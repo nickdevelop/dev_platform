@@ -1,0 +1,25 @@
+# SDD scratch workspace
+.superpowers/
+
+# Node / Vue
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Go
+/platform
+/platform-server
+*.test
+*.out
+
+# Environment / local secrets
+.env
+.env.*
+*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
