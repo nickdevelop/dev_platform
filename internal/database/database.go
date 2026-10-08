@@ -8,11 +8,16 @@ package database
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // dbFileName is the name of the SQLite database file inside the data
@@ -22,6 +27,38 @@ const dbFileName = "platform.db"
 // busyTimeoutMS is the SQLite busy timeout in milliseconds applied to every
 // connection, so short write contention waits instead of failing.
 const busyTimeoutMS = 5000
+
+// logOutput is where database log messages are written. Tests redirect it
+// to capture what the logger emits.
+var logOutput io.Writer = os.Stdout
+
+// newDBLogger builds the GORM logger for the platform database. It mirrors
+// the default logger except that parameterized query logging is enabled:
+// bound SQL values — which include session tokens, password hashes and
+// other sensitive configuration — are never emitted, only statements with
+// "?" placeholders.
+func newDBLogger() logger.Interface {
+	return logger.New(log.New(logOutput, "\r\n", log.LstdFlags), logger.Config{
+		SlowThreshold:        200 * time.Millisecond,
+		LogLevel:             logger.Warn,
+		ParameterizedQueries: true,
+		Colorful:             true,
+	})
+}
+
+// buildDSN builds the SQLite DSN for dbPath. The path is embedded as a
+// percent-encoded file: URI, so reserved characters that are legal in Linux
+// directory names (such as "?") cannot collide with the DSN query
+// separator. The pragmas run on every new pooled connection: foreign key
+// enforcement, the busy timeout, and the WAL journal mode.
+func buildDSN(dbPath string) string {
+	uri := url.URL{Scheme: "file", Path: dbPath}
+	params := url.Values{}
+	params.Add("_pragma", "foreign_keys(1)")
+	params.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", busyTimeoutMS))
+	params.Add("_pragma", "journal_mode(WAL)")
+	return uri.String() + "?" + params.Encode()
+}
 
 // Open opens (creating it when missing) the platform SQLite database under
 // dataDir and returns the GORM handle. The database file is placed directly
@@ -35,12 +72,8 @@ func Open(dataDir string) (*gorm.DB, error) {
 	}
 
 	dbPath := filepath.Join(dataDir, dbFileName)
-	// Pragmas in the DSN run on every new pooled connection: foreign key
-	// enforcement, the busy timeout, and the WAL journal mode.
-	dsn := fmt.Sprintf("%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)",
-		dbPath, busyTimeoutMS)
-
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(buildDSN(dbPath)), &gorm.Config{
+		Logger: newDBLogger(),
 		// Surface driver constraint violations as gorm.ErrDuplicatedKey.
 		TranslateError: true,
 	})
