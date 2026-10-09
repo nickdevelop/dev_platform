@@ -1,14 +1,20 @@
 package sessions
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/agents"
 )
@@ -400,5 +406,70 @@ func TestStreamSessionRejectsCrossProjectSession(t *testing.T) {
 	err := env.svc.StreamSession(context.Background(), otherProject, session.ID, &recordingWriter{}, nil)
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("StreamSession cross-project error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+// TestSSEStreamOutlivesServerWriteTimeout verifies the SSE handler clears the
+// connection write deadline, so a stream is not truncated by the server's
+// absolute WriteTimeout (~60s in production).
+func TestSSEStreamOutlivesServerWriteTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	session := createNativeSession(t, env, "native-1")
+
+	server := httptest.NewUnstartedServer(router)
+	server.Config.WriteTimeout = 100 * time.Millisecond
+	server.Start()
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf("%s/projects/%d/sessions/%s/events", server.URL, env.projectID, session.ID), nil)
+	if err != nil {
+		t.Fatalf("build SSE request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("open SSE stream: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("SSE status = %d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("SSE Content-Type = %q, want text/event-stream", got)
+	}
+
+	waitForSubscriber(t, env.fake, env.instanceID)
+
+	// Wait past the server's WriteTimeout, then emit: without a cleared write
+	// deadline the flush would fail and no frame would reach the client.
+	time.Sleep(250 * time.Millisecond)
+	env.fake.emit(t, env.instanceID, streamMessageEvent(1, "native-1", "after-deadline"))
+
+	frames := make(chan string, 1)
+	go func() {
+		reader := bufio.NewReader(resp.Body)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if strings.Contains(line, "after-deadline") {
+				frames <- line
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-frames:
+	case <-time.After(3 * time.Second):
+		t.Fatal("no SSE frame arrived after the server WriteTimeout; the write deadline was not cleared")
 	}
 }

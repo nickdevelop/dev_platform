@@ -385,7 +385,12 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 	s.markSiblingsDisconnected(row.InstanceID, row.ID, now)
 
 	if stopErr != nil {
-		return s.sessionFromModel(row), stopErr
+		// An unknown backend is a platform misconfiguration and stays a 400;
+		// every other stop failure is a backend operation failure (502).
+		if errors.Is(stopErr, instances.ErrUnknownBackend) {
+			return s.sessionFromModel(row), stopErr
+		}
+		return s.sessionFromModel(row), fmt.Errorf("%w: stop instance: %w", ErrBackendFailed, stopErr)
 	}
 	return s.sessionFromModel(row), nil
 }
@@ -403,12 +408,15 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 	if row.Status == string(SessionStopped) {
 		return fmt.Errorf("%w: session is stopped", ErrInvalidRequest)
 	}
-	inst, err := s.instances.Get(row.InstanceID)
+	inst, err := s.scopedInstance(projectID, row.InstanceID)
 	if err != nil {
 		return err
 	}
 	if !instanceRunnable(inst) {
 		return fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
+	}
+	if !s.capabilities(inst.Backend).Streaming {
+		return fmt.Errorf("%w: streaming", ErrUnsupportedCapability)
 	}
 
 	subCtx, cancel := context.WithCancel(ctx)

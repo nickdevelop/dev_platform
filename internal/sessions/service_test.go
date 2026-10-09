@@ -615,6 +615,81 @@ func TestStopIsIdempotentAndRaceSafe(t *testing.T) {
 	}
 }
 
+// TestStopFailureIsReportedAsBackendFailure verifies an adapter stop failure is
+// labelled as a backend operation failure (502) and the session is left
+// disconnected rather than reported as stopped.
+func TestStopFailureIsReportedAsBackendFailure(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	env.fake.mu.Lock()
+	env.fake.stopErr = errors.New("adapter boom")
+	env.fake.mu.Unlock()
+
+	got, err := env.svc.Stop(context.Background(), env.projectID, session.ID)
+	if !errors.Is(err, ErrBackendFailed) {
+		t.Fatalf("Stop error = %v, want ErrBackendFailed", err)
+	}
+	if got.Status != SessionDisconnected {
+		t.Errorf("session status after failed stop = %q, want %q", got.Status, SessionDisconnected)
+	}
+	inst, getErr := env.instances.Get(env.instanceID)
+	if getErr != nil {
+		t.Fatalf("Get instance: %v", getErr)
+	}
+	if inst.Status != agents.InstanceFailed {
+		t.Errorf("instance status = %q, want %q", inst.Status, agents.InstanceFailed)
+	}
+}
+
+// TestStreamSessionRequiresStreamingCapability verifies the SSE route refuses a
+// backend that does not declare streaming support.
+func TestStreamSessionRequiresStreamingCapability(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{SessionDiscovery: true, Stop: true}
+	env.fake.mu.Unlock()
+
+	session := createNativeSession(t, env, "native-1")
+
+	err := env.svc.StreamSession(context.Background(), env.projectID, session.ID, &recordingWriter{}, nil)
+	if !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("StreamSession error = %v, want ErrUnsupportedCapability", err)
+	}
+}
+
+// TestStreamSessionRevalidatesInstanceProject verifies StreamSession enforces
+// the instance↔project relationship even when the index row claims the project,
+// so a corrupted mapping cannot stream another project's instance.
+func TestStreamSessionRevalidatesInstanceProject(t *testing.T) {
+	env := newTestEnv(t)
+	otherProject := env.registerProject(t, "beta")
+	otherInstance, err := env.instances.Start(context.Background(), otherProject, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("start other instance: %v", err)
+	}
+
+	now := time.Now().UTC()
+	row := database.AgentSession{
+		ID:              "cross-instance",
+		ProjectID:       env.projectID,
+		Backend:         string(agents.BackendPi),
+		InstanceID:      otherInstance.ID,
+		NativeSessionID: "n",
+		Status:          string(SessionActive),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := env.db.Create(&row).Error; err != nil {
+		t.Fatalf("insert cross-project session: %v", err)
+	}
+
+	err = env.svc.StreamSession(context.Background(), env.projectID, row.ID, &recordingWriter{}, nil)
+	if !errors.Is(err, instances.ErrInstanceNotFound) {
+		t.Fatalf("StreamSession error = %v, want ErrInstanceNotFound", err)
+	}
+}
+
 // TestUnknownSessionOperationsAreNotFound verifies unknown ids fail cleanly.
 func TestUnknownSessionOperationsAreNotFound(t *testing.T) {
 	env := newTestEnv(t)
@@ -706,5 +781,16 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	<-done
 	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
 		t.Errorf("SSE Content-Type = %q, want text/event-stream", got)
+	}
+
+	// An adapter stop failure maps to the documented 502 agent_operation_failed.
+	env.fake.mu.Lock()
+	env.fake.stopErr = errors.New("adapter boom")
+	env.fake.mu.Unlock()
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/stop", env.projectID, created.ID), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("POST stop with adapter failure = %d, want 502", rec.Code)
 	}
 }

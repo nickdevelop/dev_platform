@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -233,6 +234,12 @@ func (s *Service) handleEvents(c *gin.Context) {
 		respondError(c, http.StatusConflict, "instance_not_running")
 		return
 	}
+	// Refuse a stream for a backend that does not declare streaming support,
+	// consistent with the other capability gates.
+	if !session.Capabilities.Streaming {
+		respondError(c, http.StatusConflict, "unsupported_capability")
+		return
+	}
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -240,6 +247,11 @@ func (s *Service) handleEvents(c *gin.Context) {
 	// Disable intermediary (for example nginx) response buffering so events
 	// reach the browser as they are produced.
 	c.Header("X-Accel-Buffering", "no")
+	// An SSE response is long-lived and must outlive the server's absolute
+	// WriteTimeout; clear the connection's write deadline (the controller
+	// unwraps gin's ResponseWriter to the net/http response). Ignore an
+	// unsupported result, which only happens for writers with no deadline.
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 	c.Writer.Flush()
 
 	_ = s.StreamSession(c.Request.Context(), id, sessionID, c.Writer, func() { c.Writer.Flush() })
