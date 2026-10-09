@@ -203,6 +203,322 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects:
+    get:
+      summary: List projects
+      description: >-
+        Returns the registered projects with their current names and canonical
+        directory paths.
+      operationId: listProjects
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The registered projects.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Register an existing project directory
+      description: >-
+        Registers an existing directory under an authorized workspace root. The
+        canonical path is stored and the project name is derived from the
+        directory basename; the directory itself is never modified.
+      operationId: registerProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterProjectRequest'
+      responses:
+        '201':
+          description: Project registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: >-
+            Malformed body, or the path is not an authorized existing
+            directory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: The directory is already registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/create:
+    post:
+      summary: Create a project directory
+      description: >-
+        Creates a new project directory named name under an authorized parent
+        directory and records it. The name must be a single safe path element;
+        an existing target is never overwritten.
+      operationId: createProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Malformed body, invalid name, or unauthorized parent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: The target directory already exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/move:
+    post:
+      summary: Move a project directory
+      description: >-
+        Moves the project directory to an authorized destination path and
+        updates the record. Requires the typed confirmation of the project's
+        current name; an existing destination is never overwritten.
+      operationId: moveProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the project to move.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveProjectRequest'
+      responses:
+        '200':
+          description: Project moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Malformed body, bad id, or mismatched confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No project with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            The source directory is missing, the destination exists, or the
+            destination parent is missing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/rename:
+    post:
+      summary: Rename a project directory
+      description: >-
+        Renames the project directory within its current parent and updates the
+        record. Requires the typed confirmation of the project's current name;
+        an existing target is never overwritten.
+      operationId: renameProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the project to rename.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameProjectRequest'
+      responses:
+        '200':
+          description: Project renamed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '400':
+          description: Malformed body, bad id, invalid name, or mismatched confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No project with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The source directory is missing or the target exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/unregister:
+    post:
+      summary: Unregister a project
+      description: >-
+        Removes only the platform project record. The directory on disk is never
+        touched. This is the non-destructive alternative to delete.
+      operationId: unregisterProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the project to unregister.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Project unregistered.
+        '400':
+          description: Malformed project id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No project with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/delete:
+    post:
+      summary: Delete a project directory
+      description: >-
+        Deletes the project directory and its record, preferring the OS trash.
+        When the trash is unavailable the request fails with 409 and nothing is
+        removed; the caller must re-issue it with permanent=true after an
+        explicit confirmation. The typed confirmation of the project's current
+        name is always required.
+      operationId: deleteProject
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the project to delete.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteProjectRequest'
+      responses:
+        '204':
+          description: Project directory deleted and record removed.
+        '400':
+          description: Malformed body, bad id, or mismatched confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No project with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            The directory is missing, or the OS trash is unavailable and the
+            request did not explicitly confirm permanent deletion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -311,6 +627,103 @@ components:
         path:
           type: string
           description: Absolute path of an existing directory to authorize.
+      additionalProperties: false
+    Project:
+      type: object
+      required:
+        - id
+        - name
+        - path
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Stable platform identifier; survives renames and moves.
+        name:
+          type: string
+          description: Current project name (directory basename).
+        path:
+          type: string
+          description: Canonical absolute directory path of the project.
+      additionalProperties: false
+    ProjectList:
+      type: object
+      required:
+        - projects
+      properties:
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+      additionalProperties: false
+    RegisterProjectRequest:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          description: >-
+            Absolute path of an existing directory inside an authorized
+            workspace root.
+      additionalProperties: false
+    CreateProjectRequest:
+      type: object
+      required:
+        - parent
+        - name
+      properties:
+        parent:
+          type: string
+          description: Absolute path of an existing authorized parent directory.
+        name:
+          type: string
+          description: >-
+            Project directory name; a single path element with no separators.
+      additionalProperties: false
+    MoveProjectRequest:
+      type: object
+      required:
+        - path
+        - confirmName
+      properties:
+        path:
+          type: string
+          description: Authorized destination path for the project directory.
+        confirmName:
+          type: string
+          description: >-
+            Typed confirmation; must equal the project's current name.
+      additionalProperties: false
+    RenameProjectRequest:
+      type: object
+      required:
+        - name
+        - confirmName
+      properties:
+        name:
+          type: string
+          description: New project directory name; a single path element.
+        confirmName:
+          type: string
+          description: >-
+            Typed confirmation; must equal the project's current name.
+      additionalProperties: false
+    DeleteProjectRequest:
+      type: object
+      required:
+        - confirmName
+      properties:
+        confirmName:
+          type: string
+          description: >-
+            Typed confirmation; must equal the project's current name.
+        permanent:
+          type: boolean
+          default: false
+          description: >-
+            Explicit second confirmation required to permanently delete the
+            directory when the OS trash is unavailable. It is never implied.
       additionalProperties: false
     ErrorResponse:
       type: object

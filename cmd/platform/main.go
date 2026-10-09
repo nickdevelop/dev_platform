@@ -20,6 +20,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
+	"devplatform/internal/projects"
 	"devplatform/internal/workspaces"
 )
 
@@ -167,6 +168,7 @@ func runServer(args []string) error {
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:       authService,
 		Workspaces: workspaces.NewService(db),
+		Projects:   projects.NewService(db),
 	})
 
 	server := &http.Server{

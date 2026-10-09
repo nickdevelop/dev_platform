@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/auth"
+	"devplatform/internal/projects"
 	"devplatform/internal/workspaces"
 )
 
@@ -19,6 +20,10 @@ type Dependencies struct {
 	// with Auth, the workspace-root management routes are served under
 	// /api/workspaces behind RequireSession; it requires Auth to be set.
 	Workspaces *workspaces.Service
+	// Projects manages project records and their directories. When set
+	// together with Auth, the project routes are served under /api/projects
+	// behind RequireSession; it requires Auth to be set.
+	Projects *projects.Service
 }
 
 // NewRouter builds the Gin engine with all API routes registered.
@@ -36,9 +41,15 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		api := router.Group("/api")
 		deps.Auth.RegisterRoutes(api)
 
+		// Management routes share one session-protected group so no route
+		// can accidentally omit authentication (CSRF is installed globally
+		// above).
+		protected := api.Group("", auth.RequireSession(deps.Auth))
 		if deps.Workspaces != nil {
-			protected := api.Group("", auth.RequireSession(deps.Auth))
 			deps.Workspaces.RegisterRoutes(protected)
+		}
+		if deps.Projects != nil {
+			deps.Projects.RegisterRoutes(protected)
 		}
 	}
 

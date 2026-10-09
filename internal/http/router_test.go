@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
+	"devplatform/internal/projects"
 	"devplatform/internal/workspaces"
 )
 
@@ -41,9 +43,9 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// newAuthedClient builds the full platform router with auth and workspace
-// services wired, logs a client in, and returns the client, base URL and the
-// CSRF token to echo on mutating requests.
+// newAuthedClient builds the full platform router with auth, workspace and
+// project services wired, logs a client in, and returns the client, base URL
+// and the CSRF token to echo on mutating requests.
 func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 	t.Helper()
 
@@ -55,6 +57,7 @@ func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 	router := NewRouter(Dependencies{
 		Auth:       authSvc,
 		Workspaces: workspaces.NewService(db),
+		Projects:   projects.NewService(db),
 	})
 
 	jar, err := cookiejar.New(nil)
@@ -96,6 +99,108 @@ func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
 	}
 	return client, base, session.CSRFToken
+}
+
+// postJSON sends an authenticated JSON request with the CSRF token.
+func postJSON(t *testing.T, client *http.Client, base, path, csrf string, body any) *http.Response {
+	t.Helper()
+
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, base+path, strings.NewReader(string(payload)))
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if csrf != "" {
+		req.Header.Set(auth.CSRFHeaderName, csrf)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", path, err)
+	}
+	return resp
+}
+
+// TestRouterServesProjectsBehindSessionAndCSRF verifies the project routes are
+// reachable only with a session and enforce CSRF on mutations, and that the
+// full register/list/unregister round trip works over the real router.
+func TestRouterServesProjectsBehindSessionAndCSRF(t *testing.T) {
+	client, base, csrf := newAuthedClient(t)
+
+	// Unauthenticated requests are rejected.
+	unauthed, err := (&http.Client{}).Get(base + "/api/projects")
+	if err != nil {
+		t.Fatalf("GET projects: %v", err)
+	}
+	unauthed.Body.Close()
+	if unauthed.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated GET status = %d, want %d", unauthed.StatusCode, http.StatusUnauthorized)
+	}
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	addRoot := postJSON(t, client, base, "/api/workspaces/roots", csrf, map[string]string{"path": root})
+	addRoot.Body.Close()
+	if addRoot.StatusCode != http.StatusCreated {
+		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
+	}
+
+	projectDir := filepath.Join(root, "alpha")
+	if err := os.Mkdir(projectDir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	// A mutation without a CSRF token is rejected.
+	noCSRF := postJSON(t, client, base, "/api/projects", "", map[string]string{"path": projectDir})
+	noCSRF.Body.Close()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)
+	}
+
+	// With session and CSRF, registration succeeds.
+	register := postJSON(t, client, base, "/api/projects", csrf, map[string]string{"path": projectDir})
+	if register.StatusCode != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d", register.StatusCode, http.StatusCreated)
+	}
+	var created projects.Project
+	if err := json.NewDecoder(register.Body).Decode(&created); err != nil {
+		t.Fatalf("decode register body: %v", err)
+	}
+	register.Body.Close()
+	if created.Name != "alpha" || created.Path != projectDir {
+		t.Errorf("created project = %+v, want name alpha path %q", created, projectDir)
+	}
+
+	list, err := client.Get(base + "/api/projects")
+	if err != nil {
+		t.Fatalf("GET projects: %v", err)
+	}
+	var body struct {
+		Projects []projects.Project `json:"projects"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&body); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	list.Body.Close()
+	if len(body.Projects) != 1 || body.Projects[0].ID != created.ID {
+		t.Fatalf("projects = %+v, want the registered project", body.Projects)
+	}
+
+	// Unregister removes the record but keeps the directory on disk.
+	unregister := postJSON(t, client, base,
+		"/api/projects/"+strconv.FormatUint(uint64(created.ID), 10)+"/unregister", csrf, struct{}{})
+	unregister.Body.Close()
+	if unregister.StatusCode != http.StatusNoContent {
+		t.Fatalf("unregister status = %d, want %d", unregister.StatusCode, http.StatusNoContent)
+	}
+	if _, err := os.Stat(projectDir); err != nil {
+		t.Errorf("directory removed by unregister: %v", err)
+	}
 }
 
 // TestRouterServesWorkspaceRootsBehindSessionAndCSRF verifies the wiring of
