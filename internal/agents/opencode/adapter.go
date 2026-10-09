@@ -29,6 +29,11 @@ const (
 	// event stream drops. Each instance reconnects its own stream only.
 	streamRetryMin = 100 * time.Millisecond
 	streamRetryMax = 5 * time.Second
+	// defaultStreamIdleTimeout is how long a silent-but-open event stream may
+	// go without delivering an event before the adapter treats it as dead and
+	// reconnects. It bounds a hung connection that never sends and never
+	// closes.
+	defaultStreamIdleTimeout = 60 * time.Second
 	// maxStartupOutputBytes bounds captured server output used for diagnostics.
 	maxStartupOutputBytes = 8 * 1024
 )
@@ -44,6 +49,9 @@ type Options struct {
 	// StartupTimeout bounds how long StartInstance waits for the server to
 	// answer /api/info. Defaults to 20s.
 	StartupTimeout time.Duration
+	// StreamIdleTimeout bounds how long the event stream may go silent before
+	// the adapter reconnects. Defaults to 60s.
+	StreamIdleTimeout time.Duration
 	// Now overrides the clock; tests set it for deterministic timestamps.
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
@@ -58,6 +66,7 @@ type Adapter struct {
 	executable     string
 	hostname       string
 	startupTimeout time.Duration
+	streamIdle     time.Duration
 	now            func() time.Time
 	newID          func() (string, error)
 	launch         launcher
@@ -93,6 +102,7 @@ func New(options Options) *Adapter {
 		executable:     options.Executable,
 		hostname:       options.Hostname,
 		startupTimeout: options.StartupTimeout,
+		streamIdle:     options.StreamIdleTimeout,
 		now:            options.Now,
 		newID:          options.NewID,
 		instances:      make(map[string]*instance),
@@ -105,6 +115,9 @@ func New(options Options) *Adapter {
 	}
 	if adapter.startupTimeout <= 0 {
 		adapter.startupTimeout = 20 * time.Second
+	}
+	if adapter.streamIdle <= 0 {
+		adapter.streamIdle = defaultStreamIdleTimeout
 	}
 	if adapter.now == nil {
 		adapter.now = func() time.Time { return time.Now().UTC() }
@@ -196,19 +209,20 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	now := a.now()
 	instanceCtx, cancel := context.WithCancel(context.Background())
 	inst := &instance{
-		id:        id,
-		directory: request.Directory,
-		endpoint:  result.endpoint,
-		client:    result.client,
-		proc:      result,
-		ctx:       instanceCtx,
-		cancel:    cancel,
-		done:      make(chan struct{}),
-		now:       a.now,
-		subs:      make(map[*subscriber]struct{}),
-		sessions:  make(map[string]string),
-		toolNames: make(map[string]string),
-		deltaOpen: make(map[string]bool),
+		id:         id,
+		directory:  request.Directory,
+		endpoint:   result.endpoint,
+		client:     result.client,
+		proc:       result,
+		ctx:        instanceCtx,
+		cancel:     cancel,
+		done:       make(chan struct{}),
+		now:        a.now,
+		streamIdle: a.streamIdle,
+		subs:       make(map[*subscriber]struct{}),
+		sessions:   make(map[string]string),
+		toolNames:  make(map[string]string),
+		deltaOpen:  make(map[string]bool),
 	}
 
 	a.mu.Lock()
@@ -422,15 +436,18 @@ func (a *Adapter) getInstance(instanceID string) (*instance, error) {
 
 // instance is one running opencode server bound to a working directory.
 type instance struct {
-	id        string
-	directory string
-	endpoint  string
-	client    *Client
-	proc      *launchResult
-	ctx       context.Context
-	cancel    context.CancelFunc
-	done      chan struct{}
-	now       func() time.Time
+	id         string
+	directory  string
+	endpoint   string
+	client     *Client
+	proc       *launchResult
+	ctx        context.Context
+	cancel     context.CancelFunc
+	done       chan struct{}
+	now        func() time.Time
+	streamIdle time.Duration
+	// sleep is a test seam for the reconnect backoff; when nil, wait is used.
+	sleep func(time.Duration) bool
 
 	mu            sync.Mutex
 	closed        bool
@@ -566,52 +583,120 @@ func (inst *instance) publish(event agents.NormalizedEvent) {
 }
 
 // runStream reads the server's SSE stream, reconnects with backoff after a
-// drop, and reports each error without affecting any other instance.
+// drop, and reports each error without affecting any other instance. The
+// backoff is reset only when a connection actually delivered an event, so a
+// server that accepts and immediately closes the stream backs off up to the
+// cap instead of hammering it at the minimum delay.
 func (inst *instance) runStream() {
 	backoff := streamRetryMin
 	for {
 		if !inst.active() {
 			return
 		}
-		stream, err := inst.client.Events(inst.ctx)
-		if err != nil {
-			if !inst.active() {
-				return
-			}
-			inst.publishStreamError(err)
-			if !inst.wait(backoff) {
-				return
-			}
-			backoff = nextBackoff(backoff)
-			continue
-		}
-		backoff = streamRetryMin
-		err = inst.pump(stream)
-		_ = stream.Close()
+		events, err := inst.consume()
 		if !inst.active() {
 			return
 		}
 		if err != nil {
 			inst.publishStreamError(err)
 		}
-		if !inst.wait(backoff) {
+		if events > 0 {
+			// A connection that delivered events was healthy; reset so a
+			// long-lived stream that later drops reconnects promptly.
+			backoff = streamRetryMin
+		}
+		if !inst.pause(backoff) {
 			return
 		}
 		backoff = nextBackoff(backoff)
 	}
 }
 
+// consume opens one event-stream connection, guards it with an idle watchdog,
+// and drains it. It returns the number of events read and the terminating
+// error. A silent-but-open stream is canceled by the watchdog and reported as
+// an error so runStream reconnects instead of blocking forever.
+func (inst *instance) consume() (int, error) {
+	attemptCtx, cancel := context.WithCancel(inst.ctx)
+	defer cancel()
+
+	activity := make(chan struct{}, 1)
+	watchdogDone := make(chan struct{})
+	if inst.streamIdle > 0 {
+		go func() {
+			defer close(watchdogDone)
+			timer := time.NewTimer(inst.streamIdle)
+			defer timer.Stop()
+			for {
+				select {
+				case <-attemptCtx.Done():
+					return
+				case <-activity:
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					timer.Reset(inst.streamIdle)
+				case <-timer.C:
+					// No data within the idle window: force the blocked
+					// read to unblock so the stream reconnects.
+					cancel()
+					return
+				}
+			}
+		}()
+	} else {
+		close(watchdogDone)
+	}
+
+	stream, err := inst.client.Events(attemptCtx)
+	if err != nil {
+		cancel()
+		<-watchdogDone
+		return 0, err
+	}
+	events, err := inst.pump(stream, func() {
+		select {
+		case activity <- struct{}{}:
+		default:
+		}
+	})
+	_ = stream.Close()
+	cancel()
+	<-watchdogDone
+	return events, err
+}
+
 // pump reads one stream to completion, normalizing and publishing each event.
-func (inst *instance) pump(stream *EventStream) error {
+// It returns the number of events read so the caller can tell a healthy
+// connection from one that closed without ever producing data.
+func (inst *instance) pump(stream *EventStream, onProgress func()) (int, error) {
+	events := 0
 	for {
 		event, err := stream.Next()
 		if err != nil {
-			return err
+			return events, err
+		}
+		events++
+		if onProgress != nil {
+			onProgress()
 		}
 		for _, normalized := range inst.normalize(event) {
 			inst.publish(normalized)
 		}
 	}
+}
+
+// pause sleeps for the backoff through the test seam when set, otherwise using
+// the instance's cancellation-aware wait. It reports false when the instance
+// ended.
+func (inst *instance) pause(d time.Duration) bool {
+	if inst.sleep != nil {
+		return inst.sleep(d)
+	}
+	return inst.wait(d)
 }
 
 // wait sleeps for the backoff or returns false when the instance ended.
@@ -1134,7 +1219,9 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	if err := a.waitReady(ctx, process, client); err != nil {
 		_ = killProcessGroup(command.Process)
 		_ = process.wait()
-		return nil, fmt.Errorf("%w: %s", err, redactSecrets(output.String()))
+		// Redact the exact generated password (which may appear in a
+		// non-key=value shape) as well as generic credential shapes.
+		return nil, fmt.Errorf("%w: %s", err, client.redact(output.String()))
 	}
 
 	return &launchResult{

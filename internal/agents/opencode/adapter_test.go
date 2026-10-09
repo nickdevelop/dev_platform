@@ -622,3 +622,126 @@ func TestParseModelRef(t *testing.T) {
 		t.Fatal("expected error for empty model")
 	}
 }
+
+func TestAdapterStreamBackoffGrowsOnImmediateDisconnect(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			// Return immediately: the connection is accepted and closed with
+			// no event, the shape that must drive backoff growth.
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+
+	inst := adapter.instances[instance.ID]
+	var mu sync.Mutex
+	var waits []time.Duration
+	done := make(chan struct{})
+	var once sync.Once
+	inst.sleep = func(d time.Duration) bool {
+		mu.Lock()
+		waits = append(waits, d)
+		n := len(waits)
+		mu.Unlock()
+		if n >= 6 {
+			once.Do(func() { close(done) })
+			return false
+		}
+		return true
+	}
+
+	if _, err := adapter.Subscribe(context.Background(), instance.ID); err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for the reconnect backoff to grow")
+	}
+
+	mu.Lock()
+	got := append([]time.Duration(nil), waits...)
+	mu.Unlock()
+
+	if len(got) < 3 {
+		t.Fatalf("recorded %d reconnects, want at least 3: %v", len(got), got)
+	}
+	if got[0] != streamRetryMin {
+		t.Fatalf("first backoff = %v, want %v", got[0], streamRetryMin)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i] <= got[i-1] {
+			t.Fatalf("backoff did not grow on repeated immediate disconnects: %v", got)
+		}
+	}
+	for _, d := range got {
+		if d > streamRetryMax {
+			t.Fatalf("backoff %v exceeds the cap %v: %v", d, streamRetryMax, got)
+		}
+	}
+}
+
+func TestAdapterStreamIdleTimeoutReconnects(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			// Accept and never write: only the idle watchdog can end this.
+			<-r.Context().Done()
+		},
+	}))
+	adapter.streamIdle = 50 * time.Millisecond
+	instance := startTestInstance(t, adapter)
+
+	ch, err := adapter.Subscribe(context.Background(), instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	select {
+	case ev := <-ch:
+		if ev.Type != agents.EventLifecycle || ev.Lifecycle == nil || ev.Lifecycle.State != "stream_error" {
+			t.Fatalf("unexpected event from a silent stream: %+v", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a silent but open stream was not bounded by the idle timeout")
+	}
+}
+
+func TestAdapterLaunchDiagnosticRedactsPassword(t *testing.T) {
+	outFile := filepath.Join(t.TempDir(), "password.txt")
+	t.Setenv("OC_TEST_OUT", outFile)
+
+	script := filepath.Join(t.TempDir(), "fake-opencode")
+	content := "#!/bin/sh\n" +
+		"printf '%s' \"$OPENCODE_SERVER_PASSWORD\" > \"$OC_TEST_OUT\"\n" +
+		"echo \"server password $OPENCODE_SERVER_PASSWORD\"\n" +
+		"exit 1\n"
+	if err := os.WriteFile(script, []byte(content), 0o755); err != nil {
+		t.Fatalf("write fake executable: %v", err)
+	}
+
+	adapter := New(Options{Executable: script, StartupTimeout: 3 * time.Second})
+	_, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()})
+	if err == nil {
+		t.Fatal("expected the launch to fail")
+	}
+
+	password, readErr := os.ReadFile(outFile)
+	if readErr != nil || len(password) == 0 {
+		t.Fatalf("fake server did not capture the password: %v (%q)", readErr, password)
+	}
+	if strings.Contains(err.Error(), string(password)) {
+		t.Fatalf("the exact password leaked in the launch diagnostic: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[REDACTED]") {
+		t.Fatalf("expected a redaction marker in the launch diagnostic: %v", err)
+	}
+}
