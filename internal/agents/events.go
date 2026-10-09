@@ -148,20 +148,22 @@ func (e NormalizedEvent) Validate() error {
 		return fmt.Errorf("%w: raw body is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.Raw), MaxRawEventBytes)
 	}
 
-	payloadName := func() string {
-		switch {
-		case e.Lifecycle != nil:
-			return "lifecycle"
-		case e.Message != nil:
-			return "message"
-		case e.ToolCall != nil:
-			return "toolCall"
-		case e.ToolResult != nil:
-			return "toolResult"
-		case e.Error != nil:
-			return "error"
-		default:
-			return ""
+	fields := []struct {
+		name string
+		set  bool
+	}{
+		{"lifecycle", e.Lifecycle != nil},
+		{"message", e.Message != nil},
+		{"toolCall", e.ToolCall != nil},
+		{"toolResult", e.ToolResult != nil},
+		{"error", e.Error != nil},
+	}
+	got := ""
+	setCount := 0
+	for _, f := range fields {
+		if f.set {
+			setCount++
+			got = f.name
 		}
 	}
 
@@ -176,9 +178,11 @@ func (e NormalizedEvent) Validate() error {
 	}[e.Type]
 
 	if typed {
-		switch got := payloadName(); {
-		case got == "":
+		switch {
+		case setCount == 0:
 			return fmt.Errorf("%w: %s event is missing its %s payload", ErrInvalidEvent, e.Type, want)
+		case setCount > 1:
+			return fmt.Errorf("%w: %s event carries %d payloads, want exactly one", ErrInvalidEvent, e.Type, setCount)
 		case got != want:
 			return fmt.Errorf("%w: %s event carries a %s payload", ErrInvalidEvent, e.Type, got)
 		}
@@ -188,7 +192,7 @@ func (e NormalizedEvent) Validate() error {
 		return nil
 	}
 
-	if got := payloadName(); got != "" {
+	if setCount > 0 {
 		return fmt.Errorf("%w: unknown event carries a %s payload", ErrInvalidEvent, got)
 	}
 	if len(e.Raw) == 0 {

@@ -302,6 +302,33 @@ func TestContractsNormalizedEvents(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "two payloads set is rejected",
+			event: withExtraPayload(
+				withPayload(base, EventMessage, &MessagePayload{Role: "assistant", Text: "hi"}),
+				&ToolCallPayload{CallID: "call_1", Name: "read_file"},
+			),
+			wantErr: true,
+		},
+		{
+			name: "two payloads neither matching the type is rejected",
+			event: withExtraPayload(
+				withPayload(base, EventLifecycle, &LifecycleEvent{State: string(InstanceRunning)}),
+				&ErrorPayload{Message: "boom"},
+			),
+			wantErr: true,
+		},
+		{
+			name: "three payloads set is rejected",
+			event: withExtraPayload(
+				withExtraPayload(
+					withPayload(base, EventError, &ErrorPayload{Message: "boom"}),
+					&MessagePayload{Role: "system", Text: "reconnecting"},
+				),
+				&ToolResultPayload{CallID: "call_1", Output: "ok"},
+			),
+			wantErr: true,
+		},
+		{
 			name:  "message event with backend metadata",
 			event: withPayloadAndRaw(base, EventMessage, &MessagePayload{Role: "assistant", Text: "hi"}, json.RawMessage(`{"partId":"part-9"}`)),
 		},
@@ -370,6 +397,27 @@ func withRaw(event NormalizedEvent, eventType EventType, raw json.RawMessage) No
 func withPayloadAndRaw(event NormalizedEvent, eventType EventType, payload any, raw json.RawMessage) NormalizedEvent {
 	event = withPayload(event, eventType, payload)
 	event.Raw = raw
+	return event
+}
+
+// withExtraPayload installs an additional payload alongside the one the event
+// already carries. Validate must reject any event with more than one payload,
+// even when one of them matches the event's Type.
+func withExtraPayload(event NormalizedEvent, payload any) NormalizedEvent {
+	switch p := payload.(type) {
+	case *LifecycleEvent:
+		event.Lifecycle = p
+	case *MessagePayload:
+		event.Message = p
+	case *ToolCallPayload:
+		event.ToolCall = p
+	case *ToolResultPayload:
+		event.ToolResult = p
+	case *ErrorPayload:
+		event.Error = p
+	default:
+		panic("unhandled payload type")
+	}
 	return event
 }
 
