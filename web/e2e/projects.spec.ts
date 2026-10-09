@@ -40,7 +40,9 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
     data: { path: workspaceRoot },
     headers: { 'X-CSRF-Token': operatorSession.csrfToken },
   })
-  expect(addRoot.status(), await addRoot.text()).toBe(201)
+  // 409 = security.spec.ts (the sibling spec sharing this run's database)
+  // already authorized the same root; both specs tolerate either outcome.
+  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
 
   // Unauthenticated users land on the login view.
   await page.goto('/')

@@ -24,12 +24,23 @@ type Dependencies struct {
 	// together with Auth, the project routes are served under /api/projects
 	// behind RequireSession; it requires Auth to be set.
 	Projects *projects.Service
+	// WebDir is the directory holding the built web UI assets (the Vite
+	// build output, typically web/dist). When non-empty, the engine serves
+	// the single-page app from it so the UI and the API share one origin in
+	// production: /api routes always take precedence, and unknown non-API
+	// paths fall back to the SPA entry. Empty disables static hosting.
+	WebDir string
 }
 
 // NewRouter builds the Gin engine with all API routes registered.
 func NewRouter(deps Dependencies) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
+
+	// The platform is exposed directly on the LAN with no reverse proxy in
+	// front of it, so no proxy headers (X-Forwarded-*) are trusted when the
+	// engine derives a client address; a client cannot forge them.
+	_ = router.SetTrustedProxies(nil)
 
 	router.GET("/api/health", handleHealth)
 
@@ -51,6 +62,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
 		}
+	}
+
+	if deps.WebDir != "" {
+		serveStatic(router, deps.WebDir)
 	}
 
 	return router

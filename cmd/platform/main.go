@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/term"
 	"gorm.io/gorm"
 
@@ -21,18 +23,9 @@ import (
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
 	"devplatform/internal/projects"
+	platformruntime "devplatform/internal/runtime"
 	"devplatform/internal/workspaces"
 )
-
-// listenAddr resolves the address the HTTP service binds. PLATFORM_LISTEN_ADDR
-// overrides the default for deployments (and the E2E harness) that cannot use
-// :8080.
-func listenAddr() string {
-	if addr := os.Getenv("PLATFORM_LISTEN_ADDR"); addr != "" {
-		return addr
-	}
-	return ":8080"
-}
 
 // setPasswordCommand is the first-run subcommand that configures the platform
 // password from a hidden TTY prompt.
@@ -51,9 +44,13 @@ func main() {
 	}
 }
 
-// defaultDataDir resolves where platform data lives when no -data-dir is
-// given. It can be overridden by PLATFORM_DATA_DIR.
-func defaultDataDir() string {
+// resolveDataDir resolves where platform data lives: the -data-dir flag
+// wins, then PLATFORM_DATA_DIR, then the user config directory, then a
+// directory next to the working directory as a last resort.
+func resolveDataDir(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
 	if dir := os.Getenv("PLATFORM_DATA_DIR"); dir != "" {
 		return dir
 	}
@@ -61,6 +58,37 @@ func defaultDataDir() string {
 		return filepath.Join(base, "devplatform")
 	}
 	return filepath.Join(".", "devplatform-data")
+}
+
+// resolveListenAddr resolves the address the HTTP service binds: the
+// -listen flag wins, then PLATFORM_LISTEN_ADDR (used by deployments and the
+// E2E harness, e.g. "127.0.0.1:18080" for localhost-only or ":8080" for LAN
+// binding), then the default :8080.
+func resolveListenAddr(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if addr := os.Getenv("PLATFORM_LISTEN_ADDR"); addr != "" {
+		return addr
+	}
+	return ":8080"
+}
+
+// resolveWebDir resolves the directory of built web UI assets to serve:
+// the -web-dir flag wins, then PLATFORM_WEB_DIR, then the repository build
+// output ./web/dist when it has been built. An empty result disables static
+// hosting so the service runs as a pure API.
+func resolveWebDir(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if dir := os.Getenv("PLATFORM_WEB_DIR"); dir != "" {
+		return dir
+	}
+	if info, err := os.Stat(filepath.Join("web", "dist", "index.html")); err == nil && !info.IsDir() {
+		return filepath.Join("web", "dist")
+	}
+	return ""
 }
 
 // openDatabase opens and migrates the platform database.
@@ -91,7 +119,7 @@ func closeDatabase(db *gorm.DB) {
 // environment or logs; an already-configured password is never overwritten.
 func runSetPassword(args []string) error {
 	fs := flag.NewFlagSet(setPasswordCommand, flag.ContinueOnError)
-	dataDir := fs.String("data-dir", defaultDataDir(), "platform data directory")
+	dataDir := fs.String("data-dir", "", "platform data directory (default: $PLATFORM_DATA_DIR, then the user config directory)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -128,7 +156,7 @@ func runSetPassword(args []string) error {
 		return errors.New("passwords do not match")
 	}
 
-	db, err := openDatabase(*dataDir)
+	db, err := openDatabase(resolveDataDir(*dataDir))
 	if err != nil {
 		return err
 	}
@@ -149,10 +177,13 @@ func clear(buf []byte) {
 }
 
 // runServer starts the HTTP service, wiring the auth service over the
-// platform database.
+// platform database, holding the data-directory single-instance lock, and
+// serving the built web UI from the same origin when available.
 func runServer(args []string) error {
 	fs := flag.NewFlagSet("platform", flag.ContinueOnError)
-	dataDir := fs.String("data-dir", defaultDataDir(), "platform data directory")
+	dataDirFlag := fs.String("data-dir", "", "platform data directory (default: $PLATFORM_DATA_DIR, then the user config directory)")
+	listenFlag := fs.String("listen", "", "HTTP listen address host:port (default: $PLATFORM_LISTEN_ADDR, then :8080)")
+	webDirFlag := fs.String("web-dir", "", "directory of built web UI assets to serve (default: $PLATFORM_WEB_DIR, then ./web/dist when built)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -160,7 +191,20 @@ func runServer(args []string) error {
 		return errors.New("unexpected arguments; see -h")
 	}
 
-	db, err := openDatabase(*dataDir)
+	dataDir := resolveDataDir(*dataDirFlag)
+
+	// One platform service per data directory: take the single-instance lock
+	// before opening the database, so a second process fails fast with a
+	// clear error instead of racing on the same SQLite database.
+	lock, err := platformruntime.AcquireLock(dataDir)
+	if err != nil {
+		return err
+	}
+	// Release runs after closeDatabase (defers unwind LIFO): the lock is
+	// dropped only once the database is closed.
+	defer lock.Release()
+
+	db, err := openDatabase(dataDir)
 	if err != nil {
 		return err
 	}
@@ -173,14 +217,30 @@ func runServer(args []string) error {
 		log.Printf("no platform password configured; run %q first", setPasswordCommand)
 	}
 
+	// Route dumps and debug warnings are noise in production logs.
+	gin.SetMode(gin.ReleaseMode)
+
+	webDir := resolveWebDir(*webDirFlag)
+	if webDir != "" {
+		log.Printf("serving web UI from %s", webDir)
+	}
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:       authService,
 		Workspaces: workspaces.NewService(db),
 		Projects:   projects.NewService(db),
+		WebDir:     webDir,
 	})
 
+	// Listen explicitly so the log reports the concrete bound address (the
+	// port is resolved when the configured port is 0) and startup fails
+	// fast on a busy port with a clear error.
+	addr := resolveListenAddr(*listenFlag)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+
 	server := &http.Server{
-		Addr:              listenAddr(),
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -190,9 +250,9 @@ func runServer(args []string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- server.ListenAndServe()
+		errCh <- server.Serve(listener)
 	}()
-	log.Printf("platform listening on %s", server.Addr)
+	log.Printf("platform listening on %s", listener.Addr())
 
 	select {
 	case err := <-errCh:

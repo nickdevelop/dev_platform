@@ -17,4 +17,11 @@ export default defineConfig({
     // e2e/ holds Playwright specs, run separately via `npm run test:e2e`.
     exclude: [...configDefaults.exclude, 'e2e/**'],
   },
+  build: {
+    // The Go service serves this directory in production (PLATFORM_WEB_DIR
+    // or ./web/dist next to the working directory); keep the layout stable:
+    // index.html at the root, hashed bundles under assets/.
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
 })
