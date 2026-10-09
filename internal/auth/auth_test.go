@@ -133,19 +133,26 @@ func fetchCSRF(t *testing.T, client *http.Client, base string) string {
 	return body.CSRFToken
 }
 
-// postJSON posts a JSON body with an optional CSRF header.
-func postJSON(t *testing.T, client *http.Client, url, csrf, payload string) *http.Response {
-	t.Helper()
-
+// postJSONRaw posts a JSON body with an optional CSRF header and returns the
+// response or an error. It is safe to call from multiple goroutines.
+func postJSONRaw(client *http.Client, url, csrf, payload string) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(payload))
 	if err != nil {
-		t.Fatalf("new request: %v", err)
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if csrf != "" {
 		req.Header.Set(CSRFHeaderName, csrf)
 	}
-	resp, err := client.Do(req)
+	return client.Do(req)
+}
+
+// postJSON posts a JSON body with an optional CSRF header, failing the test on
+// transport errors.
+func postJSON(t *testing.T, client *http.Client, url, csrf, payload string) *http.Response {
+	t.Helper()
+
+	resp, err := postJSONRaw(client, url, csrf, payload)
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}
@@ -381,13 +388,80 @@ func TestLoginThrottleBoundsRepeatedFailures(t *testing.T) {
 	}
 }
 
+// TestLoginThrottleLimitHoldsUnderConcurrency is the regression test for the
+// check-then-record race: many simultaneous wrong-password requests must
+// never admit more than the configured number of attempts in one window.
+func TestLoginThrottleLimitHoldsUnderConcurrency(t *testing.T) {
+	clock := newTestClock()
+	const limit = 3
+	svc := newService(t, WithClock(clock.Now), WithLoginThrottle(limit, time.Minute))
+	client, base := newClient(t, newRouter(svc))
+	csrf := fetchCSRF(t, client, base)
+
+	const burst = 40
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	statuses := make([]int, 0, burst)
+	transportErrors := make([]error, 0)
+
+	start := make(chan struct{})
+	for i := 0; i < burst; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			resp, err := postJSONRaw(client, base+"/api/auth/login", csrf, loginPayload("wrong"))
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				transportErrors = append(transportErrors, err)
+				return
+			}
+			statuses = append(statuses, resp.StatusCode)
+			resp.Body.Close()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(transportErrors) != 0 {
+		t.Fatalf("transport errors: %v", transportErrors)
+	}
+
+	admitted, throttled := 0, 0
+	for _, status := range statuses {
+		switch status {
+		case http.StatusUnauthorized:
+			admitted++
+		case http.StatusTooManyRequests:
+			throttled++
+		default:
+			t.Errorf("unexpected status %d", status)
+		}
+	}
+	if admitted != limit {
+		t.Errorf("admitted %d concurrent attempts, want exactly %d", admitted, limit)
+	}
+	if admitted+throttled != burst {
+		t.Errorf("admitted+throttled = %d, want %d", admitted+throttled, burst)
+	}
+
+	// The window is not yet elapsed and the failures are the same ones the
+	// burst recorded, so even the correct password stays throttled.
+	stillBlocked := postJSON(t, client, base+"/api/auth/login", csrf, loginPayload(testPassword))
+	stillBlocked.Body.Close()
+	if stillBlocked.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("post-burst correct login status = %d, want %d", stillBlocked.StatusCode, http.StatusTooManyRequests)
+	}
+}
+
 func TestLoginThrottleKeyMapIsBounded(t *testing.T) {
 	throttle := NewLoginThrottle(1, time.Minute, nil)
 	throttle.maxKeys = 16
 	for i := 0; i < 100; i++ {
-		throttle.RecordFailure(string(rune('a'+i%26)) + string(rune('0'+i/26)))
+		throttle.Reserve(string(rune('a'+i%26)) + string(rune('0'+i/26)))
 	}
-	if got := len(throttle.failures); got > throttle.maxKeys {
+	if got := len(throttle.attempts); got > throttle.maxKeys {
 		t.Errorf("tracked throttle keys = %d, want <= %d", got, throttle.maxKeys)
 	}
 }

@@ -123,7 +123,10 @@ func (s *Service) handleLogin(c *gin.Context) {
 	}
 
 	key := clientKey(c)
-	if !s.throttle.Allow(key) {
+	// Reserve the attempt before doing any password work so that the limit
+	// check and the record are atomic: a concurrent burst can never admit
+	// more than max attempts per window.
+	if !s.throttle.Reserve(key) {
 		abortWithError(c, http.StatusTooManyRequests, "too_many_attempts")
 		return
 	}
@@ -134,7 +137,8 @@ func (s *Service) handleLogin(c *gin.Context) {
 		return
 	}
 	if !configured {
-		s.throttle.RecordFailure(key)
+		// The reserved slot stands; the response is identical to a wrong
+		// password so it cannot reveal whether a password is configured.
 		abortWithError(c, http.StatusUnauthorized, "invalid_credentials")
 		return
 	}
@@ -145,11 +149,11 @@ func (s *Service) handleLogin(c *gin.Context) {
 		return
 	}
 	if !ok {
-		s.throttle.RecordFailure(key)
 		abortWithError(c, http.StatusUnauthorized, "invalid_credentials")
 		return
 	}
 
+	// Successful login frees the reserved slot and prior failures.
 	s.throttle.Reset(key)
 	session, err := s.sessions.Create()
 	if err != nil {
@@ -212,19 +216,21 @@ func clientKey(c *gin.Context) string {
 	return host
 }
 
-// LoginThrottle is a bounded, in-memory sliding-window failure counter keyed
-// by client. It does not depend on any user identity because the platform has
-// a single shared password.
+// LoginThrottle is a bounded, in-memory sliding-window attempt limiter keyed
+// by client. A slot is reserved atomically with the limit check before
+// credential verification, so a concurrent burst cannot admit more than max
+// attempts per window. It does not depend on any user identity because the
+// platform has a single shared password.
 type LoginThrottle struct {
 	mu       sync.Mutex
 	max      int
 	window   time.Duration
 	maxKeys  int
 	now      func() time.Time
-	failures map[string][]time.Time
+	attempts map[string][]time.Time
 }
 
-// NewLoginThrottle builds a throttle allowing max failures per window. A
+// NewLoginThrottle builds a throttle allowing max attempts per window. A
 // non-positive max or window falls back to sane defaults.
 func NewLoginThrottle(max int, window time.Duration, now func() time.Time) *LoginThrottle {
 	if max < 1 {
@@ -241,51 +247,52 @@ func NewLoginThrottle(max int, window time.Duration, now func() time.Time) *Logi
 		window:   window,
 		maxKeys:  defaultMaxThrottleKeys,
 		now:      now,
-		failures: make(map[string][]time.Time),
+		attempts: make(map[string][]time.Time),
 	}
 }
 
-// Allow reports whether key may attempt a login right now.
-func (t *LoginThrottle) Allow(key string) bool {
+// Reserve atomically checks the sliding-window limit for key and, when the
+// key is under the limit, records one attempt and returns true. Because the
+// check and the record happen under a single lock, concurrent callers can
+// never together admit more than max attempts in a window. The reserved slot
+// is consumed whether or not credential verification later succeeds; a
+// successful login calls Reset to free it.
+func (t *LoginThrottle) Reserve(key string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	recent := pruneFailures(t.failures[key], t.now().Add(-t.window))
-	if len(recent) == 0 {
-		delete(t.failures, key)
-	} else {
-		t.failures[key] = recent
+	now := t.now()
+	recent := pruneFailures(t.attempts[key], now.Add(-t.window))
+	if len(recent) >= t.max {
+		if len(recent) == 0 {
+			delete(t.attempts, key)
+		} else {
+			t.attempts[key] = recent
+		}
+		return false
 	}
-	return len(recent) < t.max
-}
 
-// RecordFailure records one failed attempt for key.
-func (t *LoginThrottle) RecordFailure(key string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if _, tracked := t.failures[key]; !tracked && len(t.failures) >= t.maxKeys {
+	if _, tracked := t.attempts[key]; !tracked && len(t.attempts) >= t.maxKeys {
 		t.evictOldestLocked()
 	}
-	now := t.now()
-	recent := pruneFailures(t.failures[key], now.Add(-t.window))
-	t.failures[key] = append(recent, now)
+	t.attempts[key] = append(recent, now)
+	return true
 }
 
-// Reset clears the failure history for key after a successful login.
+// Reset clears the attempt history for key after a successful login.
 func (t *LoginThrottle) Reset(key string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.failures, key)
+	delete(t.attempts, key)
 }
 
 // evictOldestLocked drops the least recently active key to bound memory.
 func (t *LoginThrottle) evictOldestLocked() {
 	var oldestKey string
 	var oldest time.Time
-	for key, attempts := range t.failures {
+	for key, attempts := range t.attempts {
 		if len(attempts) == 0 {
-			delete(t.failures, key)
+			delete(t.attempts, key)
 			continue
 		}
 		last := attempts[len(attempts)-1]
@@ -295,7 +302,7 @@ func (t *LoginThrottle) evictOldestLocked() {
 		}
 	}
 	if oldestKey != "" {
-		delete(t.failures, oldestKey)
+		delete(t.attempts, oldestKey)
 	}
 }
 
