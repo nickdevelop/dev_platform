@@ -455,6 +455,76 @@ func TestLoginThrottleLimitHoldsUnderConcurrency(t *testing.T) {
 	}
 }
 
+// throttleCount returns the number of attempts currently counted for key.
+func throttleCount(throttle *LoginThrottle, key string) int {
+	throttle.mu.Lock()
+	defer throttle.mu.Unlock()
+	return len(throttle.attempts[key])
+}
+
+// TestLoginThrottleSuccessDoesNotClearOtherReservations is the regression test
+// for a success clearing every reservation: a successful login must release
+// only its own slot, so a concurrent failing attempt stays counted and the
+// window bound holds even when success and failures interleave.
+func TestLoginThrottleSuccessDoesNotClearOtherReservations(t *testing.T) {
+	clock := newTestClock()
+	const (
+		limit        = 2
+		testClientIP = "127.0.0.1" // httptest binds the loopback address
+	)
+	svc := newService(t, WithClock(clock.Now), WithLoginThrottle(limit, time.Minute))
+	client, base := newClient(t, newRouter(svc))
+	csrf := fetchCSRF(t, client, base)
+
+	// Admit one failing request and hold its reservation. A failure never
+	// releases its slot, so it represents an attempt already counted in the
+	// window while the success below is processed.
+	failed := make(chan int, 1)
+	go func() {
+		resp, err := postJSONRaw(client, base+"/api/auth/login", csrf, loginPayload("wrong"))
+		if err != nil {
+			failed <- -1
+			return
+		}
+		failed <- resp.StatusCode
+		resp.Body.Close()
+	}()
+
+	// The reservation is taken atomically before password verification, so
+	// waiting for it to appear is deterministic rather than a timing guess.
+	deadline := time.Now().Add(2 * time.Second)
+	for throttleCount(svc.throttle, testClientIP) < 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("failing request never reserved a throttle slot")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// A successful login must release only its own reservation; the held
+	// failing reservation must survive.
+	success := postJSON(t, client, base+"/api/auth/login", csrf, loginPayload(testPassword))
+	success.Body.Close()
+	if success.StatusCode != http.StatusOK {
+		t.Fatalf("successful login status = %d, want %d", success.StatusCode, http.StatusOK)
+	}
+	if got := <-failed; got != http.StatusUnauthorized {
+		t.Fatalf("held failing request status = %d, want %d", got, http.StatusUnauthorized)
+	}
+
+	// One slot is still consumed by the held failure, so of two further
+	// failures exactly one is admitted and the other is throttled.
+	first := postJSON(t, client, base+"/api/auth/login", csrf, loginPayload("wrong"))
+	first.Body.Close()
+	second := postJSON(t, client, base+"/api/auth/login", csrf, loginPayload("wrong"))
+	second.Body.Close()
+	if first.StatusCode != http.StatusUnauthorized {
+		t.Errorf("first post-success failure status = %d, want %d", first.StatusCode, http.StatusUnauthorized)
+	}
+	if second.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("second post-success failure status = %d, want %d (success cleared another attempt's slot)", second.StatusCode, http.StatusTooManyRequests)
+	}
+}
+
 func TestLoginThrottleKeyMapIsBounded(t *testing.T) {
 	throttle := NewLoginThrottle(1, time.Minute, nil)
 	throttle.maxKeys = 16
