@@ -1,0 +1,1257 @@
+package opencode
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"devplatform/internal/agents"
+)
+
+// Compile-time proof that the opencode adapter satisfies the platform contract.
+var _ agents.AgentAdapter = (*Adapter)(nil)
+
+const (
+	// streamRetryMin and streamRetryMax bound the reconnect backoff after the
+	// event stream drops. Each instance reconnects its own stream only.
+	streamRetryMin = 100 * time.Millisecond
+	streamRetryMax = 5 * time.Second
+	// maxStartupOutputBytes bounds captured server output used for diagnostics.
+	maxStartupOutputBytes = 8 * 1024
+)
+
+// Options configures the opencode adapter. The zero value is usable when the
+// `opencode` binary is on PATH.
+type Options struct {
+	// Executable is the opencode binary name or path. Defaults to "opencode".
+	Executable string
+	// Hostname is the loopback host the per-instance server binds. Defaults
+	// to 127.0.0.1.
+	Hostname string
+	// StartupTimeout bounds how long StartInstance waits for the server to
+	// answer /api/info. Defaults to 20s.
+	StartupTimeout time.Duration
+	// Now overrides the clock; tests set it for deterministic timestamps.
+	Now func() time.Time
+	// NewID overrides identifier generation; tests may make it deterministic.
+	NewID func() (string, error)
+}
+
+// Adapter implements agents.AgentAdapter for the opencode v2 HTTP API. Each
+// instance owns one `opencode serve` process on a loopback port, a typed client
+// bound to that server, and its own normalized event fan-out; a failure in one
+// instance never touches another.
+type Adapter struct {
+	executable     string
+	hostname       string
+	startupTimeout time.Duration
+	now            func() time.Time
+	newID          func() (string, error)
+	launch         launcher
+
+	mu        sync.Mutex
+	instances map[string]*instance
+}
+
+// launchResult is a started opencode server: the client bound to it, its
+// endpoint, and the teardown hook that terminates the process.
+type launchResult struct {
+	client   *Client
+	endpoint string
+	stop     func(context.Context) error
+}
+
+// launcher starts one server in a directory. It is a field so tests can inject
+// a fake without launching a process.
+type launcher func(ctx context.Context, directory string) (*launchResult, error)
+
+// Register installs a default opencode adapter (executable "opencode") into the
+// registry. Callers needing custom options use New and Registry.Register.
+func Register(registry *agents.Registry) error {
+	if registry == nil {
+		return errors.New("opencode: registry is required")
+	}
+	return registry.Register(agents.BackendOpenCodeV2, New(Options{}))
+}
+
+// New builds an opencode adapter.
+func New(options Options) *Adapter {
+	adapter := &Adapter{
+		executable:     options.Executable,
+		hostname:       options.Hostname,
+		startupTimeout: options.StartupTimeout,
+		now:            options.Now,
+		newID:          options.NewID,
+		instances:      make(map[string]*instance),
+	}
+	if adapter.executable == "" {
+		adapter.executable = "opencode"
+	}
+	if adapter.hostname == "" {
+		adapter.hostname = "127.0.0.1"
+	}
+	if adapter.startupTimeout <= 0 {
+		adapter.startupTimeout = 20 * time.Second
+	}
+	if adapter.now == nil {
+		adapter.now = func() time.Time { return time.Now().UTC() }
+	}
+	if adapter.newID == nil {
+		adapter.newID = newUUID
+	}
+	adapter.launch = adapter.launchServer
+	return adapter
+}
+
+// Capabilities declares what the v2 API actually supports. Streaming
+// (session.text.delta), session discovery/create/continue, model selection
+// (session.create model + session.switchModel) and tool call/result events
+// (session.tool.*) are all available. ToolConfirmation stays false: the API
+// emits permission.asked and accepts a reply, but the frozen AgentAdapter
+// interface exposes no method to answer it, so the adapter must not advertise a
+// confirmation control it cannot act on.
+func (a *Adapter) Capabilities() agents.Capabilities {
+	return agents.Capabilities{
+		Streaming:        true,
+		SessionDiscovery: true,
+		SessionContinue:  true,
+		Stop:             true,
+		ModelSelection:   true,
+		ToolCallEvents:   true,
+		ToolConfirmation: false,
+	}
+}
+
+// Probe reports whether the opencode binary is resolvable. It never starts a
+// server.
+func (a *Adapter) Probe(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	path, err := exec.LookPath(a.executable)
+	if err != nil {
+		return fmt.Errorf("opencode: executable %q not found: %w", a.executable, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("opencode: stat executable %q: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("opencode: executable %q is a directory", path)
+	}
+	return nil
+}
+
+// StartInstance validates the directory and binary, launches one opencode
+// server in the directory, waits for it to become ready, and registers a
+// running instance that reports the server endpoint.
+func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanceRequest) (*agents.Instance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if request.Directory == "" {
+		return nil, errors.New("opencode: instance directory is required")
+	}
+	info, err := os.Stat(request.Directory)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: instance directory %q: %w", request.Directory, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("opencode: instance directory %q is not a directory", request.Directory)
+	}
+	if err := a.Probe(ctx); err != nil {
+		return nil, err
+	}
+
+	result, err := a.launch(ctx, request.Directory)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: start server in %q: %w", request.Directory, err)
+	}
+	if result == nil || result.client == nil || result.endpoint == "" {
+		return nil, errors.New("opencode: launcher returned no usable server")
+	}
+
+	id, err := a.newID()
+	if err != nil {
+		// Never leak a server we cannot name.
+		if result.stop != nil {
+			_ = result.stop(ctx)
+		}
+		return nil, fmt.Errorf("opencode: allocate instance id: %w", err)
+	}
+
+	now := a.now()
+	instanceCtx, cancel := context.WithCancel(context.Background())
+	inst := &instance{
+		id:        id,
+		directory: request.Directory,
+		endpoint:  result.endpoint,
+		client:    result.client,
+		proc:      result,
+		ctx:       instanceCtx,
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		now:       a.now,
+		subs:      make(map[*subscriber]struct{}),
+		sessions:  make(map[string]string),
+		toolNames: make(map[string]string),
+		deltaOpen: make(map[string]bool),
+	}
+
+	a.mu.Lock()
+	a.instances[id] = inst
+	a.mu.Unlock()
+
+	return &agents.Instance{
+		ID:        id,
+		Backend:   agents.BackendOpenCodeV2,
+		Directory: request.Directory,
+		Status:    agents.InstanceRunning,
+		Endpoint:  result.endpoint,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+// StopInstance terminates the instance's server and closes its event stream.
+// An instance that is already gone is a successful stop.
+func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	inst, ok := a.instances[instanceID]
+	if ok {
+		delete(a.instances, instanceID)
+	}
+	a.mu.Unlock()
+	if !ok {
+		return nil
+	}
+	return inst.stop(ctx)
+}
+
+// Subscribe returns the instance's normalized event stream. It opens the
+// backend stream on first use. The channel closes when the caller's context
+// ends or the instance stops.
+func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	sub := newSubscriber()
+	if err := inst.addSubscriber(sub); err != nil {
+		return nil, err
+	}
+	inst.ensureStream()
+	go sub.forward()
+	go sub.watch(ctx, inst)
+	return sub.out, nil
+}
+
+// CreateSession creates a native session in the instance's directory.
+func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return nil, err
+	}
+	var model *ModelRef
+	if options.Model != "" {
+		parsed, err := parseModelRef(options.Model)
+		if err != nil {
+			return nil, err
+		}
+		model = &parsed
+	}
+	info, err := inst.client.CreateSession(ctx, CreateSessionRequest{
+		Title:    options.Title,
+		Model:    model,
+		Location: &LocationRef{Directory: inst.directory},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("opencode: create session on instance %q: %w", instanceID, err)
+	}
+	if info.ID == "" {
+		return nil, errors.New("opencode: server returned a session without an id")
+	}
+	inst.registerSession(info.ID, info.Title)
+	return &agents.SessionRef{
+		InstanceID: instanceID,
+		Backend:    agents.BackendOpenCodeV2,
+		SessionID:  info.ID,
+		Title:      info.Title,
+	}, nil
+}
+
+// ContinueSession re-attaches to an existing native session and refreshes its
+// title from the server.
+func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*agents.SessionRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	if ref.Backend != agents.BackendOpenCodeV2 {
+		return nil, fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return nil, err
+	}
+	info, err := inst.client.GetSession(ctx, ref.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: continue session %q: %w", ref.SessionID, err)
+	}
+	title := ref.Title
+	if info.Title != "" {
+		title = info.Title
+	}
+	inst.registerSession(ref.SessionID, title)
+	return &agents.SessionRef{
+		InstanceID: ref.InstanceID,
+		Backend:    agents.BackendOpenCodeV2,
+		SessionID:  ref.SessionID,
+		Title:      title,
+	}, nil
+}
+
+// SendMessage admits one user turn on the session. It returns once the server
+// accepted the message; replies and tool activity arrive on the subscription.
+func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, message agents.SendMessageRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if ref.Backend != agents.BackendOpenCodeV2 {
+		return fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
+	}
+	if strings.TrimSpace(message.Text) == "" {
+		return errors.New("opencode: message text is required")
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return err
+	}
+	if message.Model != "" {
+		model, err := parseModelRef(message.Model)
+		if err != nil {
+			return err
+		}
+		if err := inst.client.SwitchModel(ctx, ref.SessionID, model); err != nil {
+			return fmt.Errorf("opencode: switch model for session %q: %w", ref.SessionID, err)
+		}
+	}
+	if err := inst.client.Prompt(ctx, ref.SessionID, message.Text); err != nil {
+		return fmt.Errorf("opencode: send message on instance %q: %w", ref.InstanceID, err)
+	}
+	inst.registerSession(ref.SessionID, ref.Title)
+	return nil
+}
+
+// ListSessions returns the native sessions the server knows for the instance's
+// directory.
+func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents.SessionRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := inst.client.ListSessions(ctx, inst.directory)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: list sessions on instance %q: %w", instanceID, err)
+	}
+	refs := make([]agents.SessionRef, 0, len(sessions))
+	for _, session := range sessions {
+		if session.ID == "" {
+			continue
+		}
+		inst.registerSession(session.ID, session.Title)
+		refs = append(refs, agents.SessionRef{
+			InstanceID: instanceID,
+			Backend:    agents.BackendOpenCodeV2,
+			SessionID:  session.ID,
+			Title:      session.Title,
+		})
+	}
+	return refs, nil
+}
+
+// getInstance returns a registered instance or an error.
+func (a *Adapter) getInstance(instanceID string) (*instance, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	inst, ok := a.instances[instanceID]
+	if !ok {
+		return nil, fmt.Errorf("opencode: unknown instance %q", instanceID)
+	}
+	return inst, nil
+}
+
+// instance is one running opencode server bound to a working directory.
+type instance struct {
+	id        string
+	directory string
+	endpoint  string
+	client    *Client
+	proc      *launchResult
+	ctx       context.Context
+	cancel    context.CancelFunc
+	done      chan struct{}
+	now       func() time.Time
+
+	mu            sync.Mutex
+	closed        bool
+	streamStarted bool
+	seq           uint64
+	subs          map[*subscriber]struct{}
+	sessions      map[string]string
+	toolNames     map[string]string
+	deltaOpen     map[string]bool
+}
+
+// ensureRunning reports whether the instance can accept work.
+func (inst *instance) ensureRunning() error {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if inst.closed {
+		return fmt.Errorf("opencode: instance %q is not running", inst.id)
+	}
+	return nil
+}
+
+// isClosed reports whether the instance has been stopped.
+func (inst *instance) isClosed() bool {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	return inst.closed
+}
+
+// active reports whether the instance is still streaming.
+func (inst *instance) active() bool {
+	if inst.ctx.Err() != nil {
+		return false
+	}
+	return !inst.isClosed()
+}
+
+// stop closes the instance's stream, tears down its server and is idempotent.
+func (inst *instance) stop(ctx context.Context) error {
+	inst.mu.Lock()
+	if inst.closed {
+		inst.mu.Unlock()
+		return nil
+	}
+	inst.closed = true
+	close(inst.done)
+	inst.mu.Unlock()
+
+	inst.cancel()
+	if inst.proc != nil && inst.proc.stop != nil {
+		return inst.proc.stop(ctx)
+	}
+	return nil
+}
+
+// registerSession remembers a native session so its events are routed to this
+// instance. A non-empty title replaces a previously remembered empty one.
+func (inst *instance) registerSession(sessionID, title string) {
+	if sessionID == "" {
+		return
+	}
+	inst.mu.Lock()
+	if existing, ok := inst.sessions[sessionID]; !ok || (title != "" && title != existing) {
+		inst.sessions[sessionID] = title
+	}
+	inst.mu.Unlock()
+}
+
+// knownSession reports whether a session belongs to this instance.
+func (inst *instance) knownSession(sessionID string) bool {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	_, ok := inst.sessions[sessionID]
+	return ok
+}
+
+// addSubscriber registers a subscriber unless the instance is already closed.
+func (inst *instance) addSubscriber(sub *subscriber) error {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if inst.closed {
+		return fmt.Errorf("opencode: instance %q is not running", inst.id)
+	}
+	inst.subs[sub] = struct{}{}
+	return nil
+}
+
+// removeSubscriber drops a finished subscriber.
+func (inst *instance) removeSubscriber(sub *subscriber) {
+	inst.mu.Lock()
+	delete(inst.subs, sub)
+	inst.mu.Unlock()
+}
+
+// ensureStream starts the instance's single backend event reader on first use.
+func (inst *instance) ensureStream() {
+	inst.mu.Lock()
+	if inst.streamStarted || inst.closed {
+		inst.mu.Unlock()
+		return
+	}
+	inst.streamStarted = true
+	inst.mu.Unlock()
+	go inst.runStream()
+}
+
+// publish stamps the envelope, assigns the next per-instance sequence and
+// delivers the event to every current subscriber.
+func (inst *instance) publish(event agents.NormalizedEvent) {
+	inst.mu.Lock()
+	if inst.closed {
+		inst.mu.Unlock()
+		return
+	}
+	inst.seq++
+	event.Sequence = inst.seq
+	event.InstanceID = inst.id
+	event.Backend = agents.BackendOpenCodeV2
+	if event.Timestamp.IsZero() {
+		event.Timestamp = inst.now()
+	}
+	subs := make([]*subscriber, 0, len(inst.subs))
+	for sub := range inst.subs {
+		subs = append(subs, sub)
+	}
+	inst.mu.Unlock()
+
+	for _, sub := range subs {
+		select {
+		case sub.stash <- event:
+		case <-sub.done:
+		}
+	}
+}
+
+// runStream reads the server's SSE stream, reconnects with backoff after a
+// drop, and reports each error without affecting any other instance.
+func (inst *instance) runStream() {
+	backoff := streamRetryMin
+	for {
+		if !inst.active() {
+			return
+		}
+		stream, err := inst.client.Events(inst.ctx)
+		if err != nil {
+			if !inst.active() {
+				return
+			}
+			inst.publishStreamError(err)
+			if !inst.wait(backoff) {
+				return
+			}
+			backoff = nextBackoff(backoff)
+			continue
+		}
+		backoff = streamRetryMin
+		err = inst.pump(stream)
+		_ = stream.Close()
+		if !inst.active() {
+			return
+		}
+		if err != nil {
+			inst.publishStreamError(err)
+		}
+		if !inst.wait(backoff) {
+			return
+		}
+		backoff = nextBackoff(backoff)
+	}
+}
+
+// pump reads one stream to completion, normalizing and publishing each event.
+func (inst *instance) pump(stream *EventStream) error {
+	for {
+		event, err := stream.Next()
+		if err != nil {
+			return err
+		}
+		for _, normalized := range inst.normalize(event) {
+			inst.publish(normalized)
+		}
+	}
+}
+
+// wait sleeps for the backoff or returns false when the instance ended.
+func (inst *instance) wait(d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-inst.done:
+		return false
+	case <-inst.ctx.Done():
+		return false
+	}
+}
+
+// nextBackoff doubles the delay up to the cap.
+func nextBackoff(current time.Duration) time.Duration {
+	next := current * 2
+	if next > streamRetryMax {
+		next = streamRetryMax
+	}
+	return next
+}
+
+// publishStreamError surfaces an instance-level stream failure. The contract
+// requires a session id on error events, so when a session is known the error
+// is attached to it; otherwise it is reported as an instance-scoped lifecycle
+// event, which is valid without a session id.
+func (inst *instance) publishStreamError(err error) {
+	message := truncate(redactSecrets(err.Error()))
+	inst.mu.Lock()
+	sessionID := ""
+	for id := range inst.sessions {
+		sessionID = id
+		break
+	}
+	inst.mu.Unlock()
+
+	if sessionID != "" {
+		inst.publish(inst.errorEvent(sessionID, "stream_error", message))
+		return
+	}
+	event := inst.event("")
+	event.Type = agents.EventLifecycle
+	event.Lifecycle = &agents.LifecycleEvent{State: "stream_error", Detail: message}
+	inst.publish(event)
+}
+
+// event builds an envelope populated with the instance identity. Sequence is
+// assigned later, centrally, at publish time.
+func (inst *instance) event(sessionID string) agents.NormalizedEvent {
+	return agents.NormalizedEvent{
+		InstanceID: inst.id,
+		SessionID:  sessionID,
+		Backend:    agents.BackendOpenCodeV2,
+		Timestamp:  inst.now(),
+	}
+}
+
+// errorEvent builds a typed error event.
+func (inst *instance) errorEvent(sessionID, code, message string) agents.NormalizedEvent {
+	event := inst.event(sessionID)
+	event.Type = agents.EventError
+	event.Error = &agents.ErrorPayload{Code: code, Message: truncate(redactSecrets(message))}
+	return event
+}
+
+// lifecycleEvent builds a session-scoped lifecycle event.
+func (inst *instance) lifecycleEvent(sessionID, state, detail string) agents.NormalizedEvent {
+	event := inst.event(sessionID)
+	event.Type = agents.EventLifecycle
+	event.Lifecycle = &agents.LifecycleEvent{State: state, Detail: truncate(detail)}
+	return event
+}
+
+// unknown preserves an event the adapter could not normalize, byte for byte.
+func (inst *instance) unknown(event *Event, sessionID string) agents.NormalizedEvent {
+	out := inst.event(sessionID)
+	out.Type = agents.EventUnknown
+	out.Raw = append(json.RawMessage(nil), event.Raw()...)
+	return out
+}
+
+// owns reports whether an event belongs to this instance: its session was seen
+// before, or its location matches the instance directory (and the session is
+// then learned).
+func (inst *instance) owns(event *Event, sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	if inst.knownSession(sessionID) {
+		return true
+	}
+	if event.Location != nil && sameDirectory(event.Location.Directory, inst.directory) {
+		inst.registerSession(sessionID, "")
+		return true
+	}
+	return false
+}
+
+// normalize maps one opencode event onto the normalized union. Events for other
+// locations or sessions are ignored; a known session's unmapped event is
+// preserved as EventUnknown.
+func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
+	data := decodeEventData(event.Data)
+	sessionID := data.SessionID
+	if !inst.owns(event, sessionID) {
+		return nil
+	}
+
+	switch event.Type {
+	case "session.text.delta":
+		inst.setDelta(sessionID, data.AssistantMessageID)
+		out := inst.event(sessionID)
+		out.Type = agents.EventMessage
+		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Delta, Final: false}
+		return []agents.NormalizedEvent{out}
+
+	case "session.text.ended":
+		text := data.Text
+		if inst.takeDelta(sessionID, data.AssistantMessageID) {
+			// Deltas already carried the text; close with an empty
+			// terminator so a concatenating consumer does not double it.
+			text = ""
+		}
+		out := inst.event(sessionID)
+		out.Type = agents.EventMessage
+		out.Message = &agents.MessagePayload{Role: "assistant", Text: text, Final: true}
+		return []agents.NormalizedEvent{out}
+
+	case "session.text.started":
+		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "text_started", "")}
+
+	case "session.tool.input.started":
+		inst.rememberToolName(sessionID, data.AssistantMessageID, data.ID, data.Name)
+		return nil
+
+	case "session.tool.called":
+		out := inst.event(sessionID)
+		out.Type = agents.EventToolCall
+		out.ToolCall = &agents.ToolCallPayload{
+			CallID: data.ID,
+			Name:   inst.toolName(sessionID, data.AssistantMessageID, data.ID),
+			Input:  data.Input,
+		}
+		return []agents.NormalizedEvent{out}
+
+	case "session.tool.success":
+		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
+		out := inst.event(sessionID)
+		out.Type = agents.EventToolResult
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenContent(data.Content), IsError: false}
+		return []agents.NormalizedEvent{out}
+
+	case "session.tool.failed":
+		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
+		out := inst.event(sessionID)
+		out.Type = agents.EventToolResult
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: structuredErrorMessage(data, data.Content), IsError: true}
+		return []agents.NormalizedEvent{out}
+
+	case "session.execution.failed", "session.step.failed", "session.error":
+		return []agents.NormalizedEvent{inst.errorEvent(sessionID, errorCode(event.Type), structuredErrorMessage(data, nil))}
+
+	case "session.retry.scheduled":
+		return []agents.NormalizedEvent{inst.errorEvent(sessionID, "retry_scheduled", retryMessage(data))}
+
+	case "session.created":
+		inst.registerSession(sessionID, data.Title)
+		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "created", data.Title)}
+
+	case "session.updated", "session.renamed", "session.moved", "session.deleted",
+		"session.forked", "session.instructions.updated", "session.skill.activated",
+		"session.execution.started", "session.execution.succeeded", "session.execution.interrupted",
+		"session.step.started", "session.step.streamed", "session.step.ended",
+		"session.compaction.started", "session.compaction.ended",
+		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
+		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, lifecycleState(event.Type), lifecycleDetail(data))}
+
+	default:
+		return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
+	}
+}
+
+// setDelta records that an assistant message is streaming text deltas.
+func (inst *instance) setDelta(sessionID, messageID string) {
+	inst.mu.Lock()
+	inst.deltaOpen[deltaKey(sessionID, messageID)] = true
+	inst.mu.Unlock()
+}
+
+// takeDelta reports whether deltas were streamed and clears the marker.
+func (inst *instance) takeDelta(sessionID, messageID string) bool {
+	key := deltaKey(sessionID, messageID)
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	open := inst.deltaOpen[key]
+	delete(inst.deltaOpen, key)
+	return open
+}
+
+// rememberToolName records a tool's name until its call is emitted.
+func (inst *instance) rememberToolName(sessionID, messageID, toolID, name string) {
+	if toolID == "" {
+		return
+	}
+	inst.mu.Lock()
+	inst.toolNames[toolKey(sessionID, messageID, toolID)] = name
+	inst.mu.Unlock()
+}
+
+// toolName returns a recorded tool name, if any.
+func (inst *instance) toolName(sessionID, messageID, toolID string) string {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	return inst.toolNames[toolKey(sessionID, messageID, toolID)]
+}
+
+// forgetToolName drops a tool's recorded name once it finishes.
+func (inst *instance) forgetToolName(sessionID, messageID, toolID string) {
+	inst.mu.Lock()
+	delete(inst.toolNames, toolKey(sessionID, messageID, toolID))
+	inst.mu.Unlock()
+}
+
+// deltaKey and toolKey scope adapter-side bookkeeping to a message/tool.
+func deltaKey(sessionID, messageID string) string {
+	return sessionID + "|" + messageID
+}
+
+func toolKey(sessionID, messageID, toolID string) string {
+	return sessionID + "|" + messageID + "|" + toolID
+}
+
+// subscriber is one consumer of an instance's stream. stash is written by
+// publishers and never closed; out is owned and closed by forward.
+type subscriber struct {
+	stash chan agents.NormalizedEvent
+	out   chan agents.NormalizedEvent
+	done  chan struct{}
+	once  sync.Once
+}
+
+func newSubscriber() *subscriber {
+	return &subscriber{
+		stash: make(chan agents.NormalizedEvent, 64),
+		out:   make(chan agents.NormalizedEvent, 64),
+		done:  make(chan struct{}),
+	}
+}
+
+// forward copies the subscriber's stash to its output and closes the output
+// when the subscription ends.
+func (s *subscriber) forward() {
+	defer close(s.out)
+	for {
+		select {
+		case <-s.done:
+			return
+		case event := <-s.stash:
+			select {
+			case s.out <- event:
+			case <-s.done:
+				return
+			}
+		}
+	}
+}
+
+// watch closes the subscriber when either the caller's context ends or the
+// instance stops, then unregisters it.
+func (s *subscriber) watch(ctx context.Context, inst *instance) {
+	select {
+	case <-ctx.Done():
+	case <-inst.done:
+	}
+	s.once.Do(func() { close(s.done) })
+	inst.removeSubscriber(s)
+}
+
+// eventData is the union of the data bodies the adapter inspects. Unknown
+// fields are ignored.
+type eventData struct {
+	SessionID          string           `json:"sessionID"`
+	AssistantMessageID string           `json:"assistantMessageID"`
+	Delta              string           `json:"delta"`
+	Text               string           `json:"text"`
+	ID                 string           `json:"id"`
+	Name               string           `json:"name"`
+	Input              json.RawMessage  `json:"input"`
+	Content            json.RawMessage  `json:"content"`
+	Error              *structuredError `json:"error"`
+	Title              string           `json:"title"`
+	Reason             string           `json:"reason"`
+	Attempt            int              `json:"attempt"`
+}
+
+// structuredError mirrors Session.StructuredError.
+type structuredError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Status  int    `json:"status"`
+}
+
+// decodeEventData parses an event body into the union; a malformed body yields
+// the zero value and is later preserved as EventUnknown.
+func decodeEventData(raw json.RawMessage) eventData {
+	var data eventData
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &data)
+	}
+	return data
+}
+
+// errorCode classifies a failure event type.
+func errorCode(eventType string) string {
+	switch eventType {
+	case "session.error":
+		return "session_error"
+	case "session.step.failed":
+		return "step_failed"
+	default:
+		return "execution_failed"
+	}
+}
+
+// lifecycleDetail chooses human-readable context for a lifecycle event.
+func lifecycleDetail(data eventData) string {
+	if data.Title != "" {
+		return data.Title
+	}
+	return data.Reason
+}
+
+// structuredErrorMessage extracts a failure's message, falling back to content.
+func structuredErrorMessage(data eventData, content json.RawMessage) string {
+	if data.Error != nil {
+		if data.Error.Message != "" {
+			return data.Error.Message
+		}
+		if data.Error.Type != "" {
+			return data.Error.Type
+		}
+	}
+	if len(content) > 0 {
+		if text := flattenContent(content); text != "" {
+			return text
+		}
+	}
+	return "opencode reported a failure"
+}
+
+// retryMessage renders a scheduled-retry event.
+func retryMessage(data eventData) string {
+	message := structuredErrorMessage(data, nil)
+	if data.Attempt > 0 {
+		return fmt.Sprintf("retry attempt %d: %s", data.Attempt, message)
+	}
+	return message
+}
+
+// lifecycleState converts a native event type into a lifecycle state name.
+func lifecycleState(eventType string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(eventType, "session."), ".", "_")
+}
+
+// flattenContent renders a tool result content value (string, text blocks or a
+// wrapped object) as display text.
+func flattenContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+	var blocks []json.RawMessage
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		parts := make([]string, 0, len(blocks))
+		for _, block := range blocks {
+			if rendered := flattenContent(block); rendered != "" {
+				parts = append(parts, rendered)
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+	var object struct {
+		Text    string          `json:"text"`
+		Output  string          `json:"output"`
+		Message string          `json:"message"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &object); err == nil {
+		if object.Text != "" {
+			return object.Text
+		}
+		if len(object.Content) > 0 {
+			if rendered := flattenContent(object.Content); rendered != "" {
+				return rendered
+			}
+		}
+		if object.Output != "" {
+			return object.Output
+		}
+		if object.Message != "" {
+			return object.Message
+		}
+	}
+	return truncate(string(raw))
+}
+
+// parseModelRef parses "provider/model#variant" into the API's ModelRef. The
+// provider is required: the API identifies models by provider and id.
+func parseModelRef(value string) (ModelRef, error) {
+	if strings.TrimSpace(value) == "" {
+		return ModelRef{}, errors.New("opencode: model is required")
+	}
+	raw := value
+	variant := ""
+	if idx := strings.Index(raw, "#"); idx >= 0 {
+		variant = raw[idx+1:]
+		raw = raw[:idx]
+	}
+	provider := ""
+	id := raw
+	if idx := strings.Index(raw, "/"); idx >= 0 {
+		provider = raw[:idx]
+		id = raw[idx+1:]
+	}
+	if provider == "" || id == "" {
+		return ModelRef{}, fmt.Errorf("opencode: model %q must be provider/model", value)
+	}
+	return ModelRef{ID: id, ProviderID: provider, Variant: variant}, nil
+}
+
+// sameDirectory compares two directories after cleaning and symlink-resolving
+// them, so routing is not fooled by a trailing slash or a symlinked root.
+func sameDirectory(a, b string) bool {
+	if a == b {
+		return true
+	}
+	resolvedA, errA := filepath.EvalSymlinks(a)
+	resolvedB, errB := filepath.EvalSymlinks(b)
+	if errA != nil || errB != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return resolvedA == resolvedB
+}
+
+// truncate bounds a diagnostic string.
+func truncate(value string) string {
+	if len(value) <= maxEventBytes {
+		return value
+	}
+	return value[:maxEventBytes] + "…(truncated)"
+}
+
+// freePort asks the OS for an unused loopback port.
+func freePort() (int, error) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, fmt.Errorf("opencode: find free port: %w", err)
+	}
+	defer listener.Close()
+	address, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, errors.New("opencode: unexpected listener address")
+	}
+	return address.Port, nil
+}
+
+// randomPassword returns a 256-bit base64url server password.
+func randomPassword() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", fmt.Errorf("opencode: generate server password: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
+}
+
+// launchServer starts `opencode serve` on a loopback port with a generated
+// password (passed via the environment, never argv), waits for /api/info, and
+// returns a handle whose stop kills the process group.
+func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchResult, error) {
+	port, err := freePort()
+	if err != nil {
+		return nil, err
+	}
+	password, err := randomPassword()
+	if err != nil {
+		return nil, err
+	}
+
+	// exec.Command, not CommandContext: the server must outlive the start
+	// request. Teardown is owned by the returned stop hook; a canceled start
+	// context is honored by waitReady.
+	command := exec.Command(a.executable, "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	command.Dir = directory
+	command.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
+	output := &limitedWriter{limit: maxStartupOutputBytes}
+	command.Stdout = output
+	command.Stderr = output
+	setProcessGroup(command)
+	command.WaitDelay = 2 * time.Second
+
+	if err := command.Start(); err != nil {
+		return nil, fmt.Errorf("opencode: start server process: %w", err)
+	}
+	process := &launchedProcess{cmd: command, done: make(chan struct{})}
+	go process.wait()
+
+	endpoint := "http://" + net.JoinHostPort(a.hostname, strconv.Itoa(port))
+	client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: defaultUsername, Password: password})
+	if err != nil {
+		_ = killProcessGroup(command.Process)
+		_ = process.wait()
+		return nil, err
+	}
+	if err := a.waitReady(ctx, process, client); err != nil {
+		_ = killProcessGroup(command.Process)
+		_ = process.wait()
+		return nil, fmt.Errorf("%w: %s", err, redactSecrets(output.String()))
+	}
+
+	return &launchResult{
+		client:   client,
+		endpoint: endpoint,
+		stop: func(stopCtx context.Context) error {
+			_ = killProcessGroup(command.Process)
+			waited := make(chan error, 1)
+			go func() { waited <- process.wait() }()
+			select {
+			case <-waited:
+			case <-stopCtx.Done():
+			case <-time.After(3 * time.Second):
+			}
+			return nil
+		},
+	}, nil
+}
+
+// waitReady polls /api/info until the server answers, the process exits, the
+// context ends, or the startup deadline passes.
+func (a *Adapter) waitReady(ctx context.Context, process *launchedProcess, client *Client) error {
+	deadline := time.NewTimer(a.startupTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	probe := func() error {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		_, err := client.Info(probeCtx)
+		return err
+	}
+	if err := probe(); err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
+			return fmt.Errorf("opencode: server rejected generated credentials: %w", err)
+		}
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return errors.New("opencode: server did not become ready in time")
+		case <-process.done:
+			return errors.New("opencode: server exited before becoming ready")
+		case <-ticker.C:
+			if err := probe(); err == nil {
+				return nil
+			}
+		}
+	}
+}
+
+// launchedProcess reaps a child exactly once and exposes its completion.
+type launchedProcess struct {
+	cmd  *exec.Cmd
+	once sync.Once
+	err  error
+	done chan struct{}
+}
+
+// wait reaps the child once and closes done. Concurrent callers block until the
+// single reap completes.
+func (p *launchedProcess) wait() error {
+	p.once.Do(func() {
+		p.err = p.cmd.Wait()
+		close(p.done)
+	})
+	<-p.done
+	return p.err
+}
+
+// limitedWriter captures at most limit bytes and always reports the full write
+// so a chatty child never blocks. It is safe for concurrent use.
+type limitedWriter struct {
+	mu      sync.Mutex
+	buffer  bytes.Buffer
+	limit   int
+	written int
+}
+
+// Write appends up to the limit and discards the remainder.
+func (l *limitedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.written < l.limit {
+		remaining := l.limit - l.written
+		chunk := p
+		if len(chunk) > remaining {
+			chunk = chunk[:remaining]
+		}
+		n, err := l.buffer.Write(chunk)
+		l.written += n
+		if err != nil {
+			return n, err
+		}
+	}
+	return len(p), nil
+}
+
+// String returns the captured output.
+func (l *limitedWriter) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buffer.String()
+}
+
+// newUUID returns an RFC 4122 version 4 UUID as a lowercase string.
+func newUUID() (string, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	buf[6] = (buf[6] & 0x0f) | 0x40
+	buf[8] = (buf[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
+}
