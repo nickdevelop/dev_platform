@@ -19,6 +19,7 @@ import {
 } from '../api/projects'
 import { useAuthStore } from '../stores/auth'
 import ProjectDialog from '../components/ProjectDialog.vue'
+import WorkspaceRootsDialog from '../components/WorkspaceRootsDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
 
@@ -31,6 +32,7 @@ const pageError = ref('')
 const search = ref('')
 
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
+const showRoots = ref(false)
 const dialogError = ref('')
 const submitting = ref(false)
 const pathInput = ref('')
@@ -220,6 +222,7 @@ async function logout() {
       />
       <button type="button" class="register" @click="openDialog('register')">注册已有目录</button>
       <button type="button" class="create" @click="openDialog('create')">新建项目</button>
+      <button type="button" class="manage-roots" @click="showRoots = true">管理授权工作区</button>
     </div>
 
     <p v-if="pageError" class="page-error" role="alert">{{ pageError }}</p>
@@ -244,6 +247,8 @@ async function logout() {
       </li>
       <li v-if="filteredProjects.length === 0" class="empty">没有匹配的项目。</li>
     </ul>
+
+    <WorkspaceRootsDialog v-if="showRoots" @close="showRoots = false" />
 
     <ProjectDialog
       v-if="dialog"

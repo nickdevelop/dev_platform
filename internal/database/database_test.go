@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -271,6 +272,34 @@ func TestProjectPathIsUnique(t *testing.T) {
 	}
 	if count != 2 {
 		t.Errorf("project count = %d, want 2", count)
+	}
+}
+
+func TestOpenRestrictsDataDirAndDatabasePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions are not meaningful on Windows")
+	}
+
+	base := t.TempDir()
+	dataDir := filepath.Join(base, "platform-data")
+
+	db := mustOpen(t, dataDir)
+	mustMigrate(t, db)
+
+	dirInfo, err := os.Stat(dataDir)
+	if err != nil {
+		t.Fatalf("stat data directory: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Errorf("data directory mode = %o, want 700", got)
+	}
+
+	dbInfo, err := os.Stat(filepath.Join(dataDir, dbFileName))
+	if err != nil {
+		t.Fatalf("stat database file: %v", err)
+	}
+	if got := dbInfo.Mode().Perm(); got != 0o600 {
+		t.Errorf("database file mode = %o, want 600", got)
 	}
 }
 

@@ -203,6 +203,170 @@ func TestRouterServesProjectsBehindSessionAndCSRF(t *testing.T) {
 	}
 }
 
+// decodeError reads and closes a response, returning its JSON error code.
+func decodeError(t *testing.T, resp *http.Response) string {
+	t.Helper()
+
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	resp.Body.Close()
+	return envelope.Error
+}
+
+// TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF exercises the
+// move/rename/delete routes over the real router: each requires the session
+// CSRF token and a typed confirmation matching the project's current name,
+// and a rename/move keeps the recorded path in step with the directory.
+func TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF(t *testing.T) {
+	client, base, csrf := newAuthedClient(t)
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	addRoot := postJSON(t, client, base, "/api/workspaces/roots", csrf, map[string]string{"path": root})
+	addRoot.Body.Close()
+	if addRoot.StatusCode != http.StatusCreated {
+		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
+	}
+
+	alpha := filepath.Join(root, "alpha")
+	if err := os.Mkdir(alpha, 0o755); err != nil {
+		t.Fatalf("Mkdir alpha: %v", err)
+	}
+	register := postJSON(t, client, base, "/api/projects", csrf, map[string]string{"path": alpha})
+	if register.StatusCode != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d", register.StatusCode, http.StatusCreated)
+	}
+	var created projects.Project
+	if err := json.NewDecoder(register.Body).Decode(&created); err != nil {
+		t.Fatalf("decode register body: %v", err)
+	}
+	register.Body.Close()
+	id := strconv.FormatUint(uint64(created.ID), 10)
+
+	// A rename without CSRF is rejected before any filesystem change.
+	noCSRF := postJSON(t, client, base, "/api/projects/"+id+"/rename", "", map[string]string{
+		"name": "beta", "confirmName": "alpha",
+	})
+	noCSRF.Body.Close()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Fatalf("rename without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)
+	}
+
+	// A rename with a mismatched confirmation is rejected.
+	wrongConfirm := postJSON(t, client, base, "/api/projects/"+id+"/rename", csrf, map[string]string{
+		"name": "beta", "confirmName": "wrong",
+	})
+	if code := decodeError(t, wrongConfirm); code != "confirmation_mismatch" {
+		t.Errorf("rename wrong-confirm error = %q, want confirmation_mismatch", code)
+	}
+	if _, err := os.Stat(alpha); err != nil {
+		t.Fatalf("directory changed despite rejected rename: %v", err)
+	}
+
+	// A valid rename updates both the directory and the record.
+	rename := postJSON(t, client, base, "/api/projects/"+id+"/rename", csrf, map[string]string{
+		"name": "beta", "confirmName": "alpha",
+	})
+	if rename.StatusCode != http.StatusOK {
+		t.Fatalf("rename status = %d, want %d", rename.StatusCode, http.StatusOK)
+	}
+	var renamed projects.Project
+	if err := json.NewDecoder(rename.Body).Decode(&renamed); err != nil {
+		t.Fatalf("decode rename body: %v", err)
+	}
+	rename.Body.Close()
+	beta := filepath.Join(root, "beta")
+	if renamed.Name != "beta" || renamed.Path != beta {
+		t.Fatalf("renamed project = %+v, want name beta path %q", renamed, beta)
+	}
+	if _, err := os.Stat(beta); err != nil {
+		t.Errorf("renamed directory missing: %v", err)
+	}
+
+	// A move with a mismatched confirmation is rejected.
+	moveWrong := postJSON(t, client, base, "/api/projects/"+id+"/move", csrf, map[string]string{
+		"path": filepath.Join(root, "gamma"), "confirmName": "alpha",
+	})
+	if code := decodeError(t, moveWrong); code != "confirmation_mismatch" {
+		t.Errorf("move wrong-confirm error = %q, want confirmation_mismatch", code)
+	}
+
+	// A valid move relocates the directory and record.
+	move := postJSON(t, client, base, "/api/projects/"+id+"/move", csrf, map[string]string{
+		"path": filepath.Join(root, "gamma"), "confirmName": "beta",
+	})
+	if move.StatusCode != http.StatusOK {
+		t.Fatalf("move status = %d, want %d", move.StatusCode, http.StatusOK)
+	}
+	var moved projects.Project
+	if err := json.NewDecoder(move.Body).Decode(&moved); err != nil {
+		t.Fatalf("decode move body: %v", err)
+	}
+	move.Body.Close()
+	gamma := filepath.Join(root, "gamma")
+	if moved.Name != "gamma" || moved.Path != gamma {
+		t.Fatalf("moved project = %+v, want name gamma path %q", moved, gamma)
+	}
+
+	// A delete with a mismatched confirmation is rejected and deletes nothing.
+	deleteWrong := postJSON(t, client, base, "/api/projects/"+id+"/delete", csrf, map[string]any{
+		"confirmName": "beta", "permanent": true,
+	})
+	if code := decodeError(t, deleteWrong); code != "confirmation_mismatch" {
+		t.Errorf("delete wrong-confirm error = %q, want confirmation_mismatch", code)
+	}
+	if _, err := os.Stat(gamma); err != nil {
+		t.Fatalf("directory removed despite rejected delete: %v", err)
+	}
+
+	// A confirmed permanent delete removes the directory and the record.
+	deleteOK := postJSON(t, client, base, "/api/projects/"+id+"/delete", csrf, map[string]any{
+		"confirmName": "gamma", "permanent": true,
+	})
+	deleteOK.Body.Close()
+	if deleteOK.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d", deleteOK.StatusCode, http.StatusNoContent)
+	}
+	if _, err := os.Stat(gamma); !os.IsNotExist(err) {
+		t.Errorf("directory still exists after confirmed delete: %v", err)
+	}
+}
+
+// TestRouterRejectsOversizedRequestBody verifies the API body cap: a body
+// larger than the limit is refused rather than buffered.
+func TestRouterRejectsOversizedRequestBody(t *testing.T) {
+	client, base, csrf := newAuthedClient(t)
+
+	huge := strings.Repeat("a", maxRequestBodyBytes+1024)
+	resp := postJSON(t, client, base, "/api/projects", csrf, map[string]string{"path": huge})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("oversized body status = %d, want %d", resp.StatusCode, http.StatusBadRequest)
+	}
+}
+
+// TestAuthSessionResponseIsNotCached verifies session metadata and the CSRF
+// token are never stored by a cache.
+func TestAuthSessionResponseIsNotCached(t *testing.T) {
+	db := openTestDB(t)
+	authSvc := auth.NewService(db)
+
+	resp := get(t, Dependencies{Auth: authSvc}, "/api/auth/session")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/auth/session status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("session Cache-Control = %q, want no-store", cc)
+	}
+	body(t, resp)
+}
+
 // TestRouterServesWorkspaceRootsBehindSessionAndCSRF verifies the wiring of
 // the workspace service into the router: the routes are absent without the
 // service, require a session, and enforce CSRF on mutations.

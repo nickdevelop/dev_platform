@@ -60,10 +60,13 @@ export async function apiRequest<T>(
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   })
 
-  if (response.status === 401) {
-    if (!options.ignoreUnauthorized) {
-      unauthorizedHandler?.()
-    }
+  // A 401 on a normal call means the session expired: notify the global
+  // handler and report it as UnauthorizedError. A 401 on a login call
+  // (ignoreUnauthorized) instead means bad credentials, so fall through and
+  // map the server's error body (e.g. invalid_credentials) rather than
+  // reporting a session-expiry.
+  if (response.status === 401 && !options.ignoreUnauthorized) {
+    unauthorizedHandler?.()
     throw new UnauthorizedError()
   }
 
@@ -77,7 +80,11 @@ export async function apiRequest<T>(
   } catch {
     // A non-JSON body carries no error code; report it as unknown.
   }
-  const code = isErrorResponse(payload) ? payload.error : 'unknown_error'
+  const code = isErrorResponse(payload)
+    ? payload.error
+    : response.status === 401
+      ? 'unauthorized'
+      : 'unknown_error'
 
   if (response.status < 200 || response.status >= 300) {
     throw new ApiError(response.status, code)
@@ -100,6 +107,9 @@ const errorMessages: Record<string, string> = {
   unauthorized: '登录状态已失效，请重新登录。',
   invalid_csrf_token: '请求校验失败，请刷新页面后重试。',
   path_not_authorized: '路径不在已授权的工作区内。',
+  root_already_registered: '该工作区根目录已授权。',
+  invalid_root: '目录无效或不存在。',
+  root_not_found: '工作区根目录不存在。',
   not_a_directory: '该路径不是目录。',
   path_conflict: '目标路径已存在。',
   project_not_found: '项目不存在。',

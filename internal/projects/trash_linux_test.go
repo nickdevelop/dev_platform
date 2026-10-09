@@ -87,6 +87,80 @@ func TestSystemTrashEscapesSpacesAndAvoidsCollisions(t *testing.T) {
 	}
 }
 
+// TestSelectTrashRootChoosesHomeForSameDevice verifies a path on the home
+// trash's own filesystem uses the home trash.
+func TestSelectTrashRootChoosesHomeForSameDevice(t *testing.T) {
+	homeTrashRoot := filepath.Join(t.TempDir(), "Trash")
+	topdir := t.TempDir()
+
+	got := selectTrashRoot(homeTrashRoot, 4, 4, topdir, 1000)
+	if got != homeTrashRoot {
+		t.Errorf("selectTrashRoot(same device) = %q, want home trash %q", got, homeTrashRoot)
+	}
+}
+
+// TestSelectTrashRootUsesPerVolumeForForeignDevice simulates the WSL case
+// where the project lives on another mount (/mnt/c): the selected trash root
+// must be the per-user trash directory on that volume, never the home trash.
+func TestSelectTrashRootUsesPerVolumeForForeignDevice(t *testing.T) {
+	homeTrashRoot := filepath.Join(t.TempDir(), "Trash")
+	topdir := t.TempDir()
+
+	got := selectTrashRoot(homeTrashRoot, 4, 99, topdir, 1000)
+	want := filepath.Join(topdir, ".Trash-1000")
+	if got != want {
+		t.Fatalf("selectTrashRoot(foreign device) = %q, want per-volume %q", got, want)
+	}
+	if got == homeTrashRoot {
+		t.Errorf("foreign-device path still used the home trash %q", homeTrashRoot)
+	}
+
+	// When the volume exposes a usable shared .Trash (sticky + world
+	// writable), the per-user directory inside it is preferred.
+	shared := filepath.Join(topdir, ".Trash")
+	if err := os.Mkdir(shared, 0o777); err != nil {
+		t.Fatalf("create shared .Trash: %v", err)
+	}
+	if err := os.Chmod(shared, os.ModeSticky|0o777); err != nil {
+		t.Fatalf("chmod shared .Trash: %v", err)
+	}
+	if got := perVolumeTrashRoot(topdir, 1000); got != filepath.Join(shared, "1000") {
+		t.Errorf("perVolumeTrashRoot with shared trash = %q, want %q", got, filepath.Join(shared, "1000"))
+	}
+}
+
+// TestMoveIntoTrashWritesFreedesktopLayout verifies the per-volume move
+// mechanics: the payload and its .trashinfo land under files/ and info/ with
+// the original absolute path recorded.
+func TestMoveIntoTrashWritesFreedesktopLayout(t *testing.T) {
+	trashRoot := filepath.Join(t.TempDir(), ".Trash-1000")
+	src := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	absolute, err := filepath.Abs(src)
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+
+	if err := moveIntoTrash(trashRoot, absolute); err != nil {
+		t.Fatalf("moveIntoTrash: %v", err)
+	}
+	if _, err := os.Lstat(src); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("source still exists after moveIntoTrash: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(trashRoot, "files", "proj", "sub")); err != nil {
+		t.Errorf("trashed payload missing: %v", err)
+	}
+	info, err := os.ReadFile(filepath.Join(trashRoot, "info", "proj.trashinfo"))
+	if err != nil {
+		t.Fatalf("read trash info: %v", err)
+	}
+	if !strings.Contains(string(info), "Path="+absolute) {
+		t.Errorf("trash info = %q, want Path=%s", info, absolute)
+	}
+}
+
 // TestSystemTrashReportsUnavailableWithoutHome verifies that a missing home
 // directory is reported as ErrTrashUnavailable rather than silently deleting.
 func TestSystemTrashReportsUnavailableWithoutHome(t *testing.T) {

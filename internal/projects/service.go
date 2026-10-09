@@ -5,11 +5,15 @@
 // Every filesystem operation is confined to the operator-authorized workspace
 // roots and always acts on the canonical path returned by
 // workspaces.ResolveAuthorizedPath; raw user input is never re-derived into a
-// path after authorization. Filesystem changes happen before the platform
-// record is updated, record changes run in GORM transactions, and no target is
-// ever overwritten. Deletion prefers the OS trash; permanent deletion is only
-// performed when the caller passes an explicit permanent flag, and never
-// silently.
+// path after authorization. Record changes run in GORM transactions and no
+// target is ever overwritten. Most operations change the filesystem first and
+// update the record after; the compensating direction differs per operation
+// (create removes the new directory on a failed insert, relocate moves it
+// back on a failed update). Delete is record-first: the record is removed
+// before the directory is touched and restored if the filesystem operation
+// fails, so the platform never points at a directory this call deleted.
+// Deletion prefers the OS trash; permanent deletion is only performed when
+// the caller passes an explicit permanent flag, and never silently.
 package projects
 
 import (

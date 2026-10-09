@@ -42,7 +42,7 @@ func AcquireLock(dataDir string) (*Lock, error) {
 	if dataDir == "" {
 		return nil, errors.New("runtime: data directory is required")
 	}
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("runtime: create data directory: %w", err)
 	}
 
@@ -50,6 +50,11 @@ func AcquireLock(dataDir string) (*Lock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("runtime: open single-instance lock %s: %w", path, err)
+	}
+	// Tighten a lock file left with wider permissions by an earlier version.
+	if err := os.Chmod(path, 0o600); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("runtime: restrict single-instance lock %s: %w", path, err)
 	}
 	if err := lockFile(file); err != nil {
 		file.Close()

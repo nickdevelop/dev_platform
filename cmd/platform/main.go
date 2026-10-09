@@ -243,6 +243,13 @@ func runServer(args []string) error {
 	server := &http.Server{
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		// Bodies are small and bounded (maxRequestBodyBytes); a slow client
+		// must not be able to hold a connection open indefinitely.
+		ReadTimeout: 30 * time.Second,
+		// Responses are small JSON documents today. Revisit when streaming
+		// agent output is added, since WriteTimeout caps the whole response.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

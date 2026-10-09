@@ -165,6 +165,35 @@ describe('login and session flows', () => {
     expect(auth.isAuthenticated).toBe(false)
   })
 
+  it('shows the wrong-password error, not a session-expired message', async () => {
+    const { wrapper, router } = await mountApp([
+      {
+        method: 'GET',
+        path: '/api/auth/session',
+        status: 200,
+        body: { authenticated: false, csrfToken: 'csrf-1' },
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/login',
+        status: 401,
+        body: { error: 'invalid_credentials' },
+      },
+    ])
+
+    await wrapper.find('input[type="password"]').setValue('wrong-password')
+    await wrapper.find('form.login-form').trigger('submit')
+    await flushPromises()
+
+    // The user stays on the login view and sees the credentials error, not
+    // the session-expiry message (which a 401 would otherwise imply).
+    expect(router.currentRoute.value.name).toBe('login')
+    const alert = wrapper.find('.login-error[role="alert"]')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('密码错误')
+    expect(alert.text()).not.toContain('登录状态已失效')
+  })
+
   it('logs out and returns to the login view', async () => {
     const { wrapper, router, calls } = await mountApp([
       authenticatedSession(),
@@ -292,6 +321,58 @@ describe('project management', () => {
     expect(attempts).toHaveLength(2)
     expect(attempts[1]?.body).toEqual({ confirmName: 'demo', permanent: true })
     expect(dialog(wrapper).exists()).toBe(false)
+  })
+
+  it('adds a workspace root and then registers a project under it', async () => {
+    const workspaceRoot = {
+      id: 1,
+      path: '/workspace',
+      createdAt: '2026-10-08T00:00:00Z',
+    }
+    const { wrapper, calls } = await mountWithProjects([
+      { method: 'GET', path: '/api/workspaces/roots', status: 200, body: { roots: [] } },
+      { method: 'POST', path: '/api/workspaces/roots', status: 201, body: workspaceRoot },
+      {
+        method: 'GET',
+        path: '/api/workspaces/roots',
+        status: 200,
+        body: { roots: [workspaceRoot] },
+      },
+      { method: 'POST', path: '/api/projects', status: 201, body: { id: 9, name: 'demo', path: '/workspace/demo' } },
+    ])
+
+    // The management entry point is reachable from the projects view.
+    await wrapper.find('button.manage-roots').trigger('click')
+    await flushPromises()
+    const rootsDialog = dialog(wrapper)
+    expect(rootsDialog.text()).toContain('尚未授权')
+
+    // A user can add an authorized root.
+    await rootsDialog.find('#new-root-path').setValue('/workspace')
+    await rootsDialog.find('form.add-root').trigger('submit')
+    await flushPromises()
+    expect(rootsDialog.text()).toContain('/workspace')
+
+    await rootsDialog.trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(dialog(wrapper).exists()).toBe(false)
+
+    // ...and then register a project directory under it.
+    await wrapper.find('button.register').trigger('click')
+    await flushPromises()
+    const registerDialog = dialog(wrapper)
+    await registerDialog.find('#dialog-path').setValue('/workspace/demo')
+    await registerDialog.find('button.confirm').trigger('click')
+    await flushPromises()
+
+    const addRoot = calls.find(
+      (call) => call.method === 'POST' && call.path === '/api/workspaces/roots',
+    )
+    expect(addRoot?.body).toEqual({ path: '/workspace' })
+    expect(addRoot?.headers['x-csrf-token']).toBe('csrf-1')
+
+    const register = calls.find((call) => call.method === 'POST' && call.path === '/api/projects')
+    expect(register?.body).toEqual({ path: '/workspace/demo' })
   })
 
   it('moves focus into the dialog when it opens', async () => {

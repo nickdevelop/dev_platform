@@ -2,12 +2,31 @@
 package http
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
 	"devplatform/internal/workspaces"
 )
+
+// maxRequestBodyBytes bounds every API request body (1 MiB). All platform
+// request DTOs are tiny JSON objects; a larger body is malformed or hostile
+// and is rejected before it can be buffered.
+const maxRequestBodyBytes = 1 << 20
+
+// limitRequestBody caps the request body a handler may read from. Reads past
+// the cap fail, so gin's binder reports the malformed request instead of the
+// server buffering an unbounded payload.
+func limitRequestBody(max int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max)
+		}
+		c.Next()
+	}
+}
 
 // Dependencies carries the collaborators the API routes need. Later tasks
 // extend this struct (database, workspace services); services are injected
@@ -49,7 +68,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		// management route can accidentally omit it.
 		router.Use(auth.RequireCSRF())
 
-		api := router.Group("/api")
+		api := router.Group("/api", limitRequestBody(maxRequestBodyBytes))
 		deps.Auth.RegisterRoutes(api)
 
 		// Management routes share one session-protected group so no route

@@ -3,6 +3,7 @@ package runtime_test
 import (
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -67,6 +68,38 @@ func TestAcquireLockIsReacquirableAfterRelease(t *testing.T) {
 		t.Fatalf("AcquireLock after release: %v", err)
 	}
 	_ = again.Release()
+}
+
+// TestAcquireLockRestrictsDataDirAndLockPermissions verifies the lock file
+// and its data directory are owner-only on Unix, so a local user cannot read
+// platform state (the directory also holds the session database).
+func TestAcquireLockRestrictsDataDirAndLockPermissions(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("Unix file permissions are not meaningful on Windows")
+	}
+
+	dataDir := filepath.Join(t.TempDir(), "runtime-data")
+	lock, err := runtime.AcquireLock(dataDir)
+	if err != nil {
+		t.Fatalf("AcquireLock: %v", err)
+	}
+	defer lock.Release()
+
+	dirInfo, err := os.Stat(dataDir)
+	if err != nil {
+		t.Fatalf("stat data directory: %v", err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Errorf("data directory mode = %o, want 700", got)
+	}
+
+	lockInfo, err := os.Stat(filepath.Join(dataDir, "platform.lock"))
+	if err != nil {
+		t.Fatalf("stat lock file: %v", err)
+	}
+	if got := lockInfo.Mode().Perm(); got != 0o600 {
+		t.Errorf("lock file mode = %o, want 600", got)
+	}
 }
 
 // TestAcquireLockCreatesMissingDataDir verifies the lock bootstraps the data

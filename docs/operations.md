@@ -40,6 +40,10 @@ command-line arguments, the environment, or pipelines — `set-password`
 refuses them — and it is never logged. Re-running `set-password` does not
 overwrite an existing password.
 
+After starting the service, **authorize at least one workspace root** before
+registering projects (see "Authorize workspace roots" below); project
+register/create is rejected with `path_not_authorized` until a root exists.
+
 ## Start and stop
 
 ```sh
@@ -87,6 +91,58 @@ graceful shutdown; a crashed process cannot pin it (the OS drops it when
 the process dies). The zero-byte `platform.lock` file remains on disk; that
 is normal.
 
+## Authorize workspace roots (required before projects)
+
+Every project register or create is checked against the configured
+**workspace roots**: only a directory at or under an authorized root can be
+managed. A fresh data directory has none, so the first project operation
+fails with `path_not_authorized` until at least one root is added.
+
+### From the web UI
+
+1. Log in and open the projects view.
+2. Click **管理授权工作区** (Manage authorized workspaces).
+3. Enter the absolute path of an existing directory (for example
+   `/home/you/projects`) and click **添加** (Add). Repeat for each root you
+   want to authorize.
+4. Close the dialog and register or create a project under one of those
+   roots. Removing a root only unregisters it; it never deletes the
+   directory.
+
+### Copy-paste fallback (no browser)
+
+Workspace-root mutations require an authenticated session and the CSRF
+token, so log in first. The following uses `cookies.txt` for the session and
+CSRF cookies:
+
+```sh
+BASE=http://localhost:8080
+
+# 1. Fetch a CSRF token (public endpoint; sets the platform_csrf cookie).
+curl -s -c cookies.txt "$BASE/api/auth/session" >/dev/null
+CSRF=$(awk '$6=="platform_csrf"{print $7}' cookies.txt)
+
+# 2. Log in (the password is never written to disk or logs).
+read -rs PASSWORD
+curl -s -b cookies.txt -c cookies.txt -X POST "$BASE/api/auth/login" \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d "{\"password\":\"$PASSWORD\"}"
+unset PASSWORD
+
+# 3. Authorize a root (the path must exist and be a directory).
+curl -s -b cookies.txt -X POST "$BASE/api/workspaces/roots" \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"path":"/home/you/projects"}'
+
+# 4. List roots and remove one by id.
+curl -s -b cookies.txt "$BASE/api/workspaces/roots"
+curl -s -b cookies.txt -X DELETE "$BASE/api/workspaces/roots/1" \
+  -H "X-CSRF-Token: $CSRF"
+```
+
+`POST /api/workspaces/roots` returns `201` with the canonicalized path;
+`DELETE` returns `204`.
+
 ## Configuration reference
 
 Every setting is configurable by flag, then environment variable, then
@@ -129,6 +185,16 @@ Security properties that hold on any bind address:
 The service targets plain-HTTP LAN use. If you must expose it beyond a
 trusted LAN, put it behind a TLS-terminating reverse proxy that forwards to
 a loopback bind.
+
+> **Login throttle behind a proxy.** The per-client login throttle keys on
+> the connection's remote address, and no `X-Forwarded-*` headers are
+> trusted. Behind a TLS-terminating reverse proxy that shares one connection
+> address, every client therefore collapses into a single throttle key: one
+> client's failed logins can (temporarily) lock out all clients, and the
+> per-attacker limit no longer isolates clients. When fronting the service
+> with a proxy, keep login attempts low and monitor the auth endpoint, or
+> terminate TLS at a proxy that preserves the client address and have the
+> proxy apply its own rate limit.
 
 ## Production UI serving (same origin)
 

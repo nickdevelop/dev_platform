@@ -108,6 +108,12 @@ func abortWithError(c *gin.Context, status int, code string) {
 	c.AbortWithStatusJSON(status, errorResponse{Error: code})
 }
 
+// setNoStore marks an auth response as non-cacheable. Session metadata and
+// the CSRF token must never be written to a browser or intermediary cache.
+func setNoStore(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+}
+
 // loginRequest is the JSON body of POST /api/auth/login.
 type loginRequest struct {
 	Password string `json:"password"`
@@ -116,6 +122,7 @@ type loginRequest struct {
 // handleLogin verifies the shared password and issues a session. Failures
 // return a generic error and never reveal whether a password is configured.
 func (s *Service) handleLogin(c *gin.Context) {
+	setNoStore(c)
 	var req loginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		abortWithError(c, http.StatusBadRequest, "invalid_request")
@@ -175,6 +182,7 @@ func (s *Service) handleLogin(c *gin.Context) {
 // handleSession reports the current authentication state and always provides
 // a CSRF token so the browser can drive mutating requests.
 func (s *Service) handleSession(c *gin.Context) {
+	setNoStore(c)
 	resp := sessionResponse{CSRFToken: s.nextCSRFToken(c)}
 
 	if id := sessionCookieValue(c); id != "" {
@@ -197,6 +205,7 @@ func (s *Service) handleSession(c *gin.Context) {
 
 // handleLogout invalidates the current session and clears the cookie.
 func (s *Service) handleLogout(c *gin.Context) {
+	setNoStore(c)
 	if session, ok := SessionFromContext(c); ok {
 		if err := s.sessions.Delete(session.ID); err != nil {
 			abortWithError(c, http.StatusInternalServerError, "server_error")

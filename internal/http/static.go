@@ -44,9 +44,12 @@ func serveStatic(router *gin.Engine, webDir string) {
 
 	// Vite emits content-hashed bundles under assets/. The URL path maps
 	// directly onto the web directory layout (webFS/assets/...), so the
-	// file server consumes the request path unmodified.
+	// file server consumes the request path unmodified. Only files are
+	// served: a directory request (notably /assets/ itself) is a 404 rather
+	// than an http.FileServer directory listing that would expose build
+	// filenames.
 	assets := router.Group("/assets", cacheControl(assetCacheControl))
-	assets.GET("/*filepath", gin.WrapH(fileServer))
+	assets.GET("/*filepath", gin.WrapH(onlyFiles(webFS, fileServer)))
 
 	// Everything no registered route claimed.
 	router.NoRoute(func(c *gin.Context) {
@@ -70,6 +73,22 @@ func serveStatic(router *gin.Engine, webDir string) {
 			}
 		}
 		serveIndex(webFS)(c)
+	})
+}
+
+// onlyFiles wraps an fs-backed handler so a request that resolves to a
+// directory is a 404 instead of a directory listing. It is used for the
+// hashed-asset subtree, which contains only files.
+func onlyFiles(webFS fs.FS, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if name != "" && name != "." {
+			if info, err := fs.Stat(webFS, name); err == nil && info.IsDir() {
+				http.NotFound(w, r)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

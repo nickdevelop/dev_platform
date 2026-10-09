@@ -124,6 +124,16 @@ func TestStaticServesEntryAssetsAndSPAFallback(t *testing.T) {
 		t.Errorf("GET missing asset status = %d, want %d", missing.StatusCode, http.StatusNotFound)
 	}
 	body(t, missing)
+
+	// The assets directory itself must not expose an HTTP directory listing
+	// of the built filenames.
+	listing := get(t, deps, "/assets/")
+	if listing.StatusCode != http.StatusNotFound {
+		t.Errorf("GET /assets/ status = %d, want %d (no directory listing)", listing.StatusCode, http.StatusNotFound)
+	}
+	if got := body(t, listing); strings.Contains(got, "app-abc123.js") {
+		t.Errorf("GET /assets/ leaked build filenames: %q", got)
+	}
 }
 
 // TestStaticDoesNotShadowAPIRoutes verifies that enabling static hosting
