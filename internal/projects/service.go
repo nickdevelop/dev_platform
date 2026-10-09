@@ -52,6 +52,17 @@ var (
 	// ErrTrashUnavailable reports that the OS trash could not be used, so
 	// deletion requires an explicit permanent-delete confirmation.
 	ErrTrashUnavailable = errors.New("projects: os trash is unavailable")
+	// ErrPathChanged reports that a stored project path no longer resolves to
+	// itself inside an authorized root — for example because a path component
+	// was replaced by a symlink, or the authorizing root was removed. The path
+	// is refused rather than mutated.
+	ErrPathChanged = errors.New("projects: stored project path is no longer authorized or canonical")
+	// ErrRestoreFailed reports that a failed delete operation could not restore
+	// the project record, leaving the record and the directory out of step.
+	ErrRestoreFailed = errors.New("projects: failed to restore project record after a failed delete")
+	// ErrRollbackFailed reports that a directory was moved but its record could
+	// not be updated and the compensating move back also failed.
+	ErrRollbackFailed = errors.New("projects: failed to roll back directory move after a record update failure")
 )
 
 // Project is the JSON-stable API representation of a managed project. GORM
@@ -86,12 +97,15 @@ func WithTrash(t Trash) Option {
 type Service struct {
 	db    *gorm.DB
 	trash Trash
-	mu    sync.Mutex
+	// renamePath renames a directory. It defaults to os.Rename and is a test
+	// seam for exercising failure/compensation paths.
+	renamePath func(oldpath, newpath string) error
+	mu         sync.Mutex
 }
 
 // NewService builds the project service over the platform database.
 func NewService(db *gorm.DB, opts ...Option) *Service {
-	s := &Service{db: db, trash: systemTrash{}}
+	s := &Service{db: db, trash: systemTrash{}, renamePath: os.Rename}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -182,6 +196,9 @@ func (s *Service) Rename(id uint, name, confirmName string) (Project, error) {
 	if err := confirmNameMatches(row, confirmName); err != nil {
 		return Project{}, err
 	}
+	if err := s.authorizeStoredPath(row.Path); err != nil {
+		return Project{}, err
+	}
 	if err := validateName(name); err != nil {
 		return Project{}, err
 	}
@@ -211,6 +228,9 @@ func (s *Service) Move(id uint, destinationInput, confirmName string) (Project, 
 		return Project{}, err
 	}
 	if err := confirmNameMatches(row, confirmName); err != nil {
+		return Project{}, err
+	}
+	if err := s.authorizeStoredPath(row.Path); err != nil {
 		return Project{}, err
 	}
 	if err := s.requireDirectory(row.Path); err != nil {
@@ -245,10 +265,17 @@ func (s *Service) Unregister(id uint) error {
 
 // Delete removes the project directory and its record. Preferring the OS
 // trash, it moves the directory there; when trash is unavailable (or fails)
-// the call fails with ErrTrashUnavailable and nothing is removed, so the
-// caller must re-issue the request with permanent=true after explicit
+// the call fails with ErrTrashUnavailable and the directory is left in place,
+// so the caller must re-issue the request with permanent=true after explicit
 // confirmation. The typed confirmation must match the project's current name
 // in every case.
+//
+// The record is removed before the directory so the platform can never end up
+// holding a record that points at a directory this call deleted. If the
+// filesystem operation then fails, the record is restored; if that restore
+// itself fails the call reports ErrRestoreFailed rather than a misleading
+// success. The stored path is re-authorized against the current roots first,
+// so a project whose authorizing root was removed is refused, not deleted.
 func (s *Service) Delete(id uint, confirmName string, permanent bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,27 +287,48 @@ func (s *Service) Delete(id uint, confirmName string, permanent bool) error {
 	if err := confirmNameMatches(row, confirmName); err != nil {
 		return err
 	}
+	if err := s.authorizeStoredPath(row.Path); err != nil {
+		return err
+	}
 	if err := s.requireDirectory(row.Path); err != nil {
 		return err
 	}
 
-	if permanent {
-		if err := os.RemoveAll(row.Path); err != nil {
-			return fmt.Errorf("projects: permanently delete %q: %w", row.Path, err)
-		}
-	} else if err := s.trash.Move(row.Path); err != nil {
-		return fmt.Errorf("%w: %v", ErrTrashUnavailable, err)
+	if err := s.deleteRecord(id); err != nil {
+		return err
 	}
 
-	if err := s.deleteRecord(id); err != nil {
-		return fmt.Errorf("projects: remove record for %q: %w", row.Path, err)
+	operationErr := s.removeDirectory(row.Path, permanent)
+	if operationErr == nil {
+		return nil
+	}
+	if restoreErr := s.restoreProject(row); restoreErr != nil {
+		return fmt.Errorf("%w: delete of %q failed (%v), and record %d could not be restored: %v",
+			ErrRestoreFailed, row.Path, operationErr, row.ID, restoreErr)
+	}
+	return operationErr
+}
+
+// removeDirectory performs the destructive half of Delete: the OS trash by
+// default, or an explicit permanent removal.
+func (s *Service) removeDirectory(path string, permanent bool) error {
+	if permanent {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("projects: permanently delete %q: %w", path, err)
+		}
+		return nil
+	}
+	if err := s.trash.Move(path); err != nil {
+		return fmt.Errorf("%w: %v", ErrTrashUnavailable, err)
 	}
 	return nil
 }
 
 // relocate moves the directory at row.Path to target and updates the record.
 // The target must not exist. If the record update fails, the directory is
-// moved back so the record never points at a location that changed silently.
+// moved back so the record never points at a location that changed silently;
+// if that compensating move also fails the call reports ErrRollbackFailed with
+// both affected paths rather than discarding the error.
 func (s *Service) relocate(row database.Project, target, name string) (Project, error) {
 	if _, err := os.Lstat(target); err == nil {
 		return Project{}, fmt.Errorf("%w: %q", ErrTargetExists, target)
@@ -288,20 +336,29 @@ func (s *Service) relocate(row database.Project, target, name string) (Project, 
 		return Project{}, fmt.Errorf("projects: inspect target %q: %w", target, err)
 	}
 
-	if err := os.Rename(row.Path, target); err != nil {
+	if err := s.renamePath(row.Path, target); err != nil {
 		return Project{}, fmt.Errorf("projects: move %q to %q: %w", row.Path, target, err)
 	}
 
 	previous := row.Path
 	row.Path, row.Name = target, name
 	if err := s.db.Transaction(func(tx *gorm.DB) error { return tx.Save(&row).Error }); err != nil {
-		_ = os.Rename(target, previous)
+		if rollbackErr := s.renamePath(target, previous); rollbackErr != nil {
+			return Project{}, fmt.Errorf("%w: directory now at %q but record %d still points at %q (%v); record update error: %v",
+				ErrRollbackFailed, target, row.ID, previous, rollbackErr, err)
+		}
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return Project{}, fmt.Errorf("%w: %q", ErrProjectExists, target)
 		}
 		return Project{}, fmt.Errorf("projects: update record for %q: %w", target, err)
 	}
 	return projectFromModel(row), nil
+}
+
+// restoreProject re-inserts a project record after a failed delete, preserving
+// its identity and timestamps.
+func (s *Service) restoreProject(row database.Project) error {
+	return s.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error })
 }
 
 // insertProject records a directory as a project in its own transaction.
@@ -354,6 +411,22 @@ func (s *Service) resolve(input string) (workspaces.ResolvedPath, error) {
 		return workspaces.ResolvedPath{}, err
 	}
 	return resolved, nil
+}
+
+// authorizeStoredPath re-authorizes a path already stored in the database
+// against the currently configured workspace roots before it is mutated. It
+// additionally requires the canonical resolution to be unchanged, so a stored
+// path whose components were replaced by symlinks (or whose authorizing root
+// was removed) is rejected instead of mutated.
+func (s *Service) authorizeStoredPath(path string) error {
+	resolved, err := s.resolve(path)
+	if err != nil {
+		return err
+	}
+	if resolved.Path != path {
+		return fmt.Errorf("%w: %q now resolves to %q", ErrPathChanged, path, resolved.Path)
+	}
+	return nil
 }
 
 // resolveExistingDirectory authorizes input and additionally requires it to be

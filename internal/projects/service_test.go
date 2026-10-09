@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -41,16 +42,20 @@ func openTestDB(t *testing.T) *gorm.DB {
 // move by renaming it into an isolated trash directory. When err is set the
 // move fails, standing in for an unavailable or broken OS trash.
 type fakeTrash struct {
-	mu    sync.Mutex
-	dir   string
-	err   error
-	moved []string
+	mu     sync.Mutex
+	dir    string
+	err    error
+	onMove func()
+	moved  []string
 }
 
 func (f *fakeTrash) Move(path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if f.onMove != nil {
+		f.onMove()
+	}
 	if f.err != nil {
 		return f.err
 	}
@@ -69,6 +74,12 @@ func (f *fakeTrash) setErr(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.err = err
+}
+
+func (f *fakeTrash) setOnMove(fn func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.onMove = fn
 }
 
 func (f *fakeTrash) movedPaths() []string {
@@ -504,6 +515,135 @@ func TestConcurrentCreateTargetCollision(t *testing.T) {
 	}
 	if info, err := os.Stat(filepath.Join(root, "race")); err != nil || !info.IsDir() {
 		t.Errorf("target directory missing after race: err=%v", err)
+	}
+}
+
+func TestMutationsRejectedWhenAuthorizingRootRemoved(t *testing.T) {
+	svc, db, root, trash := newTestService(t)
+
+	project, err := svc.Create(root, "orphan")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Removing the authorizing root must make the stored project path
+	// unauthorized again; the project must be refused, not mutated.
+	if err := db.Delete(&database.WorkspaceRoot{}, "path = ?", root).Error; err != nil {
+		t.Fatalf("remove workspace root: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"rename", func() error { _, err := svc.Rename(project.ID, "renamed", "orphan"); return err }},
+		{"move", func() error { _, err := svc.Move(project.ID, filepath.Join(root, "moved"), "orphan"); return err }},
+		{"trash delete", func() error { return svc.Delete(project.ID, "orphan", false) }},
+		{"permanent delete", func() error { return svc.Delete(project.ID, "orphan", true) }},
+	}
+	for _, tc := range cases {
+		if err := tc.call(); !errors.Is(err, workspaces.ErrOutsideRoots) {
+			t.Errorf("%s under removed root error = %v, want ErrOutsideRoots", tc.name, err)
+		}
+	}
+
+	if info, err := os.Stat(filepath.Join(root, "orphan")); err != nil || !info.IsDir() {
+		t.Errorf("directory mutated despite refusal: err=%v", err)
+	}
+	if got := projectCount(t, db); got != 1 {
+		t.Errorf("project count = %d, want the record preserved", got)
+	}
+	if moved := trash.movedPaths(); len(moved) != 0 {
+		t.Errorf("trash consulted despite refusal: %v", moved)
+	}
+}
+
+func TestDeleteRestoresRecordWhenFilesystemOperationFails(t *testing.T) {
+	svc, db, root, trash := newTestService(t)
+
+	project, err := svc.Create(root, "retained")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	trash.setErr(ErrTrashUnavailable)
+
+	if err := svc.Delete(project.ID, "retained", false); !errors.Is(err, ErrTrashUnavailable) {
+		t.Fatalf("Delete error = %v, want ErrTrashUnavailable", err)
+	}
+
+	// The record must be restored with its identity intact and must still
+	// point at the directory that is still on disk.
+	list, err := svc.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != project.ID || list[0].Path != project.Path {
+		t.Fatalf("list after failed delete = %+v, want the original record %+v", list, project)
+	}
+	if got := projectCount(t, db); got != 1 {
+		t.Errorf("project count = %d, want 1", got)
+	}
+	if info, err := os.Stat(project.Path); err != nil || !info.IsDir() {
+		t.Errorf("directory missing after failed delete: err=%v", err)
+	}
+}
+
+func TestDeleteSurfacesRestoreFailure(t *testing.T) {
+	svc, db, root, trash := newTestService(t)
+
+	project, err := svc.Create(root, "doomed")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	trash.setErr(ErrTrashUnavailable)
+	trash.setOnMove(func() {
+		// Simulate another writer claiming the now-record-free path before the
+		// failed delete can restore its own record.
+		if err := db.Create(&database.Project{Name: "intruder", Path: project.Path}).Error; err != nil {
+			t.Errorf("inject conflicting record: %v", err)
+		}
+	})
+
+	err = svc.Delete(project.ID, "doomed", false)
+	if !errors.Is(err, ErrRestoreFailed) {
+		t.Fatalf("Delete error = %v, want ErrRestoreFailed", err)
+	}
+	if !strings.Contains(err.Error(), project.Path) || !strings.Contains(err.Error(), strconv.FormatUint(uint64(project.ID), 10)) {
+		t.Errorf("error %q should identify the affected path and record id", err)
+	}
+	if info, err := os.Stat(project.Path); err != nil || !info.IsDir() {
+		t.Errorf("directory mutated despite failed delete: err=%v", err)
+	}
+}
+
+func TestRelocateRollbackFailureSurfacesError(t *testing.T) {
+	svc, db, root, _ := newTestService(t)
+
+	project, err := svc.Create(root, "old")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	target := filepath.Join(root, "new")
+	// A conflicting record at the target makes the record update fail, while
+	// the target directory itself stays absent so the rename proceeds.
+	if err := db.Create(&database.Project{Name: "ghost", Path: target}).Error; err != nil {
+		t.Fatalf("seed conflicting record: %v", err)
+	}
+
+	calls := 0
+	svc.renamePath = func(oldpath, newpath string) error {
+		calls++
+		if calls == 1 {
+			return os.Rename(oldpath, newpath)
+		}
+		return errors.New("injected rollback failure")
+	}
+
+	_, err = svc.Rename(project.ID, "new", "old")
+	if !errors.Is(err, ErrRollbackFailed) {
+		t.Fatalf("Rename error = %v, want ErrRollbackFailed", err)
+	}
+	if !strings.Contains(err.Error(), target) || !strings.Contains(err.Error(), project.Path) {
+		t.Errorf("error %q should identify both affected paths", err)
 	}
 }
 
