@@ -20,6 +20,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
+	"devplatform/internal/workspaces"
 )
 
 const listenAddr = ":8080"
@@ -163,7 +164,10 @@ func runServer(args []string) error {
 		log.Printf("no platform password configured; run %q first", setPasswordCommand)
 	}
 
-	router := platformhttp.NewRouter(platformhttp.Dependencies{Auth: authService})
+	router := platformhttp.NewRouter(platformhttp.Dependencies{
+		Auth:       authService,
+		Workspaces: workspaces.NewService(db),
+	})
 
 	server := &http.Server{
 		Addr:              listenAddr,

@@ -102,6 +102,107 @@ paths:
           $ref: '#/components/responses/CSRFRejected'
         '500':
           $ref: '#/components/responses/InternalError'
+  /workspaces/roots:
+    get:
+      summary: List authorized workspace roots
+      description: >-
+        Returns the workspace roots registered by the operator. Project
+        operations are restricted to these roots.
+      operationId: listWorkspaceRoots
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The registered workspace roots.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRootList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Register a workspace root
+      description: >-
+        Registers an existing directory as an authorized workspace root. The
+        canonical (symlink-resolved) directory path is stored; paths that do
+        not exist or are not directories are refused.
+      operationId: addWorkspaceRoot
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWorkspaceRootRequest'
+      responses:
+        '201':
+          description: Workspace root registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceRoot'
+        '400':
+          description: Malformed body or the path is not an existing directory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: The path is already registered as a workspace root.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /workspaces/roots/{id}:
+    delete:
+      summary: Remove a workspace root
+      description: >-
+        Unregisters a workspace root by id. The directory on disk is never
+        touched.
+      operationId: removeWorkspaceRoot
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the workspace root to remove.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Workspace root removed.
+        '400':
+          description: Malformed root id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No workspace root with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -174,6 +275,42 @@ components:
           format: date-time
         csrfToken:
           type: string
+      additionalProperties: false
+    WorkspaceRoot:
+      type: object
+      required:
+        - id
+        - path
+        - createdAt
+      properties:
+        id:
+          type: integer
+          format: int64
+        path:
+          type: string
+          description: Canonical absolute directory path of the root.
+        createdAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    WorkspaceRootList:
+      type: object
+      required:
+        - roots
+      properties:
+        roots:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceRoot'
+      additionalProperties: false
+    AddWorkspaceRootRequest:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          description: Absolute path of an existing directory to authorize.
       additionalProperties: false
     ErrorResponse:
       type: object
