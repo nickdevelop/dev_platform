@@ -84,6 +84,37 @@ export interface StartAgentInstanceBody {
   backend: BackendId
 }
 
+// Mirrors the per-project backend enable/disable state
+// (#/components/schemas/AgentBackendConfig).
+export interface BackendConfig {
+  backend: BackendId
+  enabled: boolean
+}
+
+// Mirrors #/components/schemas/AgentBackendConfigList.
+export interface BackendConfigList {
+  backends: BackendConfig[]
+}
+
+// GET /api/projects/{id}/agent-backends
+export function listProjectBackendConfigs(projectId: number): Promise<BackendConfigList> {
+  return apiRequest<BackendConfigList>('GET', `/projects/${projectId}/agent-backends`)
+}
+
+// PUT /api/projects/{id}/agent-backends/{backend}
+export function setProjectBackendConfig(
+  projectId: number,
+  backend: BackendId,
+  enabled: boolean,
+  csrfToken: string,
+): Promise<BackendConfig> {
+  return apiRequest<BackendConfig>(
+    'PUT',
+    `/projects/${projectId}/agent-backends/${encodeURIComponent(backend)}`,
+    { body: { enabled }, csrfToken },
+  )
+}
+
 // GET /api/agent-backends
 export function listAgentBackends(): Promise<AgentBackendList> {
   return apiRequest<AgentBackendList>('GET', '/agent-backends')

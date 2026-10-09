@@ -406,6 +406,44 @@ func TestCreateRejectsWhenInstanceBelongsToAnotherProject(t *testing.T) {
 	}
 }
 
+// TestCreateResolvesDuplicateNativeSessionRace verifies a create that loses a
+// concurrent race for the same (instance, native) pair returns the already
+// indexed session instead of surfacing a unique-index 500.
+func TestCreateResolvesDuplicateNativeSessionRace(t *testing.T) {
+	env := newTestEnv(t)
+
+	// A concurrent create already indexed this native session.
+	now := time.Now().UTC()
+	existing := database.AgentSession{
+		ID:              "existing-1",
+		ProjectID:       env.projectID,
+		Backend:         string(agents.BackendPi),
+		InstanceID:      env.instanceID,
+		NativeSessionID: "native-race",
+		Status:          string(SessionActive),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := env.db.Create(&existing).Error; err != nil {
+		t.Fatalf("seed existing session: %v", err)
+	}
+
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-race"}
+	env.fake.mu.Unlock()
+
+	session, err := env.svc.Create(context.Background(), env.projectID, env.instanceID, "", "")
+	if err != nil {
+		t.Fatalf("Create after a duplicate native-session race: %v", err)
+	}
+	if session.ID != "existing-1" {
+		t.Errorf("Create returned %q, want the already-indexed id existing-1", session.ID)
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want 1 after the race", got)
+	}
+}
+
 // TestDiscoverIndexesNativeSessionsAndSkipsMalformed verifies discovery maps
 // valid native sessions into the index exactly once and never attaches
 // malformed or misattributed native metadata to the project.

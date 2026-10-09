@@ -11,6 +11,7 @@ import { defineStore } from 'pinia'
 import {
   continueProjectSession,
   createProjectSession,
+  discoverProjectInstanceSessions,
   listProjectSessions,
   sendProjectSessionMessage,
   sessionEventsPath,
@@ -82,6 +83,23 @@ export const useSessionsStore = defineStore('sessions', {
         this.error = describeApiError(error)
       } finally {
         this.loading = false
+      }
+    },
+
+    // Discovers an instance's agent-native sessions and merges them into the
+    // session list by platform id, so a rescan never duplicates a session.
+    async discoverNativeSessions(projectId: number, instanceId: string) {
+      try {
+        const list = await discoverProjectInstanceSessions(projectId, instanceId)
+        const byId = new Map(this.sessions.map((entry) => [entry.id, entry]))
+        for (const discovered of list.sessions) byId.set(discovered.id, discovered)
+        this.sessions = [...byId.values()]
+        this.error = ''
+        return list.sessions
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.error = describeApiError(error)
+        return null
       }
     },
 
@@ -253,9 +271,15 @@ export const useSessionsStore = defineStore('sessions', {
 
     applyLifecycle(sessionId: string, event: NormalizedEvent) {
       const state = event.lifecycle?.state
-      if (state !== 'stopped' && state !== 'disconnected') return
-      const status = state === 'stopped' ? 'stopped' : 'disconnected'
-      this.setStatus(sessionId, status)
+      if (state === 'stopped') {
+        this.setStatus(sessionId, 'stopped')
+        return
+      }
+      // A failed/errored instance means the session is no longer usable; it is
+      // reported disconnected (resumable once a capable instance runs again).
+      if (state === 'failed' || state === 'error' || state === 'disconnected') {
+        this.setStatus(sessionId, 'disconnected')
+      }
     },
 
     setStatus(sessionId: string, status: AgentSession['status']) {

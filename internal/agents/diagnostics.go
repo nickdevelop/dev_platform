@@ -14,33 +14,41 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // secretPatterns are the credential shapes redacted from every diagnostic.
 // They are deliberately conservative: only clear token prefixes and key=value
 // or key: value pairs are masked, so ordinary diagnostics survive intact.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(?:sk|rk|pk|ghp|gho|glpat)-[A-Za-z0-9._-]{6,}`),
-	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*`),
-	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)\b\s*[=:]\s*[^\s"',]+`),
+//
+// The keyword pattern captures the key and any `=`/`:` separator (including a
+// JSON-quoted `"key": "value"` shape) so the replacement keeps the surrounding
+// punctuation and masks only the value. The value itself may be quoted.
+var secretPatterns = []struct {
+	re          *regexp.Regexp
+	replacement string
+}{
+	{
+		re:          regexp.MustCompile(`(?i)\b(?:sk|rk|pk|ghp|gho|glpat)-[A-Za-z0-9._-]{6,}`),
+		replacement: "[REDACTED]",
+	},
+	{
+		re:          regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*`),
+		replacement: "[REDACTED]",
+	},
+	{
+		re:          regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)\b(["']?\s*[=:]\s*["']?)[^\s"',]+`),
+		replacement: "$1$2[REDACTED]",
+	},
 }
 
 // RedactSecrets masks the value of anything that looks like a credential in
 // operator-visible diagnostic text. Every diagnostics message — including the
 // collector's crash report and raw CLI version output — must pass through it,
-// so a credential can never reach the API response or the UI.
+// so a credential can never reach the API response or the UI. It matches both
+// plain (`token=abc123`) and JSON-quoted (`"token": "abc123"`) shapes.
 func RedactSecrets(value string) string {
 	for _, pattern := range secretPatterns {
-		value = pattern.ReplaceAllStringFunc(value, func(match string) string {
-			if idx := strings.IndexAny(match, "=:"); idx >= 0 {
-				return match[:idx+1] + "[REDACTED]"
-			}
-			if space := strings.IndexAny(match, " \t"); space >= 0 {
-				return match[:space+1] + "[REDACTED]"
-			}
-			return "[REDACTED]"
-		})
+		value = pattern.re.ReplaceAllString(value, pattern.replacement)
 	}
 	return value
 }

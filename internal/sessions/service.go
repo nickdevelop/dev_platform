@@ -75,6 +75,11 @@ var errEventEncode = errors.New("sessions: encode event")
 // before it is disconnected.
 const defaultStreamBuffer = 64
 
+// heartbeatInterval is how often an idle SSE stream emits a comment frame. It
+// keeps intermediaries and the browser connection alive when the agent is
+// silent for a long time (no data frame would otherwise be sent).
+const heartbeatInterval = 15 * time.Second
+
 // Session is the JSON-stable API representation of a session index entry. The
 // embedded capabilities tell the workbench which controls the backend actually
 // supports, so unsupported controls can be hidden.
@@ -103,6 +108,9 @@ type BackendCapabilities struct {
 type InstanceService interface {
 	// Get returns the instance record with the given id.
 	Get(instanceID string) (instances.Instance, error)
+	// List returns a project's instances, so session reconciliation can index
+	// them in one query instead of one Get per session row.
+	List(projectID uint) ([]instances.Instance, error)
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 	// Stop terminates the instance (idempotently).
@@ -179,12 +187,37 @@ func (s *Service) List(projectID uint) ([]Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	index, err := s.instanceIndex(projectID)
+	if err != nil {
+		// Preserve the previous best-effort behavior when the instance list
+		// cannot be read: fall back to one lookup per row.
+		out := make([]Session, 0, len(rows))
+		for _, row := range rows {
+			row = s.reconcile(row)
+			out = append(out, s.sessionFromModel(row))
+		}
+		return out, nil
+	}
 	out := make([]Session, 0, len(rows))
 	for _, row := range rows {
-		row = s.reconcile(row)
+		row = s.reconcileIndexed(row, index)
 		out = append(out, s.sessionFromModel(row))
 	}
 	return out, nil
+}
+
+// instanceIndex returns a project's instances keyed by id, loaded in one query
+// so a session list does not issue one Get per row (finding: reconcile N+1).
+func (s *Service) instanceIndex(projectID uint) (map[string]instances.Instance, error) {
+	list, err := s.instances.List(projectID)
+	if err != nil {
+		return nil, err
+	}
+	index := make(map[string]instances.Instance, len(list))
+	for _, inst := range list {
+		index[inst.ID] = inst
+	}
+	return index, nil
 }
 
 // Get returns one session, refusing ids outside the authorized project.
@@ -472,10 +505,22 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 		}
 	}()
 
+	heartbeat := time.NewTicker(heartbeatInterval)
+	defer heartbeat.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-heartbeat.C:
+			// A comment frame keeps an idle stream alive without being a
+			// data event; SSE clients ignore it.
+			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
+				cancel()
+				return err
+			}
+			if flush != nil {
+				flush()
+			}
 		case ev, ok := <-queue:
 			if !ok {
 				if slow.Load() {
@@ -563,6 +608,19 @@ func (s *Service) reconcile(row database.AgentSession) database.AgentSession {
 	return s.setStatus(row, SessionActive)
 }
 
+// reconcileIndexed is reconcile against an already-loaded instance index, so a
+// listing reconciles every session without a per-row instance lookup.
+func (s *Service) reconcileIndexed(row database.AgentSession, index map[string]instances.Instance) database.AgentSession {
+	if row.Status == string(SessionStopped) {
+		return row
+	}
+	inst, ok := index[row.InstanceID]
+	if !ok || inst.ProjectID != row.ProjectID || !instanceRunnable(inst) {
+		return s.setStatus(row, SessionDisconnected)
+	}
+	return s.setStatus(row, SessionActive)
+}
+
 // setStatus persists status when it differs and returns the updated row.
 func (s *Service) setStatus(row database.AgentSession, status SessionStatus) database.AgentSession {
 	if row.Status == string(status) {
@@ -578,13 +636,22 @@ func (s *Service) setStatus(row database.AgentSession, status SessionStatus) dat
 	return row
 }
 
-// indexRef persists a new index row for a native session.
+// indexRef persists a new index row for a native session. A create that loses a
+// concurrent race for the same (instance, native) pair is resolved
+// idempotently: the already-indexed row is returned instead of surfacing a 500
+// from the unique-index violation.
 func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.SessionRef, status SessionStatus) (Session, error) {
 	row, err := s.newSessionRow(projectID, inst, ref, status)
 	if err != nil {
 		return Session{}, err
 	}
 	if err := s.repo.create(row); err != nil {
+		if existing, getErr := s.repo.getByNative(inst.ID, ref.SessionID); getErr == nil {
+			if existing.ProjectID != projectID {
+				return Session{}, fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
+			}
+			return s.sessionFromModel(existing), nil
+		}
 		return Session{}, err
 	}
 	return s.sessionFromModel(row), nil

@@ -5,10 +5,12 @@ workbench: what each backend adapter declares, which versions were tested, and
 which behaviors are **provisional** because they cannot be verified without a
 configured model provider.
 
-The code-level declarations live in `internal/agents/diagnostics.go` (tested
-version ranges) and in each adapter's `Capabilities()`; the tests in
-`internal/agents/diagnostics_test.go` pin the values in this document so the
-two cannot drift apart.
+The tested version ranges live in `internal/agents/diagnostics.go` and are
+pinned by `internal/agents/diagnostics_test.go`, so the code and this document
+cannot drift apart. Each backend's capability declaration lives in its
+adapter's `Capabilities()` and is pinned by that adapter's own tests (for
+example `TestAdapterCapabilitiesDeclared` in `internal/agents/opencode`), not
+by the diagnostics tests.
 
 Tested environment: Go 1.27.1, Node 22, `opencode` 2.0.24, `pi` 1.1.0. No live
 model provider was configured during verification (an opencode probe without
@@ -64,6 +66,31 @@ diagnostic is built, and server startup output is bounded.
 A backend whose adapter fails to produce diagnostics (including a crash) is
 reported as an `adapter`-kind error report; it never prevents the other
 backends' reports, and the registry walk always completes.
+
+## Session history
+
+The platform does **not** read or replay an agent-native session's prior
+messages. Discovery and continue re-attach the platform's index to the native
+session id, but the workbench renders only the live normalized event stream it
+receives after a session is opened, and it says so explicitly in the
+conversation pane (a history note above the message log). Agent-native history
+remains the authority and is never copied into the platform.
+
+This is a deliberate, documented scope boundary: reading native history would
+require a new adapter operation, and the frozen `AgentAdapter` contract
+deliberately exposes no history method, so a continuation shows no earlier
+turns rather than a partially reconstructed one.
+
+## Project backend enable/disable
+
+`AgentBackendConfig` stores a per-project `enabled` flag for each backend
+(spec §5.3). The default is **enabled**: a registered backend is usable in a
+project until an operator disables it from the project Agent settings
+(`GET`/`PUT /api/projects/{id}/agent-backends[/{backend}]`). Starting an
+instance of a disabled backend is refused with `backend_disabled` (409);
+already-running instances are unaffected, and re-enabling restores starting
+immediately. The `(project_id, backend)` pair is unique, so toggles are
+idempotent upserts.
 
 ## Resilience and isolation (tested)
 

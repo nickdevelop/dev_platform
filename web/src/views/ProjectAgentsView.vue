@@ -22,7 +22,12 @@ const actionError = ref('')
 onMounted(load)
 
 async function load() {
-  await Promise.all([agents.loadBackends(), agents.loadInstances(projectId.value), agents.loadDiagnostics()])
+  await Promise.all([
+    agents.loadBackends(),
+    agents.loadInstances(projectId.value),
+    agents.loadDiagnostics(),
+    agents.loadBackendConfigs(projectId.value),
+  ])
   if (selectedBackend.value === '' && agents.backends.length > 0) {
     selectedBackend.value = agents.backends[0].backend
   }
@@ -42,6 +47,19 @@ async function stop(instanceId: string) {
   const stopped = await agents.stopInstance(projectId.value, instanceId)
   if (!stopped) actionError.value = agents.error
 }
+
+async function toggleBackend(backend: BackendId, event: Event) {
+  const enabled = (event.target as HTMLInputElement).checked
+  actionError.value = ''
+  const updated = await agents.setBackendEnabled(projectId.value, backend, enabled)
+  if (!updated) actionError.value = agents.error
+}
+
+// The start control is disabled when the selected backend is disabled for the
+// project, so the UI never offers an action the server will refuse.
+const selectedBackendEnabled = computed(
+  () => selectedBackend.value === '' || agents.backendEnabledFor(selectedBackend.value),
+)
 
 function openWorkbench() {
   void router.push({ name: 'session-workbench', params: { id: String(projectId.value) } })
@@ -64,6 +82,24 @@ function openWorkbench() {
 
     <BackendDiagnostics :diagnostics="agents.diagnostics" />
 
+    <section class="backend-config" aria-label="项目 Agent 后端启用">
+      <h2>项目后端启用</h2>
+      <ul class="backend-config-list">
+        <li v-for="backend in agents.backends" :key="backend.backend" class="backend-config-item">
+          <label>
+            <input
+              type="checkbox"
+              :checked="agents.backendEnabledFor(backend.backend)"
+              :data-test="`backend-toggle-${backend.backend}`"
+              @change="toggleBackend(backend.backend, $event)"
+            />
+            启用 {{ backend.backend }}
+          </label>
+        </li>
+      </ul>
+      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中启动实例。</p>
+    </section>
+
     <section class="start-instance" aria-label="启动 Agent 实例">
       <label for="backend-select">Agent 后端</label>
       <select id="backend-select" v-model="selectedBackend">
@@ -74,7 +110,7 @@ function openWorkbench() {
       <button
         type="button"
         class="start"
-        :disabled="starting || selectedBackend === ''"
+        :disabled="starting || selectedBackend === '' || !selectedBackendEnabled"
         @click="start"
       >
         启动实例

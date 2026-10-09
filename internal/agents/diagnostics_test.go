@@ -331,6 +331,38 @@ func TestCollectDiagnosticsNilRegistry(t *testing.T) {
 	}
 }
 
+// TestRedactSecrets pins the credential shapes the redaction helper masks,
+// including JSON-quoted key/value pairs (finding 6): a credential inside a
+// serialized JSON diagnostic must never survive.
+func TestRedactSecrets(t *testing.T) {
+	cases := []struct {
+		in       string
+		leak     string // must not appear in the output
+		wantMask bool
+	}{
+		{in: `token=supersecret`, leak: "supersecret", wantMask: true},
+		{in: `password: hunter2`, leak: "hunter2", wantMask: true},
+		{in: `{"token": "abcd1234"}`, leak: "abcd1234", wantMask: true},
+		{in: `{"password":"hunter2"}`, leak: "hunter2", wantMask: true},
+		{in: `{"api_key": 'sk-live-abcdef123456'}`, leak: "sk-live-abcdef123456", wantMask: true},
+		{in: `Authorization: Bearer abcdef.ghijkl`, leak: "abcdef.ghijkl", wantMask: true},
+		{in: `token sk-abcd1234567`, leak: "sk-abcd1234567", wantMask: true},
+		{in: `the tested version is 2.0.24`, leak: "", wantMask: false},
+	}
+	for _, tc := range cases {
+		got := RedactSecrets(tc.in)
+		if tc.leak != "" && strings.Contains(got, tc.leak) {
+			t.Errorf("RedactSecrets(%q) = %q, leaked %q", tc.in, got, tc.leak)
+		}
+		if tc.wantMask && !strings.Contains(got, "[REDACTED]") {
+			t.Errorf("RedactSecrets(%q) = %q, want a [REDACTED] marker", tc.in, got)
+		}
+		if !tc.wantMask && got != tc.in {
+			t.Errorf("RedactSecrets(%q) = %q, want it unchanged", tc.in, got)
+		}
+	}
+}
+
 // TestDiagnosticianRequiresAdapter pins that Diagnostician is an extension of
 // AgentAdapter, so a diagnostics-only type can never be registered.
 func TestDiagnosticianRequiresAdapter(t *testing.T) {

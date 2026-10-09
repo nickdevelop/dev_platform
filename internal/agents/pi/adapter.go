@@ -736,20 +736,48 @@ func newSubscriber() *subscriber {
 	}
 }
 
+// piDeliverTimeout bounds how long a torn-down subscriber waits to hand an
+// already-queued terminal event to its consumer before giving up.
+const piDeliverTimeout = 100 * time.Millisecond
+
 // forward copies the subscriber's stash to its output and closes the output
-// when the subscription ends.
+// when the subscription ends. On teardown it flushes events already queued so a
+// terminal event is delivered rather than dropped.
 func (s *subscriber) forward() {
 	defer close(s.out)
 	for {
 		select {
 		case <-s.done:
+			s.flush()
 			return
 		case event := <-s.stash:
 			select {
 			case s.out <- event:
 			case <-s.done:
+				s.deliver(event)
+				s.flush()
 				return
 			}
+		}
+	}
+}
+
+// deliver sends one event to the output, giving up after a short bound.
+func (s *subscriber) deliver(event agents.NormalizedEvent) {
+	select {
+	case s.out <- event:
+	case <-time.After(piDeliverTimeout):
+	}
+}
+
+// flush delivers the subscriber's already-queued events to its output.
+func (s *subscriber) flush() {
+	for {
+		select {
+		case event := <-s.stash:
+			s.deliver(event)
+		default:
+			return
 		}
 	}
 }

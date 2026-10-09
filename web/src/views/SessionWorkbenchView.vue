@@ -22,9 +22,11 @@ const selectedInstanceId = ref('')
 const sessionTitle = ref('')
 const sessionModel = ref('')
 const creating = ref(false)
+const discovering = ref(false)
 const sending = ref(false)
 const messageText = ref('')
 const busy = ref(false)
+const toolNotice = ref('')
 
 const activeSession = computed(() => sessions.activeSession)
 const activeMessages = computed<ChatEntry[]>(() =>
@@ -66,6 +68,15 @@ const activeModelSelection = computed(
   () => activeSession.value?.capabilities.modelSelection === true,
 )
 
+// Native-session discovery is offered only for an instance whose backend
+// declares it; the selected instance's backend is consulted, since the action
+// runs before any session exists.
+const discoverAvailable = computed(() => {
+  const instance = agents.instances.find((entry) => entry.id === selectedInstanceId.value)
+  if (!instance) return false
+  return agents.capabilitiesFor(instance.backend)?.sessionDiscovery === true
+})
+
 onMounted(load)
 onBeforeUnmount(() => sessions.unsubscribeAll())
 
@@ -99,6 +110,21 @@ async function createSession() {
     sessions.activateSession(projectId.value, created.id)
   }
   creating.value = false
+}
+
+async function discover() {
+  if (selectedInstanceId.value === '' || discovering.value) return
+  discovering.value = true
+  await sessions.discoverNativeSessions(projectId.value, selectedInstanceId.value)
+  discovering.value = false
+}
+
+// The frozen adapter contract exposes no method to answer a tool-permission
+// request, so even a backend that advertised toolConfirmation could not be
+// driven from here. The handlers are bound so the control never emits into the
+// void; they surface the limitation instead.
+function onToolDecision() {
+  toolNotice.value = '此后端未提供工具确认接口，工作台无法批准或拒绝工具调用。'
 }
 
 async function send() {
@@ -175,6 +201,16 @@ function reconnect() {
           <button type="submit" class="create" :disabled="creating || selectedInstanceId === ''">
             新建会话
           </button>
+          <button
+            v-if="discoverAvailable"
+            type="button"
+            class="discover"
+            data-test="discover-sessions"
+            :disabled="discovering || selectedInstanceId === ''"
+            @click="discover"
+          >
+            发现原生会话
+          </button>
         </form>
 
         <SessionList
@@ -195,6 +231,10 @@ function reconnect() {
           <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
           <p class="session-status" role="status" aria-live="polite">
             状态：{{ activeSession.status === 'active' ? '进行中' : activeSession.status === 'stopped' ? '已停止' : '已断开' }}
+          </p>
+
+          <p class="history-note" data-test="history-note">
+            历史消息由 Agent 原生保存；工作台仅显示本次打开后的实时事件流，不会回放此前的会话记录。
           </p>
 
           <MessageView
@@ -220,7 +260,11 @@ function reconnect() {
             @update:model="sessionModel = $event"
             @stop="stop"
             @continue="resume"
+            @confirm-tool="onToolDecision"
+            @deny-tool="onToolDecision"
           />
+
+          <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
 
           <form class="send" @submit.prevent="send">
             <label for="message-text">发送消息</label>
@@ -318,6 +362,17 @@ function reconnect() {
 
 .page-error {
   color: #b91c1c;
+}
+
+.history-note {
+  margin: 0 0 0.5rem;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.tool-notice {
+  color: #92400e;
+  font-size: 0.85rem;
 }
 
 .empty {

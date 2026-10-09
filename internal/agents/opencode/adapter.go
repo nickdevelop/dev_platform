@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"devplatform/internal/agents"
 )
@@ -82,11 +83,14 @@ type Adapter struct {
 }
 
 // launchResult is a started opencode server: the client bound to it, its
-// endpoint, and the teardown hook that terminates the process.
+// endpoint, the teardown hook that terminates the process, and a channel that
+// closes when the server process exits. done is nil for launchers that have no
+// process (for example a test double), in which case no process watcher runs.
 type launchResult struct {
 	client   *Client
 	endpoint string
 	stop     func(context.Context) error
+	done     <-chan struct{}
 }
 
 // launcher starts one server in a directory. It is a field so tests can inject
@@ -305,7 +309,14 @@ func (a *Adapter) checkAPI(ctx context.Context, supported agents.SupportedVersio
 			unreachable = append(unreachable, fmt.Sprintf("instance %s at %s (%s)", target.id, target.endpoint, redactSecrets(err.Error())))
 			continue
 		}
-		if parsed, ok := agents.ParseVersion(info.Version); ok && !parsed.InRange(supported) {
+		parsed, ok := agents.ParseVersion(info.Version)
+		if !ok {
+			// Never treat an unparseable server version as compatible: the
+			// instance cannot be verified, so surface it as a warning.
+			mismatched = append(mismatched, fmt.Sprintf("instance %s reported an unparseable API version %q", target.id, truncate(redactSecrets(info.Version))))
+			continue
+		}
+		if !parsed.InRange(supported) {
 			mismatched = append(mismatched, fmt.Sprintf("instance %s reports API version %s", target.id, parsed))
 		}
 	}
@@ -396,6 +407,12 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	a.instances[id] = inst
 	a.mu.Unlock()
 
+	// Watch the server process so an unexpected exit is reported as a failed
+	// instance instead of a silently dead "running" one (finding 2).
+	if result.done != nil {
+		go a.watchProcess(inst, result.done)
+	}
+
 	return &agents.Instance{
 		ID:        id,
 		Backend:   agents.BackendOpenCodeV2,
@@ -405,6 +422,29 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
+}
+
+// watchProcess observes the launched server process. If it exits while the
+// instance is still considered active — that is, not because StopInstance tore
+// it down — the instance is marked failed and its stream closed, so the
+// platform record and dependent sessions stop reporting a usable instance whose
+// server is gone. A normal stop (which sets closed before killing the process)
+// is never misreported as a failure.
+func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
+	select {
+	case <-inst.ctx.Done():
+		return
+	case <-procDone:
+	}
+	if !inst.active() {
+		return
+	}
+	a.mu.Lock()
+	if a.instances[inst.id] == inst {
+		delete(a.instances, inst.id)
+	}
+	a.mu.Unlock()
+	inst.fail("opencode server process exited unexpectedly")
 }
 
 // StopInstance terminates the instance's server and closes its event stream.
@@ -667,6 +707,28 @@ func (inst *instance) stop(ctx context.Context) error {
 		return inst.proc.stop(ctx)
 	}
 	return nil
+}
+
+// fail marks the instance failed after its backend went away without a stop.
+// It publishes an instance-scoped lifecycle event carrying the failed state so
+// the platform's applyLifecycle accepts the transition (running -> failed) and
+// dependent sessions reconcile to disconnected, then tears the instance down
+// exactly like a stop. It is idempotent.
+func (inst *instance) fail(detail string) {
+	event := inst.event("")
+	event.Type = agents.EventLifecycle
+	event.Lifecycle = &agents.LifecycleEvent{State: string(agents.InstanceFailed), Detail: truncate(redactSecrets(detail))}
+	inst.publish(event)
+
+	inst.mu.Lock()
+	if inst.closed {
+		inst.mu.Unlock()
+		return
+	}
+	inst.closed = true
+	close(inst.done)
+	inst.mu.Unlock()
+	inst.cancel()
 }
 
 // registerSession remembers a native session so its events are routed to this
@@ -1123,20 +1185,54 @@ func newSubscriber() *subscriber {
 	}
 }
 
+// drainTimeout bounds how long forward waits to flush an already-queued event
+// to a consumer at teardown, so a terminal event is not lost while a gone
+// consumer can never block the goroutine forever.
+const drainTimeout = 100 * time.Millisecond
+
 // forward copies the subscriber's stash to its output and closes the output
-// when the subscription ends.
+// when the subscription ends. On teardown it flushes events already queued
+// (for example a terminal `failed` lifecycle published immediately before the
+// instance was torn down) so the consumer sees them before the channel closes.
 func (s *subscriber) forward() {
 	defer close(s.out)
 	for {
 		select {
-		case <-s.done:
-			return
 		case event := <-s.stash:
 			select {
 			case s.out <- event:
 			case <-s.done:
+				// The subscription ended, but this event was already read
+				// from the stash: deliver it (bounded) before flushing the
+				// rest, so a terminal event is never dropped.
+				s.deliver(event)
+				s.flush()
 				return
 			}
+		case <-s.done:
+			s.flush()
+			return
+		}
+	}
+}
+
+// deliver sends one event to the output, giving up after drainTimeout so a
+// gone consumer cannot wedge the goroutine.
+func (s *subscriber) deliver(event agents.NormalizedEvent) {
+	select {
+	case s.out <- event:
+	case <-time.After(drainTimeout):
+	}
+}
+
+// flush delivers the subscriber's already-queued events to its output.
+func (s *subscriber) flush() {
+	for {
+		select {
+		case event := <-s.stash:
+			s.deliver(event)
+		default:
+			return
 		}
 	}
 }
@@ -1321,12 +1417,17 @@ func sameDirectory(a, b string) bool {
 	return resolvedA == resolvedB
 }
 
-// truncate bounds a diagnostic string.
+// truncate bounds a diagnostic string. It backs off to a UTF-8 rune boundary so
+// a multi-byte character is never split into invalid bytes.
 func truncate(value string) string {
 	if len(value) <= maxEventBytes {
 		return value
 	}
-	return value[:maxEventBytes] + "…(truncated)"
+	cut := maxEventBytes
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut] + "…(truncated)"
 }
 
 // freePort asks the OS for an unused loopback port.
@@ -1401,6 +1502,7 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	return &launchResult{
 		client:   client,
 		endpoint: endpoint,
+		done:     process.done,
 		stop: func(stopCtx context.Context) error {
 			_ = killProcessGroup(command.Process)
 			waited := make(chan error, 1)

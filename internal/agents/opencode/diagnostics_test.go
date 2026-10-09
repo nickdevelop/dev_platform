@@ -263,4 +263,24 @@ func TestAdapterDiagnosticsAPIProbesRunningInstances(t *testing.T) {
 			t.Errorf("message %q must name the instance and the remedy", api.Message)
 		}
 	})
+
+	t.Run("unparseable api version is a warning, not silently ok", func(t *testing.T) {
+		adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+			"GET /api/info": func(w http.ResponseWriter, r *http.Request) {
+				io.WriteString(w, `{"version":"build-unknown","pid":7}`)
+			},
+		}))
+		adapter.versionProbe = versionStub("opencode v2.0.24", nil)
+		startTestInstance(t, adapter)
+
+		report := adapter.Diagnostics(context.Background())
+
+		api := report.Checks[2]
+		if api.Kind != agents.DiagnosticAPI || api.Status != agents.DiagnosticWarning {
+			t.Fatalf("api check = %+v, want a warning for an unparseable server version", api)
+		}
+		if !strings.Contains(api.Message, "unparseable") {
+			t.Errorf("message %q should call out the unparseable version", api.Message)
+		}
+	})
 }

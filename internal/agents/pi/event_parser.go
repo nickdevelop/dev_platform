@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"devplatform/internal/agents"
 )
@@ -399,10 +400,15 @@ func firstNonEmpty(values ...string) string {
 }
 
 // truncate bounds a string to maxStderrBytes so diagnostics cannot grow the
-// event unboundedly.
+// event unboundedly. It backs off to a UTF-8 rune boundary so a multi-byte
+// character is never split into invalid bytes.
 func truncate(value string) string {
 	if len(value) <= maxStderrBytes {
 		return value
 	}
-	return value[:maxStderrBytes] + "…(truncated)"
+	cut := maxStderrBytes
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut] + "…(truncated)"
 }

@@ -24,6 +24,9 @@ type recordingLauncher struct {
 	client    *Client
 	endpoint  string
 	launchErr error
+	// done, when set, stands in for the server process's exit channel so a
+	// test can simulate the process going away.
+	done chan struct{}
 
 	mu    sync.Mutex
 	stops int
@@ -36,6 +39,7 @@ func (l *recordingLauncher) launch(_ context.Context, _ string) (*launchResult, 
 	return &launchResult{
 		client:   l.client,
 		endpoint: l.endpoint,
+		done:     l.done,
 		stop: func(context.Context) error {
 			l.mu.Lock()
 			l.stops++
@@ -583,6 +587,60 @@ func TestAdapterStreamDisconnectEmitsError(t *testing.T) {
 			}
 		case <-timeout:
 			t.Fatal("timed out waiting for the stream error")
+		}
+	}
+}
+
+// TestAdapterProcessExitMarksInstanceFailed verifies finding 2: when the
+// launched server process exits on its own, the adapter emits an
+// instance-scoped lifecycle event carrying the failed state (so the platform's
+// applyLifecycle accepts it) and the instance stops accepting work.
+func TestAdapterProcessExitMarksInstanceFailed(t *testing.T) {
+	adapter, launcher, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	launcher.done = make(chan struct{})
+	instance := startTestInstance(t, adapter)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	// The server process exits.
+	close(launcher.done)
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				t.Fatal("channel closed before the failed lifecycle event")
+			}
+			if ev.Type == agents.EventLifecycle && ev.Lifecycle != nil {
+				if ev.Lifecycle.State != string(agents.InstanceFailed) {
+					t.Fatalf("lifecycle state = %q, want %q", ev.Lifecycle.State, agents.InstanceFailed)
+				}
+				if ev.SessionID != "" {
+					t.Fatalf("instance-scoped lifecycle event carries session %q, want empty", ev.SessionID)
+				}
+				// The instance no longer accepts work.
+				if _, err := adapter.CreateSession(ctx, instance.ID, agents.CreateSessionOptions{}); err == nil {
+					t.Fatal("CreateSession succeeded on an instance whose process exited")
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for the failed lifecycle event")
 		}
 	}
 }

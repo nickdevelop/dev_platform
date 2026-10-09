@@ -13,9 +13,9 @@ import (
 )
 
 // TestDiagnosticsCollectsRegisteredBackends verifies the session service
-// surfaces the registry's diagnostics: a reporting backend passes its report
-// through, a panicking adapter becomes an error report, and an adapter without
-// diagnostics support is still reported with an unknown status.
+// surfaces a registered backend's diagnostics report through to the caller.
+// The collector's own isolation behavior (a panicking adapter, or one without
+// diagnostics support) is covered in internal/agents/diagnostics_test.go.
 func TestDiagnosticsCollectsRegisteredBackends(t *testing.T) {
 	env := newTestEnv(t)
 

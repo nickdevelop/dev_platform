@@ -2,14 +2,19 @@ package instances
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -338,6 +343,106 @@ func TestStartAssociatesProjectAndPersistsInstance(t *testing.T) {
 	}
 }
 
+// TestBackendEnableDisableGatesStart proves finding 3: a backend defaults to
+// enabled, an operator can disable it per project, a disabled backend cannot be
+// started, and re-enabling restores starting.
+func TestBackendEnableDisableGatesStart(t *testing.T) {
+	svc, _, projectID, _, fake := newTestService(t)
+
+	// Default: enabled without any stored config.
+	configs, err := svc.Backends(projectID)
+	if err != nil {
+		t.Fatalf("Backends: %v", err)
+	}
+	if len(configs) != 1 || configs[0].Backend != agents.BackendPi || !configs[0].Enabled {
+		t.Fatalf("default configs = %+v, want pi enabled", configs)
+	}
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
+		t.Fatalf("Start with the default (enabled) backend: %v", err)
+	}
+
+	// Disable it, and prove starting is refused without invoking the adapter.
+	if _, err := svc.SetBackendEnabled(projectID, agents.BackendPi, false); err != nil {
+		t.Fatalf("SetBackendEnabled(false): %v", err)
+	}
+	before := fake.startCount()
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); !errors.Is(err, ErrBackendDisabled) {
+		t.Fatalf("Start on a disabled backend error = %v, want ErrBackendDisabled", err)
+	}
+	if got := fake.startCount(); got != before {
+		t.Errorf("adapter was started %d times for a disabled backend, want %d", got, before)
+	}
+	configs, err = svc.Backends(projectID)
+	if err != nil {
+		t.Fatalf("Backends after disable: %v", err)
+	}
+	if configs[0].Enabled {
+		t.Errorf("configs after disable = %+v, want pi disabled", configs)
+	}
+
+	// Re-enabling restores the ability to start (upsert, no duplicate rows).
+	if _, err := svc.SetBackendEnabled(projectID, agents.BackendPi, true); err != nil {
+		t.Fatalf("SetBackendEnabled(true): %v", err)
+	}
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
+		t.Fatalf("Start after re-enable: %v", err)
+	}
+	var count int64
+	if err := svc.db.Model(&database.AgentBackendConfig{}).Count(&count).Error; err != nil {
+		t.Fatalf("count backend configs: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("backend config rows = %d, want 1 (upsert, not duplicate)", count)
+	}
+
+	if _, err := svc.SetBackendEnabled(projectID, "claude-code", true); !errors.Is(err, ErrUnknownBackend) {
+		t.Errorf("SetBackendEnabled unknown backend error = %v, want ErrUnknownBackend", err)
+	}
+}
+
+// TestBackendConfigRoutes proves the per-project backend config routes: GET
+// lists the state, PUT toggles it, and starting a disabled backend maps to a
+// 409 backend_disabled.
+func TestBackendConfigRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, _, projectID, _, _ := newTestService(t)
+
+	router := gin.New()
+	svc.RegisterRoutes(router)
+	base := fmt.Sprintf("/projects/%d/agent-backends", projectID)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base, nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"pi"`) {
+		t.Fatalf("GET %s = %d %s", base, rec.Code, rec.Body.String())
+	}
+
+	body := strings.NewReader(`{"enabled":false}`)
+	req := httptest.NewRequest(http.MethodPut, base+"/pi", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT %s/pi = %d %s", base, rec.Code, rec.Body.String())
+	}
+	var config BackendConfig
+	if err := json.Unmarshal(rec.Body.Bytes(), &config); err != nil {
+		t.Fatalf("decode config: %v", err)
+	}
+	if config.Backend != agents.BackendPi || config.Enabled {
+		t.Errorf("config = %+v, want pi disabled", config)
+	}
+
+	// Starting the disabled backend is a 409 with the documented code.
+	startReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/instances", projectID), strings.NewReader(`{"backend":"pi"}`))
+	startReq.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, startReq)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "backend_disabled") {
+		t.Fatalf("POST disabled instance = %d %s, want 409 backend_disabled", rec.Code, rec.Body.String())
+	}
+}
+
 func TestStartRejectsUnknownProject(t *testing.T) {
 	svc, db, _, _, fake := newTestService(t)
 
@@ -568,6 +673,77 @@ func TestLifecycleEventUpdatesOnlyItsInstance(t *testing.T) {
 	if survivor.Status != agents.InstanceRunning {
 		t.Errorf("second instance status = %q after the first failed, want running", survivor.Status)
 	}
+}
+
+// TestCloseStopsAllLiveInstances proves the shutdown seam: every running or
+// starting instance is stopped via its adapter on Close, and an instance that
+// is already terminal is left alone. It also proves one adapter failure does
+// not prevent the others from being stopped.
+func TestCloseStopsAllLiveInstances(t *testing.T) {
+	t.Run("stops every live instance", func(t *testing.T) {
+		svc, _, projectID, _, fake := newTestService(t)
+		first, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+		if err != nil {
+			t.Fatalf("Start first: %v", err)
+		}
+		second, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+		if err != nil {
+			t.Fatalf("Start second: %v", err)
+		}
+		// A terminal instance must not be stopped again.
+		if _, err := svc.Stop(context.Background(), first.ID); err != nil {
+			t.Fatalf("Stop first: %v", err)
+		}
+		fake.mu.Lock()
+		fake.stopped = nil
+		fake.mu.Unlock()
+
+		if err := svc.Close(context.Background()); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+		for _, id := range []string{first.ID, second.ID} {
+			got, err := svc.Get(id)
+			if err != nil {
+				t.Fatalf("Get %s: %v", id, err)
+			}
+			if got.Status != agents.InstanceStopped {
+				t.Errorf("instance %s status = %q, want stopped", id, got.Status)
+			}
+		}
+		if stopped := fake.stoppedIDs(); len(stopped) != 1 || stopped[0] != second.ID {
+			t.Errorf("adapter stopped %v, want only the still-live [%s]", stopped, second.ID)
+		}
+	})
+
+	t.Run("reports failures without skipping other instances", func(t *testing.T) {
+		svc, _, projectID, _, fake := newTestService(t)
+		first, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+		if err != nil {
+			t.Fatalf("Start first: %v", err)
+		}
+		if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
+			t.Fatalf("Start second: %v", err)
+		}
+		fake.mu.Lock()
+		fake.stopErr = errors.New("adapter boom")
+		fake.mu.Unlock()
+
+		err = svc.Close(context.Background())
+		if err == nil {
+			t.Fatal("Close with a failing adapter returned nil, want the joined error")
+		}
+		// The failing stop is still attempted once per live instance.
+		if got := fake.stopCallCount(); got != 2 {
+			t.Errorf("adapter StopInstance calls = %d, want 2 (one per live instance)", got)
+		}
+		got, getErr := svc.Get(first.ID)
+		if getErr != nil {
+			t.Fatalf("Get: %v", getErr)
+		}
+		if got.Status != agents.InstanceFailed {
+			t.Errorf("failed-stop instance status = %q, want failed", got.Status)
+		}
+	})
 }
 
 func TestSubscribeRejectsUnknownOrStoppedInstance(t *testing.T) {

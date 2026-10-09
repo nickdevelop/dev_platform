@@ -248,6 +248,18 @@ func runServer(args []string) error {
 	instanceService := instances.NewService(db, registry, projectService)
 	sessionService := sessions.NewService(db, registry, instanceService)
 
+	// Stop every live agent instance before the database is closed and the
+	// data-directory lock released, so no `opencode serve` server or pi child
+	// process outlives the platform (finding 1). Defers unwind LIFO, so this
+	// runs before closeDatabase and lock.Release.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := instanceService.Close(closeCtx); err != nil {
+			log.Printf("agent instance shutdown: %v", err)
+		}
+	}()
+
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:       authService,
 		Workspaces: workspaces.NewService(db),

@@ -229,7 +229,7 @@ describe('session list', () => {
     expect(open.attributes('role')).toBe('button')
     expect(open.attributes('tabindex')).toBe('0')
 
-    open.element.focus()
+    ;(open.element as HTMLElement).focus()
     expect(document.activeElement).toBe(open.element)
 
     await open.trigger('keydown', { key: 'Enter' })
@@ -632,5 +632,78 @@ describe('session workbench view', () => {
 
     const sent = calls.find((call) => call.method === 'POST' && call.path.endsWith('/messages'))
     expect(sent?.body).toEqual({ text: 'hello' })
+  })
+
+  it('offers a discover-native-sessions action that merges results without duplicates', async () => {
+    const existing = session({ id: 'sess-1', title: 'Existing' })
+    const discovered = session({ id: 'sess-2', title: 'Discovered' })
+    const calls = stubRoutes([
+      ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [existing] } }],
+      [
+        'GET',
+        '/api/projects/1/instances/inst-1/sessions',
+        { status: 200, body: { sessions: [discovered, existing] } },
+      ],
+      [
+        'GET',
+        '/api/projects/1/instances',
+        { status: 200, body: { instances: [instance({ id: 'inst-1', backend: 'pi' })] } },
+      ],
+      [
+        'GET',
+        '/api/agent-backends',
+        {
+          status: 200,
+          body: {
+            backends: [
+              { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true, streaming: true }) },
+            ],
+          },
+        },
+      ],
+    ])
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const { wrapper } = await mountWorkbench()
+    const button = wrapper.find('[data-test="discover-sessions"]')
+    expect(button.exists()).toBe(true)
+
+    await button.trigger('click')
+    await flushPromises()
+
+    // The discovered session is merged; the already-known one is not duplicated.
+    expect(wrapper.findAll('.session-item')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Discovered')
+    const discoveredCall = calls.find((call) => call.path.endsWith('/instances/inst-1/sessions'))
+    expect(discoveredCall).toBeTruthy()
+  })
+})
+
+describe('project backend enable/disable store', () => {
+  it('loads and toggles a backend, reflecting the new state locally', async () => {
+    const calls = stubRoutes([
+      [
+        'GET',
+        '/api/projects/1/agent-backends',
+        { status: 200, body: { backends: [{ backend: 'pi', enabled: true }] } },
+      ],
+      [
+        'PUT',
+        '/api/projects/1/agent-backends/pi',
+        { status: 200, body: { backend: 'pi', enabled: false } },
+      ],
+    ])
+    const { agents, auth } = setupStores()
+    auth.csrfToken = 'csrf-1'
+
+    await agents.loadBackendConfigs(1)
+    expect(agents.backendEnabledFor('pi')).toBe(true)
+
+    const updated = await agents.setBackendEnabled(1, 'pi', false)
+    expect(updated?.enabled).toBe(false)
+    expect(agents.backendEnabledFor('pi')).toBe(false)
+
+    const put = calls.find((call) => call.method === 'PUT')
+    expect(put?.body).toEqual({ enabled: false })
   })
 })
