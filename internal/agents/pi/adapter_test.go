@@ -490,6 +490,116 @@ func TestRegisterInstallsDefaultAdapter(t *testing.T) {
 	}
 }
 
+// TestAdapterStopRacingSendReapsProcess reproduces the stop/send interleaving
+// where the instance closes after the process was started but before it was
+// registered: attachProcess must still reap the child, leaving no zombie.
+func TestAdapterStopRacingSendReapsProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process liveness check requires a unix shell")
+	}
+	dir := t.TempDir()
+	fake := writeFakePi(t, dir, sleepingFakePi)
+	pidFile := filepath.Join(dir, "pid.txt")
+	t.Setenv("FAKE_PI_PID", pidFile)
+
+	adapter := newTestAdapter(t, fake, "")
+	ctx := context.Background()
+	started, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := adapter.getInstance(started.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The process is started under the instance context, exactly as
+	// SendMessage starts it, and is deliberately left unregistered.
+	proc, err := startProcess(inst.ctx, processSpec{
+		executable: fake,
+		args:       []string{"--mode", "json", "--", "race"},
+		dir:        dir,
+	})
+	if err != nil {
+		t.Fatalf("startProcess() error = %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(waitForFile(t, pidFile))))
+	if err != nil {
+		t.Fatalf("parse pid: %v", err)
+	}
+
+	// Stop first: the snapshot cannot contain the unregistered process.
+	inst.stop(ctx)
+
+	// Now the racing send tries to attach it: it must be refused and reaped.
+	if attached := inst.attachProcess(proc, "sess-race"); attached {
+		t.Fatal("attachProcess() registered a process on a stopped instance")
+	}
+	waitReaped(t, pid)
+}
+
+// TestAdapterStopForgetsSessionMetadata proves stopping an instance drops its
+// session entries (no unbounded growth) without touching other instances.
+func TestAdapterStopForgetsSessionMetadata(t *testing.T) {
+	dir := t.TempDir()
+	fake := writeFakePi(t, dir, streamingFakePi)
+	adapter := newTestAdapter(t, fake, "")
+	ctx := context.Background()
+
+	first, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, instanceID := range []string{first.ID, first.ID, second.ID} {
+		if _, err := adapter.CreateSession(ctx, instanceID, agents.CreateSessionOptions{}); err != nil {
+			t.Fatalf("CreateSession(%s): %v", instanceID, err)
+		}
+	}
+	if got := sessionCount(adapter); got != 3 {
+		t.Fatalf("session entries = %d, want 3", got)
+	}
+
+	if err := adapter.StopInstance(ctx, first.ID); err != nil {
+		t.Fatalf("StopInstance() error = %v", err)
+	}
+	if got := sessionCount(adapter); got != 1 {
+		t.Fatalf("session entries after stop = %d, want 1 (only the other instance)", got)
+	}
+
+	// A create that races the teardown must not resurrect an entry.
+	if _, err := adapter.CreateSession(ctx, first.ID, agents.CreateSessionOptions{}); err == nil {
+		t.Error("CreateSession on a stopped instance = nil, want error")
+	}
+	if got := sessionCount(adapter); got != 1 {
+		t.Errorf("session entries = %d after a post-stop create, want 1", got)
+	}
+}
+
+// sessionCount reports how many session metadata entries the adapter holds.
+func sessionCount(adapter *Adapter) int {
+	adapter.mu.Lock()
+	defer adapter.mu.Unlock()
+	return len(adapter.sessions)
+}
+
+// waitReaped polls until the pid is no longer signalable, i.e. the child has
+// been reaped rather than left as a zombie (a zombie still answers signal 0).
+func waitReaped(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := syscall.Kill(pid, 0); err != nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("process %d was not reaped", pid)
+}
+
 // containsSequence reports whether args contains the given adjacent pair.
 func containsSequence(args []string, a, b string) bool {
 	for i := 0; i+1 < len(args); i++ {

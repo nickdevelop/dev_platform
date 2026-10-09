@@ -215,6 +215,15 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	inst, ok := a.instances[instanceID]
 	if ok {
 		delete(a.instances, instanceID)
+		// Drop the instance's session metadata with the instance so the
+		// adapter's session map cannot grow without bound. Doing this under
+		// the same lock that CreateSession re-checks the instance under makes
+		// the teardown atomic with respect to session creation.
+		for key := range a.sessions {
+			if key.instanceID == instanceID {
+				delete(a.sessions, key)
+			}
+		}
 	}
 	a.mu.Unlock()
 	if !ok {
@@ -262,6 +271,12 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		return nil, fmt.Errorf("pi: allocate session id: %w", err)
 	}
 	a.mu.Lock()
+	// Re-check under the adapter lock: a stop that deleted the instance while
+	// this call was in flight must not leave a session entry behind.
+	if a.instances[instanceID] != inst {
+		a.mu.Unlock()
+		return nil, fmt.Errorf("pi: instance %q is not running", instanceID)
+	}
 	a.sessions[sessionKey{instanceID: instanceID, sessionID: id}] = &sessionState{title: options.Title, model: options.Model}
 	a.mu.Unlock()
 
@@ -353,11 +368,9 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if err != nil {
 		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
 	}
-	if !inst.addProcess(proc) {
-		proc.kill()
+	if !inst.attachProcess(proc, ref.SessionID) {
 		return fmt.Errorf("pi: instance %q is stopping", ref.InstanceID)
 	}
-	go inst.runProcess(proc, ref.SessionID)
 	return nil
 }
 
@@ -519,6 +532,19 @@ func (inst *instance) addProcess(proc *process) bool {
 	}
 	inst.procs[proc] = struct{}{}
 	return true
+}
+
+// attachProcess hands a freshly started process to exactly one reaper. It
+// reports whether the process was registered before the instance stopped; when
+// it was not, the process is killed and still reaped by runProcess, so a stop
+// racing a send can never leave an unreaped (zombie) child.
+func (inst *instance) attachProcess(proc *process, sessionID string) bool {
+	registered := inst.addProcess(proc)
+	if !registered {
+		proc.kill()
+	}
+	go inst.runProcess(proc, sessionID)
+	return registered
 }
 
 // removeProcess drops a reaped process.
