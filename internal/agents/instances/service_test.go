@@ -54,6 +54,14 @@ type fakeAdapter struct {
 	started []string
 	stopped []string
 
+	// stopCalls counts every StopInstance entry, including calls that block
+	// (stopBlock) or fail (stopErr), so concurrency tests can assert the
+	// adapter is invoked exactly once.
+	stopCalls int
+	// stopBlock, when non-nil, makes StopInstance record the call and then
+	// block until the channel is closed, widening the concurrent-stop window.
+	stopBlock chan struct{}
+
 	subs  map[string]chan agents.NormalizedEvent
 	subEr map[string]error
 }
@@ -87,17 +95,33 @@ func (f *fakeAdapter) StartInstance(_ context.Context, req agents.StartInstanceR
 
 func (f *fakeAdapter) StopInstance(_ context.Context, instanceID string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
+	f.stopCalls++
 	if f.stopErr != nil {
-		return f.stopErr
+		err := f.stopErr
+		f.mu.Unlock()
+		return err
 	}
 	f.stopped = append(f.stopped, instanceID)
+	block := f.stopBlock
+	f.mu.Unlock()
+
+	if block != nil {
+		<-block
+	}
+
+	f.mu.Lock()
 	if ch, ok := f.subs[instanceID]; ok {
 		close(ch)
 		delete(f.subs, instanceID)
 	}
+	f.mu.Unlock()
 	return nil
+}
+
+func (f *fakeAdapter) stopCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.stopCalls
 }
 
 func (f *fakeAdapter) ListSessions(context.Context, string) ([]agents.SessionRef, error) {
@@ -562,5 +586,176 @@ func TestSubscribeRejectsUnknownOrStoppedInstance(t *testing.T) {
 	}
 	if _, err := svc.Subscribe(context.Background(), inst.ID); !errors.Is(err, ErrInstanceNotRunning) {
 		t.Errorf("Subscribe stopped error = %v, want ErrInstanceNotRunning", err)
+	}
+}
+
+// waitClosed drains ch until it closes, failing the test if it does not.
+func waitClosed(t *testing.T, ch <-chan agents.NormalizedEvent) {
+	t.Helper()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("event channel did not close")
+		}
+	}
+}
+
+// TestAddSubscriberRefusesFinishedStream reproduces finding 1 deterministically:
+// runStream finishes the stream (nil-ing st.subscribers) before addSubscriber
+// registers. Registering must be refused instead of assigning to the nil map.
+func TestAddSubscriberRefusesFinishedStream(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t)
+	inst, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	st := &stream{cancel: func() {}, subscribers: make(map[*subscriber]struct{})}
+	finished := make(chan agents.NormalizedEvent)
+	close(finished)
+	// runStream processes the already-closed upstream and marks the stream
+	// finished before returning.
+	svc.runStream(inst.ID, agents.BackendPi, st, finished)
+
+	sub, ok := svc.addSubscriber(context.Background(), inst.ID, st)
+	if ok {
+		t.Fatal("addSubscriber accepted a subscriber on an already-finished stream")
+	}
+	if _, open := <-sub.out; open {
+		t.Fatal("refused subscriber's output channel is not closed")
+	}
+}
+
+// TestSubscribeRacesStreamCompletionWithoutPanic stresses the subscribe path
+// against stream completion many times so the finish/register interleaving is
+// exercised under -race without writing to a nil subscriber map.
+func TestSubscribeRacesStreamCompletionWithoutPanic(t *testing.T) {
+	svc, _, _, _, _ := newTestService(t)
+	finished := make(chan agents.NormalizedEvent)
+	close(finished)
+
+	for i := 0; i < 200; i++ {
+		instanceID := fmt.Sprintf("race-%d", i)
+		st := &stream{cancel: func() {}, subscribers: make(map[*subscriber]struct{})}
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			svc.runStream(instanceID, agents.BackendPi, st, finished)
+		}()
+		for j := 0; j < 4; j++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sub, ok := svc.addSubscriber(context.Background(), instanceID, st)
+				if !ok {
+					if _, open := <-sub.out; open {
+						t.Errorf("refused subscriber's output channel is open")
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+// TestSubscriberCleanupExitsWhenStreamFinishes proves finding 2's fix: the
+// cleanup goroutine exits on stream completion even though the caller's context
+// is never canceled.
+func TestSubscriberCleanupExitsWhenStreamFinishes(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t)
+	inst, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	// A context that is never canceled: only the subscriber's own done channel
+	// (closed by finishStream) can wake the cleanup goroutine.
+	events, err := svc.Subscribe(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	if _, err := svc.Stop(context.Background(), inst.ID); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	waitClosed(t, events)
+
+	// If the cleanup goroutine still waited only on ctx.Done, this Wait would
+	// block forever.
+	exited := make(chan struct{})
+	go func() {
+		svc.cleanup.Wait()
+		close(exited)
+	}()
+	select {
+	case <-exited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("subscriber cleanup goroutine did not exit after the stream finished")
+	}
+}
+
+// TestConcurrentStopInvokesAdapterOnce proves finding 3's fix: concurrent Stop
+// calls on one instance are single-flight, so the adapter is invoked exactly
+// once even though every caller starts from a running instance. The adapter
+// blocks inside StopInstance so every caller overlaps the running status.
+func TestConcurrentStopInvokesAdapterOnce(t *testing.T) {
+	svc, _, projectID, _, fake := newTestService(t)
+	inst, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	release := make(chan struct{})
+	fake.mu.Lock()
+	fake.stopBlock = release
+	fake.mu.Unlock()
+
+	const callers = 4
+	var wg sync.WaitGroup
+	results := make([]Instance, callers)
+	errs := make([]error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = svc.Stop(context.Background(), inst.ID)
+		}(i)
+	}
+
+	// Wait until the adapter is in flight, then let the other callers run. The
+	// in-flight assertion is a fast signal; the final count below is the
+	// deterministic one because every adapter call blocks on release.
+	deadline := time.Now().Add(2 * time.Second)
+	for fake.stopCallCount() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if got := fake.stopCallCount(); got != 1 {
+		close(release)
+		wg.Wait()
+		t.Fatalf("adapter StopInstance called %d times while a stop was in flight, want 1", got)
+	}
+
+	close(release)
+	wg.Wait()
+
+	for i := range errs {
+		if errs[i] != nil {
+			t.Errorf("Stop[%d] error = %v, want nil", i, errs[i])
+		}
+		if results[i].Status != agents.InstanceStopped {
+			t.Errorf("Stop[%d] status = %q, want %q", i, results[i].Status, agents.InstanceStopped)
+		}
+	}
+	if got := fake.stopCallCount(); got != 1 {
+		t.Errorf("adapter StopInstance called %d times total, want exactly once", got)
 	}
 }

@@ -90,18 +90,38 @@ type Service struct {
 	// mu guards streams, the per-instance upstream subscriptions.
 	mu      sync.Mutex
 	streams map[string]*stream
+
+	// stopMu guards stopGates. stopGates gives every instance its own stop
+	// mutex so concurrent Stop calls on one instance are single-flight while
+	// stops of different instances still run concurrently.
+	stopMu    sync.Mutex
+	stopGates map[string]*stopGate
+
+	// cleanup tracks subscriber fan-out cleanup goroutines. finishStream
+	// closes the subscriber's done channel, which wakes its cleanup goroutine
+	// even when the subscriber's own context never ends; cleanup makes that
+	// exit observable (and lets a future Service shutdown await it).
+	cleanup sync.WaitGroup
+}
+
+// stopGate is a per-instance stop mutex with a reference count so the gate map
+// does not grow without bound as instances come and go.
+type stopGate struct {
+	mu   sync.Mutex
+	refs int
 }
 
 // NewService builds the instance service. registry resolves backend ids to
 // adapters; projects resolves project ids to authorized working directories.
 func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirectoryResolver) *Service {
 	return &Service{
-		db:       db,
-		registry: registry,
-		projects: projects,
-		newID:    randomID,
-		now:      func() time.Time { return time.Now().UTC() },
-		streams:  make(map[string]*stream),
+		db:        db,
+		registry:  registry,
+		projects:  projects,
+		newID:     randomID,
+		now:       func() time.Time { return time.Now().UTC() },
+		streams:   make(map[string]*stream),
+		stopGates: make(map[string]*stopGate),
 	}
 }
 
@@ -215,12 +235,24 @@ func (s *Service) Get(instanceID string) (Instance, error) {
 }
 
 // Stop terminates an instance and tears down its event fan-out. It is
-// idempotent: stopping an already stopped or failed instance returns that
-// instance unchanged without calling the adapter again. Stopping one instance
-// never affects another. Adapters are expected to treat a backend that is
-// already gone as a successful stop; an adapter error is surfaced and the
-// instance is marked failed so the failure stays visible.
+// idempotent, including under concurrency: a per-instance stop gate serializes
+// callers so only the first observes the running instance and invokes the
+// adapter, while the rest observe the terminal state it wrote. Stopping an
+// already stopped or failed instance returns that instance unchanged without
+// calling the adapter again. Stopping one instance never affects another.
+// Adapters are expected to treat a backend that is already gone as a
+// successful stop; an adapter error is surfaced and the instance is marked
+// failed so the failure stays visible.
 func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error) {
+	gate := s.acquireStopGate(instanceID)
+	gate.mu.Lock()
+	defer func() {
+		gate.mu.Unlock()
+		s.releaseStopGate(instanceID, gate)
+	}()
+
+	// Re-read under the gate: a caller that arrives second must observe the
+	// terminal state the first caller wrote rather than re-running the stop.
 	row, err := s.load(instanceID)
 	if err != nil {
 		return Instance{}, err
@@ -262,6 +294,33 @@ func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error)
 	return instanceFromModel(row), nil
 }
 
+// acquireStopGate returns the instance's stop gate, creating it on first use
+// and taking a reference so it is not reclaimed while a caller holds it.
+func (s *Service) acquireStopGate(instanceID string) *stopGate {
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+
+	gate, ok := s.stopGates[instanceID]
+	if !ok {
+		gate = &stopGate{}
+		s.stopGates[instanceID] = gate
+	}
+	gate.refs++
+	return gate
+}
+
+// releaseStopGate drops a caller's reference and removes the gate once no
+// caller holds it, so the gate map stays bounded.
+func (s *Service) releaseStopGate(instanceID string, gate *stopGate) {
+	s.stopMu.Lock()
+	defer s.stopMu.Unlock()
+
+	gate.refs--
+	if gate.refs == 0 && s.stopGates[instanceID] == gate {
+		delete(s.stopGates, instanceID)
+	}
+}
+
 // Subscribe returns a channel of the instance's normalized events. All
 // subscribers of one instance share a single upstream adapter subscription and
 // each gets an independent channel; events for other instances are never
@@ -285,7 +344,8 @@ func (s *Service) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 	if err != nil {
 		return nil, err
 	}
-	return s.addSubscriber(ctx, instanceID, st).out, nil
+	sub, _ := s.addSubscriber(ctx, instanceID, st)
+	return sub.out, nil
 }
 
 // resolveProject maps a project id to its authorized directory, translating
@@ -441,8 +501,13 @@ func (s *Service) closeStream(instanceID string) {
 	}
 }
 
-// addSubscriber registers a new subscriber and starts its forwarder.
-func (s *Service) addSubscriber(ctx context.Context, instanceID string, st *stream) *subscriber {
+// addSubscriber registers a new subscriber and starts its forwarder. It
+// returns false when the stream has already finished (finishStream nil-ed the
+// subscriber set), in which case the caller must not register: the returned
+// subscriber's output is already closed rather than risking a write to a nil
+// map. Registration and the finished check happen under the same lock that
+// finishStream holds while nil-ing the set, so the two are ordered safely.
+func (s *Service) addSubscriber(ctx context.Context, instanceID string, st *stream) (*subscriber, bool) {
 	sub := &subscriber{
 		stash: make(chan agents.NormalizedEvent, 32),
 		out:   make(chan agents.NormalizedEvent, 32),
@@ -450,16 +515,32 @@ func (s *Service) addSubscriber(ctx context.Context, instanceID string, st *stre
 	}
 
 	s.mu.Lock()
+	if st.subscribers == nil {
+		// The stream completed between streamFor and here; hand back a
+		// subscriber whose output is already closed (the documented contract
+		// is that the channel closes when the stream ends).
+		s.mu.Unlock()
+		close(sub.out)
+		return sub, false
+	}
 	st.subscribers[sub] = struct{}{}
 	s.mu.Unlock()
 
 	go sub.forward(ctx)
+	s.cleanup.Add(1)
 	go func() {
-		<-ctx.Done()
+		defer s.cleanup.Done()
+		// Wake on either the caller's context or the subscriber's own done
+		// channel, so stream completion / unsubscribe (which closes done)
+		// always exits this goroutine even if the context never ends.
+		select {
+		case <-ctx.Done():
+		case <-sub.done:
+		}
 		sub.once.Do(func() { close(sub.done) })
 		s.removeSubscriber(instanceID, st, sub)
 	}()
-	return sub
+	return sub, true
 }
 
 // removeSubscriber drops a canceled subscriber from its stream.
