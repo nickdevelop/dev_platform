@@ -13,7 +13,37 @@ package agents
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 )
+
+// secretPatterns are the credential shapes redacted from every diagnostic.
+// They are deliberately conservative: only clear token prefixes and key=value
+// or key: value pairs are masked, so ordinary diagnostics survive intact.
+var secretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\b(?:sk|rk|pk|ghp|gho|glpat)-[A-Za-z0-9._-]{6,}`),
+	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*`),
+	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)\b\s*[=:]\s*[^\s"',]+`),
+}
+
+// RedactSecrets masks the value of anything that looks like a credential in
+// operator-visible diagnostic text. Every diagnostics message — including the
+// collector's crash report and raw CLI version output — must pass through it,
+// so a credential can never reach the API response or the UI.
+func RedactSecrets(value string) string {
+	for _, pattern := range secretPatterns {
+		value = pattern.ReplaceAllStringFunc(value, func(match string) string {
+			if idx := strings.IndexAny(match, "=:"); idx >= 0 {
+				return match[:idx+1] + "[REDACTED]"
+			}
+			if space := strings.IndexAny(match, " \t"); space >= 0 {
+				return match[:space+1] + "[REDACTED]"
+			}
+			return "[REDACTED]"
+		})
+	}
+	return value
+}
 
 // DiagnosticKind classifies what a diagnostic inspected.
 type DiagnosticKind string
@@ -278,7 +308,7 @@ func collectBackendDiagnostics(ctx context.Context, id BackendID, adapter AgentA
 				Checks: []Diagnostic{{
 					Kind:    DiagnosticAdapter,
 					Status:  DiagnosticError,
-					Message: fmt.Sprintf("%s adapter crashed while collecting diagnostics: %v; the other backends are unaffected", id, recovered),
+					Message: fmt.Sprintf("%s adapter crashed while collecting diagnostics: %s; the other backends are unaffected", id, RedactSecrets(fmt.Sprint(recovered))),
 				}},
 			}
 		}
@@ -288,6 +318,10 @@ func collectBackendDiagnostics(ctx context.Context, id BackendID, adapter AgentA
 		report = diagnostician.Diagnostics(ctx)
 		if report.Backend == "" {
 			report.Backend = id
+		}
+		if report.Checks == nil {
+			// The JSON contract declares checks as an array, never null.
+			report.Checks = []Diagnostic{}
 		}
 		if report.Status == "" {
 			report.Status = AggregateStatus(report.Checks)
@@ -303,7 +337,7 @@ func collectBackendDiagnostics(ctx context.Context, id BackendID, adapter AgentA
 
 	// An adapter without diagnostics support is reported honestly as unknown
 	// instead of being silently dropped.
-	report = BackendDiagnostics{Backend: id, Status: DiagnosticUnknown}
+	report = BackendDiagnostics{Backend: id, Status: DiagnosticUnknown, Checks: []Diagnostic{}}
 	if source, ok := adapter.(capabilitySource); ok {
 		capabilities := source.Capabilities()
 		report.Capabilities = &capabilities

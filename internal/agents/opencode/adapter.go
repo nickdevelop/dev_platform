@@ -250,7 +250,7 @@ func (a *Adapter) checkVersion(ctx context.Context, supported agents.SupportedVe
 		return "", agents.Diagnostic{
 			Kind:    agents.DiagnosticVersion,
 			Status:  agents.DiagnosticWarning,
-			Message: fmt.Sprintf("opencode reported an unparseable version %q; the tested version is %s", truncate(raw), supported.Tested),
+			Message: fmt.Sprintf("opencode reported an unparseable version %q; the tested version is %s", truncate(redactSecrets(raw)), supported.Tested),
 		}
 	}
 	if !parsed.InRange(supported) {

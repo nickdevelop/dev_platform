@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"regexp"
-	"strings"
 	"time"
+
+	"devplatform/internal/agents"
 )
 
 // processSpec is a fully-resolved, shell-free command description. Arguments
@@ -92,29 +92,11 @@ func (p *process) pid() int {
 	return p.cmd.Process.Pid
 }
 
-// secretPatterns match the credential shapes an agent CLI might echo to
-// stderr. Diagnostics and error payloads are passed through redactSecrets
-// before they leave the adapter.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(?:sk|rk|pk|ghp|gho|glpat)-[A-Za-z0-9._-]{6,}`),
-	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*`),
-	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)\b\s*[=:]\s*[^\s"',]+`),
-}
-
 // redactSecrets masks the value of anything that looks like a credential. It
-// is deliberately conservative: it only rewrites clear key=value or known
-// token prefixes, so ordinary diagnostics survive intact.
+// delegates to the shared agents helper so every diagnostic path — the
+// adapters, the collector's crash report and raw CLI output — uses one
+// definition. Diagnostics and error payloads are passed through it before
+// they leave the adapter.
 func redactSecrets(value string) string {
-	for _, pattern := range secretPatterns {
-		value = pattern.ReplaceAllStringFunc(value, func(match string) string {
-			if idx := strings.IndexAny(match, "=:"); idx >= 0 {
-				return match[:idx+1] + "[REDACTED]"
-			}
-			if space := strings.IndexAny(match, " \t"); space >= 0 {
-				return match[:space+1] + "[REDACTED]"
-			}
-			return "[REDACTED]"
-		})
-	}
-	return value
+	return agents.RedactSecrets(value)
 }

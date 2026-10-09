@@ -66,6 +66,7 @@ export const useAgentsStore = defineStore('agents', {
       try {
         const report = await fetchAgentDiagnostics()
         this.diagnostics = report.diagnostics
+        this.diagnosticsError = ''
       } catch (error) {
         if (error instanceof UnauthorizedError) return // global handler went to login
         this.diagnosticsError = describeApiError(error)

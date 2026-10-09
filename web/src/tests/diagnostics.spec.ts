@@ -7,7 +7,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import BackendDiagnostics from '../components/BackendDiagnostics.vue'
 import { useAgentsStore } from '../stores/agents'
-import type { BackendDiagnostics as BackendDiagnosticsReport } from '../api/agents'
+import type { AgentDiagnostic, BackendDiagnostics as BackendDiagnosticsReport } from '../api/agents'
 
 const mounted: ReturnType<typeof mount>[] = []
 
@@ -99,6 +99,18 @@ describe('BackendDiagnostics panel', () => {
     mounted.push(wrapper)
     expect(wrapper.text()).toContain('暂无后端诊断信息。')
   })
+
+  it('renders defensively when a report has no checks array', () => {
+    const wrapper = mount(BackendDiagnostics, {
+      props: {
+        diagnostics: [report({ checks: undefined as unknown as AgentDiagnostic[] })],
+      },
+    })
+    mounted.push(wrapper)
+
+    expect(wrapper.find('[data-diagnostics-status]').text()).toBe('正常')
+    expect(wrapper.text()).toContain('该后端未提供诊断信息。')
+  })
 })
 
 describe('agents store diagnostics', () => {
@@ -141,5 +153,26 @@ describe('agents store diagnostics', () => {
     expect(store.diagnostics).toEqual([])
     expect(store.diagnosticsError).not.toBe('')
     expect(store.error).toBe('instances error')
+  })
+
+  it('clears a stale error after a successful reload', async () => {
+    const store = setup()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 500, json: async () => ({ error: 'server_error' }) })),
+    )
+    await store.loadDiagnostics()
+    await flushPromises()
+    expect(store.diagnosticsError).not.toBe('')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 200, json: async () => ({ diagnostics: [report()] }) })),
+    )
+    await store.loadDiagnostics()
+    await flushPromises()
+
+    expect(store.diagnosticsError).toBe('')
+    expect(store.diagnostics).toHaveLength(1)
   })
 })

@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -127,14 +128,18 @@ func TestAggregateStatus(t *testing.T) {
 // diagnosticsStub is a scriptable Diagnostician for the collector tests.
 type diagnosticsStub struct {
 	stubAdapter
-	report  BackendDiagnostics
-	crash   bool
-	checked *bool
+	report     BackendDiagnostics
+	crash      bool
+	panicValue any
+	checked    *bool
 }
 
 func (s *diagnosticsStub) Diagnostics(ctx context.Context) BackendDiagnostics {
 	if s.checked != nil {
 		*s.checked = ctx.Err() == nil
+	}
+	if s.panicValue != nil {
+		panic(s.panicValue)
 	}
 	if s.crash {
 		panic("diagnostics exploded")
@@ -253,8 +258,8 @@ func TestCollectDiagnosticsWithoutDiagnostician(t *testing.T) {
 	}
 
 	pi := byBackend[BackendPi]
-	if pi.Status != DiagnosticUnknown || pi.Checks != nil || pi.Capabilities != nil {
-		t.Errorf("pi report = %+v, want unknown status without checks or capabilities", pi)
+	if pi.Status != DiagnosticUnknown || pi.Checks == nil || len(pi.Checks) != 0 || pi.Capabilities != nil {
+		t.Errorf("pi report = %+v, want unknown status with an empty (non-nil) checks array and no capabilities", pi)
 	}
 	opencode := byBackend[BackendOpenCodeV2]
 	if opencode.Status != DiagnosticUnknown {
@@ -263,6 +268,59 @@ func TestCollectDiagnosticsWithoutDiagnostician(t *testing.T) {
 	if opencode.Capabilities == nil || !opencode.Capabilities.Streaming {
 		t.Errorf("opencode capabilities = %+v, want the adapter declaration", opencode.Capabilities)
 	}
+}
+
+// TestCollectDiagnosticsRedactsPanicValue keeps the collector's crash report
+// free of credentials: the recovered value is operator-visible, so it must
+// pass through the same redaction as every other diagnostic.
+func TestCollectDiagnosticsRedactsPanicValue(t *testing.T) {
+	registry := NewRegistry()
+	stub := &diagnosticsStub{panicValue: "token=panicsecretvalue"}
+	if err := registry.Register(BackendPi, stub); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	reports := CollectDiagnostics(context.Background(), registry)
+	if len(reports) != 1 {
+		t.Fatalf("reports = %+v, want one", reports)
+	}
+	report := reports[0]
+	if len(report.Checks) != 1 || report.Checks[0].Kind != DiagnosticAdapter {
+		t.Fatalf("checks = %+v, want a single adapter-kind check", report.Checks)
+	}
+	message := report.Checks[0].Message
+	if strings.Contains(message, "panicsecretvalue") {
+		t.Errorf("panic value leaked into the diagnostic: %q", message)
+	}
+	if !strings.Contains(message, "[REDACTED]") {
+		t.Errorf("panic value was not redacted: %q", message)
+	}
+}
+
+// TestCollectDiagnosticsAlwaysArraysChecks keeps the JSON contract: checks is
+// always a (possibly empty) array, never null, for every adapter shape.
+func TestCollectDiagnosticsAlwaysArraysChecks(t *testing.T) {
+	t.Run("diagnostician with a zero report", func(t *testing.T) {
+		registry := NewRegistry()
+		if err := registry.Register(BackendPi, &diagnosticsStub{}); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		report := CollectDiagnostics(context.Background(), registry)[0]
+		if report.Checks == nil || len(report.Checks) != 0 {
+			t.Errorf("checks = %#v, want an empty non-nil array", report.Checks)
+		}
+	})
+
+	t.Run("adapter without diagnostics", func(t *testing.T) {
+		registry := NewRegistry()
+		if err := registry.Register(BackendPi, &stubAdapter{}); err != nil {
+			t.Fatalf("register: %v", err)
+		}
+		report := CollectDiagnostics(context.Background(), registry)[0]
+		if report.Checks == nil || len(report.Checks) != 0 {
+			t.Errorf("checks = %#v, want an empty non-nil array", report.Checks)
+		}
+	})
 }
 
 // TestCollectDiagnosticsNilRegistry keeps the collector total: no registry, no

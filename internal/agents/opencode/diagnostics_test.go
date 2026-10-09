@@ -150,6 +150,30 @@ func TestAdapterDiagnosticsUndeterminableVersion(t *testing.T) {
 	})
 }
 
+// TestAdapterDiagnosticsRedactsUnparseableVersionOutput proves the
+// unparseable-version branch never leaks raw CLI output that happens to
+// contain a credential: the version probe errored in a way the parser could
+// not classify, but its text is still operator-visible.
+func TestAdapterDiagnosticsRedactsUnparseableVersionOutput(t *testing.T) {
+	adapter := New(Options{
+		Executable:   writeVersionScript(t, "unused"),
+		VersionProbe: versionStub("token=supersecretvalue", nil),
+	})
+
+	report := adapter.Diagnostics(context.Background())
+
+	if report.Status != agents.DiagnosticWarning {
+		t.Fatalf("status = %q, want warning", report.Status)
+	}
+	message := report.Checks[1].Message
+	if strings.Contains(message, "supersecretvalue") {
+		t.Errorf("raw CLI output leaked into the unparseable-version diagnostic: %q", message)
+	}
+	if !strings.Contains(message, "[REDACTED]") {
+		t.Errorf("raw CLI output was not redacted: %q", message)
+	}
+}
+
 // TestAdapterDiagnosticsRunsRealVersionCommand exercises the default probe:
 // the adapter runs `<executable> --version` and parses the output.
 func TestAdapterDiagnosticsRunsRealVersionCommand(t *testing.T) {

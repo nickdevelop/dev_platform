@@ -17,7 +17,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -376,28 +375,12 @@ func (e *redactedError) Error() string { return e.redact(e.err.Error()) }
 // Unwrap exposes the original error to errors.Is/errors.As.
 func (e *redactedError) Unwrap() error { return e.err }
 
-// secretPatterns match credential shapes an agent CLI or server might echo.
-var secretPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\b(?:sk|rk|pk|ghp|gho|glpat)-[A-Za-z0-9._-]{6,}`),
-	regexp.MustCompile(`(?i)\bbearer\s+[A-Za-z0-9._~+/-]+=*`),
-	regexp.MustCompile(`(?i)\b(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)\b\s*[=:]\s*[^\s"',]+`),
-}
-
-// redactSecrets masks the value of anything that looks like a credential. It is
-// conservative so ordinary diagnostics survive intact.
+// redactSecrets masks the value of anything that looks like a credential. It
+// delegates to the shared agents helper so every diagnostic path — the
+// adapters, the collector's crash report and raw CLI output — uses one
+// definition.
 func redactSecrets(value string) string {
-	for _, pattern := range secretPatterns {
-		value = pattern.ReplaceAllStringFunc(value, func(match string) string {
-			if idx := strings.IndexAny(match, "=:"); idx >= 0 {
-				return match[:idx+1] + "[REDACTED]"
-			}
-			if space := strings.IndexAny(match, " \t"); space >= 0 {
-				return match[:space+1] + "[REDACTED]"
-			}
-			return "[REDACTED]"
-		})
-	}
-	return value
+	return agents.RedactSecrets(value)
 }
 
 // Event is one decoded SSE event from GET /api/event. The envelope carries the

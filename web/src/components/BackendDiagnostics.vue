@@ -53,6 +53,12 @@ function versionLine(entry: BackendDiagnostics): string {
   }
   return ''
 }
+
+// checksOf tolerates a payload without a checks array (for example an older
+// or hand-written response) so the panel never throws on a missing array.
+function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
+  return entry.checks ?? []
+}
 </script>
 
 <template>
@@ -76,7 +82,7 @@ function versionLine(entry: BackendDiagnostics): string {
 
         <ul class="checks">
           <li
-            v-for="(check, index) in entry.checks"
+            v-for="(check, index) in checksOf(entry)"
             :key="`${entry.backend}-${check.kind}-${index}`"
             class="check"
             :data-diagnostic-kind="check.kind"
@@ -85,7 +91,7 @@ function versionLine(entry: BackendDiagnostics): string {
             <span class="badge" :class="`badge-${check.status}`">{{ statusLabels[check.status] ?? check.status }}</span>
             <span class="check-message">{{ check.message }}</span>
           </li>
-          <li v-if="entry.checks.length === 0" class="check check-empty">该后端未提供诊断信息。</li>
+          <li v-if="checksOf(entry).length === 0" class="check check-empty">该后端未提供诊断信息。</li>
         </ul>
 
         <div v-if="entry.capabilities" class="capabilities">
