@@ -23,6 +23,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	"devplatform/internal/projects"
+	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
 
@@ -680,5 +681,103 @@ func TestRouterServesProjectInstancesBehindSessionAndCSRF(t *testing.T) {
 	again.Body.Close()
 	if again.StatusCode != http.StatusOK {
 		t.Errorf("second stop status = %d, want %d (idempotent)", again.StatusCode, http.StatusOK)
+	}
+}
+
+// TestRouterServesSessionRoutesBehindSessionAndCSRF verifies the session routes
+// and the backend-capability route are session-protected and enforce CSRF on
+// mutations.
+func TestRouterServesSessionRoutesBehindSessionAndCSRF(t *testing.T) {
+	db := openTestDB(t)
+	authSvc := auth.NewService(db)
+	if err := authSvc.SetPassword("correct horse battery staple"); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	registry := agents.NewRegistry()
+	if err := registry.Register(agents.BackendPi, &routerFakeAdapter{}); err != nil {
+		t.Fatalf("register fake adapter: %v", err)
+	}
+	projectService := projects.NewService(db)
+	instanceService := instances.NewService(db, registry, projectService)
+	router := NewRouter(Dependencies{
+		Auth:       authSvc,
+		Workspaces: workspaces.NewService(db),
+		Projects:   projectService,
+		Instances:  instanceService,
+		Sessions:   sessions.NewService(db, registry, instanceService),
+	})
+
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+
+	// Unauthenticated management routes are rejected before anything else.
+	for _, path := range []string{"/api/agent-backends", "/api/projects/1/sessions"} {
+		resp, err := (&http.Client{}).Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("unauthenticated GET %s status = %d, want %d", path, resp.StatusCode, http.StatusUnauthorized)
+		}
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	resp, err := client.Get(server.URL + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET session: %v", err)
+	}
+	var session struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
+		t.Fatalf("decode session body: %v", err)
+	}
+	resp.Body.Close()
+
+	loginReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/auth/login", strings.NewReader(`{"password":"correct horse battery staple"}`))
+	if err != nil {
+		t.Fatalf("build login request: %v", err)
+	}
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.Header.Set(auth.CSRFHeaderName, session.CSRFToken)
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		t.Fatalf("POST login: %v", err)
+	}
+	loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+
+	// The capability route lists the registered backend.
+	caps, err := client.Get(server.URL + "/api/agent-backends")
+	if err != nil {
+		t.Fatalf("GET agent-backends: %v", err)
+	}
+	var capsBody struct {
+		Backends []struct {
+			Backend string `json:"backend"`
+		} `json:"backends"`
+	}
+	if err := json.NewDecoder(caps.Body).Decode(&capsBody); err != nil {
+		t.Fatalf("decode capabilities: %v", err)
+	}
+	caps.Body.Close()
+	if len(capsBody.Backends) != 1 || capsBody.Backends[0].Backend != "pi" {
+		t.Fatalf("backends = %+v, want only pi", capsBody.Backends)
+	}
+
+	// A mutation without a CSRF token is rejected.
+	noCSRF := postJSON(t, client, server.URL, "/api/projects/1/sessions", "", map[string]string{"instanceId": "x"})
+	noCSRF.Body.Close()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Errorf("POST sessions without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)
 	}
 }

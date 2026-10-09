@@ -658,6 +658,401 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /agent-backends:
+    get:
+      summary: List agent backends and their capabilities
+      description: >-
+        Returns every registered agent backend with the capabilities it
+        declares. The workbench uses this to hide controls the backend does not
+        support, so unsupported operations are never presented as available.
+      operationId: listAgentBackends
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The registered backends.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentBackendList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions:
+    get:
+      summary: List a project's indexed sessions
+      description: >-
+        Returns the project's session index entries, reconciled against the
+        current instance lifecycle so a session whose instance has stopped is
+        reported disconnected rather than usable.
+      operationId: listProjectSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The project's indexed sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a session on an agent instance
+      description: >-
+        Starts a new agent-native session on the named instance and records the
+        platform-to-native id mapping. The instance must belong to the project
+        and be running; a model may only be chosen when the backend declares
+        modelSelection.
+      operationId: createProjectSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentSessionRequest'
+      responses:
+        '201':
+          description: Session created and indexed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          description: Malformed body, unknown backend, or bad instance id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            The instance is not running, or the backend does not support the
+            requested capability (for example model selection).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to create the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/instances/{instanceId}/sessions:
+    get:
+      summary: Discover an instance's native sessions
+      description: >-
+        Lists the agent-native sessions the backend reports for the instance and
+        indexes each valid one. Discovery requires the backend to declare
+        sessionDiscovery; malformed or misattributed native metadata is ignored.
+      operationId: discoverProjectInstanceSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: instanceId
+          in: path
+          required: true
+          description: Durable identifier of the instance to query.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The instance's discovered, indexed sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The instance is not running or does not support discovery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to list sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/continue:
+    post:
+      summary: Continue an indexed session
+      description: >-
+        Re-attaches to the session's agent-native session so later messages
+        extend it. Refused with a clear error when the instance is not running
+        or the backend does not declare sessionContinue.
+      operationId: continueProjectSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Session re-attached.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          description: Malformed path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The instance is not running or continue is unsupported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to continue the session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/messages:
+    post:
+      summary: Send a message to a session
+      description: >-
+        Delivers one user turn to the session's native session. Replies, tool
+        activity and errors arrive on the session event stream. A model may only
+        be overridden when the backend declares modelSelection.
+      operationId: sendProjectSessionMessage
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAgentSessionMessageRequest'
+      responses:
+        '202':
+          description: Message accepted; output arrives on the event stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          description: Malformed body or empty message text.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The instance is not running or model selection is unsupported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to accept the message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/stop:
+    post:
+      summary: Stop a session's run
+      description: >-
+        Stops the instance running the session. Because the adapter contract
+        exposes only an instance-level stop, this stops the instance's run; the
+        target session is marked stopped and the instance's other sessions are
+        marked disconnected. The operation is idempotent: a second stop is a
+        no-op and concurrent stops call the adapter once.
+      operationId: stopProjectSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Session stopped (or already stopped).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          description: Malformed path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not declare stop support.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/events:
+    get:
+      summary: Subscribe to a session's normalized event stream
+      description: >-
+        Streams the session's normalized events as Server-Sent Events
+        (text/event-stream). Each data payload is the normalized event envelope;
+        the sessionId is the platform session id. A slow or stale client is
+        disconnected rather than allowed to stall the instance's stream. The
+        stream ends when the instance's event stream ends.
+      operationId: subscribeProjectSessionEvents
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A Server-Sent Event stream of normalized events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >-
+                  SSE frames with id (sequence), event (normalized type) and
+                  data (the JSON event envelope).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The session's instance is not running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   securitySchemes:
     cookieAuth:
@@ -938,4 +1333,154 @@ components:
           enum:
             - opencode-v2
             - pi
+      additionalProperties: false
+    AgentCapabilities:
+      type: object
+      description: >-
+        A backend's explicit capability declaration. Every field is a required
+        boolean so a false capability is visibly false and the workbench can
+        hide the corresponding control.
+      required:
+        - streaming
+        - sessionDiscovery
+        - sessionContinue
+        - stop
+        - modelSelection
+        - toolCallEvents
+        - toolConfirmation
+      properties:
+        streaming:
+          type: boolean
+        sessionDiscovery:
+          type: boolean
+        sessionContinue:
+          type: boolean
+        stop:
+          type: boolean
+        modelSelection:
+          type: boolean
+        toolCallEvents:
+          type: boolean
+        toolConfirmation:
+          type: boolean
+      additionalProperties: false
+    AgentBackend:
+      type: object
+      required:
+        - backend
+        - capabilities
+      properties:
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
+        capabilities:
+          $ref: '#/components/schemas/AgentCapabilities'
+      additionalProperties: false
+    AgentBackendList:
+      type: object
+      required:
+        - backends
+      properties:
+        backends:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentBackend'
+      additionalProperties: false
+    AgentSession:
+      type: object
+      description: >-
+        The platform's index entry for one agent-native session. It carries only
+        the id mapping the platform owns, never agent-native history.
+      required:
+        - id
+        - projectId
+        - backend
+        - instanceId
+        - nativeSessionId
+        - status
+        - capabilities
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: Durable platform session identifier.
+        projectId:
+          type: integer
+          format: int64
+          description: Identifier of the owning project.
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
+        instanceId:
+          type: string
+          description: Durable identifier of the instance running the session.
+        nativeSessionId:
+          type: string
+          description: The agent-native session identifier.
+        title:
+          type: string
+          description: Agent-reported display title, when known.
+        status:
+          type: string
+          enum:
+            - active
+            - stopped
+            - disconnected
+          description: >-
+            Platform view of the session's run state; derived from the
+            instance lifecycle plus an explicit platform stop.
+        capabilities:
+          $ref: '#/components/schemas/AgentCapabilities'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AgentSessionList:
+      type: object
+      required:
+        - sessions
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSession'
+      additionalProperties: false
+    CreateAgentSessionRequest:
+      type: object
+      required:
+        - instanceId
+      properties:
+        instanceId:
+          type: string
+          description: Durable identifier of the instance to start the session on.
+        title:
+          type: string
+          description: Display title for the new session, when supported.
+        model:
+          type: string
+          description: >-
+            Model to select; only honored when the backend declares
+            modelSelection.
+      additionalProperties: false
+    SendAgentSessionMessageRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: The message body sent to the agent.
+        model:
+          type: string
+          description: >-
+            Per-message model override; only honored when the backend declares
+            modelSelection.
       additionalProperties: false

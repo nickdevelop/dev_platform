@@ -21,11 +21,14 @@ import (
 
 	"devplatform/internal/agents"
 	"devplatform/internal/agents/instances"
+	"devplatform/internal/agents/opencode"
+	"devplatform/internal/agents/pi"
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
 	"devplatform/internal/projects"
 	platformruntime "devplatform/internal/runtime"
+	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
 
@@ -233,13 +236,24 @@ func runServer(args []string) error {
 	// build an isolated registry. Until an adapter is registered, starting an
 	// instance of that backend is refused with a clear error.
 	registry := agents.NewRegistry()
+	// Register the installed backends. Registration only constructs the
+	// adapter; it never probes or starts a backend, so a missing binary is
+	// reported when an instance is started, not at boot.
+	if err := pi.Register(registry); err != nil {
+		return fmt.Errorf("register pi adapter: %w", err)
+	}
+	if err := opencode.Register(registry); err != nil {
+		return fmt.Errorf("register opencode adapter: %w", err)
+	}
 	instanceService := instances.NewService(db, registry, projectService)
+	sessionService := sessions.NewService(db, registry, instanceService)
 
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:       authService,
 		Workspaces: workspaces.NewService(db),
 		Projects:   projectService,
 		Instances:  instanceService,
+		Sessions:   sessionService,
 		WebDir:     webDir,
 	})
 

@@ -77,3 +77,28 @@ type AgentInstance struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+// AgentSession is the platform's index entry for one agent-native session. It
+// stores only the mapping the platform owns — its own id, the owning project,
+// backend and instance, and the agent-native session id — plus a display title
+// and a platform status. The conversation transcript itself stays in the agent;
+// the platform never persists agent-native history. Table: agent_sessions.
+type AgentSession struct {
+	ID        string `gorm:"primaryKey;column:id;not null"`
+	ProjectID uint   `gorm:"column:project_id;not null;index"`
+	Backend   string `gorm:"column:backend;not null"`
+	// InstanceID is the platform instance that owns this native session.
+	InstanceID string `gorm:"column:instance_id;not null;index;uniqueIndex:idx_agent_session_native"`
+	// NativeSessionID is the agent's own session identifier. The pair
+	// (instance_id, native_session_id) is unique so a native session can be
+	// discovered at most once and keeps one stable platform id.
+	NativeSessionID string `gorm:"column:native_session_id;not null;uniqueIndex:idx_agent_session_native"`
+	Title           string `gorm:"column:title"`
+	Status          string `gorm:"column:status;not null"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// TableName pins the session index table name (GORM would otherwise pluralize
+// AgentSession to agent_sessions already; pinning keeps it explicit).
+func (AgentSession) TableName() string { return "agent_sessions" }
