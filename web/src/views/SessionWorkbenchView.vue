@@ -48,13 +48,23 @@ const pendingToolCall = computed<{ callId: string; name: string } | null>(() => 
   return pending
 })
 
-// Model selection is offered only when the selected instance's backend
-// declares it. The backend re-checks the capability, so this is presentation.
+// Model selection for the create form is offered only when the selected
+// instance's backend declares it. Send-time model support is derived separately
+// from the active session's own capabilities (below), because the create
+// instance and the active session need not be the same backend.
 const modelSelectionAvailable = computed(() => {
   const instance = agents.instances.find((entry) => entry.id === selectedInstanceId.value)
   if (!instance) return false
   return agents.capabilitiesFor(instance.backend)?.modelSelection === true
 })
+
+// Whether the currently open session accepts a per-message model override. The
+// session DTO is authoritative: it must match the input visibility gated by
+// CapabilityControls, so a typed model is never silently dropped or sent to a
+// backend that does not support it.
+const activeModelSelection = computed(
+  () => activeSession.value?.capabilities.modelSelection === true,
+)
 
 onMounted(load)
 onBeforeUnmount(() => sessions.unsubscribeAll())
@@ -96,7 +106,7 @@ async function send() {
   if (!session || sending.value || messageText.value.trim() === '') return
   sending.value = true
   const model =
-    modelSelectionAvailable.value && sessionModel.value.trim() !== ''
+    activeModelSelection.value && sessionModel.value.trim() !== ''
       ? sessionModel.value.trim()
       : undefined
   await sessions.sendMessage(projectId.value, session.id, messageText.value, model)
@@ -174,7 +184,13 @@ function reconnect() {
         />
       </section>
 
-      <section class="conversation" aria-label="会话内容">
+      <section
+        class="conversation"
+        aria-label="会话内容"
+        data-test="conversation"
+        :data-stream-session="activeSession?.id ?? ''"
+        :data-stream-status="activeStreamStatus"
+      >
         <template v-if="activeSession">
           <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
           <p class="session-status" role="status" aria-live="polite">

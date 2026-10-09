@@ -10,6 +10,7 @@ import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import AgentInstanceList from '../components/AgentInstanceList.vue'
 import CapabilityControls from '../components/CapabilityControls.vue'
 import MessageView from '../components/MessageView.vue'
+import SessionList from '../components/SessionList.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
@@ -126,18 +127,28 @@ class FakeEventSource {
 }
 
 // stubRoutes answers fetch calls by method + path prefix, independent of order,
-// so a test can express the API surface a view or store will touch.
+// so a test can express the API surface a view or store will touch. It returns
+// the recorded calls (method, path, parsed body) for assertions.
 interface RouteResponse {
   status: number
   body?: unknown
 }
 
-function stubRoutes(routes: Array<[string, string, RouteResponse]>) {
+interface RecordedRequest {
+  method: string
+  path: string
+  body: unknown
+}
+
+function stubRoutes(routes: Array<[string, string, RouteResponse]>): RecordedRequest[] {
+  const calls: RecordedRequest[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), 'http://localhost')
       const method = (init?.method ?? 'GET').toUpperCase()
+      const body = init?.body ? JSON.parse(String(init.body)) : null
+      calls.push({ method, path: url.pathname, body })
       const match = routes.find(
         ([routeMethod, prefix]) => routeMethod === method && url.pathname.startsWith(prefix),
       )
@@ -148,6 +159,7 @@ function stubRoutes(routes: Array<[string, string, RouteResponse]>) {
       } as Response
     }),
   )
+  return calls
 }
 
 let pinia: Pinia
@@ -199,6 +211,33 @@ describe('agent instance list', () => {
 
     await wrapper.find('button.stop').trigger('click')
     expect(wrapper.emitted('stop')?.[0]).toEqual(['pi-1'])
+  })
+})
+
+describe('session list', () => {
+  it('opens a session with the keyboard (Enter and Space) as well as the pointer', async () => {
+    const wrapper = mount(SessionList, {
+      props: { sessions: [session({ id: 'sess-1', title: 'Demo' })] },
+      // Attach so focus behaves like a browser (a detached tree cannot focus).
+      attachTo: document.body,
+    })
+    mounted.push(wrapper)
+
+    // The row exposes a focusable, keyboard-operable control.
+    const open = wrapper.find('.session-open')
+    expect(open.exists()).toBe(true)
+    expect(open.attributes('role')).toBe('button')
+    expect(open.attributes('tabindex')).toBe('0')
+
+    open.element.focus()
+    expect(document.activeElement).toBe(open.element)
+
+    await open.trigger('keydown', { key: 'Enter' })
+    await open.trigger('keydown', { key: ' ' })
+    await open.trigger('click')
+
+    const selections = wrapper.emitted('select') ?? []
+    expect(selections.map((entry) => entry[0])).toEqual(['sess-1', 'sess-1', 'sess-1'])
   })
 })
 
@@ -396,6 +435,42 @@ describe('session store streaming and isolation', () => {
     source.end()
     expect(sessions.statusFor('sess-1')).toBe('error')
   })
+
+  it('closes the previous stream when switching sessions', async () => {
+    stubRoutes([
+      [
+        'GET',
+        '/api/projects/1/sessions',
+        {
+          status: 200,
+          body: {
+            sessions: [
+              session({ id: 'sess-1', instanceId: 'inst-1', nativeSessionId: 'n1' }),
+              session({ id: 'sess-2', instanceId: 'inst-2', nativeSessionId: 'n2' }),
+            ],
+          },
+        },
+      ],
+    ])
+    const { sessions } = setupStores()
+    await sessions.loadSessions(1)
+
+    sessions.activateSession(1, 'sess-1')
+    expect(FakeEventSource.instances).toHaveLength(1)
+    const first = FakeEventSource.instances[0]
+    first.open()
+
+    sessions.activateSession(1, 'sess-2')
+    // The old stream was closed and only the new one is live.
+    expect(first.readyState).toBe(FakeEventSource.CLOSED)
+    expect(sessions.statusFor('sess-1')).toBe('idle')
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(sessions.activeSessionId).toBe('sess-2')
+
+    // Re-activating the current session is a no-op (no duplicate stream).
+    sessions.activateSession(1, 'sess-2')
+    expect(FakeEventSource.instances).toHaveLength(2)
+  })
 })
 
 describe('stop semantics', () => {
@@ -433,6 +508,23 @@ describe('stop semantics', () => {
 })
 
 describe('session workbench view', () => {
+  async function mountWorkbench() {
+    const stores = setupStores()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/projects/:id/workbench', name: 'workbench', component: SessionWorkbenchView },
+        { path: '/projects/:id/agents', name: 'project-agents', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/projects/1/workbench')
+    await router.isReady()
+    const wrapper = mount(SessionWorkbenchView, { global: { plugins: [pinia, router] } })
+    mounted.push(wrapper)
+    await flushPromises()
+    return { wrapper, ...stores }
+  }
+
   it('lists sessions and renders the selected session workbench', async () => {
     stubRoutes([
       [
@@ -464,32 +556,81 @@ describe('session workbench view', () => {
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { sessions, agents, auth } = setupStores()
+    const { wrapper, sessions, agents, auth } = await mountWorkbench()
     auth.csrfToken = 'csrf-1'
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/projects/:id/workbench', name: 'workbench', component: SessionWorkbenchView },
-        { path: '/projects/:id/agents', name: 'project-agents', component: { template: '<div />' } },
-      ],
-    })
-    await router.push('/projects/1/workbench')
-    await router.isReady()
-
-    const wrapper = mount(SessionWorkbenchView, { global: { plugins: [pinia, router] } })
-    mounted.push(wrapper)
-    await flushPromises()
 
     expect(agents.backends).toHaveLength(1)
     expect(wrapper.findAll('.session-item')).toHaveLength(1)
     expect(wrapper.text()).toContain('Demo session')
 
-    await wrapper.find('.session-item').trigger('click')
+    await wrapper.find('.session-open').trigger('click')
     await flushPromises()
 
     // Selecting a session opens its stream and shows its controls.
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(wrapper.find('button.stop').exists()).toBe(true)
     expect(sessions.activeSessionId).toBe('sess-1')
+  })
+
+  it('derives send-time model support from the active session, not the create instance', async () => {
+    const piSession = session({
+      id: 'sess-pi',
+      backend: 'pi',
+      instanceId: 'pi-1',
+      capabilities: noCapabilities({ streaming: true, stop: true }),
+    })
+    const calls = stubRoutes([
+      ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [piSession] } }],
+      [
+        'GET',
+        '/api/agent-backends',
+        {
+          status: 200,
+          body: {
+            backends: [
+              { backend: 'opencode-v2', capabilities: noCapabilities({ streaming: true, modelSelection: true }) },
+              { backend: 'pi', capabilities: noCapabilities({ streaming: true }) },
+            ],
+          },
+        },
+      ],
+      [
+        'GET',
+        '/api/projects/1/instances',
+        {
+          status: 200,
+          body: {
+            instances: [
+              instance({ id: 'oc-1', backend: 'opencode-v2' }),
+              instance({ id: 'pi-1', backend: 'pi' }),
+            ],
+          },
+        },
+      ],
+      ['POST', '/api/projects/1/sessions/sess-pi/messages', { status: 202, body: piSession }],
+    ])
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    const { wrapper, auth } = await mountWorkbench()
+    auth.csrfToken = 'csrf-1'
+
+    await wrapper.find('.session-open').trigger('click')
+    await flushPromises()
+
+    // The active session's backend does not advertise modelSelection, so the
+    // in-conversation model input is hidden...
+    expect(wrapper.find('#session-model').exists()).toBe(false)
+    // ...even though the create form's instance (opencode) supports it.
+    expect(wrapper.find('#new-session-model').exists()).toBe(true)
+
+    // A model value typed into the create form must not leak into a message
+    // sent on the pi session.
+    await wrapper.find('#new-session-model').setValue('gpt-x')
+    await wrapper.find('#message-text').setValue('hello')
+    await wrapper.find('form.send').trigger('submit')
+    await flushPromises()
+
+    const sent = calls.find((call) => call.method === 'POST' && call.path.endsWith('/messages'))
+    expect(sent?.body).toEqual({ text: 'hello' })
   })
 })

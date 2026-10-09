@@ -12,7 +12,7 @@
 // E2E_PASSWORD and E2E_WORKSPACE_ROOT for an isolated scratch directory.
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test, type APIRequestContext } from '@playwright/test'
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
@@ -32,6 +32,19 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   expect(login.status(), await login.text()).toBe(200)
   const session = await (await request.get('/api/auth/session')).json()
   return session.csrfToken as string
+}
+
+// openSession selects a session row and waits until its SSE stream is open.
+// The conversation section exposes data-stream-session/-status so the wait is
+// on an observable signal instead of a fixed timeout.
+async function openSession(page: Page, title: string) {
+  const row = page.locator('.session-item', { hasText: title })
+  await row.click()
+  const sessionId = await row.getAttribute('data-session-id')
+  expect(sessionId).toBeTruthy()
+  const conversation = page.locator('.conversation')
+  await expect(conversation).toHaveAttribute('data-stream-session', sessionId as string)
+  await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 }
 
 test('isolates streamed events and stop across agent instances in one project', async ({ page, request }) => {
@@ -94,16 +107,14 @@ test('isolates streamed events and stop across agent instances in one project', 
   }
 
   // The pi session streams its reply into its own conversation.
-  await page.locator('.session-item', { hasText: 'pi-session' }).click()
-  await page.waitForTimeout(400)
+  await openSession(page, 'pi-session')
   await page.locator('#message-text').fill('ping-pi')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.locator('.conversation')).toContainText('pi reply: ping-pi', { timeout: 20_000 })
 
   // The opencode session streams its own reply, and the pi event never leaks
   // into this instance's view.
-  await page.locator('.session-item', { hasText: 'oc-session-1' }).click()
-  await page.waitForTimeout(400)
+  await openSession(page, 'oc-session-1')
   await page.locator('#message-text').fill('ping-oc')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(page.locator('.conversation')).toContainText('opencode reply: ping-oc', {
@@ -112,13 +123,13 @@ test('isolates streamed events and stop across agent instances in one project', 
   await expect(page.locator('.conversation')).not.toContainText('pi reply: ping-pi')
 
   // Switching back to the pi session shows only its own history.
-  await page.locator('.session-item', { hasText: 'pi-session' }).click()
+  await openSession(page, 'pi-session')
   await expect(page.locator('.conversation')).toContainText('pi reply: ping-pi')
   await expect(page.locator('.conversation')).not.toContainText('opencode reply: ping-oc')
 
   // Stop the opencode session. The backend stops at instance level: the same
   // instance's sibling is disconnected, while the pi instance is untouched.
-  await page.locator('.session-item', { hasText: 'oc-session-1' }).click()
+  await openSession(page, 'oc-session-1')
   await page.getByRole('button', { name: '停止运行' }).click()
   await expect(page.locator('.session-item', { hasText: 'oc-session-1' })).toContainText('已停止', {
     timeout: 20_000,

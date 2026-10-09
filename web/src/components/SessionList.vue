@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Lists a project's indexed sessions. Selecting one opens its workbench;
 // status is reported as the backend derived it (active/stopped/disconnected).
+// Each row is a keyboard-operable control: Enter and Space open the session,
+// matching the pointer behavior.
 import type { AgentSession } from '../api/sessions'
 
 const props = defineProps<{
@@ -15,6 +17,10 @@ const statusLabels: Record<string, string> = {
   stopped: '已停止',
   disconnected: '已断开',
 }
+
+function select(sessionId: string) {
+  emit('select', sessionId)
+}
 </script>
 
 <template>
@@ -24,14 +30,24 @@ const statusLabels: Record<string, string> = {
       :key="session.id"
       class="session-item"
       :class="{ active: session.id === props.activeId }"
-      @click="emit('select', session.id)"
+      :data-session-id="session.id"
     >
-      <div class="session-info">
-        <span class="session-title">{{ session.title || session.id }}</span>
-        <span class="session-meta">
-          <span class="backend">{{ session.backend }}</span>
-          <span class="status" :class="`status-${session.status}`">
-            {{ statusLabels[session.status] ?? session.status }}
+      <div
+        class="session-open"
+        role="button"
+        tabindex="0"
+        :aria-current="session.id === props.activeId ? 'true' : undefined"
+        @click="select(session.id)"
+        @keydown.enter.prevent="select(session.id)"
+        @keydown.space.prevent="select(session.id)"
+      >
+        <span class="session-info">
+          <span class="session-title">{{ session.title || session.id }}</span>
+          <span class="session-meta">
+            <span class="backend">{{ session.backend }}</span>
+            <span class="status" :class="`status-${session.status}`">
+              {{ statusLabels[session.status] ?? session.status }}
+            </span>
           </span>
         </span>
       </div>
@@ -53,13 +69,24 @@ const statusLabels: Record<string, string> = {
 .session-item {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  cursor: pointer;
 }
 
 .session-item.active {
   border-color: #2563eb;
   background: #eff6ff;
+}
+
+.session-open {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.session-open:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .session-info {

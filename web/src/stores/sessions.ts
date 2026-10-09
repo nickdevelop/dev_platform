@@ -90,7 +90,6 @@ export const useSessionsStore = defineStore('sessions', {
       try {
         const created = await createProjectSession(projectId, body, auth.csrfToken)
         this.sessions = [...this.sessions, created]
-        this.activeSessionId = created.id
         this.error = ''
         return created
       } catch (error) {
@@ -128,8 +127,12 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    // Marks a session active and opens its stream (idempotent).
+    // Marks a session active and opens its stream. Switching sessions closes
+    // the previously active session's stream so only one subscription is live
+    // at a time; re-activating the same session is a no-op.
     activateSession(projectId: number, sessionId: string) {
+      const previous = this.activeSessionId
+      if (previous && previous !== sessionId) this.unsubscribe(previous)
       this.activeSessionId = sessionId
       this.subscribe(projectId, sessionId)
     },
