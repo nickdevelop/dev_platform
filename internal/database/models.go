@@ -2,6 +2,13 @@ package database
 
 import "time"
 
+// Setting keys owned by the platform.
+const (
+	// SettingKeyPasswordHash holds the Argon2id-encoded platform access
+	// password hash. It is never a plaintext password.
+	SettingKeyPasswordHash = "auth.password_hash"
+)
+
 // Setting stores one platform configuration value addressed by key, so
 // platform configuration survives restarts. Table: settings.
 type Setting struct {

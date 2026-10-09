@@ -1,20 +1,36 @@
 // Package http wires the platform's HTTP API.
 package http
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
 
-// Dependencies carries the collaborators the API routes need. Task 1 has
-// none; later tasks extend this struct (database, auth, workspace services).
-type Dependencies struct{}
+	"devplatform/internal/auth"
+)
+
+// Dependencies carries the collaborators the API routes need. Later tasks
+// extend this struct (database, auth, workspace services); auth is injected
+// explicitly so the router owns no global state.
+type Dependencies struct {
+	// Auth provides password login, sessions and CSRF. When nil, only the
+	// public health route is served (used by tests that do not need auth).
+	Auth *auth.Service
+}
 
 // NewRouter builds the Gin engine with all API routes registered.
 func NewRouter(deps Dependencies) *gin.Engine {
-	_ = deps // reserved for future tasks; routes added as dependencies arrive.
-
 	router := gin.New()
 	router.Use(gin.Recovery())
 
 	router.GET("/api/health", handleHealth)
+
+	if deps.Auth != nil {
+		// Enforce CSRF on every mutating API request centrally so no later
+		// management route can accidentally omit it.
+		router.Use(auth.RequireCSRF())
+
+		api := router.Group("/api")
+		deps.Auth.RegisterRoutes(api)
+	}
 
 	return router
 }
