@@ -163,6 +163,14 @@ func (s *Service) Backends() []BackendCapabilities {
 	return out
 }
 
+// Diagnostics collects the startup diagnostics of every registered backend:
+// executable presence, CLI/API version support and API reachability, plus
+// each backend's capability declaration. One backend failing to report never
+// prevents the others' reports (see agents.CollectDiagnostics).
+func (s *Service) Diagnostics(ctx context.Context) []agents.BackendDiagnostics {
+	return agents.CollectDiagnostics(ctx, s.registry)
+}
+
 // List returns a project's indexed sessions, reconciled against the current
 // instance lifecycle so a stale session is reported disconnected rather than
 // as if it were still usable.

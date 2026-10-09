@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/agents"
 	"devplatform/internal/agents/instances"
 )
 
@@ -16,6 +17,7 @@ import (
 // CSRF enforcement is installed globally by the platform router.
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/agent-backends", s.handleBackends)
+	r.GET("/agent-backends/diagnostics", s.handleDiagnostics)
 
 	r.GET("/projects/:id/sessions", s.handleList)
 	r.POST("/projects/:id/sessions", s.handleCreate)
@@ -74,6 +76,12 @@ type backendListResponse struct {
 	Backends []BackendCapabilities `json:"backends"`
 }
 
+// backendDiagnosticsResponse is the JSON body of
+// GET /api/agent-backends/diagnostics.
+type backendDiagnosticsResponse struct {
+	Diagnostics []agents.BackendDiagnostics `json:"diagnostics"`
+}
+
 // createSessionRequest is the JSON body of POST /api/projects/{id}/sessions.
 type createSessionRequest struct {
 	InstanceID string `json:"instanceId"`
@@ -91,6 +99,17 @@ type sendMessageRequest struct {
 // capabilities so the workbench can hide unsupported controls.
 func (s *Service) handleBackends(c *gin.Context) {
 	c.JSON(http.StatusOK, backendListResponse{Backends: s.Backends()})
+}
+
+// handleDiagnostics returns the per-backend startup diagnostics (executable,
+// CLI/API version, API reachability) with redacted, actionable messages so
+// the workbench can show why a backend is or is not usable.
+func (s *Service) handleDiagnostics(c *gin.Context) {
+	report := s.Diagnostics(c.Request.Context())
+	if report == nil {
+		report = []agents.BackendDiagnostics{}
+	}
+	c.JSON(http.StatusOK, backendDiagnosticsResponse{Diagnostics: report})
 }
 
 // handleList returns the project's indexed sessions.

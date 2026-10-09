@@ -16,10 +16,19 @@
 // adapter normalizes it into the platform's message events.
 //
 // Invoked as: opencode serve --hostname H --port P
+// It also answers `--version` for the platform's diagnostics probe (a version
+// inside the adapter's tested range) and reports the same version on
+// /api/info, so the API check classifies the mock as the version it mimics.
 'use strict'
 
 import http from 'node:http'
 import crypto from 'node:crypto'
+
+// `--version` support for the platform's diagnostics probe.
+if (process.argv.includes('--version')) {
+  process.stdout.write('opencode v2.0.24-mock\n')
+  process.exit(0)
+}
 
 function flagValue(name, fallback) {
   const index = process.argv.indexOf(name)
@@ -155,7 +164,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'GET' && url.pathname === '/api/info') {
     sendJSON(response, 200, {
-      version: '0.0.0-mock',
+      version: '2.0.24-mock',
       pid: process.pid,
       urls: [`http://${host}:${port}`],
       paths: { tmp: '/tmp' },

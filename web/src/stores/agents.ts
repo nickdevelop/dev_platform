@@ -4,12 +4,14 @@
 
 import { defineStore } from 'pinia'
 import {
+  fetchAgentDiagnostics,
   listAgentBackends,
   listProjectInstances,
   startProjectInstance,
   stopProjectInstance,
   type AgentBackend,
   type AgentInstance,
+  type BackendDiagnostics,
   type BackendId,
   type Capabilities,
 } from '../api/agents'
@@ -22,6 +24,12 @@ export const useAgentsStore = defineStore('agents', {
     backendsLoaded: false,
     instances: [] as AgentInstance[],
     projectId: null as number | null,
+    // Per-backend startup diagnostics. Point-in-time results, refetched every
+    // time the agents view loads; they are never cached like the capability
+    // map, because executable/API state can change at any moment.
+    diagnostics: [] as BackendDiagnostics[],
+    diagnosticsLoading: false,
+    diagnosticsError: '',
     loading: false,
     error: '',
   }),
@@ -48,6 +56,21 @@ export const useAgentsStore = defineStore('agents', {
       } catch (error) {
         if (error instanceof UnauthorizedError) return // global handler went to login
         this.error = describeApiError(error)
+      }
+    },
+
+    // Loads the per-backend diagnostics report. A failure here is surfaced on
+    // its own flag so it cannot mask the instance list's error state.
+    async loadDiagnostics() {
+      this.diagnosticsLoading = true
+      try {
+        const report = await fetchAgentDiagnostics()
+        this.diagnostics = report.diagnostics
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return // global handler went to login
+        this.diagnosticsError = describeApiError(error)
+      } finally {
+        this.diagnosticsLoading = false
       }
     },
 

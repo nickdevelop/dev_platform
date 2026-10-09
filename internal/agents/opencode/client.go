@@ -439,6 +439,13 @@ func (e *Event) SessionID() string {
 // Raw returns the untouched bytes of the SSE event body.
 func (e *Event) Raw() []byte { return e.raw }
 
+// errMalformedEvent marks an event payload the adapter cannot decode (invalid
+// JSON, or a payload beyond the size bound). It is a stream-content failure,
+// not a transport failure: the connection is dropped and reconnected, and the
+// diagnostic carries the malformed_event code so the UI can distinguish a bad
+// payload from a dead server.
+var errMalformedEvent = errors.New("opencode: malformed event payload")
+
 // EventStream reads SSE events from an open response body. It ignores comment
 // lines and heartbeats and bounds each event payload.
 type EventStream struct {
@@ -478,7 +485,7 @@ func (s *EventStream) Next() (*Event, error) {
 		}
 		data = append(data, value...)
 		if len(data) > maxEventBytes {
-			return nil, fmt.Errorf("opencode: event payload exceeds %d bytes", maxEventBytes)
+			return nil, fmt.Errorf("%w: payload exceeds %d bytes", errMalformedEvent, maxEventBytes)
 		}
 	}
 	if err := s.scanner.Err(); err != nil {
@@ -490,11 +497,12 @@ func (s *EventStream) Next() (*Event, error) {
 	return nil, io.EOF
 }
 
-// decode parses one complete event payload and keeps its raw bytes.
+// decode parses one complete event payload and keeps its raw bytes. A payload
+// that is not valid JSON is reported through errMalformedEvent.
 func (s *EventStream) decode(data []byte) (*Event, error) {
 	event := &Event{}
 	if err := json.Unmarshal(data, event); err != nil {
-		return nil, fmt.Errorf("opencode: decode event: %w", err)
+		return nil, fmt.Errorf("%w: invalid JSON: %v", errMalformedEvent, err)
 	}
 	event.raw = append([]byte(nil), data...)
 	return event, nil

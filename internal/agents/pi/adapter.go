@@ -39,6 +39,10 @@ type Options struct {
 	// Env overrides the child environment. The zero value inherits the parent
 	// process environment.
 	Env []string
+	// VersionProbe overrides how the CLI version is obtained. When nil the
+	// adapter runs `<executable> --version`. Tests inject a stub so they do
+	// not have to execute a real binary.
+	VersionProbe func(ctx context.Context) (string, error)
 	// Now overrides the clock; tests set it for deterministic timestamps.
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
@@ -56,6 +60,7 @@ type Adapter struct {
 	env            []string
 	now            func() time.Time
 	newID          func() (string, error)
+	versionProbe   func(ctx context.Context) (string, error)
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -90,13 +95,14 @@ func Register(registry *agents.Registry) error {
 // New builds a pi adapter.
 func New(options Options) *Adapter {
 	adapter := &Adapter{
-		executable: options.Executable,
-		sessionDir: options.SessionDir,
-		env:        options.Env,
-		now:        options.Now,
-		newID:      options.NewID,
-		instances:  make(map[string]*instance),
-		sessions:   make(map[sessionKey]*sessionState),
+		executable:   options.Executable,
+		sessionDir:   options.SessionDir,
+		env:          options.Env,
+		now:          options.Now,
+		newID:        options.NewID,
+		versionProbe: options.VersionProbe,
+		instances:    make(map[string]*instance),
+		sessions:     make(map[sessionKey]*sessionState),
 	}
 	if adapter.executable == "" {
 		adapter.executable = "pi"
@@ -106,6 +112,9 @@ func New(options Options) *Adapter {
 	}
 	if adapter.newID == nil {
 		adapter.newID = newUUID
+	}
+	if adapter.versionProbe == nil {
+		adapter.versionProbe = adapter.runVersionCommand
 	}
 	if adapter.sessionDir != "" {
 		adapter.passSessionDir = true
@@ -149,6 +158,99 @@ func (a *Adapter) Probe(ctx context.Context) error {
 		return fmt.Errorf("pi: executable %q is a directory", path)
 	}
 	return nil
+}
+
+// runVersionCommand asks the CLI for its version with a short timeout.
+func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, a.executable, "--version").Output()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// Diagnostics runs the pi pre-flight checks: executable presence and CLI
+// version support against the tested range. pi has no API server, so there is
+// deliberately no api check; a malformed record on a prompt's event stream is
+// diagnosed at runtime as a parse_error event without ending the stream.
+// Messages are actionable and redacted, and nothing is started.
+func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
+	supported, _ := agents.SupportedVersionFor(agents.BackendPi)
+	report := agents.BackendDiagnostics{
+		Backend:       agents.BackendPi,
+		TestedVersion: supported.Tested,
+		Checks:        []agents.Diagnostic{},
+		Capabilities:  capabilitiesOf(a.Capabilities()),
+	}
+
+	if err := a.Probe(ctx); err != nil {
+		report.Checks = append(report.Checks, agents.Diagnostic{
+			Kind:    agents.DiagnosticExecutable,
+			Status:  agents.DiagnosticError,
+			Message: fmt.Sprintf("%s; install the pi CLI (npm install -g @earendil-works/pi-coding-agent) or point the adapter at the correct binary", redactSecrets(err.Error())),
+		})
+		report.Status = agents.DiagnosticError
+		return report
+	}
+	report.Checks = append(report.Checks, agents.Diagnostic{
+		Kind:    agents.DiagnosticExecutable,
+		Status:  agents.DiagnosticOK,
+		Message: fmt.Sprintf("pi executable %q found", a.executable),
+	})
+
+	version, versionCheck := a.checkVersion(ctx, supported)
+	report.Version = version
+	report.Checks = append(report.Checks, versionCheck)
+	report.Status = agents.AggregateStatus(report.Checks)
+	return report
+}
+
+// checkVersion classifies the CLI version against the tested range. An
+// undeterminable or unsupported version is a warning, not an error: the CLI
+// may still work, and a real failure surfaces per prompt as an error event.
+// It returns the detected version (empty when undeterminable) and the check.
+func (a *Adapter) checkVersion(ctx context.Context, supported agents.SupportedVersion) (string, agents.Diagnostic) {
+	raw, err := a.versionProbe(ctx)
+	if err != nil {
+		return "", agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("could not determine the pi CLI version (%s); the tested version is %s", redactSecrets(err.Error()), supported.Tested),
+		}
+	}
+	parsed, ok := agents.ParseVersion(raw)
+	if !ok {
+		return "", agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("pi reported an unparseable version %q; the tested version is %s", truncate(raw), supported.Tested),
+		}
+	}
+	if !parsed.InRange(supported) {
+		return parsed.String(), agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("pi CLI %s is outside the tested range [%s, %s); the tested version is %s; upgrade or downgrade pi if sessions fail", parsed, supported.Minimum, supported.Maximum, supported.Tested),
+			Detail:  truncate(redactSecrets(raw)),
+		}
+	}
+	return parsed.String(), agents.Diagnostic{
+		Kind:    agents.DiagnosticVersion,
+		Status:  agents.DiagnosticOK,
+		Message: fmt.Sprintf("pi CLI %s is within the tested range [%s, %s)", parsed, supported.Minimum, supported.Maximum),
+		Detail:  truncate(redactSecrets(raw)),
+	}
+}
+
+// capabilitiesOf returns a pointer copy so reports cannot alias the adapter.
+func capabilitiesOf(capabilities agents.Capabilities) *agents.Capabilities {
+	return &capabilities
 }
 
 // StartInstance validates the authorized directory and the binary, then

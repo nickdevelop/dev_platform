@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -52,6 +53,10 @@ type Options struct {
 	// StreamIdleTimeout bounds how long the event stream may go silent before
 	// the adapter reconnects. Defaults to 60s.
 	StreamIdleTimeout time.Duration
+	// VersionProbe overrides how the CLI version is obtained. When nil the
+	// adapter runs `<executable> --version`. Tests inject a stub so they do
+	// not have to execute a real binary.
+	VersionProbe func(ctx context.Context) (string, error)
 	// Now overrides the clock; tests set it for deterministic timestamps.
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
@@ -70,6 +75,7 @@ type Adapter struct {
 	now            func() time.Time
 	newID          func() (string, error)
 	launch         launcher
+	versionProbe   func(ctx context.Context) (string, error)
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -105,6 +111,7 @@ func New(options Options) *Adapter {
 		streamIdle:     options.StreamIdleTimeout,
 		now:            options.Now,
 		newID:          options.NewID,
+		versionProbe:   options.VersionProbe,
 		instances:      make(map[string]*instance),
 	}
 	if adapter.executable == "" {
@@ -124,6 +131,9 @@ func New(options Options) *Adapter {
 	}
 	if adapter.newID == nil {
 		adapter.newID = newUUID
+	}
+	if adapter.versionProbe == nil {
+		adapter.versionProbe = adapter.runVersionCommand
 	}
 	adapter.launch = adapter.launchServer
 	return adapter
@@ -166,6 +176,163 @@ func (a *Adapter) Probe(ctx context.Context) error {
 		return fmt.Errorf("opencode: executable %q is a directory", path)
 	}
 	return nil
+}
+
+// runVersionCommand asks the CLI for its version with a short timeout. The
+// same binary serves the v2 API, so the CLI version is also the API version.
+func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, a.executable, "--version").Output()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// Diagnostics runs the opencode pre-flight checks: executable presence, CLI
+// version support against the tested range, and API reachability of every
+// running instance. It never starts anything, honors ctx, and every message
+// is actionable and redacted. A missing binary short-circuits the report:
+// without it there is nothing left to probe.
+func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
+	supported, _ := agents.SupportedVersionFor(agents.BackendOpenCodeV2)
+	report := agents.BackendDiagnostics{
+		Backend:       agents.BackendOpenCodeV2,
+		TestedVersion: supported.Tested,
+		Checks:        []agents.Diagnostic{},
+		Capabilities:  capabilitiesOf(a.Capabilities()),
+	}
+
+	if err := a.Probe(ctx); err != nil {
+		report.Checks = append(report.Checks, agents.Diagnostic{
+			Kind:    agents.DiagnosticExecutable,
+			Status:  agents.DiagnosticError,
+			Message: fmt.Sprintf("%s; install opencode (https://opencode.ai) or point the adapter at the correct binary", redactSecrets(err.Error())),
+		})
+		report.Status = agents.DiagnosticError
+		return report
+	}
+	report.Checks = append(report.Checks, agents.Diagnostic{
+		Kind:    agents.DiagnosticExecutable,
+		Status:  agents.DiagnosticOK,
+		Message: fmt.Sprintf("opencode executable %q found", a.executable),
+	})
+
+	version, versionCheck := a.checkVersion(ctx, supported)
+	report.Version = version
+	report.Checks = append(report.Checks, versionCheck)
+
+	report.Checks = append(report.Checks, a.checkAPI(ctx, supported))
+	report.Status = agents.AggregateStatus(report.Checks)
+	return report
+}
+
+// checkVersion classifies the CLI version against the tested range. An
+// undeterminable or unsupported version is a warning, not an error: the
+// backend may still work, and the instance lifecycle reports any real
+// start failure.
+func (a *Adapter) checkVersion(ctx context.Context, supported agents.SupportedVersion) (string, agents.Diagnostic) {
+	raw, err := a.versionProbe(ctx)
+	if err != nil {
+		return "", agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("could not determine the opencode CLI version (%s); the tested version is %s", redactSecrets(err.Error()), supported.Tested),
+		}
+	}
+	parsed, ok := agents.ParseVersion(raw)
+	if !ok {
+		return "", agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("opencode reported an unparseable version %q; the tested version is %s", truncate(raw), supported.Tested),
+		}
+	}
+	if !parsed.InRange(supported) {
+		return parsed.String(), agents.Diagnostic{
+			Kind:    agents.DiagnosticVersion,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("opencode CLI %s is outside the tested range [%s, %s); the tested version is %s; upgrade or downgrade opencode if sessions fail", parsed, supported.Minimum, supported.Maximum, supported.Tested),
+			Detail:  truncate(redactSecrets(raw)),
+		}
+	}
+	return parsed.String(), agents.Diagnostic{
+		Kind:    agents.DiagnosticVersion,
+		Status:  agents.DiagnosticOK,
+		Message: fmt.Sprintf("opencode CLI %s is within the tested range [%s, %s)", parsed, supported.Minimum, supported.Maximum),
+		Detail:  truncate(redactSecrets(raw)),
+	}
+}
+
+// runningTarget is one instance the API check probes.
+type runningTarget struct {
+	id       string
+	endpoint string
+	client   *Client
+}
+
+// checkAPI probes every running instance's server with GET /api/info. An
+// unreachable server is an error (the instance cannot accept work); a server
+// reporting a version outside the tested range is a warning.
+func (a *Adapter) checkAPI(ctx context.Context, supported agents.SupportedVersion) agents.Diagnostic {
+	a.mu.Lock()
+	targets := make([]runningTarget, 0, len(a.instances))
+	for id, inst := range a.instances {
+		targets = append(targets, runningTarget{id: id, endpoint: inst.endpoint, client: inst.client})
+	}
+	a.mu.Unlock()
+	sort.Slice(targets, func(i, j int) bool { return targets[i].id < targets[j].id })
+
+	if len(targets) == 0 {
+		return agents.Diagnostic{
+			Kind:    agents.DiagnosticAPI,
+			Status:  agents.DiagnosticOK,
+			Message: "no running opencode instances to probe",
+		}
+	}
+
+	var unreachable, mismatched []string
+	for _, target := range targets {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		info, err := target.client.Info(probeCtx)
+		cancel()
+		if err != nil {
+			unreachable = append(unreachable, fmt.Sprintf("instance %s at %s (%s)", target.id, target.endpoint, redactSecrets(err.Error())))
+			continue
+		}
+		if parsed, ok := agents.ParseVersion(info.Version); ok && !parsed.InRange(supported) {
+			mismatched = append(mismatched, fmt.Sprintf("instance %s reports API version %s", target.id, parsed))
+		}
+	}
+	if len(unreachable) > 0 {
+		return agents.Diagnostic{
+			Kind:    agents.DiagnosticAPI,
+			Status:  agents.DiagnosticError,
+			Message: fmt.Sprintf("opencode server API unreachable: %s; stop and restart the affected instance(s)", strings.Join(unreachable, "; ")),
+		}
+	}
+	if len(mismatched) > 0 {
+		return agents.Diagnostic{
+			Kind:    agents.DiagnosticAPI,
+			Status:  agents.DiagnosticWarning,
+			Message: fmt.Sprintf("%s; outside the tested range [%s, %s)", strings.Join(mismatched, "; "), supported.Minimum, supported.Maximum),
+		}
+	}
+	return agents.Diagnostic{
+		Kind:    agents.DiagnosticAPI,
+		Status:  agents.DiagnosticOK,
+		Message: fmt.Sprintf("%d running instance(s) answered the API probe", len(targets)),
+	}
+}
+
+// capabilitiesOf returns a pointer copy so reports cannot alias the adapter.
+func capabilitiesOf(capabilities agents.Capabilities) *agents.Capabilities {
+	return &capabilities
 }
 
 // StartInstance validates the directory and binary, launches one opencode
@@ -586,7 +753,9 @@ func (inst *instance) publish(event agents.NormalizedEvent) {
 // drop, and reports each error without affecting any other instance. The
 // backoff is reset only when a connection actually delivered an event, so a
 // server that accepts and immediately closes the stream backs off up to the
-// cap instead of hammering it at the minimum delay.
+// cap instead of hammering it at the minimum delay. A malformed payload is
+// reported with the malformed_event code so the UI can tell a bad stream from
+// a dead server.
 func (inst *instance) runStream() {
 	backoff := streamRetryMin
 	for {
@@ -598,7 +767,11 @@ func (inst *instance) runStream() {
 			return
 		}
 		if err != nil {
-			inst.publishStreamError(err)
+			code := "stream_error"
+			if errors.Is(err, errMalformedEvent) {
+				code = "malformed_event"
+			}
+			inst.publishStreamError(code, err)
 		}
 		if events > 0 {
 			// A connection that delivered events was healthy; reset so a
@@ -722,11 +895,12 @@ func nextBackoff(current time.Duration) time.Duration {
 	return next
 }
 
-// publishStreamError surfaces an instance-level stream failure. The contract
-// requires a session id on error events, so when a session is known the error
-// is attached to it; otherwise it is reported as an instance-scoped lifecycle
-// event, which is valid without a session id.
-func (inst *instance) publishStreamError(err error) {
+// publishStreamError surfaces an instance-level stream failure with the given
+// diagnostic code. The contract requires a session id on error events, so
+// when a session is known the error is attached to it; otherwise it is
+// reported as an instance-scoped lifecycle event, which is valid without a
+// session id.
+func (inst *instance) publishStreamError(code string, err error) {
 	message := truncate(redactSecrets(err.Error()))
 	inst.mu.Lock()
 	sessionID := ""
@@ -737,12 +911,12 @@ func (inst *instance) publishStreamError(err error) {
 	inst.mu.Unlock()
 
 	if sessionID != "" {
-		inst.publish(inst.errorEvent(sessionID, "stream_error", message))
+		inst.publish(inst.errorEvent(sessionID, code, message))
 		return
 	}
 	event := inst.event("")
 	event.Type = agents.EventLifecycle
-	event.Lifecycle = &agents.LifecycleEvent{State: "stream_error", Detail: message}
+	event.Lifecycle = &agents.LifecycleEvent{State: code, Detail: message}
 	inst.publish(event)
 }
 

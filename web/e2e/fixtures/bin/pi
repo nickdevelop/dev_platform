@@ -7,6 +7,10 @@
 // CLI installed.
 //
 // Invoked as: pi --mode json [--session-id ID] [-- ...prompt]
+// It also answers `--version` (prints a version inside the adapter's tested
+// range) and fails on demand: a prompt containing __e2e_fail__ makes the
+// process write one stderr diagnostic and exit non-zero, which the e2e
+// failure spec uses to prove one backend's error never affects another.
 'use strict'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -20,12 +24,25 @@ function write(record) {
   process.stdout.write(`${JSON.stringify(record)}\n`)
 }
 
+// `--version` support for the platform's diagnostics probe.
+if (process.argv.includes('--version')) {
+  process.stdout.write('1.1.0-mock\n')
+  process.exit(0)
+}
+
 async function main() {
   const sessionId = valueAfter('--session-id')
   const separator = process.argv.indexOf('--')
   const prompt = separator >= 0 ? process.argv[separator + 1] ?? '' : ''
   const cwd = process.cwd()
   const reply = `pi reply: ${prompt}`
+
+  // On-demand failure used by agent-failures.spec.ts: a stderr diagnostic and
+  // a non-zero exit, like a provider the CLI cannot reach.
+  if (prompt.includes('__e2e_fail__')) {
+    process.stderr.write('provider unavailable: no credentials configured (fake failure)\n')
+    process.exit(1)
+  }
 
   write({ type: 'session', id: sessionId, cwd })
   write({ type: 'agent_start' })

@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import type { BackendId } from '../api/agents'
 import AgentInstanceList from '../components/AgentInstanceList.vue'
+import BackendDiagnostics from '../components/BackendDiagnostics.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,7 +22,7 @@ const actionError = ref('')
 onMounted(load)
 
 async function load() {
-  await Promise.all([agents.loadBackends(), agents.loadInstances(projectId.value)])
+  await Promise.all([agents.loadBackends(), agents.loadInstances(projectId.value), agents.loadDiagnostics()])
   if (selectedBackend.value === '' && agents.backends.length > 0) {
     selectedBackend.value = agents.backends[0].backend
   }
@@ -57,6 +58,11 @@ function openWorkbench() {
     <p v-if="agents.error || actionError" class="page-error" role="alert">
       {{ actionError || agents.error }}
     </p>
+    <p v-else-if="agents.diagnosticsError" class="diagnostics-error" role="alert">
+      {{ agents.diagnosticsError }}
+    </p>
+
+    <BackendDiagnostics :diagnostics="agents.diagnostics" />
 
     <section class="start-instance" aria-label="启动 Agent 实例">
       <label for="backend-select">Agent 后端</label>
@@ -132,5 +138,9 @@ function openWorkbench() {
 
 .page-error {
   color: #b91c1c;
+}
+
+.diagnostics-error {
+  color: #92400e;
 }
 </style>

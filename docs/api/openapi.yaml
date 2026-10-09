@@ -679,6 +679,30 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /agent-backends/diagnostics:
+    get:
+      summary: Collect agent backend startup diagnostics
+      description: >-
+        Runs the pre-flight checks of every registered agent backend:
+        executable presence, CLI/API version support against the tested range,
+        and (for server backends) API reachability of running instances.
+        Messages are actionable and redacted; a backend that fails to report
+        is returned as an error report and never prevents the other backends'
+        reports.
+      operationId: getAgentBackendDiagnostics
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: One diagnostics report per registered backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDiagnosticsReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/sessions:
     get:
       summary: List a project's indexed sessions
@@ -1395,6 +1419,85 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentBackend'
+      additionalProperties: false
+    AgentDiagnosticsReport:
+      type: object
+      required:
+        - diagnostics
+      properties:
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentBackendDiagnostics'
+      additionalProperties: false
+    AgentBackendDiagnostics:
+      type: object
+      description: >-
+        The startup diagnostics of one backend: the overall status (the worst
+        check), the detected CLI version, the tested version, the individual
+        checks and the backend's capability declaration. Messages are
+        actionable and redacted.
+      required:
+        - backend
+        - status
+        - checks
+      properties:
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
+        status:
+          type: string
+          description: The worst observed check severity; unknown when the adapter produced no checks.
+          enum:
+            - ok
+            - warning
+            - error
+            - unknown
+        version:
+          type: string
+          description: The CLI version the probe detected, when parseable.
+        testedVersion:
+          type: string
+          description: The version the adapter was verified against.
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentDiagnostic'
+        capabilities:
+          $ref: '#/components/schemas/AgentCapabilities'
+      additionalProperties: false
+    AgentDiagnostic:
+      type: object
+      description: The result of one pre-flight check.
+      required:
+        - kind
+        - status
+        - message
+      properties:
+        kind:
+          type: string
+          description: What the check inspected.
+          enum:
+            - executable
+            - version
+            - api
+            - event_stream
+            - adapter
+        status:
+          type: string
+          enum:
+            - ok
+            - warning
+            - error
+            - unknown
+        message:
+          type: string
+          description: Actionable, redacted summary for the operator.
+        detail:
+          type: string
+          description: Optional bounded raw check output.
       additionalProperties: false
     AgentSession:
       type: object

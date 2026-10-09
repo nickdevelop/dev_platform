@@ -37,6 +37,30 @@ export interface AgentBackendList {
   backends: AgentBackend[]
 }
 
+// Mirrors #/components/schemas/AgentDiagnostic. The message is actionable and
+// already redacted by the server.
+export interface AgentDiagnostic {
+  kind: 'executable' | 'version' | 'api' | 'event_stream' | 'adapter'
+  status: 'ok' | 'warning' | 'error' | 'unknown'
+  message: string
+  detail?: string
+}
+
+// Mirrors #/components/schemas/AgentBackendDiagnostics.
+export interface BackendDiagnostics {
+  backend: BackendId
+  status: 'ok' | 'warning' | 'error' | 'unknown'
+  version?: string
+  testedVersion?: string
+  checks: AgentDiagnostic[]
+  capabilities?: Capabilities
+}
+
+// Mirrors #/components/schemas/AgentDiagnosticsReport.
+export interface AgentDiagnosticsReport {
+  diagnostics: BackendDiagnostics[]
+}
+
 // Mirrors #/components/schemas/AgentInstance.
 export interface AgentInstance {
   id: string
@@ -63,6 +87,11 @@ export interface StartAgentInstanceBody {
 // GET /api/agent-backends
 export function listAgentBackends(): Promise<AgentBackendList> {
   return apiRequest<AgentBackendList>('GET', '/agent-backends')
+}
+
+// GET /api/agent-backends/diagnostics
+export function fetchAgentDiagnostics(): Promise<AgentDiagnosticsReport> {
+  return apiRequest<AgentDiagnosticsReport>('GET', '/agent-backends/diagnostics')
 }
 
 // GET /api/projects/{id}/instances

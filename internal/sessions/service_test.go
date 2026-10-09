@@ -75,6 +75,10 @@ type fakeAdapter struct {
 	next      int
 	subBuffer int
 	subs      map[string]chan agents.NormalizedEvent
+
+	// diagnostics is the canned startup report the adapter hands back when
+	// the service collects backend diagnostics.
+	diagnostics agents.BackendDiagnostics
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -98,6 +102,12 @@ func (f *fakeAdapter) Capabilities() agents.Capabilities {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.caps
+}
+
+// Diagnostics returns the canned report; it makes fakeAdapter a
+// agents.Diagnostician so the service's diagnostics collection is testable.
+func (f *fakeAdapter) Diagnostics(context.Context) agents.BackendDiagnostics {
+	return f.diagnostics
 }
 
 func (f *fakeAdapter) StartInstance(_ context.Context, req agents.StartInstanceRequest) (*agents.Instance, error) {
