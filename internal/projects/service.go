@@ -258,6 +258,31 @@ func (s *Service) Move(id uint, destinationInput, confirmName string) (Project, 
 	return s.relocate(row, destination.Path, filepath.Base(destination.Path))
 }
 
+// ResolveDirectory loads the project with the given id, re-authorizes its
+// stored path against the currently configured workspace roots, checks that the
+// directory still exists, and returns the canonical directory the project
+// currently occupies. It is the gate the agent instance lifecycle uses to turn
+// a project id into an authorized working directory: an unknown project, a
+// removed authorizing root, a symlinked path whose canonical form changed, or a
+// missing directory all fail rather than yield a directory the platform must
+// not touch.
+func (s *Service) ResolveDirectory(id uint) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	row, err := s.load(id)
+	if err != nil {
+		return "", err
+	}
+	if err := s.authorizeStoredPath(row.Path); err != nil {
+		return "", err
+	}
+	if err := s.requireDirectory(row.Path); err != nil {
+		return "", err
+	}
+	return row.Path, nil
+}
+
 // Unregister removes only the platform record; the directory on disk is never
 // touched.
 func (s *Service) Unregister(id uint) error {

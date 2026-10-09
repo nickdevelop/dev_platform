@@ -77,7 +77,7 @@ func TestOpenMigratesFreshDatabase(t *testing.T) {
 	db := mustOpen(t, dataDir)
 	mustMigrate(t, db)
 
-	for _, model := range []any{&Setting{}, &AuthSession{}, &WorkspaceRoot{}, &Project{}} {
+	for _, model := range []any{&Setting{}, &AuthSession{}, &WorkspaceRoot{}, &Project{}, &AgentBackendConfig{}, &AgentInstance{}} {
 		if !db.Migrator().HasTable(model) {
 			t.Errorf("table for %T does not exist after migration", model)
 		}

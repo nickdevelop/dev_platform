@@ -19,6 +19,8 @@ import (
 	"golang.org/x/term"
 	"gorm.io/gorm"
 
+	"devplatform/internal/agents"
+	"devplatform/internal/agents/instances"
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
@@ -224,10 +226,20 @@ func runServer(args []string) error {
 	if webDir != "" {
 		log.Printf("serving web UI from %s", webDir)
 	}
+
+	projectService := projects.NewService(db)
+	// Backend adapters register themselves explicitly here (or through their
+	// own Register helper); there is no package-init side effect, so tests can
+	// build an isolated registry. Until an adapter is registered, starting an
+	// instance of that backend is refused with a clear error.
+	registry := agents.NewRegistry()
+	instanceService := instances.NewService(db, registry, projectService)
+
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:       authService,
 		Workspaces: workspaces.NewService(db),
-		Projects:   projects.NewService(db),
+		Projects:   projectService,
+		Instances:  instanceService,
 		WebDir:     webDir,
 	})
 

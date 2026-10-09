@@ -1,7 +1,9 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -9,11 +11,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"devplatform/internal/agents"
+	"devplatform/internal/agents/instances"
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	"devplatform/internal/projects"
@@ -458,5 +464,221 @@ func TestRouterServesWorkspaceRootsBehindSessionAndCSRF(t *testing.T) {
 	removed.Body.Close()
 	if removed.StatusCode != http.StatusNoContent {
 		t.Errorf("DELETE root status = %d, want %d", removed.StatusCode, http.StatusNoContent)
+	}
+}
+
+// routerFakeAdapter is the smallest AgentAdapter that can start and stop an
+// instance, used to exercise the instance routes over the real router.
+type routerFakeAdapter struct {
+	mu   sync.Mutex
+	next int
+}
+
+func (f *routerFakeAdapter) Probe(context.Context) error { return nil }
+
+func (f *routerFakeAdapter) StartInstance(_ context.Context, req agents.StartInstanceRequest) (*agents.Instance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.next++
+	now := time.Now().UTC()
+	return &agents.Instance{
+		ID:        "router-inst-" + strconv.Itoa(f.next),
+		Backend:   agents.BackendPi,
+		Directory: req.Directory,
+		Status:    agents.InstanceRunning,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+func (f *routerFakeAdapter) StopInstance(context.Context, string) error { return nil }
+
+func (f *routerFakeAdapter) ListSessions(context.Context, string) ([]agents.SessionRef, error) {
+	return nil, nil
+}
+
+func (f *routerFakeAdapter) CreateSession(context.Context, string, agents.CreateSessionOptions) (*agents.SessionRef, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *routerFakeAdapter) ContinueSession(context.Context, agents.SessionRef) (*agents.SessionRef, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *routerFakeAdapter) SendMessage(context.Context, agents.SessionRef, agents.SendMessageRequest) error {
+	return nil
+}
+
+func (f *routerFakeAdapter) Subscribe(context.Context, string) (<-chan agents.NormalizedEvent, error) {
+	return make(chan agents.NormalizedEvent), nil
+}
+
+// newInstancesClient builds the full router with the instance service wired
+// over a fake pi adapter, logs a client in, and registers one project. It
+// returns the client, base URL, CSRF token, project id and project directory.
+func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, string) {
+	t.Helper()
+
+	db := openTestDB(t)
+	authSvc := auth.NewService(db)
+	if err := authSvc.SetPassword("correct horse battery staple"); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	registry := agents.NewRegistry()
+	if err := registry.Register(agents.BackendPi, &routerFakeAdapter{}); err != nil {
+		t.Fatalf("register fake adapter: %v", err)
+	}
+	projectService := projects.NewService(db)
+	router := NewRouter(Dependencies{
+		Auth:       authSvc,
+		Workspaces: workspaces.NewService(db),
+		Projects:   projectService,
+		Instances:  instances.NewService(db, registry, projectService),
+	})
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	client := &http.Client{Jar: jar}
+	base := server.URL
+
+	resp, err := client.Get(base + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET session: %v", err)
+	}
+	var session struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
+		t.Fatalf("decode session body: %v", err)
+	}
+	resp.Body.Close()
+
+	loginReq, err := http.NewRequest(http.MethodPost, base+"/api/auth/login", strings.NewReader(`{"password":"correct horse battery staple"}`))
+	if err != nil {
+		t.Fatalf("build login request: %v", err)
+	}
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.Header.Set(auth.CSRFHeaderName, session.CSRFToken)
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		t.Fatalf("POST login: %v", err)
+	}
+	loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
+	}
+
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	addRoot := postJSON(t, client, base, "/api/workspaces/roots", session.CSRFToken, map[string]string{"path": root})
+	addRoot.Body.Close()
+	if addRoot.StatusCode != http.StatusCreated {
+		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
+	}
+	projectDir := filepath.Join(root, "alpha")
+	if err := os.Mkdir(projectDir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	register := postJSON(t, client, base, "/api/projects", session.CSRFToken, map[string]string{"path": projectDir})
+	if register.StatusCode != http.StatusCreated {
+		t.Fatalf("register status = %d, want %d", register.StatusCode, http.StatusCreated)
+	}
+	var created projects.Project
+	if err := json.NewDecoder(register.Body).Decode(&created); err != nil {
+		t.Fatalf("decode register body: %v", err)
+	}
+	register.Body.Close()
+
+	return client, base, session.CSRFToken, created.ID, projectDir
+}
+
+// TestRouterServesProjectInstancesBehindSessionAndCSRF verifies the instance
+// routes are session-protected, enforce CSRF on mutations, and support the
+// start/list/stop round trip with isolated per-instance state.
+func TestRouterServesProjectInstancesBehindSessionAndCSRF(t *testing.T) {
+	client, base, csrf, projectID, projectDir := newInstancesClient(t)
+	instancesPath := "/api/projects/" + strconv.FormatUint(uint64(projectID), 10) + "/instances"
+
+	// Unauthenticated requests are rejected.
+	unauthed, err := (&http.Client{}).Get(base + instancesPath)
+	if err != nil {
+		t.Fatalf("GET instances: %v", err)
+	}
+	unauthed.Body.Close()
+	if unauthed.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated GET status = %d, want %d", unauthed.StatusCode, http.StatusUnauthorized)
+	}
+
+	// An authenticated mutation without a CSRF token is rejected.
+	noCSRF := postJSON(t, client, base, instancesPath, "", map[string]string{"backend": "pi"})
+	noCSRF.Body.Close()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)
+	}
+
+	// Starting an unknown backend is rejected.
+	unknown := postJSON(t, client, base, instancesPath, csrf, map[string]string{"backend": "claude-code"})
+	if code := decodeError(t, unknown); code != "unknown_backend" {
+		t.Errorf("unknown backend error = %q, want unknown_backend", code)
+	}
+
+	// With session and CSRF, starting an instance succeeds.
+	start := postJSON(t, client, base, instancesPath, csrf, map[string]string{"backend": "pi"})
+	if start.StatusCode != http.StatusCreated {
+		t.Fatalf("start status = %d, want %d", start.StatusCode, http.StatusCreated)
+	}
+	var started instances.Instance
+	if err := json.NewDecoder(start.Body).Decode(&started); err != nil {
+		t.Fatalf("decode start body: %v", err)
+	}
+	start.Body.Close()
+	if started.ID == "" || started.ProjectID != projectID {
+		t.Fatalf("started instance = %+v, want id with project %d", started, projectID)
+	}
+	if started.Directory != projectDir {
+		t.Errorf("instance directory = %q, want %q", started.Directory, projectDir)
+	}
+
+	// The list route returns the instance.
+	list, err := client.Get(base + instancesPath)
+	if err != nil {
+		t.Fatalf("GET instances: %v", err)
+	}
+	var listed struct {
+		Instances []instances.Instance `json:"instances"`
+	}
+	if err := json.NewDecoder(list.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list body: %v", err)
+	}
+	list.Body.Close()
+	if len(listed.Instances) != 1 || listed.Instances[0].ID != started.ID {
+		t.Fatalf("listed instances = %+v, want the started instance", listed.Instances)
+	}
+
+	// Stopping is a JSON mutation and is idempotent.
+	stopPath := instancesPath + "/" + started.ID + "/stop"
+	stop := postJSON(t, client, base, stopPath, csrf, struct{}{})
+	if stop.StatusCode != http.StatusOK {
+		t.Fatalf("stop status = %d, want %d", stop.StatusCode, http.StatusOK)
+	}
+	var stopped instances.Instance
+	if err := json.NewDecoder(stop.Body).Decode(&stopped); err != nil {
+		t.Fatalf("decode stop body: %v", err)
+	}
+	stop.Body.Close()
+	if stopped.Status != agents.InstanceStopped {
+		t.Errorf("stopped status = %q, want %q", stopped.Status, agents.InstanceStopped)
+	}
+	again := postJSON(t, client, base, stopPath, csrf, struct{}{})
+	again.Body.Close()
+	if again.StatusCode != http.StatusOK {
+		t.Errorf("second stop status = %d, want %d (idempotent)", again.StatusCode, http.StatusOK)
 	}
 }

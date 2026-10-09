@@ -46,3 +46,34 @@ type Project struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+// AgentBackendConfig records whether one agent backend is enabled for one
+// project. Backend holds a platform backend id (for example "opencode-v2" or
+// "pi"); the pair (project_id, backend) is unique so a project can enable each
+// backend at most once. Table: agent_backend_configs.
+type AgentBackendConfig struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_agent_backend_project"`
+	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_agent_backend_project"`
+	Enabled   bool   `gorm:"column:enabled;not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// AgentInstance is one platform-managed agent occurrence scoped to a project.
+// The ID is the durable platform instance identifier (assigned by the adapter
+// that started the instance); Directory is the canonical, already-authorized
+// project working directory. Status and Error are copied from the adapter's
+// lifecycle so a stopped or failed instance stays diagnosable after the
+// backend is gone. Table: agent_instances.
+type AgentInstance struct {
+	ID        string `gorm:"primaryKey;column:id;not null"`
+	ProjectID uint   `gorm:"column:project_id;not null;index"`
+	Backend   string `gorm:"column:backend;not null"`
+	Directory string `gorm:"column:directory;not null"`
+	Status    string `gorm:"column:status;not null"`
+	Endpoint  string `gorm:"column:endpoint"`
+	Error     string `gorm:"column:error"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}

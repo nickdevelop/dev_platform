@@ -42,6 +42,12 @@ var migrationSteps = []migrationStep{
 	{version: 4, name: "create_projects", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&Project{})
 	}},
+	{version: 5, name: "create_agent_backend_configs", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&AgentBackendConfig{})
+	}},
+	{version: 6, name: "create_agent_instances", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&AgentInstance{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

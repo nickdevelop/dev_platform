@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/agents/instances"
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
 	"devplatform/internal/workspaces"
@@ -43,6 +44,10 @@ type Dependencies struct {
 	// together with Auth, the project routes are served under /api/projects
 	// behind RequireSession; it requires Auth to be set.
 	Projects *projects.Service
+	// Instances manages per-project agent instances and their event fan-out.
+	// When set together with Auth, the instance routes are served under
+	// /api/projects/{id}/instances behind RequireSession.
+	Instances *instances.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -80,6 +85,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
+		}
+		if deps.Instances != nil {
+			deps.Instances.RegisterRoutes(protected)
 		}
 	}
 

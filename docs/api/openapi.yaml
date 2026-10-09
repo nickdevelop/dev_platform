@@ -519,6 +519,145 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/instances:
+    get:
+      summary: List a project's agent instances
+      description: >-
+        Returns the agent instances belonging to the project with their current
+        lifecycle status, in creation order.
+      operationId: listProjectInstances
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: The project's agent instances.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInstanceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Start a project agent instance
+      description: >-
+        Starts a new instance of the requested backend in the project's working
+        directory. A project may run several instances of the same backend; each
+        instance has an independent status and stop operation. A failed start is
+        recorded as a failed instance but the request itself returns an error
+        and never affects other instances.
+      operationId: startProjectInstance
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartAgentInstanceRequest'
+      responses:
+        '201':
+          description: Instance started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInstance'
+        '400':
+          description: Malformed body, unknown backend, or unauthorized project path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No project with the given id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The project directory is missing or is not a directory.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to start the instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/instances/{instanceId}/stop:
+    post:
+      summary: Stop a project agent instance
+      description: >-
+        Stops the named instance. The operation is idempotent and never affects
+        another instance of the same project. The instance must belong to the
+        project in the path.
+      operationId: stopProjectInstance
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: instanceId
+          in: path
+          required: true
+          description: Durable identifier of the instance to stop.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Instance stopped (or already stopped).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInstance'
+        '400':
+          description: Malformed path or body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -732,4 +871,71 @@ components:
       properties:
         error:
           type: string
+      additionalProperties: false
+    AgentInstance:
+      type: object
+      required:
+        - id
+        - projectId
+        - backend
+        - directory
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: Durable platform instance identifier.
+        projectId:
+          type: integer
+          format: int64
+          description: Identifier of the owning project.
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
+        directory:
+          type: string
+          description: Authorized working directory of the instance.
+        status:
+          type: string
+          enum:
+            - starting
+            - running
+            - stopped
+            - failed
+        endpoint:
+          type: string
+          description: Base URL of a server-based backend, when one exists.
+        error:
+          type: string
+          description: Redacted adapter failure text for a failed instance.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    AgentInstanceList:
+      type: object
+      required:
+        - instances
+      properties:
+        instances:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentInstance'
+      additionalProperties: false
+    StartAgentInstanceRequest:
+      type: object
+      required:
+        - backend
+      properties:
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
       additionalProperties: false
