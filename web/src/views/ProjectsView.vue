@@ -123,6 +123,10 @@ async function load() {
   }
 }
 
+function openAgents(project: Project) {
+  void router.push({ name: 'project-agents', params: { id: String(project.id) } })
+}
+
 function openDialog(kind: DialogKind, project: Project | null = null) {
   dialog.value = { kind, project }
   dialogError.value = ''
@@ -235,6 +239,7 @@ async function logout() {
           <span class="project-path">{{ project.path }}</span>
         </div>
         <div class="project-actions">
+          <button type="button" class="agents" @click="openAgents(project)">Agent 设置</button>
           <button type="button" @click="openDialog('rename', project)">重命名</button>
           <button type="button" @click="openDialog('move', project)">移动</button>
           <button type="button" class="unregister" @click="openDialog('unregister', project)">

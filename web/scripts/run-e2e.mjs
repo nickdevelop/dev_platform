@@ -15,6 +15,10 @@ import { fileURLToPath } from 'node:url'
 
 const webDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoDir = path.dirname(webDir)
+// Fake agent executables (pi, opencode) let the workbench E2E drive the real
+// adapters without the installed CLIs. They are prepended to the server's PATH
+// so the adapters resolve them exactly as they would the real binaries.
+const fixtureBin = path.join(webDir, 'e2e', 'fixtures', 'bin')
 // The environment pre-creates /tmp/opencode for scratch data; fall back to
 // the platform temp dir elsewhere.
 const scratchRoot = process.env.TMPDIR ?? '/tmp/opencode'
@@ -62,6 +66,13 @@ function shutdown(exitCode) {
       // Already exited.
     }
   }
+  // The Go server may not finish reaping an agent it was stopping when it is
+  // signaled, so any fixture agent that outlived it is cleaned up directly.
+  try {
+    spawnSync('pkill', ['-f', fixtureBin])
+  } catch {
+    // pkill is best-effort; its absence is not a harness failure.
+  }
   rmSync(scratch, { recursive: true, force: true })
   process.exit(exitCode)
 }
@@ -106,7 +117,12 @@ try {
   if (setup.status !== 0) throw new Error('e2e: configuring the throwaway password failed')
 
   start('server', serverBin, ['-data-dir', dataDir], {
-    env: { ...process.env, XDG_DATA_HOME: xdgDataHome, PLATFORM_LISTEN_ADDR: apiAddr },
+    env: {
+      ...process.env,
+      XDG_DATA_HOME: xdgDataHome,
+      PLATFORM_LISTEN_ADDR: apiAddr,
+      PATH: `${fixtureBin}${path.delimiter}${process.env.PATH ?? ''}`,
+    },
   })
   await waitFor(`http://${apiAddr}/api/health`, 'platform server')
 

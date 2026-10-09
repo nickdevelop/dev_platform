@@ -9,6 +9,8 @@ import { setOnUnauthorized } from './api/client'
 import { useAuthStore } from './stores/auth'
 import LoginView from './views/LoginView.vue'
 import ProjectsView from './views/ProjectsView.vue'
+import ProjectAgentsView from './views/ProjectAgentsView.vue'
+import SessionWorkbenchView from './views/SessionWorkbenchView.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -18,6 +20,18 @@ export function createAppRouter() {
         path: '/',
         name: 'projects',
         component: ProjectsView,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/projects/:id/agents',
+        name: 'project-agents',
+        component: ProjectAgentsView,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: '/projects/:id/workbench',
+        name: 'session-workbench',
+        component: SessionWorkbenchView,
         meta: { requiresAuth: true },
       },
       {

@@ -1,0 +1,55 @@
+#!/usr/bin/env node
+// Fake `pi` coding agent for the end-to-end workbench test. It implements just
+// enough of pi's documented `--mode json` protocol to drive one prompt: a
+// session header, a streamed assistant reply in two text deltas, and the
+// closing message/agent records. It never touches the network or the
+// filesystem, so the platform's pi adapter can be exercised without the real
+// CLI installed.
+//
+// Invoked as: pi --mode json [--session-id ID] [-- ...prompt]
+'use strict'
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function valueAfter(flag) {
+  const index = process.argv.indexOf(flag)
+  return index >= 0 ? process.argv[index + 1] ?? '' : ''
+}
+
+function write(record) {
+  process.stdout.write(`${JSON.stringify(record)}\n`)
+}
+
+async function main() {
+  const sessionId = valueAfter('--session-id')
+  const separator = process.argv.indexOf('--')
+  const prompt = separator >= 0 ? process.argv[separator + 1] ?? '' : ''
+  const cwd = process.cwd()
+  const reply = `pi reply: ${prompt}`
+
+  write({ type: 'session', id: sessionId, cwd })
+  write({ type: 'agent_start' })
+  write({ type: 'message_start', message: { role: 'user', content: prompt } })
+
+  const split = Math.ceil(reply.length / 2)
+  await sleep(15)
+  write({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: reply.slice(0, split) },
+  })
+  await sleep(15)
+  write({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'text_delta', delta: reply.slice(split) },
+  })
+  write({
+    type: 'message_end',
+    message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+  })
+  write({ type: 'agent_end' })
+}
+
+main().catch((error) => {
+  process.stderr.write(`fake pi: ${error && error.stack ? error.stack : error}\n`)
+  process.exit(1)
+})

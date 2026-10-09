@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+// Mock opencode v2 server for the end-to-end workbench test. It implements the
+// minimal HTTP surface the platform's opencode adapter consumes:
+//
+//   GET  /api/info                       readiness probe
+//   GET  /api/session?directory=…        list sessions
+//   POST /api/session                    create a native session
+//   GET  /api/session/:id                fetch one session
+//   POST /api/session/:id/model          model switch (accepted)
+//   POST /api/session/:id/prompt         admit a turn and stream its reply
+//   GET  /api/event                      SSE event stream
+//
+// Every request is basic-auth protected with the generated credentials the
+// adapter passes via OPENCODE_SERVER_PASSWORD. The streamed reply is emitted as
+// session.created + two session.text.delta chunks + session.text.ended so the
+// adapter normalizes it into the platform's message events.
+//
+// Invoked as: opencode serve --hostname H --port P
+'use strict'
+
+import http from 'node:http'
+import crypto from 'node:crypto'
+
+function flagValue(name, fallback) {
+  const index = process.argv.indexOf(name)
+  return index >= 0 ? process.argv[index + 1] : fallback
+}
+
+const host = flagValue('--hostname', '127.0.0.1')
+const port = Number.parseInt(flagValue('--port', '0'), 10)
+const password = process.env.OPENCODE_SERVER_PASSWORD || ''
+const directory = process.cwd()
+
+const sessions = new Map()
+const clients = new Set()
+// Every event is retained so a stream that connects after a prompt still
+// receives it; the workbench test often subscribes just after creating a
+// session, and the adapter's single stream should not miss an early turn.
+const history = []
+let sequence = 0
+
+function sendJSON(response, status, body) {
+  const payload = body === undefined ? '' : JSON.stringify(body)
+  response.writeHead(status, { 'content-type': 'application/json' })
+  response.end(payload)
+}
+
+function sendSSE(response, event) {
+  response.write(`data: ${JSON.stringify(event)}\n\n`)
+}
+
+function broadcast(event) {
+  history.push(event)
+  for (const client of clients) sendSSE(client, event)
+}
+
+function authorized(request) {
+  const header = request.headers.authorization || ''
+  const match = /^Basic (.+)$/.exec(header)
+  if (!match) return false
+  const [user, pass] = Buffer.from(match[1], 'base64').toString().split(':')
+  return user === 'opencode' && pass === password
+}
+
+function readBody(request) {
+  return new Promise((resolve) => {
+    const chunks = []
+    request.on('data', (chunk) => chunks.push(chunk))
+    request.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8').trim()
+      if (raw === '') return resolve({})
+      try {
+        resolve(JSON.parse(raw))
+      } catch {
+        resolve({})
+      }
+    })
+  })
+}
+
+function sessionInfo(id) {
+  return {
+    id,
+    projectID: 'mock-project',
+    title: sessions.get(id)?.title || '',
+    location: { directory },
+    time: { created: sessions.get(id)?.created || Date.now(), updated: Date.now() },
+  }
+}
+
+function createdEvent(id, title) {
+  sequence += 1
+  return {
+    id: `evt-${sequence}`,
+    type: 'session.created',
+    location: { directory },
+    data: { sessionID: id, title },
+    durable: { aggregateID: id, seq: sequence, version: 1 },
+  }
+}
+
+function promptEvents(id, text) {
+  const events = []
+  const reply = `opencode reply: ${text}`
+  // All records of one assistant message share its id so the adapter can close
+  // the delta set without duplicating the streamed text.
+  const messageId = `msg-${crypto.randomBytes(4).toString('hex')}`
+  sequence += 1
+  events.push({
+    id: `evt-${sequence}`,
+    type: 'session.text.started',
+    location: { directory },
+    data: { sessionID: id, assistantMessageID: messageId },
+  })
+  const split = Math.ceil(reply.length / 2)
+  for (const chunk of [reply.slice(0, split), reply.slice(split)]) {
+    sequence += 1
+    events.push({
+      id: `evt-${sequence}`,
+      type: 'session.text.delta',
+      location: { directory },
+      data: { sessionID: id, assistantMessageID: messageId, delta: chunk },
+    })
+  }
+  sequence += 1
+  events.push({
+    id: `evt-${sequence}`,
+    type: 'session.text.ended',
+    location: { directory },
+    data: { sessionID: id, assistantMessageID: messageId, text: reply },
+  })
+  return events
+}
+
+const server = http.createServer(async (request, response) => {
+  const url = new URL(request.url, `http://${host}:${port}`)
+  if (!authorized(request)) {
+    sendJSON(response, 401, { _tag: 'unauthorized', message: 'authentication required' })
+    return
+  }
+
+  // Event stream: keep the connection open until the process is stopped.
+  if (request.method === 'GET' && url.pathname === '/api/event') {
+    response.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+    })
+    response.write(': connected\n\n')
+    for (const event of history) sendSSE(response, event)
+    clients.add(response)
+    request.on('close', () => clients.delete(response))
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/info') {
+    sendJSON(response, 200, {
+      version: '0.0.0-mock',
+      pid: process.pid,
+      urls: [`http://${host}:${port}`],
+      paths: { tmp: '/tmp' },
+    })
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/session') {
+    const list = [...sessions.keys()].map(sessionInfo)
+    sendJSON(response, 200, { data: list })
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/session') {
+    const body = await readBody(request)
+    const id = `oc-${crypto.randomBytes(6).toString('hex')}`
+    sessions.set(id, { title: body.title || '', created: Date.now() })
+    broadcast(createdEvent(id, body.title || ''))
+    sendJSON(response, 200, { data: sessionInfo(id) })
+    return
+  }
+
+  const sessionMatch = /^\/api\/session\/([^/]+)(\/[a-z]+)?$/.exec(url.pathname)
+  if (sessionMatch) {
+    const id = decodeURIComponent(sessionMatch[1])
+    const action = sessionMatch[2] || ''
+    if (!sessions.has(id)) {
+      sendJSON(response, 404, { _tag: 'not_found', message: 'session not found' })
+      return
+    }
+    if (request.method === 'GET' && action === '') {
+      sendJSON(response, 200, { data: sessionInfo(id) })
+      return
+    }
+    if (request.method === 'POST' && action === '/model') {
+      await readBody(request)
+      sendJSON(response, 200, {})
+      return
+    }
+    if (request.method === 'POST' && action === '/prompt') {
+      const body = await readBody(request)
+      // Re-announce the session so a stream that connected after creation still
+      // learns the session id, then stream the reply.
+      broadcast(createdEvent(id, sessions.get(id)?.title || ''))
+      for (const event of promptEvents(id, body.text || '')) broadcast(event)
+      sendJSON(response, 200, {})
+      return
+    }
+  }
+
+  sendJSON(response, 404, { _tag: 'not_found', message: `no route for ${request.method} ${url.pathname}` })
+})
+
+server.listen(port, host, () => {
+  process.stderr.write(`mock opencode listening on http://${host}:${port}\n`)
+})
