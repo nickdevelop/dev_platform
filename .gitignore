@@ -12,6 +12,7 @@ playwright-report/
 # Go
 /platform
 /platform-server
+/bin/
 *.test
 *.out
 
