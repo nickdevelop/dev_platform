@@ -1,0 +1,125 @@
+// End-to-end lifecycle: LAN-style login through the real UI against the real
+// Go backend, then a full project lifecycle (register, create, search,
+// rename, move, unregister, delete-to-trash, logout) inside a temporary
+// authorized workspace. Filesystem effects are asserted directly from the
+// Node side, including the freedesktop trash used by the server.
+//
+// Started via `npm run test:e2e`, which provides E2E_PASSWORD,
+// E2E_WORKSPACE_ROOT and E2E_TRASH_DIR pointing at an isolated scratch
+// directory; the password is a throwaway value created for this run only.
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
+
+const password = process.env.E2E_PASSWORD
+const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
+const trashDir = process.env.E2E_TRASH_DIR
+
+if (!password || !workspaceRoot || !trashDir) {
+  throw new Error('run this spec through web/scripts/run-e2e.mjs, not plain playwright test')
+}
+
+test('login and drive a project through its full lifecycle', async ({ page, request }) => {
+  // Authorized workspace content: one existing directory to register, and
+  // one parent directory that a project can be moved into.
+  mkdirSync(join(workspaceRoot, 'alpha'))
+  mkdirSync(join(workspaceRoot, 'archive'))
+
+  // Operator setup: authorize the temporary workspace root through the
+  // workspaces API. The `request` fixture has its own cookie jar, so the
+  // browser context below stays unauthenticated and the login flow is still
+  // exercised through the UI.
+  const preSession = await (await request.get('/api/auth/session')).json()
+  const preLogin = await request.post('/api/auth/login', {
+    data: { password },
+    headers: { 'X-CSRF-Token': preSession.csrfToken },
+  })
+  expect(preLogin.status(), await preLogin.text()).toBe(200)
+  const operatorSession = await (await request.get('/api/auth/session')).json()
+  const addRoot = await request.post('/api/workspaces/roots', {
+    data: { path: workspaceRoot },
+    headers: { 'X-CSRF-Token': operatorSession.csrfToken },
+  })
+  expect(addRoot.status(), await addRoot.text()).toBe(201)
+
+  // Unauthenticated users land on the login view.
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login$/)
+
+  await page.getByLabel('平台密码').fill(password)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/\/$/)
+
+  // Register an existing directory under the authorized root.
+  await page.getByRole('button', { name: '注册已有目录' }).click()
+  const registerDialog = page.getByRole('dialog')
+  await registerDialog.getByLabel('目录的绝对路径').fill(join(workspaceRoot, 'alpha'))
+  await registerDialog.getByRole('button', { name: '注册', exact: true }).click()
+  const alphaItem = page.locator('.project-item', { hasText: 'alpha' })
+  await expect(alphaItem).toBeVisible()
+  await expect(alphaItem).toContainText(join(workspaceRoot, 'alpha'))
+
+  // Create a brand-new project directory.
+  await page.getByRole('button', { name: '新建项目' }).click()
+  const createDialog = page.getByRole('dialog')
+  await createDialog.getByLabel('父目录的绝对路径').fill(workspaceRoot)
+  await createDialog.getByLabel('项目目录名').fill('beta')
+  await createDialog.getByRole('button', { name: '创建', exact: true }).click()
+  const betaItem = page.locator('.project-item', { hasText: 'beta' })
+  await expect(betaItem).toBeVisible()
+  expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
+
+  // Search narrows the list by name.
+  await page.getByLabel('搜索项目').fill('alp')
+  await expect(betaItem).toBeHidden()
+  await expect(alphaItem).toBeVisible()
+  await page.getByLabel('搜索项目').fill('')
+
+  // Rename requires typing the project's current name.
+  await betaItem.getByRole('button', { name: '重命名' }).click()
+  const renameDialog = page.getByRole('dialog')
+  await renameDialog.getByLabel('新目录名').fill('gamma')
+  await renameDialog.getByLabel(/输入当前项目名/).fill('beta')
+  await renameDialog.getByRole('button', { name: '重命名', exact: true }).click()
+  const gammaItem = page.locator('.project-item', { hasText: 'gamma' })
+  await expect(gammaItem).toBeVisible()
+  expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(true)
+  expect(existsSync(join(workspaceRoot, 'beta'))).toBe(false)
+
+  // Move requires the typed confirmation as well.
+  await gammaItem.getByRole('button', { name: '移动' }).click()
+  const moveDialog = page.getByRole('dialog')
+  await moveDialog.getByLabel('目标完整路径').fill(join(workspaceRoot, 'archive', 'gamma'))
+  await moveDialog.getByLabel(/输入当前项目名/).fill('gamma')
+  await moveDialog.getByRole('button', { name: '移动', exact: true }).click()
+  const movedItem = page.locator('.project-item', { hasText: 'gamma' })
+  await expect(movedItem).toContainText('archive')
+  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(true)
+  expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(false)
+
+  // Unregister removes only the platform record; the directory survives.
+  await alphaItem.getByRole('button', { name: '移除记录' }).click()
+  const unregisterDialog = page.getByRole('dialog')
+  await expect(unregisterDialog).toContainText('会被完整保留')
+  await unregisterDialog.getByRole('button', { name: '移除记录', exact: true }).click()
+  await expect(alphaItem).toBeHidden()
+  expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
+
+  // Delete is destructive: it needs the typed name and prefers the OS trash.
+  await movedItem.getByRole('button', { name: '删除目录' }).click()
+  const deleteDialog = page.getByRole('dialog')
+  const deleteConfirm = deleteDialog.getByRole('button', { name: '删除目录', exact: true })
+  await expect(deleteConfirm).toBeDisabled()
+  await deleteDialog.getByLabel(/输入项目名/).fill('gamma')
+  await expect(deleteConfirm).toBeEnabled()
+  await deleteConfirm.click()
+  await expect(movedItem).toBeHidden()
+  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(false)
+  // The directory landed in the server's isolated trash, not the void.
+  const trashed = readdirSync(join(trashDir, 'files'))
+  expect(trashed.some((name) => name.startsWith('gamma'))).toBe(true)
+
+  // Logging out ends the session and returns to the login view.
+  await page.getByRole('button', { name: '退出登录' }).click()
+  await expect(page).toHaveURL(/\/login$/)
+})

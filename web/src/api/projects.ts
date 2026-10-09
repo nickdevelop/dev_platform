@@ -1,0 +1,76 @@
+// Project API calls. Request/response DTOs are explicitly synchronized with
+// docs/api/openapi.yaml (schemas Project, ProjectList and the project request
+// bodies); they stay JSON-stable and independent of Go struct shapes.
+
+import { apiRequest } from './client'
+
+// Mirrors #/components/schemas/Project.
+export interface Project {
+  id: number
+  name: string
+  path: string
+}
+
+// Mirrors #/components/schemas/ProjectList.
+export interface ProjectList {
+  projects: Project[]
+}
+
+export function listProjects(): Promise<ProjectList> {
+  return apiRequest<ProjectList>('GET', '/projects')
+}
+
+// Mirrors #/components/schemas/RegisterProjectRequest.
+export function registerProject(path: string, csrfToken: string): Promise<Project> {
+  return apiRequest<Project>('POST', '/projects', { body: { path }, csrfToken })
+}
+
+// Mirrors #/components/schemas/CreateProjectRequest.
+export function createProject(parent: string, name: string, csrfToken: string): Promise<Project> {
+  return apiRequest<Project>('POST', '/projects/create', { body: { parent, name }, csrfToken })
+}
+
+// Mirrors #/components/schemas/MoveProjectRequest.
+export function moveProject(
+  id: number,
+  path: string,
+  confirmName: string,
+  csrfToken: string,
+): Promise<Project> {
+  return apiRequest<Project>('POST', `/projects/${id}/move`, {
+    body: { path, confirmName },
+    csrfToken,
+  })
+}
+
+// Mirrors #/components/schemas/RenameProjectRequest.
+export function renameProject(
+  id: number,
+  name: string,
+  confirmName: string,
+  csrfToken: string,
+): Promise<Project> {
+  return apiRequest<Project>('POST', `/projects/${id}/rename`, {
+    body: { name, confirmName },
+    csrfToken,
+  })
+}
+
+export function unregisterProject(id: number, csrfToken: string): Promise<void> {
+  return apiRequest<void>('POST', `/projects/${id}/unregister`, { csrfToken })
+}
+
+// Mirrors #/components/schemas/DeleteProjectRequest. `permanent` is the
+// explicit second confirmation required when the OS trash is unavailable; it
+// is never implied by the UI.
+export function deleteProject(
+  id: number,
+  confirmName: string,
+  permanent: boolean,
+  csrfToken: string,
+): Promise<void> {
+  return apiRequest<void>('POST', `/projects/${id}/delete`, {
+    body: { confirmName, permanent },
+    csrfToken,
+  })
+}

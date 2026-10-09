@@ -24,7 +24,15 @@ import (
 	"devplatform/internal/workspaces"
 )
 
-const listenAddr = ":8080"
+// listenAddr resolves the address the HTTP service binds. PLATFORM_LISTEN_ADDR
+// overrides the default for deployments (and the E2E harness) that cannot use
+// :8080.
+func listenAddr() string {
+	if addr := os.Getenv("PLATFORM_LISTEN_ADDR"); addr != "" {
+		return addr
+	}
+	return ":8080"
+}
 
 // setPasswordCommand is the first-run subcommand that configures the platform
 // password from a hidden TTY prompt.
@@ -172,7 +180,7 @@ func runServer(args []string) error {
 	})
 
 	server := &http.Server{
-		Addr:              listenAddr,
+		Addr:              listenAddr(),
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -184,7 +192,7 @@ func runServer(args []string) error {
 	go func() {
 		errCh <- server.ListenAndServe()
 	}()
-	log.Printf("platform listening on %s", listenAddr)
+	log.Printf("platform listening on %s", server.Addr)
 
 	select {
 	case err := <-errCh:
