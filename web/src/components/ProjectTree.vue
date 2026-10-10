@@ -5,7 +5,7 @@
 // previously opened project is never rendered. Search matches project names and
 // task titles; the active and expanded projects always stay visible, so the open
 // selection is never hidden by a filter.
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
@@ -28,9 +28,16 @@ const sessionsStore = useSessionsStore()
 const expandedId = ref<number | null>(props.activeProjectId)
 
 const statusLabels: Record<string, string> = {
-  active: '运行中',
-  stopped: '空闲',
   disconnected: '断开',
+}
+
+// The task label is driven by the turn, not the persisted status: only a
+// running turn shows 「运行中」. A disconnected instance stays visible as such,
+// and a stopped session shows no label (idle is the silent default).
+function statusText(entry: AgentSession): string {
+  if (entry.status === 'disconnected') return statusLabels.disconnected
+  if (entry.turn === 'running') return '运行中'
+  return ''
 }
 
 const expandedSessions = computed(() => {
@@ -72,6 +79,35 @@ watch(
   { immediate: true },
 )
 
+// A task whose turn is not the open one gets no SSE events, so the tree polls
+// the session list while the expanded project has any running task. It stops as
+// soon as the list reports none, and on unmount.
+const hasRunningTasks = computed(() => expandedSessions.value.some((entry) => entry.turn === 'running'))
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+watch(
+  [expandedId, hasRunningTasks],
+  ([projectId, running]) => {
+    stopPolling()
+    if (projectId !== null && running) {
+      pollTimer = setInterval(() => {
+        void sessionsStore.refreshSessions(projectId)
+      }, 2000)
+    }
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(stopPolling)
+
 // Clicking the expanded project collapses it; clicking another project expands
 // it and collapses the previous one.
 function onProjectClick(projectId: number) {
@@ -108,7 +144,7 @@ function onProjectClick(projectId: number) {
           >
             <span class="title">{{ entry.title || entry.id }}</span>
             <BackendTag :backend="entry.backend" />
-            <span class="status">{{ statusLabels[entry.status] ?? entry.status }}</span>
+            <span v-if="statusText(entry)" class="status">{{ statusText(entry) }}</span>
           </button>
         </li>
         <li v-if="expandedSessions.length === 0" class="empty">该项目还没有任务。</li>

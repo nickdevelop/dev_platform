@@ -62,14 +62,18 @@ function stubSessions(byProject: Record<number, AgentSession[]>): string[] {
   return requested
 }
 
+const mounted: ReturnType<typeof mount>[] = []
+
 function mountTree(props: { activeProjectId: number | null; activeSessionId?: string | null; search?: string }) {
-  return mount(ProjectTree, {
+  const wrapper = mount(ProjectTree, {
     props: {
       activeProjectId: props.activeProjectId,
       activeSessionId: props.activeSessionId ?? null,
       search: props.search ?? '',
     },
   })
+  mounted.push(wrapper)
+  return wrapper
 }
 
 describe('ProjectTree', () => {
@@ -80,6 +84,9 @@ describe('ProjectTree', () => {
   })
 
   afterEach(() => {
+    for (const wrapper of mounted) wrapper.unmount()
+    mounted.length = 0
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -98,20 +105,59 @@ describe('ProjectTree', () => {
     expect(requested).toEqual(['/api/projects/1/sessions'])
   })
 
-  it('shows each task with its backend tag and status', async () => {
+  it('shows a running turn as 运行中 and hides idle status', async () => {
     stubSessions({
-      1: [session({ id: 's1', title: 'Task A', backend: 'opencode-v2', status: 'active' })],
+      1: [
+        session({ id: 's1', title: 'Task A', backend: 'opencode-v2', turn: 'running' }),
+        session({ id: 's2', title: 'Task B', status: 'active', turn: 'idle' }),
+      ],
     })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    const task = wrapper.findAll('.task').find((item) => item.text().includes('Task A'))
-    expect(task).toBeDefined()
-    const tag = task!.findComponent(BackendTag)
+    const running = wrapper.findAll('.task').find((item) => item.text().includes('Task A'))
+    expect(running).toBeDefined()
+    const tag = running!.findComponent(BackendTag)
     expect(tag.exists()).toBe(true)
     expect(tag.props('backend')).toBe('opencode-v2')
     expect(tag.text()).toBe('opencode')
-    expect(task!.text()).toContain('运行中')
+    expect(running!.find('.status').text()).toBe('运行中')
+
+    const idle = wrapper.findAll('.task').find((item) => item.text().includes('Task B'))
+    expect(idle).toBeDefined()
+    expect(idle!.find('.status').exists()).toBe(false)
+  })
+
+  it('shows a disconnected session as 断开', async () => {
+    stubSessions({ 1: [session({ id: 's1', title: 'Task A', status: 'disconnected' })] })
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+
+    expect(wrapper.find('.status').text()).toBe('断开')
+  })
+
+  it('polls while the expanded project has a running task and stops when none is', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const byProject: Record<number, AgentSession[]> = { 1: [session({ id: 's1', turn: 'running' })] }
+    const requested = stubSessions(byProject)
+    mountTree({ activeProjectId: 1 })
+    await flushPromises()
+    expect(requested).toEqual(['/api/projects/1/sessions'])
+
+    vi.advanceTimersByTime(2000)
+    await flushPromises()
+    expect(requested.length).toBe(2)
+
+    // The turn finished: the next refresh carries no running task and the poll
+    // stops, so further time passes issue no more requests.
+    byProject[1] = [session({ id: 's1', turn: 'idle' })]
+    vi.advanceTimersByTime(2000)
+    await flushPromises()
+    expect(requested.length).toBe(3)
+
+    vi.advanceTimersByTime(4000)
+    await flushPromises()
+    expect(requested.length).toBe(3)
   })
 
   it('keeps the active task selected and emits nothing when search has no match', async () => {
