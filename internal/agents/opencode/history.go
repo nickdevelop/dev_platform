@@ -16,8 +16,8 @@ var _ agents.HistoryReader = (*Adapter)(nil)
 // ListHistory reads a session's native message log and translates it into the
 // platform's normalized events.
 //
-// The translation mirrors the live stream: assistant reasoning and the
-// endpoint's turn markers produce nothing, so a replayed conversation looks
+// The translation mirrors the live stream: reasoning, replies and tool activity
+// all become their own event kinds in both, so a replayed conversation looks
 // like the one the user watched. Returned events leave InstanceID and
 // SessionID empty — the request names an instance-free scope — and are marked
 // Replayed.
@@ -89,8 +89,9 @@ func (a *Adapter) historyInstance(directory string) (*instance, error) {
 }
 
 // normalizeHistoryMessage translates one native message. A message can yield
-// two events (an assistant entry that both speaks and calls a tool), one, or
-// none (reasoning, turn markers, model switches).
+// several events (an assistant entry that reasons, speaks and calls a tool), one,
+// or none (turn markers, model switches). The reasoning block is kept as its own
+// event kind so a replayed conversation matches the live one.
 func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 	observed := time.Now().UTC()
 	if message.Time.Created != 0 {
@@ -126,6 +127,14 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 				events = append(events, event)
 			case "tool":
 				events = append(events, toolHistoryEvents(envelope, block)...)
+			case "reasoning":
+				if block.Text == "" {
+					continue
+				}
+				event := envelope
+				event.Type = agents.EventThinking
+				event.Thinking = &agents.ThinkingPayload{Text: block.Text, Final: true}
+				events = append(events, event)
 			}
 		}
 		return events

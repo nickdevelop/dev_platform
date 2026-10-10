@@ -1069,6 +1069,32 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 	case "session.text.started":
 		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "text_started", "")}
 
+	// Reasoning streams under its own event family and becomes its own kind of
+	// entry: the deltas carry it and reasoning.ended closes the block. No event
+	// is emitted for reasoning.started, because nothing consumes a start marker
+	// — the workbench opens the block on the first chunk.
+	case "session.reasoning.started":
+		return nil
+
+	case "session.reasoning.delta":
+		inst.setReasoningOpen(sessionID, data.AssistantMessageID)
+		out := inst.event(sessionID)
+		out.Type = agents.EventThinking
+		out.Thinking = &agents.ThinkingPayload{Text: data.Delta, Final: false}
+		return []agents.NormalizedEvent{out}
+
+	case "session.reasoning.ended":
+		text := data.Text
+		if inst.takeReasoningOpen(sessionID, data.AssistantMessageID) {
+			// Deltas already carried the text; close with an empty
+			// terminator so a concatenating consumer does not double it.
+			text = ""
+		}
+		out := inst.event(sessionID)
+		out.Type = agents.EventThinking
+		out.Thinking = &agents.ThinkingPayload{Text: text, Final: true}
+		return []agents.NormalizedEvent{out}
+
 	case "session.tool.input.started":
 		inst.rememberToolName(sessionID, data.AssistantMessageID, data.ID, data.Name)
 		return nil
@@ -1164,6 +1190,30 @@ func (inst *instance) forgetToolName(sessionID, messageID, toolID string) {
 // deltaKey and toolKey scope adapter-side bookkeeping to a message/tool.
 func deltaKey(sessionID, messageID string) string {
 	return sessionID + "|" + messageID
+}
+
+// reasoningKey namespaces the reasoning block in the same open-chunk map the
+// text stream uses, so a message with both streams keeps them independent.
+func reasoningKey(sessionID, messageID string) string {
+	return "reasoning|" + deltaKey(sessionID, messageID)
+}
+
+// setReasoningOpen marks that reasoning deltas were streamed for one message.
+func (inst *instance) setReasoningOpen(sessionID, messageID string) {
+	inst.mu.Lock()
+	inst.deltaOpen[reasoningKey(sessionID, messageID)] = true
+	inst.mu.Unlock()
+}
+
+// takeReasoningOpen reports whether reasoning deltas were streamed and clears
+// the marker.
+func (inst *instance) takeReasoningOpen(sessionID, messageID string) bool {
+	key := reasoningKey(sessionID, messageID)
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	open := inst.deltaOpen[key]
+	delete(inst.deltaOpen, key)
+	return open
 }
 
 func toolKey(sessionID, messageID, toolID string) string {

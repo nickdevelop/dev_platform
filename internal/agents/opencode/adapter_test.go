@@ -836,36 +836,41 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		t.Fatalf("ListHistory: %v", err)
 	}
 	events := result.Events
-	if len(events) != 6 {
-		t.Fatalf("ListHistory returned %d events, want 6: %+v", len(events), events)
+	if len(events) != 7 {
+		t.Fatalf("ListHistory returned %d events, want 7: %+v", len(events), events)
 	}
 
 	if events[0].Type != agents.EventMessage || events[0].Message == nil ||
 		events[0].Message.Role != "user" || events[0].Message.Text != "历史里的用户消息" || !events[0].Message.Final {
 		t.Errorf("events[0] = %+v, want the user message", events[0])
 	}
-	if events[1].Type != agents.EventMessage || events[1].Message == nil ||
-		events[1].Message.Role != "assistant" || events[1].Message.Text != "历史里的助手回复" {
-		t.Errorf("events[1] = %+v, want the assistant message after skipping reasoning", events[1])
+	// The reasoning block arrives before the reply it belongs to.
+	if events[1].Type != agents.EventThinking || events[1].Thinking == nil ||
+		events[1].Thinking.Text != "这段推理必须被跳过" || !events[1].Thinking.Final {
+		t.Errorf("events[1] = %+v, want the replayed reasoning block", events[1])
 	}
-	if events[2].Type != agents.EventToolCall || events[2].ToolCall == nil ||
-		events[2].ToolCall.CallID != "call_1" || events[2].ToolCall.Name != "execute" {
-		t.Fatalf("events[2] = %+v, want the first tool call", events[2])
+	if events[2].Type != agents.EventMessage || events[2].Message == nil ||
+		events[2].Message.Role != "assistant" || events[2].Message.Text != "历史里的助手回复" {
+		t.Errorf("events[2] = %+v, want the assistant message", events[2])
+	}
+	if events[3].Type != agents.EventToolCall || events[3].ToolCall == nil ||
+		events[3].ToolCall.CallID != "call_1" || events[3].ToolCall.Name != "execute" {
+		t.Fatalf("events[3] = %+v, want the first tool call", events[3])
 	}
 	var input map[string]string
-	if err := json.Unmarshal(events[2].ToolCall.Input, &input); err != nil || input["code"] != "ls -la" {
-		t.Errorf("first tool call input = %s, want the fixture state.input", events[2].ToolCall.Input)
+	if err := json.Unmarshal(events[3].ToolCall.Input, &input); err != nil || input["code"] != "ls -la" {
+		t.Errorf("first tool call input = %s, want the fixture state.input", events[3].ToolCall.Input)
 	}
-	if events[3].Type != agents.EventToolResult || events[3].ToolResult == nil ||
-		events[3].ToolResult.CallID != "call_1" || events[3].ToolResult.Output != "历史里的工具输出" || events[3].ToolResult.IsError {
-		t.Errorf("events[3] = %+v, want the completed tool result", events[3])
+	if events[4].Type != agents.EventToolResult || events[4].ToolResult == nil ||
+		events[4].ToolResult.CallID != "call_1" || events[4].ToolResult.Output != "历史里的工具输出" || events[4].ToolResult.IsError {
+		t.Errorf("events[4] = %+v, want the completed tool result", events[4])
 	}
-	if events[4].Type != agents.EventToolCall || events[4].ToolCall == nil || events[4].ToolCall.CallID != "call_2" {
-		t.Fatalf("events[4] = %+v, want the second tool call", events[4])
+	if events[5].Type != agents.EventToolCall || events[5].ToolCall == nil || events[5].ToolCall.CallID != "call_2" {
+		t.Fatalf("events[5] = %+v, want the second tool call", events[5])
 	}
-	if events[5].Type != agents.EventToolResult || events[5].ToolResult == nil ||
-		events[5].ToolResult.CallID != "call_2" || !events[5].ToolResult.IsError {
-		t.Errorf("events[5] = %+v, want a failed tool result for call_2", events[5])
+	if events[6].Type != agents.EventToolResult || events[6].ToolResult == nil ||
+		events[6].ToolResult.CallID != "call_2" || !events[6].ToolResult.IsError {
+		t.Errorf("events[6] = %+v, want a failed tool result for call_2", events[6])
 	}
 
 	for i, event := range events {
@@ -1004,5 +1009,108 @@ func TestListHistoryFallsBackToAnyRunningInstance(t *testing.T) {
 	}
 	if len(result.Events) == 0 {
 		t.Fatal("ListHistory returned nothing through the fallback instance")
+	}
+}
+
+// TestAdapterSubscribeStreamsReasoning pins that the reasoning event family
+// becomes its own event kind rather than being folded into the reply: deltas
+// stream non-final and the block closes with an empty final terminator, exactly
+// like the text family, and the text stream is unaffected.
+func TestAdapterSubscribeStreamsReasoning(t *testing.T) {
+	events := strings.Join([]string{
+		sseEvent("evt_1", "session.reasoning.started", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"reasoningID":"rs_1"}`, "/x"),
+		sseEvent("evt_2", "session.reasoning.delta", `{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","delta":"先看"}`, "/x"),
+		sseEvent("evt_3", "session.reasoning.delta", `{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","delta":"再看"}`, "/x"),
+		sseEvent("evt_4", "session.reasoning.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","text":"先看再看"}`, "/x"),
+		sseEvent("evt_5", "session.text.delta", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"delta":"答案"}`, "/x"),
+		sseEvent("evt_6", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"text":"答案"}`, "/x"),
+	}, "")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"Reasoning","time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	got := collectEvents(t, stream, 5)
+
+	for i, want := range map[int]string{0: "先看", 1: "再看"} {
+		event := got[i]
+		if event.Type != agents.EventThinking || event.Thinking == nil ||
+			event.Thinking.Text != want || event.Thinking.Final {
+			t.Errorf("event[%d] = %+v, want a non-final thinking chunk %q", i, event, want)
+		}
+	}
+	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || got[2].Thinking.Text != "" || !got[2].Thinking.Final {
+		t.Errorf("event[2] = %+v, want an empty final thinking terminator", got[2])
+	}
+	if got[3].Type != agents.EventMessage || got[3].Message == nil || got[3].Message.Text != "答案" || got[3].Message.Final {
+		t.Errorf("event[3] = %+v, want the streamed text delta", got[3])
+	}
+	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "" || !got[4].Message.Final {
+		t.Errorf("event[4] = %+v, want the text terminator", got[4])
+	}
+}
+
+// TestAdapterSubscribeReportsReasoningWithoutDeltas pins the non-streaming
+// shape: a single ended event with text and no preceding delta is carried
+// whole rather than dropped.
+func TestAdapterSubscribeReportsReasoningWithoutDeltas(t *testing.T) {
+	events := sseEvent("evt_1", "session.reasoning.ended",
+		`{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","text":"完整推理"}`, "/x")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"R","time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	got := collectEvents(t, stream, 1)
+
+	if got[0].Type != agents.EventThinking || got[0].Thinking == nil ||
+		got[0].Thinking.Text != "完整推理" || !got[0].Thinking.Final {
+		t.Errorf("event[0] = %+v, want the whole reasoning block", got[0])
 	}
 }
