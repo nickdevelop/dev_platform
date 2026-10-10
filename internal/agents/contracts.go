@@ -37,6 +37,9 @@ var (
 	// ErrRawEventTooLarge reports a backend JSON blob beyond the contract
 	// size bound.
 	ErrRawEventTooLarge = errors.New("agents: raw event exceeds size bound")
+	// ErrInvalidHistoryRequest reports a history read that does not name both
+	// a working directory and an agent-native session id.
+	ErrInvalidHistoryRequest = errors.New("agents: invalid history request")
 )
 
 // BackendID identifies an agent backend supported by the workbench. The
@@ -95,6 +98,11 @@ type Capabilities struct {
 	// interrupted through the adapter (Interrupt) without stopping the
 	// instance or its other sessions.
 	Interrupt bool `json:"interrupt"`
+	// SessionHistory reports whether an existing agent-native session's prior
+	// turns can be read (HistoryReader). A backend that does not declare it
+	// must not be asked for history, and the workbench must not offer a
+	// history view for it.
+	SessionHistory bool `json:"sessionHistory"`
 }
 
 // ModelInfo is one model an agent can run, as the backend reports it. ID is
@@ -229,6 +237,29 @@ func (s SessionRef) Validate() error {
 	return nil
 }
 
+// ListHistoryRequest scopes a read of an agent-native session's prior turns.
+// Directory is an already-authorized platform path and SessionID is the
+// agent's own session identifier; the pair is what a transcript is stored
+// under, so neither may be empty.
+type ListHistoryRequest struct {
+	// Directory is the working directory the agent operated in.
+	Directory string `json:"directory"`
+	// SessionID is the agent-native session identifier.
+	SessionID string `json:"sessionId"`
+}
+
+// Validate reports whether the history request names both the directory and
+// the session it reads.
+func (r ListHistoryRequest) Validate() error {
+	if r.Directory == "" {
+		return fmt.Errorf("%w: directory is empty", ErrInvalidHistoryRequest)
+	}
+	if r.SessionID == "" {
+		return fmt.Errorf("%w: session id is empty", ErrInvalidHistoryRequest)
+	}
+	return nil
+}
+
 // StartInstanceRequest asks an adapter to bring up one instance of its
 // backend in a working directory.
 type StartInstanceRequest struct {
@@ -314,4 +345,23 @@ type AgentAdapter interface {
 	// Interrupt ends the current turn of one session and leaves the instance
 	// and its other sessions running. Requires Capabilities.Interrupt.
 	Interrupt(ctx context.Context, ref SessionRef) error
+}
+
+// HistoryReader is the optional half of the adapter contract: an adapter
+// implements it when Capabilities.SessionHistory is true, so the workbench can
+// read an existing agent-native session's prior turns.
+//
+// It is deliberately separate from AgentAdapter and deliberately carries no
+// instance id. History lives in the agent's own storage, so reading it needs
+// only the working directory and the agent-native session id — which is also
+// what lets a caller replay a session whose original instance is gone.
+type HistoryReader interface {
+	// ListHistory returns the session's prior turns as normalized events,
+	// oldest first, bounded by MaxHistoryEvents.
+	//
+	// The returned events carry Backend, Sequence, Timestamp and exactly one
+	// typed payload; InstanceID and SessionID are left empty because the
+	// request names neither. Callers that need a complete envelope (for
+	// Validate) stamp the instance and session identity themselves.
+	ListHistory(ctx context.Context, request ListHistoryRequest) ([]NormalizedEvent, error)
 }

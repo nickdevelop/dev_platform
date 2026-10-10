@@ -12,6 +12,12 @@ import (
 // preserving the original bytes of unknown events.
 const MaxRawEventBytes = 64 * 1024
 
+// MaxHistoryEvents bounds how many prior events one history read returns.
+// A transcript is unbounded in principle — a long session's pi JSONL file is
+// routinely megabytes — so a reader keeps the most recent events and reports
+// the truncation rather than materializing the whole file.
+const MaxHistoryEvents = 5000
+
 // EventType discriminates the NormalizedEvent union: it names which payload
 // field carries the event body.
 type EventType string
@@ -107,6 +113,11 @@ type NormalizedEvent struct {
 	// Sequence increases by one per event per instance and orders the
 	// stream.
 	Sequence uint64 `json:"sequence"`
+	// Replayed is true for an event read from an agent-native transcript
+	// rather than observed on the live stream. It keeps a replayed event
+	// distinguishable from a realtime one without changing the envelope for
+	// realtime events, which omit the field entirely.
+	Replayed bool `json:"replayed,omitempty"`
 	// Timestamp is when the event was observed by the adapter.
 	Timestamp time.Time `json:"timestamp"`
 	// Type discriminates the union and names the non-nil payload field.

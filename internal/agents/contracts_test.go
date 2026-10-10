@@ -597,3 +597,75 @@ func TestContractsSubscribeCancellation(t *testing.T) {
 		t.Fatal("consumer did not observe context cancellation")
 	}
 }
+
+// TestListHistoryRequestValidate pins the history request contract: both the
+// working directory and the agent-native session id are required, because a
+// read scoped to neither could return another project's transcript.
+func TestListHistoryRequestValidate(t *testing.T) {
+	valid := ListHistoryRequest{Directory: "/data/projects/demo", SessionID: "ses_123"}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid request rejected: %v", err)
+	}
+
+	cases := map[string]ListHistoryRequest{
+		"empty directory": {Directory: "", SessionID: "ses_123"},
+		"empty session":   {Directory: "/data/projects/demo", SessionID: ""},
+	}
+	for name, request := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := request.Validate(); !errors.Is(err, ErrInvalidHistoryRequest) {
+				t.Errorf("Validate() = %v, want ErrInvalidHistoryRequest", err)
+			}
+		})
+	}
+}
+
+// TestCapabilitiesSessionHistoryDefaultsFalse pins the opt-in rule every
+// capability follows: the zero value declares nothing.
+func TestCapabilitiesSessionHistoryDefaultsFalse(t *testing.T) {
+	var capabilities Capabilities
+	if capabilities.SessionHistory {
+		t.Fatal("zero-value Capabilities must not declare session history")
+	}
+}
+
+// TestNormalizedEventReplayedRoundTrip pins the JSON shape of the replay
+// marker: present and true for history, absent for the live stream so the
+// envelope stays unchanged on the wire for realtime events.
+func TestNormalizedEventReplayedRoundTrip(t *testing.T) {
+	event := NormalizedEvent{
+		InstanceID: "inst-1",
+		SessionID:  "ses_123",
+		Backend:    BackendPi,
+		Sequence:   1,
+		Timestamp:  time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC),
+		Type:       EventMessage,
+		Message:    &MessagePayload{Role: "user", Text: "hi", Final: true},
+		Replayed:   true,
+	}
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal replayed event: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"replayed":true`) {
+		t.Errorf("replayed event JSON = %s, want it to carry replayed:true", encoded)
+	}
+
+	event.Replayed = false
+	encoded, err = json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal realtime event: %v", err)
+	}
+	if strings.Contains(string(encoded), "replayed") {
+		t.Errorf("realtime event JSON = %s, want no replayed field", encoded)
+	}
+}
+
+// TestHistoryReaderIsOptional pins the contract choice that history is an
+// optional capability interface: an adapter that only implements AgentAdapter
+// must not be a HistoryReader, so no test double is forced to stub history.
+func TestHistoryReaderIsOptional(t *testing.T) {
+	if _, ok := any(stubAdapter{}).(HistoryReader); ok {
+		t.Fatal("stubAdapter must not satisfy HistoryReader")
+	}
+}
