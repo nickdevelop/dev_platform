@@ -29,15 +29,15 @@ onMounted(load)
 watch(() => props.projectId, load)
 
 async function load() {
+  await agents.loadBackends()
+  if (selectedBackend.value === '' && agents.backends.length > 0) {
+    selectedBackend.value = agents.backends[0].backend
+  }
   await Promise.all([
-    agents.loadBackends(),
     agents.loadInstances(props.projectId),
     agents.loadDiagnostics(),
     agents.loadBackendConfigs(props.projectId),
   ])
-  if (selectedBackend.value === '' && agents.backends.length > 0) {
-    selectedBackend.value = agents.backends[0].backend
-  }
 }
 
 async function start() {
@@ -198,6 +198,15 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 .actions .unregister {
   color: #334155;
   border-color: #cbd5e1;
+}
+
+.backend-config-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
 .start-instance {

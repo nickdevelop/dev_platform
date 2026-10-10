@@ -148,6 +148,7 @@ async function logout() {
   height: 100vh;
   background: #f4f5f7;
   color: #1f2328;
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
 }
 
