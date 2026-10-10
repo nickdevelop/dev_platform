@@ -68,7 +68,8 @@ func TestContractsCapabilityCombinations(t *testing.T) {
 	// not opt in must never expose a control that pretends to work.
 	var zero Capabilities
 	if zero.Streaming || zero.SessionDiscovery || zero.SessionContinue ||
-		zero.Stop || zero.ModelSelection || zero.ToolCallEvents || zero.ToolConfirmation {
+		zero.Stop || zero.ModelSelection || zero.ToolCallEvents || zero.ToolConfirmation ||
+		zero.Interrupt {
 		t.Error("zero Capabilities must be false for every capability")
 	}
 
@@ -80,7 +81,7 @@ func TestContractsCapabilityCombinations(t *testing.T) {
 	}
 	for _, key := range []string{
 		"streaming", "sessionDiscovery", "sessionContinue", "stop",
-		"modelSelection", "toolCallEvents", "toolConfirmation",
+		"modelSelection", "toolCallEvents", "toolConfirmation", "interrupt",
 	} {
 		if !strings.Contains(string(data), `"`+key+`":false`) {
 			t.Errorf("marshaled Capabilities %s lacks explicit key %q", data, key)
@@ -516,6 +517,12 @@ func (stubAdapter) CreateSession(ctx context.Context, instanceID string, opts Cr
 func (stubAdapter) ContinueSession(ctx context.Context, ref SessionRef) (*SessionRef, error) {
 	return nil, ctx.Err()
 }
+
+func (stubAdapter) ListModels(ctx context.Context, instanceID string) ([]ModelInfo, error) {
+	return nil, ctx.Err()
+}
+
+func (stubAdapter) Interrupt(ctx context.Context, ref SessionRef) error { return ctx.Err() }
 
 func (stubAdapter) SendMessage(ctx context.Context, ref SessionRef, message SendMessageRequest) error {
 	return ctx.Err()

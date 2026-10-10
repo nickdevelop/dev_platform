@@ -145,6 +145,12 @@ func (f *fakeAdapter) SendMessage(context.Context, agents.SessionRef, agents.Sen
 	return nil
 }
 
+func (f *fakeAdapter) ListModels(context.Context, string) ([]agents.ModelInfo, error) {
+	return nil, nil
+}
+
+func (f *fakeAdapter) Interrupt(context.Context, agents.SessionRef) error { return nil }
+
 func (f *fakeAdapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -1618,3 +1618,13 @@ func newUUID() (string, error) {
 	buf[8] = (buf[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
+
+// ListModels is replaced by the opencode model listing in the next change.
+func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
+	return nil, errors.New("opencode: list models not implemented")
+}
+
+// Interrupt is replaced by the opencode turn interrupt in the next change.
+func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
+	return errors.New("opencode: interrupt not implemented")
+}

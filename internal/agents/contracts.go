@@ -91,6 +91,20 @@ type Capabilities struct {
 	// ToolConfirmation reports whether the backend can pause a tool call and
 	// wait for the user to confirm it.
 	ToolConfirmation bool `json:"toolConfirmation"`
+	// Interrupt reports whether the current turn of one session can be
+	// interrupted through the adapter (Interrupt) without stopping the
+	// instance or its other sessions.
+	Interrupt bool `json:"interrupt"`
+}
+
+// ModelInfo is one model an agent can run, as the backend reports it. ID is
+// the value SendMessageRequest.Model and CreateSessionOptions.Model accept:
+// "provider/model", or "provider/model#variant" for a model variant.
+type ModelInfo struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Provider string   `json:"provider"`
+	Variants []string `json:"variants,omitempty"`
 }
 
 // InstanceStatus is the lifecycle state of an adapter-managed instance.
@@ -292,4 +306,12 @@ type AgentAdapter interface {
 	// gone, or the backend stream terminated — and any error terminates the
 	// stream through an EventError event before closing.
 	Subscribe(ctx context.Context, instanceID string) (<-chan NormalizedEvent, error)
+
+	// ListModels returns the models the instance's backend can run. Requires
+	// Capabilities.ModelSelection.
+	ListModels(ctx context.Context, instanceID string) ([]ModelInfo, error)
+
+	// Interrupt ends the current turn of one session and leaves the instance
+	// and its other sessions running. Requires Capabilities.Interrupt.
+	Interrupt(ctx context.Context, ref SessionRef) error
 }

@@ -510,6 +510,12 @@ func (f *routerFakeAdapter) SendMessage(context.Context, agents.SessionRef, agen
 	return nil
 }
 
+func (f *routerFakeAdapter) ListModels(context.Context, string) ([]agents.ModelInfo, error) {
+	return nil, nil
+}
+
+func (f *routerFakeAdapter) Interrupt(context.Context, agents.SessionRef) error { return nil }
+
 func (f *routerFakeAdapter) Subscribe(context.Context, string) (<-chan agents.NormalizedEvent, error) {
 	return make(chan agents.NormalizedEvent), nil
 }
