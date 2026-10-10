@@ -8,7 +8,7 @@ const props = defineProps<{
   capabilitiesFor: (backend: string) => Capabilities | null
 }>()
 
-const emit = defineEmits<{ stop: [instanceId: string] }>()
+const emit = defineEmits<{ stop: [instanceId: string]; discover: [instanceId: string] }>()
 
 const statusLabels: Record<string, string> = {
   starting: '启动中',
@@ -19,6 +19,10 @@ const statusLabels: Record<string, string> = {
 
 function canStop(backend: string, status: string): boolean {
   return status === 'running' && props.capabilitiesFor(backend)?.stop === true
+}
+
+function canDiscover(backend: string, status: string): boolean {
+  return status === 'running' && props.capabilitiesFor(backend)?.sessionDiscovery === true
 }
 </script>
 
@@ -33,9 +37,20 @@ function canStop(backend: string, status: string): boolean {
         <span class="directory">{{ instance.directory }}</span>
         <span v-if="instance.error" class="instance-error" role="alert">{{ instance.error }}</span>
       </div>
-      <button v-if="canStop(instance.backend, instance.status)" type="button" class="stop" @click="emit('stop', instance.id)">
-        停止
-      </button>
+      <div class="instance-actions">
+        <button
+          v-if="canDiscover(instance.backend, instance.status)"
+          type="button"
+          class="discover"
+          data-test="discover-sessions"
+          @click="emit('discover', instance.id)"
+        >
+          发现原生会话
+        </button>
+        <button v-if="canStop(instance.backend, instance.status)" type="button" class="stop" @click="emit('stop', instance.id)">
+          停止
+        </button>
+      </div>
     </li>
     <li v-if="props.instances.length === 0" class="empty">尚未启动任何 Agent 实例。</li>
   </ul>
@@ -98,6 +113,12 @@ function canStop(backend: string, status: string): boolean {
   width: 100%;
 }
 
+.instance-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .instance-item button {
   padding: 0.3rem 0.65rem;
   border: 1px solid #fca5a5;
@@ -105,6 +126,11 @@ function canStop(backend: string, status: string): boolean {
   background: #fff;
   color: #b91c1c;
   cursor: pointer;
+}
+
+.instance-item button.discover {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
 }
 
 .empty {

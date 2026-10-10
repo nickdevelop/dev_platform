@@ -15,7 +15,6 @@ import { useSessionsStore } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
-import NewTaskPanel from '../components/NewTaskPanel.vue'
 import TaskChatPanel from '../components/TaskChatPanel.vue'
 
 // A fully-false capability declaration: the workbench must expose no controls.
@@ -540,45 +539,6 @@ describe('task chat and new task panels', () => {
     expect(sent?.body).toEqual({ text: 'hello' })
   })
 
-  it('offers a discover-native-sessions action that merges results without duplicates', async () => {
-    const existing = session({ id: 'sess-1', title: 'Existing' })
-    const discovered = session({ id: 'sess-2', title: 'Discovered' })
-    const calls = stubRoutes([
-      ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [existing] } }],
-      [
-        'GET',
-        '/api/projects/1/instances/inst-1/sessions',
-        { status: 200, body: { sessions: [discovered, existing] } },
-      ],
-      ['GET', '/api/projects/1/instances', { status: 200, body: { instances: [instance({ id: 'inst-1', backend: 'pi' })] } }],
-      [
-        'GET',
-        '/api/agent-backends',
-        {
-          status: 200,
-          body: {
-            backends: [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true, streaming: true }) }],
-          },
-        },
-      ],
-    ])
-    vi.stubGlobal('EventSource', FakeEventSource)
-
-    const stores = setupStores()
-    await stores.sessions.loadSessions(1)
-    const wrapper = mount(NewTaskPanel, { props: { projectId: 1 }, global: { plugins: [pinia] } })
-    mounted.push(wrapper)
-    await flushPromises()
-
-    const button = wrapper.find('[data-test="discover-sessions"]')
-    expect(button.exists()).toBe(true)
-    await button.trigger('click')
-    await flushPromises()
-
-    // The discovered session is merged; the already-known one is not duplicated.
-    expect(stores.sessions.sessions.map((entry) => entry.id)).toEqual(['sess-1', 'sess-2'])
-    expect(calls.find((call) => call.path.endsWith('/instances/inst-1/sessions'))).toBeTruthy()
-  })
 })
 
 describe('project backend enable/disable store', () => {

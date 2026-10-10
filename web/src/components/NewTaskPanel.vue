@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// New task form for the right pane of the shell. A task is created as a session
-// on a running instance; model input and native-session discovery are offered
-// only when the selected instance's backend declares them. On success the shell
-// navigates to the new task.
+// New task form for the right pane of the shell. A task names only an agent
+// backend: the server reuses or starts the project's instance for that backend.
+// The model is chosen in the chat composer, and native-session discovery lives
+// in project settings. On success the shell navigates to the new task.
 import { computed, onMounted, ref } from 'vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
-import type { CreateSessionBody } from '../api/sessions'
+import type { BackendId } from '../api/agents'
 import BackendTag from './BackendTag.vue'
 
 const props = defineProps<{ projectId: number }>()
@@ -16,49 +16,34 @@ const emit = defineEmits<{ created: [sessionId: string] }>()
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
 
-const selectedInstanceId = ref('')
+const selectedBackend = ref<BackendId | ''>('')
 const sessionTitle = ref('')
-const sessionModel = ref('')
 const creating = ref(false)
-const discovering = ref(false)
 
-const selectedInstance = computed(() =>
-  agents.runningInstances.find((entry) => entry.id === selectedInstanceId.value) ?? null,
+const selectedCapabilities = computed(() =>
+  selectedBackend.value === '' ? null : agents.capabilitiesFor(selectedBackend.value),
 )
 
-const modelSelectionAvailable = computed(
-  () => selectedInstance.value !== null && agents.capabilitiesFor(selectedInstance.value.backend)?.modelSelection === true,
-)
-
-const discoverAvailable = computed(
-  () => selectedInstance.value !== null && agents.capabilitiesFor(selectedInstance.value.backend)?.sessionDiscovery === true,
+const selectedEnabled = computed(
+  () => selectedBackend.value !== '' && agents.backendEnabledFor(selectedBackend.value),
 )
 
 onMounted(async () => {
-  await Promise.all([agents.loadBackends(), agents.loadInstances(props.projectId)])
-  if (selectedInstanceId.value === '' && agents.runningInstances.length > 0) {
-    selectedInstanceId.value = agents.runningInstances[0].id
+  await Promise.all([agents.loadBackends(), agents.loadBackendConfigs(props.projectId)])
+  if (selectedBackend.value === '' && agents.backends.length > 0) {
+    selectedBackend.value = agents.backends[0].backend
   }
 })
 
 async function createSession() {
-  if (selectedInstanceId.value === '' || creating.value) return
+  if (selectedBackend.value === '' || creating.value || !selectedEnabled.value) return
   creating.value = true
-  const body: CreateSessionBody = { instanceId: selectedInstanceId.value }
-  if (sessionTitle.value.trim() !== '') body.title = sessionTitle.value.trim()
-  if (modelSelectionAvailable.value && sessionModel.value.trim() !== '') {
-    body.model = sessionModel.value.trim()
-  }
-  const created = await sessions.createSession(props.projectId, body)
+  const created = await sessions.createSession(props.projectId, {
+    backend: selectedBackend.value,
+    title: sessionTitle.value.trim() === '' ? undefined : sessionTitle.value.trim(),
+  })
   creating.value = false
   if (created) emit('created', created.id)
-}
-
-async function discover() {
-  if (selectedInstanceId.value === '' || discovering.value) return
-  discovering.value = true
-  await sessions.discoverNativeSessions(props.projectId, selectedInstanceId.value)
-  discovering.value = false
 }
 </script>
 
@@ -67,38 +52,46 @@ async function discover() {
     <h1>新建任务</h1>
 
     <form class="create-session" @submit.prevent="createSession">
-      <label for="instance-select">运行实例</label>
-      <div class="instance-row">
-        <select id="instance-select" v-model="selectedInstanceId">
-          <option v-for="instance in agents.runningInstances" :key="instance.id" :value="instance.id">
-            {{ instance.backend }} · {{ instance.id }}
+      <label for="backend-select">Agent 后端</label>
+      <div class="backend-row">
+        <select id="backend-select" v-model="selectedBackend">
+          <option
+            v-for="backend in agents.backends"
+            :key="backend.backend"
+            :value="backend.backend"
+            :disabled="!agents.backendEnabledFor(backend.backend)"
+          >
+            {{ backend.backend }}{{ agents.backendEnabledFor(backend.backend) ? '' : '（已在项目中禁用）' }}
           </option>
         </select>
-        <BackendTag v-if="selectedInstance" :backend="selectedInstance.backend" />
+        <BackendTag v-if="selectedBackend !== ''" :backend="selectedBackend" />
       </div>
-      <p v-if="agents.runningInstances.length === 0" class="hint">请先在项目设置中启动实例。</p>
+      <p v-if="selectedCapabilities" class="hint">
+        {{
+          selectedCapabilities.modelSelection
+            ? '支持模型选择与工具确认；模型在对话页选择。'
+            : '不支持模型选择；模型将使用后端默认值。'
+        }}
+      </p>
 
       <label for="session-title">任务标题</label>
-      <input id="session-title" v-model="sessionTitle" type="text" placeholder="标题（可选）" autocomplete="off" />
+      <input
+        id="session-title"
+        v-model="sessionTitle"
+        type="text"
+        placeholder="标题（可选）"
+        autocomplete="off"
+      />
 
-      <template v-if="modelSelectionAvailable">
-        <label for="new-session-model">模型</label>
-        <input id="new-session-model" v-model="sessionModel" type="text" placeholder="模型（可选）" autocomplete="off" />
-      </template>
+      <p v-if="sessions.error" class="page-error" role="alert">{{ sessions.error }}</p>
 
       <div class="actions">
-        <button type="submit" class="create" :disabled="creating || selectedInstanceId === ''">
-          新建任务
-        </button>
         <button
-          v-if="discoverAvailable"
-          type="button"
-          class="discover"
-          data-test="discover-sessions"
-          :disabled="discovering || selectedInstanceId === ''"
-          @click="discover"
+          type="submit"
+          class="create"
+          :disabled="creating || selectedBackend === '' || !selectedEnabled"
         >
-          发现原生会话
+          新建任务
         </button>
       </div>
     </form>
@@ -124,7 +117,7 @@ async function discover() {
   gap: 0.4rem;
 }
 
-.instance-row,
+.backend-row,
 .actions {
   display: flex;
   align-items: center;
@@ -160,6 +153,12 @@ async function discover() {
 
 .hint {
   color: #64748b;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.page-error {
+  color: #b91c1c;
   font-size: 0.85rem;
   margin: 0;
 }

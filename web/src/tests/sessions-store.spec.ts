@@ -171,4 +171,23 @@ describe('sessions store turn actions', () => {
     expect(sessions.sessions.map((entry) => entry.id)).toEqual(['s1'])
     expect(sessions.error).toBe('')
   })
+
+  it('discoverNativeSessions merges results without duplicating a known session', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          ({ status: 200, json: async () => ({ sessions: [session('s2', 1), session('s1', 1)] }) }) as Response,
+      ),
+    )
+
+    const found = await sessions.discoverNativeSessions(1, 'inst-1')
+
+    expect(found?.map((entry) => entry.id)).toEqual(['s2', 's1'])
+    expect(sessions.sessions.map((entry) => entry.id).sort()).toEqual(['s1', 's2'])
+    expect(sessions.error).toBe('')
+  })
 })

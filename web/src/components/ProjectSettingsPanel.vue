@@ -8,6 +8,7 @@ import type { BackendId } from '../api/agents'
 import type { Project } from '../api/projects'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
 import AgentInstanceList from './AgentInstanceList.vue'
 import BackendDiagnostics from './BackendDiagnostics.vue'
 
@@ -19,11 +20,13 @@ const emit = defineEmits<{
 
 const projectsStore = useProjectsStore()
 const agents = useAgentsStore()
+const sessions = useSessionsStore()
 
 const project = computed(() => projectsStore.byId(props.projectId) ?? null)
 const selectedBackend = ref<BackendId | ''>('')
 const starting = ref(false)
 const actionError = ref('')
+const discoverNotice = ref('')
 
 onMounted(load)
 watch(() => props.projectId, load)
@@ -53,6 +56,19 @@ async function stop(instanceId: string) {
   actionError.value = ''
   const stopped = await agents.stopInstance(props.projectId, instanceId)
   if (!stopped) actionError.value = agents.error
+}
+
+// Discovery is instance-scoped, so the entry lives beside the instance. It is
+// offered only for a running instance whose backend declares sessionDiscovery.
+async function discover(instanceId: string) {
+  actionError.value = ''
+  discoverNotice.value = ''
+  const found = await sessions.discoverNativeSessions(props.projectId, instanceId)
+  if (found === null) {
+    actionError.value = sessions.error
+    return
+  }
+  discoverNotice.value = `已发现 ${found.length} 个原生会话。`
 }
 
 async function toggleBackend(backend: BackendId, event: Event) {
@@ -139,7 +155,9 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
       :instances="agents.instances"
       :capabilities-for="agents.capabilitiesFor"
       @stop="stop"
+      @discover="discover"
     />
+    <p v-if="discoverNotice" class="discover-notice" role="status">{{ discoverNotice }}</p>
 
     <section class="resources" aria-label="资源关联">
       <h2>资源关联</h2>
@@ -226,6 +244,11 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 
 .page-error {
   color: #b91c1c;
+}
+
+.discover-notice {
+  color: #15803d;
+  font-size: 0.9rem;
 }
 
 .diagnostics-error {

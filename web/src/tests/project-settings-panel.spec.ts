@@ -8,9 +8,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsPanel from '../components/ProjectSettingsPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
 import type { Capabilities } from '../api/sessions'
 
-function noCapabilities(): Capabilities {
+function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
     streaming: false,
     sessionDiscovery: false,
@@ -20,6 +21,7 @@ function noCapabilities(): Capabilities {
     modelSelection: false,
     toolCallEvents: false,
     toolConfirmation: false,
+    ...overrides,
   }
 }
 
@@ -107,5 +109,52 @@ describe('ProjectSettingsPanel', () => {
 
     expect(wrapper.text()).toContain('待资源管理功能接入')
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('offers discover for a running instance whose backend supports it and calls the store', async () => {
+    const agents = useAgentsStore()
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
+    agents.instances = [
+      {
+        id: 'inst-1',
+        projectId: 1,
+        backend: 'pi',
+        directory: '/workspace/alpha',
+        status: 'running',
+        createdAt: '2026-10-09T00:00:00Z',
+        updatedAt: '2026-10-09T00:00:00Z',
+      } as never,
+    ]
+    const sessions = useSessionsStore()
+    const discover = vi.spyOn(sessions, 'discoverNativeSessions').mockResolvedValue([] as never)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const button = wrapper.find('[data-test="discover-sessions"]')
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+    await flushPromises()
+    expect(discover).toHaveBeenCalledWith(1, 'inst-1')
+  })
+
+  it('offers no discover action when the backend cannot discover sessions', async () => {
+    const agents = useAgentsStore()
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: false }) }]
+    agents.instances = [
+      {
+        id: 'inst-1',
+        projectId: 1,
+        backend: 'pi',
+        directory: '/workspace/alpha',
+        status: 'running',
+        createdAt: '2026-10-09T00:00:00Z',
+        updatedAt: '2026-10-09T00:00:00Z',
+      } as never,
+    ]
+
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
   })
 })
