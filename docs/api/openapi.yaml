@@ -660,6 +660,58 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/instances/{instanceId}/models:
+    get:
+      summary: List the models an instance's backend offers
+      description: >-
+        Returns the models the instance's backend currently offers. Requires
+        the backend to declare modelSelection; the instance must belong to the
+        project. The id uses the same provider/model[#variant] form as the
+        message model override.
+      operationId: listProjectInstanceModels
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: instanceId
+          in: path
+          required: true
+          description: Durable identifier of the instance to query.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The models the backend offers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelInfoList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not declare model selection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to list models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/agent-backends:
     get:
       summary: List a project's backend enable/disable state
@@ -829,12 +881,13 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
     post:
-      summary: Create a session on an agent instance
+      summary: Create a session for a backend
       description: >-
-        Starts a new agent-native session on the named instance and records the
-        platform-to-native id mapping. The instance must belong to the project
-        and be running; a model may only be chosen when the backend declares
-        modelSelection.
+        Starts a new agent-native session for the requested backend and records
+        the platform-to-native id mapping. The server reuses the project's most
+        recently created running instance of that backend, starting one when
+        none is running; a start failure leaves no session behind. The removed
+        instanceId field is ignored, so a body without backend is rejected.
       operationId: createProjectSession
       security:
         - cookieAuth: []
@@ -861,7 +914,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AgentSession'
         '400':
-          description: Malformed body, unknown backend, or bad instance id.
+          description: Malformed body or missing/invalid backend.
           content:
             application/json:
               schema:
@@ -871,21 +924,23 @@ paths:
         '403':
           $ref: '#/components/responses/CSRFRejected'
         '404':
-          description: No such instance in this project.
+          description: No such project.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: >-
-            The instance is not running, or the backend does not support the
-            requested capability (for example model selection).
+            The backend is disabled for the project, or the request requires a
+            capability the backend does not support.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
-          description: The backend adapter failed to create the session.
+          description: >-
+            The backend adapter failed to start an instance or to create the
+            session.
           content:
             application/json:
               schema:
@@ -1125,6 +1180,67 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
           description: The backend adapter failed to stop the instance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/interrupt:
+    post:
+      summary: Interrupt a session's current turn
+      description: >-
+        Ends the session's current turn without stopping the instance or
+        affecting its other sessions. Idempotent: interrupting a session whose
+        turn is not running succeeds and returns the session unchanged.
+        Requires the backend to declare interrupt support.
+      operationId: interruptProjectSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The session's current turn was interrupted (or was idle).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          description: Malformed path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not declare interrupt support.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to interrupt the turn.
           content:
             application/json:
               schema:
@@ -1506,6 +1622,7 @@ components:
         - sessionDiscovery
         - sessionContinue
         - stop
+        - interrupt
         - modelSelection
         - toolCallEvents
         - toolConfirmation
@@ -1517,6 +1634,8 @@ components:
         sessionContinue:
           type: boolean
         stop:
+          type: boolean
+        interrupt:
           type: boolean
         modelSelection:
           type: boolean
@@ -1640,6 +1759,7 @@ components:
         - instanceId
         - nativeSessionId
         - status
+        - turn
         - capabilities
         - createdAt
         - updatedAt
@@ -1674,6 +1794,15 @@ components:
           description: >-
             Platform view of the session's run state; derived from the
             instance lifecycle plus an explicit platform stop.
+        turn:
+          type: string
+          enum:
+            - idle
+            - running
+          description: >-
+            Whether the session is processing one user turn. Derived from the
+            instance's lifecycle events and never persisted, so it is idle
+            after a platform restart.
         capabilities:
           $ref: '#/components/schemas/AgentCapabilities'
         createdAt:
@@ -1693,22 +1822,58 @@ components:
           items:
             $ref: '#/components/schemas/AgentSession'
       additionalProperties: false
+    ModelInfo:
+      type: object
+      description: >-
+        One model a backend offers. The id uses the provider/model form sent in
+        SendAgentSessionMessageRequest.model, with an optional #variant suffix.
+      required:
+        - id
+        - name
+        - provider
+      properties:
+        id:
+          type: string
+          description: Model identifier in provider/model[#variant] form.
+        name:
+          type: string
+          description: Human-readable model name.
+        provider:
+          type: string
+          description: Provider the model belongs to.
+        variants:
+          type: array
+          items:
+            type: string
+          description: Optional variants accepted in the id's #variant suffix.
+      additionalProperties: false
+    ModelInfoList:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+      additionalProperties: false
     CreateAgentSessionRequest:
       type: object
       required:
-        - instanceId
+        - backend
       properties:
-        instanceId:
+        backend:
           type: string
-          description: Durable identifier of the instance to start the session on.
+          enum:
+            - opencode-v2
+            - pi
+          description: >-
+            Backend to create the session on. The server reuses the project's
+            most recently created running instance of this backend, starting
+            one when none is running.
         title:
           type: string
           description: Display title for the new session, when supported.
-        model:
-          type: string
-          description: >-
-            Model to select; only honored when the backend declares
-            modelSelection.
       additionalProperties: false
     SendAgentSessionMessageRequest:
       type: object
