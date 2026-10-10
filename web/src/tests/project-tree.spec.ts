@@ -20,6 +20,7 @@ function noCapabilities(): Capabilities {
     modelSelection: false,
     toolCallEvents: false,
     toolConfirmation: false,
+    sessionHistory: false,
   }
 }
 

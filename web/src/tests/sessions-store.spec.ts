@@ -17,6 +17,7 @@ function capabilities(): Capabilities {
     modelSelection: false,
     toolCallEvents: false,
     toolConfirmation: false,
+    sessionHistory: false,
   }
 }
 
@@ -189,5 +190,167 @@ describe('sessions store turn actions', () => {
     expect(found?.map((entry) => entry.id)).toEqual(['s2', 's1'])
     expect(sessions.sessions.map((entry) => entry.id).sort()).toEqual(['s1', 's2'])
     expect(sessions.error).toBe('')
+  })
+})
+
+// A minimal EventSource stand-in: the history tests only need to prove that a
+// subscription was opened, not to drive the stream.
+class RecordingEventSource {
+  static instances: RecordingEventSource[] = []
+  static CONNECTING = 0
+  static OPEN = 1
+  static CLOSED = 2
+
+  readyState = RecordingEventSource.CONNECTING
+  onopen: (() => void) | null = null
+  onerror: (() => void) | null = null
+
+  constructor(readonly url: string) {
+    RecordingEventSource.instances.push(this)
+  }
+
+  addEventListener() {}
+  close() {
+    this.readyState = RecordingEventSource.CLOSED
+  }
+}
+
+function historyEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    instanceId: '',
+    backend: 'pi',
+    sequence: 1,
+    timestamp: '2026-10-10T12:00:00Z',
+    replayed: true,
+    ...overrides,
+  }
+}
+
+function messageEvent(role: string, text: string, sequence: number) {
+  return historyEvent({ type: 'message', sequence, message: { role, text, final: true } })
+}
+
+function stubRoutes(routes: Record<string, unknown>): string[] {
+  const calls: string[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      for (const [suffix, payload] of Object.entries(routes)) {
+        if (url.endsWith(suffix)) return { status: 200, json: async () => payload } as Response
+      }
+      return { status: 404, json: async () => ({ code: 'not_found', message: 'missing' }) } as Response
+    }),
+  )
+  return calls
+}
+
+describe('sessions store history', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    // The live subscriptions live in a module-level map, so a source opened by
+    // an earlier test would make the next subscribe a no-op.
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('opens a session in continue → history → subscribe order', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    const calls = stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [messageEvent('user', '历史', 1)], truncated: false },
+    })
+
+    await sessions.openSession(1, 's1')
+
+    expect(calls).toEqual([
+      '/api/projects/1/sessions/s1/continue',
+      '/api/projects/1/sessions/s1/history',
+    ])
+    expect(RecordingEventSource.instances).toHaveLength(1)
+    expect(RecordingEventSource.instances[0].url).toBe('/api/projects/1/sessions/s1/events')
+  })
+
+  it('replays history into the log and marks where it ends', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({
+      '/history': {
+        events: [messageEvent('user', '历史里的问题', 1), messageEvent('assistant', '历史里的回答', 2)],
+        truncated: false,
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries.map((entry) => entry.kind)).toEqual(['message', 'message', 'separator'])
+    expect(entries[0].text).toBe('历史里的问题')
+    expect(entries[1].text).toBe('历史里的回答')
+    expect(entries[2].text).toContain('历史')
+  })
+
+  it('loads history only once per session', async () => {
+    const sessions = useSessionsStore()
+    const calls = stubRoutes({ '/history': { events: [messageEvent('user', '一次', 1)], truncated: false } })
+
+    await sessions.loadHistory(1, 's1')
+    await sessions.loadHistory(1, 's1')
+
+    expect(calls).toHaveLength(1)
+  })
+
+  it('records a load failure and still opens the live stream', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/history')) {
+          return { status: 502, json: async () => ({ code: 'agent_operation_failed', message: '读不到历史' }) } as Response
+        }
+        return { status: 200, json: async () => session('s1', 1) } as Response
+      }),
+    )
+
+    await sessions.openSession(1, 's1')
+
+    expect(sessions.historyError['s1']).not.toBe('')
+    expect(sessions.messagesFor('s1')).toEqual([])
+    expect(RecordingEventSource.instances).toHaveLength(1)
+  })
+
+  it('records the truncation verdict', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({ '/history': { events: [messageEvent('user', '最近一条', 1)], truncated: true } })
+
+    await sessions.loadHistory(1, 's1')
+
+    expect(sessions.historyTruncated['s1']).toBe(true)
+  })
+
+  it('drops a live echo of the message history already ended with', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({ '/history': { events: [messageEvent('assistant', '最终回复', 1)], truncated: false } })
+
+    await sessions.loadHistory(1, 's1')
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'message', sequence: 99, replayed: false, message: { role: 'assistant', text: '最终回复', final: true } })),
+    )
+
+    const messages = sessions.messagesFor('s1').filter((entry) => entry.kind === 'message')
+    expect(messages).toHaveLength(1)
   })
 })

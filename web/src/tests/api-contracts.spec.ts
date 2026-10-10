@@ -2,7 +2,7 @@
 // match the backend routes and docs/api/openapi.yaml exactly, so a drift in the
 // wire format fails here rather than in an integration no test covers.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createProjectSession, interruptProjectSession } from '../api/sessions'
+import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
 import { listInstanceModels } from '../api/agents'
 
 afterEach(() => {
@@ -65,5 +65,19 @@ describe('agents API contracts', () => {
     expect(calls[0].url).toBe('/api/projects/7/instances/inst%2F1/models')
     expect(calls[0].init?.method).toBe('GET')
     expect(result.models[0].id).toBe('pi/gpt')
+  })
+})
+
+describe('session history API contract', () => {
+  it('reads history from the session history route without a CSRF token', async () => {
+    const calls = stubJson({ events: [], truncated: true })
+
+    const history = await getSessionHistory(7, 'ses/1')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/projects/7/sessions/ses%2F1/history')
+    expect(calls[0].init?.method).toBe('GET')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBeUndefined()
+    expect(history.truncated).toBe(true)
   })
 })

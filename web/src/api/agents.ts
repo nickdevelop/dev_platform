@@ -19,6 +19,7 @@ export interface Capabilities {
   modelSelection: boolean
   toolCallEvents: boolean
   toolConfirmation: boolean
+  sessionHistory: boolean
 }
 
 // Mirrors the AgentInstance/AgentBackend backend enum.

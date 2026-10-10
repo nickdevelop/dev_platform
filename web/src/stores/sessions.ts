@@ -12,6 +12,7 @@ import {
   continueProjectSession,
   createProjectSession,
   discoverProjectInstanceSessions,
+  getSessionHistory,
   interruptProjectSession,
   listProjectSessions,
   sendProjectSessionMessage,
@@ -25,10 +26,11 @@ import { describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
 
 // One rendered line in a session's log. Agent output is only ever carried as
-// text and interpolated, never injected as HTML.
+// text and interpolated, never injected as HTML. A `separator` line marks where
+// replayed history ends and the live stream begins.
 export interface ChatEntry {
   id: string
-  kind: 'message' | 'tool_call' | 'tool_result' | 'error'
+  kind: 'message' | 'tool_call' | 'tool_result' | 'error' | 'separator'
   role: string
   text: string
   streaming: boolean
@@ -50,12 +52,63 @@ function nextEntryID(sessionId: string, sequence: number, kind: string): string 
   return `${sessionId}:${sequence}:${kind}:${entryCounter}`
 }
 
+// entryFromEvent maps one non-message event to its log line, or null when the
+// event renders nothing (lifecycle events are handled separately because they
+// carry no log line of their own). Both the live path and the history replay
+// go through it, so a replayed tool call looks exactly like a live one.
+function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | null {
+  switch (event.type) {
+    case 'tool_call':
+      if (!event.toolCall) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'tool_call'),
+        kind: 'tool_call',
+        role: 'assistant',
+        text: event.toolCall.name,
+        streaming: false,
+        callId: event.toolCall.callId,
+        name: event.toolCall.name,
+      }
+    case 'tool_result':
+      if (!event.toolResult) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'tool_result'),
+        kind: 'tool_result',
+        role: 'tool',
+        text: event.toolResult.output ?? '',
+        streaming: false,
+        callId: event.toolResult.callId,
+        isError: event.toolResult.isError,
+      }
+    case 'error':
+      if (!event.error) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'error'),
+        kind: 'error',
+        role: 'system',
+        text: event.error.message,
+        streaming: false,
+      }
+    default:
+      return null
+  }
+}
+
 export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as AgentSession[],
     projectId: null as number | null,
     messages: {} as Record<string, ChatEntry[]>,
     streamStatus: {} as Record<string, StreamStatus>,
+    // History is loaded once per session: historyLoaded guards a second fetch,
+    // historyError carries a retryable failure, historyTruncated records that
+    // the backend only returned the most recent part of the transcript.
+    historyLoaded: {} as Record<string, boolean>,
+    historyError: {} as Record<string, string>,
+    historyTruncated: {} as Record<string, boolean>,
+    // historyTailGuard is true right after a replay, when a backend may
+    // re-deliver the message the history ended with.
+    historyTailGuard: {} as Record<string, boolean>,
     activeSessionId: null as string | null,
     loading: false,
     error: '',
@@ -77,7 +130,17 @@ export const useSessionsStore = defineStore('sessions', {
   actions: {
     async loadSessions(projectId: number) {
       const request = ++this.listRequest
-      if (this.projectId !== projectId) this.sessions = []
+      if (this.projectId !== projectId) {
+        this.sessions = []
+        // History is per session id, but a different project's log must never
+        // render under the new project, so the replay state is reset with the
+        // list it belongs to.
+        this.messages = {}
+        this.historyLoaded = {}
+        this.historyError = {}
+        this.historyTruncated = {}
+        this.historyTailGuard = {}
+      }
       this.loading = true
       this.projectId = projectId
       try {
@@ -173,6 +236,8 @@ export const useSessionsStore = defineStore('sessions', {
     // Marks a session active and opens its stream. Switching sessions closes
     // the previously active session's stream so only one subscription is live
     // at a time; re-activating the same session is a no-op.
+    // activateSession is the low-level subscription switch; callers opening a
+    // task use openSession so the replay always lands before the stream.
     activateSession(projectId: number, sessionId: string) {
       const previous = this.activeSessionId
       if (previous && previous !== sessionId) this.unsubscribe(previous)
@@ -214,61 +279,95 @@ export const useSessionsStore = defineStore('sessions', {
       if (event.instanceId && event.instanceId !== session.instanceId) return
       if (event.sessionId && event.sessionId !== sessionId) return
 
-      switch (event.type) {
-        case 'message':
-          if (event.message) {
-            this.appendMessage(sessionId, event.message.role, event.message.text, event.message.final, event.sequence)
-          }
-          break
-        case 'tool_call':
-          if (event.toolCall) {
-            this.pushEntry(sessionId, {
-              id: nextEntryID(sessionId, event.sequence, 'tool_call'),
-              kind: 'tool_call',
-              role: 'assistant',
-              text: event.toolCall.name,
-              streaming: false,
-              callId: event.toolCall.callId,
-              name: event.toolCall.name,
-            })
-          }
-          break
-        case 'tool_result':
-          if (event.toolResult) {
-            this.pushEntry(sessionId, {
-              id: nextEntryID(sessionId, event.sequence, 'tool_result'),
-              kind: 'tool_result',
-              role: 'tool',
-              text: event.toolResult.output ?? '',
-              streaming: false,
-              callId: event.toolResult.callId,
-              isError: event.toolResult.isError,
-            })
-          }
-          break
-        case 'error':
-          if (event.error) {
-            this.pushEntry(sessionId, {
-              id: nextEntryID(sessionId, event.sequence, 'error'),
-              kind: 'error',
-              role: 'system',
-              text: event.error.message,
-              streaming: false,
-            })
-            // These are the backend's turn-ending error codes; any other error
-            // is reported without concluding the turn.
-            if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
-              this.setTurn(sessionId, 'idle')
-            }
-          }
-          break
-        case 'lifecycle':
-          this.applyLifecycle(sessionId, event)
-          break
-        default:
-          // Unknown events keep their raw body out of the DOM entirely.
-          break
+      if (event.type === 'message') {
+        if (!event.message) return
+        if (this.consumeHistoryGuard(sessionId, event.message.role, event.message.text)) return
+        this.appendMessage(sessionId, event.message.role, event.message.text, event.message.final, event.sequence)
+        return
       }
+      if (event.type === 'lifecycle') {
+        this.applyLifecycle(sessionId, event)
+        return
+      }
+      const entry = entryFromEvent(sessionId, event)
+      if (!entry) return
+      this.pushEntry(sessionId, entry)
+      // These are the backend's turn-ending error codes; any other error is
+      // reported without concluding the turn.
+      if (event.type === 'error' && event.error) {
+        if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
+          this.setTurn(sessionId, 'idle')
+        }
+      }
+    },
+
+    // consumeHistoryGuard reports whether a live message is a re-delivery of
+    // the line history ended with, which the backend may send once right after
+    // a replay. The guard is spent on the first live message either way, so a
+    // genuinely repeated sentence later in the conversation is never dropped.
+    consumeHistoryGuard(sessionId: string, role: string, text: string): boolean {
+      if (!this.historyTailGuard[sessionId]) return false
+      this.historyTailGuard[sessionId] = false
+      const last = [...(this.messages[sessionId] ?? [])]
+        .reverse()
+        .find((entry) => entry.kind === 'message')
+      return last !== undefined && last.role === role && last.text === text
+    },
+
+    // loadHistory replays the session's agent-native prior turns into the log
+    // and marks where they end. It is called by openSession before the stream
+    // opens; a failure is recorded for retry and never blocks the live stream.
+    async loadHistory(projectId: number, sessionId: string) {
+      if (this.historyLoaded[sessionId]) return
+      this.historyError[sessionId] = ''
+      try {
+        const history = await getSessionHistory(projectId, sessionId)
+        if (this.historyLoaded[sessionId]) return
+        const entries = this.ensureMessages(sessionId)
+        for (const event of history.events) {
+          if (event.type === 'message' && event.message) {
+            // Replayed messages are complete and are never echo-deduplicated:
+            // two identical user turns in a transcript are two real turns.
+            this.appendMessage(
+              sessionId,
+              event.message.role,
+              event.message.text,
+              event.message.final,
+              event.sequence,
+              false,
+            )
+            continue
+          }
+          const entry = entryFromEvent(sessionId, event)
+          if (entry) entries.push(entry)
+        }
+        if (history.events.length > 0) {
+          entries.push({
+            id: nextEntryID(sessionId, 0, 'separator'),
+            kind: 'separator',
+            role: 'system',
+            text: '以上为历史记录',
+            streaming: false,
+          })
+          this.historyTailGuard[sessionId] = true
+        }
+        this.historyTruncated[sessionId] = history.truncated
+        this.historyLoaded[sessionId] = true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.historyError[sessionId] = describeApiError(error)
+      }
+    },
+
+    // openSession makes a task usable in one ordered step: re-attach the
+    // session (starting a backend instance when none is running), replay its
+    // history, then subscribe. The order is load-bearing, not an optimization:
+    // subscribing first would render live events above the history that
+    // arrives after them.
+    async openSession(projectId: number, sessionId: string) {
+      await this.continueSession(projectId, sessionId)
+      await this.loadHistory(projectId, sessionId)
+      this.activateSession(projectId, sessionId)
     },
 
     appendMessage(
@@ -277,6 +376,7 @@ export const useSessionsStore = defineStore('sessions', {
       text: string,
       final: boolean,
       sequence: number,
+      dedupeEcho = true,
     ) {
       const list = this.ensureMessages(sessionId)
       const last = list[list.length - 1]
@@ -286,8 +386,16 @@ export const useSessionsStore = defineStore('sessions', {
         return
       }
       // A user turn echoed by the backend is deduplicated against the copy the
-      // workbench already added when the message was sent.
-      if (role === 'user' && last && last.kind === 'message' && last.role === 'user' && last.text === text) {
+      // workbench already added when the message was sent. A replay opts out:
+      // a transcript's repeated lines are distinct turns, not echoes.
+      if (
+        dedupeEcho &&
+        role === 'user' &&
+        last &&
+        last.kind === 'message' &&
+        last.role === 'user' &&
+        last.text === text
+      ) {
         return
       }
       list.push({

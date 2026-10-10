@@ -96,12 +96,22 @@ export interface NormalizedEvent {
   sequence: number
   timestamp: string
   type: NormalizedEventType
+  // True for an event read from the agent's own transcript rather than
+  // observed live. Realtime events omit it.
+  replayed?: boolean
   lifecycle?: LifecyclePayload
   message?: MessagePayload
   toolCall?: ToolCallPayload
   toolResult?: ToolResultPayload
   error?: ErrorPayload
   raw?: unknown
+}
+
+// Mirrors #/components/schemas/AgentSessionHistory: the session's prior turns,
+// oldest first, and whether older events were left out.
+export interface SessionHistory {
+  events: NormalizedEvent[]
+  truncated: boolean
 }
 
 // GET /api/projects/{id}/sessions
@@ -129,6 +139,17 @@ export function discoverProjectInstanceSessions(
   return apiRequest<AgentSessionList>(
     'GET',
     `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/sessions`,
+  )
+}
+
+// GET /api/projects/{id}/sessions/{sessionId}/history
+export function getSessionHistory(
+  projectId: number,
+  sessionId: string,
+): Promise<SessionHistory> {
+  return apiRequest<SessionHistory>(
+    'GET',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/history`,
   )
 }
 
