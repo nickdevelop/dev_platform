@@ -108,6 +108,23 @@ async function main() {
   write({ type: 'agent_start' })
   write({ type: 'message_start', message: { role: 'user', content: prompt } })
 
+  // Reasoning streams before the reply, as the real CLI does, and the same
+  // reasoning is written into the transcript so a replay shows it too.
+  const thinking = `thinking about: ${prompt}`
+  write({ type: 'message_update', assistantMessageEvent: { type: 'thinking_start', contentIndex: 0, partial: {} } })
+  const thinkingSplit = Math.ceil(thinking.length / 2)
+  for (const chunk of [thinking.slice(0, thinkingSplit), thinking.slice(thinkingSplit)]) {
+    await sleep(10)
+    write({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: chunk, partial: {} },
+    })
+  }
+  write({
+    type: 'message_update',
+    assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: thinking, partial: {} },
+  })
+
   // Hold the turn open until the platform interrupts (kills) this process, so
   // the workbench's stop action can be observed deterministically.
   if (prompt.includes('__e2e_hold__')) {
@@ -136,7 +153,13 @@ async function main() {
     id: `a-${Date.now()}`,
     parentId: null,
     timestamp: new Date().toISOString(),
-    message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+    message: {
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking },
+        { type: 'text', text: reply },
+      ],
+    },
   })
 }
 

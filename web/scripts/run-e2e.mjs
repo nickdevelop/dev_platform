@@ -29,7 +29,10 @@ const scratchRoot = process.env.TMPDIR ?? '/tmp/opencode'
 const E2E_PASSWORD = `e2e-${Date.now().toString(36)}-${process.pid.toString(36)}`
 // The harness moves the backend off the default :8080 (often occupied on
 // developer machines) and points the Vite /api proxy at the same address.
-const apiAddr = process.env.E2E_API_ADDR ?? '127.0.0.1:18080'
+// It deliberately avoids 18080, which is dev.sh's default port: a developer
+// running the platform locally must not collide with (or be killed by) an E2E
+// run. Override with E2E_API_ADDR.
+const apiAddr = process.env.E2E_API_ADDR ?? '127.0.0.1:18090'
 
 const scratch = mkdtempSync(path.join(scratchRoot, 'platform-e2e-'))
 const dataDir = path.join(scratch, 'data')

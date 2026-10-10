@@ -56,6 +56,7 @@ export interface SendMessageBody {
 export type NormalizedEventType =
   | 'lifecycle'
   | 'message'
+  | 'thinking'
   | 'tool_call'
   | 'tool_result'
   | 'error'
@@ -63,6 +64,13 @@ export type NormalizedEventType =
 
 export interface MessagePayload {
   role: string
+  text: string
+  final: boolean
+}
+
+// Mirrors agents.ThinkingPayload: the agent's reasoning, or one streaming chunk
+// of it. Reasoning is its own event kind and its own rendered entry.
+export interface ThinkingPayload {
   text: string
   final: boolean
 }
@@ -101,6 +109,7 @@ export interface NormalizedEvent {
   replayed?: boolean
   lifecycle?: LifecyclePayload
   message?: MessagePayload
+  thinking?: ThinkingPayload
   toolCall?: ToolCallPayload
   toolResult?: ToolResultPayload
   error?: ErrorPayload

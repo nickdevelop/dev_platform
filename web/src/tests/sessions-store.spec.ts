@@ -354,3 +354,69 @@ describe('sessions store history', () => {
     expect(messages).toHaveLength(1)
   })
 })
+
+describe('sessions store thinking entries', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function thinkingEvent(text: string, final: boolean, sequence: number) {
+    return historyEvent({ instanceId: 'inst-1', type: 'thinking', sequence, replayed: false, thinking: { text, final } })
+  }
+
+  it('accumulates streamed reasoning into one entry and closes it', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(thinkingEvent('先看', false, 1)))
+    sessions.handleEvent('s1', JSON.stringify(thinkingEvent('再看', false, 2)))
+    sessions.handleEvent('s1', JSON.stringify(thinkingEvent('', true, 3)))
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries).toHaveLength(1)
+    expect(entries[0].kind).toBe('thinking')
+    expect(entries[0].text).toBe('先看再看')
+    expect(entries[0].streaming).toBe(false)
+  })
+
+  it('keeps reasoning as its own line before the reply', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(thinkingEvent('推理', false, 1)))
+    sessions.handleEvent('s1', JSON.stringify(thinkingEvent('', true, 2)))
+    sessions.handleEvent('s1', JSON.stringify({ ...historyEvent({ instanceId: 'inst-1', type: 'message', sequence: 3 }), message: { role: 'assistant', text: '答案', final: true } }))
+
+    expect(sessions.messagesFor('s1').map((entry) => entry.kind)).toEqual(['thinking', 'message'])
+    expect(sessions.messagesFor('s1')[1].text).toBe('答案')
+  })
+
+  it('replays reasoning from history as a closed entry', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({
+      '/history': {
+        events: [
+          historyEvent({ type: 'thinking', sequence: 1, thinking: { text: '历史推理', final: true } }),
+          messageEvent('assistant', '历史回答', 2),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message', 'separator'])
+    expect(entries[0].text).toBe('历史推理')
+    expect(entries[0].streaming).toBe(false)
+  })
+})

@@ -129,12 +129,15 @@ describe('ProjectTree', () => {
     expect(idle!.find('.status').exists()).toBe(false)
   })
 
-  it('shows a disconnected session as 断开', async () => {
+  it('shows no status label for a disconnected session', async () => {
+    // Only a running turn carries a marker: a disconnected session needs no
+    // badge once opening a task repairs it.
     stubSessions({ 1: [session({ id: 's1', title: 'Task A', status: 'disconnected' })] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    expect(wrapper.find('.status').text()).toBe('断开')
+    expect(wrapper.find('.status').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('断开')
   })
 
   it('polls while the expanded project has a running task and stops when none is', async () => {

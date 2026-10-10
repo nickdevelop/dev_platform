@@ -118,16 +118,24 @@ test('a reply survives a page reload, shown above the history separator', async 
   await expect(replayed).toContainText('pi reply: remember this turn', { timeout: 20_000 })
   await expect(replayed.locator('[data-test="history-separator"]')).toBeVisible()
 
+  // Reasoning is replayed as its own collapsed block, above the reply.
+  const piThinking = replayed.locator('[data-test="thinking"]')
+  await expect(piThinking).toHaveCount(1)
+  await expect(piThinking.locator('summary')).toContainText('已思考')
+  await expect(piThinking).toContainText('thinking about: remember this turn')
+
   // And the task is usable again: the replayed turn is not the end of the log.
   await send(page, 'and this one')
   await expect(replayed).toContainText('pi reply: and this one', { timeout: 20_000 })
 
-  // The other backend's history comes from its own native log, and its
-  // reasoning block is skipped exactly like the live stream skips it.
+  // The other backend's history comes from its own native log, reasoning
+  // included.
   const replayedOC = await openTask(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
   await expect(replayedOC.locator('[data-test="history-separator"]')).toBeVisible()
-  await expect(replayedOC).not.toContainText('internal reasoning is not conversation')
+  const ocThinking = replayedOC.locator('[data-test="thinking"]')
+  await expect(ocThinking.locator('summary')).toContainText('已思考')
+  await expect(ocThinking).toContainText('internal reasoning is not conversation')
 })
 
 test('opening a task whose instance was stopped re-attaches it without any manual start', async ({

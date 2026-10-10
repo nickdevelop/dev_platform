@@ -29,10 +29,11 @@ import { useAuthStore } from './auth'
 
 // One rendered line in a session's log. Agent output is only ever carried as
 // text and interpolated, never injected as HTML. A `separator` line marks where
-// replayed history ends and the live stream begins.
+// replayed history ends and the live stream begins; a `thinking` line is the
+// agent's reasoning, which the pane shows collapsed.
 export interface ChatEntry {
   id: string
-  kind: 'message' | 'tool_call' | 'tool_result' | 'error' | 'separator'
+  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'separator'
   role: string
   text: string
   streaming: boolean
@@ -247,7 +248,7 @@ export const useSessionsStore = defineStore('sessions', {
           this.streamStatus[sessionId] = 'reconnecting'
         }
       }
-      for (const type of ['lifecycle', 'message', 'tool_call', 'tool_result', 'error', 'unknown']) {
+      for (const type of ['lifecycle', 'message', 'thinking', 'tool_call', 'tool_result', 'error', 'unknown']) {
         source.addEventListener(type, (event) => {
           this.handleEvent(sessionId, (event as MessageEvent).data)
         })
@@ -306,6 +307,11 @@ export const useSessionsStore = defineStore('sessions', {
         this.appendMessage(sessionId, event.message.role, event.message.text, event.message.final, event.sequence)
         return
       }
+      if (event.type === 'thinking') {
+        if (!event.thinking) return
+        this.appendThinking(sessionId, event.thinking.text, event.thinking.final, event.sequence)
+        return
+      }
       if (event.type === 'lifecycle') {
         this.applyLifecycle(sessionId, event)
         return
@@ -357,6 +363,10 @@ export const useSessionsStore = defineStore('sessions', {
               event.sequence,
               false,
             )
+            continue
+          }
+          if (event.type === 'thinking' && event.thinking) {
+            this.appendThinking(sessionId, event.thinking.text, event.thinking.final, event.sequence)
             continue
           }
           const entry = entryFromEvent(sessionId, event)
@@ -423,6 +433,26 @@ export const useSessionsStore = defineStore('sessions', {
         id: nextEntryID(sessionId, sequence, 'message'),
         kind: 'message',
         role,
+        text,
+        streaming: !final,
+      })
+    },
+
+    // appendThinking adds reasoning to the log, merging a streamed block into
+    // the entry already open so the pane shows one growing block rather than a
+    // line per chunk.
+    appendThinking(sessionId: string, text: string, final: boolean, sequence: number) {
+      const list = this.ensureMessages(sessionId)
+      const last = list[list.length - 1]
+      if (last && last.kind === 'thinking' && last.streaming) {
+        last.text += text
+        if (final) last.streaming = false
+        return
+      }
+      list.push({
+        id: nextEntryID(sessionId, sequence, 'thinking'),
+        kind: 'thinking',
+        role: 'assistant',
         text,
         streaming: !final,
       })

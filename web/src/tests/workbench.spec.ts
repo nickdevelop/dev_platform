@@ -10,7 +10,7 @@ import CapabilityControls from '../components/CapabilityControls.vue'
 import MessageView from '../components/MessageView.vue'
 import SessionList from '../components/SessionList.vue'
 import { useAgentsStore } from '../stores/agents'
-import { useSessionsStore } from '../stores/sessions'
+import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
@@ -543,5 +543,74 @@ describe('project backend enable/disable store', () => {
 
     const put = calls.find((call) => call.method === 'PUT')
     expect(put?.body).toEqual({ enabled: false })
+  })
+})
+
+describe('MessageView presentation', () => {
+  const messages: ChatEntry[] = [
+    { id: 'm1', kind: 'message', role: 'user', text: '我的问题', streaming: false },
+    { id: 'm2', kind: 'thinking', role: 'assistant', text: '推理内容', streaming: false },
+    { id: 'm3', kind: 'message', role: 'assistant', text: '答复内容', streaming: false },
+    { id: 'm4', kind: 'tool_call', role: 'assistant', text: 'bash', name: 'bash', callId: 'c1', streaming: false },
+    { id: 'm5', kind: 'tool_result', role: 'tool', text: '输出内容', callId: 'c1', isError: false, streaming: false },
+  ]
+
+  it('aligns user turns to the right and agent output to the left', () => {
+    const wrapper = mount(MessageView, {
+      props: { messages, capabilities: noCapabilities({ toolCallEvents: true }) },
+    })
+    mounted.push(wrapper)
+
+    const bubbles = wrapper.findAll('.bubble')
+    expect(bubbles[0].classes()).toContain('bubble-user')
+    expect(bubbles[1].classes()).toContain('bubble-agent')
+  })
+
+  it('keeps reasoning collapsed and shows it when expanded', async () => {
+    const wrapper = mount(MessageView, {
+      props: { messages, capabilities: noCapabilities({ toolCallEvents: true }) },
+    })
+    mounted.push(wrapper)
+
+    const thinking = wrapper.find('[data-test="thinking"]')
+    expect(thinking.exists()).toBe(true)
+    expect(thinking.attributes('open')).toBeUndefined()
+    expect(thinking.find('summary').text()).toContain('已思考')
+
+    await thinking.find('summary').trigger('click')
+    expect(thinking.text()).toContain('推理内容')
+  })
+
+  it('keeps tool output collapsed with its length visible', () => {
+    const wrapper = mount(MessageView, {
+      props: { messages, capabilities: noCapabilities({ toolCallEvents: true }) },
+    })
+    mounted.push(wrapper)
+
+    const result = wrapper.find('[data-test="tool-result"]')
+    expect(result.exists()).toBe(true)
+    expect(result.attributes('open')).toBeUndefined()
+    expect(result.find('summary').text()).toContain('工具结果')
+    expect(result.find('summary').text()).toContain('4')
+
+    const call = wrapper.find('[data-test="tool-call"]')
+    expect(call.text()).toContain('工具调用')
+    expect(call.text()).toContain('bash')
+  })
+
+  it('renders no tool or reasoning entries when the backend declares neither', () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [
+          { id: 'm4', kind: 'tool_call', role: 'assistant', text: 'bash', name: 'bash', streaming: false },
+          { id: 'm5', kind: 'tool_result', role: 'tool', text: '输出', streaming: false },
+        ],
+        capabilities: noCapabilities({ toolCallEvents: false }),
+      },
+    })
+    mounted.push(wrapper)
+
+    expect(wrapper.find('[data-test="tool-call"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="tool-result"]').exists()).toBe(false)
   })
 })

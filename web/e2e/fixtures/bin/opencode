@@ -169,6 +169,35 @@ function promptEvents(id, text) {
   // All records of one assistant message share its id so the adapter can close
   // the delta set without duplicating the streamed text.
   const messageId = `msg-${crypto.randomBytes(4).toString('hex')}`
+  const reasoningId = `rs-${crypto.randomBytes(4).toString('hex')}`
+  const reasoning = 'internal reasoning is not conversation'
+
+  // The reasoning family streams before the text family, like the real server.
+  sequence += 1
+  events.push({
+    id: `evt-${sequence}`,
+    type: 'session.reasoning.started',
+    location: { directory },
+    data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, ordinal: 1 },
+  })
+  const reasoningSplit = Math.ceil(reasoning.length / 2)
+  for (const chunk of [reasoning.slice(0, reasoningSplit), reasoning.slice(reasoningSplit)]) {
+    sequence += 1
+    events.push({
+      id: `evt-${sequence}`,
+      type: 'session.reasoning.delta',
+      location: { directory },
+      data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, delta: chunk },
+    })
+  }
+  sequence += 1
+  events.push({
+    id: `evt-${sequence}`,
+    type: 'session.reasoning.ended',
+    location: { directory },
+    data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, text: reasoning },
+  })
+
   sequence += 1
   events.push({
     id: `evt-${sequence}`,

@@ -28,15 +28,15 @@ const sessionsStore = useSessionsStore()
 const expandedId = ref<number | null>(props.activeProjectId)
 
 const statusLabels: Record<string, string> = {
-  disconnected: '断开',
+  running: '运行中',
 }
 
-// The task label is driven by the turn, not the persisted status: only a
-// running turn shows 「运行中」. A disconnected instance stays visible as such,
-// and a stopped session shows no label (idle is the silent default).
+// The task label is driven by the turn alone: a running turn shows 「运行中」
+// and every other state is silent. A disconnected session carries no badge,
+// because opening a task re-attaches it — a marker there would only ask the
+// user to fix something the platform already repairs.
 function statusText(entry: AgentSession): string {
-  if (entry.status === 'disconnected') return statusLabels.disconnected
-  if (entry.turn === 'running') return '运行中'
+  if (entry.turn === 'running') return statusLabels.running
   return ''
 }
 

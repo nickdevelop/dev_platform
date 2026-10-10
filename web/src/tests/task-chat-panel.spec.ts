@@ -445,3 +445,54 @@ describe('TaskChatPanel', () => {
     expect(store.messagesFor('sess-1')).toHaveLength(0)
   })
 })
+
+describe('TaskChatPanel conversation layout', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const agents = useAgentsStore()
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+  })
+
+  afterEach(() => {
+    useSessionsStore().unsubscribeAll()
+    vi.unstubAllGlobals()
+  })
+
+  it('puts the agent tag before the task title', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const header = wrapper.find('.chat-header')
+    const tag = wrapper.findComponent(BackendTag)
+    expect(header.exists()).toBe(true)
+    expect(tag.exists()).toBe(true)
+    expect(header.element.firstElementChild).toBe(tag.element)
+    // And the title follows it, rather than preceding it.
+    expect(header.find('.session-heading').exists()).toBe(true)
+  })
+
+  it('keeps the composer outside the scrolling message area', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // The message log scrolls; the composer is pinned below it, so it is not a
+    // descendant of the scrolling region.
+    const scroller = wrapper.find('[data-test="conversation-scroll"]')
+    expect(scroller.exists()).toBe(true)
+    expect(scroller.find('form.send').exists()).toBe(false)
+    expect(wrapper.find('form.send').exists()).toBe(true)
+  })
+
+  it('marks only a running task with a status chip', async () => {
+    stubSessionList([session('sess-1', { status: 'disconnected', turn: 'idle' })])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.find('.turn-status').exists()).toBe(false)
+  })
+})

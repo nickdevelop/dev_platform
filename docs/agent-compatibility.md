@@ -46,7 +46,7 @@ must never expose a control for a capability a backend did not declare.
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through (verified argv plumbing); real model resolution is **provisional**. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
 | `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ❌ — print/JSON mode cannot pause a tool call for confirmation. |
-| `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
+| `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
 
 ## Diagnostics
 
@@ -76,8 +76,10 @@ can now **replay** it. When a task is opened the platform re-attaches the
 session and asks the adapter for the prior turns through the optional
 `agents.HistoryReader` operation (declared by `sessionHistory`); the adapter
 reads the agent's own record and normalizes it into the same event envelope the
-live stream uses, marked `replayed`. The workbench renders history first, then
-subscribes, and draws a separator where the replay ends.
+live stream uses, marked `replayed`. Reasoning, replies and tool activity all
+become their own event kinds, so a replayed conversation shows what the user
+watched. The workbench renders history first, then subscribes, and draws a
+separator where the replay ends.
 
 Because the read is scoped by working directory and agent-native session id
 rather than by an instance, a task whose instance has stopped — or whose
@@ -86,12 +88,17 @@ platform was restarted — still replays.
 | | `opencode-v2` | `pi` |
 | --- | --- | --- |
 | Source | `GET /api/session/{id}/message` | the session's JSONL transcript (`<session dir>/<directory slug>/<timestamp>_<id>.jsonl`, version 3) |
-| Skipped | `reasoning` blocks, `idle` and `model-switched` entries | the `system` record, `thinking` blocks, `model_change` and `thinking_level_change` |
+| Reasoning | `reasoning` blocks and the `session.reasoning.*` events become `thinking` events | `thinking` blocks and the `thinking_*` events become `thinking` events |
+| Skipped | `idle` and `model-switched` entries | the `system` record, `model_change` and `thinking_level_change` |
 | Tool activity | a `tool` block becomes a call/result pair (`state.input`, `state.output`, `state.status != "completed"` marks an error) | a `toolCall` block becomes the call; the `toolResult` record's `toolCallId`/`isError` link its result |
 
-The skips are deliberate and match the live stream, so a replayed conversation
-looks exactly like the one the user watched: pi's live parser already drops
-`thinking_*`, and opencode's live normalization produces no reasoning events.
+Reasoning is a first-class event kind rather than something the platform drops:
+both backends expose it live (`session.reasoning.started/delta/ended` for
+opencode, `thinking_start/delta/end` for pi, both verified against the installed
+binaries) and in their stored records, so live and replay agree. No capability
+flag gates it, because it drives no control — a backend that never reasons
+simply never emits it. The workbench renders it as a collapsed block of its own
+rather than folding it into the reply.
 
 Reads are bounded by `agents.MaxHistoryEvents = 5000`: a reader keeps the most
 recent events, renumbers them from one and reports the truncation through

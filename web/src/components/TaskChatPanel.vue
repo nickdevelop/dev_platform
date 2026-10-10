@@ -168,9 +168,9 @@ function reconnect() {
   >
     <template v-if="activeSession">
       <header class="chat-header">
+        <BackendTag :backend="activeSession.backend" />
         <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
         <div class="session-meta">
-          <BackendTag :backend="activeSession.backend" />
           <span v-if="instance" class="chip">工作目录：{{ instance.directory }}</span>
           <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
         </div>
@@ -194,15 +194,17 @@ function reconnect() {
         <button type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
-      <MessageView
-        :messages="activeMessages"
-        :capabilities="activeSession.capabilities"
-        :stream-status="streamStatus"
-      />
+      <div class="conversation-scroll" data-test="conversation-scroll">
+        <MessageView
+          :messages="activeMessages"
+          :capabilities="activeSession.capabilities"
+          :stream-status="streamStatus"
+        />
 
-      <button v-if="streamStatus === 'error'" type="button" class="reconnect" @click="reconnect">
-        重新连接事件流
-      </button>
+        <button v-if="streamStatus === 'error'" type="button" class="reconnect" @click="reconnect">
+          重新连接事件流
+        </button>
+      </div>
 
       <CapabilityControls
         :capabilities="activeSession.capabilities"
@@ -261,14 +263,23 @@ function reconnect() {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  /* The pane is one viewport tall, so the conversation scrolls inside it and
+     the composer stays put at the bottom. */
+  height: 100%;
   min-height: 0;
+}
+
+.conversation-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .chat-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .session-heading {
