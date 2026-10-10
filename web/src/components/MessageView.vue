@@ -53,6 +53,11 @@ function roleClass(role: string): string {
         <template v-else-if="entry.kind === 'error'">
           <span class="agent-error" data-test="agent-error">{{ entry.text }}</span>
         </template>
+
+        <template v-else-if="entry.kind === 'separator'">
+          <hr class="separator-rule" />
+          <span class="separator-text" data-test="history-separator">{{ entry.text }}</span>
+        </template>
       </li>
     </ol>
 
@@ -108,5 +113,24 @@ function roleClass(role: string): string {
 
 .empty {
   color: #64748b;
+}
+
+.kind-separator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.separator-rule {
+  flex: 1;
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0;
+}
+
+.separator-text {
+  flex-shrink: 0;
 }
 </style>

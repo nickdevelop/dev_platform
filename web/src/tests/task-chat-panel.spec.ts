@@ -70,10 +70,23 @@ class FakeEventSource {
   }
 }
 
-function stubSessionList(list: AgentSession[]) {
-  const fetchSpy = vi.fn(
-    async () => ({ status: 200, json: async () => ({ sessions: list }) }) as Response,
-  )
+// stubSessionList serves every request opening a task makes: the project's
+// session list, the continue that re-attaches the session, and the history
+// replay. Routing by path keeps each response shaped as its endpoint promises.
+function stubSessionList(
+  list: AgentSession[],
+  history: { events: unknown[]; truncated: boolean } = { events: [], truncated: false },
+) {
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+    if (url.endsWith('/continue')) {
+      const id = url.split('/')[5]
+      const found = list.find((entry) => entry.id === id) ?? list[0]
+      return { status: 200, json: async () => found } as Response
+    }
+    return { status: 200, json: async () => ({ sessions: list }) } as Response
+  })
   vi.stubGlobal('fetch', fetchSpy)
   return fetchSpy
 }
@@ -163,22 +176,136 @@ describe('TaskChatPanel', () => {
     expect(wrapper.find('a').attributes('href')).toBe('/projects/1')
   })
 
-  it('disables sending and explains when the task instance is stopped', async () => {
+  it('does not block the composer on an instance the project list calls stopped', async () => {
     stubSessionList([session('sess-1')])
     useAgentsStore().instances = [instance('stopped')]
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('实例已停止，请在项目设置中启动')
-    expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
+    // Opening the task repairs the session, so a stale instance status in the
+    // project list no longer gates sending.
+    expect(wrapper.text()).not.toContain('实例已停止')
+    await wrapper.find('#message-text').setValue('hello')
+    expect(wrapper.find('button.send-button').attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens the task with openSession rather than subscribing directly', async () => {
+    const fetchSpy = stubSessionList([session('sess-1')])
+    const store = useSessionsStore()
+    const openSession = vi.spyOn(store, 'openSession')
+
+    mountPanel('sess-1')
+    await flushPromises()
+
+    expect(openSession).toHaveBeenCalledWith(1, 'sess-1')
+    const urls = fetchSpy.mock.calls.map((call) => String(call[0]))
+    expect(urls.some((url) => url.endsWith('/continue'))).toBe(true)
+    expect(urls.some((url) => url.endsWith('/history'))).toBe(true)
+  })
+
+  it('renders no instance identifier in the header', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('实例：')
+    expect(wrapper.text()).not.toContain('inst-1')
+  })
+
+  it('shows the replayed history with a separator and a truncation note', async () => {
+    stubSessionList([session('sess-1')], {
+      events: [
+        {
+          instanceId: 'inst-1',
+          sessionId: 'native-sess-1',
+          backend: 'opencode-v2',
+          sequence: 1,
+          timestamp: '2026-10-09T00:00:00Z',
+          type: 'message',
+          replayed: true,
+          message: { role: 'assistant', text: 'OLD REPLAYED', final: true },
+        },
+      ],
+      truncated: true,
+    })
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('OLD REPLAYED')
+    expect(wrapper.find('[data-test="history-separator"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="history-truncated"]').text()).toContain('历史')
+  })
+
+  it('offers a retry when reading history fails', async () => {
+    let historyCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/history')) {
+          historyCalls += 1
+          if (historyCalls === 1) {
+            return { status: 502, json: async () => ({ error: 'agent_operation_failed' }) } as Response
+          }
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+        }
+        if (url.endsWith('/continue')) return { status: 200, json: async () => session('sess-1') } as Response
+        return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+      }),
+    )
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const retry = wrapper.find('[data-test="history-retry"]')
+    expect(retry.exists()).toBe(true)
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(historyCalls).toBe(2)
+  })
+
+  it('explains a session that stays disconnected and offers to retry', async () => {
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/history')) {
+        return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+      }
+      if (url.endsWith('/continue')) {
+        return { status: 502, json: async () => ({ error: 'instance_start_failed' }) } as Response
+      }
+      return {
+        status: 200,
+        json: async () => ({ sessions: [session('sess-1', { status: 'disconnected' })] }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // The backend reports a code, not prose; the note shows the platform's
+    // message for that code, which names the failure and where to look.
+    expect(wrapper.find('[data-test="session-unavailable"]').text()).toContain('Agent 实例启动失败')
+
+    const before = fetchSpy.mock.calls.length
+    await wrapper.find('[data-test="session-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(before)
   })
 
   it('keeps the typed message and reports the error when sending fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if ((init?.method ?? 'GET') === 'POST') {
+        const url = String(input)
+        if (url.endsWith('/messages')) {
           return { status: 500, json: async () => ({}) } as Response
+        }
+        if (url.endsWith('/continue')) {
+          return { status: 200, json: async () => session('sess-1') } as Response
+        }
+        if (url.endsWith('/history')) {
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
       }),
@@ -269,8 +396,16 @@ describe('TaskChatPanel', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        if (String(input).endsWith('/models')) {
-          return { status: 500, json: async () => ({}) } as Response
+        const url = String(input)
+        if (url.endsWith('/models')) return { status: 500, json: async () => ({}) } as Response
+        if (url.endsWith('/continue')) {
+          return {
+            status: 200,
+            json: async () => session('sess-1', { capabilities: capabilities({ modelSelection: true }) }),
+          } as Response
+        }
+        if (url.endsWith('/history')) {
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return {
           status: 200,

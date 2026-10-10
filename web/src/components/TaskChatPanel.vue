@@ -22,6 +22,10 @@ const loadError = ref('')
 const sendError = ref('')
 const sending = ref(false)
 const busy = ref(false)
+// preparing covers the window in which the task is being re-attached and its
+// history replayed, so the pane says what it is waiting for instead of looking
+// like an empty conversation.
+const preparing = ref(false)
 const messageText = ref('')
 const selectedModel = ref('')
 // Whether the model list for the open instance loaded. A failed list disables
@@ -36,23 +40,22 @@ const instance = computed(() => {
   return agents.instances.find((entry) => entry.id === session.instanceId) ?? null
 })
 
-// A task can only take messages while its agent instance runs; the project
-// settings pane is where a stopped instance is started again.
-const instanceRunning = computed(() => {
-  const session = activeSession.value
-  if (!session) return false
-  return agents.instances.some(
-    (entry) => entry.id === session.instanceId && entry.status === 'running',
-  )
-})
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
+const historyError = computed(() => sessions.historyError[props.sessionId] ?? '')
+const historyTruncated = computed(() => sessions.historyTruncated[props.sessionId] === true)
 
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
 const canInterrupt = computed(() => activeSession.value?.capabilities.interrupt === true)
-const interactEnabled = computed(
-  () => instanceRunning.value && activeSession.value?.status === 'active',
+// The composer is gated on the session itself. Opening a task repairs a
+// stopped instance, so an instance's status is no longer a precondition the
+// user has to fix from another pane.
+const interactEnabled = computed(() => activeSession.value?.status === 'active')
+// A session that is still not usable after opening says so, with the reason
+// the backend gave, instead of leaving the user with a dead composer.
+const unavailable = computed(
+  () => activeSession.value !== null && activeSession.value.status === 'disconnected',
 )
 
 const composerLabel = computed(() => (isRunning.value && canInterrupt.value ? '停止' : '发送'))
@@ -82,8 +85,12 @@ onBeforeUnmount(() => sessions.unsubscribeAll())
 
 // A directly opened task URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
-// such; an id absent from a successful list is never subscribed. The model
+// such; an id absent from a successful list is never opened. The model
 // selection is reset per task, because it is chosen per message.
+//
+// Opening goes through the store's openSession, which re-attaches the session
+// (starting a backend instance when none is running), replays the agent-native
+// history, and only then subscribes — in that order.
 async function open() {
   ready.value = false
   loadError.value = ''
@@ -95,9 +102,19 @@ async function open() {
     loadError.value = sessions.error
     return
   }
-  if (sessions.sessionById(props.sessionId)) {
-    sessions.activateSession(props.projectId, props.sessionId)
+  if (!sessions.sessionById(props.sessionId)) return
+  preparing.value = true
+  try {
+    await sessions.openSession(props.projectId, props.sessionId)
+  } finally {
+    preparing.value = false
   }
+}
+
+// retryOpen re-runs the whole open path, which is what the unavailable note and
+// the history retry need: both failures come from the same repair attempt.
+function retryOpen() {
+  void open()
 }
 
 // The frozen adapter contract exposes no method to answer a tool-permission
@@ -154,14 +171,27 @@ function reconnect() {
         <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
         <div class="session-meta">
           <BackendTag :backend="activeSession.backend" />
-          <span class="chip">实例：{{ activeSession.instanceId }}</span>
           <span v-if="instance" class="chip">工作目录：{{ instance.directory }}</span>
           <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
         </div>
       </header>
 
-      <p class="history-note" data-test="history-note">
-        历史消息由 Agent 原生保存；工作台仅显示本次打开后的实时事件流，不会回放此前的会话记录。
+      <p v-if="preparing" class="history-note" data-test="preparing" role="status" aria-live="polite">
+        正在准备 agent…
+      </p>
+
+      <p v-if="historyTruncated" class="history-note" data-test="history-truncated">
+        仅显示最近的历史记录。
+      </p>
+
+      <p v-if="historyError" class="history-error" role="alert" data-test="history-error">
+        {{ historyError }}
+        <button type="button" class="retry" data-test="history-retry" @click="retryOpen">重试</button>
+      </p>
+
+      <p v-if="unavailable" class="instance-note" role="alert" data-test="session-unavailable">
+        {{ sessions.error || '任务当前不可用，请重试。' }}
+        <button type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
       <MessageView
@@ -183,7 +213,6 @@ function reconnect() {
 
       <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
 
-      <p v-if="!instanceRunning" class="instance-note">实例已停止，请在项目设置中启动后再发送消息。</p>
       <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
 
       <form class="send" @submit.prevent="onSubmit">
@@ -271,6 +300,22 @@ function reconnect() {
   margin: 0;
   color: #64748b;
   font-size: 0.85rem;
+}
+
+.history-error {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.85rem;
+}
+
+.retry {
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
 }
 
 .send {
