@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"sync/atomic"
 	"time"
 
 	"devplatform/internal/agents"
@@ -30,6 +31,12 @@ type process struct {
 	// done is closed after the child has been reaped. StopInstance waits on
 	// it (bounded) so a stopped instance does not leave a zombie.
 	done chan struct{}
+
+	// sessionID names the session whose prompt this process runs. It is set
+	// when the process is attached to its reaper.
+	sessionID string
+	// interrupted is set when the platform ended this turn on purpose.
+	interrupted atomic.Bool
 }
 
 // startProcess launches the child with the instance's context. The executable

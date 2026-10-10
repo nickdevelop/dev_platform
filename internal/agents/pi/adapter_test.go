@@ -466,6 +466,7 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 		ModelSelection:   true,
 		ToolCallEvents:   true,
 		ToolConfirmation: false,
+		Interrupt:        true,
 	}
 	if got := adapter.Capabilities(); got != want {
 		t.Errorf("Capabilities() = %+v, want %+v", got, want)

@@ -138,6 +138,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		ModelSelection:   true,
 		ToolCallEvents:   true,
 		ToolConfirmation: false,
+		Interrupt:        true,
 	}
 }
 
@@ -479,6 +480,45 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 // ListSessions reads pi's on-disk JSONL sessions for the instance directory.
 // pi groups session files by working directory, so a project's sessions live in
 // a single folder under the session root. Missing folders are not an error.
+// ListModels runs `pi --list-models` and returns the models it reports. pi's
+// catalog is not tied to a session, so the instance only has to exist.
+func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := a.getInstance(instanceID); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, a.executable, "--list-models").Output()
+	if err != nil {
+		return nil, fmt.Errorf("pi: list models: %s", redactSecrets(err.Error()))
+	}
+	return parseModelList(string(out)), nil
+}
+
+// Interrupt ends the running prompt of one session. The process is killed
+// and its turn is settled as aborted; the instance and the instance's other
+// sessions keep running. A session with no running prompt is a no-op.
+func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if ref.Backend != agents.BackendPi {
+		return fmt.Errorf("pi: session backend %q is not pi", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	inst.interruptSession(ref.SessionID)
+	return nil
+}
+
 func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents.SessionRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -641,12 +681,31 @@ func (inst *instance) addProcess(proc *process) bool {
 // it was not, the process is killed and still reaped by runProcess, so a stop
 // racing a send can never leave an unreaped (zombie) child.
 func (inst *instance) attachProcess(proc *process, sessionID string) bool {
+	proc.sessionID = sessionID
 	registered := inst.addProcess(proc)
 	if !registered {
 		proc.kill()
 	}
 	go inst.runProcess(proc, sessionID)
 	return registered
+}
+
+// interruptSession kills the running prompt processes of one session. Each is
+// marked interrupted first, so its reaper settles the turn as aborted instead
+// of reporting the kill as a process error.
+func (inst *instance) interruptSession(sessionID string) {
+	inst.mu.Lock()
+	var targets []*process
+	for proc := range inst.procs {
+		if proc.sessionID == sessionID {
+			targets = append(targets, proc)
+		}
+	}
+	inst.mu.Unlock()
+	for _, proc := range targets {
+		proc.interrupted.Store(true)
+		proc.kill()
+	}
 }
 
 // removeProcess drops a reaped process.
@@ -708,6 +767,17 @@ func (inst *instance) runProcess(proc *process, sessionID string) {
 
 	waitErr := proc.wait()
 	inst.removeProcess(proc)
+	if proc.interrupted.Load() {
+		if !inst.isClosed() {
+			inst.publish(agents.NormalizedEvent{
+				Type:      agents.EventLifecycle,
+				Lifecycle: &agents.LifecycleEvent{State: "agent_settled", Detail: "aborted"},
+				SessionID: sessionID,
+				Timestamp: inst.now(),
+			})
+		}
+		return
+	}
 	if waitErr != nil && !inst.isClosed() {
 		inst.publish(agents.NormalizedEvent{
 			Type:      agents.EventError,
@@ -912,14 +982,4 @@ func newUUID() (string, error) {
 	buf[6] = (buf[6] & 0x0f) | 0x40
 	buf[8] = (buf[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
-}
-
-// ListModels is replaced by the pi model listing in the next change.
-func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
-	return nil, errors.New("pi: list models not implemented")
-}
-
-// Interrupt is replaced by the pi turn interrupt in the next change.
-func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
-	return errors.New("pi: interrupt not implemented")
 }
