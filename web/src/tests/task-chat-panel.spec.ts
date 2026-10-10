@@ -5,10 +5,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import BackendTag from '../components/BackendTag.vue'
 import TaskChatPanel from '../components/TaskChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
+import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
 
 function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -73,8 +75,34 @@ function stubSessionList(list: AgentSession[]) {
   return fetchSpy
 }
 
+// The panel links back to its project, so the test router knows both shapes.
+function testRouter() {
+  return createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/projects/:projectId', name: 'project', component: { render: () => null } },
+      { path: '/projects/:projectId/tasks/:sessionId', name: 'task', component: { render: () => null } },
+    ],
+  })
+}
+
 function mountPanel(sessionId: string) {
-  return mount(TaskChatPanel, { props: { projectId: 1, sessionId } })
+  return mount(TaskChatPanel, {
+    props: { projectId: 1, sessionId },
+    global: { plugins: [testRouter()] },
+  })
+}
+
+function instance(status: AgentInstance['status']): AgentInstance {
+  return {
+    id: 'inst-1',
+    projectId: 1,
+    backend: 'opencode-v2',
+    directory: '/workspace/alpha',
+    status,
+    createdAt: '2026-10-09T00:00:00Z',
+    updatedAt: '2026-10-09T00:00:00Z',
+  }
 }
 
 function entry(id: string, text: string): ChatEntry {
@@ -115,7 +143,53 @@ describe('TaskChatPanel', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('任务不存在')
+    expect(wrapper.find('a').attributes('href')).toBe('/projects/1')
     expect(FakeEventSource.instances).toHaveLength(0)
+  })
+
+  it('shows a failed project load as an error with a way back, not as a missing task', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 500, json: async () => ({}) }) as Response),
+    )
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
+    expect(wrapper.text()).not.toContain('任务不存在')
+    expect(wrapper.find('a').attributes('href')).toBe('/projects/1')
+  })
+
+  it('disables sending and explains when the task instance is stopped', async () => {
+    stubSessionList([session('sess-1')])
+    useAgentsStore().instances = [instance('stopped')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('实例已停止，请在项目设置中启动')
+    expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps the typed message and reports the error when sending fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if ((init?.method ?? 'GET') === 'POST') {
+          return { status: 500, json: async () => ({}) } as Response
+        }
+        return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    await wrapper.find('#message-text').setValue('hello')
+    await wrapper.find('form.send').trigger('submit')
+    await flushPromises()
+
+    expect((wrapper.find('#message-text').element as HTMLTextAreaElement).value).toBe('hello')
+    expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
   })
 
   it('closes the previous stream and hides its messages when the task switches', async () => {

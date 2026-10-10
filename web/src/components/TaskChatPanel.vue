@@ -4,6 +4,7 @@
 // task closes the previous stream, so its events can never appear here. Only
 // controls the session's declared capabilities support are rendered.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
 import MessageView from './MessageView.vue'
@@ -11,9 +12,12 @@ import CapabilityControls from './CapabilityControls.vue'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
+const agents = useAgentsStore()
 const sessions = useSessionsStore()
 
 const ready = ref(false)
+const loadError = ref('')
+const sendError = ref('')
 const sessionModel = ref('')
 const sending = ref(false)
 const messageText = ref('')
@@ -21,6 +25,16 @@ const busy = ref(false)
 const toolNotice = ref('')
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
+
+// A task can only take messages while its agent instance runs; the project
+// settings pane is where a stopped instance is started again.
+const instanceRunning = computed(() => {
+  const session = activeSession.value
+  if (!session) return false
+  return agents.instances.some(
+    (entry) => entry.id === session.instanceId && entry.status === 'running',
+  )
+})
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 
@@ -47,11 +61,17 @@ watch(() => [props.projectId, props.sessionId], open)
 onBeforeUnmount(() => sessions.unsubscribeAll())
 
 // A directly opened task URL arrives before the project's sessions are loaded,
-// so the list is fetched first. An id absent from the list is never subscribed.
+// so the list and the instances are fetched first. A failed load is reported as
+// such; an id absent from a successful list is never subscribed.
 async function open() {
   ready.value = false
-  if (sessions.projectId !== props.projectId) await sessions.loadSessions(props.projectId)
+  loadError.value = ''
+  await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
   ready.value = true
+  if (sessions.error) {
+    loadError.value = sessions.error
+    return
+  }
   if (sessions.sessionById(props.sessionId)) {
     sessions.activateSession(props.projectId, props.sessionId)
   }
@@ -66,14 +86,17 @@ function onToolDecision() {
 
 async function send() {
   const session = activeSession.value
-  if (!session || sending.value || messageText.value.trim() === '') return
+  if (!session || sending.value || messageText.value.trim() === '' || !instanceRunning.value) return
   sending.value = true
+  sendError.value = ''
   const model =
     activeModelSelection.value && sessionModel.value.trim() !== ''
       ? sessionModel.value.trim()
       : undefined
-  await sessions.sendMessage(props.projectId, session.id, messageText.value, model)
-  messageText.value = ''
+  const updated = await sessions.sendMessage(props.projectId, session.id, messageText.value, model)
+  // The text is kept on failure so the user can retry without retyping it.
+  if (updated) messageText.value = ''
+  else sendError.value = sessions.error || '发送失败，请重试。'
   sending.value = false
 }
 
@@ -151,19 +174,31 @@ const statusLabels: Record<string, string> = {
 
       <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
 
+      <p v-if="!instanceRunning" class="instance-note">实例已停止，请在项目设置中启动后再发送消息。</p>
+      <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
+
       <form class="send" @submit.prevent="send">
         <label for="message-text">发送消息</label>
         <textarea id="message-text" v-model="messageText" rows="3"></textarea>
         <button
           type="submit"
           class="send-button"
-          :disabled="sending || messageText.trim() === '' || activeSession.status !== 'active'"
+          :disabled="
+            sending || messageText.trim() === '' || !instanceRunning || activeSession.status !== 'active'
+          "
         >
           发送
         </button>
       </form>
     </template>
-    <p v-else-if="ready" class="empty">任务不存在或已被移除。</p>
+    <template v-else-if="loadError">
+      <p class="empty" role="alert">{{ loadError }}</p>
+      <RouterLink :to="{ name: 'project', params: { projectId: String(props.projectId) } }">返回项目</RouterLink>
+    </template>
+    <template v-else-if="ready">
+      <p class="empty">任务不存在或已被移除。</p>
+      <RouterLink :to="{ name: 'project', params: { projectId: String(props.projectId) } }">返回项目</RouterLink>
+    </template>
     <p v-else class="loading">加载中…</p>
   </section>
 </template>
@@ -242,6 +277,18 @@ const statusLabels: Record<string, string> = {
 
 .tool-notice {
   color: #92400e;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.instance-note {
+  color: #92400e;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.send-error {
+  color: #b91c1c;
   font-size: 0.85rem;
   margin: 0;
 }

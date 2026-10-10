@@ -539,6 +539,7 @@ describe('task chat and new task panels', () => {
     })
     const calls = stubRoutes([
       ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [piSession] } }],
+      ['GET', '/api/projects/1/instances', { status: 200, body: { instances: [instance({ id: 'pi-1', backend: 'pi' })] } }],
       ['POST', '/api/projects/1/sessions/sess-pi/messages', { status: 202, body: piSession }],
     ])
     vi.stubGlobal('EventSource', FakeEventSource)

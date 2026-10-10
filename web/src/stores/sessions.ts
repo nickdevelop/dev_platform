@@ -58,6 +58,9 @@ export const useSessionsStore = defineStore('sessions', {
     activeSessionId: null as string | null,
     loading: false,
     error: '',
+    // Sequence number of the latest project-list request; a response that
+    // arrives after a newer request was issued is discarded.
+    listRequest: 0,
   }),
 
   getters: {
@@ -72,17 +75,21 @@ export const useSessionsStore = defineStore('sessions', {
 
   actions: {
     async loadSessions(projectId: number) {
+      const request = ++this.listRequest
+      if (this.projectId !== projectId) this.sessions = []
       this.loading = true
       this.projectId = projectId
       try {
         const list = await listProjectSessions(projectId)
+        if (request !== this.listRequest) return
         this.sessions = list.sessions
         this.error = ''
       } catch (error) {
         if (error instanceof UnauthorizedError) return
+        if (request !== this.listRequest) return
         this.error = describeApiError(error)
       } finally {
-        this.loading = false
+        if (request === this.listRequest) this.loading = false
       }
     },
 
