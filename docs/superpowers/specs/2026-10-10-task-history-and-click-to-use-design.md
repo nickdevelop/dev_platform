@@ -51,18 +51,23 @@
 `internal/agents/contracts.go` 新增：
 
 ```go
-// ListHistoryRequest scopes a native transcript read. Deliberately
-// instance-free so the read does not depend on a live instance handle.
 type ListHistoryRequest struct {
     Directory string `json:"directory"` // 已授权的项目工作目录
     SessionID string `json:"sessionId"` // agent 原生会话 id
 }
 
-// AgentAdapter 新增
-// ListHistory returns a session's prior turns as normalized events, oldest
-// first. Requires Capabilities.SessionHistory.
-ListHistory(ctx context.Context, request ListHistoryRequest) ([]NormalizedEvent, error)
+func (r ListHistoryRequest) Validate() error // 空目录/空会话 id → ErrInvalidHistoryRequest
+
+// HistoryReader is the optional half of the contract: an adapter implements
+// it when Capabilities.SessionHistory is true.
+type HistoryReader interface {
+    ListHistory(ctx context.Context, request ListHistoryRequest) ([]NormalizedEvent, error)
+}
 ```
+
+**为什么是可选接口而不是 `AgentAdapter` 的方法**：历史读取是可选能力，不是每个后端都会支持。放进 `AgentAdapter` 会强制每个实现者（含测试替身）都写一个方法体，而可选能力用「能力位 + 类型断言」表达更贴实：`capabilities.SessionHistory` 是给 UI 看的声明，`adapter.(agents.HistoryReader)` 是调用侧的机械检查。两个后端本次都实现它。
+
+**信封字段的填法（契约脚注）**：`ListHistoryRequest` 不含实例，因此 adapter 返回的事件里 `instanceId` 留空、只填 `backend`/`sequence`/`timestamp`/`type`/payload，且**不调用 `Validate()`**（`Validate` 要求 `instanceId` 非空）。历史事件的 `instanceId`、`sessionId` 由会话服务层按会话行统一盖上后再校验。
 
 `Capabilities` 新增 `SessionHistory bool`（json `sessionHistory`）；两个后端均为 `true`。
 
