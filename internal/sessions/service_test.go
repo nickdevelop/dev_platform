@@ -830,7 +830,7 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 		router.ServeHTTP(rec, sseReq)
 		close(done)
 	}()
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 	cancel()
 	<-done
 	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {

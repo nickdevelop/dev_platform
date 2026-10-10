@@ -95,22 +95,25 @@ func waitForFrames(t *testing.T, w *recordingWriter, n int) {
 	t.Fatalf("timed out waiting for %d SSE frames; got %q", n, w.Bytes())
 }
 
-// waitForSubscriber blocks until the fake adapter has an active subscription
-// for instanceID and returns its channel.
-func waitForSubscriber(t *testing.T, f *fakeAdapter, instanceID string) chan agents.NormalizedEvent {
+// waitForSubscriber blocks until the session's SSE stream has attached its
+// subscriber and returns the instance's shared upstream channel. Creating a
+// session starts the always-on turn tracker, which subscribes to the instance
+// stream first; waiting for a subscription alone would return before the SSE
+// subscriber is attached, so this waits for the second subscriber.
+func waitForSubscriber(t *testing.T, env *testEnv) chan agents.NormalizedEvent {
 	t.Helper()
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		f.mu.Lock()
-		ch := f.subs[instanceID]
-		f.mu.Unlock()
-		if ch != nil {
+		if env.instances.SubscriberCount(env.instanceID) >= 2 {
+			env.fake.mu.Lock()
+			ch := env.fake.subs[env.instanceID]
+			env.fake.mu.Unlock()
 			return ch
 		}
 		time.Sleep(2 * time.Millisecond)
 	}
-	t.Fatal("timed out waiting for an instance subscription")
+	t.Fatal("timed out waiting for the SSE subscriber to attach")
 	return nil
 }
 
@@ -141,7 +144,7 @@ func TestStreamSessionFramesOrderedEvents(t *testing.T) {
 		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, w, nil)
 	}()
 
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 	env.fake.emit(t, env.instanceID, streamMessageEvent(1, "native-1", "first"))
 	env.fake.emit(t, env.instanceID, streamMessageEvent(2, "native-1", "second"))
 	env.fake.emit(t, env.instanceID, agents.NormalizedEvent{
@@ -210,7 +213,7 @@ func TestStreamSessionSkipsMalformedAndPreservesUnknown(t *testing.T) {
 		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, w, nil)
 	}()
 
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 	// A message event with no payload is malformed and must be dropped.
 	env.fake.emit(t, env.instanceID, agents.NormalizedEvent{
 		InstanceID: "unused",
@@ -282,7 +285,7 @@ func TestStreamSessionSlowClientDisconnectsWithoutStalling(t *testing.T) {
 		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, &blockingWriter{gate: gate}, nil)
 	}()
 
-	ch := waitForSubscriber(t, env.fake, env.instanceID)
+	ch := waitForSubscriber(t, env)
 
 	// Flood far more events than any buffer; a healthy policy keeps draining
 	// even while the client is wedged, so this must not block.
@@ -331,7 +334,7 @@ func TestStreamSessionEndMarksSessionDisconnected(t *testing.T) {
 		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, &recordingWriter{}, nil)
 	}()
 
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 	if _, err := env.instances.Stop(context.Background(), env.instanceID); err != nil {
 		t.Fatalf("stop instance: %v", err)
 	}
@@ -366,7 +369,7 @@ func TestStreamSessionClientDisconnectLeavesInstanceRunning(t *testing.T) {
 		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, &recordingWriter{}, nil)
 	}()
 
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 	cancel()
 	select {
 	case err := <-done:
@@ -445,7 +448,7 @@ func TestSSEStreamOutlivesServerWriteTimeout(t *testing.T) {
 		t.Fatalf("SSE Content-Type = %q, want text/event-stream", got)
 	}
 
-	waitForSubscriber(t, env.fake, env.instanceID)
+	waitForSubscriber(t, env)
 
 	// Wait past the server's WriteTimeout, then emit: without a cleared write
 	// deadline the flush would fail and no frame would reach the client.

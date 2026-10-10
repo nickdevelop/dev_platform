@@ -429,6 +429,20 @@ func (s *Service) releaseStopGate(instanceID string, gate *stopGate) {
 	}
 }
 
+// SubscriberCount reports how many live subscribers are attached to the
+// instance's event stream, or zero when no stream exists. A caller that needs
+// one specific subscriber to be registered (rather than merely the stream to
+// exist) can wait for the count to reach the number it expects.
+func (s *Service) SubscriberCount(instanceID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.streams[instanceID]
+	if !ok || st.subscribers == nil {
+		return 0
+	}
+	return len(st.subscribers)
+}
+
 // Subscribe returns a channel of the instance's normalized events. All
 // subscribers of one instance share a single upstream adapter subscription and
 // each gets an independent channel; events for other instances are never

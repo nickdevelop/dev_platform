@@ -644,6 +644,50 @@ func TestSubscriptionsAreIsolatedPerInstance(t *testing.T) {
 	expectNoEvent(t, secondEvents)
 }
 
+// TestSubscriberCountReportsAttachedSubscribers verifies the service exposes
+// how many subscribers are attached to an instance's stream. More than one
+// component can subscribe (for example the session layer's turn tracker plus an
+// SSE client), so a caller that needs a specific subscriber to be registered
+// must be able to tell "the stream exists" from "my subscriber is attached".
+func TestSubscriberCountReportsAttachedSubscribers(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t)
+
+	inst, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := svc.SubscriberCount(inst.ID); got != 0 {
+		t.Fatalf("SubscriberCount before any subscribe = %d, want 0", got)
+	}
+
+	ctxFirst, cancelFirst := context.WithCancel(context.Background())
+	if _, err := svc.Subscribe(ctxFirst, inst.ID); err != nil {
+		t.Fatalf("Subscribe first: %v", err)
+	}
+	if got := svc.SubscriberCount(inst.ID); got != 1 {
+		t.Fatalf("SubscriberCount after one subscribe = %d, want 1", got)
+	}
+
+	ctxSecond, cancelSecond := context.WithCancel(context.Background())
+	defer cancelSecond()
+	if _, err := svc.Subscribe(ctxSecond, inst.ID); err != nil {
+		t.Fatalf("Subscribe second: %v", err)
+	}
+	if got := svc.SubscriberCount(inst.ID); got != 2 {
+		t.Fatalf("SubscriberCount after two subscribes = %d, want 2", got)
+	}
+
+	cancelFirst()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if svc.SubscriberCount(inst.ID) == 1 {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("SubscriberCount after cancel = %d, want 1", svc.SubscriberCount(inst.ID))
+}
+
 func TestLifecycleEventUpdatesOnlyItsInstance(t *testing.T) {
 	svc, _, projectID, _, fake := newTestService(t)
 

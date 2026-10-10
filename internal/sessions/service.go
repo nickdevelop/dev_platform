@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -91,6 +92,7 @@ type Session struct {
 	NativeSessionID string              `json:"nativeSessionId"`
 	Title           string              `json:"title,omitempty"`
 	Status          SessionStatus       `json:"status"`
+	Turn            TurnState           `json:"turn"`
 	Capabilities    agents.Capabilities `json:"capabilities"`
 	CreatedAt       time.Time           `json:"createdAt"`
 	UpdatedAt       time.Time           `json:"updatedAt"`
@@ -136,6 +138,13 @@ type Service struct {
 
 	// streamBuffer bounds one SSE subscriber's backlog; tests may lower it.
 	streamBuffer int
+
+	// turnMu guards trackers and turns. turns maps instance id to native
+	// session id to the session's current turn state; trackers records the
+	// instances that already have a turn tracker.
+	turnMu   sync.Mutex
+	trackers map[string]bool
+	turns    map[string]map[string]TurnState
 }
 
 // NewService builds the session service over the platform database, the
@@ -149,6 +158,8 @@ func NewService(db *gorm.DB, registry *agents.Registry, instanceService Instance
 		newID:        randomID,
 		now:          func() time.Time { return time.Now().UTC() },
 		streamBuffer: defaultStreamBuffer,
+		trackers:     make(map[string]bool),
+		turns:        make(map[string]map[string]TurnState),
 	}
 }
 
@@ -197,6 +208,11 @@ func (s *Service) List(projectID uint) ([]Session, error) {
 			out = append(out, s.sessionFromModel(row))
 		}
 		return out, nil
+	}
+	for _, inst := range index {
+		if instanceRunnable(inst) {
+			s.ensureTracker(inst.ID)
+		}
 	}
 	out := make([]Session, 0, len(rows))
 	for _, row := range rows {
@@ -256,6 +272,7 @@ func (s *Service) Create(ctx context.Context, projectID uint, instanceID, title,
 	if err := validateRef(ref, inst); err != nil {
 		return Session{}, err
 	}
+	s.ensureTracker(inst.ID)
 	return s.indexRef(projectID, inst, *ref, SessionActive)
 }
 
@@ -345,6 +362,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	if err := s.repo.update(row); err != nil {
 		return Session{}, err
 	}
+	s.ensureTracker(inst.ID)
 	return s.sessionFromModel(row), nil
 }
 
@@ -386,6 +404,7 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	if err := s.repo.update(row); err != nil {
 		return Session{}, err
 	}
+	s.ensureTracker(inst.ID)
 	return s.sessionFromModel(row), nil
 }
 
@@ -720,6 +739,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
 		Status:          SessionStatus(row.Status),
+		Turn:            s.turnOf(row.InstanceID, row.NativeSessionID),
 		Capabilities:    s.capabilities(backend),
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
