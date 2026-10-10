@@ -113,6 +113,59 @@ describe('BackendDiagnostics panel', () => {
     expect(wrapper.find('[data-diagnostics-status]').text()).toBe('正常')
     expect(wrapper.text()).toContain('该后端未提供诊断信息。')
   })
+
+  it('lists a backend instance with a stop action and emits the instance id', async () => {
+    const wrapper = mount(BackendDiagnostics, {
+      props: {
+        diagnostics: [report()],
+        instances: [
+          {
+            id: 'inst-1',
+            projectId: 1,
+            backend: 'opencode-v2',
+            directory: '/workspace/alpha',
+            status: 'running',
+            createdAt: '2026-10-09T00:00:00Z',
+            updatedAt: '2026-10-09T00:00:00Z',
+          },
+        ],
+        capabilitiesFor: () => report().capabilities,
+      },
+    })
+    mounted.push(wrapper)
+
+    const list = wrapper.find('[data-test="instance-list"]')
+    expect(list.exists()).toBe(true)
+    expect(list.text()).toContain('inst-1')
+    expect(list.text()).toContain('/workspace/alpha')
+
+    await wrapper.find('[data-test="stop-instance"]').trigger('click')
+    expect(wrapper.emitted('stop')?.[0]).toEqual(['inst-1'])
+  })
+
+  it('offers no stop action for a backend that cannot stop', async () => {
+    const wrapper = mount(BackendDiagnostics, {
+      props: {
+        diagnostics: [report()],
+        instances: [
+          {
+            id: 'inst-1',
+            projectId: 1,
+            backend: 'pi',
+            directory: '/workspace/alpha',
+            status: 'running',
+            createdAt: '2026-10-09T00:00:00Z',
+            updatedAt: '2026-10-09T00:00:00Z',
+          },
+        ],
+        capabilitiesFor: () => ({ ...report().capabilities!, stop: false }),
+      },
+    })
+    mounted.push(wrapper)
+
+    expect(wrapper.find('[data-test="instance-list"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="stop-instance"]').exists()).toBe(false)
+  })
 })
 
 describe('agents store diagnostics', () => {

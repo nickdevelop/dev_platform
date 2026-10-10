@@ -311,6 +311,24 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 // exactly once, returning the indexed references. Malformed, misattributed or
 // unknown-project metadata is skipped so nothing is attached to the wrong
 // project.
+// DiscoverProject indexes the agent-native sessions of a project's backend,
+// starting an instance when none is running. It is the project-level entry
+// point for discovery: the caller names a backend, and which instance serves it
+// is the platform's business rather than something the user has to pick.
+func (s *Service) DiscoverProject(ctx context.Context, projectID uint, backend agents.BackendID) ([]Session, error) {
+	if _, err := s.adapter(backend); err != nil {
+		return nil, err
+	}
+	if !s.capabilities(backend).SessionDiscovery {
+		return nil, fmt.Errorf("%w: session discovery", ErrUnsupportedCapability)
+	}
+	inst, err := s.instanceForBackend(ctx, projectID, backend)
+	if err != nil {
+		return nil, err
+	}
+	return s.Discover(ctx, projectID, inst.ID)
+}
+
 func (s *Service) Discover(ctx context.Context, projectID uint, instanceID string) ([]Session, error) {
 	inst, err := s.scopedInstance(projectID, instanceID)
 	if err != nil {

@@ -12,6 +12,7 @@ import {
   continueProjectSession,
   createProjectSession,
   discoverProjectInstanceSessions,
+  discoverProjectSessions as discoverProjectSessionsRequest,
   getSessionHistory,
   interruptProjectSession,
   listProjectSessions,
@@ -19,6 +20,7 @@ import {
   sessionEventsPath,
   stopProjectSession,
   type AgentSession,
+  type BackendId,
   type CreateSessionBody,
   type NormalizedEvent,
 } from '../api/sessions'
@@ -179,6 +181,25 @@ export const useSessionsStore = defineStore('sessions', {
     async discoverNativeSessions(projectId: number, instanceId: string) {
       try {
         const list = await discoverProjectInstanceSessions(projectId, instanceId)
+        const byId = new Map(this.sessions.map((entry) => [entry.id, entry]))
+        for (const discovered of list.sessions) byId.set(discovered.id, discovered)
+        this.sessions = [...byId.values()]
+        this.error = ''
+        return list.sessions
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.error = describeApiError(error)
+        return null
+      }
+    },
+
+    // discoverProjectSessions scans a backend at the project level: the server
+    // starts or reuses the instance that serves the backend, so the caller
+    // never names an instance. Results merge by platform id, so a rescan never
+    // duplicates a session.
+    async discoverProjectSessions(projectId: number, backend: BackendId) {
+      try {
+        const list = await discoverProjectSessionsRequest(projectId, backend)
         const byId = new Map(this.sessions.map((entry) => [entry.id, entry]))
         for (const discovered of list.sessions) byId.set(discovered.id, discovered)
         this.sessions = [...byId.values()]

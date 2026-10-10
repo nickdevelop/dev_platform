@@ -61,6 +61,9 @@ type fakeAdapter struct {
 	listRefs  []agents.SessionRef
 	listErr   error
 	listCalls int
+	// listBindInstance makes ListSessions rebind its refs to the instance it
+	// was asked about, for tests that cannot predict the instance id.
+	listBindInstance bool
 
 	continueRef *agents.SessionRef
 	continueErr error
@@ -158,11 +161,20 @@ func (f *fakeAdapter) StopInstance(_ context.Context, instanceID string) error {
 	return nil
 }
 
-func (f *fakeAdapter) ListSessions(context.Context, string) ([]agents.SessionRef, error) {
+func (f *fakeAdapter) ListSessions(_ context.Context, instanceID string) ([]agents.SessionRef, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.listCalls++
-	return append([]agents.SessionRef(nil), f.listRefs...), f.listErr
+	refs := append([]agents.SessionRef(nil), f.listRefs...)
+	// Discovery tests that cannot know the instance id in advance (because the
+	// service starts one) ask the fake to bind what it returns to the instance
+	// it was queried on, which is what a real adapter does.
+	if f.listBindInstance {
+		for i := range refs {
+			refs[i].InstanceID = instanceID
+		}
+	}
+	return refs, f.listErr
 }
 
 func (f *fakeAdapter) CreateSession(_ context.Context, instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
@@ -1520,5 +1532,76 @@ func TestContinueRejectsOtherProject(t *testing.T) {
 
 	if _, err := env.svc.Continue(context.Background(), other, session.ID); !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("Continue through another project error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+// TestDiscoverProjectUsesRunnableInstance pins the project-level scan: the
+// caller names a backend, and the platform picks the instance that serves it.
+func TestDiscoverProjectUsesRunnableInstance(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-project", Title: "found"},
+	}
+	env.fake.mu.Unlock()
+	before := env.fake.startCount()
+
+	found, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("DiscoverProject: %v", err)
+	}
+	if len(found) != 1 || found[0].NativeSessionID != "n-project" {
+		t.Fatalf("DiscoverProject = %+v, want the native session n-project", found)
+	}
+	if got := env.fake.startCount(); got != before {
+		t.Errorf("StartInstance calls = %d, want %d (the running instance is reused)", got, before)
+	}
+
+	// Re-scanning keeps the platform id instead of indexing a duplicate.
+	again, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("second DiscoverProject: %v", err)
+	}
+	if len(again) != 1 || again[0].ID != found[0].ID {
+		t.Errorf("second DiscoverProject = %+v, want the same platform id %q", again, found[0].ID)
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want 1", got)
+	}
+}
+
+// TestDiscoverProjectStartsInstanceWhenNeeded pins that scanning a backend with
+// no running instance brings one up instead of failing.
+func TestDiscoverProjectStartsInstanceWhenNeeded(t *testing.T) {
+	env := newTestEnv(t)
+	stopEnvInstance(t, env)
+	before := env.fake.startCount()
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-late", Title: "late"},
+	}
+	env.fake.listBindInstance = true
+	env.fake.mu.Unlock()
+
+	found, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("DiscoverProject: %v", err)
+	}
+	if got := env.fake.startCount(); got != before+1 {
+		t.Errorf("StartInstance calls = %d, want %d (one auto-start)", got, before+1)
+	}
+	if len(found) != 1 {
+		t.Fatalf("DiscoverProject = %+v, want the discovered session", found)
+	}
+}
+
+// TestDiscoverProjectRejectsUnknownBackend pins the error mapping for a
+// backend the platform does not know.
+func TestDiscoverProjectRejectsUnknownBackend(t *testing.T) {
+	env := newTestEnv(t)
+
+	_, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendID("nope"))
+	if !errors.Is(err, instances.ErrUnknownBackend) {
+		t.Errorf("DiscoverProject error = %v, want ErrUnknownBackend", err)
 	}
 }

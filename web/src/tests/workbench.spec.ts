@@ -6,7 +6,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import AgentInstanceList from '../components/AgentInstanceList.vue'
 import CapabilityControls from '../components/CapabilityControls.vue'
 import MessageView from '../components/MessageView.vue'
 import SessionList from '../components/SessionList.vue'
@@ -190,30 +189,6 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   FakeEventSource.instances = []
-})
-
-describe('agent instance list', () => {
-  it('renders multiple instances and gates stop per backend capability', async () => {
-    const instances = [
-      instance({ id: 'pi-1', backend: 'pi' }),
-      instance({ id: 'oc-1', backend: 'opencode-v2', endpoint: 'http://127.0.0.1:1234' }),
-    ]
-    const wrapper = mount(AgentInstanceList, {
-      props: {
-        instances,
-        capabilitiesFor: (backend: string) =>
-          backend === 'pi' ? noCapabilities({ stop: true }) : noCapabilities({ stop: false }),
-      },
-    })
-    mounted.push(wrapper)
-
-    expect(wrapper.findAll('.instance-item')).toHaveLength(2)
-    // Only the backend that declares stop exposes a stop control.
-    expect(wrapper.findAll('button.stop')).toHaveLength(1)
-
-    await wrapper.find('button.stop').trigger('click')
-    expect(wrapper.emitted('stop')?.[0]).toEqual(['pi-1'])
-  })
 })
 
 describe('session list', () => {

@@ -9,7 +9,6 @@ import type { Project } from '../api/projects'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import AgentInstanceList from './AgentInstanceList.vue'
 import BackendDiagnostics from './BackendDiagnostics.vue'
 
 const props = defineProps<{ projectId: number }>()
@@ -24,7 +23,7 @@ const sessions = useSessionsStore()
 
 const project = computed(() => projectsStore.byId(props.projectId) ?? null)
 const selectedBackend = ref<BackendId | ''>('')
-const starting = ref(false)
+const scanning = ref(false)
 const actionError = ref('')
 const discoverNotice = ref('')
 
@@ -43,32 +42,26 @@ async function load() {
   ])
 }
 
-async function start() {
-  if (selectedBackend.value === '' || starting.value) return
-  starting.value = true
+async function scan() {
+  if (selectedBackend.value === '' || scanning.value) return
+  scanning.value = true
   actionError.value = ''
-  const created = await agents.startInstance(props.projectId, selectedBackend.value)
-  if (!created) actionError.value = agents.error
-  starting.value = false
+  discoverNotice.value = ''
+  // Discovery is project-level: the server starts or reuses the instance that
+  // serves the backend, so the page never asks the user to pick one.
+  const found = await sessions.discoverProjectSessions(props.projectId, selectedBackend.value)
+  if (found === null) {
+    actionError.value = sessions.error
+  } else {
+    discoverNotice.value = `已发现 ${found.length} 个原生会话。`
+  }
+  scanning.value = false
 }
 
-async function stop(instanceId: string) {
+async function stopInstance(instanceId: string) {
   actionError.value = ''
   const stopped = await agents.stopInstance(props.projectId, instanceId)
   if (!stopped) actionError.value = agents.error
-}
-
-// Discovery is instance-scoped, so the entry lives beside the instance. It is
-// offered only for a running instance whose backend declares sessionDiscovery.
-async function discover(instanceId: string) {
-  actionError.value = ''
-  discoverNotice.value = ''
-  const found = await sessions.discoverNativeSessions(props.projectId, instanceId)
-  if (found === null) {
-    actionError.value = sessions.error
-    return
-  }
-  discoverNotice.value = `已发现 ${found.length} 个原生会话。`
 }
 
 async function toggleBackend(backend: BackendId, event: Event) {
@@ -78,10 +71,17 @@ async function toggleBackend(backend: BackendId, event: Event) {
   if (!updated) actionError.value = agents.error
 }
 
-// The start control is disabled when the selected backend is disabled for the
+// The scan control is disabled when the selected backend is disabled for the
 // project, so the UI never offers an action the server will refuse.
 const selectedBackendEnabled = computed(
   () => selectedBackend.value === '' || agents.backendEnabledFor(selectedBackend.value),
+)
+
+// sessionDiscovery is a backend capability; a backend without it has no scan.
+const canScan = computed(
+  () =>
+    selectedBackend.value !== '' &&
+    agents.capabilitiesFor(selectedBackend.value)?.sessionDiscovery === true,
 )
 
 function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
@@ -111,7 +111,12 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
       {{ agents.diagnosticsError }}
     </p>
 
-    <BackendDiagnostics :diagnostics="agents.diagnostics" />
+    <BackendDiagnostics
+      :diagnostics="agents.diagnostics"
+      :instances="agents.instances"
+      :capabilities-for="agents.capabilitiesFor"
+      @stop="stopInstance"
+    />
 
     <section class="backend-config" aria-label="项目 Agent 后端启用">
       <h2>项目后端启用</h2>
@@ -131,32 +136,30 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
       <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中启动实例。</p>
     </section>
 
-    <section class="start-instance" aria-label="启动 Agent 实例">
-      <label for="backend-select">Agent 后端</label>
-      <select id="backend-select" v-model="selectedBackend">
-        <option v-for="backend in agents.backends" :key="backend.backend" :value="backend.backend">
-          {{ backend.backend }}
-        </option>
-      </select>
-      <button
-        type="button"
-        class="start"
-        :disabled="starting || selectedBackend === '' || !selectedBackendEnabled"
-        @click="start"
-      >
-        启动实例
-      </button>
-      <p class="hint">每个实例相互独立：一个实例的失败或停止不影响其他实例。</p>
+    <section class="scan-sessions" aria-label="扫描原生会话">
+      <h2>扫描原生会话</h2>
+      <div class="scan-controls">
+        <label for="backend-select">Agent 后端</label>
+        <select id="backend-select" v-model="selectedBackend">
+          <option v-for="backend in agents.backends" :key="backend.backend" :value="backend.backend">
+            {{ backend.backend }}
+          </option>
+        </select>
+        <button
+          v-if="canScan"
+          type="button"
+          class="scan"
+          data-test="discover-sessions"
+          :disabled="scanning || !selectedBackendEnabled"
+          @click="scan"
+        >
+          扫描发现原生会话
+        </button>
+      </div>
+      <p class="hint">扫描会把 Agent 原生保存的会话登记为任务；无需选择实例。</p>
     </section>
 
-    <p v-if="agents.loading" class="loading">加载中…</p>
-    <AgentInstanceList
-      v-else
-      :instances="agents.instances"
-      :capabilities-for="agents.capabilitiesFor"
-      @stop="stop"
-      @discover="discover"
-    />
+    <p v-if="scanning" class="loading">扫描中…</p>
     <p v-if="discoverNotice" class="discover-notice" role="status">{{ discoverNotice }}</p>
 
     <section class="resources" aria-label="资源关联">
@@ -198,8 +201,8 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 }
 
 .actions button,
-.start-instance select,
-.start-instance button {
+.scan-controls select,
+.scan-controls button {
   padding: 0.35rem 0.7rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
@@ -227,14 +230,14 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
   gap: 0.35rem;
 }
 
-.start-instance {
+.scan-controls {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
 
-.start-instance .hint,
+.scan-controls .hint,
 .hint {
   flex-basis: 100%;
   color: #64748b;

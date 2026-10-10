@@ -996,6 +996,70 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/discover:
+    get:
+      summary: Index a project backend's native sessions
+      description: >-
+        Lists the agent-native sessions the backend knows for the project's
+        working directory and merges them into the platform index, starting an
+        instance when none is running. The caller names a backend rather than
+        an instance, because which instance serves the backend is the
+        platform's business.
+      operationId: discoverProjectSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: backend
+          in: query
+          required: true
+          description: Backend whose native sessions are indexed.
+          schema:
+            type: string
+            enum:
+              - opencode-v2
+              - pi
+      responses:
+        '200':
+          description: The project's indexed sessions after discovery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionList'
+        '400':
+          description: Malformed path or an unknown backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            The backend is disabled for the project, or does not declare
+            session discovery support.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to start or to list sessions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/sessions/{sessionId}/continue:
     post:
       summary: Continue an indexed session

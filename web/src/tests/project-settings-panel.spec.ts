@@ -75,16 +75,6 @@ describe('ProjectSettingsPanel', () => {
     expect(useAgentsStore().setBackendEnabled).toHaveBeenCalledWith(1, 'pi', false)
   })
 
-  it('disables starting an instance when the selected backend is disabled', async () => {
-    const agents = useAgentsStore()
-    agents.backendConfigs = [{ projectId: 1, backend: 'opencode-v2', enabled: false } as never]
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    const start = wrapper.find('button.start')
-    expect(start.attributes('disabled')).toBeDefined()
-  })
-
   it('hands the danger-zone actions to the manage dialog with the project', async () => {
     const wrapper = mountPanel()
     await flushPromises()
@@ -112,50 +102,43 @@ describe('ProjectSettingsPanel', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('offers discover for a running instance whose backend supports it and calls the store', async () => {
+  it('asks for discovery from the project page without picking an instance', async () => {
     const agents = useAgentsStore()
     agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
-    agents.instances = [
-      {
-        id: 'inst-1',
-        projectId: 1,
-        backend: 'pi',
-        directory: '/workspace/alpha',
-        status: 'running',
-        createdAt: '2026-10-09T00:00:00Z',
-        updatedAt: '2026-10-09T00:00:00Z',
-      } as never,
-    ]
     const sessions = useSessionsStore()
-    const discover = vi.spyOn(sessions, 'discoverNativeSessions').mockResolvedValue([] as never)
+    const discover = vi.spyOn(sessions, 'discoverProjectSessions').mockResolvedValue([] as never)
 
     const wrapper = mountPanel()
     await flushPromises()
+
+    // The instance list is gone from the project page: which instance serves
+    // the backend is the platform's business, not the user's.
+    expect(wrapper.find('.instance-list').exists()).toBe(false)
 
     const button = wrapper.find('[data-test="discover-sessions"]')
     expect(button.exists()).toBe(true)
     await button.trigger('click')
     await flushPromises()
-    expect(discover).toHaveBeenCalledWith(1, 'inst-1')
+    expect(discover).toHaveBeenCalledWith(1, 'pi')
   })
 
-  it('offers no discover action when the backend cannot discover sessions', async () => {
+  it('offers no discovery action when the selected backend cannot discover sessions', async () => {
     const agents = useAgentsStore()
     agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: false }) }]
-    agents.instances = [
-      {
-        id: 'inst-1',
-        projectId: 1,
-        backend: 'pi',
-        directory: '/workspace/alpha',
-        status: 'running',
-        createdAt: '2026-10-09T00:00:00Z',
-        updatedAt: '2026-10-09T00:00:00Z',
-      } as never,
-    ]
 
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
+  })
+
+  it('disables discovery when the selected backend is disabled for the project', async () => {
+    const agents = useAgentsStore()
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
+    agents.backendConfigs = [{ projectId: 1, backend: 'pi', enabled: false } as never]
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="discover-sessions"]').attributes('disabled')).toBeDefined()
   })
 })

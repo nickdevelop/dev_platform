@@ -22,6 +22,11 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/sessions", s.handleList)
 	r.POST("/projects/:id/sessions", s.handleCreate)
 
+	// Discovery is project-level: the caller names the backend and the platform
+	// picks (or starts) the instance that serves it, so no user-visible
+	// instance id is needed.
+	r.GET("/projects/:id/sessions/discover", s.handleDiscoverProject)
+
 	// Discovery is instance-scoped: the adapter needs to know which instance
 	// (and therefore which working directory) to ask.
 	r.GET("/projects/:id/instances/:instanceId/sessions", s.handleDiscover)
@@ -223,6 +228,26 @@ func (s *Service) handleInterrupt(c *gin.Context) {
 }
 
 // handleContinue re-attaches to an indexed native session.
+// handleDiscoverProject indexes a project backend's native sessions, starting
+// an instance when none is running.
+func (s *Service) handleDiscoverProject(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	backend := agents.BackendID(c.Query("backend"))
+	if backend == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	list, err := s.DiscoverProject(c.Request.Context(), id, backend)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
+}
+
 // handleHistory serves one session's replayed prior turns. History is an
 // optional capability: a backend without it answers 409 rather than an empty
 // history that would look like a session with no past.

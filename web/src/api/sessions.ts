@@ -142,6 +142,19 @@ export function discoverProjectInstanceSessions(
   )
 }
 
+// GET /api/projects/{id}/sessions/discover?backend={backend}
+// Discovery is project-level: the caller names the backend and the server picks
+// or starts the instance that serves it.
+export function discoverProjectSessions(
+  projectId: number,
+  backend: BackendId,
+): Promise<AgentSessionList> {
+  return apiRequest<AgentSessionList>(
+    'GET',
+    `/projects/${projectId}/sessions/discover?backend=${encodeURIComponent(backend)}`,
+  )
+}
+
 // GET /api/projects/{id}/sessions/{sessionId}/history
 export function getSessionHistory(
   projectId: number,
