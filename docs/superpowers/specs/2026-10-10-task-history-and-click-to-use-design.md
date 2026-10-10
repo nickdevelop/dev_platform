@@ -58,10 +58,17 @@ type ListHistoryRequest struct {
 
 func (r ListHistoryRequest) Validate() error // 空目录/空会话 id → ErrInvalidHistoryRequest
 
+// HistoryResult carries the events and the truncation verdict. The reader that
+// did the bounding reports it, because only it knows whether anything dropped.
+type HistoryResult struct {
+    Events    []NormalizedEvent
+    Truncated bool
+}
+
 // HistoryReader is the optional half of the contract: an adapter implements
 // it when Capabilities.SessionHistory is true.
 type HistoryReader interface {
-    ListHistory(ctx context.Context, request ListHistoryRequest) ([]NormalizedEvent, error)
+    ListHistory(ctx context.Context, request ListHistoryRequest) (HistoryResult, error)
 }
 ```
 
@@ -91,7 +98,7 @@ type HistoryReader interface {
 
 跳过 `thinking`/`reasoning` 是与实时流一致的有意选择：pi 的实时解析器丢弃 `thinking_*`（`internal/agents/pi/event_parser.go`），opencode 的实时归一化也不产出推理事件。这样「回放出来的历史」与「当时看到的实时流」外观一致，不产生多一层或少一层的割裂。
 
-**顺序与规模**：`sequence` 在历史空间内按文件/响应顺序 1..N 递增，`replayed=true`。前端按到达顺序追加，不跨空间比较 `sequence`。单会话历史事件数上限 `maxHistoryEvents = 5000`，超出时**保留最近的 5000 条**并在响应上置 `truncated: true`（理由是 1.8 MB 的 pi transcript 属于常见量级，必须有界）。
+**顺序与规模**：`sequence` 在历史空间内按文件/响应顺序 1..N 递增，`replayed=true`。前端按到达顺序追加，不跨空间比较 `sequence`。单会话历史事件数上限 `maxHistoryEvents = 5000`，超出时**保留最近的 5000 条**并由 adapter 在 `HistoryResult.Truncated` 上置 `true`（响应体为 `truncated`）。理由：1.8 MB 的 pi transcript 属于常见量级，必须有界；而截断与否只能由做了截断的读取方判定，服务层不得二次推导（例如「恰好 5000 条」不等于被截断）。
 
 **错误语义**：原生读取失败（文件不可读、服务不可达）返回带上下文的 error（`ErrBackendFailed` 包装）；能力未声明返回 `ErrUnsupportedCapability`；目录或会话 id 为空按契约校验错误处理。
 

@@ -398,6 +398,66 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 }
 
 // Send delivers one user turn to the session's native session.
+// History is the JSON-stable API representation of a session's replayed
+// prior turns. Events carry the same envelope as the live stream, stamped with
+// the session's instance and native id, and Truncated reports that older
+// events exist beyond the backend's read bound.
+type History struct {
+	Events    []agents.NormalizedEvent `json:"events"`
+	Truncated bool                     `json:"truncated"`
+}
+
+// History reads a session's agent-native prior turns. History lives in the
+// agent's own storage: the platform reads it on demand and keeps no copy, so
+// this works for a session whose instance is no longer running.
+func (s *Service) History(ctx context.Context, projectID uint, sessionID string) (History, error) {
+	row, err := s.loadScoped(projectID, sessionID)
+	if err != nil {
+		return History{}, err
+	}
+	backend := agents.BackendID(row.Backend)
+	if !s.capabilities(backend).SessionHistory {
+		return History{}, fmt.Errorf("%w: session history", ErrUnsupportedCapability)
+	}
+	adapter, err := s.adapter(backend)
+	if err != nil {
+		return History{}, err
+	}
+	reader, ok := adapter.(agents.HistoryReader)
+	if !ok {
+		// A backend that declares the capability but cannot serve it is a
+		// platform misconfiguration, not a client error; it still must not
+		// present as an empty history.
+		return History{}, fmt.Errorf("%w: session history", ErrUnsupportedCapability)
+	}
+	// Instance rows are never deleted, so a stopped or failed instance still
+	// carries the working directory the transcript is keyed under.
+	inst, err := s.instances.Get(row.InstanceID)
+	if err != nil {
+		return History{}, err
+	}
+
+	result, err := reader.ListHistory(ctx, agents.ListHistoryRequest{
+		Directory: inst.Directory,
+		SessionID: row.NativeSessionID,
+	})
+	if err != nil {
+		return History{}, fmt.Errorf("%w: read session history: %w", ErrBackendFailed, err)
+	}
+
+	events := make([]agents.NormalizedEvent, 0, len(result.Events))
+	for _, event := range result.Events {
+		event.InstanceID = row.InstanceID
+		event.SessionID = row.NativeSessionID
+		event.Backend = backend
+		if err := event.Validate(); err != nil {
+			return History{}, fmt.Errorf("%w: invalid replayed event: %w", ErrBackendFailed, err)
+		}
+		events = append(events, event)
+	}
+	return History{Events: events, Truncated: result.Truncated}, nil
+}
+
 func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, model string) (Session, error) {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {

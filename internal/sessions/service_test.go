@@ -79,6 +79,10 @@ type fakeAdapter struct {
 	models    []agents.ModelInfo
 	modelsErr error
 
+	historyResult agents.HistoryResult
+	historyErr    error
+	historyReqs   []agents.ListHistoryRequest
+
 	startErr  error
 	next      int
 	subBuffer int
@@ -100,6 +104,7 @@ func newFakeAdapter() *fakeAdapter {
 			Interrupt:        true,
 			ToolCallEvents:   true,
 			ToolConfirmation: false,
+			SessionHistory:   true,
 		},
 		subs: make(map[string]chan agents.NormalizedEvent),
 	}
@@ -210,6 +215,19 @@ func (f *fakeAdapter) Interrupt(_ context.Context, ref agents.SessionRef) error 
 	f.interruptCalls++
 	f.interruptRefs = append(f.interruptRefs, ref)
 	return f.interruptErr
+}
+
+// ListHistory makes fakeAdapter an agents.HistoryReader so the service's
+// history path is testable. It records the requests it saw; the capability
+// flag, not the method's presence, is what the service must gate on.
+func (f *fakeAdapter) ListHistory(_ context.Context, request agents.ListHistoryRequest) (agents.HistoryResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.historyReqs = append(f.historyReqs, request)
+	if f.historyErr != nil {
+		return agents.HistoryResult{}, f.historyErr
+	}
+	return f.historyResult, nil
 }
 
 func (f *fakeAdapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
@@ -1167,5 +1185,205 @@ func TestHandleModelsAndInterrupt(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "unsupported_capability") {
 		t.Fatalf("GET models unsupported = %d %s, want 409 unsupported_capability", rec.Code, rec.Body.String())
+	}
+}
+
+// historyEvents builds a history result the fake adapter hands back. The
+// events deliberately carry no instance or session identity: stamping is the
+// service's job, so a test that forgot to stamp would fail Validate.
+func historyEvents(observed time.Time, texts ...string) []agents.NormalizedEvent {
+	events := make([]agents.NormalizedEvent, 0, len(texts))
+	for _, text := range texts {
+		events = append(events, agents.NormalizedEvent{
+			Type:      agents.EventMessage,
+			Backend:   agents.BackendPi,
+			Timestamp: observed,
+			Replayed:  true,
+			Message:   &agents.MessagePayload{Role: "assistant", Text: text, Final: true},
+		})
+	}
+	return events
+}
+
+// TestHistoryStampsEnvelopeAndReturnsEvents pins the service's part of the
+// contract: the adapter may leave instance and session identity empty, and the
+// service fills it from the session row before anything reaches a client.
+func TestHistoryStampsEnvelopeAndReturnsEvents(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-hist")
+	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: historyEvents(observed, "第一轮", "第二轮")}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.History(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(history.Events) != 2 {
+		t.Fatalf("History returned %d events, want 2", len(history.Events))
+	}
+	for i, event := range history.Events {
+		if event.InstanceID != env.instanceID {
+			t.Errorf("events[%d].InstanceID = %q, want the session's instance %q", i, event.InstanceID, env.instanceID)
+		}
+		if event.SessionID != "native-hist" {
+			t.Errorf("events[%d].SessionID = %q, want the native session id", i, event.SessionID)
+		}
+		if event.Backend != agents.BackendPi {
+			t.Errorf("events[%d].Backend = %q, want pi", i, event.Backend)
+		}
+		if !event.Replayed {
+			t.Errorf("events[%d] lost its replayed marker", i)
+		}
+		if err := event.Validate(); err != nil {
+			t.Errorf("events[%d] does not validate after stamping: %v", i, err)
+		}
+	}
+
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.historyReqs) != 1 {
+		t.Fatalf("adapter saw %d history requests, want 1", len(env.fake.historyReqs))
+	}
+	request := env.fake.historyReqs[0]
+	if request.Directory != env.projectDir || request.SessionID != "native-hist" {
+		t.Errorf("history request = %+v, want the project directory and the native session id", request)
+	}
+}
+
+// TestHistoryTruncatedFlagPropagates pins that the truncation verdict comes
+// from the adapter that did the bounding, not from the service re-deriving it.
+func TestHistoryTruncatedFlagPropagates(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-trunc")
+	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: historyEvents(observed, "只有一条"), Truncated: false}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.History(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if history.Truncated {
+		t.Error("Truncated = true for an untruncated read")
+	}
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: historyEvents(observed, "最后一条"), Truncated: true}
+	env.fake.mu.Unlock()
+
+	history, err = env.svc.History(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if !history.Truncated {
+		t.Error("Truncated = false, want the adapter's verdict to reach the response")
+	}
+}
+
+// TestHistoryUnsupportedCapability pins that a backend without the capability
+// is refused rather than asked for a transcript it cannot read.
+func TestHistoryUnsupportedCapability(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-nohist")
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true}
+	env.fake.mu.Unlock()
+
+	_, err := env.svc.History(context.Background(), env.projectID, session.ID)
+	if !errors.Is(err, ErrUnsupportedCapability) {
+		t.Errorf("History error = %v, want ErrUnsupportedCapability", err)
+	}
+}
+
+// TestHistoryBackendFailureIsReported pins that a failing native read reaches
+// the client as a backend failure, not as an empty history.
+func TestHistoryBackendFailureIsReported(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-broken")
+	env.fake.mu.Lock()
+	env.fake.historyErr = errors.New("transcript unreadable")
+	env.fake.mu.Unlock()
+
+	_, err := env.svc.History(context.Background(), env.projectID, session.ID)
+	if !errors.Is(err, ErrBackendFailed) {
+		t.Errorf("History error = %v, want ErrBackendFailed", err)
+	}
+}
+
+// TestHistoryUnknownSessionIsNotFound pins project and session scoping.
+func TestHistoryUnknownSessionIsNotFound(t *testing.T) {
+	env := newTestEnv(t)
+
+	if _, err := env.svc.History(context.Background(), env.projectID, "no-such-session"); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("History for an unknown session error = %v, want ErrSessionNotFound", err)
+	}
+
+	session := createNativeSession(t, env, "native-scoped")
+	other := env.registerProject(t, "beta")
+	if _, err := env.svc.History(context.Background(), other, session.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("History through another project error = %v, want ErrSessionNotFound", err)
+	}
+}
+
+// TestHandlersServeSessionHistory pins the HTTP shape and the error mapping of
+// the history endpoint.
+func TestHandlersServeSessionHistory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+	session := createNativeSession(t, env, "native-http-history")
+	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: historyEvents(observed, "历史一条"), Truncated: true}
+	env.fake.mu.Unlock()
+
+	get := func(path string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec
+	}
+
+	rec := get(fmt.Sprintf("/projects/%d/sessions/%s/history", env.projectID, session.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET history = %d %s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Events    []agents.NormalizedEvent `json:"events"`
+		Truncated bool                     `json:"truncated"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode history response %s: %v", rec.Body.String(), err)
+	}
+	if len(payload.Events) != 1 || payload.Events[0].SessionID != "native-http-history" || !payload.Truncated {
+		t.Fatalf("history response = %+v, want one stamped event and truncated", payload)
+	}
+
+	// Unknown session → 404.
+	if rec = get(fmt.Sprintf("/projects/%d/sessions/nope/history", env.projectID)); rec.Code != http.StatusNotFound {
+		t.Errorf("GET unknown history = %d %s, want 404", rec.Code, rec.Body.String())
+	}
+
+	// Capability missing → 409.
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true}
+	env.fake.mu.Unlock()
+	if rec = get(fmt.Sprintf("/projects/%d/sessions/%s/history", env.projectID, session.ID)); rec.Code != http.StatusConflict {
+		t.Errorf("GET unsupported history = %d %s, want 409", rec.Code, rec.Body.String())
+	}
+
+	// Backend failure → 502.
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true, SessionHistory: true}
+	env.fake.historyErr = errors.New("boom")
+	env.fake.mu.Unlock()
+	if rec = get(fmt.Sprintf("/projects/%d/sessions/%s/history", env.projectID, session.ID)); rec.Code != http.StatusBadGateway {
+		t.Errorf("GET failed history = %d %s, want 502", rec.Code, rec.Body.String())
 	}
 }

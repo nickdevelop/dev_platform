@@ -1297,6 +1297,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/history:
+    get:
+      summary: Read a session's prior turns
+      description: >-
+        Returns the session's agent-native prior turns, oldest first, as the
+        same normalized event envelope the SSE stream carries, each with
+        replayed=true. History stays in the agent's own storage: the platform
+        reads it on demand and keeps no copy, so a session whose instance has
+        stopped can still be replayed. Requires the backend to declare
+        sessionHistory support. At most 5000 of the most recent events are
+        returned; truncated reports that older events were left out.
+      operationId: readProjectSessionHistory
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The session's replayed prior turns, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionHistory'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not declare session history support.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to read the transcript.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   securitySchemes:
     cookieAuth:
@@ -1626,6 +1681,7 @@ components:
         - modelSelection
         - toolCallEvents
         - toolConfirmation
+        - sessionHistory
       properties:
         streaming:
           type: boolean
@@ -1642,6 +1698,8 @@ components:
         toolCallEvents:
           type: boolean
         toolConfirmation:
+          type: boolean
+        sessionHistory:
           type: boolean
       additionalProperties: false
     AgentBackend:
@@ -1821,6 +1879,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentSession'
+      additionalProperties: false
+    AgentSessionHistory:
+      type: object
+      required:
+        - events
+        - truncated
+      properties:
+        events:
+          type: array
+          description: >-
+            The session's prior turns, oldest first. Each item is the same
+            normalized event envelope the SSE stream delivers (instanceId,
+            sessionId, backend, sequence, timestamp, type and exactly one
+            typed payload), with replayed=true to mark it as history rather
+            than a live event.
+          items:
+            type: object
+        truncated:
+          type: boolean
+          description: >-
+            True when older events exist beyond the returned window, so the
+            client can say so instead of presenting a partial history as
+            complete.
       additionalProperties: false
     ModelInfo:
       type: object

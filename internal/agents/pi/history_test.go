@@ -43,6 +43,17 @@ func writeTranscriptFile(t *testing.T, sessionRoot, directory, sessionID, conten
 	}
 }
 
+// listHistory drives a history read and fails the test on error, so the
+// mapping tests read as assertions about events rather than about plumbing.
+func listHistory(t *testing.T, adapter *Adapter, request agents.ListHistoryRequest) agents.HistoryResult {
+	t.Helper()
+	result, err := adapter.ListHistory(context.Background(), request)
+	if err != nil {
+		t.Fatalf("ListHistory(%+v) error = %v", request, err)
+	}
+	return result
+}
+
 // TestListHistoryMapsPiTranscript pins the whole translation: which records
 // become events, in what order, with which payloads, and which are skipped.
 // The skipped records (system preamble, thinking) are the ones that would make
@@ -54,10 +65,7 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 	writeTranscriptFixture(t, sessionRoot, dir, sessionID)
 
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
-	events, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
-	if err != nil {
-		t.Fatalf("ListHistory() error = %v", err)
-	}
+	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID}).Events
 	if len(events) != 4 {
 		t.Fatalf("ListHistory() returned %d events, want 4 (user, assistant text, tool call, tool result): %+v", len(events), events)
 	}
@@ -121,20 +129,14 @@ func TestListHistoryMissingSessionFile(t *testing.T) {
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
 
 	// No per-directory folder exists yet.
-	events, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dir, SessionID: "sess-absent"})
-	if err != nil {
-		t.Fatalf("ListHistory() for a directory with no transcripts error = %v", err)
-	}
+	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: "sess-absent"}).Events
 	if len(events) != 0 {
 		t.Errorf("ListHistory() = %+v, want empty", events)
 	}
 
 	// The folder exists but holds a different session.
 	writeTranscriptFixture(t, sessionRoot, dir, "sess-other")
-	events, err = adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dir, SessionID: "sess-absent"})
-	if err != nil {
-		t.Fatalf("ListHistory() for an unknown session error = %v", err)
-	}
+	events = listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: "sess-absent"}).Events
 	if len(events) != 0 {
 		t.Errorf("ListHistory() = %+v, want empty for an unknown session id", events)
 	}
@@ -160,9 +162,10 @@ func TestListHistoryTruncatesToMostRecent(t *testing.T) {
 	writeTranscriptFile(t, sessionRoot, dir, sessionID, strings.Join(lines, "\n")+"\n")
 
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
-	events, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
-	if err != nil {
-		t.Fatalf("ListHistory() error = %v", err)
+	result := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
+	events := result.Events
+	if !result.Truncated {
+		t.Error("Truncated = false, want true when events were dropped")
 	}
 	if len(events) != agents.MaxHistoryEvents {
 		t.Fatalf("ListHistory() returned %d events, want the bound of %d", len(events), agents.MaxHistoryEvents)

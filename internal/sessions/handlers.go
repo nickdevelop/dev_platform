@@ -33,6 +33,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/sessions/:sessionId/messages", s.handleSend)
 	r.POST("/projects/:id/sessions/:sessionId/stop", s.handleStop)
 	r.POST("/projects/:id/sessions/:sessionId/interrupt", s.handleInterrupt)
+	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 }
 
@@ -222,6 +223,27 @@ func (s *Service) handleInterrupt(c *gin.Context) {
 }
 
 // handleContinue re-attaches to an indexed native session.
+// handleHistory serves one session's replayed prior turns. History is an
+// optional capability: a backend without it answers 409 rather than an empty
+// history that would look like a session with no past.
+func (s *Service) handleHistory(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	history, err := s.History(c.Request.Context(), id, sessionID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, history)
+}
+
 func (s *Service) handleContinue(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {

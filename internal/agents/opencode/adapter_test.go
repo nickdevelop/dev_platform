@@ -823,13 +823,14 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 	}))
 	instance := startTestInstance(t, adapter)
 
-	events, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
+	result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
 		Directory: instance.Directory,
 		SessionID: "ses_1",
 	})
 	if err != nil {
 		t.Fatalf("ListHistory: %v", err)
 	}
+	events := result.Events
 	if len(events) != 6 {
 		t.Fatalf("ListHistory returned %d events, want 6: %+v", len(events), events)
 	}

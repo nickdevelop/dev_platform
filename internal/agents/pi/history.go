@@ -33,29 +33,29 @@ const maxHistoryRecordBytes = 8 * 1024 * 1024
 // the same as the one the user watched. Returned events leave InstanceID and
 // SessionID empty — the request names an instance-free scope — and are marked
 // Replayed.
-func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) ([]agents.NormalizedEvent, error) {
+func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) (agents.HistoryResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	if err := request.Validate(); err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	if a.sessionDir == "" {
-		return nil, errors.New("pi: session directory is unavailable")
+		return agents.HistoryResult{}, errors.New("pi: session directory is unavailable")
 	}
 
 	path, err := a.historyFile(request)
 	if err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	if path == "" {
 		// An unknown session is nothing to replay, not a failure.
-		return []agents.NormalizedEvent{}, nil
+		return agents.HistoryResult{Events: []agents.NormalizedEvent{}}, nil
 	}
 
 	events, err := a.readHistory(ctx, path)
 	if err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	return boundHistory(events), nil
 }
@@ -219,13 +219,15 @@ func decodeHistoryContent(raw json.RawMessage) []historyBlock {
 }
 
 // boundHistory keeps the most recent MaxHistoryEvents and renumbers them from
-// one, so an unbounded transcript is never materialized whole.
-func boundHistory(events []agents.NormalizedEvent) []agents.NormalizedEvent {
-	if len(events) > agents.MaxHistoryEvents {
+// one, so an unbounded transcript is never materialized whole. It reports
+// whether older events were dropped.
+func boundHistory(events []agents.NormalizedEvent) agents.HistoryResult {
+	truncated := len(events) > agents.MaxHistoryEvents
+	if truncated {
 		events = events[len(events)-agents.MaxHistoryEvents:]
 	}
 	for i := range events {
 		events[i].Sequence = uint64(i + 1)
 	}
-	return events
+	return agents.HistoryResult{Events: events, Truncated: truncated}
 }

@@ -347,6 +347,18 @@ type AgentAdapter interface {
 	Interrupt(ctx context.Context, ref SessionRef) error
 }
 
+// HistoryResult is the outcome of a history read: the session's prior events,
+// oldest first, and whether an older part of the transcript was left out. The
+// reader that bounded the read reports it, because only it knows whether
+// anything was dropped.
+type HistoryResult struct {
+	// Events are the replayed events, oldest first, bounded by
+	// MaxHistoryEvents and renumbered from one.
+	Events []NormalizedEvent
+	// Truncated reports that older events exist beyond the bound.
+	Truncated bool
+}
+
 // HistoryReader is the optional half of the adapter contract: an adapter
 // implements it when Capabilities.SessionHistory is true, so the workbench can
 // read an existing agent-native session's prior turns.
@@ -356,12 +368,12 @@ type AgentAdapter interface {
 // only the working directory and the agent-native session id — which is also
 // what lets a caller replay a session whose original instance is gone.
 type HistoryReader interface {
-	// ListHistory returns the session's prior turns as normalized events,
-	// oldest first, bounded by MaxHistoryEvents.
+	// ListHistory returns the session's prior turns, oldest first, bounded
+	// by MaxHistoryEvents.
 	//
 	// The returned events carry Backend, Sequence, Timestamp and exactly one
 	// typed payload; InstanceID and SessionID are left empty because the
 	// request names neither. Callers that need a complete envelope (for
 	// Validate) stamp the instance and session identity themselves.
-	ListHistory(ctx context.Context, request ListHistoryRequest) ([]NormalizedEvent, error)
+	ListHistory(ctx context.Context, request ListHistoryRequest) (HistoryResult, error)
 }

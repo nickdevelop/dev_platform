@@ -21,21 +21,21 @@ var _ agents.HistoryReader = (*Adapter)(nil)
 // like the one the user watched. Returned events leave InstanceID and
 // SessionID empty — the request names an instance-free scope — and are marked
 // Replayed.
-func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) ([]agents.NormalizedEvent, error) {
+func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) (agents.HistoryResult, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	if err := request.Validate(); err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 
 	inst, err := a.historyInstance()
 	if err != nil {
-		return nil, err
+		return agents.HistoryResult{}, err
 	}
 	messages, err := inst.client.ListMessages(ctx, request.SessionID)
 	if err != nil {
-		return nil, fmt.Errorf("opencode: read history for session %q: %w", request.SessionID, err)
+		return agents.HistoryResult{}, fmt.Errorf("opencode: read history for session %q: %w", request.SessionID, err)
 	}
 
 	events := make([]agents.NormalizedEvent, 0, len(messages))
@@ -144,13 +144,15 @@ func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []ag
 }
 
 // boundHistory keeps the most recent agents.MaxHistoryEvents and renumbers them
-// from one, so an unbounded log is never materialized whole.
-func boundHistory(events []agents.NormalizedEvent) []agents.NormalizedEvent {
-	if len(events) > agents.MaxHistoryEvents {
+// from one, so an unbounded log is never materialized whole. It reports whether
+// older events were dropped.
+func boundHistory(events []agents.NormalizedEvent) agents.HistoryResult {
+	truncated := len(events) > agents.MaxHistoryEvents
+	if truncated {
 		events = events[len(events)-agents.MaxHistoryEvents:]
 	}
 	for i := range events {
 		events[i].Sequence = uint64(i + 1)
 	}
-	return events
+	return agents.HistoryResult{Events: events, Truncated: truncated}
 }
