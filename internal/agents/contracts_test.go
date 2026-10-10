@@ -669,3 +669,62 @@ func TestHistoryReaderIsOptional(t *testing.T) {
 		t.Fatal("stubAdapter must not satisfy HistoryReader")
 	}
 }
+
+// TestThinkingEventIsAValidEnvelope pins the new payload into the union's rules:
+// a thinking event carries exactly its own payload, and a thinking event
+// without one is rejected like any other typed event.
+func TestThinkingEventIsAValidEnvelope(t *testing.T) {
+	event := NormalizedEvent{
+		InstanceID: "inst-1",
+		SessionID:  "ses_123",
+		Backend:    BackendPi,
+		Sequence:   1,
+		Timestamp:  time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC),
+		Type:       EventThinking,
+		Thinking:   &ThinkingPayload{Text: "weighing the options", Final: false},
+	}
+	if err := event.Validate(); err != nil {
+		t.Fatalf("thinking event does not validate: %v", err)
+	}
+
+	event.Thinking = nil
+	if err := event.Validate(); !errors.Is(err, ErrInvalidEvent) {
+		t.Errorf("thinking event without a payload error = %v, want ErrInvalidEvent", err)
+	}
+
+	// A thinking event must not carry another payload instead.
+	event.Message = &MessagePayload{Role: "assistant", Text: "hi", Final: true}
+	if err := event.Validate(); !errors.Is(err, ErrInvalidEvent) {
+		t.Errorf("thinking event with a message payload error = %v, want ErrInvalidEvent", err)
+	}
+}
+
+// TestThinkingEventJSONRoundTrip pins the wire shape the SSE stream and the
+// history endpoint carry.
+func TestThinkingEventJSONRoundTrip(t *testing.T) {
+	event := NormalizedEvent{
+		InstanceID: "inst-1",
+		SessionID:  "ses_123",
+		Backend:    BackendOpenCodeV2,
+		Sequence:   3,
+		Timestamp:  time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC),
+		Type:       EventThinking,
+		Thinking:   &ThinkingPayload{Text: "只在这里的推理", Final: true},
+	}
+	encoded, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal thinking event: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"type":"thinking"`) ||
+		!strings.Contains(string(encoded), `"thinking":{`) {
+		t.Errorf("thinking event JSON = %s, want a thinking type and payload", encoded)
+	}
+
+	var decoded NormalizedEvent
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal thinking event: %v", err)
+	}
+	if decoded.Thinking == nil || decoded.Thinking.Text != "只在这里的推理" || !decoded.Thinking.Final {
+		t.Errorf("decoded thinking payload = %+v, want the original", decoded.Thinking)
+	}
+}

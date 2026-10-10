@@ -34,6 +34,11 @@ const (
 	// EventToolResult carries the outcome of a previously announced tool
 	// call.
 	EventToolResult EventType = "tool_result"
+	// EventThinking carries the agent's reasoning, so the workbench can show it
+	// as its own kind of entry instead of folding it into the reply. Like a
+	// message it streams: chunks arrive with Final false and the last one
+	// closes it. Backends that do not expose reasoning simply never emit it.
+	EventThinking EventType = "thinking"
 	// EventError carries a backend or adapter failure that is not attached
 	// to a specific tool call.
 	EventError EventType = "error"
@@ -46,7 +51,7 @@ const (
 // Valid reports whether the event type is one of the defined kinds.
 func (t EventType) Valid() bool {
 	switch t {
-	case EventLifecycle, EventMessage, EventToolCall, EventToolResult, EventError, EventUnknown:
+	case EventLifecycle, EventMessage, EventToolCall, EventToolResult, EventThinking, EventError, EventUnknown:
 		return true
 	default:
 		return false
@@ -71,6 +76,17 @@ type MessagePayload struct {
 	// Text is the message body, or the chunk's text delta.
 	Text string `json:"text"`
 	// Final reports whether this payload completes the message.
+	Final bool `json:"final"`
+}
+
+// ThinkingPayload carries the agent's reasoning, or one streaming chunk of it:
+// chunks arrive with Final false and the last one closes the block with Final
+// true. It mirrors MessagePayload's streaming contract so the two render
+// identically.
+type ThinkingPayload struct {
+	// Text is the reasoning body, or the chunk's text delta.
+	Text string `json:"text"`
+	// Final reports whether this payload completes the reasoning block.
 	Final bool `json:"final"`
 }
 
@@ -125,6 +141,7 @@ type NormalizedEvent struct {
 
 	Lifecycle  *LifecycleEvent    `json:"lifecycle,omitempty"`
 	Message    *MessagePayload    `json:"message,omitempty"`
+	Thinking   *ThinkingPayload   `json:"thinking,omitempty"`
 	ToolCall   *ToolCallPayload   `json:"toolCall,omitempty"`
 	ToolResult *ToolResultPayload `json:"toolResult,omitempty"`
 	Error      *ErrorPayload      `json:"error,omitempty"`
@@ -165,6 +182,7 @@ func (e NormalizedEvent) Validate() error {
 	}{
 		{"lifecycle", e.Lifecycle != nil},
 		{"message", e.Message != nil},
+		{"thinking", e.Thinking != nil},
 		{"toolCall", e.ToolCall != nil},
 		{"toolResult", e.ToolResult != nil},
 		{"error", e.Error != nil},
@@ -183,6 +201,7 @@ func (e NormalizedEvent) Validate() error {
 	want, typed := map[EventType]string{
 		EventLifecycle:  "lifecycle",
 		EventMessage:    "message",
+		EventThinking:   "thinking",
 		EventToolCall:   "toolCall",
 		EventToolResult: "toolResult",
 		EventError:      "error",
