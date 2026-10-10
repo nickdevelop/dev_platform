@@ -99,7 +99,11 @@ recent events, renumbers them from one and reports the truncation through
 `GET /api/projects/{id}/sessions/{sessionId}/history`), so the workbench can say
 an older part was left out instead of presenting a partial transcript as
 complete. A transcript whose last line is half-written ends the read with the
-records already parsed rather than failing.
+records already parsed and **without** reporting truncation — that line is the
+turn currently being written, so nothing earlier was lost. An unreadable or
+oversized record anywhere else does report truncation, because everything after
+it is gone and the workbench must not present the remainder as the whole
+conversation.
 
 opencode's history read needs a running server, because that is where the
 message log lives; the platform starts one if none is running before reading.

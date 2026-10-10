@@ -53,11 +53,15 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 		return agents.HistoryResult{Events: []agents.NormalizedEvent{}}, nil
 	}
 
-	events, err := a.readHistory(ctx, path)
+	events, partial, err := a.readHistory(ctx, path)
 	if err != nil {
 		return agents.HistoryResult{}, err
 	}
-	return boundHistory(events), nil
+	result := boundHistory(events)
+	// A read that stopped early dropped data just as a bounded read does, and
+	// the caller must not present the remainder as the whole conversation.
+	result.Truncated = result.Truncated || partial
+	return result, nil
 }
 
 // historyFile returns the transcript path for the requested session, or an
@@ -111,14 +115,17 @@ type historyBlock struct {
 	Arguments json.RawMessage `json:"arguments"`
 }
 
-// readHistory streams the transcript and returns its events oldest first. A
-// record that does not parse ends the read with what came before it: the last
-// line of a transcript being written is routinely incomplete, and everything
-// already read is still valid history.
-func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.NormalizedEvent, error) {
+// readHistory streams the transcript and returns its events oldest first, plus
+// whether the read stopped before the end of the file.
+//
+// A record that does not parse ends the read with what came before it. For the
+// last line of a transcript still being written that is the right answer:
+// nothing earlier is lost. Anywhere else it means the rest of the conversation
+// is unreadable, so the read is reported as partial and the caller can say so.
+func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.NormalizedEvent, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("pi: open transcript %q: %w", path, err)
+		return nil, false, fmt.Errorf("pi: open transcript %q: %w", path, err)
 	}
 	defer file.Close()
 
@@ -128,15 +135,22 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 	events := make([]agents.NormalizedEvent, 0, 16)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		var record historyRecord
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
-			break
+			// Scan consumes the next line to settle whether anything followed
+			// the unreadable one; a clean end is not a partial read.
+			more := scanner.Scan()
+			return events, more || scanner.Err() != nil, nil
 		}
 		events = append(events, normalizeHistoryRecord(record)...)
 	}
-	return events, nil
+	if err := scanner.Err(); err != nil {
+		// An unreadable or oversized record ended the read before the end.
+		return events, true, nil
+	}
+	return events, false, nil
 }
 
 // normalizeHistoryRecord translates one transcript record. A record can yield

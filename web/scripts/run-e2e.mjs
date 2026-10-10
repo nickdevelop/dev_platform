@@ -40,6 +40,9 @@ const trashDir = path.join(xdgDataHome, 'Trash')
 // fake pi executable writes to it. Pointing it into the scratch directory
 // keeps the run from reading or writing the developer's real pi sessions.
 const piSessionDir = path.join(scratch, 'pi-sessions')
+// The mock opencode server keeps session data on disk (like the real one), so
+// the store lives in the scratch directory too.
+const opencodeStoreDir = path.join(scratch, 'opencode-store')
 const serverBin = path.join(scratch, 'platform-server')
 const setupBin = path.join(scratch, 'platform-setup')
 mkdirSync(workspaceRoot, { recursive: true })
@@ -127,6 +130,7 @@ try {
       XDG_DATA_HOME: xdgDataHome,
       PLATFORM_LISTEN_ADDR: apiAddr,
       PI_CODING_AGENT_SESSION_DIR: piSessionDir,
+      OPENCODE_MOCK_STORE_DIR: opencodeStoreDir,
       PATH: `${fixtureBin}${path.delimiter}${process.env.PATH ?? ''}`,
     },
   })

@@ -24,6 +24,9 @@
 
 import http from 'node:http'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 // `--version` support for the platform's diagnostics probe.
 if (process.argv.includes('--version')) {
@@ -42,10 +45,12 @@ const password = process.env.OPENCODE_SERVER_PASSWORD || ''
 const directory = process.cwd()
 
 const sessions = new Map()
-// messages holds each session's native message log, which the platform reads
-// back for history replay. It mirrors the real server's /message shape: user
-// entries carry a top-level text, assistant entries a content block array.
-const messages = new Map()
+// messages mirrors the real server's machine-wide message storage. The real
+// opencode keeps session data on disk, so any running server reads any
+// session's history — the platform relies on that when it replays a session
+// whose own instance is gone. Keeping this in memory would make the mock
+// stricter than the thing it stands in for, and would fail a correct platform.
+const storeRoot = process.env.OPENCODE_MOCK_STORE_DIR || path.join(os.tmpdir(), 'opencode-mock-store')
 const pending = new Map()
 const clients = new Set()
 // Every event is retained so a stream that connects after a prompt still
@@ -103,10 +108,35 @@ function sessionInfo(id) {
   }
 }
 
+// messageStorePath is one session's message log, scoped by working directory
+// the way the real server scopes its per-project data.
+function messageStorePath(sessionId) {
+  const slug = directory.replace(/^[/\\]+/, '').replace(/[/\\:]/g, '-')
+  return path.join(storeRoot, slug, `${sessionId}.json`)
+}
+
+// readMessages returns a session's native message log as the real server's
+// /message endpoint does: user entries carry a top-level text, assistant
+// entries a content block array.
+function readMessages(sessionId) {
+  try {
+    return JSON.parse(fs.readFileSync(messageStorePath(sessionId), 'utf8'))
+  } catch {
+    return []
+  }
+}
+
 // recordMessage appends one native message to a session's log.
 function recordMessage(id, message) {
-  if (!messages.has(id)) messages.set(id, [])
-  messages.get(id).push({ id: `msg-${crypto.randomBytes(4).toString('hex')}`, time: { created: Date.now() }, ...message })
+  const list = readMessages(id)
+  list.push({
+    id: `msg-${crypto.randomBytes(4).toString('hex')}`,
+    time: { created: Date.now() },
+    ...message,
+  })
+  const file = messageStorePath(id)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify(list))
 }
 
 function createdEvent(id, title) {
@@ -234,17 +264,18 @@ const server = http.createServer(async (request, response) => {
   if (sessionMatch) {
     const id = decodeURIComponent(sessionMatch[1])
     const action = sessionMatch[2] || ''
+    // The native message log is read from disk, so a session created by another
+    // server process answers here too — exactly like the real server.
+    if (request.method === 'GET' && action === '/message') {
+      sendJSON(response, 200, { data: readMessages(id) })
+      return
+    }
     if (!sessions.has(id)) {
       sendJSON(response, 404, { _tag: 'not_found', message: 'session not found' })
       return
     }
     if (request.method === 'GET' && action === '') {
       sendJSON(response, 200, { data: sessionInfo(id) })
-      return
-    }
-    // The native message log the platform replays as task history.
-    if (request.method === 'GET' && action === '/message') {
-      sendJSON(response, 200, { data: messages.get(id) || [] })
       return
     }
     if (request.method === 'POST' && action === '/model') {

@@ -199,3 +199,57 @@ func TestListHistoryRejectsEmptyRequest(t *testing.T) {
 		})
 	}
 }
+
+// TestListHistoryReportsPartialReadAsTruncated pins honesty about incomplete
+// reads: when a record in the middle of a transcript cannot be read, the events
+// after it are lost, and the caller must be told rather than shown a partial
+// history as if it were the whole conversation.
+func TestListHistoryReportsPartialReadAsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	sessionRoot := t.TempDir()
+	const sessionID = "sess-partial"
+
+	lines := []string{
+		fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":"2026-10-09T00:00:00.000Z","cwd":%q}`, sessionID, dir),
+		`{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-09T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"第一条"}]}}`,
+		`{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-09T00:00:02.000Z","message":{"role":"assistant","content":`,
+		`{"type":"message","id":"u2","parentId":null,"timestamp":"2026-10-09T00:00:03.000Z","message":{"role":"user","content":[{"type":"text","text":"最后一条"}]}}`,
+	}
+	writeTranscriptFile(t, sessionRoot, dir, sessionID, strings.Join(lines, "\n")+"\n")
+
+	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
+	result := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
+
+	if len(result.Events) == 0 {
+		t.Fatal("no events replayed; the readable records before the damage should survive")
+	}
+	if !result.Truncated {
+		t.Error("Truncated = false, want true: events after an unreadable record were dropped")
+	}
+}
+
+// TestListHistoryToleratesHalfWrittenLastLine pins the other side: the final
+// line of a transcript being written by a running turn is routinely incomplete,
+// and dropping it loses nothing that came before.
+func TestListHistoryToleratesHalfWrittenLastLine(t *testing.T) {
+	dir := t.TempDir()
+	sessionRoot := t.TempDir()
+	const sessionID = "sess-tail"
+
+	lines := []string{
+		fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":"2026-10-09T00:00:00.000Z","cwd":%q}`, sessionID, dir),
+		`{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-09T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"完整的一条"}]}}`,
+		`{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-09T00`,
+	}
+	writeTranscriptFile(t, sessionRoot, dir, sessionID, strings.Join(lines, "\n")+"\n")
+
+	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
+	result := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
+
+	if len(result.Events) != 1 || result.Events[0].Message.Text != "完整的一条" {
+		t.Fatalf("events = %+v, want the one complete record", result.Events)
+	}
+	if result.Truncated {
+		t.Error("Truncated = true for a half-written trailing line, want false: nothing before it was lost")
+	}
+}

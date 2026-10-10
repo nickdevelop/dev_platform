@@ -29,7 +29,7 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 		return agents.HistoryResult{}, err
 	}
 
-	inst, err := a.historyInstance()
+	inst, err := a.historyInstance(request.Directory)
 	if err != nil {
 		return agents.HistoryResult{}, err
 	}
@@ -48,11 +48,14 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 // historyInstance returns a running instance whose client can answer for the
 // requested session.
 //
-// The opencode server is machine-global: the native message log lives on disk
-// and the directory is a per-request scope, so any running server reads any
-// session's history. The smallest instance id is chosen only to make the
-// selection reproducible; no instance is preferred over another.
-func (a *Adapter) historyInstance() (*instance, error) {
+// An instance serving the same working directory is preferred, because that is
+// the server whose project the session belongs to. When none does — the session
+// outlived its instance, which is exactly the case an instance-free read exists
+// for — any running instance is used: the opencode server is machine-wide, the
+// native message log lives on disk and the directory is a per-request scope, so
+// any server reads any session's history. The smallest instance id is chosen
+// only to make the selection reproducible.
+func (a *Adapter) historyInstance(directory string) (*instance, error) {
 	a.mu.Lock()
 	ids := make([]string, 0, len(a.instances))
 	for id := range a.instances {
@@ -67,10 +70,20 @@ func (a *Adapter) historyInstance() (*instance, error) {
 
 	// Checked outside the adapter lock: isClosed takes the instance lock, and
 	// the instance teardown path must never wait on the adapter lock.
+	var fallback *instance
 	for _, inst := range candidates {
-		if !inst.isClosed() {
+		if inst.isClosed() {
+			continue
+		}
+		if sameDirectory(inst.directory, directory) {
 			return inst, nil
 		}
+		if fallback == nil {
+			fallback = inst
+		}
+	}
+	if fallback != nil {
+		return fallback, nil
 	}
 	return nil, errors.New("opencode: no running instance; start the backend before reading session history")
 }

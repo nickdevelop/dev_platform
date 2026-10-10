@@ -903,3 +903,106 @@ func TestListHistoryWithoutRunningInstance(t *testing.T) {
 		t.Errorf("ListHistory error = %q, want guidance to start the backend", err)
 	}
 }
+
+// twoServerAdapter wires an adapter whose successive instances talk to
+// different servers, so a test can prove which instance history was read
+// through. Instance ids are deterministic and increasing, which means the
+// arbitrary "smallest id" pick would choose the first server.
+func twoServerAdapter(t *testing.T, first, second http.HandlerFunc) (*Adapter, []string) {
+	t.Helper()
+
+	servers := []*httptest.Server{httptest.NewServer(first), httptest.NewServer(second)}
+	for _, server := range servers {
+		t.Cleanup(server.Close)
+	}
+	clients := make([]*Client, 0, len(servers))
+	for _, server := range servers {
+		client, err := NewClient(ClientOptions{BaseURL: server.URL, Username: "opencode", Password: "pw", Timeout: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		clients = append(clients, client)
+	}
+
+	executable := filepath.Join(t.TempDir(), "fake-opencode")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatalf("write fake executable: %v", err)
+	}
+	calls := 0
+	launches := 0
+	adapter := New(Options{
+		Executable: executable,
+		NewID: func() (string, error) {
+			calls++
+			return fmt.Sprintf("inst-%d", calls), nil
+		},
+	})
+	adapter.launch = func(context.Context, string) (*launchResult, error) {
+		client := clients[min(len(clients)-1, launches)]
+		launches++
+		return &launchResult{
+			client:   client,
+			endpoint: client.baseURL,
+			stop:     func(context.Context) error { return nil },
+		}, nil
+	}
+	return adapter, []string{servers[0].URL, servers[1].URL}
+}
+
+// TestListHistoryPrefersTheInstanceForTheDirectory pins that history is read
+// through the server bound to the requested directory when one exists. Reading
+// through an unrelated server happens to work against a machine-wide store, but
+// it is not something the platform should depend on.
+func TestListHistoryPrefersTheInstanceForTheDirectory(t *testing.T) {
+	fixture := readMessagesFixture(t)
+	// The first server serves nothing: if it is chosen, the read fails.
+	adapter, _ := twoServerAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(fixture)
+	})
+
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: dirA}); err != nil {
+		t.Fatalf("StartInstance dirA: %v", err)
+	}
+	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: dirB}); err != nil {
+		t.Fatalf("StartInstance dirB: %v", err)
+	}
+
+	result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dirB, SessionID: "ses_1"})
+	if err != nil {
+		t.Fatalf("ListHistory for the second instance's directory: %v", err)
+	}
+	if len(result.Events) == 0 {
+		t.Fatal("ListHistory returned nothing; it did not read through the instance for the directory")
+	}
+}
+
+// TestListHistoryFallsBackToAnyRunningInstance pins the instance-free contract:
+// a session whose own instance is gone can still be replayed, because the read
+// is scoped by directory and session id rather than by an instance.
+func TestListHistoryFallsBackToAnyRunningInstance(t *testing.T) {
+	fixture := readMessagesFixture(t)
+	adapter, _ := twoServerAdapter(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(fixture)
+	}, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	})
+
+	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()}); err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	// A directory no instance was started for: the read still works.
+	result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: t.TempDir(), SessionID: "ses_1"})
+	if err != nil {
+		t.Fatalf("ListHistory without a same-directory instance: %v", err)
+	}
+	if len(result.Events) == 0 {
+		t.Fatal("ListHistory returned nothing through the fallback instance")
+	}
+}
