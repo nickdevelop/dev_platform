@@ -439,6 +439,64 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	return s.sessionFromModel(row), nil
 }
 
+// ListModels returns the models the instance's backend offers. It is available
+// only for backends that declare model selection, so an unsupported control is
+// never presented as available.
+func (s *Service) ListModels(ctx context.Context, projectID uint, instanceID string) ([]agents.ModelInfo, error) {
+	inst, err := s.scopedInstance(projectID, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !s.capabilities(inst.Backend).ModelSelection {
+		return nil, fmt.Errorf("%w: model selection", ErrUnsupportedCapability)
+	}
+	adapter, err := s.adapter(inst.Backend)
+	if err != nil {
+		return nil, err
+	}
+	models, err := adapter.ListModels(ctx, instanceID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: list models: %w", ErrBackendFailed, err)
+	}
+	return models, nil
+}
+
+// Interrupt ends the session's current turn. It is idempotent: a session whose
+// turn is not running is returned untouched without calling the backend. Only
+// the session's own turn is interrupted; the instance and its other sessions
+// are unaffected.
+func (s *Service) Interrupt(ctx context.Context, projectID uint, sessionID string) (Session, error) {
+	row, err := s.loadScoped(projectID, sessionID)
+	if err != nil {
+		return Session{}, err
+	}
+	row = s.reconcile(row)
+	inst, err := s.scopedInstance(projectID, row.InstanceID)
+	if err != nil {
+		return Session{}, err
+	}
+	if !s.capabilities(inst.Backend).Interrupt {
+		return Session{}, fmt.Errorf("%w: interrupt", ErrUnsupportedCapability)
+	}
+	if s.turnOf(row.InstanceID, row.NativeSessionID) != TurnRunning {
+		return s.sessionFromModel(row), nil
+	}
+	adapter, err := s.adapter(inst.Backend)
+	if err != nil {
+		return Session{}, err
+	}
+	ref := agents.SessionRef{
+		InstanceID: row.InstanceID,
+		Backend:    agents.BackendID(row.Backend),
+		SessionID:  row.NativeSessionID,
+		Title:      row.Title,
+	}
+	if err := adapter.Interrupt(ctx, ref); err != nil {
+		return Session{}, fmt.Errorf("%w: interrupt session: %w", ErrBackendFailed, err)
+	}
+	return s.sessionFromModel(row), nil
+}
+
 // Stop stops the instance running the session. The instance stop is
 // single-flight and idempotent, so concurrent stops call the adapter once and
 // a second stop is a no-op. The target session is marked stopped and the

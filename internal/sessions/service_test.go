@@ -72,6 +72,13 @@ type fakeAdapter struct {
 	stopErr   error
 	stopCalls int
 
+	interruptCalls int
+	interruptRefs  []agents.SessionRef
+	interruptErr   error
+
+	models    []agents.ModelInfo
+	modelsErr error
+
 	startErr  error
 	next      int
 	subBuffer int
@@ -90,6 +97,7 @@ func newFakeAdapter() *fakeAdapter {
 			SessionContinue:  true,
 			Stop:             true,
 			ModelSelection:   true,
+			Interrupt:        true,
 			ToolCallEvents:   true,
 			ToolConfirmation: false,
 		},
@@ -191,10 +199,18 @@ func (f *fakeAdapter) SendMessage(_ context.Context, ref agents.SessionRef, mess
 }
 
 func (f *fakeAdapter) ListModels(context.Context, string) ([]agents.ModelInfo, error) {
-	return nil, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]agents.ModelInfo(nil), f.models...), f.modelsErr
 }
 
-func (f *fakeAdapter) Interrupt(context.Context, agents.SessionRef) error { return nil }
+func (f *fakeAdapter) Interrupt(_ context.Context, ref agents.SessionRef) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.interruptCalls++
+	f.interruptRefs = append(f.interruptRefs, ref)
+	return f.interruptErr
+}
 
 func (f *fakeAdapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
 	f.mu.Lock()
@@ -230,6 +246,14 @@ func (f *fakeAdapter) startCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.next
+}
+
+// interruptCallCount reports how many times the adapter was asked to interrupt
+// a turn, so a test can assert an idle interrupt is a no-op.
+func (f *fakeAdapter) interruptCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.interruptCalls
 }
 
 // emit delivers ev on the instance's current subscription channel, failing the
@@ -981,5 +1005,167 @@ func TestHandleCreateMapsStartFailures(t *testing.T) {
 	rec = post(failing)
 	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "instance_start_failed") {
 		t.Fatalf("POST start failure = %d %s, want 502 instance_start_failed", rec.Code, rec.Body.String())
+	}
+}
+
+// TestListModelsReturnsAdapterModels verifies the model list surfaces the
+// adapter's result unchanged.
+func TestListModelsReturnsAdapterModels(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.models = []agents.ModelInfo{
+		{ID: "pi/gpt-5", Name: "gpt-5", Provider: "pi"},
+		{ID: "pi/claude", Name: "claude", Provider: "pi", Variants: []string{"fast"}},
+	}
+	env.fake.mu.Unlock()
+
+	models, err := env.svc.ListModels(context.Background(), env.projectID, env.instanceID)
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 || models[0].ID != "pi/gpt-5" || len(models[1].Variants) != 1 {
+		t.Errorf("ListModels = %+v, want the adapter's two models", models)
+	}
+}
+
+// TestListModelsRejectsUnsupportedCapability verifies a backend without model
+// selection is refused rather than asked for models.
+func TestListModelsRejectsUnsupportedCapability(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true}
+	env.fake.mu.Unlock()
+
+	if _, err := env.svc.ListModels(context.Background(), env.projectID, env.instanceID); !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("ListModels error = %v, want ErrUnsupportedCapability", err)
+	}
+}
+
+// TestListModelsRejectsCrossProjectInstance verifies the instance must belong
+// to the authorized project.
+func TestListModelsRejectsCrossProjectInstance(t *testing.T) {
+	env := newTestEnv(t)
+	otherProject := env.registerProject(t, "beta")
+
+	if _, err := env.svc.ListModels(context.Background(), otherProject, env.instanceID); !errors.Is(err, instances.ErrInstanceNotFound) {
+		t.Fatalf("ListModels cross-project error = %v, want ErrInstanceNotFound", err)
+	}
+}
+
+// TestInterruptIdleSessionIsNoop verifies interrupting an idle session succeeds
+// without calling the adapter and leaves the turn idle.
+func TestInterruptIdleSessionIsNoop(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-idle")
+
+	got, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Interrupt idle: %v", err)
+	}
+	if got.Turn != TurnIdle {
+		t.Errorf("interrupted idle session turn = %q, want idle", got.Turn)
+	}
+	if calls := env.fake.interruptCallCount(); calls != 0 {
+		t.Errorf("adapter Interrupt calls = %d, want 0 for an idle session", calls)
+	}
+}
+
+// TestInterruptRunningSessionCallsAdapterOnce verifies a running turn is
+// interrupted through the adapter exactly once, with the native session id.
+func TestInterruptRunningSessionCallsAdapterOnce(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-busy")
+	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "execution_started"))
+	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
+
+	if _, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID); err != nil {
+		t.Fatalf("Interrupt running: %v", err)
+	}
+	if calls := env.fake.interruptCallCount(); calls != 1 {
+		t.Fatalf("adapter Interrupt calls = %d, want 1", calls)
+	}
+	env.fake.mu.Lock()
+	refs := append([]agents.SessionRef(nil), env.fake.interruptRefs...)
+	env.fake.mu.Unlock()
+	if len(refs) != 1 || refs[0].SessionID != "native-busy" {
+		t.Errorf("adapter Interrupt refs = %+v, want the native session id", refs)
+	}
+}
+
+// TestInterruptRejectsUnsupportedCapability verifies a backend without the
+// interrupt capability is refused.
+func TestInterruptRejectsUnsupportedCapability(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true}
+	env.fake.mu.Unlock()
+
+	if _, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("Interrupt error = %v, want ErrUnsupportedCapability", err)
+	}
+}
+
+// TestInterruptReportsBackendFailure verifies an adapter interrupt failure is
+// labelled a backend operation failure.
+func TestInterruptReportsBackendFailure(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-busy")
+	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "agent_start"))
+	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
+	env.fake.mu.Lock()
+	env.fake.interruptErr = errors.New("adapter boom")
+	env.fake.mu.Unlock()
+
+	if _, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrBackendFailed) {
+		t.Fatalf("Interrupt error = %v, want ErrBackendFailed", err)
+	}
+}
+
+// TestHandleModelsAndInterrupt verifies the routes expose the model list and
+// return the session DTO for an interrupt, mapping unsupported capability to
+// 409.
+func TestHandleModelsAndInterrupt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+	session := createNativeSession(t, env, "native-1")
+
+	env.fake.mu.Lock()
+	env.fake.models = []agents.ModelInfo{{ID: "pi/gpt", Name: "gpt", Provider: "pi"}}
+	env.fake.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/instances/%s/models", env.projectID, env.instanceID), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"pi/gpt"`) {
+		t.Fatalf("GET models = %d %s, want 200 with the model", rec.Code, rec.Body.String())
+	}
+
+	// Interrupting an idle session is idempotent and returns the session DTO.
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/interrupt", env.projectID, session.ID), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST interrupt = %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	var got Session
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode interrupted session: %v", err)
+	}
+	if got.ID != session.ID || got.Turn != TurnIdle {
+		t.Errorf("interrupted session = %+v, want idle session %s", got, session.ID)
+	}
+
+	// A backend without model selection is refused with 409.
+	env.fake.mu.Lock()
+	env.fake.caps = agents.Capabilities{Streaming: true}
+	env.fake.mu.Unlock()
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/instances/%s/models", env.projectID, env.instanceID), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "unsupported_capability") {
+		t.Fatalf("GET models unsupported = %d %s, want 409 unsupported_capability", rec.Code, rec.Body.String())
 	}
 }
