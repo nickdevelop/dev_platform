@@ -13,6 +13,10 @@ export type { BackendId, Capabilities } from './agents'
 // Mirrors the AgentSession status enum.
 export type SessionStatus = 'active' | 'stopped' | 'disconnected'
 
+// Mirrors the AgentSession turn enum: whether the session is processing one
+// user turn. Derived from the instance lifecycle and never persisted.
+export type TurnState = 'idle' | 'running'
+
 // Mirrors #/components/schemas/AgentSession.
 export interface AgentSession {
   id: string
@@ -22,6 +26,7 @@ export interface AgentSession {
   nativeSessionId: string
   title?: string
   status: SessionStatus
+  turn: TurnState
   capabilities: Capabilities
   createdAt: string
   updatedAt: string
@@ -32,11 +37,12 @@ export interface AgentSessionList {
   sessions: AgentSession[]
 }
 
-// Mirrors #/components/schemas/CreateAgentSessionRequest.
+// Mirrors #/components/schemas/CreateAgentSessionRequest. The backend selects
+// the instance: the server reuses a running one or starts one. instanceId is
+// no longer accepted.
 export interface CreateSessionBody {
-  instanceId: string
+  backend: BackendId
   title?: string
-  model?: string
 }
 
 // Mirrors #/components/schemas/SendAgentSessionMessageRequest.
@@ -162,6 +168,19 @@ export function stopProjectSession(
   return apiRequest<AgentSession>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/stop`,
+    { csrfToken },
+  )
+}
+
+// POST /api/projects/{id}/sessions/{sessionId}/interrupt
+export function interruptProjectSession(
+  projectId: number,
+  sessionId: string,
+  csrfToken: string,
+): Promise<AgentSession> {
+  return apiRequest<AgentSession>(
+    'POST',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/interrupt`,
     { csrfToken },
   )
 }

@@ -24,6 +24,7 @@ function capabilities(): Capabilities {
     sessionDiscovery: false,
     sessionContinue: false,
     stop: true,
+    interrupt: false,
     modelSelection: false,
     toolCallEvents: false,
     toolConfirmation: false,

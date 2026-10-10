@@ -1,0 +1,69 @@
+// Contract tests for the frontend API client: request bodies and paths must
+// match the backend routes and docs/api/openapi.yaml exactly, so a drift in the
+// wire format fails here rather than in an integration no test covers.
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createProjectSession, interruptProjectSession } from '../api/sessions'
+import { listInstanceModels } from '../api/agents'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+interface Call {
+  url: string
+  init: RequestInit | undefined
+}
+
+function stubJson(payload: unknown, status = 200): Call[] {
+  const calls: Call[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      return { status, json: async () => payload } as Response
+    }),
+  )
+  return calls
+}
+
+function headersOf(call: Call): Record<string, string> {
+  return (call.init?.headers ?? {}) as Record<string, string>
+}
+
+describe('session API contracts', () => {
+  it('creates a session with { backend, title } and never sends instanceId', async () => {
+    const calls = stubJson({ id: 's1' })
+
+    await createProjectSession(7, { backend: 'pi', title: 'Hello' }, 'csrf-1')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/projects/7/sessions')
+    expect(calls[0].init?.method).toBe('POST')
+    const body = JSON.parse(String(calls[0].init?.body))
+    expect(body).toEqual({ backend: 'pi', title: 'Hello' })
+    expect(body).not.toHaveProperty('instanceId')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe('csrf-1')
+  })
+
+  it('interrupts a session through the interrupt route', async () => {
+    const calls = stubJson({ id: 's1', turn: 'idle' })
+
+    await interruptProjectSession(7, 'ses/1', 'csrf-2')
+
+    expect(calls[0].url).toBe('/api/projects/7/sessions/ses%2F1/interrupt')
+    expect(calls[0].init?.method).toBe('POST')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe('csrf-2')
+  })
+})
+
+describe('agents API contracts', () => {
+  it('lists an instance models from the instance models route', async () => {
+    const calls = stubJson({ models: [{ id: 'pi/gpt', name: 'gpt', provider: 'pi' }] })
+
+    const result = await listInstanceModels(7, 'inst/1')
+
+    expect(calls[0].url).toBe('/api/projects/7/instances/inst%2F1/models')
+    expect(calls[0].init?.method).toBe('GET')
+    expect(result.models[0].id).toBe('pi/gpt')
+  })
+})

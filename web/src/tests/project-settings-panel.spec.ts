@@ -16,6 +16,7 @@ function noCapabilities(): Capabilities {
     sessionDiscovery: false,
     sessionContinue: false,
     stop: false,
+    interrupt: false,
     modelSelection: false,
     toolCallEvents: false,
     toolConfirmation: false,

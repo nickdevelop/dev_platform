@@ -33,6 +33,7 @@ function report(overrides: Partial<BackendDiagnosticsReport> = {}): BackendDiagn
       sessionDiscovery: true,
       sessionContinue: true,
       stop: true,
+      interrupt: true,
       modelSelection: true,
       toolCallEvents: true,
       toolConfirmation: false,

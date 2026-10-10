@@ -15,6 +15,7 @@ export interface Capabilities {
   sessionDiscovery: boolean
   sessionContinue: boolean
   stop: boolean
+  interrupt: boolean
   modelSelection: boolean
   toolCallEvents: boolean
   toolConfirmation: boolean
@@ -82,6 +83,20 @@ export interface AgentInstanceList {
 // Mirrors #/components/schemas/StartAgentInstanceRequest.
 export interface StartAgentInstanceBody {
   backend: BackendId
+}
+
+// Mirrors #/components/schemas/ModelInfo. The id uses the provider/model form
+// accepted by SendMessageBody.model, with an optional #variant suffix.
+export interface ModelInfo {
+  id: string
+  name: string
+  provider: string
+  variants?: string[]
+}
+
+// Mirrors #/components/schemas/ModelInfoList.
+export interface ModelInfoList {
+  models: ModelInfo[]
 }
 
 // Mirrors the per-project backend enable/disable state
@@ -152,5 +167,16 @@ export function stopProjectInstance(
     'POST',
     `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/stop`,
     { csrfToken },
+  )
+}
+
+// GET /api/projects/{id}/instances/{instanceId}/models
+export function listInstanceModels(
+  projectId: number,
+  instanceId: string,
+): Promise<ModelInfoList> {
+  return apiRequest<ModelInfoList>(
+    'GET',
+    `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/models`,
   )
 }
