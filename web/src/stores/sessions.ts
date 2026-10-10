@@ -12,6 +12,7 @@ import {
   continueProjectSession,
   createProjectSession,
   discoverProjectInstanceSessions,
+  interruptProjectSession,
   listProjectSessions,
   sendProjectSessionMessage,
   sessionEventsPath,
@@ -90,6 +91,23 @@ export const useSessionsStore = defineStore('sessions', {
         this.error = describeApiError(error)
       } finally {
         if (request === this.listRequest) this.loading = false
+      }
+    },
+
+    // Silently refreshes the session list for the running-turn poll: it never
+    // clears the list or toggles loading, and a response that arrives after a
+    // newer request is discarded. A failure keeps the last good list and stays
+    // quiet, because a poll must not surface a transient error.
+    async refreshSessions(projectId: number) {
+      const request = ++this.listRequest
+      try {
+        const list = await listProjectSessions(projectId)
+        if (request !== this.listRequest) return
+        if (this.projectId !== projectId) return
+        this.sessions = list.sessions
+      } catch (error) {
+        // Deliberately silent: keep the last good list.
+        void error
       }
     },
 
@@ -333,6 +351,25 @@ export const useSessionsStore = defineStore('sessions', {
         this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
         this.error = ''
         return updated
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.error = describeApiError(error)
+        return null
+      }
+    },
+
+    // Interrupts the session's current turn. The server's returned DTO
+    // replaces the list entry, so the turn state is never optimistic; an idle
+    // session is an idempotent success and produces no error.
+    async interrupt(projectId: number, sessionId: string) {
+      const auth = useAuthStore()
+      try {
+        const interrupted = await interruptProjectSession(projectId, sessionId, auth.csrfToken)
+        this.sessions = this.sessions.map((entry) =>
+          entry.id === sessionId ? interrupted : entry,
+        )
+        this.error = ''
+        return interrupted
       } catch (error) {
         if (error instanceof UnauthorizedError) return null
         this.error = describeApiError(error)
