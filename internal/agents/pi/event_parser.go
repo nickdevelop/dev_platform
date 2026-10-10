@@ -47,6 +47,10 @@ type parser struct {
 
 	lineNumber uint64
 	deltaOpen  bool
+	// thinkingOpen tracks a streamed reasoning block, so a turn that ends
+	// without a thinking_end still closes it instead of leaving the workbench
+	// with a block that never settles.
+	thinkingOpen bool
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -196,12 +200,29 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			out.Message = &agents.MessagePayload{Role: "assistant", Text: update.Delta, Final: false}
 			return []agents.NormalizedEvent{out}
 		}
+		// Reasoning streams under the same envelope as text: thinking_start
+		// opens the block, thinking_delta carries it and thinking_end closes it.
+		// The workbench renders it as its own kind of entry.
+		if update != nil && update.Type == "thinking_start" {
+			p.thinkingOpen = true
+			return nil
+		}
+		if update != nil && update.Type == "thinking_delta" {
+			p.thinkingOpen = true
+			out := p.event()
+			out.Type = agents.EventThinking
+			out.Thinking = &agents.ThinkingPayload{Text: update.Delta, Final: false}
+			return []agents.NormalizedEvent{out}
+		}
+		if update != nil && update.Type == "thinking_end" {
+			return p.closeThinking()
+		}
 		if update != nil && update.Type == "error" {
 			return []agents.NormalizedEvent{p.errorEvent("provider", redactSecrets(firstNonEmpty(update.Error, update.Reason)))}
 		}
-		// thinking_*, toolcall_* snapshots, start and done are either
-		// redundant with the typed tool_execution_* records or have no
-		// normalized payload; keep them as bounded raw metadata.
+		// toolcall_* snapshots, start and done are either redundant with the
+		// typed tool_execution_* records or have no normalized payload; keep
+		// them as bounded raw metadata.
 		return []agents.NormalizedEvent{p.unknown(raw)}
 
 	case "message_end":
@@ -211,6 +232,9 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			// message_start; emitting message_end too would duplicate them.
 			return nil
 		}
+		// A turn that ends while reasoning is open closes the block first, so
+		// the order the user sees stays reasoning-then-reply.
+		events := p.closeThinking()
 		streamed := p.deltaOpen
 		p.deltaOpen = false
 		out := p.event()
@@ -221,7 +245,7 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			// empty terminator so a concatenating consumer does not double it.
 			out.Message.Text = ""
 		}
-		return []agents.NormalizedEvent{out}
+		return append(events, out)
 
 	case "tool_execution_start":
 		out := p.event()
@@ -292,6 +316,22 @@ func (p *parser) stderrEvent(line []byte) agents.NormalizedEvent {
 }
 
 // unknown preserves a record the adapter could not normalize, byte for byte.
+// closeThinking emits the empty final terminator for an open reasoning block,
+// mirroring how a streamed message is closed: the deltas already carried the
+// text, so a concatenating consumer would otherwise keep the block streaming.
+// It emits nothing when no reasoning was streamed, so a turn without thinking
+// is unchanged.
+func (p *parser) closeThinking() []agents.NormalizedEvent {
+	if !p.thinkingOpen {
+		return nil
+	}
+	p.thinkingOpen = false
+	out := p.event()
+	out.Type = agents.EventThinking
+	out.Thinking = &agents.ThinkingPayload{Final: true}
+	return []agents.NormalizedEvent{out}
+}
+
 func (p *parser) unknown(raw []byte) agents.NormalizedEvent {
 	out := p.event()
 	out.Type = agents.EventUnknown

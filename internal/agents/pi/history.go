@@ -28,11 +28,10 @@ const maxHistoryRecordBytes = 8 * 1024 * 1024
 // ListHistory reads a session's transcript from pi's own session file and
 // translates it into the platform's normalized events.
 //
-// The translation mirrors the live stream on purpose: assistant thinking is
-// dropped because the live parser drops it, so a replayed conversation looks
-// the same as the one the user watched. Returned events leave InstanceID and
-// SessionID empty — the request names an instance-free scope — and are marked
-// Replayed.
+// The translation mirrors the live stream: reasoning becomes its own event
+// kind in both, so a replayed conversation looks the same as the one the user
+// watched. Returned events leave InstanceID and SessionID empty — the request
+// names an instance-free scope — and are marked Replayed.
 func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) (agents.HistoryResult, error) {
 	if err := ctx.Err(); err != nil {
 		return agents.HistoryResult{}, err
@@ -104,12 +103,12 @@ type historyRecord struct {
 	} `json:"message"`
 }
 
-// historyBlock is one content block of a message. Thinking blocks carry a
-// "thinking" field that is deliberately not decoded: they translate to
-// nothing.
+// historyBlock is one content block of a message. Reasoning blocks carry their
+// text in pi's own "thinking" field, not in "text".
 type historyBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text"`
+	Thinking  string          `json:"thinking"`
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
 	Arguments json.RawMessage `json:"arguments"`
@@ -190,6 +189,14 @@ func normalizeHistoryRecord(record historyRecord) []agents.NormalizedEvent {
 				event := envelope
 				event.Type = agents.EventToolCall
 				event.ToolCall = &agents.ToolCallPayload{CallID: block.ID, Name: block.Name, Input: block.Arguments}
+				events = append(events, event)
+			case "thinking":
+				if record.Message.Role != "assistant" || block.Thinking == "" {
+					continue
+				}
+				event := envelope
+				event.Type = agents.EventThinking
+				event.Thinking = &agents.ThinkingPayload{Text: block.Thinking, Final: true}
 				events = append(events, event)
 			}
 		}

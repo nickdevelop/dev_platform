@@ -66,8 +66,8 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
 	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID}).Events
-	if len(events) != 4 {
-		t.Fatalf("ListHistory() returned %d events, want 4 (user, assistant text, tool call, tool result): %+v", len(events), events)
+	if len(events) != 5 {
+		t.Fatalf("ListHistory() returned %d events, want 5 (user, reasoning, assistant text, tool call, tool result): %+v", len(events), events)
 	}
 
 	user := events[0]
@@ -76,16 +76,22 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 		t.Errorf("events[0] = %+v, want a final user message", user)
 	}
 
-	assistant := events[1]
-	if assistant.Type != agents.EventMessage || assistant.Message == nil ||
-		assistant.Message.Role != "assistant" || assistant.Message.Text != "历史里的助手回复" || !assistant.Message.Final {
-		t.Errorf("events[1] = %+v, want a final assistant message (thinking skipped)", assistant)
+	reasoning := events[1]
+	if reasoning.Type != agents.EventThinking || reasoning.Thinking == nil ||
+		reasoning.Thinking.Text != "这段推理必须被跳过" || !reasoning.Thinking.Final {
+		t.Errorf("events[1] = %+v, want the replayed reasoning block", reasoning)
 	}
 
-	call := events[2]
+	assistant := events[2]
+	if assistant.Type != agents.EventMessage || assistant.Message == nil ||
+		assistant.Message.Role != "assistant" || assistant.Message.Text != "历史里的助手回复" || !assistant.Message.Final {
+		t.Errorf("events[2] = %+v, want a final assistant message", assistant)
+	}
+
+	call := events[3]
 	if call.Type != agents.EventToolCall || call.ToolCall == nil ||
 		call.ToolCall.CallID != "call_1" || call.ToolCall.Name != "bash" {
-		t.Fatalf("events[2] = %+v, want the bash tool call", call)
+		t.Fatalf("events[3] = %+v, want the bash tool call", call)
 	}
 	var input map[string]string
 	if err := json.Unmarshal(call.ToolCall.Input, &input); err != nil {
@@ -95,10 +101,10 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 		t.Errorf("tool call input = %v, want the fixture command", input)
 	}
 
-	result := events[3]
+	result := events[4]
 	if result.Type != agents.EventToolResult || result.ToolResult == nil ||
 		result.ToolResult.CallID != "call_1" || result.ToolResult.Output != "历史里的工具输出" || !result.ToolResult.IsError {
-		t.Errorf("events[3] = %+v, want a failed tool result for call_1", result)
+		t.Errorf("events[4] = %+v, want a failed tool result for call_1", result)
 	}
 
 	for i, event := range events {

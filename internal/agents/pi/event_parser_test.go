@@ -243,3 +243,69 @@ func TestParserEndOfStream(t *testing.T) {
 		t.Errorf("event[1] = %+v, want the record after the oversized line", got[1])
 	}
 }
+
+// TestParserStreamsThinking checks that reasoning is carried as its own event
+// kind: deltas arrive non-final, and the block is closed by an empty final
+// terminator, exactly like a streamed assistant message.
+func TestParserStreamsThinking(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"session","version":3,"id":"sess-1","cwd":"/data/projects/demo"}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"让我","partial":{}}}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"想想","partial":{}}}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"让我想想","partial":{}}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"让我想想"},{"type":"text","text":"好"}],"stopReason":"stop"}}`,
+	}, "\n") + "\n"
+
+	got := collect(t, input)
+	if len(got) != 5 {
+		t.Fatalf("got %d events, want 5 (lifecycle, two deltas, terminator, message): %+v", len(got), got)
+	}
+	for i, want := range map[int]string{1: "让我", 2: "想想"} {
+		event := got[i]
+		if event.Type != agents.EventThinking || event.Thinking == nil {
+			t.Fatalf("event[%d] = %+v, want a thinking event", i, event)
+		}
+		if event.Thinking.Text != want || event.Thinking.Final {
+			t.Errorf("event[%d] thinking = %+v, want a non-final chunk %q", i, event.Thinking, want)
+		}
+		if event.SessionID != "sess-1" {
+			t.Errorf("event[%d].SessionID = %q, want sess-1", i, event.SessionID)
+		}
+		if err := event.Validate(); err != nil {
+			t.Errorf("event[%d] does not validate: %v", i, err)
+		}
+	}
+
+	terminator := got[3]
+	if terminator.Type != agents.EventThinking || terminator.Thinking == nil ||
+		terminator.Thinking.Text != "" || !terminator.Thinking.Final {
+		t.Errorf("event[3] = %+v, want an empty final thinking terminator (deltas already carried the text)", terminator)
+	}
+
+	// The assistant message must still close normally alongside the reasoning.
+	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "好" {
+		t.Errorf("event[4] = %+v, want the assistant message", got[4])
+	}
+}
+
+// TestParserClosesDanglingThinking pins robustness: a turn that ends without a
+// thinking_end must not leave a streaming block open in the workbench.
+func TestParserClosesDanglingThinking(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"session","version":3,"id":"sess-1","cwd":"/data/projects/demo"}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"半截"}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"好"}],"stopReason":"stop"}}`,
+	}, "\n") + "\n"
+
+	got := collect(t, input)
+	if len(got) != 4 {
+		t.Fatalf("got %d events, want 4 (lifecycle, delta, thinking terminator, message): %+v", len(got), got)
+	}
+	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || !got[2].Thinking.Final {
+		t.Errorf("event[2] = %+v, want a final thinking terminator before the message", got[2])
+	}
+	if got[3].Type != agents.EventMessage {
+		t.Errorf("event[3] = %+v, want the assistant message", got[3])
+	}
+}
