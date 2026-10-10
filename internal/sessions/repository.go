@@ -98,3 +98,12 @@ func (r *repository) updateStatus(id, status string, at time.Time) error {
 			Updates(map[string]any{"status": status, "updated_at": at}).Error
 	})
 }
+
+// delete removes one index row by id. Re-binding a session onto a new instance
+// uses it to merge away the duplicate row discovery may have created for the
+// same native session under that instance.
+func (r *repository) delete(id string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Delete(&database.AgentSession{}, "id = ?", id).Error
+	})
+}

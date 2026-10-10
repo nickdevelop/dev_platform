@@ -641,8 +641,15 @@ func TestStaleSessionReflectsInstanceLifecycle(t *testing.T) {
 	if _, err := env.svc.Send(context.Background(), env.projectID, session.ID, "hi", ""); !errors.Is(err, instances.ErrInstanceNotRunning) {
 		t.Errorf("Send on stale session error = %v, want ErrInstanceNotRunning", err)
 	}
-	if _, err := env.svc.Continue(context.Background(), env.projectID, session.ID); !errors.Is(err, instances.ErrInstanceNotRunning) {
-		t.Errorf("Continue on stale session error = %v, want ErrInstanceNotRunning", err)
+	// Continue is the repair path: a stale session is re-attached by starting a
+	// fresh instance rather than refused, which is what makes opening a task
+	// after a platform restart work without manual instance management.
+	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue on stale session error = %v, want it to re-attach", err)
+	}
+	if continued.Status != SessionActive || continued.InstanceID == env.instanceID {
+		t.Errorf("Continue = %+v, want an active session rebound onto a new instance", continued)
 	}
 }
 
@@ -1385,5 +1392,133 @@ func TestHandlersServeSessionHistory(t *testing.T) {
 	env.fake.mu.Unlock()
 	if rec = get(fmt.Sprintf("/projects/%d/sessions/%s/history", env.projectID, session.ID)); rec.Code != http.StatusBadGateway {
 		t.Errorf("GET failed history = %d %s, want 502", rec.Code, rec.Body.String())
+	}
+}
+
+// stopEnvInstance stops the environment's instance without deleting its row,
+// which is the state a platform restart leaves: the session row still points
+// at an instance that is no longer running.
+func stopEnvInstance(t *testing.T, env *testEnv) {
+	t.Helper()
+	if _, err := env.instances.Stop(context.Background(), env.instanceID); err != nil {
+		t.Fatalf("stop instance: %v", err)
+	}
+}
+
+// TestContinueStartsInstanceWhenNoneRunning pins the click-to-use path: a
+// session whose instance is gone is re-attached by starting a new instance in
+// the same project rather than asking the user to start one.
+func TestContinueStartsInstanceWhenNoneRunning(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-resume")
+	stopEnvInstance(t, env)
+	before := env.fake.startCount()
+
+	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if got := env.fake.startCount(); got != before+1 {
+		t.Errorf("StartInstance calls = %d, want %d (one auto-start)", got, before+1)
+	}
+	if continued.InstanceID == env.instanceID {
+		t.Fatalf("InstanceID = %q, want a rebind onto the newly started instance", continued.InstanceID)
+	}
+	if continued.Status != SessionActive {
+		t.Errorf("Status = %q, want active after continue", continued.Status)
+	}
+
+	var row database.AgentSession
+	if err := env.db.First(&row, "id = ?", session.ID).Error; err != nil {
+		t.Fatalf("load session row: %v", err)
+	}
+	if row.InstanceID != continued.InstanceID {
+		t.Errorf("persisted instance id = %q, want %q", row.InstanceID, continued.InstanceID)
+	}
+	if row.NativeSessionID != "native-resume" {
+		t.Errorf("native session id = %q, want it untouched", row.NativeSessionID)
+	}
+}
+
+// TestContinueIsIdempotentWhenInstanceRuns pins that the auto-start path costs
+// nothing when the instance is already usable.
+func TestContinueIsIdempotentWhenInstanceRuns(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-idle")
+	before := env.fake.startCount()
+
+	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if got := env.fake.startCount(); got != before {
+		t.Errorf("StartInstance calls = %d, want %d (no start on a running instance)", got, before)
+	}
+	if continued.InstanceID != env.instanceID {
+		t.Errorf("InstanceID = %q, want the running instance %q", continued.InstanceID, env.instanceID)
+	}
+}
+
+// TestContinueRebindMergesDuplicateRowOnNewInstance pins the merge: because the
+// unique key includes the instance, discovery can index the same native session
+// a second time under a new instance, and rebinding must not leave the user
+// with two tasks for one conversation.
+func TestContinueRebindMergesDuplicateRowOnNewInstance(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-dup")
+	stopEnvInstance(t, env)
+
+	// A second index row for the same native session, already bound to the
+	// replacement instance discovery would have created.
+	replacement, err := env.instances.Start(context.Background(), env.projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("start replacement instance: %v", err)
+	}
+	now := time.Now().UTC()
+	duplicate := database.AgentSession{
+		ID:              "duplicate-row",
+		ProjectID:       env.projectID,
+		Backend:         string(agents.BackendPi),
+		InstanceID:      replacement.ID,
+		NativeSessionID: "native-dup",
+		Title:           "native-dup",
+		Status:          string(SessionActive),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := env.db.Create(&duplicate).Error; err != nil {
+		t.Fatalf("create duplicate row: %v", err)
+	}
+
+	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if continued.ID != session.ID {
+		t.Errorf("continued session id = %q, want the session the user opened (%q)", continued.ID, session.ID)
+	}
+	if continued.InstanceID != replacement.ID {
+		t.Errorf("InstanceID = %q, want the replacement instance %q", continued.InstanceID, replacement.ID)
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want the duplicate merged away (1)", got)
+	}
+	var rows []database.AgentSession
+	if err := env.db.Where("native_session_id = ?", "native-dup").Find(&rows).Error; err != nil {
+		t.Fatalf("load rows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != session.ID {
+		t.Errorf("native-session rows = %+v, want only the opened session %q", rows, session.ID)
+	}
+}
+
+// TestContinueRejectsOtherProject pins project scoping.
+func TestContinueRejectsOtherProject(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-scope")
+	other := env.registerProject(t, "beta")
+
+	if _, err := env.svc.Continue(context.Background(), other, session.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Continue through another project error = %v, want ErrSessionNotFound", err)
 	}
 }

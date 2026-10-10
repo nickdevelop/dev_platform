@@ -346,32 +346,45 @@ func (s *Service) Discover(ctx context.Context, projectID uint, instanceID strin
 	return out, nil
 }
 
-// Continue re-attaches to an indexed native session. A native session whose
-// instance is gone, or a backend without continue support, is refused with a
-// clear reason rather than presented as usable.
+// Continue re-attaches to an indexed native session and makes it usable
+// again. A session whose instance is gone — the state a platform restart
+// leaves behind — is rebound onto a freshly started instance in the same
+// project, because the user asked to continue the conversation, not to repair
+// the platform. A backend without continue support is refused with a clear
+// reason rather than presented as usable.
 func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string) (Session, error) {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return Session{}, err
 	}
 	row = s.reconcile(row)
-	inst, err := s.scopedInstance(projectID, row.InstanceID)
-	if err != nil {
-		return Session{}, err
-	}
-	if !instanceRunnable(inst) {
-		return Session{}, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
-	}
-	if !s.capabilities(inst.Backend).SessionContinue {
+
+	backend := agents.BackendID(row.Backend)
+	if !s.capabilities(backend).SessionContinue {
 		return Session{}, fmt.Errorf("%w: session continue", ErrUnsupportedCapability)
 	}
-	adapter, err := s.adapter(inst.Backend)
+
+	inst, err := s.scopedInstance(projectID, row.InstanceID)
+	if err != nil && !errors.Is(err, instances.ErrInstanceNotFound) {
+		return Session{}, err
+	}
+	if err != nil || !instanceRunnable(inst) {
+		inst, err = s.instanceForBackend(ctx, projectID, backend)
+		if err != nil {
+			return Session{}, err
+		}
+		if err := s.rebind(projectID, &row, inst); err != nil {
+			return Session{}, err
+		}
+	}
+
+	adapter, err := s.adapter(backend)
 	if err != nil {
 		return Session{}, err
 	}
 	ref := agents.SessionRef{
 		InstanceID: row.InstanceID,
-		Backend:    agents.BackendID(row.Backend),
+		Backend:    backend,
 		SessionID:  row.NativeSessionID,
 		Title:      row.Title,
 	}
@@ -395,6 +408,44 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	}
 	s.ensureTracker(inst.ID)
 	return s.sessionFromModel(row), nil
+}
+
+// rebind points a session row at another instance, merging away any other row
+// that already indexes the same native session under that instance.
+//
+// The index's unique key includes the instance, so discovery can legitimately
+// create a second row for one native session after a restart. The row the user
+// has open wins: keeping it preserves the platform session id in the URL they
+// are looking at, and the other row is deleted rather than left to appear as a
+// duplicate task.
+func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instances.Instance) error {
+	existing, err := s.repo.getByNative(inst.ID, row.NativeSessionID)
+	switch {
+	case err == nil && existing.ID == row.ID:
+		// Already bound to this instance; nothing to merge.
+	case err == nil:
+		if existing.ProjectID != projectID {
+			// Defensive: never absorb a row indexed for another project.
+			return fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
+		}
+		// Keep whichever side knows more before dropping the duplicate.
+		if row.Title == "" {
+			row.Title = existing.Title
+		}
+		if !existing.CreatedAt.IsZero() && (row.CreatedAt.IsZero() || existing.CreatedAt.Before(row.CreatedAt)) {
+			row.CreatedAt = existing.CreatedAt
+		}
+		if err := s.repo.delete(existing.ID); err != nil {
+			return err
+		}
+	case errors.Is(err, ErrSessionNotFound):
+		// No duplicate row to merge.
+	default:
+		return err
+	}
+	row.InstanceID = inst.ID
+	row.UpdatedAt = s.now()
+	return nil
 }
 
 // Send delivers one user turn to the session's native session.
