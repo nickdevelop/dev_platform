@@ -89,8 +89,8 @@ async function logout() {
       <div class="sidebar-head">
         <h2>项目</h2>
         <div class="head-actions">
-          <button type="button" @click="openManage('register')">注册</button>
-          <button type="button" @click="openManage('create')">新建</button>
+          <button type="button" class="register" @click="openManage('register')">注册</button>
+          <button type="button" class="create" @click="openManage('create')">新建</button>
         </div>
       </div>
       <input

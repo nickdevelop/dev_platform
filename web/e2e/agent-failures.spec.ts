@@ -72,15 +72,27 @@ async function uiLogin(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
-// openSession selects a session row and waits until its SSE stream is open.
+// openSession selects a task in the tree and waits until its SSE stream is open.
 async function openSession(page: Page, title: string) {
-  const row = page.locator('.session-item', { hasText: title })
-  await row.click()
-  const sessionId = await row.getAttribute('data-session-id')
-  expect(sessionId).toBeTruthy()
-  const conversation = page.locator('.conversation')
-  await expect(conversation).toHaveAttribute('data-stream-session', sessionId as string)
+  await taskRow(page, title).click()
+  const conversation = page.locator('[data-test="conversation"]')
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
+}
+
+function taskRow(page: Page, title: string) {
+  return page.locator('.task', { hasText: title })
+}
+
+// createTask opens the project's new-task form from the tree, picks the instance
+// by its position among running instances, and waits for the task to appear.
+async function createTask(page: Page, instanceIndex: number, title: string) {
+  await page.locator('.new-task').click()
+  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
+  await page.locator('#instance-select').selectOption({ index: instanceIndex })
+  await page.locator('#session-title').fill(title)
+  await page.locator('form.create-session button.create').click()
+  await expect(taskRow(page, title)).toBeVisible()
 }
 
 test('a failing pi turn never disturbs the opencode instance in the same project', async ({ page, request }) => {
@@ -92,8 +104,8 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
   // The diagnostics panel reports both backends with the versions their
   // fixtures mimic, inside the tested ranges.
-  await page.goto(`/projects/${projectId}/agents`)
-  await expect(page.getByRole('heading', { name: 'Agent 实例设置' })).toBeVisible()
+  await page.goto(`/projects/${projectId}`)
+  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
   const piReport = page.locator('[data-backend-diagnostics="pi"]')
   const ocReport = page.locator('[data-backend-diagnostics="opencode-v2"]')
   await expect(piReport.locator('[data-diagnostics-status]')).toHaveText('正常')
@@ -109,17 +121,9 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   await page.getByRole('button', { name: '启动实例' }).click()
   await expect(page.locator('.instance-item', { hasText: 'opencode-v2' })).toBeVisible({ timeout: 20_000 })
 
-  // One session per instance in the workbench.
-  await page.getByRole('button', { name: '打开会话工作台' }).click()
-  await expect(page.getByRole('heading', { name: '会话工作台' })).toBeVisible()
-  await page.locator('#instance-select').selectOption({ index: 0 })
-  await page.locator('#session-title').fill('pi-failing')
-  await page.getByRole('button', { name: '新建会话' }).click()
-  await expect(page.locator('.session-item', { hasText: 'pi-failing' })).toBeVisible()
-  await page.locator('#instance-select').selectOption({ index: 1 })
-  await page.locator('#session-title').fill('oc-healthy')
-  await page.getByRole('button', { name: '新建会话' }).click()
-  await expect(page.locator('.session-item', { hasText: 'oc-healthy' })).toBeVisible()
+  // One task per instance: index 0 is pi, index 1 is opencode-v2.
+  await createTask(page, 0, 'pi-failing')
+  await createTask(page, 1, 'oc-healthy')
 
   // The pi turn fails: the fake CLI writes one stderr diagnostic and exits
   // non-zero. The error is surfaced in the failing session's conversation.
@@ -135,8 +139,8 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   await openSession(page, 'oc-healthy')
   await page.locator('#message-text').fill('ping-oc')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.locator('.conversation')).toContainText('opencode reply: ping-oc', { timeout: 20_000 })
-  await expect(page.locator('.conversation')).not.toContainText('provider unavailable')
+  await expect(page.locator('[data-test="conversation"]')).toContainText('opencode reply: ping-oc', { timeout: 20_000 })
+  await expect(page.locator('[data-test="conversation"]')).not.toContainText('provider unavailable')
 
   // Switching back to the pi session still shows its recorded failure.
   await openSession(page, 'pi-failing')
@@ -144,7 +148,7 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
   // The diagnostics panel still reports both backends usable after the
   // failure: a failed turn is a session problem, not a broken backend.
-  await page.goto(`/projects/${projectId}/agents`)
+  await page.goto(`/projects/${projectId}`)
   await expect(piReport.locator('[data-diagnostics-status]')).toHaveText('正常')
   await expect(ocReport.locator('[data-diagnostics-status]')).toHaveText('正常')
 })

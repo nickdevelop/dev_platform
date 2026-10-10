@@ -5,7 +5,6 @@
 // driven deterministically.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import AgentInstanceList from '../components/AgentInstanceList.vue'
 import CapabilityControls from '../components/CapabilityControls.vue'
@@ -16,7 +15,8 @@ import { useSessionsStore } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
-import SessionWorkbenchView from '../views/SessionWorkbenchView.vue'
+import NewTaskPanel from '../components/NewTaskPanel.vue'
+import TaskChatPanel from '../components/TaskChatPanel.vue'
 
 // A fully-false capability declaration: the workbench must expose no controls.
 function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -507,72 +507,30 @@ describe('stop semantics', () => {
   })
 })
 
-describe('session workbench view', () => {
-  async function mountWorkbench() {
+describe('task chat and new task panels', () => {
+  async function mountPanel(component: Parameters<typeof mount>[0], props: Record<string, unknown>) {
     const stores = setupStores()
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/projects/:id/workbench', name: 'workbench', component: SessionWorkbenchView },
-        { path: '/projects/:id/agents', name: 'project-agents', component: { template: '<div />' } },
-      ],
-    })
-    await router.push('/projects/1/workbench')
-    await router.isReady()
-    const wrapper = mount(SessionWorkbenchView, { global: { plugins: [pinia, router] } })
+    const wrapper = mount(component, { props, global: { plugins: [pinia] } })
     mounted.push(wrapper)
     await flushPromises()
     return { wrapper, ...stores }
   }
 
-  it('lists sessions and renders the selected session workbench', async () => {
+  it('opens a task and renders its stream controls', async () => {
     stubRoutes([
-      [
-        'GET',
-        '/api/projects/1/sessions',
-        { status: 200, body: { sessions: [session({ title: 'Demo session' })] } },
-      ],
-      [
-        'GET',
-        '/api/agent-backends',
-        {
-          status: 200,
-          body: {
-            backends: [
-              {
-                backend: 'pi',
-                capabilities: noCapabilities({
-                  streaming: true,
-                  sessionContinue: true,
-                  stop: true,
-                  modelSelection: true,
-                }),
-              },
-            ],
-          },
-        },
-      ],
-      ['GET', '/api/projects/1/instances', { status: 200, body: { instances: [instance()] } }],
+      ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [session({ title: 'Demo session' })] } }],
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { wrapper, sessions, agents, auth } = await mountWorkbench()
-    auth.csrfToken = 'csrf-1'
+    const { wrapper, sessions } = await mountPanel(TaskChatPanel, { projectId: 1, sessionId: 'sess-1' })
 
-    expect(agents.backends).toHaveLength(1)
-    expect(wrapper.findAll('.session-item')).toHaveLength(1)
     expect(wrapper.text()).toContain('Demo session')
-
-    await wrapper.find('.session-open').trigger('click')
-    await flushPromises()
-
-    // Selecting a session opens its stream and shows its controls.
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(wrapper.find('button.stop').exists()).toBe(true)
     expect(sessions.activeSessionId).toBe('sess-1')
   })
 
-  it('derives send-time model support from the active session, not the create instance', async () => {
+  it('derives send-time model support from the open task, not the create instance', async () => {
     const piSession = session({
       id: 'sess-pi',
       backend: 'pi',
@@ -581,51 +539,16 @@ describe('session workbench view', () => {
     })
     const calls = stubRoutes([
       ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [piSession] } }],
-      [
-        'GET',
-        '/api/agent-backends',
-        {
-          status: 200,
-          body: {
-            backends: [
-              { backend: 'opencode-v2', capabilities: noCapabilities({ streaming: true, modelSelection: true }) },
-              { backend: 'pi', capabilities: noCapabilities({ streaming: true }) },
-            ],
-          },
-        },
-      ],
-      [
-        'GET',
-        '/api/projects/1/instances',
-        {
-          status: 200,
-          body: {
-            instances: [
-              instance({ id: 'oc-1', backend: 'opencode-v2' }),
-              instance({ id: 'pi-1', backend: 'pi' }),
-            ],
-          },
-        },
-      ],
       ['POST', '/api/projects/1/sessions/sess-pi/messages', { status: 202, body: piSession }],
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { wrapper, auth } = await mountWorkbench()
+    const { wrapper, auth } = await mountPanel(TaskChatPanel, { projectId: 1, sessionId: 'sess-pi' })
     auth.csrfToken = 'csrf-1'
 
-    await wrapper.find('.session-open').trigger('click')
-    await flushPromises()
-
-    // The active session's backend does not advertise modelSelection, so the
-    // in-conversation model input is hidden...
+    // The open task's backend does not advertise modelSelection, so no model input is shown.
     expect(wrapper.find('#session-model').exists()).toBe(false)
-    // ...even though the create form's instance (opencode) supports it.
-    expect(wrapper.find('#new-session-model').exists()).toBe(true)
 
-    // A model value typed into the create form must not leak into a message
-    // sent on the pi session.
-    await wrapper.find('#new-session-model').setValue('gpt-x')
     await wrapper.find('#message-text').setValue('hello')
     await wrapper.find('form.send').trigger('submit')
     await flushPromises()
@@ -644,38 +567,34 @@ describe('session workbench view', () => {
         '/api/projects/1/instances/inst-1/sessions',
         { status: 200, body: { sessions: [discovered, existing] } },
       ],
-      [
-        'GET',
-        '/api/projects/1/instances',
-        { status: 200, body: { instances: [instance({ id: 'inst-1', backend: 'pi' })] } },
-      ],
+      ['GET', '/api/projects/1/instances', { status: 200, body: { instances: [instance({ id: 'inst-1', backend: 'pi' })] } }],
       [
         'GET',
         '/api/agent-backends',
         {
           status: 200,
           body: {
-            backends: [
-              { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true, streaming: true }) },
-            ],
+            backends: [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true, streaming: true }) }],
           },
         },
       ],
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { wrapper } = await mountWorkbench()
+    const stores = setupStores()
+    await stores.sessions.loadSessions(1)
+    const wrapper = mount(NewTaskPanel, { props: { projectId: 1 }, global: { plugins: [pinia] } })
+    mounted.push(wrapper)
+    await flushPromises()
+
     const button = wrapper.find('[data-test="discover-sessions"]')
     expect(button.exists()).toBe(true)
-
     await button.trigger('click')
     await flushPromises()
 
     // The discovered session is merged; the already-known one is not duplicated.
-    expect(wrapper.findAll('.session-item')).toHaveLength(2)
-    expect(wrapper.text()).toContain('Discovered')
-    const discoveredCall = calls.find((call) => call.path.endsWith('/instances/inst-1/sessions'))
-    expect(discoveredCall).toBeTruthy()
+    expect(stores.sessions.sessions.map((entry) => entry.id)).toEqual(['sess-1', 'sess-2'])
+    expect(calls.find((call) => call.path.endsWith('/instances/inst-1/sessions'))).toBeTruthy()
   })
 })
 

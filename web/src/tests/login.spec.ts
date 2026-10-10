@@ -8,6 +8,7 @@ import { useAuthStore } from '../stores/auth'
 // The stub answers fetch calls in strict request order: each stubbed route is
 // consumed exactly once, which lets a test script multi-step flows such as
 // "delete fails with trash_unavailable, then succeeds with permanent=true".
+// Paths match exactly, so /api/projects never swallows /api/projects/1/... calls.
 interface StubRoute {
   method: string
   path: string
@@ -37,7 +38,7 @@ function stubApi(routes: StubRoute[]) {
       const body = init?.body ? JSON.parse(String(init.body)) : null
       calls.push({ method, path: url.pathname, body, headers })
       const index = queue.findIndex(
-        (route) => route.method === method && url.pathname.startsWith(route.path),
+        (route) => route.method === method && url.pathname === route.path,
       )
       if (index === -1) {
         throw new Error(`unexpected ${method} ${url.pathname}`)
@@ -72,12 +73,12 @@ const secondProject = { id: 2, name: 'other', path: '/workspace/other' }
 // later assertions; every mounted wrapper is unmounted after each test.
 const mountedWrappers: ReturnType<typeof mount>[] = []
 
-async function mountApp(routes: StubRoute[]) {
+async function mountApp(routes: StubRoute[], path = '/') {
   const calls = stubApi(routes)
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createAppRouter()
-  await router.push('/')
+  await router.push(path)
   await router.isReady()
   // Attach to the real document so focus management behaves like in a
   // browser; detached trees cannot receive focus.
@@ -143,7 +144,6 @@ describe('login and session flows', () => {
 
     expect(router.currentRoute.value.path).toBe('/')
     expect(wrapper.text()).toContain('demo')
-    expect(wrapper.text()).toContain('/workspace/demo')
 
     const login = calls.find((call) => call.method === 'POST' && call.path === '/api/auth/login')
     expect(login).toBeDefined()
@@ -219,15 +219,29 @@ describe('login and session flows', () => {
 
 describe('project management', () => {
   // Three list responses cover the initial load plus two reloads triggered
-  // by successful mutations; tests append their own POST routes.
-  function mountWithProjects(extraRoutes: StubRoute[] = []) {
-    return mountApp([
-      authenticatedSession(),
-      projectsRoute({ projects: [demoProject, secondProject] }),
-      projectsRoute({ projects: [demoProject, secondProject] }),
-      projectsRoute({ projects: [demoProject, secondProject] }),
-      ...extraRoutes,
-    ])
+  // by successful mutations; tests append their own POST routes. Project
+  // actions live in the project settings pane, so tests that use them mount
+  // /projects/1 and answer the settings pane's agent loads.
+  function mountWithProjects(extraRoutes: StubRoute[] = [], path = '/') {
+    return mountApp(
+      [
+        authenticatedSession(),
+        projectsRoute({ projects: [demoProject, secondProject] }),
+        projectsRoute({ projects: [demoProject, secondProject] }),
+        projectsRoute({ projects: [demoProject, secondProject] }),
+        ...extraRoutes,
+      ],
+      path,
+    )
+  }
+
+  function settingsRoutes(): StubRoute[] {
+    return [
+      { method: 'GET', path: '/api/agent-backends', status: 200, body: { backends: [] } },
+      { method: 'GET', path: '/api/agent-backends/diagnostics', status: 200, body: { diagnostics: [] } },
+      { method: 'GET', path: '/api/projects/1/instances', status: 200, body: { instances: [] } },
+      { method: 'GET', path: '/api/projects/1/agent-backends', status: 200, body: { backends: [] } },
+    ]
   }
 
   it('filters the project list by name', async () => {
@@ -242,27 +256,19 @@ describe('project management', () => {
   })
 
   it('distinguishes unregister (keeps directory) from delete (removes directory)', async () => {
-    const { wrapper, calls } = await mountWithProjects([
-      { method: 'POST', path: '/api/projects/1/unregister', status: 204 },
-    ])
+    const { wrapper, calls, router } = await mountWithProjects(
+      [
+        ...settingsRoutes(),
+        { method: 'POST', path: '/api/projects/1/unregister', status: 204 },
+      ],
+      '/projects/1',
+    )
 
     // Both actions exist as separate, clearly-labeled buttons.
     const unregisterButton = wrapper.find('button.unregister')
     const deleteButton = wrapper.find('button.delete')
-    expect(unregisterButton.text()).toBe('移除记录')
+    expect(unregisterButton.text()).toBe('解除登记')
     expect(deleteButton.text()).toBe('删除目录')
-
-    // Unregister warns that the directory is kept and needs no typed confirmation.
-    await unregisterButton.trigger('click')
-    const unregisterDialog = dialog(wrapper)
-    expect(unregisterDialog.attributes('aria-label')).toContain('保留目录')
-    expect(unregisterDialog.text()).toContain('会被完整保留')
-    const unregisterConfirm = unregisterDialog.find('button.confirm')
-    expect(buttonDisabled(unregisterConfirm.element)).toBe(false)
-    await unregisterConfirm.trigger('click')
-    await flushPromises()
-    expect(calls.some((call) => call.path === '/api/projects/1/unregister')).toBe(true)
-    expect(dialog(wrapper).exists()).toBe(false)
 
     // Delete is destructive: it must not proceed before the project name is typed.
     await deleteButton.trigger('click')
@@ -285,13 +291,31 @@ describe('project management', () => {
     await flushPromises()
     expect(dialog(wrapper).exists()).toBe(false)
     expect(calls.some((call) => call.path === '/api/projects/1/delete')).toBe(false)
+
+    // Unregister warns that the directory is kept and needs no typed confirmation.
+    await unregisterButton.trigger('click')
+    const unregisterDialog = dialog(wrapper)
+    expect(unregisterDialog.attributes('aria-label')).toContain('保留目录')
+    expect(unregisterDialog.text()).toContain('会被完整保留')
+    const unregisterConfirm = unregisterDialog.find('button.confirm')
+    expect(buttonDisabled(unregisterConfirm.element)).toBe(false)
+    await unregisterConfirm.trigger('click')
+    await flushPromises()
+    expect(calls.some((call) => call.path === '/api/projects/1/unregister')).toBe(true)
+    expect(dialog(wrapper).exists()).toBe(false)
+    // The unregistered project's page is closed and the shell returns home.
+    expect(router.currentRoute.value.name).toBe('home')
   })
 
   it('offers explicit permanent deletion only after the trash is reported unavailable', async () => {
-    const { wrapper, calls } = await mountWithProjects([
-      { method: 'POST', path: '/api/projects/1/delete', status: 409, body: { error: 'trash_unavailable' } },
-      { method: 'POST', path: '/api/projects/1/delete', status: 204 },
-    ])
+    const { wrapper, calls } = await mountWithProjects(
+      [
+        ...settingsRoutes(),
+        { method: 'POST', path: '/api/projects/1/delete', status: 409, body: { error: 'trash_unavailable' } },
+        { method: 'POST', path: '/api/projects/1/delete', status: 204 },
+      ],
+      '/projects/1',
+    )
 
     await wrapper.find('button.delete').trigger('click')
     const dialogElement = dialog(wrapper)
@@ -341,7 +365,7 @@ describe('project management', () => {
       { method: 'POST', path: '/api/projects', status: 201, body: { id: 9, name: 'demo', path: '/workspace/demo' } },
     ])
 
-    // The management entry point is reachable from the projects view.
+    // The management entry point is reachable from the category rail.
     await wrapper.find('button.manage-roots').trigger('click')
     await flushPromises()
     const rootsDialog = dialog(wrapper)
@@ -376,7 +400,7 @@ describe('project management', () => {
   })
 
   it('moves focus into the dialog when it opens', async () => {
-    const { wrapper } = await mountWithProjects()
+    const { wrapper } = await mountWithProjects(settingsRoutes(), '/projects/1')
 
     await wrapper.find('button.unregister').trigger('click')
     await flushPromises()

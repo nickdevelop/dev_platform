@@ -2,8 +2,9 @@
 // Left navigation tree: projects with their tasks (agent sessions). Only one
 // project is expanded at a time; its tasks load on expansion. Tasks are shown
 // only when the session store holds that project's list, so a stale list from a
-// previously opened project is never rendered. Search filters tasks by title
-// and never changes the selection.
+// previously opened project is never rendered. Search matches project names and
+// task titles; the active and expanded projects always stay visible, so the open
+// selection is never hidden by a filter.
 import { computed, ref, watch } from 'vue'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
@@ -37,11 +38,22 @@ const expandedSessions = computed(() => {
   return sessionsStore.sessions
 })
 
+const query = computed(() => props.search.trim().toLowerCase())
+
 const visibleSessions = computed(() => {
-  const query = props.search.trim().toLowerCase()
-  if (query === '') return expandedSessions.value
+  if (query.value === '') return expandedSessions.value
   return expandedSessions.value.filter((entry) =>
-    (entry.title || entry.id).toLowerCase().includes(query),
+    (entry.title || entry.id).toLowerCase().includes(query.value),
+  )
+})
+
+const visibleProjects = computed(() => {
+  if (query.value === '') return projectsStore.projects
+  return projectsStore.projects.filter(
+    (project) =>
+      project.id === props.activeProjectId ||
+      project.id === expandedId.value ||
+      project.name.toLowerCase().includes(query.value),
   )
 })
 
@@ -74,7 +86,7 @@ function onProjectClick(projectId: number) {
 
 <template>
   <ul class="project-tree" aria-label="项目与任务">
-    <li v-for="project in projectsStore.projects" :key="project.id" class="project">
+    <li v-for="project in visibleProjects" :key="project.id" class="project">
       <button
         type="button"
         class="project-row"
@@ -107,6 +119,7 @@ function onProjectClick(projectId: number) {
       </ul>
     </li>
     <li v-if="projectsStore.projects.length === 0" class="empty">还没有项目。</li>
+    <li v-else-if="visibleProjects.length === 0" class="empty">没有匹配的项目。</li>
   </ul>
 </template>
 

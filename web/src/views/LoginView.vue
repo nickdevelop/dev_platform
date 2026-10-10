@@ -20,7 +20,7 @@ async function submit() {
   try {
     await auth.login(password.value)
     password.value = ''
-    await router.push({ name: 'projects' })
+    await router.push({ name: 'home' })
   } catch (error) {
     errorMessage.value = describeApiError(error, '登录失败，请重试。')
   } finally {

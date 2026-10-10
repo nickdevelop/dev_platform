@@ -13,8 +13,8 @@ const emit = defineEmits<{
     <button type="button" class="category active" title="项目" aria-current="page">项目</button>
     <button type="button" class="category reserved" title="Chat（预留）" disabled>Chat</button>
     <div class="spacer"></div>
-    <button type="button" class="footer-btn" title="授权工作区" @click="emit('open-roots')">设置</button>
-    <button type="button" class="footer-btn" title="退出登录" @click="emit('logout')">退出</button>
+    <button type="button" class="footer-btn manage-roots" title="授权工作区" @click="emit('open-roots')">设置</button>
+    <button type="button" class="footer-btn logout" title="退出登录" @click="emit('logout')">退出</button>
   </nav>
 </template>
 

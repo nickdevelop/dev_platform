@@ -34,17 +34,29 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-// openSession selects a session row and waits until its SSE stream is open.
+// openSession selects a task in the tree and waits until its SSE stream is open.
 // The conversation section exposes data-stream-session/-status so the wait is
 // on an observable signal instead of a fixed timeout.
 async function openSession(page: Page, title: string) {
-  const row = page.locator('.session-item', { hasText: title })
-  await row.click()
-  const sessionId = await row.getAttribute('data-session-id')
-  expect(sessionId).toBeTruthy()
-  const conversation = page.locator('.conversation')
-  await expect(conversation).toHaveAttribute('data-stream-session', sessionId as string)
+  await taskRow(page, title).click()
+  const conversation = page.locator('[data-test="conversation"]')
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
+}
+
+function taskRow(page: Page, title: string) {
+  return page.locator('.task', { hasText: title })
+}
+
+// createTask opens the project's new-task form from the tree, picks the instance
+// by its position among running instances, and waits for the task to appear.
+async function createTask(page: Page, instanceIndex: number, title: string) {
+  await page.locator('.new-task').click()
+  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
+  await page.locator('#instance-select').selectOption({ index: instanceIndex })
+  await page.locator('#session-title').fill(title)
+  await page.locator('form.create-session button.create').click()
+  await expect(taskRow(page, title)).toBeVisible()
 }
 
 test('isolates streamed events and stop across agent instances in one project', async ({ page, request }) => {
@@ -75,8 +87,8 @@ test('isolates streamed events and stop across agent instances in one project', 
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  await page.goto(`/projects/${project.id}/agents`)
-  await expect(page.getByRole('heading', { name: 'Agent 实例设置' })).toBeVisible()
+  await page.goto(`/projects/${project.id}`)
+  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
 
   // Start one pi instance and one opencode instance in the same project.
   await page.locator('#backend-select').selectOption('pi')
@@ -87,53 +99,38 @@ test('isolates streamed events and stop across agent instances in one project', 
   await page.getByRole('button', { name: '启动实例' }).click()
   await expect(page.locator('.instance-item', { hasText: 'opencode-v2' })).toBeVisible({ timeout: 20_000 })
 
-  // Open the unified session workbench.
-  await page.getByRole('button', { name: '打开会话工作台' }).click()
-  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/workbench$`))
-  await expect(page.getByRole('heading', { name: '会话工作台' })).toBeVisible()
-
-  // A pi session and two opencode sessions. Instances are listed in creation
+  // A pi task and two opencode tasks. Running instances are listed in creation
   // order: index 0 is pi, index 1 is opencode-v2.
-  await page.locator('#instance-select').selectOption({ index: 0 })
-  await page.locator('#session-title').fill('pi-session')
-  await page.getByRole('button', { name: '新建会话' }).click()
-  await expect(page.locator('.session-item', { hasText: 'pi-session' })).toBeVisible()
-
-  for (const title of ['oc-session-1', 'oc-session-2']) {
-    await page.locator('#instance-select').selectOption({ index: 1 })
-    await page.locator('#session-title').fill(title)
-    await page.getByRole('button', { name: '新建会话' }).click()
-    await expect(page.locator('.session-item', { hasText: title })).toBeVisible()
-  }
+  await createTask(page, 0, 'pi-session')
+  await createTask(page, 1, 'oc-session-1')
+  await createTask(page, 1, 'oc-session-2')
 
   // The pi session streams its reply into its own conversation.
   await openSession(page, 'pi-session')
   await page.locator('#message-text').fill('ping-pi')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.locator('.conversation')).toContainText('pi reply: ping-pi', { timeout: 20_000 })
+  await expect(page.locator('[data-test="conversation"]')).toContainText('pi reply: ping-pi', { timeout: 20_000 })
 
   // The opencode session streams its own reply, and the pi event never leaks
   // into this instance's view.
   await openSession(page, 'oc-session-1')
   await page.locator('#message-text').fill('ping-oc')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(page.locator('.conversation')).toContainText('opencode reply: ping-oc', {
+  await expect(page.locator('[data-test="conversation"]')).toContainText('opencode reply: ping-oc', {
     timeout: 20_000,
   })
-  await expect(page.locator('.conversation')).not.toContainText('pi reply: ping-pi')
+  await expect(page.locator('[data-test="conversation"]')).not.toContainText('pi reply: ping-pi')
 
   // Switching back to the pi session shows only its own history.
   await openSession(page, 'pi-session')
-  await expect(page.locator('.conversation')).toContainText('pi reply: ping-pi')
-  await expect(page.locator('.conversation')).not.toContainText('opencode reply: ping-oc')
+  await expect(page.locator('[data-test="conversation"]')).toContainText('pi reply: ping-pi')
+  await expect(page.locator('[data-test="conversation"]')).not.toContainText('opencode reply: ping-oc')
 
   // Stop the opencode session. The backend stops at instance level: the same
   // instance's sibling is disconnected, while the pi instance is untouched.
   await openSession(page, 'oc-session-1')
   await page.getByRole('button', { name: '停止运行' }).click()
-  await expect(page.locator('.session-item', { hasText: 'oc-session-1' })).toContainText('已停止', {
-    timeout: 20_000,
-  })
-  await expect(page.locator('.session-item', { hasText: 'oc-session-2' })).toContainText('已断开')
-  await expect(page.locator('.session-item', { hasText: 'pi-session' })).toContainText('进行中')
+  await expect(taskRow(page, 'oc-session-1')).toContainText('空闲', { timeout: 20_000 })
+  await expect(taskRow(page, 'oc-session-2')).toContainText('断开')
+  await expect(taskRow(page, 'pi-session')).toContainText('运行中')
 })

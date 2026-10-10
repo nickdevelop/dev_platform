@@ -52,55 +52,60 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
+  const settings = page.getByRole('region', { name: '项目设置' })
+  const row = (name: string) => page.locator('.project-row', { hasText: name })
+
   // Register an existing directory under the authorized root.
-  await page.getByRole('button', { name: '注册已有目录' }).click()
+  await page.getByRole('button', { name: '注册', exact: true }).click()
   const registerDialog = page.getByRole('dialog')
   await registerDialog.getByLabel('目录的绝对路径').fill(join(workspaceRoot, 'alpha'))
   await registerDialog.getByRole('button', { name: '注册', exact: true }).click()
-  const alphaItem = page.locator('.project-item', { hasText: 'alpha' })
+  const alphaItem = row('alpha')
   await expect(alphaItem).toBeVisible()
-  await expect(alphaItem).toContainText(join(workspaceRoot, 'alpha'))
+  await alphaItem.click()
+  await expect(settings).toContainText(join(workspaceRoot, 'alpha'))
 
   // Create a brand-new project directory.
-  await page.getByRole('button', { name: '新建项目' }).click()
+  await page.getByRole('button', { name: '新建', exact: true }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('父目录的绝对路径').fill(workspaceRoot)
   await createDialog.getByLabel('项目目录名').fill('beta')
   await createDialog.getByRole('button', { name: '创建', exact: true }).click()
-  const betaItem = page.locator('.project-item', { hasText: 'beta' })
+  const betaItem = row('beta')
   await expect(betaItem).toBeVisible()
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
 
-  // Search narrows the list by name.
-  await page.getByLabel('搜索项目').fill('alp')
+  // Search matches project names: other projects are hidden, the open one stays.
+  await page.getByLabel('搜索项目或任务').fill('alp')
   await expect(betaItem).toBeHidden()
   await expect(alphaItem).toBeVisible()
-  await page.getByLabel('搜索项目').fill('')
+  await page.getByLabel('搜索项目或任务').fill('')
 
   // Rename requires typing the project's current name.
-  await betaItem.getByRole('button', { name: '重命名' }).click()
+  await betaItem.click()
+  await settings.getByRole('button', { name: '重命名' }).click()
   const renameDialog = page.getByRole('dialog')
   await renameDialog.getByLabel('新目录名').fill('gamma')
   await renameDialog.getByLabel(/输入当前项目名/).fill('beta')
   await renameDialog.getByRole('button', { name: '重命名', exact: true }).click()
-  const gammaItem = page.locator('.project-item', { hasText: 'gamma' })
+  const gammaItem = row('gamma')
   await expect(gammaItem).toBeVisible()
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(true)
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(false)
 
   // Move requires the typed confirmation as well.
-  await gammaItem.getByRole('button', { name: '移动' }).click()
+  await settings.getByRole('button', { name: '移动' }).click()
   const moveDialog = page.getByRole('dialog')
   await moveDialog.getByLabel('目标完整路径').fill(join(workspaceRoot, 'archive', 'gamma'))
   await moveDialog.getByLabel(/输入当前项目名/).fill('gamma')
   await moveDialog.getByRole('button', { name: '移动', exact: true }).click()
-  const movedItem = page.locator('.project-item', { hasText: 'gamma' })
-  await expect(movedItem).toContainText('archive')
+  await expect(settings).toContainText(join(workspaceRoot, 'archive', 'gamma'))
   expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(true)
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(false)
 
   // Unregister removes only the platform record; the directory survives.
-  await alphaItem.getByRole('button', { name: '移除记录' }).click()
+  await alphaItem.click()
+  await settings.getByRole('button', { name: '解除登记' }).click()
   const unregisterDialog = page.getByRole('dialog')
   await expect(unregisterDialog).toContainText('会被完整保留')
   await unregisterDialog.getByRole('button', { name: '移除记录', exact: true }).click()
@@ -108,20 +113,21 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
 
   // Delete is destructive: it needs the typed name and prefers the OS trash.
-  await movedItem.getByRole('button', { name: '删除目录' }).click()
+  await row('gamma').click()
+  await settings.getByRole('button', { name: '删除目录' }).click()
   const deleteDialog = page.getByRole('dialog')
   const deleteConfirm = deleteDialog.getByRole('button', { name: '删除目录', exact: true })
   await expect(deleteConfirm).toBeDisabled()
   await deleteDialog.getByLabel(/输入项目名/).fill('gamma')
   await expect(deleteConfirm).toBeEnabled()
   await deleteConfirm.click()
-  await expect(movedItem).toBeHidden()
+  await expect(row('gamma')).toBeHidden()
   expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(false)
   // The directory landed in the server's isolated trash, not the void.
   const trashed = readdirSync(join(trashDir, 'files'))
   expect(trashed.some((name) => name.startsWith('gamma'))).toBe(true)
 
   // Logging out ends the session and returns to the login view.
-  await page.getByRole('button', { name: '退出登录' }).click()
+  await page.getByTitle('退出登录').click()
   await expect(page).toHaveURL(/\/login$/)
 })

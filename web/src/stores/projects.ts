@@ -1,6 +1,6 @@
-// Project list for the navigation shell. Mirrors the load behavior of the
-// former ProjectsView: an expired session is handled by the global 401 handler,
-// so the store only records the error text for every other failure.
+// Project list for the navigation shell. An expired session is handled by the
+// global 401 handler, so the store only records the error text for every other
+// failure.
 import { defineStore } from 'pinia'
 import { describeApiError, UnauthorizedError } from '../api/client'
 import { listProjects, type Project } from '../api/projects'

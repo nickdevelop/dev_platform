@@ -125,6 +125,24 @@ describe('ProjectTree', () => {
     expect(wrapper.emitted('select-project')).toBeUndefined()
   })
 
+  it('filters other projects by name and always keeps the active project', async () => {
+    stubSessions({ 1: [] })
+    const wrapper = mountTree({ activeProjectId: 1, search: 'zzz' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('alpha')
+    expect(wrapper.text()).not.toContain('beta')
+
+    await wrapper.setProps({ search: 'bet' })
+    expect(wrapper.text()).toContain('beta')
+  })
+
+  it('reports when no project matches the search', async () => {
+    stubSessions({})
+    const wrapper = mountTree({ activeProjectId: null, search: 'zzz' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('没有匹配的项目')
+  })
+
   it('shows a new-task entry for a project with no tasks', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: 1 })
