@@ -211,7 +211,7 @@ describe('TaskChatPanel', () => {
     expect(wrapper.text()).not.toContain('OLD MESSAGE')
   })
 
-  it('shows the backend tag and no rename control in the header', async () => {
+  it('shows the backend tag and no rename or continue controls in the header', async () => {
     stubSessionList([session('sess-1', { backend: 'pi' })])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -220,14 +220,92 @@ describe('TaskChatPanel', () => {
     expect(tag.exists()).toBe(true)
     expect(tag.props('backend')).toBe('pi')
     expect(wrapper.findAll('button').some((button) => button.text() === '重命名')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '继续会话')).toBe(false)
   })
 
-  it('hides the model input when the session does not declare modelSelection', async () => {
-    stubSessionList([session('sess-1', { capabilities: capabilities({ modelSelection: false, stop: true }) })])
+  it('renders no model picker when the session does not declare modelSelection', async () => {
+    stubSessionList([
+      session('sess-1', { capabilities: capabilities({ modelSelection: false, interrupt: true }) }),
+    ])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    expect(wrapper.find('#session-model').exists()).toBe(false)
-    expect(wrapper.find('.stop').exists()).toBe(true)
+    expect(wrapper.find('.model-select').exists()).toBe(false)
+  })
+
+  it('offers send while the turn is idle', async () => {
+    stubSessionList([session('sess-1', { turn: 'idle' })])
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const button = wrapper.find('button.send-button')
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toBe('发送')
+    expect(wrapper.find('button.stop-button').exists()).toBe(false)
+  })
+
+  it('offers stop on a running turn and interrupts the session on click', async () => {
+    stubSessionList([
+      session('sess-1', { turn: 'running', capabilities: capabilities({ interrupt: true }) }),
+    ])
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const store = useSessionsStore()
+    const interrupt = vi.spyOn(store, 'interrupt').mockResolvedValue(null)
+
+    const button = wrapper.find('button.stop-button')
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toBe('停止')
+
+    await button.trigger('click')
+    expect(interrupt).toHaveBeenCalledWith(1, 'sess-1')
+  })
+
+  it('disables sending when the model list fails to load', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith('/models')) {
+          return { status: 500, json: async () => ({}) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            sessions: [session('sess-1', { capabilities: capabilities({ modelSelection: true }) })],
+          }),
+        } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    await wrapper.find('#message-text').setValue('hello')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('模型列表加载失败')
+    expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
+  })
+
+  it('keeps an aborted pi turn idle without a process_exit error entry', () => {
+    const store = useSessionsStore()
+    store.sessions = [session('sess-1', { turn: 'running' })]
+    store.handleEvent(
+      'sess-1',
+      JSON.stringify({
+        instanceId: 'inst-1',
+        sessionId: 'sess-1',
+        backend: 'pi',
+        sequence: 2,
+        timestamp: '2026-10-09T00:00:00Z',
+        type: 'lifecycle',
+        lifecycle: { state: 'agent_settled', detail: 'aborted' },
+      }),
+    )
+
+    expect(store.sessionById('sess-1')?.turn).toBe('idle')
+    expect(store.messagesFor('sess-1')).toHaveLength(0)
   })
 })

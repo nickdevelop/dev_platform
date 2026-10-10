@@ -255,6 +255,11 @@ export const useSessionsStore = defineStore('sessions', {
               text: event.error.message,
               streaming: false,
             })
+            // These are the backend's turn-ending error codes; any other error
+            // is reported without concluding the turn.
+            if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
+              this.setTurn(sessionId, 'idle')
+            }
           }
           break
         case 'lifecycle':
@@ -296,6 +301,22 @@ export const useSessionsStore = defineStore('sessions', {
 
     applyLifecycle(sessionId: string, event: NormalizedEvent) {
       const state = event.lifecycle?.state
+      // The turn is derived from the same lifecycle states the backend uses, so
+      // the open panel's send/stop action tracks a live turn. An interrupted
+      // turn settles as agent_settled (detail aborted) with no error entry.
+      if (state === 'execution_started' || state === 'agent_start') {
+        this.setTurn(sessionId, 'running')
+        return
+      }
+      if (
+        state === 'execution_succeeded' ||
+        state === 'execution_interrupted' ||
+        state === 'agent_settled' ||
+        state === 'agent_end'
+      ) {
+        this.setTurn(sessionId, 'idle')
+        return
+      }
       if (state === 'stopped') {
         this.setStatus(sessionId, 'stopped')
         return
@@ -305,6 +326,12 @@ export const useSessionsStore = defineStore('sessions', {
       if (state === 'failed' || state === 'error' || state === 'disconnected') {
         this.setStatus(sessionId, 'disconnected')
       }
+    },
+
+    setTurn(sessionId: string, turn: AgentSession['turn']) {
+      this.sessions = this.sessions.map((entry) =>
+        entry.id === sessionId ? { ...entry, turn } : entry,
+      )
     },
 
     setStatus(sessionId: string, status: AgentSession['status']) {

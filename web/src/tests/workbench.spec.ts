@@ -244,33 +244,13 @@ describe('session list', () => {
 })
 
 describe('capability-gated controls', () => {
-  it('omits model, continue, stop and tool-confirmation controls when unsupported', () => {
+  it('omits the tool-confirmation control when unsupported', () => {
     const wrapper = mount(CapabilityControls, {
       props: { capabilities: noCapabilities(), pendingToolCall: { callId: 'c1', name: 'bash' } },
     })
     mounted.push(wrapper)
 
-    expect(wrapper.find('#session-model').exists()).toBe(false)
-    expect(wrapper.find('button.continue').exists()).toBe(false)
-    expect(wrapper.find('button.stop').exists()).toBe(false)
     expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
-  })
-
-  it('renders model, continue and stop controls when the capabilities advertise them', () => {
-    const wrapper = mount(CapabilityControls, {
-      props: {
-        capabilities: noCapabilities({
-          modelSelection: true,
-          sessionContinue: true,
-          stop: true,
-        }),
-      },
-    })
-    mounted.push(wrapper)
-
-    expect(wrapper.find('#session-model').exists()).toBe(true)
-    expect(wrapper.find('button.continue').exists()).toBe(true)
-    expect(wrapper.find('button.stop').exists()).toBe(true)
   })
 
   it('renders tool confirmation only when the capability is advertised', async () => {
@@ -528,7 +508,7 @@ describe('task chat and new task panels', () => {
 
     expect(wrapper.text()).toContain('Demo session')
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(wrapper.find('button.stop').exists()).toBe(true)
+    expect(wrapper.find('button.send-button').exists()).toBe(true)
     expect(sessions.activeSessionId).toBe('sess-1')
   })
 
@@ -549,8 +529,8 @@ describe('task chat and new task panels', () => {
     const { wrapper, auth } = await mountPanel(TaskChatPanel, { projectId: 1, sessionId: 'sess-pi' })
     auth.csrfToken = 'csrf-1'
 
-    // The open task's backend does not advertise modelSelection, so no model input is shown.
-    expect(wrapper.find('#session-model').exists()).toBe(false)
+    // The open task's backend does not advertise modelSelection, so no model picker is shown.
+    expect(wrapper.find('.model-select').exists()).toBe(false)
 
     await wrapper.find('#message-text').setValue('hello')
     await wrapper.find('form.send').trigger('submit')

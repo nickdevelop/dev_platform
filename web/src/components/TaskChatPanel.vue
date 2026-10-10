@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // Task conversation for the right pane of the shell. The task is an agent
 // session of the project. Its stream is scoped to this session: opening another
-// task closes the previous stream, so its events can never appear here. Only
-// controls the session's declared capabilities support are rendered.
+// task closes the previous stream, so its events can never appear here. The
+// composer is the only place a turn is sent or stopped; the send action becomes
+// 停止 while the session's turn is running.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
 import MessageView from './MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
+import ModelSelect from './ModelSelect.vue'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
@@ -18,13 +20,21 @@ const sessions = useSessionsStore()
 const ready = ref(false)
 const loadError = ref('')
 const sendError = ref('')
-const sessionModel = ref('')
 const sending = ref(false)
-const messageText = ref('')
 const busy = ref(false)
+const messageText = ref('')
+const selectedModel = ref('')
+// Whether the model list for the open instance loaded. A failed list disables
+// sending rather than falling back to a free-text model.
+const modelOk = ref(true)
 const toolNotice = ref('')
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
+const instance = computed(() => {
+  const session = activeSession.value
+  if (!session) return null
+  return agents.instances.find((entry) => entry.id === session.instanceId) ?? null
+})
 
 // A task can only take messages while its agent instance runs; the project
 // settings pane is where a stopped instance is started again.
@@ -38,9 +48,19 @@ const instanceRunning = computed(() => {
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 
-// Model input is rendered only when this session's own capabilities declare it;
-// the session DTO is authoritative for what a message may carry.
-const activeModelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
+const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
+const isRunning = computed(() => activeSession.value?.turn === 'running')
+const canInterrupt = computed(() => activeSession.value?.capabilities.interrupt === true)
+const interactEnabled = computed(
+  () => instanceRunning.value && activeSession.value?.status === 'active',
+)
+
+const composerLabel = computed(() => (isRunning.value && canInterrupt.value ? '停止' : '发送'))
+const composerDisabled = computed(() => {
+  if (!activeSession.value || !interactEnabled.value) return true
+  if (isRunning.value) return !canInterrupt.value || busy.value
+  return sending.value || messageText.value.trim() === '' || !modelOk.value
+})
 
 // The most recent tool call that has not produced a result yet. Only rendered
 // by CapabilityControls when the session declares toolConfirmation.
@@ -62,10 +82,13 @@ onBeforeUnmount(() => sessions.unsubscribeAll())
 
 // A directly opened task URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
-// such; an id absent from a successful list is never subscribed.
+// such; an id absent from a successful list is never subscribed. The model
+// selection is reset per task, because it is chosen per message.
 async function open() {
   ready.value = false
   loadError.value = ''
+  selectedModel.value = ''
+  modelOk.value = true
   await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
   ready.value = true
   if (sessions.error) {
@@ -86,13 +109,10 @@ function onToolDecision() {
 
 async function send() {
   const session = activeSession.value
-  if (!session || sending.value || messageText.value.trim() === '' || !instanceRunning.value) return
+  if (!session || composerDisabled.value || messageText.value.trim() === '') return
   sending.value = true
   sendError.value = ''
-  const model =
-    activeModelSelection.value && sessionModel.value.trim() !== ''
-      ? sessionModel.value.trim()
-      : undefined
+  const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
   const updated = await sessions.sendMessage(props.projectId, session.id, messageText.value, model)
   // The text is kept on failure so the user can retry without retyping it.
   if (updated) messageText.value = ''
@@ -102,28 +122,22 @@ async function send() {
 
 async function stop() {
   const session = activeSession.value
-  if (!session) return
+  if (!session || !canInterrupt.value) return
   busy.value = true
-  await sessions.stopSession(props.projectId, session.id)
+  await sessions.interrupt(props.projectId, session.id)
   busy.value = false
 }
 
-async function resume() {
-  const session = activeSession.value
-  if (!session) return
-  busy.value = true
-  await sessions.continueSession(props.projectId, session.id)
-  busy.value = false
+async function onSubmit() {
+  if (isRunning.value) {
+    await stop()
+    return
+  }
+  await send()
 }
 
 function reconnect() {
   if (activeSession.value) sessions.resubscribe(props.projectId, activeSession.value.id)
-}
-
-const statusLabels: Record<string, string> = {
-  active: '进行中',
-  stopped: '已停止',
-  disconnected: '已断开',
 }
 </script>
 
@@ -140,9 +154,9 @@ const statusLabels: Record<string, string> = {
         <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
         <div class="session-meta">
           <BackendTag :backend="activeSession.backend" />
-          <span class="session-status" role="status" aria-live="polite">
-            状态：{{ statusLabels[activeSession.status] ?? activeSession.status }}
-          </span>
+          <span class="chip">实例：{{ activeSession.instanceId }}</span>
+          <span v-if="instance" class="chip">工作目录：{{ instance.directory }}</span>
+          <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
         </div>
       </header>
 
@@ -162,12 +176,7 @@ const statusLabels: Record<string, string> = {
 
       <CapabilityControls
         :capabilities="activeSession.capabilities"
-        :model="sessionModel"
         :pending-tool-call="pendingToolCall"
-        :busy="busy"
-        @update:model="sessionModel = $event"
-        @stop="stop"
-        @continue="resume"
         @confirm-tool="onToolDecision"
         @deny-tool="onToolDecision"
       />
@@ -177,18 +186,33 @@ const statusLabels: Record<string, string> = {
       <p v-if="!instanceRunning" class="instance-note">实例已停止，请在项目设置中启动后再发送消息。</p>
       <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
 
-      <form class="send" @submit.prevent="send">
+      <form class="send" @submit.prevent="onSubmit">
         <label for="message-text">发送消息</label>
-        <textarea id="message-text" v-model="messageText" rows="3"></textarea>
-        <button
-          type="submit"
-          class="send-button"
-          :disabled="
-            sending || messageText.trim() === '' || !instanceRunning || activeSession.status !== 'active'
-          "
-        >
-          发送
-        </button>
+        <textarea
+          id="message-text"
+          v-model="messageText"
+          rows="3"
+          placeholder="向 Agent 发送消息…（Enter 发送，Shift+Enter 换行）"
+          @keydown.enter.exact.prevent="onSubmit"
+        ></textarea>
+        <div class="composer-bar">
+          <ModelSelect
+            v-model="selectedModel"
+            :project-id="props.projectId"
+            :instance-id="activeSession.instanceId"
+            :model-selection="activeSession.capabilities.modelSelection"
+            @status="modelOk = $event"
+          />
+          <button
+            type="button"
+            class="composer-action"
+            :class="isRunning ? 'stop-button' : 'send-button'"
+            :disabled="composerDisabled"
+            @click="onSubmit"
+          >
+            {{ composerLabel }}
+          </button>
+        </div>
       </form>
     </template>
     <template v-else-if="loadError">
@@ -225,12 +249,21 @@ const statusLabels: Record<string, string> = {
 
 .session-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
 }
 
-.session-status {
+.chip {
   color: #475569;
+  background: #f1f5f9;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.turn-status {
+  color: #1d4ed8;
   font-size: 0.85rem;
 }
 
@@ -253,7 +286,14 @@ const statusLabels: Record<string, string> = {
   font: inherit;
 }
 
-.send button,
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.composer-action,
 .reconnect {
   align-self: flex-start;
   padding: 0.35rem 0.7rem;
@@ -263,16 +303,21 @@ const statusLabels: Record<string, string> = {
   cursor: pointer;
 }
 
-.send .send-button {
+.composer-action.send-button {
   background: #2563eb;
   border-color: #2563eb;
   color: #fff;
 }
 
-.send .send-button:disabled {
+.composer-action.send-button:disabled {
   background: #93c5fd;
   border-color: #93c5fd;
   cursor: default;
+}
+
+.composer-action.stop-button {
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 
 .tool-notice {
