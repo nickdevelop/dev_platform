@@ -803,3 +803,97 @@ func TestAdapterLaunchDiagnosticRedactsPassword(t *testing.T) {
 		t.Fatalf("expected a redaction marker in the launch diagnostic: %v", err)
 	}
 }
+
+func serveMessagesFixture(t *testing.T) http.HandlerFunc {
+	t.Helper()
+	fixture := readMessagesFixture(t)
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(fixture)
+	}
+}
+
+// TestListHistoryMapsOpenCodeMessages pins the translation of the native
+// message log: conversation blocks become message and tool events in order,
+// thinking and turn markers produce nothing, and every event is marked as
+// replayed and left instance-free for the caller to stamp.
+func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/session/ses_1/message": serveMessagesFixture(t),
+	}))
+	instance := startTestInstance(t, adapter)
+
+	events, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
+		Directory: instance.Directory,
+		SessionID: "ses_1",
+	})
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	if len(events) != 6 {
+		t.Fatalf("ListHistory returned %d events, want 6: %+v", len(events), events)
+	}
+
+	if events[0].Type != agents.EventMessage || events[0].Message == nil ||
+		events[0].Message.Role != "user" || events[0].Message.Text != "历史里的用户消息" || !events[0].Message.Final {
+		t.Errorf("events[0] = %+v, want the user message", events[0])
+	}
+	if events[1].Type != agents.EventMessage || events[1].Message == nil ||
+		events[1].Message.Role != "assistant" || events[1].Message.Text != "历史里的助手回复" {
+		t.Errorf("events[1] = %+v, want the assistant message after skipping reasoning", events[1])
+	}
+	if events[2].Type != agents.EventToolCall || events[2].ToolCall == nil ||
+		events[2].ToolCall.CallID != "call_1" || events[2].ToolCall.Name != "execute" {
+		t.Fatalf("events[2] = %+v, want the first tool call", events[2])
+	}
+	var input map[string]string
+	if err := json.Unmarshal(events[2].ToolCall.Input, &input); err != nil || input["code"] != "ls -la" {
+		t.Errorf("first tool call input = %s, want the fixture state.input", events[2].ToolCall.Input)
+	}
+	if events[3].Type != agents.EventToolResult || events[3].ToolResult == nil ||
+		events[3].ToolResult.CallID != "call_1" || events[3].ToolResult.Output != "历史里的工具输出" || events[3].ToolResult.IsError {
+		t.Errorf("events[3] = %+v, want the completed tool result", events[3])
+	}
+	if events[4].Type != agents.EventToolCall || events[4].ToolCall == nil || events[4].ToolCall.CallID != "call_2" {
+		t.Fatalf("events[4] = %+v, want the second tool call", events[4])
+	}
+	if events[5].Type != agents.EventToolResult || events[5].ToolResult == nil ||
+		events[5].ToolResult.CallID != "call_2" || !events[5].ToolResult.IsError {
+		t.Errorf("events[5] = %+v, want a failed tool result for call_2", events[5])
+	}
+
+	for i, event := range events {
+		if !event.Replayed {
+			t.Errorf("events[%d].Replayed = false, want every history event marked replayed", i)
+		}
+		if event.InstanceID != "" {
+			t.Errorf("events[%d].InstanceID = %q, want empty: the request names no instance", i, event.InstanceID)
+		}
+		if event.Backend != agents.BackendOpenCodeV2 {
+			t.Errorf("events[%d].Backend = %q, want opencode-v2", i, event.Backend)
+		}
+		if event.Sequence != uint64(i+1) {
+			t.Errorf("events[%d].Sequence = %d, want %d", i, event.Sequence, i+1)
+		}
+	}
+}
+
+// TestListHistoryWithoutRunningInstance pins the actionable failure: with no
+// server there is nothing to read from, and the error must say to start one
+// rather than looking like a missing session.
+func TestListHistoryWithoutRunningInstance(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request expected without a running instance, got %s %s", r.Method, r.URL.Path)
+	})
+
+	_, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
+		Directory: t.TempDir(),
+		SessionID: "ses_1",
+	})
+	if err == nil {
+		t.Fatal("ListHistory without a running instance succeeded, want an error")
+	}
+	if !strings.Contains(err.Error(), "start") {
+		t.Errorf("ListHistory error = %q, want guidance to start the backend", err)
+	}
+}

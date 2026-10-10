@@ -1,0 +1,62 @@
+{
+  "data": [
+    {
+      "id": "msg_user_1",
+      "type": "user",
+      "text": "历史里的用户消息",
+      "time": { "created": 1791600000000 }
+    },
+    {
+      "id": "msg_asst_1",
+      "type": "assistant",
+      "agent": "build",
+      "model": { "id": "acme/acme-code", "providerID": "acme", "variant": "default" },
+      "content": [
+        { "type": "reasoning", "text": "这段推理必须被跳过" },
+        { "type": "text", "text": "历史里的助手回复" },
+        {
+          "type": "tool",
+          "id": "call_1",
+          "name": "execute",
+          "executed": false,
+          "state": {
+            "status": "completed",
+            "input": { "code": "ls -la" },
+            "output": "历史里的工具输出"
+          },
+          "time": { "created": 1791600000100, "ran": 1791600000200, "completed": 1791600000300 }
+        }
+      ],
+      "time": { "created": 1791600000000 }
+    },
+    {
+      "id": "msg_asst_2",
+      "type": "assistant",
+      "agent": "build",
+      "content": [
+        {
+          "type": "tool",
+          "id": "call_2",
+          "name": "bash",
+          "state": {
+            "status": "error",
+            "input": { "command": "false" },
+            "output": "工具失败输出"
+          }
+        }
+      ],
+      "time": { "created": 1791600000400 }
+    },
+    {
+      "id": "msg_idle_1",
+      "type": "idle",
+      "outcome": "succeeded",
+      "time": { "created": 1791600000500 }
+    },
+    {
+      "id": "msg_model_switch_1",
+      "type": "model-switched",
+      "time": { "created": 1791600000600 }
+    }
+  ]
+}

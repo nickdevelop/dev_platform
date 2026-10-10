@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -381,5 +383,48 @@ func TestClientInterrupt(t *testing.T) {
 	}
 	if method != http.MethodPost || path != "/api/session/ses_one/interrupt" {
 		t.Fatalf("request = %s %s", method, path)
+	}
+}
+
+// readMessagesFixture returns the structural transcript fixture shared by the
+// client and adapter history tests.
+func readMessagesFixture(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "messages.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	return raw
+}
+
+// TestClientListMessages pins the request and the response shape of the
+// native message endpoint history is read from.
+func TestClientListMessages(t *testing.T) {
+	fixture := readMessagesFixture(t)
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/session/ses_1/message" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(fixture)
+	})
+
+	messages, err := client.ListMessages(context.Background(), "ses_1")
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(messages) != 5 {
+		t.Fatalf("ListMessages returned %d messages, want 5", len(messages))
+	}
+	if messages[0].Type != "user" || messages[0].Text != "历史里的用户消息" {
+		t.Errorf("messages[0] = %+v, want the fixture user message", messages[0])
+	}
+	if messages[1].Type != "assistant" || len(messages[1].Content) != 3 {
+		t.Fatalf("messages[1] = %+v, want the fixture assistant blocks", messages[1])
+	}
+	tool := messages[1].Content[2]
+	if tool.Type != "tool" || tool.ID != "call_1" || tool.Name != "execute" || tool.State == nil ||
+		tool.State.Status != "completed" || tool.State.Output != "历史里的工具输出" {
+		t.Errorf("assistant tool block = %+v, want the fixture tool call", tool)
 	}
 }

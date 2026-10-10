@@ -157,6 +157,42 @@ type CreateSessionRequest struct {
 	Location *LocationRef `json:"location,omitempty"`
 }
 
+// Message is one entry of GET /api/session/{id}/message. The endpoint mixes
+// conversation entries with turn markers: Type is "user", "assistant",
+// "idle" or "model-switched". A user message carries its body in Text; an
+// assistant message carries blocks in Content.
+type Message struct {
+	ID      string         `json:"id"`
+	Type    string         `json:"type"`
+	Text    string         `json:"text,omitempty"`
+	Content []ContentBlock `json:"content,omitempty"`
+	Time    MessageTime    `json:"time"`
+}
+
+// MessageTime is a message's wall-clock stamp in milliseconds since epoch.
+type MessageTime struct {
+	Created int64 `json:"created"`
+}
+
+// ContentBlock is one block of an assistant message: "text", "reasoning" or
+// "tool". Reasoning blocks carry no normalized payload and are skipped by the
+// caller, like pi's thinking blocks.
+type ContentBlock struct {
+	Type  string     `json:"type"`
+	Text  string     `json:"text,omitempty"`
+	ID    string     `json:"id,omitempty"`
+	Name  string     `json:"name,omitempty"`
+	State *ToolState `json:"state,omitempty"`
+}
+
+// ToolState is a tool block's execution state: the arguments it ran with, its
+// output and whether it completed.
+type ToolState struct {
+	Status string          `json:"status"`
+	Input  json.RawMessage `json:"input,omitempty"`
+	Output string          `json:"output,omitempty"`
+}
+
 // APIError reports a non-2xx response from the opencode API. Message is
 // redacted before it leaves the client.
 type APIError struct {
@@ -199,6 +235,19 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]SessionI
 		Data []SessionInfo `json:"data"`
 	}
 	if err := c.do(ctx, http.MethodGet, "/api/session", query, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data, nil
+}
+
+// ListMessages returns one session's native message log, oldest first. The
+// server stores it on disk, so any running server answers for any session it
+// knows the directory of.
+func (c *Client) ListMessages(ctx context.Context, sessionID string) ([]Message, error) {
+	var payload struct {
+		Data []Message `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/session/"+sessionID+"/message", nil, nil, &payload); err != nil {
 		return nil, err
 	}
 	return payload.Data, nil
