@@ -30,6 +30,14 @@ if (process.argv.includes('--version')) {
   process.exit(0)
 }
 
+// `--list-models` support for the workbench's model picker. The platform parses
+// the header row and the provider/model columns.
+if (process.argv.includes('--list-models')) {
+  process.stdout.write('provider model context max-out thinking images\n')
+  process.stdout.write('pi pi-model 128k 8k no no\n')
+  process.exit(0)
+}
+
 async function main() {
   const sessionId = valueAfter('--session-id')
   const separator = process.argv.indexOf('--')
@@ -47,6 +55,12 @@ async function main() {
   write({ type: 'session', id: sessionId, cwd })
   write({ type: 'agent_start' })
   write({ type: 'message_start', message: { role: 'user', content: prompt } })
+
+  // Hold the turn open until the platform interrupts (kills) this process, so
+  // the workbench's stop action can be observed deterministically.
+  if (prompt.includes('__e2e_hold__')) {
+    await new Promise(() => {})
+  }
 
   const split = Math.ceil(reply.length / 2)
   await sleep(15)

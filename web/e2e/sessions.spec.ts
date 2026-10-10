@@ -3,10 +3,11 @@
 // scripts/run-e2e.mjs) concurrently in one project, then drives the UI:
 //
 //   - two agent instances in one project (pi and opencode-v2),
+//   - tasks are created by choosing only an agent backend,
 //   - sessions on each instance stream their own replies,
 //   - events from one instance never render in another instance's view,
-//   - stopping a session cascades to its same-instance siblings, while a
-//     different instance's session stays active.
+//   - a running turn offers 停止, which interrupts only that turn and returns
+//     the session to idle while its siblings stay untouched.
 //
 // Started via `npm run test:e2e`, which builds the server and provides
 // E2E_PASSWORD and E2E_WORKSPACE_ROOT for an isolated scratch directory.
@@ -48,18 +49,18 @@ function taskRow(page: Page, title: string) {
   return page.locator('.task', { hasText: title })
 }
 
-// createTask opens the project's new-task form from the tree, picks the instance
-// by its position among running instances, and waits for the task to appear.
-async function createTask(page: Page, instanceIndex: number, title: string) {
+// createTask opens the project's new-task form from the tree, chooses the agent
+// backend, and waits for the task to appear.
+async function createTask(page: Page, backendName: string, title: string) {
   await page.locator('.new-task').click()
   await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#instance-select').selectOption({ index: instanceIndex })
+  await page.locator('#backend-select').selectOption(backendName)
   await page.locator('#session-title').fill(title)
   await page.locator('form.create-session button.create').click()
   await expect(taskRow(page, title)).toBeVisible()
 }
 
-test('isolates streamed events and stop across agent instances in one project', async ({ page, request }) => {
+test('isolates streamed events and interrupts one turn across agent instances', async ({ page, request }) => {
   test.slow()
 
   // Operator setup: authorize the workspace root and register a fresh project
@@ -99,11 +100,10 @@ test('isolates streamed events and stop across agent instances in one project', 
   await page.getByRole('button', { name: '启动实例' }).click()
   await expect(page.locator('.instance-item', { hasText: 'opencode-v2' })).toBeVisible({ timeout: 20_000 })
 
-  // A pi task and two opencode tasks. Running instances are listed in creation
-  // order: index 0 is pi, index 1 is opencode-v2.
-  await createTask(page, 0, 'pi-session')
-  await createTask(page, 1, 'oc-session-1')
-  await createTask(page, 1, 'oc-session-2')
+  // One task per backend, created by choosing only the agent.
+  await createTask(page, 'pi', 'pi-session')
+  await createTask(page, 'opencode-v2', 'oc-session-1')
+  await createTask(page, 'opencode-v2', 'oc-hold')
 
   // The pi session streams its reply into its own conversation.
   await openSession(page, 'pi-session')
@@ -126,11 +126,18 @@ test('isolates streamed events and stop across agent instances in one project', 
   await expect(page.locator('[data-test="conversation"]')).toContainText('pi reply: ping-pi')
   await expect(page.locator('[data-test="conversation"]')).not.toContainText('opencode reply: ping-oc')
 
-  // Stop the opencode session. The backend stops at instance level: the same
-  // instance's sibling is disconnected, while the pi instance is untouched.
-  await openSession(page, 'oc-session-1')
-  await page.getByRole('button', { name: '停止运行' }).click()
-  await expect(taskRow(page, 'oc-session-1')).toContainText('空闲', { timeout: 20_000 })
-  await expect(taskRow(page, 'oc-session-2')).toContainText('断开')
-  await expect(taskRow(page, 'pi-session')).toContainText('运行中')
+  // A held turn keeps the session running; the composer offers 停止. Stopping
+  // interrupts only this turn, so the tree stops showing 运行中 and the
+  // composer returns to 发送.
+  await openSession(page, 'oc-hold')
+  await page.locator('#message-text').fill('__e2e_hold__ keep this turn open')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(taskRow(page, 'oc-hold')).toContainText('运行中', { timeout: 20_000 })
+  await page.getByRole('button', { name: '停止', exact: true }).click()
+  await expect(taskRow(page, 'oc-hold')).not.toContainText('运行中', { timeout: 20_000 })
+  await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
+
+  // The other sessions' turns and the instances are untouched.
+  await expect(taskRow(page, 'oc-session-1')).not.toContainText('断开')
+  await expect(taskRow(page, 'pi-session')).not.toContainText('断开')
 })
