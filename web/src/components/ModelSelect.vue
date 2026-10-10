@@ -45,6 +45,18 @@ async function load() {
 onMounted(load)
 watch(() => [props.projectId, props.instanceId, props.modelSelection], load)
 
+// When the parent clears the selection (switching to another task on the same
+// instance does not reload the list), default to the first model again so the
+// picker is never left blank.
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (props.modelSelection && value === '' && models.value.length > 0) {
+      emit('update:modelValue', models.value[0].id)
+    }
+  },
+)
+
 function onSelect(event: Event) {
   emit('update:modelValue', (event.target as HTMLSelectElement).value)
 }

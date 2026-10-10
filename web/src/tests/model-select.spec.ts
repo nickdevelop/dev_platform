@@ -73,4 +73,24 @@ describe('ModelSelect', () => {
     expect(wrapper.find('.model-select').exists()).toBe(false)
     expect(calls).toHaveLength(0)
   })
+
+  it('re-selects the first model when the parent clears the selection', async () => {
+    stubModels({
+      models: [
+        { id: 'pi/a', name: 'Model A', provider: 'pi' },
+        { id: 'pi/b', name: 'Model B', provider: 'pi' },
+      ],
+    })
+
+    const wrapper = mountSelect({ modelValue: 'pi/b' })
+    await flushPromises()
+    // The parent already chose a model, so nothing is emitted on load.
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+
+    // Switching to a task on the same instance clears the parent's selection
+    // without changing ModelSelect's props; it must still default again.
+    await wrapper.setProps({ modelValue: '' })
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['pi/a'])
+  })
 })
