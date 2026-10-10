@@ -139,6 +139,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		ToolCallEvents:   true,
 		ToolConfirmation: false,
 		Interrupt:        true,
+		SessionHistory:   true,
 	}
 }
 

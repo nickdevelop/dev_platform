@@ -36,10 +36,15 @@ const dataDir = path.join(scratch, 'data')
 const workspaceRoot = path.join(scratch, 'workspace')
 const xdgDataHome = path.join(scratch, 'xdg-data')
 const trashDir = path.join(xdgDataHome, 'Trash')
+// The pi adapter discovers and replays sessions from this directory, and the
+// fake pi executable writes to it. Pointing it into the scratch directory
+// keeps the run from reading or writing the developer's real pi sessions.
+const piSessionDir = path.join(scratch, 'pi-sessions')
 const serverBin = path.join(scratch, 'platform-server')
 const setupBin = path.join(scratch, 'platform-setup')
 mkdirSync(workspaceRoot, { recursive: true })
 mkdirSync(xdgDataHome, { recursive: true })
+mkdirSync(piSessionDir, { recursive: true })
 
 const children = []
 let shuttingDown = false
@@ -121,6 +126,7 @@ try {
       ...process.env,
       XDG_DATA_HOME: xdgDataHome,
       PLATFORM_LISTEN_ADDR: apiAddr,
+      PI_CODING_AGENT_SESSION_DIR: piSessionDir,
       PATH: `${fixtureBin}${path.delimiter}${process.env.PATH ?? ''}`,
     },
   })

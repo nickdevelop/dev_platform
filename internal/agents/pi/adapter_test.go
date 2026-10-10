@@ -467,6 +467,9 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 		ToolCallEvents:   true,
 		ToolConfirmation: false,
 		Interrupt:        true,
+		// The adapter reads pi's own transcript, so history must be declared
+		// or the platform answers 409 and never asks for it.
+		SessionHistory: true,
 	}
 	if got := adapter.Capabilities(); got != want {
 		t.Errorf("Capabilities() = %+v, want %+v", got, want)

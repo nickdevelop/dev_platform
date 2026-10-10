@@ -160,6 +160,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		ModelSelection:   true,
 		ToolCallEvents:   true,
 		ToolConfirmation: false,
+		SessionHistory:   true,
 	}
 }
 

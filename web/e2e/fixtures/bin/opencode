@@ -8,6 +8,7 @@
 //   GET  /api/session/:id                fetch one session
 //   POST /api/session/:id/model          model switch (accepted)
 //   POST /api/session/:id/prompt         admit a turn and stream its reply
+//   GET  /api/session/:id/message         the session's native message log
 //   GET  /api/event                      SSE event stream
 //
 // Every request is basic-auth protected with the generated credentials the
@@ -41,6 +42,10 @@ const password = process.env.OPENCODE_SERVER_PASSWORD || ''
 const directory = process.cwd()
 
 const sessions = new Map()
+// messages holds each session's native message log, which the platform reads
+// back for history replay. It mirrors the real server's /message shape: user
+// entries carry a top-level text, assistant entries a content block array.
+const messages = new Map()
 const pending = new Map()
 const clients = new Set()
 // Every event is retained so a stream that connects after a prompt still
@@ -96,6 +101,12 @@ function sessionInfo(id) {
     location: { directory },
     time: { created: sessions.get(id)?.created || Date.now(), updated: Date.now() },
   }
+}
+
+// recordMessage appends one native message to a session's log.
+function recordMessage(id, message) {
+  if (!messages.has(id)) messages.set(id, [])
+  messages.get(id).push({ id: `msg-${crypto.randomBytes(4).toString('hex')}`, time: { created: Date.now() }, ...message })
 }
 
 function createdEvent(id, title) {
@@ -231,6 +242,11 @@ const server = http.createServer(async (request, response) => {
       sendJSON(response, 200, { data: sessionInfo(id) })
       return
     }
+    // The native message log the platform replays as task history.
+    if (request.method === 'GET' && action === '/message') {
+      sendJSON(response, 200, { data: messages.get(id) || [] })
+      return
+    }
     if (request.method === 'POST' && action === '/model') {
       await readBody(request)
       sendJSON(response, 200, {})
@@ -243,6 +259,7 @@ const server = http.createServer(async (request, response) => {
       // learns the session id, then start the turn.
       broadcast(createdEvent(id, sessions.get(id)?.title || ''))
       broadcast(executionEvent(id, 'started'))
+      recordMessage(id, { type: 'user', text })
       if (text.includes('__e2e_hold__')) {
         // Keep the turn running until the workbench interrupts it, so the stop
         // action can be observed deterministically.
@@ -250,6 +267,16 @@ const server = http.createServer(async (request, response) => {
       } else {
         for (const event of promptEvents(id, text)) broadcast(event)
         broadcast(executionEvent(id, 'succeeded'))
+        // Matches the real shape: assistant entries carry content blocks, and
+        // a reasoning block the workbench must skip on replay.
+        recordMessage(id, {
+          type: 'assistant',
+          agent: 'build',
+          content: [
+            { type: 'reasoning', text: 'internal reasoning is not conversation' },
+            { type: 'text', text: `opencode reply: ${text}` },
+          ],
+        })
       }
       sendJSON(response, 200, {})
       return

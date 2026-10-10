@@ -13,7 +13,40 @@
 // failure spec uses to prove one backend's error never affects another.
 'use strict'
 
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// sessionDir mirrors pi's own precedence: the platform sets
+// PI_CODING_AGENT_SESSION_DIR so the E2E run writes transcripts into its
+// scratch directory instead of the developer's real session folder.
+function sessionDir() {
+  const override = process.env.PI_CODING_AGENT_SESSION_DIR
+  if (override) return override
+  return path.join(os.homedir(), '.pi', 'agent', 'sessions')
+}
+
+// sessionDirName mirrors the platform adapter's directory slug, so the file
+// this fake writes is the file the adapter reads back for history.
+function sessionDirName(directory) {
+  const trimmed = directory.replace(/^[/\\]+/, '')
+  return `--${trimmed.replace(/[/\\:]/g, '-')}--`
+}
+
+// transcriptPath is where one session's JSONL transcript lives.
+function transcriptPath(directory, sessionId) {
+  const folder = path.join(sessionDir(), sessionDirName(directory))
+  fs.mkdirSync(folder, { recursive: true })
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return path.join(folder, `${stamp}_${sessionId}.jsonl`)
+}
+
+// record appends one JSONL record, the format pi writes and the adapter reads.
+function record(stream, entry) {
+  fs.appendFileSync(stream, `${JSON.stringify(entry)}\n`)
+}
 
 function valueAfter(flag) {
   const index = process.argv.indexOf(flag)
@@ -52,6 +85,25 @@ async function main() {
     process.exit(1)
   }
 
+  // Persist the transcript the way the real CLI does: a session header and the
+  // user turn up front, the assistant turn appended when it completes. The
+  // platform replays exactly this file when a task is reopened.
+  const stream = transcriptPath(cwd, sessionId)
+  record(stream, {
+    type: 'session',
+    version: 3,
+    id: sessionId,
+    timestamp: new Date().toISOString(),
+    cwd,
+  })
+  record(stream, {
+    type: 'message',
+    id: `u-${Date.now()}`,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: prompt }] },
+  })
+
   write({ type: 'session', id: sessionId, cwd })
   write({ type: 'agent_start' })
   write({ type: 'message_start', message: { role: 'user', content: prompt } })
@@ -78,6 +130,14 @@ async function main() {
     message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
   })
   write({ type: 'agent_end' })
+
+  record(stream, {
+    type: 'message',
+    id: `a-${Date.now()}`,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+  })
 }
 
 main().catch((error) => {

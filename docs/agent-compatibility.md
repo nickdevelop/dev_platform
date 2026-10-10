@@ -46,6 +46,7 @@ must never expose a control for a capability a backend did not declare.
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through (verified argv plumbing); real model resolution is **provisional**. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
 | `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ❌ — print/JSON mode cannot pause a tool call for confirmation. |
+| `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
 
 ## Diagnostics
 
@@ -69,17 +70,40 @@ backends' reports, and the registry walk always completes.
 
 ## Session history
 
-The platform does **not** read or replay an agent-native session's prior
-messages. Discovery and continue re-attach the platform's index to the native
-session id, but the workbench renders only the live normalized event stream it
-receives after a session is opened, and it says so explicitly in the
-conversation pane (a history note above the message log). Agent-native history
-remains the authority and is never copied into the platform.
+History stays the agent's property: the platform never copies a transcript into
+its own storage and never builds an index over one. What changed is that a task
+can now **replay** it. When a task is opened the platform re-attaches the
+session and asks the adapter for the prior turns through the optional
+`agents.HistoryReader` operation (declared by `sessionHistory`); the adapter
+reads the agent's own record and normalizes it into the same event envelope the
+live stream uses, marked `replayed`. The workbench renders history first, then
+subscribes, and draws a separator where the replay ends.
 
-This is a deliberate, documented scope boundary: reading native history would
-require a new adapter operation, and the frozen `AgentAdapter` contract
-deliberately exposes no history method, so a continuation shows no earlier
-turns rather than a partially reconstructed one.
+Because the read is scoped by working directory and agent-native session id
+rather than by an instance, a task whose instance has stopped — or whose
+platform was restarted — still replays.
+
+| | `opencode-v2` | `pi` |
+| --- | --- | --- |
+| Source | `GET /api/session/{id}/message` | the session's JSONL transcript (`<session dir>/<directory slug>/<timestamp>_<id>.jsonl`, version 3) |
+| Skipped | `reasoning` blocks, `idle` and `model-switched` entries | the `system` record, `thinking` blocks, `model_change` and `thinking_level_change` |
+| Tool activity | a `tool` block becomes a call/result pair (`state.input`, `state.output`, `state.status != "completed"` marks an error) | a `toolCall` block becomes the call; the `toolResult` record's `toolCallId`/`isError` link its result |
+
+The skips are deliberate and match the live stream, so a replayed conversation
+looks exactly like the one the user watched: pi's live parser already drops
+`thinking_*`, and opencode's live normalization produces no reasoning events.
+
+Reads are bounded by `agents.MaxHistoryEvents = 5000`: a reader keeps the most
+recent events, renumbers them from one and reports the truncation through
+`HistoryResult.Truncated` (surfaced as `truncated` on
+`GET /api/projects/{id}/sessions/{sessionId}/history`), so the workbench can say
+an older part was left out instead of presenting a partial transcript as
+complete. A transcript whose last line is half-written ends the read with the
+records already parsed rather than failing.
+
+opencode's history read needs a running server, because that is where the
+message log lives; the platform starts one if none is running before reading.
+pi's read touches only the filesystem, so it needs no process at all.
 
 ## Project backend enable/disable
 

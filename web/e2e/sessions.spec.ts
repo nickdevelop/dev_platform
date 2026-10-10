@@ -91,16 +91,8 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await page.goto(`/projects/${project.id}`)
   await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
 
-  // Start one pi instance and one opencode instance in the same project.
-  await page.locator('#backend-select').selectOption('pi')
-  await page.getByRole('button', { name: '启动实例' }).click()
-  await expect(page.locator('.instance-item', { hasText: 'pi' })).toBeVisible({ timeout: 20_000 })
-
-  await page.locator('#backend-select').selectOption('opencode-v2')
-  await page.getByRole('button', { name: '启动实例' }).click()
-  await expect(page.locator('.instance-item', { hasText: 'opencode-v2' })).toBeVisible({ timeout: 20_000 })
-
-  // One task per backend, created by choosing only the agent.
+  // Tasks are created by choosing only the agent backend; the platform starts
+  // whatever backend service each one needs.
   await createTask(page, 'pi', 'pi-session')
   await createTask(page, 'opencode-v2', 'oc-session-1')
   await createTask(page, 'opencode-v2', 'oc-hold')
@@ -137,7 +129,7 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await expect(taskRow(page, 'oc-hold')).not.toContainText('运行中', { timeout: 20_000 })
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
 
-  // The other sessions' turns and the instances are untouched.
+  // The other sessions' turns are untouched.
   await expect(taskRow(page, 'oc-session-1')).not.toContainText('断开')
   await expect(taskRow(page, 'pi-session')).not.toContainText('断开')
 })

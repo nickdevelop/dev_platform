@@ -113,15 +113,8 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   await expect(piReport).toContainText('1.1.0')
   await expect(ocReport).toContainText('2.0.24')
 
-  // Start one instance per backend.
-  await page.locator('#backend-select').selectOption('pi')
-  await page.getByRole('button', { name: '启动实例' }).click()
-  await expect(page.locator('.instance-item', { hasText: 'pi' })).toBeVisible({ timeout: 20_000 })
-  await page.locator('#backend-select').selectOption('opencode-v2')
-  await page.getByRole('button', { name: '启动实例' }).click()
-  await expect(page.locator('.instance-item', { hasText: 'opencode-v2' })).toBeVisible({ timeout: 20_000 })
-
-  // One task per backend, created by choosing only the agent.
+  // One task per backend, created by choosing only the agent; the platform
+  // starts whatever backend service each one needs.
   await createTask(page, 'pi', 'pi-failing')
   await createTask(page, 'opencode-v2', 'oc-healthy')
 
