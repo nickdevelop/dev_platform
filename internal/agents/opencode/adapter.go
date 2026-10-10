@@ -153,6 +153,7 @@ func New(options Options) *Adapter {
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
+		Interrupt:        true,
 		SessionDiscovery: true,
 		SessionContinue:  true,
 		Stop:             true,
@@ -1619,12 +1620,53 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
 
-// ListModels is replaced by the opencode model listing in the next change.
+// ListModels returns the models the instance's server can run, identified as
+// provider/model with each variant listed under its model.
 func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
-	return nil, errors.New("opencode: list models not implemented")
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(instanceID)
+	if err != nil {
+		return nil, err
+	}
+	records, err := inst.client.ListModels(ctx, inst.directory)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: list models on instance %q: %w", instanceID, err)
+	}
+	models := make([]agents.ModelInfo, 0, len(records))
+	for _, record := range records {
+		model := agents.ModelInfo{
+			ID:       record.ProviderID + "/" + record.ModelID,
+			Name:     record.Name,
+			Provider: record.ProviderID,
+		}
+		for _, variant := range record.Variants {
+			model.Variants = append(model.Variants, variant.ID)
+		}
+		models = append(models, model)
+	}
+	return models, nil
 }
 
-// Interrupt is replaced by the opencode turn interrupt in the next change.
+// Interrupt ends the running turn of one session through the server's
+// interrupt route. The instance and its other sessions keep running.
 func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
-	return errors.New("opencode: interrupt not implemented")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	if ref.Backend != agents.BackendOpenCodeV2 {
+		return fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	if err := inst.client.Interrupt(ctx, ref.SessionID); err != nil {
+		return fmt.Errorf("opencode: interrupt session %q: %w", ref.SessionID, err)
+	}
+	return nil
 }

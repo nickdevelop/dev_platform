@@ -132,8 +132,8 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 	if !caps.Streaming || !caps.SessionDiscovery || !caps.SessionContinue || !caps.Stop {
 		t.Fatalf("core capabilities not declared: %+v", caps)
 	}
-	if !caps.ModelSelection || !caps.ToolCallEvents {
-		t.Fatalf("model/tool capabilities not declared: %+v", caps)
+	if !caps.ModelSelection || !caps.ToolCallEvents || !caps.Interrupt {
+		t.Fatalf("model/tool/interrupt capabilities not declared: %+v", caps)
 	}
 	if caps.ToolConfirmation {
 		t.Fatalf("ToolConfirmation must stay false: the adapter cannot reply to permission requests: %+v", caps)

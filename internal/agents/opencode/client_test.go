@@ -347,3 +347,39 @@ func TestNewClientValidation(t *testing.T) {
 		t.Fatal("expected error for invalid base URL")
 	}
 }
+
+func TestClientListModels(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/model" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("directory"); got != "/work/app" {
+			t.Errorf("directory query = %q, want /work/app", got)
+		}
+		w.Write([]byte(`{"data":[{"id":"m1","modelID":"model","providerID":"prov","name":"Model","variants":[{"id":"fast"}]}]}`))
+	})
+
+	models, err := client.ListModels(context.Background(), "/work/app")
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].ProviderID != "prov" || models[0].ModelID != "model" ||
+		models[0].Name != "Model" || len(models[0].Variants) != 1 || models[0].Variants[0].ID != "fast" {
+		t.Fatalf("models = %+v", models)
+	}
+}
+
+func TestClientInterrupt(t *testing.T) {
+	var path, method string
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	if err := client.Interrupt(context.Background(), "ses_one"); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+	if method != http.MethodPost || path != "/api/session/ses_one/interrupt" {
+		t.Fatalf("request = %s %s", method, path)
+	}
+}

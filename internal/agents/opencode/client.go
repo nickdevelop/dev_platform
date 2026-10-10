@@ -226,6 +226,43 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (SessionInfo,
 	return payload.Data, nil
 }
 
+// ModelVariant mirrors Model.Variant: a named configuration of a model that a
+// message may select with ModelRef.Variant.
+type ModelVariant struct {
+	ID string `json:"id"`
+}
+
+// ModelRecord mirrors Model.Info: one model the server can run. ProviderID and
+// ModelID form the identity that ModelRef and the prompt route accept.
+type ModelRecord struct {
+	ID         string         `json:"id"`
+	ModelID    string         `json:"modelID"`
+	ProviderID string         `json:"providerID"`
+	Name       string         `json:"name"`
+	Variants   []ModelVariant `json:"variants,omitempty"`
+}
+
+// ListModels returns the models the server can run for the directory.
+func (c *Client) ListModels(ctx context.Context, directory string) ([]ModelRecord, error) {
+	query := url.Values{}
+	if directory != "" {
+		query.Set("directory", directory)
+	}
+	var payload struct {
+		Data []ModelRecord `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/model", query, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data, nil
+}
+
+// Interrupt ends the running turn of one session. The server keeps the
+// session and its other sessions.
+func (c *Client) Interrupt(ctx context.Context, sessionID string) error {
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/interrupt", nil, nil, nil)
+}
+
 // SwitchModel changes the model a session uses for subsequent turns.
 func (c *Client) SwitchModel(ctx context.Context, sessionID string, model ModelRef) error {
 	body := struct {
