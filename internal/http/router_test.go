@@ -781,7 +781,7 @@ func TestRouterServesSessionRoutesBehindSessionAndCSRF(t *testing.T) {
 	}
 
 	// A mutation without a CSRF token is rejected.
-	noCSRF := postJSON(t, client, server.URL, "/api/projects/1/sessions", "", map[string]string{"instanceId": "x"})
+	noCSRF := postJSON(t, client, server.URL, "/api/projects/1/sessions", "", map[string]string{"backend": "pi"})
 	noCSRF.Body.Close()
 	if noCSRF.StatusCode != http.StatusForbidden {
 		t.Errorf("POST sessions without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)

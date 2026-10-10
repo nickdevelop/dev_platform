@@ -72,6 +72,7 @@ type fakeAdapter struct {
 	stopErr   error
 	stopCalls int
 
+	startErr  error
 	next      int
 	subBuffer int
 	subs      map[string]chan agents.NormalizedEvent
@@ -113,6 +114,9 @@ func (f *fakeAdapter) Diagnostics(context.Context) agents.BackendDiagnostics {
 func (f *fakeAdapter) StartInstance(_ context.Context, req agents.StartInstanceRequest) (*agents.Instance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.startErr != nil {
+		return nil, f.startErr
+	}
 	f.next++
 	now := time.Now().UTC()
 	return &agents.Instance{
@@ -218,6 +222,14 @@ func (f *fakeAdapter) stopCallCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.stopCalls
+}
+
+// startCount reports how many instances the adapter has started, so a test can
+// assert create reused a running instance instead of starting another.
+func (f *fakeAdapter) startCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.next
 }
 
 // emit delivers ev on the instance's current subscription channel, failing the
@@ -328,7 +340,7 @@ func createNativeSession(t *testing.T, env *testEnv, nativeID string) Session {
 	}
 	env.fake.mu.Unlock()
 
-	session, err := env.svc.Create(context.Background(), env.projectID, env.instanceID, nativeID, "")
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, nativeID)
 	if err != nil {
 		t.Fatalf("Create(%s): %v", nativeID, err)
 	}
@@ -393,22 +405,99 @@ func TestCreateIndexesPlatformToNativeMapping(t *testing.T) {
 	}
 }
 
-// TestCreateRejectsWhenInstanceBelongsToAnotherProject verifies a client may
-// only create sessions within its authorized project.
-func TestCreateRejectsWhenInstanceBelongsToAnotherProject(t *testing.T) {
+// TestCreateReusesRunningInstanceForBackend verifies create selects the
+// project's running instance of the requested backend instead of starting a
+// new one.
+func TestCreateReusesRunningInstanceForBackend(t *testing.T) {
 	env := newTestEnv(t)
-	otherProject := env.registerProject(t, "beta")
-
 	env.fake.mu.Lock()
-	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n"}
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-reuse", Title: "reuse"}
 	env.fake.mu.Unlock()
 
-	_, err := env.svc.Create(context.Background(), otherProject, env.instanceID, "", "")
-	if !errors.Is(err, instances.ErrInstanceNotFound) {
-		t.Fatalf("Create cross-project error = %v, want ErrInstanceNotFound", err)
+	before := env.fake.startCount()
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "reuse")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if session.InstanceID != env.instanceID {
+		t.Errorf("session instance = %q, want the running instance %q", session.InstanceID, env.instanceID)
+	}
+	if got := env.fake.startCount(); got != before {
+		t.Errorf("StartInstance calls = %d, want %d (a running instance must be reused)", got, before)
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want 1", got)
+	}
+}
+
+// TestCreateStartsInstanceWhenNoneRunning verifies create starts one instance
+// of the requested backend when the project has none running.
+func TestCreateStartsInstanceWhenNoneRunning(t *testing.T) {
+	env := newTestEnv(t)
+	otherProject := env.registerProject(t, "beta")
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendPi, SessionID: "native-started", Title: "started"}
+	env.fake.mu.Unlock()
+
+	before := env.fake.startCount()
+	session, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "started")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got := env.fake.startCount(); got != before+1 {
+		t.Errorf("StartInstance calls = %d, want %d (one auto-start)", got, before+1)
+	}
+	if session.ProjectID != otherProject {
+		t.Errorf("session project = %d, want %d", session.ProjectID, otherProject)
+	}
+	if session.NativeSessionID != "native-started" {
+		t.Errorf("native session = %q, want native-started", session.NativeSessionID)
+	}
+}
+
+// TestCreateReportsStartFailureWithoutIndexing verifies a failed auto-start is
+// surfaced and leaves no session index row behind.
+func TestCreateReportsStartFailureWithoutIndexing(t *testing.T) {
+	env := newTestEnv(t)
+	otherProject := env.registerProject(t, "beta")
+	env.fake.mu.Lock()
+	env.fake.startErr = errors.New("adapter cannot start")
+	env.fake.mu.Unlock()
+
+	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "nope")
+	if !errors.Is(err, instances.ErrStartFailed) {
+		t.Fatalf("Create error = %v, want instances.ErrStartFailed", err)
 	}
 	if got := sessionCount(t, env.db); got != 0 {
-		t.Errorf("session count = %d, want 0 after a rejected create", got)
+		t.Errorf("session count = %d, want 0 after a failed start", got)
+	}
+}
+
+// TestCreateRefusesDisabledBackend verifies create does not silently start a
+// backend the project has disabled.
+func TestCreateRefusesDisabledBackend(t *testing.T) {
+	env := newTestEnv(t)
+	otherProject := env.registerProject(t, "beta")
+	if _, err := env.instances.SetBackendEnabled(otherProject, agents.BackendPi, false); err != nil {
+		t.Fatalf("disable backend: %v", err)
+	}
+
+	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "t")
+	if !errors.Is(err, instances.ErrBackendDisabled) {
+		t.Fatalf("Create error = %v, want instances.ErrBackendDisabled", err)
+	}
+}
+
+// TestCreateRejectsInvalidBackend verifies create refuses a missing or invalid
+// backend rather than guessing one.
+func TestCreateRejectsInvalidBackend(t *testing.T) {
+	env := newTestEnv(t)
+
+	if _, err := env.svc.Create(context.Background(), env.projectID, "", "t"); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("Create with empty backend error = %v, want ErrInvalidRequest", err)
+	}
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendID("nope"), "t"); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("Create with unknown backend error = %v, want ErrInvalidRequest", err)
 	}
 }
 
@@ -438,7 +527,7 @@ func TestCreateResolvesDuplicateNativeSessionRace(t *testing.T) {
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-race"}
 	env.fake.mu.Unlock()
 
-	session, err := env.svc.Create(context.Background(), env.projectID, env.instanceID, "", "")
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
 	if err != nil {
 		t.Fatalf("Create after a duplicate native-session race: %v", err)
 	}
@@ -590,9 +679,6 @@ func TestUnsupportedCapabilitiesAreRejected(t *testing.T) {
 
 	session := createNativeSession(t, env, "native-1")
 
-	if _, err := env.svc.Create(context.Background(), env.projectID, env.instanceID, "", "model-x"); !errors.Is(err, ErrUnsupportedCapability) {
-		t.Errorf("Create with model error = %v, want ErrUnsupportedCapability", err)
-	}
 	if _, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID); !errors.Is(err, ErrUnsupportedCapability) {
 		t.Errorf("Discover error = %v, want ErrUnsupportedCapability", err)
 	}
@@ -795,7 +881,7 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-http"}
 	env.fake.mu.Unlock()
-	body, _ := json.Marshal(createSessionRequest{InstanceID: env.instanceID, Title: "t"})
+	body, _ := json.Marshal(createSessionRequest{Backend: agents.BackendPi, Title: "t"})
 	rec = httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions", env.projectID), strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -809,6 +895,17 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	}
 	if created.NativeSessionID != "native-http" {
 		t.Errorf("created session = %+v, want native native-http", created)
+	}
+
+	// A body that still carries the removed instanceId is ignored: without a
+	// backend it is a 400, never a silently-created session.
+	legacy, _ := json.Marshal(map[string]string{"instanceId": env.instanceID})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions", env.projectID), strings.NewReader(string(legacy)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("POST legacy instanceId body = %d, want 400", rec.Code)
 	}
 
 	// Sending an empty message is a 400.
@@ -846,5 +943,43 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("POST stop with adapter failure = %d, want 502", rec.Code)
+	}
+}
+
+// TestHandleCreateMapsStartFailures verifies create maps a project-disabled
+// backend to 409 backend_disabled and a failed auto-start to 502
+// instance_start_failed, matching the instance routes' existing contract.
+func TestHandleCreateMapsStartFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	disabled := env.registerProject(t, "beta-disabled")
+	if _, err := env.instances.SetBackendEnabled(disabled, agents.BackendPi, false); err != nil {
+		t.Fatalf("disable backend: %v", err)
+	}
+
+	post := func(projectID uint) *httptest.ResponseRecorder {
+		body, _ := json.Marshal(createSessionRequest{Backend: agents.BackendPi})
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions", projectID), strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	rec := post(disabled)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "backend_disabled") {
+		t.Fatalf("POST disabled backend = %d %s, want 409 backend_disabled", rec.Code, rec.Body.String())
+	}
+
+	failing := env.registerProject(t, "beta-failing")
+	env.fake.mu.Lock()
+	env.fake.startErr = errors.New("adapter cannot start")
+	env.fake.mu.Unlock()
+	rec = post(failing)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "instance_start_failed") {
+		t.Fatalf("POST start failure = %d %s, want 502 instance_start_failed", rec.Code, rec.Body.String())
 	}
 }

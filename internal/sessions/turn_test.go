@@ -39,12 +39,12 @@ func TestTurnTracksOnlyTheSessionWhoseTurnChanged(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-busy"}
-	busy, err := env.svc.Create(ctx, env.projectID, env.instanceID, "busy", "")
+	busy, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "busy")
 	if err != nil {
 		t.Fatal(err)
 	}
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-other"}
-	other, err := env.svc.Create(ctx, env.projectID, env.instanceID, "other", "")
+	other, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "other")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestTurnEndsOnFailureAndProcessExit(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-failing"}
-	session, err := env.svc.Create(ctx, env.projectID, env.instanceID, "failing", "")
+	session, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "failing")
 	if err != nil {
 		t.Fatal(err)
 	}

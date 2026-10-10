@@ -53,6 +53,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusNotFound, "instance_not_found")
 	case errors.Is(err, instances.ErrInstanceNotRunning):
 		respondError(c, http.StatusConflict, "instance_not_running")
+	case errors.Is(err, instances.ErrBackendDisabled):
+		respondError(c, http.StatusConflict, "backend_disabled")
+	case errors.Is(err, instances.ErrStartFailed):
+		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, ErrBackendFailed), errors.Is(err, ErrInvalidSession):
@@ -83,10 +87,11 @@ type backendDiagnosticsResponse struct {
 }
 
 // createSessionRequest is the JSON body of POST /api/projects/{id}/sessions.
+// The backend selects the instance: the server reuses a running one of that
+// backend in the project or starts one. instanceId is no longer accepted.
 type createSessionRequest struct {
-	InstanceID string `json:"instanceId"`
-	Title      string `json:"title"`
-	Model      string `json:"model"`
+	Backend agents.BackendID `json:"backend"`
+	Title   string           `json:"title,omitempty"`
 }
 
 // sendMessageRequest is the JSON body of a session message.
@@ -126,7 +131,8 @@ func (s *Service) handleList(c *gin.Context) {
 	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
 }
 
-// handleCreate starts a new session on an instance in the project.
+// handleCreate starts a new session for the requested backend in the project,
+// reusing or starting an instance as needed.
 func (s *Service) handleCreate(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
@@ -137,11 +143,7 @@ func (s *Service) handleCreate(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	if req.InstanceID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	session, err := s.Create(c.Request.Context(), id, req.InstanceID, req.Title, req.Model)
+	session, err := s.Create(c.Request.Context(), id, req.Backend, req.Title)
 	if err != nil {
 		respondServiceError(c, err)
 		return

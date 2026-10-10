@@ -113,6 +113,10 @@ type InstanceService interface {
 	// List returns a project's instances, so session reconciliation can index
 	// them in one query instead of one Get per session row.
 	List(projectID uint) ([]instances.Instance, error)
+	// Start brings up a new instance of the backend in the project. It is the
+	// session layer's auto-start path for creating a session on a backend with
+	// no running instance.
+	Start(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error)
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 	// Stop terminates the instance (idempotently).
@@ -246,23 +250,26 @@ func (s *Service) Get(projectID uint, sessionID string) (Session, error) {
 	return s.sessionFromModel(row), nil
 }
 
-// Create starts a new agent-native session on an instance and indexes it.
-func (s *Service) Create(ctx context.Context, projectID uint, instanceID, title, model string) (Session, error) {
-	inst, err := s.scopedInstance(projectID, instanceID)
+// Create starts a new agent-native session for the project's backend. It
+// reuses the project's most recently created running instance of that backend
+// and starts one when none is running, then indexes the new session. A model
+// is never chosen here: the workbench sends one with each message.
+func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title string) (Session, error) {
+	if !backend.Valid() {
+		return Session{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
+	}
+	inst, err := s.instanceForBackend(ctx, projectID, backend)
 	if err != nil {
 		return Session{}, err
 	}
 	if !instanceRunnable(inst) {
 		return Session{}, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
 	}
-	if model != "" && !s.capabilities(inst.Backend).ModelSelection {
-		return Session{}, fmt.Errorf("%w: model selection", ErrUnsupportedCapability)
-	}
 	adapter, err := s.adapter(inst.Backend)
 	if err != nil {
 		return Session{}, err
 	}
-	ref, err := adapter.CreateSession(ctx, instanceID, agents.CreateSessionOptions{Title: title, Model: model})
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title})
 	if err != nil {
 		return Session{}, fmt.Errorf("%w: create session: %w", ErrBackendFailed, err)
 	}
@@ -274,6 +281,30 @@ func (s *Service) Create(ctx context.Context, projectID uint, instanceID, title,
 	}
 	s.ensureTracker(inst.ID)
 	return s.indexRef(projectID, inst, *ref, SessionActive)
+}
+
+// instanceForBackend returns the project's most recently created running
+// instance of the backend, starting one when none is running. The project's
+// backend enable/disable configuration is enforced by Start, whose refusals and
+// failures the caller surfaces unchanged.
+func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error) {
+	list, err := s.instances.List(projectID)
+	if err != nil {
+		return instances.Instance{}, err
+	}
+	var chosen instances.Instance
+	found := false
+	for _, inst := range list {
+		// List is in creation order, so the last match is the most recent.
+		if inst.Backend == backend && inst.Status == agents.InstanceRunning {
+			chosen = inst
+			found = true
+		}
+	}
+	if found {
+		return chosen, nil
+	}
+	return s.instances.Start(ctx, projectID, backend)
 }
 
 // Discover lists an instance's agent-native sessions and indexes each valid one
