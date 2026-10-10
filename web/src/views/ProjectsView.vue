@@ -1,24 +1,13 @@
 <script setup lang="ts">
-// Projects view: lists registered projects with search, and offers the six
-// management actions. Unregister (keeps the directory) and delete (removes
-// the directory) are deliberately separate, explicitly labeled flows; delete
-// always requires the typed project name and, when the server reports the
-// OS trash unavailable, an explicit permanent-delete confirmation.
+// Projects view: lists registered projects with search and the management
+// actions. The action dialogs are owned by ProjectManageDialog; this view only
+// chooses which one is open and reloads the list after a successful change.
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
-import {
-  createProject,
-  deleteProject,
-  listProjects,
-  moveProject,
-  registerProject,
-  renameProject,
-  unregisterProject,
-  type Project,
-} from '../api/projects'
+import { describeApiError, UnauthorizedError } from '../api/client'
+import { listProjects, type Project } from '../api/projects'
 import { useAuthStore } from '../stores/auth'
-import ProjectDialog from '../components/ProjectDialog.vue'
+import ProjectManageDialog from '../components/ProjectManageDialog.vue'
 import WorkspaceRootsDialog from '../components/WorkspaceRootsDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
@@ -33,70 +22,6 @@ const search = ref('')
 
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
 const showRoots = ref(false)
-const dialogError = ref('')
-const submitting = ref(false)
-const pathInput = ref('')
-const nameInput = ref('')
-const confirmNameInput = ref('')
-const permanent = ref(false)
-const trashUnavailable = ref(false)
-
-const dialogKind = computed(() => dialog.value?.kind ?? null)
-const activeProject = computed(() => dialog.value?.project ?? null)
-
-const dialogTitle = computed(() => {
-  const name = activeProject.value?.name
-  switch (dialogKind.value) {
-    case 'register':
-      return '注册已有项目目录'
-    case 'create':
-      return '新建项目目录'
-    case 'move':
-      return `移动项目 ${name}`
-    case 'rename':
-      return `重命名项目 ${name}`
-    case 'unregister':
-      return '移除平台记录（保留目录）'
-    case 'delete':
-      return '删除项目目录'
-    default:
-      return ''
-  }
-})
-
-const confirmLabel = computed(() => {
-  switch (dialogKind.value) {
-    case 'register':
-      return '注册'
-    case 'create':
-      return '创建'
-    case 'move':
-      return '移动'
-    case 'rename':
-      return '重命名'
-    case 'unregister':
-      return '移除记录'
-    case 'delete':
-      return '删除目录'
-    default:
-      return '确定'
-  }
-})
-
-const needsTypedConfirmation = computed(
-  () => dialogKind.value === 'move' || dialogKind.value === 'rename' || dialogKind.value === 'delete',
-)
-
-const typedNameMatches = computed(
-  () => !!activeProject.value && confirmNameInput.value === activeProject.value.name,
-)
-
-const canSubmit = computed(() => {
-  if (submitting.value) return false
-  if (needsTypedConfirmation.value && !typedNameMatches.value) return false
-  if (dialogKind.value === 'delete' && trashUnavailable.value && !permanent.value) return false
-  return true
-})
 
 const filteredProjects = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -129,74 +54,14 @@ function openAgents(project: Project) {
 
 function openDialog(kind: DialogKind, project: Project | null = null) {
   dialog.value = { kind, project }
-  dialogError.value = ''
-  pathInput.value = ''
-  nameInput.value = ''
-  confirmNameInput.value = ''
-  permanent.value = false
-  trashUnavailable.value = false
 }
 
 function closeDialog() {
   dialog.value = null
 }
 
-async function submitDialog() {
-  const current = dialog.value
-  if (!current || !canSubmit.value) return
-  submitting.value = true
-  dialogError.value = ''
-  try {
-    switch (current.kind) {
-      case 'register':
-        await registerProject(pathInput.value.trim(), auth.csrfToken)
-        break
-      case 'create':
-        await createProject(pathInput.value.trim(), nameInput.value.trim(), auth.csrfToken)
-        break
-      case 'move':
-        await moveProject(
-          current.project!.id,
-          pathInput.value.trim(),
-          confirmNameInput.value,
-          auth.csrfToken,
-        )
-        break
-      case 'rename':
-        await renameProject(
-          current.project!.id,
-          nameInput.value.trim(),
-          confirmNameInput.value,
-          auth.csrfToken,
-        )
-        break
-      case 'unregister':
-        await unregisterProject(current.project!.id, auth.csrfToken)
-        break
-      case 'delete':
-        await deleteProject(
-          current.project!.id,
-          confirmNameInput.value,
-          permanent.value,
-          auth.csrfToken,
-        )
-        break
-    }
-    closeDialog()
-    await load()
-  } catch (error) {
-    if (error instanceof UnauthorizedError) return // global handler went to login
-    if (error instanceof ApiError && error.code === 'trash_unavailable' && current.kind === 'delete') {
-      // The server refused to delete without the trash; nothing was removed.
-      // Offer the explicit permanent-delete confirmation.
-      trashUnavailable.value = true
-      dialogError.value = '系统回收站不可用，目录未被删除。如确认放弃该目录，请勾选永久删除后重试。'
-    } else {
-      dialogError.value = describeApiError(error)
-    }
-  } finally {
-    submitting.value = false
-  }
+async function onSubmitted() {
+  await load()
 }
 
 async function logout() {
@@ -255,73 +120,13 @@ async function logout() {
 
     <WorkspaceRootsDialog v-if="showRoots" @close="showRoots = false" />
 
-    <ProjectDialog
+    <ProjectManageDialog
       v-if="dialog"
-      :title="dialogTitle"
-      :danger="dialogKind === 'delete'"
+      :kind="dialog.kind"
+      :project="dialog.project"
       @close="closeDialog"
-    >
-      <form class="dialog-form" @submit.prevent="submitDialog">
-        <template v-if="dialogKind === 'register'">
-          <label for="dialog-path">目录的绝对路径</label>
-          <input id="dialog-path" v-model="pathInput" type="text" autocomplete="off" spellcheck="false" />
-          <p class="hint">目录必须位于已授权的工作区内；平台只记录路径，不会修改目录内容。</p>
-        </template>
-
-        <template v-else-if="dialogKind === 'create'">
-          <label for="dialog-path">父目录的绝对路径</label>
-          <input id="dialog-path" v-model="pathInput" type="text" autocomplete="off" spellcheck="false" />
-          <label for="dialog-name">项目目录名</label>
-          <input id="dialog-name" v-model="nameInput" type="text" autocomplete="off" spellcheck="false" />
-          <p class="hint">将在父目录下创建同名新目录；已存在的目标不会被覆盖。</p>
-        </template>
-
-        <template v-else-if="dialogKind === 'move'">
-          <p>把项目 {{ activeProject?.name }}（{{ activeProject?.path }}）移动到新位置。</p>
-          <label for="dialog-path">目标完整路径</label>
-          <input id="dialog-path" v-model="pathInput" type="text" autocomplete="off" spellcheck="false" />
-          <label for="dialog-confirm-name">输入当前项目名“{{ activeProject?.name }}”以确认移动</label>
-          <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
-        </template>
-
-        <template v-else-if="dialogKind === 'rename'">
-          <label for="dialog-name">新目录名</label>
-          <input id="dialog-name" v-model="nameInput" type="text" autocomplete="off" spellcheck="false" />
-          <label for="dialog-confirm-name">输入当前项目名“{{ activeProject?.name }}”以确认重命名</label>
-          <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
-        </template>
-
-        <template v-else-if="dialogKind === 'unregister'">
-          <p>将从平台移除项目 {{ activeProject?.name }} 的记录。</p>
-          <p class="safe-note">
-            磁盘上的目录 {{ activeProject?.path }} 会被完整保留，不受影响。
-          </p>
-        </template>
-
-        <template v-else-if="dialogKind === 'delete'">
-          <p class="danger-note">项目 {{ activeProject?.name }} 的目录将被删除！</p>
-          <p>平台会优先把目录 {{ activeProject?.path }} 移入系统回收站。</p>
-          <p v-if="trashUnavailable" class="danger-note">
-            系统回收站不可用。若继续，只能永久删除该目录，且无法恢复。
-          </p>
-          <label v-if="trashUnavailable" class="permanent-option">
-            <input v-model="permanent" type="checkbox" />
-            我确认永久删除该目录（不进回收站，无法恢复）
-          </label>
-          <label for="dialog-confirm-name">输入项目名“{{ activeProject?.name }}”以确认删除</label>
-          <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
-        </template>
-
-        <p v-if="dialogError" class="dialog-error" role="alert">{{ dialogError }}</p>
-
-        <div class="dialog-actions">
-          <button type="button" class="cancel" @click="closeDialog">取消</button>
-          <button type="button" class="confirm" :disabled="!canSubmit" @click="submitDialog">
-            {{ confirmLabel }}
-          </button>
-        </div>
-      </form>
-    </ProjectDialog>
+      @submitted="onSubmitted"
+    />
   </main>
 </template>
 
