@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -71,11 +72,13 @@ func (a Appearance) Validate() error {
 type Service struct {
 	db *gorm.DB
 	mu sync.Mutex
+	// now is the clock used for detection timestamps; tests override it.
+	now func() time.Time
 }
 
 // NewService builds the settings service over the platform database.
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db}
+	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }}
 }
 
 // Appearance returns the saved appearance, or the default when none is saved.
