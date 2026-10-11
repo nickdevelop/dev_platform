@@ -139,3 +139,24 @@ type SessionPrompt struct {
 	ResourceID uint   `gorm:"primaryKey;column:resource_id;not null;index"`
 	CreatedAt  time.Time
 }
+
+// ManagedResourceFile records platform ownership of one managed target file.
+// The tuple (project_id, backend, path) identifies the target; ManagedHash is
+// the digest of the last content the platform wrote, so an external edit is
+// detectable, and BackupPath points at the preserved prior content. Ownership
+// is written only after a successful, explicitly confirmed apply.
+// Table: managed_resource_files.
+type ManagedResourceFile struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_managed_file_target"`
+	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_managed_file_target"`
+	Path      string `gorm:"column:path;not null;uniqueIndex:idx_managed_file_target"`
+	// ManagedHash is the hex digest of the last platform-written content.
+	ManagedHash string `gorm:"column:managed_hash;not null"`
+	// BackupPath is the last preserved prior content, when one exists.
+	BackupPath string `gorm:"column:backup_path"`
+	// ResourceVersion identifies the resource definition version last applied.
+	ResourceVersion string `gorm:"column:resource_version"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}

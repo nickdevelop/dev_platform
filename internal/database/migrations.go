@@ -60,6 +60,9 @@ var migrationSteps = []migrationStep{
 	{version: 10, name: "create_session_prompts", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&SessionPrompt{})
 	}},
+	{version: 11, name: "create_managed_resource_files", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&ManagedResourceFile{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the
