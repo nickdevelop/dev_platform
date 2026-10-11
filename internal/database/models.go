@@ -27,8 +27,9 @@ type AuthSession struct {
 	CreatedAt time.Time
 }
 
-// WorkspaceRoot is an operator-authorized workspace root directory under
-// which projects may be registered or created. Table: workspace_roots.
+// WorkspaceRoot is a legacy table dropped by migration 13. It is retained only
+// because the historical migration 3 creates it; no current code reads or
+// writes it. Table: workspace_roots.
 type WorkspaceRoot struct {
 	ID        uint   `gorm:"primaryKey;column:id"`
 	Path      string `gorm:"column:path;not null;uniqueIndex"`

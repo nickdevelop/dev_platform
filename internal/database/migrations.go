@@ -71,6 +71,15 @@ var migrationSteps = []migrationStep{
 		}
 		return tx.Migrator().CreateIndex(&Resource{}, "idx_resource_kind_name")
 	}},
+	{version: 13, name: "drop_workspace_roots", run: func(tx *gorm.DB) error {
+		// Workspace-root authorization was removed: projects may live in any
+		// directory the process can access, so the authorization list is dead
+		// data. Dropping the table never touches the directories themselves.
+		if tx.Migrator().HasTable(&WorkspaceRoot{}) {
+			return tx.Migrator().DropTable(&WorkspaceRoot{})
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

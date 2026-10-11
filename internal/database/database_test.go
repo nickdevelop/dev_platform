@@ -77,7 +77,7 @@ func TestOpenMigratesFreshDatabase(t *testing.T) {
 	db := mustOpen(t, dataDir)
 	mustMigrate(t, db)
 
-	for _, model := range []any{&Setting{}, &AuthSession{}, &WorkspaceRoot{}, &Project{}, &AgentBackendConfig{}, &AgentInstance{}, &AgentSession{}} {
+	for _, model := range []any{&Setting{}, &AuthSession{}, &Project{}, &AgentBackendConfig{}, &AgentInstance{}, &AgentSession{}} {
 		if !db.Migrator().HasTable(model) {
 			t.Errorf("table for %T does not exist after migration", model)
 		}
@@ -101,6 +101,14 @@ func TestOpenMigratesFreshDatabase(t *testing.T) {
 	}
 	if afterReapply != applied {
 		t.Errorf("schema_migrations count after re-run = %d, want %d", afterReapply, applied)
+	}
+}
+
+func TestMigrateDropsWorkspaceRoots(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+	if db.Migrator().HasTable("workspace_roots") {
+		t.Error("workspace_roots table still exists after migration")
 	}
 }
 
