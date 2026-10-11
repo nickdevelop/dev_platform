@@ -13,9 +13,7 @@ import (
 	"devplatform/internal/resourcesync"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
-	"devplatform/internal/workspaces"
 )
-
 // maxRequestBodyBytes bounds every API request body (1 MiB). All platform
 // request DTOs are tiny JSON objects; a larger body is malformed or hostile
 // and is rejected before it can be buffered.
@@ -40,10 +38,6 @@ type Dependencies struct {
 	// Auth provides password login, sessions and CSRF. When nil, only the
 	// public health route is served (used by tests that do not need auth).
 	Auth *auth.Service
-	// Workspaces manages the authorized workspace roots. When set together
-	// with Auth, the workspace-root management routes are served under
-	// /api/workspaces behind RequireSession; it requires Auth to be set.
-	Workspaces *workspaces.Service
 	// Projects manages project records and their directories. When set
 	// together with Auth, the project routes are served under /api/projects
 	// behind RequireSession; it requires Auth to be set.
@@ -102,9 +96,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		// can accidentally omit authentication (CSRF is installed globally
 		// above).
 		protected := api.Group("", auth.RequireSession(deps.Auth))
-		if deps.Workspaces != nil {
-			deps.Workspaces.RegisterRoutes(protected)
-		}
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
 		}

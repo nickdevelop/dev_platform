@@ -318,8 +318,8 @@ type testEnv struct {
 	projectDir string
 }
 
-// newTestEnv builds one workspace root, one project, one registered pi adapter
-// and one running instance of it.
+// newTestEnv builds one project, one registered pi adapter and one running
+// instance of it.
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 
@@ -327,9 +327,6 @@ func newTestEnv(t *testing.T) *testEnv {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	if err := db.Create(&database.WorkspaceRoot{Path: root}).Error; err != nil {
-		t.Fatalf("create workspace root: %v", err)
 	}
 	projectDir := filepath.Join(root, "alpha")
 	if err := os.Mkdir(projectDir, 0o755); err != nil {

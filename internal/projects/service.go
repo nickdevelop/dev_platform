@@ -2,10 +2,9 @@
 // lifecycle of the managed project directories: register, create, rename,
 // move, unregister and delete.
 //
-// Every filesystem operation is confined to the operator-authorized workspace
-// roots and always acts on the canonical path returned by
-// workspaces.ResolveAuthorizedPath; raw user input is never re-derived into a
-// path after authorization. Record changes run in GORM transactions and no
+// Every filesystem operation acts on the canonical path returned by
+// paths.Resolve; raw user input is never re-derived into a path after
+// canonicalization. Record changes run in GORM transactions and no
 // target is ever overwritten. Most operations change the filesystem first and
 // update the record after; the compensating direction differs per operation
 // (create removes the new directory on a failed insert, relocate moves it
@@ -27,7 +26,7 @@ import (
 	"gorm.io/gorm"
 
 	"devplatform/internal/database"
-	"devplatform/internal/workspaces"
+	"devplatform/internal/paths"
 )
 
 var (
@@ -141,11 +140,11 @@ func (s *Service) Register(input string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	if err := s.requireDirectory(resolved.Path); err != nil {
+	if err := s.requireDirectory(resolved); err != nil {
 		return Project{}, err
 	}
 
-	row, err := s.insertProject(resolved.Path, filepath.Base(resolved.Path))
+	row, err := s.insertProject(resolved, filepath.Base(resolved))
 	if err != nil {
 		return Project{}, err
 	}
@@ -168,7 +167,7 @@ func (s *Service) Create(parentInput, name string) (Project, error) {
 		return Project{}, err
 	}
 
-	target := filepath.Join(parent.Path, name)
+	target := filepath.Join(parent, name)
 	if err := os.Mkdir(target, 0o755); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return Project{}, fmt.Errorf("%w: %q", ErrTargetExists, target)
@@ -214,10 +213,10 @@ func (s *Service) Rename(id uint, name, confirmName string) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	if target.Path == row.Path {
+	if target == row.Path {
 		return projectFromModel(row), nil
 	}
-	return s.relocate(row, target.Path, name)
+	return s.relocate(row, target, name)
 }
 
 // Move moves the project directory to the authorized destination path. The
@@ -245,27 +244,25 @@ func (s *Service) Move(id uint, destinationInput, confirmName string) (Project, 
 	if err != nil {
 		return Project{}, err
 	}
-	if destination.Path == row.Path {
+	if destination == row.Path {
 		return projectFromModel(row), nil
 	}
-	if pathWithin(row.Path, destination.Path) {
-		return Project{}, fmt.Errorf("%w: %q is inside the source %q", ErrInvalidTarget, destination.Path, row.Path)
+	if pathWithin(row.Path, destination) {
+		return Project{}, fmt.Errorf("%w: %q is inside the source %q", ErrInvalidTarget, destination, row.Path)
 	}
-	parent := filepath.Dir(destination.Path)
+	parent := filepath.Dir(destination)
 	if err := s.requireDirectory(parent); err != nil {
 		return Project{}, err
 	}
-	return s.relocate(row, destination.Path, filepath.Base(destination.Path))
+	return s.relocate(row, destination, filepath.Base(destination))
 }
 
-// ResolveDirectory loads the project with the given id, re-authorizes its
-// stored path against the currently configured workspace roots, checks that the
-// directory still exists, and returns the canonical directory the project
-// currently occupies. It is the gate the agent instance lifecycle uses to turn
-// a project id into an authorized working directory: an unknown project, a
-// removed authorizing root, a symlinked path whose canonical form changed, or a
-// missing directory all fail rather than yield a directory the platform must
-// not touch.
+// ResolveDirectory loads the project with the given id, re-canonicalizes its
+// stored path, checks that the directory still exists, and returns the
+// canonical directory the project currently occupies. It is the gate the agent
+// instance lifecycle uses to turn a project id into a working directory: an
+// unknown project, a symlinked path whose canonical form changed, or a missing
+// directory all fail rather than yield a directory the platform must not touch.
 func (s *Service) ResolveDirectory(id uint) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -428,45 +425,37 @@ func (s *Service) load(id uint) (database.Project, error) {
 	return row, nil
 }
 
-// resolve authorizes input against the registered workspace roots and returns
-// the canonical path to operate on.
-func (s *Service) resolve(input string) (workspaces.ResolvedPath, error) {
-	roots, err := s.authorizedRoots()
-	if err != nil {
-		return workspaces.ResolvedPath{}, err
-	}
-	resolved, err := workspaces.ResolveAuthorizedPath(input, roots)
-	if err != nil {
-		return workspaces.ResolvedPath{}, err
-	}
-	return resolved, nil
+// resolve canonicalizes input into the absolute path to operate on. The
+// platform no longer confines paths to authorized roots; it still rejects
+// relative, ambiguous, or unresolvable input.
+func (s *Service) resolve(input string) (string, error) {
+	return paths.Resolve(input)
 }
 
-// authorizeStoredPath re-authorizes a path already stored in the database
-// against the currently configured workspace roots before it is mutated. It
-// additionally requires the canonical resolution to be unchanged, so a stored
-// path whose components were replaced by symlinks (or whose authorizing root
-// was removed) is rejected instead of mutated.
+// authorizeStoredPath re-canonicalizes a path already stored in the database
+// before it is mutated. It requires the canonical resolution to be unchanged,
+// so a stored path whose components were replaced by symlinks is rejected
+// instead of mutated.
 func (s *Service) authorizeStoredPath(path string) error {
 	resolved, err := s.resolve(path)
 	if err != nil {
 		return err
 	}
-	if resolved.Path != path {
-		return fmt.Errorf("%w: %q now resolves to %q", ErrPathChanged, path, resolved.Path)
+	if resolved != path {
+		return fmt.Errorf("%w: %q now resolves to %q", ErrPathChanged, path, resolved)
 	}
 	return nil
 }
 
-// resolveExistingDirectory authorizes input and additionally requires it to be
-// an existing directory.
-func (s *Service) resolveExistingDirectory(input string) (workspaces.ResolvedPath, error) {
+// resolveExistingDirectory canonicalizes input and additionally requires it to
+// be an existing directory.
+func (s *Service) resolveExistingDirectory(input string) (string, error) {
 	resolved, err := s.resolve(input)
 	if err != nil {
-		return workspaces.ResolvedPath{}, err
+		return "", err
 	}
-	if err := s.requireDirectory(resolved.Path); err != nil {
-		return workspaces.ResolvedPath{}, err
+	if err := s.requireDirectory(resolved); err != nil {
+		return "", err
 	}
 	return resolved, nil
 }
@@ -484,19 +473,6 @@ func (s *Service) requireDirectory(path string) error {
 		return fmt.Errorf("%w: %q", ErrNotDirectory, path)
 	}
 	return nil
-}
-
-// authorizedRoots loads the registered workspace roots from the database.
-func (s *Service) authorizedRoots() ([]string, error) {
-	var rows []database.WorkspaceRoot
-	if err := s.db.Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("projects: load workspace roots: %w", err)
-	}
-	roots := make([]string, 0, len(rows))
-	for _, row := range rows {
-		roots = append(roots, row.Path)
-	}
-	return roots, nil
 }
 
 // validateName rejects names that are empty, reserved, or would name a path

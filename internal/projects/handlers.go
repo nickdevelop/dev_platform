@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"devplatform/internal/workspaces"
+	"devplatform/internal/paths"
 )
 
 // RegisterRoutes registers the project management routes under r. The caller
@@ -52,8 +52,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "confirmation_mismatch")
 	case errors.Is(err, ErrTrashUnavailable):
 		respondError(c, http.StatusConflict, "trash_unavailable")
-	case errors.Is(err, workspaces.ErrInvalidPath), errors.Is(err, workspaces.ErrOutsideRoots), errors.Is(err, ErrPathChanged):
-		respondError(c, http.StatusBadRequest, "path_not_authorized")
+	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, ErrPathChanged):
+		respondError(c, http.StatusBadRequest, "invalid_target")
 	case errors.Is(err, ErrRestoreFailed), errors.Is(err, ErrRollbackFailed):
 		respondError(c, http.StatusInternalServerError, "inconsistent_state")
 	default:

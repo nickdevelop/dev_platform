@@ -33,7 +33,6 @@ import (
 	platformruntime "devplatform/internal/runtime"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
-	"devplatform/internal/workspaces"
 )
 
 // setPasswordCommand is the first-run subcommand that configures the platform
@@ -277,7 +276,6 @@ func runServer(args []string) error {
 
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:         authService,
-		Workspaces:   workspaces.NewService(db),
 		Projects:     projectService,
 		Instances:    instanceService,
 		Sessions:     sessionService,

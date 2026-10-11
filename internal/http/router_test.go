@@ -28,7 +28,6 @@ import (
 	resourcesyncadapters "devplatform/internal/resourcesync/adapters"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
-	"devplatform/internal/workspaces"
 )
 
 // openTestDB opens and migrates a throwaway database under a temp directory.
@@ -66,9 +65,8 @@ func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	router := NewRouter(Dependencies{
-		Auth:       authSvc,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projects.NewService(db),
+		Auth:     authSvc,
+		Projects: projects.NewService(db),
 	})
 
 	jar, err := cookiejar.New(nil)
@@ -155,11 +153,6 @@ func TestRouterServesProjectsBehindSessionAndCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	addRoot := postJSON(t, client, base, "/api/workspaces/roots", csrf, map[string]string{"path": root})
-	addRoot.Body.Close()
-	if addRoot.StatusCode != http.StatusCreated {
-		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
-	}
 
 	projectDir := filepath.Join(root, "alpha")
 	if err := os.Mkdir(projectDir, 0o755); err != nil {
@@ -238,11 +231,6 @@ func TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	addRoot := postJSON(t, client, base, "/api/workspaces/roots", csrf, map[string]string{"path": root})
-	addRoot.Body.Close()
-	if addRoot.StatusCode != http.StatusCreated {
-		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
 	}
 
 	alpha := filepath.Join(root, "alpha")
@@ -378,100 +366,6 @@ func TestAuthSessionResponseIsNotCached(t *testing.T) {
 	body(t, resp)
 }
 
-// TestRouterServesWorkspaceRootsBehindSessionAndCSRF verifies the wiring of
-// the workspace service into the router: the routes are absent without the
-// service, require a session, and enforce CSRF on mutations.
-func TestRouterServesWorkspaceRootsBehindSessionAndCSRF(t *testing.T) {
-	client, base, csrf := newAuthedClient(t)
-
-	// Unauthenticated requests are rejected before anything else.
-	unauthed, err := (&http.Client{}).Get(base + "/api/workspaces/roots")
-	if err != nil {
-		t.Fatalf("GET roots: %v", err)
-	}
-	unauthed.Body.Close()
-	if unauthed.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated GET status = %d, want %d", unauthed.StatusCode, http.StatusUnauthorized)
-	}
-
-	// An authenticated mutation without a CSRF token is rejected.
-	root := t.TempDir()
-	payload, err := json.Marshal(map[string]string{"path": root})
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	noCSRF, err := http.NewRequest(http.MethodPost, base+"/api/workspaces/roots", strings.NewReader(string(payload)))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	noCSRF.Header.Set("Content-Type", "application/json")
-	resp, err := client.Do(noCSRF)
-	if err != nil {
-		t.Fatalf("POST roots without CSRF: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("POST without CSRF status = %d, want %d", resp.StatusCode, http.StatusForbidden)
-	}
-
-	// With session and CSRF the add/list/remove round trip works.
-	add, err := http.NewRequest(http.MethodPost, base+"/api/workspaces/roots", strings.NewReader(string(payload)))
-	if err != nil {
-		t.Fatalf("build request: %v", err)
-	}
-	add.Header.Set("Content-Type", "application/json")
-	add.Header.Set(auth.CSRFHeaderName, csrf)
-	resp, err = client.Do(add)
-	if err != nil {
-		t.Fatalf("POST roots: %v", err)
-	}
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("POST roots status = %d, want %d", resp.StatusCode, http.StatusCreated)
-	}
-	var created workspaces.Root
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
-		t.Fatalf("decode add body: %v", err)
-	}
-	resp.Body.Close()
-
-	canonical, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	if created.Path != canonical {
-		t.Errorf("created root path = %q, want %q", created.Path, canonical)
-	}
-
-	list, err := client.Get(base + "/api/workspaces/roots")
-	if err != nil {
-		t.Fatalf("GET roots: %v", err)
-	}
-	var body struct {
-		Roots []workspaces.Root `json:"roots"`
-	}
-	if err := json.NewDecoder(list.Body).Decode(&body); err != nil {
-		t.Fatalf("decode list body: %v", err)
-	}
-	list.Body.Close()
-	if len(body.Roots) != 1 {
-		t.Fatalf("roots = %+v, want exactly one", body.Roots)
-	}
-
-	remove, err := http.NewRequest(http.MethodDelete, base+"/api/workspaces/roots/"+strconv.FormatUint(uint64(created.ID), 10), nil)
-	if err != nil {
-		t.Fatalf("build delete request: %v", err)
-	}
-	remove.Header.Set(auth.CSRFHeaderName, csrf)
-	removed, err := client.Do(remove)
-	if err != nil {
-		t.Fatalf("DELETE root: %v", err)
-	}
-	removed.Body.Close()
-	if removed.StatusCode != http.StatusNoContent {
-		t.Errorf("DELETE root status = %d, want %d", removed.StatusCode, http.StatusNoContent)
-	}
-}
-
 // routerFakeAdapter is the smallest AgentAdapter that can start and stop an
 // instance, used to exercise the instance routes over the real router.
 type routerFakeAdapter struct {
@@ -542,10 +436,9 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	}
 	projectService := projects.NewService(db)
 	router := NewRouter(Dependencies{
-		Auth:       authSvc,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projectService,
-		Instances:  instances.NewService(db, registry, projectService),
+		Auth:      authSvc,
+		Projects:  projectService,
+		Instances: instances.NewService(db, registry, projectService),
 	})
 
 	jar, err := cookiejar.New(nil)
@@ -587,11 +480,6 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	addRoot := postJSON(t, client, base, "/api/workspaces/roots", session.CSRFToken, map[string]string{"path": root})
-	addRoot.Body.Close()
-	if addRoot.StatusCode != http.StatusCreated {
-		t.Fatalf("add root status = %d, want %d", addRoot.StatusCode, http.StatusCreated)
 	}
 	projectDir := filepath.Join(root, "alpha")
 	if err := os.Mkdir(projectDir, 0o755); err != nil {
@@ -711,11 +599,10 @@ func TestRouterServesSessionRoutesBehindSessionAndCSRF(t *testing.T) {
 	projectService := projects.NewService(db)
 	instanceService := instances.NewService(db, registry, projectService)
 	router := NewRouter(Dependencies{
-		Auth:       authSvc,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projectService,
-		Instances:  instanceService,
-		Sessions:   sessions.NewService(db, registry, instanceService),
+		Auth:      authSvc,
+		Projects:  projectService,
+		Instances: instanceService,
+		Sessions:  sessions.NewService(db, registry, instanceService),
 	})
 
 	server := httptest.NewServer(router)
@@ -820,7 +707,6 @@ func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
 	// panics on a conflicting route tree before any request is served.
 	router := NewRouter(Dependencies{
 		Auth:         authSvc,
-		Workspaces:   workspaces.NewService(db),
 		Projects:     projectService,
 		Instances:    instanceService,
 		Sessions:     sessions.NewService(db, registry, instanceService),

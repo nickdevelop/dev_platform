@@ -198,9 +198,8 @@ func (f *fakeAdapter) stoppedIDs() []string {
 }
 
 // newTestService builds an instances service over a throwaway database with one
-// authorized workspace root and one registered project, returning the service,
-// the database, the project id, the canonical project directory and the fake
-// pi adapter.
+// registered project, returning the service, the database, the project id, the
+// canonical project directory and the fake pi adapter.
 func newTestService(t *testing.T) (*Service, *gorm.DB, uint, string, *fakeAdapter) {
 	t.Helper()
 
@@ -208,9 +207,6 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, uint, string, *fakeAdapte
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	if err := db.Create(&database.WorkspaceRoot{Path: root}).Error; err != nil {
-		t.Fatalf("create workspace root: %v", err)
 	}
 	projectDir := filepath.Join(root, "alpha")
 	if err := os.Mkdir(projectDir, 0o755); err != nil {

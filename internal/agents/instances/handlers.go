@@ -9,7 +9,7 @@ import (
 
 	"devplatform/internal/agents"
 	"devplatform/internal/projects"
-	"devplatform/internal/workspaces"
+	"devplatform/internal/paths"
 )
 
 // RegisterRoutes registers the project-scoped agent instance routes under r.
@@ -56,7 +56,7 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, projects.ErrDirectoryMissing), errors.Is(err, projects.ErrNotDirectory):
 		respondError(c, http.StatusConflict, "project_directory_unavailable")
-	case errors.Is(err, workspaces.ErrInvalidPath), errors.Is(err, workspaces.ErrOutsideRoots), errors.Is(err, projects.ErrPathChanged):
+	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, projects.ErrPathChanged):
 		respondError(c, http.StatusBadRequest, "project_not_authorized")
 	default:
 		respondError(c, http.StatusInternalServerError, "server_error")

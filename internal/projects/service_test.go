@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"devplatform/internal/database"
-	"devplatform/internal/workspaces"
+	"devplatform/internal/paths"
 )
 
 // openTestDB opens and migrates a throwaway platform database. The GORM
@@ -88,9 +88,9 @@ func (f *fakeTrash) movedPaths() []string {
 	return append([]string(nil), f.moved...)
 }
 
-// newTestService builds a project service over a throwaway database with one
-// authorized workspace root, returning the service, database, the canonical
-// root path and the injected fake trash.
+// newTestService builds a project service over a throwaway database, returning
+// the service, database, a canonical working directory and the injected fake
+// trash.
 func newTestService(t *testing.T) (*Service, *gorm.DB, string, *fakeTrash) {
 	t.Helper()
 
@@ -98,9 +98,6 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, string, *fakeTrash) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	if err := db.Create(&database.WorkspaceRoot{Path: root}).Error; err != nil {
-		t.Fatalf("create workspace root: %v", err)
 	}
 	trash := &fakeTrash{dir: filepath.Join(t.TempDir(), "trash")}
 	return NewService(db, WithTrash(trash)), db, root, trash
@@ -177,9 +174,8 @@ func TestRegisterRejectsInvalidDirectories(t *testing.T) {
 	}{
 		{"missing", filepath.Join(root, "missing"), ErrDirectoryMissing},
 		{"file", filePath, ErrNotDirectory},
-		{"outside", t.TempDir(), workspaces.ErrOutsideRoots},
-		{"empty", "", workspaces.ErrInvalidPath},
-		{"relative", "relative/path", workspaces.ErrInvalidPath},
+		{"empty", "", paths.ErrInvalidPath},
+		{"relative", "relative/path", paths.ErrInvalidPath},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -259,9 +255,6 @@ func TestCreateRejectsCollisionAndMissingParent(t *testing.T) {
 	}
 	if _, err := svc.Create(filepath.Join(root, "nope", "deeper"), "child"); !errors.Is(err, ErrDirectoryMissing) {
 		t.Errorf("Create with missing parent error = %v, want ErrDirectoryMissing", err)
-	}
-	if _, err := svc.Create(t.TempDir(), "outside"); !errors.Is(err, workspaces.ErrOutsideRoots) {
-		t.Errorf("Create outside roots error = %v, want ErrOutsideRoots", err)
 	}
 	if got := projectCount(t, db); got != 0 {
 		t.Errorf("project count = %d, want 0", got)
@@ -343,9 +336,6 @@ func TestMoveProject(t *testing.T) {
 	mustMkdir(t, filepath.Join(root, "collide"))
 	if _, err := svc.Move(project.ID, filepath.Join(root, "collide"), "dst"); !errors.Is(err, ErrTargetExists) {
 		t.Errorf("Move collision error = %v, want ErrTargetExists", err)
-	}
-	if _, err := svc.Move(project.ID, filepath.Join(t.TempDir(), "x"), "dst"); !errors.Is(err, workspaces.ErrOutsideRoots) {
-		t.Errorf("Move outside roots error = %v, want ErrOutsideRoots", err)
 	}
 	if _, err := svc.Move(project.ID, filepath.Join(root, "other"), "wrong"); !errors.Is(err, ErrConfirmationMismatch) {
 		t.Errorf("Move wrong confirmation error = %v, want ErrConfirmationMismatch", err)
@@ -518,17 +508,21 @@ func TestConcurrentCreateTargetCollision(t *testing.T) {
 	}
 }
 
-func TestMutationsRejectedWhenAuthorizingRootRemoved(t *testing.T) {
+func TestMutationsRejectedWhenStoredPathChanged(t *testing.T) {
 	svc, db, root, trash := newTestService(t)
 
 	project, err := svc.Create(root, "orphan")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	// Removing the authorizing root must make the stored project path
-	// unauthorized again; the project must be refused, not mutated.
-	if err := db.Delete(&database.WorkspaceRoot{}, "path = ?", root).Error; err != nil {
-		t.Fatalf("remove workspace root: %v", err)
+	// Replacing the stored directory with a symlink to another location makes
+	// the stored path no longer canonical: the project must be refused, not
+	// mutated.
+	if err := os.Rename(project.Path, project.Path+"-real"); err != nil {
+		t.Fatalf("rename aside: %v", err)
+	}
+	if err := os.Symlink(project.Path+"-real", project.Path); err != nil {
+		t.Fatalf("symlink: %v", err)
 	}
 
 	cases := []struct {
@@ -541,13 +535,13 @@ func TestMutationsRejectedWhenAuthorizingRootRemoved(t *testing.T) {
 		{"permanent delete", func() error { return svc.Delete(project.ID, "orphan", true) }},
 	}
 	for _, tc := range cases {
-		if err := tc.call(); !errors.Is(err, workspaces.ErrOutsideRoots) {
-			t.Errorf("%s under removed root error = %v, want ErrOutsideRoots", tc.name, err)
+		if err := tc.call(); !errors.Is(err, ErrPathChanged) {
+			t.Errorf("%s under changed path error = %v, want ErrPathChanged", tc.name, err)
 		}
 	}
 
-	if info, err := os.Stat(filepath.Join(root, "orphan")); err != nil || !info.IsDir() {
-		t.Errorf("directory mutated despite refusal: err=%v", err)
+	if _, err := os.Lstat(filepath.Join(root, "orphan")); err != nil {
+		t.Errorf("stored path removed despite refusal: %v", err)
 	}
 	if got := projectCount(t, db); got != 1 {
 		t.Errorf("project count = %d, want the record preserved", got)

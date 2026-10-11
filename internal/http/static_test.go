@@ -17,7 +17,6 @@ import (
 
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
-	"devplatform/internal/workspaces"
 )
 
 // writeWebDist creates a minimal built-frontend layout: the SPA entry plus a
@@ -146,10 +145,9 @@ func TestStaticDoesNotShadowAPIRoutes(t *testing.T) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	deps := Dependencies{
-		Auth:       authSvc,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projects.NewService(db),
-		WebDir:     writeWebDist(t),
+		Auth:     authSvc,
+		Projects: projects.NewService(db),
+		WebDir:   writeWebDist(t),
 	}
 
 	health := get(t, deps, "/api/health")
