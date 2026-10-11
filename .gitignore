@@ -1,6 +1,9 @@
 # SDD scratch workspace
 .superpowers/
 
+# dev.sh runtime state (PID + log)
+.dev/
+
 # Node / Vue
 node_modules/
 dist/
