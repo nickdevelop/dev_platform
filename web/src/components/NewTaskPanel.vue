@@ -28,10 +28,14 @@ const selectedEnabled = computed(
   () => selectedBackend.value !== '' && agents.backendEnabledFor(selectedBackend.value),
 )
 
+// Only platform-enabled backends may be chosen for a new task. The server also
+// enforces this, but hiding them keeps the UI honest.
+const selectableBackends = computed(() => agents.backends.filter((entry) => entry.enabled !== false))
+
 onMounted(async () => {
   await Promise.all([agents.loadBackends(), agents.loadBackendConfigs(props.projectId)])
-  if (selectedBackend.value === '' && agents.backends.length > 0) {
-    selectedBackend.value = agents.backends[0].backend
+  if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
+    selectedBackend.value = selectableBackends.value[0].backend
   }
 })
 
@@ -56,7 +60,7 @@ async function createSession() {
       <div class="backend-row">
         <select id="backend-select" v-model="selectedBackend">
           <option
-            v-for="backend in agents.backends"
+            v-for="backend in selectableBackends"
             :key="backend.backend"
             :value="backend.backend"
             :disabled="!agents.backendEnabledFor(backend.backend)"

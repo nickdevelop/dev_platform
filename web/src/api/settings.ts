@@ -22,3 +22,56 @@ export function getAppearance(): Promise<Appearance> {
 export function putAppearance(appearance: Appearance, csrfToken: string): Promise<Appearance> {
   return apiRequest<Appearance>('PUT', '/settings/appearance', { body: appearance, csrfToken })
 }
+
+// Agent management DTOs and calls. enabled gates new task creation; pathSource
+// is auto when the executable was found on PATH, manual when the operator set a
+// path, none when neither applies.
+export interface AgentDto {
+  backend: string
+  enabled: boolean
+  path: string
+  pathSource: 'auto' | 'manual' | 'none'
+  available: boolean
+  version?: string
+  checkedAt?: string
+}
+
+export interface AgentList {
+  agents: AgentDto[]
+}
+
+export interface AgentDetection {
+  backend: string
+  status: 'ok' | 'error'
+  path?: string
+  version?: string
+  error?: string
+}
+
+export function listAgents(): Promise<AgentList> {
+  return apiRequest<AgentList>('GET', '/agents')
+}
+
+export function setAgentEnabled(
+  backend: string,
+  enabled: boolean,
+  csrfToken: string,
+): Promise<AgentDto> {
+  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}`, {
+    body: { enabled },
+    csrfToken,
+  })
+}
+
+export function setAgentPath(backend: string, path: string, csrfToken: string): Promise<AgentDto> {
+  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/path`, {
+    body: { path },
+    csrfToken,
+  })
+}
+
+export function detectAgent(backend: string, csrfToken: string): Promise<AgentDetection> {
+  return apiRequest<AgentDetection>('POST', `/agents/${encodeURIComponent(backend)}/detect`, {
+    csrfToken,
+  })
+}

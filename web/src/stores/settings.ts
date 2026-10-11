@@ -5,8 +5,14 @@
 import { defineStore } from 'pinia'
 import {
   defaultAppearance,
+  detectAgent,
   getAppearance,
+  listAgents,
   putAppearance,
+  setAgentEnabled,
+  setAgentPath,
+  type AgentDetection,
+  type AgentDto,
   type Appearance,
 } from '../api/settings'
 import { describeApiError, UnauthorizedError } from '../api/client'
@@ -28,6 +34,9 @@ export const useSettingsStore = defineStore('settings', {
     loading: false,
     saving: false,
     error: '',
+    agents: [] as AgentDto[],
+    agentsLoading: false,
+    agentsError: '',
   }),
 
   actions: {
@@ -65,6 +74,54 @@ export const useSettingsStore = defineStore('settings', {
         return false
       } finally {
         this.saving = false
+      }
+    },
+
+    async loadAgents() {
+      this.agentsLoading = true
+      try {
+        const { agents } = await listAgents()
+        this.agents = agents
+        this.agentsError = ''
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.agentsError = describeApiError(error)
+      } finally {
+        this.agentsLoading = false
+      }
+    },
+
+    async setAgentEnabled(backend: string, enabled: boolean): Promise<void> {
+      try {
+        await setAgentEnabled(backend, enabled, useAuthStore().csrfToken)
+        await this.loadAgents()
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.agentsError = describeApiError(error)
+      }
+    },
+
+    async setAgentPath(backend: string, path: string): Promise<boolean> {
+      try {
+        await setAgentPath(backend, path, useAuthStore().csrfToken)
+        await this.loadAgents()
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentsError = describeApiError(error)
+        return false
+      }
+    },
+
+    async detectAgent(backend: string): Promise<AgentDetection | null> {
+      try {
+        const detection = await detectAgent(backend, useAuthStore().csrfToken)
+        await this.loadAgents()
+        return detection
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.agentsError = describeApiError(error)
+        return null
       }
     },
   },
