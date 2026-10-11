@@ -13,7 +13,9 @@ import (
 	"devplatform/internal/resourcesync"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
+	"devplatform/internal/settings"
 )
+
 // maxRequestBodyBytes bounds every API request body (1 MiB). All platform
 // request DTOs are tiny JSON objects; a larger body is malformed or hostile
 // and is rejected before it can be buffered.
@@ -42,6 +44,10 @@ type Dependencies struct {
 	// together with Auth, the project routes are served under /api/projects
 	// behind RequireSession; it requires Auth to be set.
 	Projects *projects.Service
+	// Settings manages platform-wide appearance and agent configuration. When
+	// set together with Auth, the settings routes are served under
+	// /api/settings behind RequireSession.
+	Settings *settings.Service
 	// Instances manages per-project agent instances and their event fan-out.
 	// When set together with Auth, the instance routes are served under
 	// /api/projects/{id}/instances behind RequireSession.
@@ -98,6 +104,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		protected := api.Group("", auth.RequireSession(deps.Auth))
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
+		}
+		if deps.Settings != nil {
+			deps.Settings.RegisterRoutes(protected)
 		}
 		if deps.Instances != nil {
 			deps.Instances.RegisterRoutes(protected)

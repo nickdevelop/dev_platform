@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/agents"
-	"devplatform/internal/projects"
 	"devplatform/internal/paths"
+	"devplatform/internal/projects"
 )
 
 // RegisterRoutes registers the project-scoped agent instance routes under r.

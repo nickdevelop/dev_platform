@@ -33,6 +33,7 @@ import (
 	platformruntime "devplatform/internal/runtime"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
+	"devplatform/internal/settings"
 )
 
 // setPasswordCommand is the first-run subcommand that configures the platform
@@ -234,6 +235,7 @@ func runServer(args []string) error {
 	}
 
 	projectService := projects.NewService(db)
+	settingsService := settings.NewService(db)
 	// Backend adapters register themselves explicitly here (or through their
 	// own Register helper); there is no package-init side effect, so tests can
 	// build an isolated registry. Until an adapter is registered, starting an
@@ -277,6 +279,7 @@ func runServer(args []string) error {
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
 		Auth:         authService,
 		Projects:     projectService,
+		Settings:     settingsService,
 		Instances:    instanceService,
 		Sessions:     sessionService,
 		Resources:    resourceService,
