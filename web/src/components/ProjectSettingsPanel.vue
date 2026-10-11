@@ -10,6 +10,7 @@ import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import BackendDiagnostics from './BackendDiagnostics.vue'
+import ResourcesSection from './ResourcesSection.vue'
 
 const props = defineProps<{ projectId: number }>()
 
@@ -162,10 +163,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
     <p v-if="scanning" class="loading">扫描中…</p>
     <p v-if="discoverNotice" class="discover-notice" role="status">{{ discoverNotice }}</p>
 
-    <section class="resources" aria-label="资源关联">
-      <h2>资源关联</h2>
-      <p class="hint">待资源管理功能接入。Skill、MCP 与提示词将在资源管理功能完成后显示在此处。</p>
-    </section>
+    <ResourcesSection :project-id="projectId" />
   </section>
 </template>
 

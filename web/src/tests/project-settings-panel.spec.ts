@@ -8,6 +8,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsPanel from '../components/ProjectSettingsPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
+import { useResourcesStore } from '../stores/resources'
 import { useSessionsStore } from '../stores/sessions'
 import type { Capabilities } from '../api/sessions'
 
@@ -51,6 +52,10 @@ describe('ProjectSettingsPanel', () => {
     vi.spyOn(agents, 'loadDiagnostics').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'setBackendEnabled').mockResolvedValue(true as never)
+
+    const resources = useResourcesStore()
+    vi.spyOn(resources, 'loadProject').mockResolvedValue(undefined as never)
+    vi.spyOn(resources, 'loadAll').mockResolvedValue(undefined as never)
   })
 
   afterEach(() => {
@@ -94,12 +99,13 @@ describe('ProjectSettingsPanel', () => {
     expect((wrapper.emitted('manage')![0][1] as { id: number }).id).toBe(1)
   })
 
-  it('shows the resource placeholder without calling any resource endpoint', async () => {
+  it('shows the resource management section and loads project resources', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('待资源管理功能接入')
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(useResourcesStore().loadProject).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('资源管理')
+    expect(wrapper.text()).not.toContain('待资源管理功能接入')
   })
 
   it('asks for discovery from the project page without picking an instance', async () => {
