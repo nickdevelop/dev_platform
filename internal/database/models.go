@@ -102,3 +102,40 @@ type AgentSession struct {
 // TableName pins the session index table name (GORM would otherwise pluralize
 // AgentSession to agent_sessions already; pinning keeps it explicit).
 func (AgentSession) TableName() string { return "agent_sessions" }
+
+// Resource is one canonical, reusable Skill, MCP or prompt definition owned
+// by the platform. Secret material is never stored here: an MCP definition
+// keeps only an opaque SecretRef, while the value itself lives in the
+// platform-private secret store. Backends is a comma-separated list of the
+// backend ids the resource applies to (empty means unrestricted).
+// Table: resources.
+type Resource struct {
+	ID          uint   `gorm:"primaryKey;column:id"`
+	Kind        string `gorm:"column:kind;not null;index"`
+	Name        string `gorm:"column:name;not null"`
+	Description string `gorm:"column:description"`
+	Content     string `gorm:"column:content"`
+	Enabled     bool   `gorm:"column:enabled;not null;default:true"`
+	PromptScope string `gorm:"column:prompt_scope"`
+	SecretRef   string `gorm:"column:secret_ref"`
+	Backends    string `gorm:"column:backends"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ProjectResource links one resource to one project. The pair is the primary
+// key, so associating twice is idempotent rather than a duplicate row.
+// Table: project_resources.
+type ProjectResource struct {
+	ProjectID  uint `gorm:"primaryKey;column:project_id;not null;index"`
+	ResourceID uint `gorm:"primaryKey;column:resource_id;not null;index"`
+	CreatedAt  time.Time
+}
+
+// SessionPrompt links one prompt resource to one platform session, recording
+// the prompts selected for that conversation. Table: session_prompts.
+type SessionPrompt struct {
+	SessionID  string `gorm:"primaryKey;column:session_id;not null;index"`
+	ResourceID uint   `gorm:"primaryKey;column:resource_id;not null;index"`
+	CreatedAt  time.Time
+}

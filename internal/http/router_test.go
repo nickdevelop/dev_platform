@@ -23,6 +23,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	"devplatform/internal/projects"
+	"devplatform/internal/resources"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
@@ -785,5 +786,107 @@ func TestRouterServesSessionRoutesBehindSessionAndCSRF(t *testing.T) {
 	noCSRF.Body.Close()
 	if noCSRF.StatusCode != http.StatusForbidden {
 		t.Errorf("POST sessions without CSRF status = %d, want %d", noCSRF.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestRouterServesResourcesBehindSessionAndCSRF verifies the resource routes
+// register alongside the session routes without a route conflict and enforce
+// session authentication and CSRF like every other management route.
+func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
+	db := openTestDB(t)
+	authSvc := auth.NewService(db)
+	if err := authSvc.SetPassword("correct horse battery staple"); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	registry := agents.NewRegistry()
+	if err := registry.Register(agents.BackendPi, &routerFakeAdapter{}); err != nil {
+		t.Fatalf("register fake adapter: %v", err)
+	}
+	projectService := projects.NewService(db)
+	instanceService := instances.NewService(db, registry, projectService)
+	// Building the router with every service present is the assertion: gin
+	// panics on a conflicting route tree before any request is served.
+	router := NewRouter(Dependencies{
+		Auth:       authSvc,
+		Workspaces: workspaces.NewService(db),
+		Projects:   projectService,
+		Instances:  instanceService,
+		Sessions:   sessions.NewService(db, registry, instanceService),
+		Resources:  resources.NewService(db),
+	})
+
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+
+	// Unauthenticated resource routes are rejected.
+	resp, err := (&http.Client{}).Get(server.URL + "/api/resources")
+	if err != nil {
+		t.Fatalf("GET resources: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated GET /api/resources status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	client := &http.Client{Jar: jar}
+
+	sessionResp, err := client.Get(server.URL + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET session: %v", err)
+	}
+	var sessionBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(sessionResp.Body).Decode(&sessionBody); err != nil {
+		t.Fatalf("decode session: %v", err)
+	}
+	sessionResp.Body.Close()
+
+	loginReq, err := http.NewRequest(http.MethodPost, server.URL+"/api/auth/login",
+		strings.NewReader(`{"password":"correct horse battery staple"}`))
+	if err != nil {
+		t.Fatalf("build login: %v", err)
+	}
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.Header.Set(auth.CSRFHeaderName, sessionBody.CSRFToken)
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want 200", loginResp.StatusCode)
+	}
+
+	// A mutation without a CSRF token is rejected.
+	noCSRF := postJSON(t, client, server.URL, "/api/resources", "", map[string]any{"kind": "skill", "name": "x"})
+	noCSRF.Body.Close()
+	if noCSRF.StatusCode != http.StatusForbidden {
+		t.Fatalf("POST resources without CSRF status = %d, want 403", noCSRF.StatusCode)
+	}
+
+	created := postJSON(t, client, server.URL, "/api/resources", sessionBody.CSRFToken, map[string]any{
+		"kind":    "skill",
+		"name":    "router-skill",
+		"content": "body",
+		"enabled": true,
+	})
+	created.Body.Close()
+	if created.StatusCode != http.StatusCreated {
+		t.Fatalf("POST resources status = %d, want 201", created.StatusCode)
+	}
+
+	listed, err := client.Get(server.URL + "/api/resources")
+	if err != nil {
+		t.Fatalf("GET resources: %v", err)
+	}
+	listed.Body.Close()
+	if listed.StatusCode != http.StatusOK {
+		t.Fatalf("GET resources status = %d, want 200", listed.StatusCode)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"devplatform/internal/agents/instances"
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
+	"devplatform/internal/resources"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
@@ -54,6 +55,11 @@ type Dependencies struct {
 	// routes are served under /api/projects/{id}/sessions behind
 	// RequireSession.
 	Sessions *sessions.Service
+	// Resources manages canonical Skill, MCP and prompt definitions, their
+	// project associations and their session selection. When set together
+	// with Auth, the resource routes are served under /api/resources and
+	// /api/projects/{id}/resources behind RequireSession.
+	Resources *resources.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -97,6 +103,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Sessions != nil {
 			deps.Sessions.RegisterRoutes(protected)
+		}
+		if deps.Resources != nil {
+			deps.Resources.RegisterRoutes(protected)
 		}
 	}
 

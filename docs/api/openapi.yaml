@@ -1462,6 +1462,390 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /resources:
+    get:
+      summary: List resource definitions
+      description: >-
+        Returns the canonical Skill, MCP and prompt definitions in creation
+        order, optionally restricted to one kind. Secret material is never
+        returned; an MCP definition carries only an opaque secretRef.
+      operationId: listResources
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: kind
+          in: query
+          required: false
+          description: Restrict the list to one resource kind.
+          schema:
+            type: string
+            enum:
+              - skill
+              - mcp
+              - prompt
+      responses:
+        '200':
+          description: The resource definitions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceList'
+        '400':
+          description: The kind filter is not a known resource kind.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a resource definition
+      description: >-
+        Persists a canonical Skill, MCP or prompt definition. An MCP definition
+        accepts only an opaque secretRef, never a credential value.
+      operationId: createResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceDefinitionRequest'
+      responses:
+        '201':
+          description: Resource created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDefinition'
+        '400':
+          description: Malformed body or an invalid resource definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /resources/{id}:
+    get:
+      summary: Read a resource definition
+      description: Returns one resource definition. Secret material is never returned.
+      operationId: getResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: The resource definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDefinition'
+        '400':
+          description: Malformed resource id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /resources/{id}/update:
+    post:
+      summary: Update a resource definition
+      description: >-
+        Replaces the mutable fields of a resource. The kind is immutable, so a
+        resource cannot change class after projects or sessions reference it.
+      operationId: updateResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceDefinitionRequest'
+      responses:
+        '200':
+          description: Updated resource definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceDefinition'
+        '400':
+          description: Malformed body or an invalid definition.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /resources/{id}/delete:
+    post:
+      summary: Delete a resource definition
+      description: >-
+        Removes a resource and every project association and session selection
+        that references it.
+      operationId: deleteResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Resource deleted.
+        '400':
+          description: Malformed resource id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/resources:
+    get:
+      summary: List a project's associated resources
+      description: Returns the resource definitions associated with one project.
+      operationId: listProjectResources
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: The project's associated resources.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Associate a resource with a project
+      description: Links an existing resource to a project; the operation is idempotent.
+      operationId: associateProjectResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceReferenceRequest'
+      responses:
+        '204':
+          description: Resource associated.
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project or resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/resources/remove:
+    post:
+      summary: Disassociate a resource from a project
+      description: Removes a resource/project link; a missing link is a no-op.
+      operationId: disassociateProjectResource
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceReferenceRequest'
+      responses:
+        '204':
+          description: Resource disassociated.
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project or resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions/{sessionId}/prompts:
+    get:
+      summary: List a session's selected prompts
+      description: Returns the prompt resources selected for one session of a project.
+      operationId: listProjectSessionPrompts
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: The session's selected prompts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPromptList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project or session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Select a prompt for a session
+      description: >-
+        Records a prompt resource as selected for one session. The resource
+        must be a prompt; the operation is idempotent.
+      operationId: selectProjectSessionPrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceReferenceRequest'
+      responses:
+        '204':
+          description: Prompt selected.
+        '400':
+          description: Malformed body, or the resource is not a prompt.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project, session or resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions/{sessionId}/prompts/remove:
+    post:
+      summary: Clear a session prompt selection
+      description: Removes a prompt selection from a session; a missing selection is a no-op.
+      operationId: removeProjectSessionPrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceReferenceRequest'
+      responses:
+        '204':
+          description: Prompt selection cleared.
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project or session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -1474,6 +1858,29 @@ components:
       in: header
       required: true
       description: Must equal the platform_csrf cookie value.
+      schema:
+        type: string
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      description: Identifier of the resource.
+      schema:
+        type: integer
+        format: int64
+    ProjectId:
+      name: id
+      in: path
+      required: true
+      description: Identifier of the owning project.
+      schema:
+        type: integer
+        format: int64
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      description: Platform identifier of the session.
       schema:
         type: string
   responses:
@@ -2079,4 +2486,122 @@ components:
           description: >-
             Per-message model override; only honored when the backend declares
             modelSelection.
+      additionalProperties: false
+    ResourceDefinition:
+      type: object
+      description: >-
+        A canonical Skill, MCP or prompt definition. Secret material is never
+        present; an MCP definition carries only an opaque secretRef.
+      required:
+        - id
+        - kind
+        - name
+        - content
+        - enabled
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+            - skill
+            - mcp
+            - prompt
+        name:
+          type: string
+          description: Human-facing name; a single path segment with no separators.
+        description:
+          type: string
+        content:
+          type: string
+          description: Definition body (instruction text or backend-neutral definition).
+        enabled:
+          type: boolean
+        promptScope:
+          type: string
+          enum:
+            - project
+            - session
+          description: Present only for prompt definitions.
+        secretRef:
+          type: string
+          description: >-
+            Opaque credential reference for an MCP definition; never the
+            credential value.
+        backends:
+          type: array
+          items:
+            type: string
+          description: Backends the resource applies to; empty means unrestricted.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ResourceList:
+      type: object
+      required:
+        - resources
+      properties:
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceDefinition'
+      additionalProperties: false
+    SessionPromptList:
+      type: object
+      required:
+        - prompts
+      properties:
+        prompts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceDefinition'
+      additionalProperties: false
+    ResourceDefinitionRequest:
+      type: object
+      required:
+        - kind
+        - name
+      properties:
+        kind:
+          type: string
+          enum:
+            - skill
+            - mcp
+            - prompt
+        name:
+          type: string
+        description:
+          type: string
+        content:
+          type: string
+        enabled:
+          type: boolean
+        promptScope:
+          type: string
+          enum:
+            - project
+            - session
+        secretRef:
+          type: string
+          description: Opaque credential reference; never a credential value.
+        backends:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    ResourceReferenceRequest:
+      type: object
+      required:
+        - resourceId
+      properties:
+        resourceId:
+          type: integer
+          format: int64
       additionalProperties: false

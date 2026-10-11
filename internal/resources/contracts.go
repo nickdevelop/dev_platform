@@ -114,35 +114,45 @@ func (d ResourceDefinition) Validate() error {
 	if d.ID == 0 {
 		return fmt.Errorf("%w: id is zero", ErrInvalidResource)
 	}
-	if !d.Kind.Valid() {
-		return fmt.Errorf("%w: unknown kind %q", ErrInvalidResource, d.Kind)
-	}
-	if !validName(d.Name) {
-		return fmt.Errorf("%w: unsafe name %q", ErrInvalidResource, d.Name)
-	}
-	switch d.Kind {
-	case ResourcePrompt:
-		if !d.PromptScope.Valid() {
-			return fmt.Errorf("%w: prompt scope %q is not valid", ErrInvalidResource, d.PromptScope)
-		}
-	default:
-		if d.PromptScope != "" {
-			return fmt.Errorf("%w: prompt scope is only valid for prompts", ErrInvalidResource)
-		}
-	}
-	if d.SecretRef != "" && d.Kind != ResourceMCP {
-		return fmt.Errorf("%w: secret reference is only valid for mcp", ErrInvalidResource)
-	}
-	for _, backend := range d.Backends {
-		if !backend.Valid() {
-			return fmt.Errorf("%w: unknown backend %q", ErrInvalidResource, backend)
-		}
+	if err := validateFields(d.Kind, d.Name, d.PromptScope, d.SecretRef, d.Backends); err != nil {
+		return err
 	}
 	if d.CreatedAt.IsZero() {
 		return fmt.Errorf("%w: created timestamp is zero", ErrInvalidResource)
 	}
 	if d.UpdatedAt.IsZero() {
 		return fmt.Errorf("%w: updated timestamp is zero", ErrInvalidResource)
+	}
+	return nil
+}
+
+// validateFields checks the client-settable fields shared by a persisted
+// definition and a create/update input. Identity and timestamps are not part
+// of it: a caller validates input before the platform assigns them.
+func validateFields(kind ResourceKind, name string, scope PromptScope, secretRef string, backends []agents.BackendID) error {
+	if !kind.Valid() {
+		return fmt.Errorf("%w: unknown kind %q", ErrInvalidResource, kind)
+	}
+	if !validName(name) {
+		return fmt.Errorf("%w: unsafe name %q", ErrInvalidResource, name)
+	}
+	switch kind {
+	case ResourcePrompt:
+		if !scope.Valid() {
+			return fmt.Errorf("%w: prompt scope %q is not valid", ErrInvalidResource, scope)
+		}
+	default:
+		if scope != "" {
+			return fmt.Errorf("%w: prompt scope is only valid for prompts", ErrInvalidResource)
+		}
+	}
+	if secretRef != "" && kind != ResourceMCP {
+		return fmt.Errorf("%w: secret reference is only valid for mcp", ErrInvalidResource)
+	}
+	for _, backend := range backends {
+		if !backend.Valid() {
+			return fmt.Errorf("%w: unknown backend %q", ErrInvalidResource, backend)
+		}
 	}
 	return nil
 }

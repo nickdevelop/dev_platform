@@ -27,6 +27,7 @@ import (
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
 	"devplatform/internal/projects"
+	"devplatform/internal/resources"
 	platformruntime "devplatform/internal/runtime"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
@@ -247,6 +248,7 @@ func runServer(args []string) error {
 	}
 	instanceService := instances.NewService(db, registry, projectService)
 	sessionService := sessions.NewService(db, registry, instanceService)
+	resourceService := resources.NewService(db)
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -266,6 +268,7 @@ func runServer(args []string) error {
 		Projects:   projectService,
 		Instances:  instanceService,
 		Sessions:   sessionService,
+		Resources:  resourceService,
 		WebDir:     webDir,
 	})
 
