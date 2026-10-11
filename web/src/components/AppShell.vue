@@ -10,6 +10,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { Project } from '../api/projects'
 import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
+import { useSettingsStore } from '../stores/settings'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from './ProjectManageDialog.vue'
 import ProjectTree from './ProjectTree.vue'
@@ -20,6 +21,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const projects = useProjectsStore()
+const settings = useSettingsStore()
 
 const search = ref('')
 const ready = ref(false)
@@ -44,6 +46,9 @@ const settingsMode = computed(() => route.meta.settings === true)
 onMounted(async () => {
   await projects.load()
   ready.value = true
+  // The appearance is shared platform config: fetch it after auth and apply
+  // it over the cached value painted before mount.
+  void settings.loadAppearance()
 })
 
 function openProject(id: number) {
