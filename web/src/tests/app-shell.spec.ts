@@ -149,4 +149,18 @@ describe('three-pane app shell', () => {
     expect(router.currentRoute.value.name).toBe('task')
     expect(router.currentRoute.value.params.sessionId).toBe('sess-new')
   })
+
+  it('gives the task conversation a non-scrolling outer pane', async () => {
+    const { wrapper } = await setup('/projects/1/tasks/sess-1', { TaskChatPanel: true })
+
+    // The conversation owns the only scroller (the message log); the shell's
+    // content pane must not scroll as well, or the page shows two scrollbars.
+    expect(wrapper.find('.pane').classes()).toContain('pane-full')
+  })
+
+  it('lets the project settings pane scroll in the content region', async () => {
+    const { wrapper } = await setup('/projects/1', { ProjectSettingsPanel: true })
+
+    expect(wrapper.find('.pane').classes()).not.toContain('pane-full')
+  })
 })

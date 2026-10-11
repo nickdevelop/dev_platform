@@ -1,10 +1,13 @@
 <script setup lang="ts">
 // Renders one session's message log, one line per kind: a user turn is a
-// right-aligned bubble, agent text is a left-aligned one, reasoning and tool
-// output are collapsed blocks the reader can open, and tool activity is shown
-// only when the session's capabilities declare tool-call events. Agent output
-// is always interpolated as text — never v-html — so backend content cannot
-// inject markup.
+// right-aligned bubble, agent replies are full-width text, reasoning is a
+// collapsed Thinking block, and each tool call and its result form one
+// collapsed block. Tool activity is shown only when the session's capabilities
+// declare tool-call events. User turns, reasoning and tool output are
+// interpolated as text; agent replies are rendered as sanitized markdown (see
+// ../markdown), so backend content still cannot inject live markup.
+import { computed } from 'vue'
+import { renderMarkdown } from '../markdown'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry, StreamStatus } from '../stores/sessions'
 
@@ -20,10 +23,77 @@ function toolEventsVisible(): boolean {
   return props.capabilities?.toolCallEvents === true
 }
 
-// toolSummary names a tool call in one line. The argument JSON, when the
-// backend sent any, is a short hint rather than the whole payload.
-function toolSummary(entry: ChatEntry): string {
+// A tool call and its result are one block, keyed by the call id. An agent can
+// report a result more than once; only the latest is kept so a call never
+// renders several results.
+const resultsByCall = computed(() => {
+  const results = new Map<string, ChatEntry>()
+  for (const entry of props.messages) {
+    if (entry.kind === 'tool_result' && entry.callId) results.set(entry.callId, entry)
+  }
+  return results
+})
+
+// Every call id that has a call block. A result whose call is missing (a
+// truncated history, say) is rendered on its own instead of being dropped.
+const callIds = computed(() => {
+  const ids = new Set<string>()
+  for (const entry of props.messages) {
+    if (entry.kind === 'tool_call' && entry.callId) ids.add(entry.callId)
+  }
+  return ids
+})
+
+function resultForCall(entry: ChatEntry): ChatEntry | undefined {
+  return entry.callId ? resultsByCall.value.get(entry.callId) : undefined
+}
+
+// A result whose call is present renders inside that call's block, so it is
+// dropped from the top-level list. A result with no matching call (a truncated
+// history, say) stays on its own so its output is never lost.
+const visibleEntries = computed(() =>
+  props.messages.filter(
+    (entry) =>
+      !(entry.kind === 'tool_result' && entry.callId !== undefined && callIds.value.has(entry.callId)),
+  ),
+)
+
+function toolName(entry: ChatEntry): string {
   return entry.name ?? entry.text
+}
+
+// The argument keys that name what a tool acted on, in preference order, so the
+// collapsed line reads like `read /path` or `bash ls`. Unknown tools fall back
+// to their first string argument.
+const ARGUMENT_KEYS = [
+  'path',
+  'filePath',
+  'file_path',
+  'file',
+  'command',
+  'pattern',
+  'query',
+  'url',
+  'prompt',
+  'description',
+  'name',
+]
+
+function toolArgument(entry: ChatEntry): string {
+  const input = entry.input
+  if (input === null || input === undefined) return ''
+  if (typeof input === 'string') return input
+  if (typeof input === 'object') {
+    const record = input as Record<string, unknown>
+    for (const key of ARGUMENT_KEYS) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim() !== '') return value
+    }
+    for (const value of Object.values(record)) {
+      if (typeof value === 'string' && value.trim() !== '') return value
+    }
+  }
+  return ''
 }
 </script>
 
@@ -40,10 +110,11 @@ function toolSummary(entry: ChatEntry): string {
     </p>
 
     <ol class="entries" role="log" aria-live="polite" aria-label="会话消息">
-      <li v-for="entry in props.messages" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
+      <li v-for="entry in visibleEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
         <template v-if="entry.kind === 'message'">
           <div class="bubble" :class="entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
-            <span class="message-text">{{ entry.text }}</span>
+            <span v-if="entry.role === 'user'" class="message-text">{{ entry.text }}</span>
+            <div v-else class="message-text markdown-body" v-html="renderMarkdown(entry.text)"></div>
             <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
           </div>
         </template>
@@ -51,33 +122,45 @@ function toolSummary(entry: ChatEntry): string {
         <template v-else-if="entry.kind === 'thinking'">
           <details class="thinking" data-test="thinking">
             <summary>
-              <span class="thinking-title">{{ entry.streaming ? '思考中…' : '已思考' }}</span>
-              <span class="toggle-hint">点击展开</span>
+              <span class="thinking-icon" aria-hidden="true">🧠</span>
+              <span class="thinking-title">Thinking</span>
             </summary>
             <p class="thinking-text">{{ entry.text }}</p>
           </details>
         </template>
 
         <template v-else-if="entry.kind === 'tool_call'">
-          <div v-if="toolEventsVisible()" class="tool-call" data-test="tool-call">
-            <span class="tool-label">工具调用</span>
-            <span class="tool-name">{{ toolSummary(entry) }}</span>
-          </div>
+          <details v-if="toolEventsVisible()" class="tool" data-test="tool-call">
+            <summary>
+              <span class="tool-icon" aria-hidden="true">🔧</span>
+              <span class="tool-name">{{ toolName(entry) }}</span>
+              <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
+            </summary>
+            <div class="tool-body">
+              <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
+              <pre
+                v-if="resultForCall(entry)"
+                class="tool-output"
+                :class="{ 'is-error': resultForCall(entry)?.isError }"
+              >{{ resultForCall(entry)?.text }}</pre>
+              <p v-else class="tool-running" role="status">运行中…</p>
+            </div>
+          </details>
         </template>
 
         <template v-else-if="entry.kind === 'tool_result'">
           <details
             v-if="toolEventsVisible()"
-            class="tool-result"
-            :class="{ 'is-error': entry.isError }"
+            class="tool"
             data-test="tool-result"
           >
             <summary>
-              <span class="tool-label">工具结果</span>
-              <span class="tool-length">{{ entry.text.length }} 字</span>
-              <span class="toggle-hint">点击展开</span>
+              <span class="tool-icon" aria-hidden="true">🔧</span>
+              <span class="tool-name">工具结果</span>
             </summary>
-            <pre class="tool-output">{{ entry.text }}</pre>
+            <div class="tool-body">
+              <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
+            </div>
           </details>
         </template>
 
@@ -120,8 +203,81 @@ function toolSummary(entry: ChatEntry): string {
 }
 
 .message-text {
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* A user turn keeps its own line breaks; agent replies are rendered markdown,
+   whose block elements carry their own spacing. */
+.bubble-user .message-text {
+  white-space: pre-wrap;
+}
+
+.markdown-body :deep(p) {
+  margin: 0 0 0.5rem;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  margin: 0.5rem 0 0.35rem;
+  line-height: 1.3;
+}
+
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.markdown-body :deep(code) {
+  background: #e2e8f0;
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.markdown-body :deep(pre) {
+  margin: 0 0 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+  overflow-x: auto;
+}
+
+.markdown-body :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: 0.8rem;
+}
+
+.markdown-body :deep(blockquote) {
+  margin: 0 0 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+}
+
+.markdown-body :deep(a) {
+  color: #2563eb;
+}
+
+.markdown-body :deep(table) {
+  border-collapse: collapse;
+  margin: 0 0 0.5rem;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid #cbd5e1;
+  padding: 0.2rem 0.5rem;
 }
 
 /* A conversation reads as two columns: the user's turns sit on the right, the
@@ -147,102 +303,95 @@ function toolSummary(entry: ChatEntry): string {
   color: #1e3a8a;
 }
 
+/* Agent replies are full-width plain text: no bubble and no background, unlike
+   the user's own turns. */
 .bubble-agent {
-  margin-right: auto;
-  background: #f1f5f9;
+  width: 100%;
+  max-width: 100%;
+  margin-right: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
   color: #1f2328;
 }
 
-.tool-call {
+.thinking,
+.tool {
+  width: 100%;
+}
+
+.thinking summary,
+.tool summary {
+  cursor: pointer;
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
+  gap: 0.4rem;
   font-size: 0.85rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.35rem 0.6rem;
-  background: #fbfcfe;
-}
-
-.tool-label {
   color: #475569;
-  font-weight: 600;
 }
 
-.tool-name,
-.tool-output,
-.tool-length,
+.thinking-title {
+  font-style: italic;
+}
+
+.thinking-icon,
+.tool-icon {
+  font-size: 0.9rem;
+}
+
+/* Expanded reasoning and tool bodies carry the background; their summary lines
+   stay flat, matching the agent's plain-text replies. */
+.thinking-text,
+.tool-body {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
 .thinking-text {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  color: #475569;
 }
 
 .tool-name {
   color: #0f172a;
+  font-weight: 600;
 }
 
-.tool-result summary,
-.thinking summary {
-  cursor: pointer;
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  font-size: 0.85rem;
-  color: #475569;
+.tool-arg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.tool-result {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0.35rem 0.6rem;
-  background: #fbfcfe;
-}
-
-.tool-result.is-error {
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.tool-output {
-  margin: 0.4rem 0 0;
-  max-height: 22rem;
-  overflow: auto;
+.tool-args,
+.tool-output,
+.tool-running {
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
   color: #334155;
 }
 
-.tool-result.is-error .tool-output {
+.tool-args + .tool-output {
+  margin-top: 0.4rem;
+}
+
+.tool-output.is-error {
   color: #b91c1c;
 }
 
-.toggle-hint,
-.tool-length {
-  color: #94a3b8;
-  font-size: 0.75rem;
-}
-
-.thinking {
-  border-left: 2px solid #e2e8f0;
-  padding-left: 0.6rem;
-}
-
-.thinking-text {
-  margin: 0.4rem 0 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.8rem;
+.tool-running {
   color: #64748b;
-}
-
-.tool-call,
-.tool-result {
-  display: block;
-}
-
-.tool-call {
-  display: flex;
-  align-items: baseline;
 }
 
 .stream-status {

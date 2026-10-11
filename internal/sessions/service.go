@@ -250,6 +250,23 @@ func (s *Service) Get(projectID uint, sessionID string) (Session, error) {
 	return s.sessionFromModel(row), nil
 }
 
+// Delete removes one session from the platform's index. The agent-native
+// transcript is the agent's and is never touched, so a later discovery of the
+// same native session indexes it again; the delete only forgets it here.
+func (s *Service) Delete(projectID uint, sessionID string) error {
+	row, err := s.loadScoped(projectID, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := s.repo.delete(row.ID); err != nil {
+		return err
+	}
+	// The turn tracker is keyed by native session; drop the entry so a later
+	// re-index of the same native session starts from a clean state.
+	s.forgetTurn(row.InstanceID, row.NativeSessionID)
+	return nil
+}
+
 // Create starts a new agent-native session for the project's backend. It
 // reuses the project's most recently created running instance of that backend
 // and starts one when none is running, then indexes the new session. A model

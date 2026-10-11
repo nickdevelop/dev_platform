@@ -221,4 +221,31 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('Task A')
     expect(requested).toContain('/api/projects/2/sessions')
   })
+
+  it('toggles a project on row click without opening its settings', async () => {
+    stubSessions({ 1: [session({ id: 's1', title: 'Task A' })] })
+    const wrapper = mountTree({ activeProjectId: null })
+    await flushPromises()
+
+    const toggle = wrapper.find('.project-toggle')
+    expect(toggle.exists()).toBe(true)
+
+    await toggle.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Task A')
+    expect(wrapper.emitted('select-project')).toBeUndefined()
+
+    await toggle.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Task A')
+  })
+
+  it('opens project settings from the settings control', async () => {
+    stubSessions({ 1: [] })
+    const wrapper = mountTree({ activeProjectId: null })
+    await flushPromises()
+
+    await wrapper.find('.project-settings').trigger('click')
+    expect(wrapper.emitted('select-project')).toEqual([[1]])
+  })
 })

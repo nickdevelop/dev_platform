@@ -11,6 +11,7 @@ import { defineStore } from 'pinia'
 import {
   continueProjectSession,
   createProjectSession,
+  deleteProjectSession,
   discoverProjectInstanceSessions,
   discoverProjectSessions as discoverProjectSessionsRequest,
   getSessionHistory,
@@ -27,10 +28,10 @@ import {
 import { describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
 
-// One rendered line in a session's log. Agent output is only ever carried as
-// text and interpolated, never injected as HTML. A `separator` line marks where
-// replayed history ends and the live stream begins; a `thinking` line is the
-// agent's reasoning, which the pane shows collapsed.
+// One rendered line in a session's log. Agent replies are rendered as sanitized
+// markdown in the view (see ../markdown); every other kind is plain text. A
+// `separator` line marks where replayed history ends and the live stream begins;
+// a `thinking` line is the agent's reasoning, which the pane shows collapsed.
 export interface ChatEntry {
   id: string
   kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'separator'
@@ -39,6 +40,9 @@ export interface ChatEntry {
   streaming: boolean
   callId?: string
   name?: string
+  // Tool calls carry the raw argument payload so the view can summarise it
+  // (name + representative argument) without the store knowing tool schemas.
+  input?: unknown
   isError?: boolean
 }
 
@@ -71,6 +75,7 @@ function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | 
         streaming: false,
         callId: event.toolCall.callId,
         name: event.toolCall.name,
+        input: event.toolCall.input,
       }
     case 'tool_result':
       if (!event.toolResult) return null
@@ -225,6 +230,31 @@ export const useSessionsStore = defineStore('sessions', {
         this.error = describeApiError(error)
         return null
       }
+    },
+
+    // deleteSession removes a session from the platform's index. It closes the
+    // session's stream and drops its local state so nothing stale can render;
+    // the agent-native transcript is untouched and may be rediscovered later.
+    async deleteSession(projectId: number, sessionId: string): Promise<boolean> {
+      const auth = useAuthStore()
+      try {
+        await deleteProjectSession(projectId, sessionId, auth.csrfToken)
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.error = describeApiError(error)
+        return false
+      }
+      this.unsubscribe(sessionId)
+      this.sessions = this.sessions.filter((entry) => entry.id !== sessionId)
+      if (this.activeSessionId === sessionId) this.activeSessionId = null
+      delete this.messages[sessionId]
+      delete this.streamStatus[sessionId]
+      delete this.historyLoaded[sessionId]
+      delete this.historyError[sessionId]
+      delete this.historyTruncated[sessionId]
+      delete this.historyTailGuard[sessionId]
+      this.error = ''
+      return true
     },
 
     // Subscribes to a session's normalized event stream. A second call for the

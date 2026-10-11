@@ -5,6 +5,7 @@
 // composer is the only place a turn is sent or stopped; the send action becomes
 // 停止 while the session's turn is running.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
@@ -16,12 +17,18 @@ const props = defineProps<{ projectId: number; sessionId: string }>()
 
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
+const router = useRouter()
 
 const ready = ref(false)
 const loadError = ref('')
 const sendError = ref('')
 const sending = ref(false)
 const busy = ref(false)
+// The delete confirmation is a modal inside the pane: the task leaves the
+// platform index only after the user confirms.
+const confirmingDelete = ref(false)
+const deleting = ref(false)
+const deleteError = ref('')
 // preparing covers the window in which the task is being re-attached and its
 // history replayed, so the pane says what it is waiting for instead of looking
 // like an empty conversation.
@@ -156,6 +163,23 @@ async function onSubmit() {
 function reconnect() {
   if (activeSession.value) sessions.resubscribe(props.projectId, activeSession.value.id)
 }
+
+// removeTask deletes the platform index entry and returns to the project. The
+// agent-native transcript is untouched, which the confirmation says.
+async function removeTask() {
+  const session = activeSession.value
+  if (!session || deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
+  const removed = await sessions.deleteSession(props.projectId, session.id)
+  deleting.value = false
+  if (!removed) {
+    deleteError.value = sessions.error || '删除失败，请重试。'
+    return
+  }
+  confirmingDelete.value = false
+  void router.push({ name: 'project', params: { projectId: String(props.projectId) } })
+}
 </script>
 
 <template>
@@ -170,6 +194,15 @@ function reconnect() {
       <header class="chat-header">
         <BackendTag :backend="activeSession.backend" />
         <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
+        <button
+          type="button"
+          class="delete-task"
+          data-test="delete-task"
+          title="删除任务"
+          @click="confirmingDelete = true"
+        >
+          删除
+        </button>
         <div class="session-meta">
           <span v-if="instance" class="chip">工作目录：{{ instance.directory }}</span>
           <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
@@ -231,6 +264,7 @@ function reconnect() {
             v-model="selectedModel"
             :project-id="props.projectId"
             :instance-id="activeSession.instanceId"
+            :backend="activeSession.backend"
             :model-selection="activeSession.capabilities.modelSelection"
             @status="modelOk = $event"
           />
@@ -245,6 +279,33 @@ function reconnect() {
           </button>
         </div>
       </form>
+
+      <div
+        v-if="confirmingDelete"
+        class="confirm-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="删除任务"
+        data-test="delete-task-dialog"
+      >
+        <div class="confirm-panel">
+          <p class="confirm-title">确定删除任务「{{ activeSession.title || activeSession.id }}」吗？</p>
+          <p class="confirm-hint">仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。</p>
+          <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
+          <div class="confirm-actions">
+            <button type="button" class="confirm-cancel" @click="confirmingDelete = false">取消</button>
+            <button
+              type="button"
+              class="confirm-delete"
+              data-test="confirm-delete"
+              :disabled="deleting"
+              @click="removeTask"
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      </div>
     </template>
     <template v-else-if="loadError">
       <p class="empty" role="alert">{{ loadError }}</p>
@@ -280,6 +341,82 @@ function reconnect() {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.delete-task {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fff;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+}
+
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(26rem, 90vw);
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+}
+
+.confirm-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.confirm-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.confirm-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.confirm-actions button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+
+.confirm-actions .confirm-delete {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+
+.confirm-actions .confirm-delete:disabled {
+  background: #fca5a5;
+  border-color: #fca5a5;
+  cursor: default;
 }
 
 .session-heading {

@@ -253,7 +253,7 @@ describe('capability-gated controls', () => {
 })
 
 describe('message rendering', () => {
-  it('renders streamed assistant text without injecting raw HTML', () => {
+  it('renders a streamed assistant reply as sanitized markdown', () => {
     const wrapper = mount(MessageView, {
       props: {
         messages: [
@@ -261,7 +261,7 @@ describe('message rendering', () => {
             id: 'm1',
             kind: 'message',
             role: 'assistant',
-            text: '<script>alert(1)</script> hello',
+            text: 'hello **world** <script>alert(1)</script>',
             streaming: true,
           },
         ],
@@ -270,8 +270,9 @@ describe('message rendering', () => {
     })
     mounted.push(wrapper)
 
-    expect(wrapper.text()).toContain('<script>alert(1)</script> hello')
-    // The payload is text, never markup.
+    // Markdown renders, but backend markup cannot inject a live script.
+    expect(wrapper.find('.bubble-agent .message-text').html()).toContain('<strong>world</strong>')
+    expect(wrapper.text()).toContain('hello world')
     expect(wrapper.find('script').exists()).toBe(false)
     expect(wrapper.find('[data-test="streaming"]').exists()).toBe(true)
   })
@@ -575,27 +576,27 @@ describe('MessageView presentation', () => {
     const thinking = wrapper.find('[data-test="thinking"]')
     expect(thinking.exists()).toBe(true)
     expect(thinking.attributes('open')).toBeUndefined()
-    expect(thinking.find('summary').text()).toContain('已思考')
+    expect(thinking.find('summary').text()).toContain('Thinking')
 
     await thinking.find('summary').trigger('click')
     expect(thinking.text()).toContain('推理内容')
   })
 
-  it('keeps tool output collapsed with its length visible', () => {
+  it('merges a tool call and its result into one collapsed block', async () => {
     const wrapper = mount(MessageView, {
       props: { messages, capabilities: noCapabilities({ toolCallEvents: true }) },
     })
     mounted.push(wrapper)
 
-    const result = wrapper.find('[data-test="tool-result"]')
-    expect(result.exists()).toBe(true)
-    expect(result.attributes('open')).toBeUndefined()
-    expect(result.find('summary').text()).toContain('工具结果')
-    expect(result.find('summary').text()).toContain('4')
-
+    // One block per call: the result is not a block of its own.
     const call = wrapper.find('[data-test="tool-call"]')
-    expect(call.text()).toContain('工具调用')
-    expect(call.text()).toContain('bash')
+    expect(call.exists()).toBe(true)
+    expect(call.attributes('open')).toBeUndefined()
+    expect(call.find('summary').text()).toContain('bash')
+    expect(wrapper.find('[data-test="tool-result"]').exists()).toBe(false)
+
+    await call.find('summary').trigger('click')
+    expect(call.find('.tool-output').text()).toContain('输出内容')
   })
 
   it('renders no tool or reasoning entries when the backend declares neither', () => {

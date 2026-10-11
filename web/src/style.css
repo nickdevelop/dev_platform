@@ -1,0 +1,14 @@
+/* The shell owns the viewport: the document itself must never scroll, so each
+   pane manages its own overflow. Without this the body's default margin plus the
+   shell's viewport height produce a page-level scrollbar beside the conversation's
+   own scroller (the double scrollbar). */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}

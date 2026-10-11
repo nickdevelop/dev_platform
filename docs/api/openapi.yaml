@@ -1309,6 +1309,52 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}:
+    delete:
+      summary: Delete a session index entry
+      description: >-
+        Removes the platform's index entry for the session. The agent-native
+        session and its transcript are owned by the agent and are not touched,
+        so a later discovery of the same native session indexes it again.
+      operationId: deleteProjectSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session to delete.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Session index entry removed.
+        '400':
+          description: Malformed path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/sessions/{sessionId}/events:
     get:
       summary: Subscribe to a session's normalized event stream

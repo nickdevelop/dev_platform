@@ -10,6 +10,7 @@ import BackendTag from '../components/BackendTag.vue'
 import TaskChatPanel from '../components/TaskChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
+import { clearModelCache } from '../modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
 
@@ -102,10 +103,10 @@ function testRouter() {
   })
 }
 
-function mountPanel(sessionId: string) {
+function mountPanel(sessionId: string, router = testRouter()) {
   return mount(TaskChatPanel, {
     props: { projectId: 1, sessionId },
-    global: { plugins: [testRouter()] },
+    global: { plugins: [router] },
   })
 }
 
@@ -139,6 +140,7 @@ describe('TaskChatPanel', () => {
     // The store keeps open streams in module scope; close them so a stream
     // opened by one test cannot make the next test skip its subscription.
     useSessionsStore().unsubscribeAll()
+    clearModelCache()
     vi.unstubAllGlobals()
   })
 
@@ -458,6 +460,7 @@ describe('TaskChatPanel conversation layout', () => {
 
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
+    clearModelCache()
     vi.unstubAllGlobals()
   })
 
@@ -494,5 +497,41 @@ describe('TaskChatPanel conversation layout', () => {
     await flushPromises()
 
     expect(wrapper.find('.turn-status').exists()).toBe(false)
+  })
+
+  it('deletes the task after a confirmation and returns to the project', async () => {
+    stubSessionList([session('sess-1')])
+    const store = useSessionsStore()
+    const remove = vi.spyOn(store, 'deleteSession').mockResolvedValue(true)
+    const router = testRouter()
+    const wrapper = mountPanel('sess-1', router)
+    await flushPromises()
+
+    await wrapper.find('[data-test="delete-task"]').trigger('click')
+    const dialog = wrapper.find('[data-test="delete-task-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    // Nothing is removed until the user confirms.
+    expect(remove).not.toHaveBeenCalled()
+
+    await dialog.find('[data-test="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(remove).toHaveBeenCalledWith(1, 'sess-1')
+    expect(router.currentRoute.value.name).toBe('project')
+  })
+
+  it('cancels the delete without removing the task', async () => {
+    stubSessionList([session('sess-1')])
+    const store = useSessionsStore()
+    const remove = vi.spyOn(store, 'deleteSession').mockResolvedValue(true)
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    await wrapper.find('[data-test="delete-task"]').trigger('click')
+    await wrapper.find('.confirm-cancel').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="delete-task-dialog"]').exists()).toBe(false)
+    expect(remove).not.toHaveBeenCalled()
   })
 })

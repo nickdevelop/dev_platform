@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useSessionsStore } from '../stores/sessions'
+import { useAuthStore } from '../stores/auth'
 import type { AgentSession, Capabilities } from '../api/sessions'
 
 function capabilities(): Capabilities {
@@ -418,5 +419,99 @@ describe('sessions store thinking entries', () => {
     expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message', 'separator'])
     expect(entries[0].text).toBe('历史推理')
     expect(entries[0].streaming).toBe(false)
+  })
+})
+
+describe('sessions store tool entries', () => {  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a tool call input so the view can summarise it', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(
+        historyEvent({
+          type: 'tool_call',
+          sequence: 1,
+          replayed: false,
+          toolCall: { callId: 'call-1', name: 'read', input: { path: '/docs/models.md' } },
+        }),
+      ),
+    )
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries).toHaveLength(1)
+    expect(entries[0].kind).toBe('tool_call')
+    expect(entries[0].input).toEqual({ path: '/docs/models.md' })
+  })
+})
+
+describe('sessions store delete', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('deletes a session, drops its local state and reports success', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1), session('s2', 1)]
+    sessions.pushEntry('s1', {
+      id: 'm1',
+      kind: 'message',
+      role: 'assistant',
+      text: 'hi',
+      streaming: false,
+    })
+    sessions.streamStatus['s1'] = 'open'
+    useAuthStore().csrfToken = 'csrf-1'
+    const calls: Array<{ method?: string; url: string }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ method: init?.method, url: String(input) })
+        return { status: 204, json: async () => ({}) } as Response
+      }),
+    )
+
+    const ok = await sessions.deleteSession(1, 's1')
+
+    expect(ok).toBe(true)
+    expect(calls[0].method).toBe('DELETE')
+    expect(calls[0].url).toBe('/api/projects/1/sessions/s1')
+    expect(sessions.sessions.map((entry) => entry.id)).toEqual(['s2'])
+    expect(sessions.messagesFor('s1')).toEqual([])
+    expect(sessions.streamStatus['s1']).toBeUndefined()
+  })
+
+  it('keeps the session and reports the error when delete fails', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    useAuthStore().csrfToken = 'csrf-1'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 500, json: async () => ({ error: 'server_error' }) }) as Response),
+    )
+
+    const ok = await sessions.deleteSession(1, 's1')
+
+    expect(ok).toBe(false)
+    expect(sessions.sessions.map((entry) => entry.id)).toEqual(['s1'])
+    expect(sessions.error).toContain('服务内部错误')
   })
 })

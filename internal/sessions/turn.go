@@ -97,3 +97,11 @@ func (s *Service) turnOf(instanceID, nativeSessionID string) TurnState {
 	}
 	return TurnIdle
 }
+
+// forgetTurn drops one native session's tracked turn, if any. It is called when
+// a session's index row is deleted so a re-indexed native session starts clean.
+func (s *Service) forgetTurn(instanceID, nativeSessionID string) {
+	s.turnMu.Lock()
+	defer s.turnMu.Unlock()
+	delete(s.turns[instanceID], nativeSessionID)
+}

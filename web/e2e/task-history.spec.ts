@@ -121,7 +121,7 @@ test('a reply survives a page reload, shown above the history separator', async 
   // Reasoning is replayed as its own collapsed block, above the reply.
   const piThinking = replayed.locator('[data-test="thinking"]')
   await expect(piThinking).toHaveCount(1)
-  await expect(piThinking.locator('summary')).toContainText('已思考')
+  await expect(piThinking.locator('summary')).toContainText('Thinking')
   await expect(piThinking).toContainText('thinking about: remember this turn')
 
   // And the task is usable again: the replayed turn is not the end of the log.
@@ -134,7 +134,7 @@ test('a reply survives a page reload, shown above the history separator', async 
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
   await expect(replayedOC.locator('[data-test="history-separator"]')).toBeVisible()
   const ocThinking = replayedOC.locator('[data-test="thinking"]')
-  await expect(ocThinking.locator('summary')).toContainText('已思考')
+  await expect(ocThinking.locator('summary')).toContainText('Thinking')
   await expect(ocThinking).toContainText('internal reasoning is not conversation')
 })
 

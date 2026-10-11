@@ -1,14 +1,17 @@
 <script setup lang="ts">
-// Model picker for the composer. It loads the open instance's model list once
-// per instance and reports its load status to the parent, which gates sending
-// so a failed list can never fall back to a free-text model. Rendered only when
-// the session declares modelSelection.
+// Model picker for the composer. It shows the backend's last known model list
+// (from the in-memory cache) the moment a task opens, then refreshes it from the
+// open instance in the background. A failed refresh with a cache present is
+// silent: the user already has models and sending stays enabled. With no cache,
+// a failure is reported and sending is gated so a free-text model is never used.
 import { onMounted, ref, watch } from 'vue'
-import { listInstanceModels, type ModelInfo } from '../api/agents'
+import { listInstanceModels, type BackendId, type ModelInfo } from '../api/agents'
+import { cachedModels, rememberModels } from '../modelCache'
 
 const props = defineProps<{
   projectId: number
   instanceId: string
+  backend: BackendId
   modelSelection: boolean
   modelValue: string
 }>()
@@ -21,29 +24,58 @@ const emit = defineEmits<{
 const models = ref<ModelInfo[]>([])
 const loading = ref(false)
 const failed = ref(false)
+// A token per request: a response that arrives after a newer one was issued is
+// discarded, so switching tasks can never show the previous task's models.
+let requestToken = 0
 
-async function load() {
-  if (!props.modelSelection || props.instanceId === '') return
+// applyModels shows a list and keeps the selection valid: an unknown previous
+// value falls back to the first model.
+function applyModels(list: ModelInfo[]) {
+  models.value = list
+  const current = props.modelValue
+  const next = list.some((model) => model.id === current) ? current : (list[0]?.id ?? '')
+  if (next !== '' && next !== current) emit('update:modelValue', next)
+}
+
+// refresh loads the instance's models. surfaceFailure distinguishes the first
+// load (no cache: a failure is shown and gates sending) from a background
+// refresh (cache present: a failure is silent).
+async function refresh(surfaceFailure: boolean) {
+  const token = ++requestToken
   loading.value = true
-  failed.value = false
   try {
     const list = await listInstanceModels(props.projectId, props.instanceId)
-    models.value = list.models
+    if (token !== requestToken) return
+    failed.value = false
+    applyModels(list.models)
+    rememberModels(props.backend, list.models)
     emit('status', true)
-    // Default to the first model when the parent has not chosen one.
-    const selected = props.modelValue || list.models[0]?.id || ''
-    if (selected !== '' && selected !== props.modelValue) emit('update:modelValue', selected)
   } catch {
-    models.value = []
-    failed.value = true
-    emit('status', false)
+    if (token !== requestToken) return
+    if (surfaceFailure) {
+      models.value = []
+      failed.value = true
+      emit('status', false)
+    }
   } finally {
-    loading.value = false
+    if (token === requestToken) loading.value = false
   }
 }
 
+async function load() {
+  if (!props.modelSelection || props.instanceId === '') return
+  const cached = cachedModels(props.backend)
+  if (cached && cached.length > 0) {
+    applyModels(cached)
+    emit('status', true)
+    void refresh(false)
+    return
+  }
+  await refresh(true)
+}
+
 onMounted(load)
-watch(() => [props.projectId, props.instanceId, props.modelSelection], load)
+watch(() => [props.projectId, props.instanceId, props.backend, props.modelSelection], load)
 
 // When the parent clears the selection (switching to another task on the same
 // instance does not reload the list), default to the first model again so the
@@ -69,7 +101,7 @@ function onSelect(event: Event) {
       v-else
       class="model-options"
       :value="props.modelValue"
-      :disabled="loading"
+      :disabled="loading && models.length === 0"
       aria-label="模型"
       @change="onSelect"
     >

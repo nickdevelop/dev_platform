@@ -109,31 +109,37 @@ watch(
 onBeforeUnmount(stopPolling)
 
 // Clicking the expanded project collapses it; clicking another project expands
-// it and collapses the previous one.
+// it and collapses the previous one. Expanding never navigates: the settings
+// control is the only way into the project configuration.
 function onProjectClick(projectId: number) {
-  if (projectId === expandedId.value) {
-    expandedId.value = null
-    return
-  }
-  expandedId.value = projectId
-  emit('select-project', projectId)
+  expandedId.value = projectId === expandedId.value ? null : projectId
 }
 </script>
 
 <template>
   <ul class="project-tree" aria-label="项目与任务">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
-      <button
-        type="button"
-        class="project-row"
-        :class="{ selected: project.id === props.activeProjectId }"
-        :aria-expanded="expandedId === project.id"
-        @click="onProjectClick(project.id)"
-      >
-        <span class="caret">{{ expandedId === project.id ? '▾' : '▸' }}</span>
-        <span class="project-name">{{ project.name }}</span>
-        <span v-if="expandedId === project.id" class="count">{{ expandedSessions.length }}</span>
-      </button>
+      <div class="project-row" :class="{ selected: project.id === props.activeProjectId }">
+        <button
+          type="button"
+          class="project-toggle"
+          :aria-expanded="expandedId === project.id"
+          @click="onProjectClick(project.id)"
+        >
+          <span class="caret">{{ expandedId === project.id ? '▾' : '▸' }}</span>
+          <span class="project-name">{{ project.name }}</span>
+          <span v-if="expandedId === project.id" class="count">{{ expandedSessions.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="project-settings"
+          :aria-label="`项目设置：${project.name}`"
+          title="项目设置"
+          @click="emit('select-project', project.id)"
+        >
+          ⚙
+        </button>
+      </div>
 
       <ul v-if="expandedId === project.id" class="tasks">
         <li v-for="entry in visibleSessions" :key="entry.id" class="task" :class="{ selected: entry.id === props.activeSessionId }">
@@ -168,6 +174,7 @@ function onProjectClick(projectId: number) {
 }
 
 .project-row,
+.project-toggle,
 .task-open,
 .new-task {
   display: flex;
@@ -183,11 +190,36 @@ function onProjectClick(projectId: number) {
 }
 
 .project-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 0;
+  border-radius: 6px;
+}
+
+.project-toggle {
+  flex: 1;
+  min-width: 0;
   padding: 7px 8px;
   font-weight: 600;
 }
 
+.project-settings {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 6px;
+  border-radius: 6px;
+  color: #8a93a3;
+}
+
 .project-row:hover,
+.project-settings:hover,
+.project-toggle:hover,
 .task-open:hover {
   background: #f1f3f6;
 }

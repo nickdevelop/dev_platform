@@ -903,6 +903,77 @@ func TestUnknownSessionOperationsAreNotFound(t *testing.T) {
 	}
 }
 
+// TestDeleteRemovesOnlyThePlatformIndex verifies deleting a task drops its
+// platform index row and leaves the agent-native session alone, so a later
+// discovery of the same native session re-indexes it.
+func TestDeleteRemovesOnlyThePlatformIndex(t *testing.T) {
+	env := newTestEnv(t)
+	created := createNativeSession(t, env, "native-delete")
+
+	if err := env.svc.Delete(env.projectID, created.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := env.svc.Get(env.projectID, created.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Get after Delete error = %v, want ErrSessionNotFound", err)
+	}
+	if got := sessionCount(t, env.db); got != 0 {
+		t.Errorf("session count after delete = %d, want 0", got)
+	}
+
+	// The native session still exists on the agent side: discovery indexes it
+	// again, which is expected for an index-only delete.
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-delete", Title: "native-delete"},
+	}
+	env.fake.mu.Unlock()
+	list, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
+	if err != nil {
+		t.Fatalf("Discover after delete: %v", err)
+	}
+	if len(list) != 1 || list[0].NativeSessionID != "native-delete" {
+		t.Errorf("Discover after delete = %+v, want the native session re-indexed", list)
+	}
+}
+
+// TestDeleteRejectsCrossProjectAccess verifies a session id cannot be deleted
+// through a project that does not own it.
+func TestDeleteRejectsCrossProjectAccess(t *testing.T) {
+	env := newTestEnv(t)
+	created := createNativeSession(t, env, "native-owner")
+	other := env.registerProject(t, "beta")
+
+	if err := env.svc.Delete(other, created.ID); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("Delete from other project error = %v, want ErrSessionNotFound", err)
+	}
+	if _, err := env.svc.Get(env.projectID, created.ID); err != nil {
+		t.Errorf("session was removed by a cross-project delete: %v", err)
+	}
+}
+
+// TestHandleDeleteRemovesSession verifies the DELETE route removes the index,
+// answers 204, and reports an unknown id as 404.
+func TestHandleDeleteRemovesSession(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	created := createNativeSession(t, env, "native-http-delete")
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/projects/%d/sessions/%s", env.projectID, created.ID), nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE session = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/projects/%d/sessions/%s", env.projectID, created.ID), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("DELETE missing session = %d, want 404", rec.Code)
+	}
+}
+
 // TestBackendsReportsDeclaredCapabilities verifies the capability endpoint
 // returns each registered backend's declaration for the workbench UI.
 func TestBackendsReportsDeclaredCapabilities(t *testing.T) {

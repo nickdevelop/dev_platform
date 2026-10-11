@@ -38,6 +38,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/sessions/:sessionId/messages", s.handleSend)
 	r.POST("/projects/:id/sessions/:sessionId/stop", s.handleStop)
 	r.POST("/projects/:id/sessions/:sessionId/interrupt", s.handleInterrupt)
+	r.DELETE("/projects/:id/sessions/:sessionId", s.handleDelete)
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 }
@@ -328,6 +329,25 @@ func (s *Service) handleStop(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, session)
+}
+
+// handleDelete removes a session from the platform's index. The agent-native
+// session is untouched, so a later discovery may index it again.
+func (s *Service) handleDelete(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := s.Delete(id, sessionID); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // handleEvents streams the session's normalized events as Server-Sent Events.

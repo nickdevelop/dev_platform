@@ -54,6 +54,8 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
 
   const settings = page.getByRole('region', { name: '项目设置' })
   const row = (name: string) => page.locator('.project-row', { hasText: name })
+  // A row click only expands/collapses the project; the gear opens settings.
+  const openSettings = (name: string) => row(name).locator('.project-settings').click()
 
   // Register an existing directory under the authorized root.
   await page.getByRole('button', { name: '注册', exact: true }).click()
@@ -62,7 +64,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await registerDialog.getByRole('button', { name: '注册', exact: true }).click()
   const alphaItem = row('alpha')
   await expect(alphaItem).toBeVisible()
-  await alphaItem.click()
+  await openSettings('alpha')
   await expect(settings).toContainText(join(workspaceRoot, 'alpha'))
 
   // Create a brand-new project directory.
@@ -82,7 +84,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await page.getByLabel('搜索项目或任务').fill('')
 
   // Rename requires typing the project's current name.
-  await betaItem.click()
+  await openSettings('beta')
   await settings.getByRole('button', { name: '重命名' }).click()
   const renameDialog = page.getByRole('dialog')
   await renameDialog.getByLabel('新目录名').fill('gamma')
@@ -104,7 +106,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(false)
 
   // Unregister removes only the platform record; the directory survives.
-  await alphaItem.click()
+  await openSettings('alpha')
   await settings.getByRole('button', { name: '解除登记' }).click()
   const unregisterDialog = page.getByRole('dialog')
   await expect(unregisterDialog).toContainText('会被完整保留')
@@ -113,7 +115,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
 
   // Delete is destructive: it needs the typed name and prefers the OS trash.
-  await row('gamma').click()
+  await openSettings('gamma')
   await settings.getByRole('button', { name: '删除目录' }).click()
   const deleteDialog = page.getByRole('dialog')
   const deleteConfirm = deleteDialog.getByRole('button', { name: '删除目录', exact: true })

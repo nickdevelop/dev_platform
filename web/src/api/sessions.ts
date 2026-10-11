@@ -228,6 +228,20 @@ export function interruptProjectSession(
   )
 }
 
+// DELETE /api/projects/{id}/sessions/{sessionId}. Removes the platform's index
+// entry only; the agent-native session is not touched.
+export function deleteProjectSession(
+  projectId: number,
+  sessionId: string,
+  csrfToken: string,
+): Promise<void> {
+  return apiRequest<void>(
+    'DELETE',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}`,
+    { csrfToken },
+  )
+}
+
 // The authenticated SSE endpoint for a session's normalized event stream.
 // Returned as a same-origin path for EventSource.
 export function sessionEventsPath(projectId: number, sessionId: string): string {

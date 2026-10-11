@@ -1,13 +1,17 @@
 // Unit tests for the model picker in the composer: it loads the backend's
 // models for the open instance, defaults to the first, reports its load status
 // so the parent can gate sending, and renders nothing for a backend without
-// model selection.
+// model selection. The last list is cached per backend so a newly opened task
+// shows its models immediately while a fresh list loads.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ModelSelect from '../components/ModelSelect.vue'
+import { clearModelCache } from '../modelCache'
+import type { BackendId } from '../api/agents'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  clearModelCache()
 })
 
 function stubModels(payload: unknown, status = 200): string[] {
@@ -22,11 +26,14 @@ function stubModels(payload: unknown, status = 200): string[] {
   return calls
 }
 
-function mountSelect(overrides: Partial<{ modelSelection: boolean; modelValue: string }> = {}) {
+function mountSelect(
+  overrides: Partial<{ modelSelection: boolean; modelValue: string; instanceId: string; backend: BackendId }> = {},
+) {
   return mount(ModelSelect, {
     props: {
       projectId: 1,
       instanceId: 'inst-1',
+      backend: 'pi',
       modelSelection: true,
       modelValue: '',
       ...overrides,
@@ -92,5 +99,50 @@ describe('ModelSelect', () => {
     await wrapper.setProps({ modelValue: '' })
     await flushPromises()
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['pi/a'])
+  })
+
+  it('shows the backend cache immediately, then refreshes it', async () => {
+    stubModels({ models: [{ id: 'pi/a', name: 'Model A', provider: 'pi' }] })
+    const first = mountSelect()
+    await flushPromises()
+    first.unmount()
+
+    // The refresh hangs, so whatever is shown next can only be the cache.
+    let resolveRefresh: (payload: unknown) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRefresh = (payload) => resolve({ status: 200, json: async () => payload } as Response)
+          }),
+      ),
+    )
+
+    const second = mountSelect({ instanceId: 'inst-2' })
+    await flushPromises()
+
+    // The cached list is shown at once: no blank picker and sending is allowed.
+    expect(second.findAll('option').map((option) => option.attributes('value'))).toEqual(['pi/a'])
+    expect(second.emitted('status')?.[0]).toEqual([true])
+
+    resolveRefresh({ models: [{ id: 'pi/b', name: 'Model B', provider: 'pi' }] })
+    await flushPromises()
+    expect(second.findAll('option').map((option) => option.attributes('value'))).toEqual(['pi/b'])
+  })
+
+  it('keeps the cache and stays quiet when the refresh fails', async () => {
+    stubModels({ models: [{ id: 'pi/a', name: 'Model A', provider: 'pi' }] })
+    const first = mountSelect()
+    await flushPromises()
+    first.unmount()
+
+    stubModels({}, 500)
+    const second = mountSelect({ instanceId: 'inst-2' })
+    await flushPromises()
+
+    expect(second.findAll('option').map((option) => option.attributes('value'))).toEqual(['pi/a'])
+    expect(second.text()).not.toContain('模型列表加载失败')
+    expect(second.emitted('status')?.at(-1)).toEqual([true])
   })
 })

@@ -133,3 +133,47 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await expect(taskRow(page, 'oc-session-1')).not.toContainText('断开')
   await expect(taskRow(page, 'pi-session')).not.toContainText('断开')
 })
+
+test('deletes a task from the conversation header after confirmation', async ({ page, request }) => {
+  test.slow()
+
+  const csrf = await operatorLogin(request)
+  const addRoot = await request.post('/api/workspaces/roots', {
+    data: { path: workspaceRoot },
+    headers: { 'X-CSRF-Token': csrf },
+  })
+  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
+
+  const projectDir = join(workspaceRoot, `delete-task-${Date.now()}-${process.pid}`)
+  mkdirSync(projectDir, { recursive: true })
+  const registered = await request.post('/api/projects', {
+    data: { path: projectDir },
+    headers: { 'X-CSRF-Token': csrf },
+  })
+  expect(registered.status(), await registered.text()).toBe(201)
+  const project = (await registered.json()) as { id: number }
+
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login$/)
+  await page.getByLabel('平台密码').fill(password)
+  await page.getByRole('button', { name: '登录' }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await page.goto(`/projects/${project.id}`)
+
+  await createTask(page, 'pi', 'pi-delete')
+  await openSession(page, 'pi-delete')
+
+  // Cancelling the confirmation leaves the task in place.
+  await page.locator('[data-test="delete-task"]').click()
+  const dialog = page.locator('[data-test="delete-task-dialog"]')
+  await expect(dialog).toBeVisible()
+  await dialog.locator('.confirm-cancel').click()
+  await expect(dialog).toBeHidden()
+  await expect(taskRow(page, 'pi-delete')).toBeVisible()
+
+  // Confirming removes it and returns to the project settings.
+  await page.locator('[data-test="delete-task"]').click()
+  await dialog.locator('[data-test="confirm-delete"]').click()
+  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
+  await expect(taskRow(page, 'pi-delete')).toHaveCount(0)
+})

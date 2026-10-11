@@ -43,6 +43,9 @@ export function createAppRouter() {
             path: 'projects/:projectId/tasks/:sessionId',
             name: 'task',
             component: TaskChatPanel,
+            // The conversation fills the pane and owns the only scroller (its
+            // message log); the shell must not scroll it as well.
+            meta: { fullHeight: true },
             props: (route) => ({
               projectId: Number(route.params.projectId),
               sessionId: String(route.params.sessionId),

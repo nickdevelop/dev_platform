@@ -35,6 +35,9 @@ const sessionId = computed<string | null>(() =>
 const missingProject = computed(
   () => ready.value && projectId.value !== null && !projects.byId(projectId.value),
 )
+// A route whose panel fills the pane (the conversation) declares it, so the pane
+// stops scrolling and the panel's own message log is the only scroller.
+const fullHeightPane = computed(() => route.meta.fullHeight === true)
 
 onMounted(async () => {
   await projects.load()
@@ -112,7 +115,7 @@ async function logout() {
       </div>
     </aside>
 
-    <section class="pane">
+    <section class="pane" :class="{ 'pane-full': fullHeightPane }">
       <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
       <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
       <div v-else-if="missingProject" class="missing">
@@ -145,7 +148,7 @@ async function logout() {
 .app-shell {
   display: grid;
   grid-template-columns: 56px 272px 1fr;
-  height: 100vh;
+  height: 100%;
   background: #f4f5f7;
   color: #1f2328;
   font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -205,6 +208,14 @@ async function logout() {
   min-width: 0;
   overflow: auto;
   padding: 18px 20px;
+}
+
+/* The conversation pane fills the viewport and never scrolls itself: its message
+   area scrolls instead. A flex column lets the panel resolve height: 100%. */
+.pane-full {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-error {
