@@ -120,15 +120,15 @@ function onSelect(event: Event) {
 
 .model-options {
   padding: 0.25rem 0.4rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font: inherit;
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .model-error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-danger);
   font-size: 0.8rem;
 }
 </style>

@@ -345,10 +345,10 @@ async function removeTask() {
 
 .delete-task {
   padding: 0.15rem 0.5rem;
-  border: 1px solid #fca5a5;
+  border: 1px solid var(--color-danger-border);
   border-radius: 6px;
-  background: #fff;
-  color: #b91c1c;
+  background: var(--color-surface);
+  color: var(--color-danger);
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
@@ -371,7 +371,7 @@ async function removeTask() {
   width: min(26rem, 90vw);
   padding: 1rem 1.1rem;
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
 }
 
@@ -382,13 +382,13 @@ async function removeTask() {
 
 .confirm-hint {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
 .confirm-error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-danger);
   font-size: 0.85rem;
 }
 
@@ -400,22 +400,22 @@ async function removeTask() {
 
 .confirm-actions button {
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   font: inherit;
 }
 
 .confirm-actions .confirm-delete {
-  background: #dc2626;
-  border-color: #dc2626;
-  color: #fff;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-surface);
 }
 
 .confirm-actions .confirm-delete:disabled {
-  background: #fca5a5;
-  border-color: #fca5a5;
+  background: var(--color-danger-border);
+  border-color: var(--color-danger-border);
   cursor: default;
 }
 
@@ -432,36 +432,36 @@ async function removeTask() {
 }
 
 .chip {
-  color: #475569;
-  background: #f1f5f9;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
   font-size: 0.8rem;
 }
 
 .turn-status {
-  color: #1d4ed8;
+  color: var(--color-primary-hover);
   font-size: 0.85rem;
 }
 
 .history-note {
   margin: 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
 .history-error {
   margin: 0;
-  color: #b45309;
+  color: var(--color-warning);
   font-size: 0.85rem;
 }
 
 .retry {
   margin-left: 0.4rem;
   padding: 0.1rem 0.5rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   font: inherit;
 }
@@ -474,7 +474,7 @@ async function removeTask() {
 
 .send textarea {
   padding: 0.4rem 0.6rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font: inherit;
 }
@@ -490,49 +490,49 @@ async function removeTask() {
 .reconnect {
   align-self: flex-start;
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
 .composer-action.send-button {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
 }
 
 .composer-action.send-button:disabled {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
   cursor: default;
 }
 
 .composer-action.stop-button {
-  color: #b91c1c;
-  border-color: #fca5a5;
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
 }
 
 .tool-notice {
-  color: #92400e;
+  color: var(--color-warning);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .instance-note {
-  color: #92400e;
+  color: var(--color-warning);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .send-error {
-  color: #b91c1c;
+  color: var(--color-danger);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .empty,
 .loading {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 </style>

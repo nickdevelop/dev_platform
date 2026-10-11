@@ -199,7 +199,7 @@ function toolArgument(entry: ChatEntry): string {
   font-weight: 600;
   text-transform: uppercase;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .message-text {
@@ -235,7 +235,7 @@ function toolArgument(entry: ChatEntry): string {
 }
 
 .markdown-body :deep(code) {
-  background: #e2e8f0;
+  background: var(--color-border);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -246,8 +246,8 @@ function toolArgument(entry: ChatEntry): string {
   margin: 0 0 0.5rem;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--color-text);
+  color: var(--color-border);
   overflow-x: auto;
 }
 
@@ -261,12 +261,12 @@ function toolArgument(entry: ChatEntry): string {
 .markdown-body :deep(blockquote) {
   margin: 0 0 0.5rem;
   padding-left: 0.75rem;
-  border-left: 3px solid #cbd5e1;
-  color: #475569;
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-muted);
 }
 
 .markdown-body :deep(a) {
-  color: #2563eb;
+  color: var(--color-primary);
 }
 
 .markdown-body :deep(table) {
@@ -276,7 +276,7 @@ function toolArgument(entry: ChatEntry): string {
 
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   padding: 0.2rem 0.5rem;
 }
 
@@ -299,8 +299,8 @@ function toolArgument(entry: ChatEntry): string {
 
 .bubble-user {
   margin-left: auto;
-  background: #dbeafe;
-  color: #1e3a8a;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 /* Agent replies are full-width plain text: no bubble and no background, unlike
@@ -312,7 +312,7 @@ function toolArgument(entry: ChatEntry): string {
   padding: 0;
   background: transparent;
   border-radius: 0;
-  color: #1f2328;
+  color: var(--color-text);
 }
 
 .thinking,
@@ -327,7 +327,7 @@ function toolArgument(entry: ChatEntry): string {
   align-items: baseline;
   gap: 0.4rem;
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--color-text-muted);
 }
 
 .thinking-title {
@@ -346,7 +346,7 @@ function toolArgument(entry: ChatEntry): string {
   margin-top: 0.4rem;
   padding: 0.5rem 0.6rem;
   border-radius: 8px;
-  background: #f1f5f9;
+  background: var(--color-surface-muted);
 }
 
 .thinking-text {
@@ -354,11 +354,11 @@ function toolArgument(entry: ChatEntry): string {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.8rem;
-  color: #475569;
+  color: var(--color-text-muted);
 }
 
 .tool-name {
-  color: #0f172a;
+  color: var(--color-text);
   font-weight: 600;
 }
 
@@ -367,7 +367,7 @@ function toolArgument(entry: ChatEntry): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #334155;
+  color: var(--color-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
@@ -379,7 +379,7 @@ function toolArgument(entry: ChatEntry): string {
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
-  color: #334155;
+  color: var(--color-text);
 }
 
 .tool-args + .tool-output {
@@ -387,34 +387,34 @@ function toolArgument(entry: ChatEntry): string {
 }
 
 .tool-output.is-error {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .tool-running {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .stream-status {
-  color: #b45309;
+  color: var(--color-warning);
   margin: 0 0 0.5rem;
 }
 
 .empty {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .kind-separator {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 0.8rem;
 }
 
 .separator-rule {
   flex: 1;
   border: none;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
   margin: 0;
 }
 

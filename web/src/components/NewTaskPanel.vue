@@ -127,23 +127,23 @@ async function createSession() {
 .create-session select,
 .create-session input {
   padding: 0.4rem 0.6rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font: inherit;
 }
 
 .create-session button {
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
 .create-session .create {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
 }
 
 .create-session button:disabled {
@@ -152,13 +152,13 @@ async function createSession() {
 }
 
 .hint {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .page-error {
-  color: #b91c1c;
+  color: var(--color-danger);
   font-size: 0.85rem;
   margin: 0;
 }

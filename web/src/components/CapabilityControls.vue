@@ -38,8 +38,8 @@ const emit = defineEmits<{
 
 <style scoped>
 .tool-confirmation {
-  border: 1px solid #fde68a;
-  background: #fffbeb;
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-soft);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
   margin: 0.5rem 0;
@@ -51,14 +51,14 @@ const emit = defineEmits<{
 
 .tool-confirmation button {
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   margin-right: 0.4rem;
 }
 
 .no-pending {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 </style>

@@ -67,13 +67,13 @@ function select(sessionId: string) {
 }
 
 .session-item {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
 .session-item.active {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--color-primary);
+  background: var(--color-info-soft);
 }
 
 .session-open {
@@ -85,7 +85,7 @@ function select(sessionId: string) {
 }
 
 .session-open:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
@@ -106,20 +106,20 @@ function select(sessionId: string) {
   display: flex;
   gap: 0.5rem;
   flex-shrink: 0;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
 .status-active {
-  color: #15803d;
+  color: var(--color-success);
 }
 
 .status-disconnected,
 .status-stopped {
-  color: #b45309;
+  color: var(--color-warning);
 }
 
 .empty {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 </style>

@@ -15,19 +15,19 @@ const label = computed(() => (props.backend === 'pi' ? 'pi' : 'opencode'))
 
 <style scoped>
 .tag {
-  font-size: 11px;
-  padding: 1px 6px;
+  font-size: 0.786rem;
+  padding: calc(var(--space-unit) * 0.167) calc(var(--space-unit) * 1.000);
   border-radius: 4px;
   white-space: nowrap;
 }
 
 .tag.opencode {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .tag.pi {
-  background: #fef3c7;
-  color: #92400e;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 </style>
