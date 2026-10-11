@@ -202,9 +202,9 @@ function kindLabel(kind: string): string {
 .section-actions button,
 .resource-item button {
   padding: 0.3rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
@@ -221,7 +221,7 @@ function kindLabel(kind: string): string {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.35rem 0.6rem;
 }
@@ -233,7 +233,7 @@ function kindLabel(kind: string): string {
 }
 
 .kind {
-  color: #475569;
+  color: var(--color-text-muted);
   font-size: 0.8rem;
 }
 
@@ -242,18 +242,18 @@ function kindLabel(kind: string): string {
 }
 
 .secret-ref {
-  color: #15803d;
+  color: var(--color-success);
   font-size: 0.8rem;
 }
 
 .disabled {
-  color: #92400e;
+  color: var(--color-warning);
   font-size: 0.8rem;
 }
 
 .resource-item .delete {
-  color: #b91c1c;
-  border-color: #fca5a5;
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
 }
 
 .spacer {
@@ -261,12 +261,12 @@ function kindLabel(kind: string): string {
 }
 
 .empty {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 
 .error {
-  color: #b91c1c;
+  color: var(--color-danger);
   margin: 0;
 }
 </style>

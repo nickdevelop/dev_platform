@@ -36,12 +36,12 @@ defineProps<{
 
 input {
   padding: 0.35rem 0.5rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
 }
 
 .hint {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.8rem;
   margin: 0;
 }

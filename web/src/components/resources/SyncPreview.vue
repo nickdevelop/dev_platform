@@ -108,7 +108,7 @@ function conflictLabel(kind: ConflictKind): string {
 }
 
 .preview-item {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.4rem 0.6rem;
   font-size: 0.88rem;
@@ -126,26 +126,26 @@ function conflictLabel(kind: ConflictKind): string {
 }
 
 .state {
-  color: #475569;
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
 .state-conflict,
 .state-failed {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .state-unsupported {
-  color: #92400e;
+  color: var(--color-warning);
 }
 
 .summary {
-  color: #64748b;
+  color: var(--color-text-muted);
   margin: 0.2rem 0 0;
 }
 
 .conflict {
-  color: #b91c1c;
+  color: var(--color-danger);
   margin: 0.2rem 0 0;
 }
 
@@ -160,19 +160,19 @@ function conflictLabel(kind: ConflictKind): string {
 
 .sync-actions button {
   padding: 0.35rem 0.8rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
 .sync-actions .force {
-  color: #b91c1c;
-  border-color: #fca5a5;
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
 }
 
 .hint {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }

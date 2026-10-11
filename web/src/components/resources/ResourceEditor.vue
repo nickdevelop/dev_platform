@@ -161,7 +161,7 @@ function submit() {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   padding: 0.75rem;
 }
@@ -182,7 +182,7 @@ input[type='text'],
 select,
 textarea {
   padding: 0.35rem 0.5rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font: inherit;
 }
@@ -190,7 +190,7 @@ textarea {
 .backends {
   display: flex;
   gap: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.4rem 0.6rem;
 }
@@ -209,9 +209,9 @@ textarea {
 
 .actions button {
   padding: 0.35rem 0.8rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 </style>

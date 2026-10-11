@@ -49,7 +49,7 @@ const emit = defineEmits<{
 }
 
 .dialog {
-  background: #fff;
+  background: var(--color-surface);
   border-radius: 10px;
   padding: 1rem 1.25rem;
   width: min(28rem, 90vw);
@@ -70,7 +70,7 @@ const emit = defineEmits<{
 
 .detail,
 .warning {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.88rem;
   margin: 0;
 }
@@ -83,15 +83,15 @@ const emit = defineEmits<{
 
 .actions button {
   padding: 0.35rem 0.8rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
 .actions .confirm {
-  background: #b91c1c;
-  border-color: #b91c1c;
-  color: #fff;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-surface);
 }
 </style>
