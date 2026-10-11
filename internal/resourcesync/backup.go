@@ -41,6 +41,19 @@ func restoreFile(backupPath, target string) error {
 	return atomicWriteFile(target, data, 0o644)
 }
 
+// cleanStaleTemps removes temp files left by an interrupted write. A leftover
+// temp never carries the target's name, so removing it is safe; failures are
+// ignored because the target itself is untouched.
+func cleanStaleTemps(dir string) {
+	matches, err := filepath.Glob(filepath.Join(dir, ".managed-*.tmp"))
+	if err != nil {
+		return
+	}
+	for _, match := range matches {
+		_ = os.Remove(match)
+	}
+}
+
 // atomicWriteFile writes data to path by writing a temp file in the same
 // directory, syncing it and renaming it over the target, so a crash never
 // leaves a partial file. Missing parent directories are created.
@@ -49,6 +62,7 @@ func atomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("resourcesync: create target directory: %w", err)
 	}
+	cleanStaleTemps(dir)
 	tmp, err := os.CreateTemp(dir, ".managed-*.tmp")
 	if err != nil {
 		return fmt.Errorf("resourcesync: create temp file: %w", err)
