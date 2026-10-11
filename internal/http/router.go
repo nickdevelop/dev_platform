@@ -8,6 +8,7 @@ import (
 
 	"devplatform/internal/agents/instances"
 	"devplatform/internal/auth"
+	"devplatform/internal/modelconfig"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
 	"devplatform/internal/resourcesync"
@@ -48,6 +49,10 @@ type Dependencies struct {
 	// set together with Auth, the settings routes are served under
 	// /api/settings behind RequireSession.
 	Settings *settings.Service
+	// Models manages OpenAI-compatible model services and their models. When
+	// set together with Auth, the model routes are served under
+	// /api/model-services and /api/models behind RequireSession.
+	Models *modelconfig.Service
 	// Instances manages per-project agent instances and their event fan-out.
 	// When set together with Auth, the instance routes are served under
 	// /api/projects/{id}/instances behind RequireSession.
@@ -107,6 +112,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Settings != nil {
 			deps.Settings.RegisterRoutes(protected)
+		}
+		if deps.Models != nil {
+			deps.Models.RegisterRoutes(protected)
 		}
 		if deps.Instances != nil {
 			deps.Instances.RegisterRoutes(protected)

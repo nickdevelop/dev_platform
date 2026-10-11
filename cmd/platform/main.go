@@ -26,6 +26,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
+	"devplatform/internal/modelconfig"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
 	"devplatform/internal/resourcesync"
@@ -256,6 +257,7 @@ func runServer(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open secret store: %w", err)
 	}
+	modelConfig := modelconfig.NewService(db, secretStore)
 	resourceService := resources.NewService(db, resources.WithSecretStore(secretStore))
 	managedFiles := resourcesync.NewManager(db, projectService, filepath.Join(dataDir, "managed-file-backups"))
 	resourceSync := resourcesync.NewCoordinator(managedFiles, resourceService, secretStore,
@@ -280,6 +282,7 @@ func runServer(args []string) error {
 		Auth:         authService,
 		Projects:     projectService,
 		Settings:     settingsService,
+		Models:       modelConfig,
 		Instances:    instanceService,
 		Sessions:     sessionService,
 		Resources:    resourceService,
