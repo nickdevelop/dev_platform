@@ -48,6 +48,9 @@ var (
 	// has explicitly disabled. The default is enabled, so this only happens
 	// after an operator turned the backend off for the project.
 	ErrBackendDisabled = errors.New("instances: backend is disabled for this project")
+	// ErrAgentDisabled reports an attempt to start a backend the platform has
+	// disabled. Disabling only blocks new work; existing instances keep running.
+	ErrAgentDisabled = errors.New("instances: agent is disabled platform-wide")
 )
 
 // ProjectDirectoryResolver turns a project id into its canonical, authorized
@@ -91,6 +94,9 @@ type Service struct {
 	projects ProjectDirectoryResolver
 	newID    func() (string, error)
 	now      func() time.Time
+	// platformEnabled reports whether a backend may be used platform-wide. Nil
+	// means every backend is enabled.
+	platformEnabled func(agents.BackendID) bool
 
 	// mu guards streams, the per-instance upstream subscriptions.
 	mu      sync.Mutex
@@ -118,8 +124,8 @@ type stopGate struct {
 
 // NewService builds the instance service. registry resolves backend ids to
 // adapters; projects resolves project ids to authorized working directories.
-func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirectoryResolver) *Service {
-	return &Service{
+func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirectoryResolver, opts ...Option) *Service {
+	s := &Service{
 		db:        db,
 		registry:  registry,
 		projects:  projects,
@@ -127,6 +133,23 @@ func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirector
 		now:       func() time.Time { return time.Now().UTC() },
 		streams:   make(map[string]*stream),
 		stopGates: make(map[string]*stopGate),
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithPlatformEnabled supplies the platform-level agent enablement lookup. A
+// nil lookup leaves every backend enabled (the zero-config default).
+func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
+	return func(s *Service) {
+		if fn != nil {
+			s.platformEnabled = fn
+		}
 	}
 }
 
@@ -167,6 +190,10 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 	}
 	if !enabled {
 		return Instance{}, fmt.Errorf("%w: %q", ErrBackendDisabled, backend)
+	}
+	// Platform-level enablement gates new work for every project.
+	if s.platformEnabled != nil && !s.platformEnabled(backend) {
+		return Instance{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
 	}
 
 	started, startErr := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: directory})

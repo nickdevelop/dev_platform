@@ -255,8 +255,8 @@ func runServer(args []string) error {
 	})); err != nil {
 		return fmt.Errorf("register opencode adapter: %w", err)
 	}
-	instanceService := instances.NewService(db, registry, projectService)
-	sessionService := sessions.NewService(db, registry, instanceService)
+	instanceService := instances.NewService(db, registry, projectService, instances.WithPlatformEnabled(settingsService.Enabled))
+	sessionService := sessions.NewService(db, registry, instanceService, sessions.WithPlatformEnabled(settingsService.Enabled))
 	secretStore, err := secrets.NewStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("open secret store: %w", err)

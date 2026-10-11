@@ -319,9 +319,15 @@ type testEnv struct {
 }
 
 // newTestEnv builds one project, one registered pi adapter and one running
-// instance of it.
-func newTestEnv(t *testing.T) *testEnv {
+// instance of it. An optional platformEnabled lookup gates both the instance
+// and session services.
+func newTestEnv(t *testing.T, platformEnabled ...func(agents.BackendID) bool) *testEnv {
 	t.Helper()
+
+	var enabled func(agents.BackendID) bool
+	if len(platformEnabled) > 0 {
+		enabled = platformEnabled[0]
+	}
 
 	db := openTestDB(t)
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -343,14 +349,14 @@ func newTestEnv(t *testing.T) *testEnv {
 	if err := registry.Register(agents.BackendPi, fake); err != nil {
 		t.Fatalf("register fake adapter: %v", err)
 	}
-	instanceService := instances.NewService(db, registry, projectService)
+	instanceService := instances.NewService(db, registry, projectService, instances.WithPlatformEnabled(enabled))
 	instance, err := instanceService.Start(context.Background(), project.ID, agents.BackendPi)
 	if err != nil {
 		t.Fatalf("start instance: %v", err)
 	}
 
 	return &testEnv{
-		svc:        NewService(db, registry, instanceService),
+		svc:        NewService(db, registry, instanceService, WithPlatformEnabled(enabled)),
 		db:         db,
 		instances:  instanceService,
 		registry:   registry,
@@ -1671,5 +1677,18 @@ func TestDiscoverProjectRejectsUnknownBackend(t *testing.T) {
 	_, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendID("nope"))
 	if !errors.Is(err, instances.ErrUnknownBackend) {
 		t.Errorf("DiscoverProject error = %v, want ErrUnknownBackend", err)
+	}
+}
+
+// TestCreateRejectsPlatformDisabledAgent verifies that a platform-level disable
+// blocks creating new sessions even when a running instance already exists (so
+// the ones Start's gate would otherwise be bypassed).
+func TestCreateRejectsPlatformDisabledAgent(t *testing.T) {
+	enabled := true
+	env := newTestEnv(t, func(agents.BackendID) bool { return enabled })
+	enabled = false
+
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "blocked"); !errors.Is(err, ErrAgentDisabled) {
+		t.Fatalf("Create error = %v, want ErrAgentDisabled", err)
 	}
 }

@@ -50,6 +50,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "instance_not_running")
 	case errors.Is(err, ErrBackendDisabled):
 		respondError(c, http.StatusConflict, "backend_disabled")
+	case errors.Is(err, ErrAgentDisabled):
+		respondError(c, http.StatusConflict, "agent_disabled")
 	case errors.Is(err, ErrStartFailed):
 		// The failed attempt is recorded and discoverable through the list
 		// route; the start request itself did not succeed.

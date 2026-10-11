@@ -61,6 +61,9 @@ var (
 	ErrInvalidSession = errors.New("sessions: invalid native session reference")
 	// ErrInvalidRequest reports a malformed request body.
 	ErrInvalidRequest = errors.New("sessions: invalid request")
+	// ErrAgentDisabled reports an attempt to create a session on a backend the
+	// platform has disabled. Existing sessions and instances stay usable.
+	ErrAgentDisabled = errors.New("sessions: agent is disabled platform-wide")
 )
 
 // errSlowClient reports an SSE client that could not keep up with the event
@@ -139,6 +142,9 @@ type Service struct {
 	instances InstanceService
 	newID     func() (string, error)
 	now       func() time.Time
+	// platformEnabled reports whether a backend may be used platform-wide. Nil
+	// means every backend is enabled.
+	platformEnabled func(agents.BackendID) bool
 
 	// streamBuffer bounds one SSE subscriber's backlog; tests may lower it.
 	streamBuffer int
@@ -153,8 +159,8 @@ type Service struct {
 
 // NewService builds the session service over the platform database, the
 // adapter registry and the instance lifecycle service.
-func NewService(db *gorm.DB, registry *agents.Registry, instanceService InstanceService) *Service {
-	return &Service{
+func NewService(db *gorm.DB, registry *agents.Registry, instanceService InstanceService, opts ...Option) *Service {
+	s := &Service{
 		db:           db,
 		repo:         newRepository(db),
 		registry:     registry,
@@ -165,6 +171,28 @@ func NewService(db *gorm.DB, registry *agents.Registry, instanceService Instance
 		trackers:     make(map[string]bool),
 		turns:        make(map[string]map[string]TurnState),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithPlatformEnabled supplies the platform-level agent enablement lookup. A
+// nil lookup leaves every backend enabled (the zero-config default).
+func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
+	return func(s *Service) {
+		if fn != nil {
+			s.platformEnabled = fn
+		}
+	}
+}
+
+// agentDisabled reports whether the platform has disabled a backend.
+func (s *Service) agentDisabled(backend agents.BackendID) bool {
+	return s.platformEnabled != nil && !s.platformEnabled(backend)
 }
 
 // randomID returns a 128-bit random platform session identifier.
@@ -275,6 +303,9 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	if !backend.Valid() {
 		return Session{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
 	}
+	if s.agentDisabled(backend) {
+		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
+	}
 	inst, err := s.instanceForBackend(ctx, projectID, backend)
 	if err != nil {
 		return Session{}, err
@@ -333,6 +364,9 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 // point for discovery: the caller names a backend, and which instance serves it
 // is the platform's business rather than something the user has to pick.
 func (s *Service) DiscoverProject(ctx context.Context, projectID uint, backend agents.BackendID) ([]Session, error) {
+	if s.agentDisabled(backend) {
+		return nil, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
+	}
 	if _, err := s.adapter(backend); err != nil {
 		return nil, err
 	}

@@ -200,7 +200,7 @@ func (f *fakeAdapter) stoppedIDs() []string {
 // newTestService builds an instances service over a throwaway database with one
 // registered project, returning the service, the database, the project id, the
 // canonical project directory and the fake pi adapter.
-func newTestService(t *testing.T) (*Service, *gorm.DB, uint, string, *fakeAdapter) {
+func newTestService(t *testing.T, opts ...Option) (*Service, *gorm.DB, uint, string, *fakeAdapter) {
 	t.Helper()
 
 	db := openTestDB(t)
@@ -222,7 +222,7 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, uint, string, *fakeAdapte
 	if err := registry.Register(agents.BackendPi, fake); err != nil {
 		t.Fatalf("register fake adapter: %v", err)
 	}
-	return NewService(db, registry, projects.NewService(db)), db, project.ID, project.Path, fake
+	return NewService(db, registry, projects.NewService(db), opts...), db, project.ID, project.Path, fake
 }
 
 // messageEvent builds a valid assistant message event for instanceID.
@@ -979,5 +979,15 @@ func TestConcurrentStopInvokesAdapterOnce(t *testing.T) {
 	}
 	if got := fake.stopCallCount(); got != 1 {
 		t.Errorf("adapter StopInstance called %d times total, want exactly once", got)
+	}
+}
+
+// TestStartRejectsPlatformDisabledAgent verifies that a platform-level disable
+// blocks starting new instances.
+func TestStartRejectsPlatformDisabledAgent(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t, WithPlatformEnabled(func(agents.BackendID) bool { return false }))
+
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); !errors.Is(err, ErrAgentDisabled) {
+		t.Fatalf("Start error = %v, want ErrAgentDisabled", err)
 	}
 }
