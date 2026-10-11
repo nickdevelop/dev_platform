@@ -347,41 +347,11 @@ describe('project management', () => {
     expect(dialog(wrapper).exists()).toBe(false)
   })
 
-  it('adds a workspace root and then registers a project under it', async () => {
-    const workspaceRoot = {
-      id: 1,
-      path: '/workspace',
-      createdAt: '2026-10-08T00:00:00Z',
-    }
+  it('registers a project directory', async () => {
     const { wrapper, calls } = await mountWithProjects([
-      { method: 'GET', path: '/api/workspaces/roots', status: 200, body: { roots: [] } },
-      { method: 'POST', path: '/api/workspaces/roots', status: 201, body: workspaceRoot },
-      {
-        method: 'GET',
-        path: '/api/workspaces/roots',
-        status: 200,
-        body: { roots: [workspaceRoot] },
-      },
       { method: 'POST', path: '/api/projects', status: 201, body: { id: 9, name: 'demo', path: '/workspace/demo' } },
     ])
 
-    // The management entry point is reachable from the category rail.
-    await wrapper.find('button.manage-roots').trigger('click')
-    await flushPromises()
-    const rootsDialog = dialog(wrapper)
-    expect(rootsDialog.text()).toContain('尚未授权')
-
-    // A user can add an authorized root.
-    await rootsDialog.find('#new-root-path').setValue('/workspace')
-    await rootsDialog.find('form.add-root').trigger('submit')
-    await flushPromises()
-    expect(rootsDialog.text()).toContain('/workspace')
-
-    await rootsDialog.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    expect(dialog(wrapper).exists()).toBe(false)
-
-    // ...and then register a project directory under it.
     await wrapper.find('button.register').trigger('click')
     await flushPromises()
     const registerDialog = dialog(wrapper)
@@ -389,14 +359,9 @@ describe('project management', () => {
     await registerDialog.find('button.confirm').trigger('click')
     await flushPromises()
 
-    const addRoot = calls.find(
-      (call) => call.method === 'POST' && call.path === '/api/workspaces/roots',
-    )
-    expect(addRoot?.body).toEqual({ path: '/workspace' })
-    expect(addRoot?.headers['x-csrf-token']).toBe('csrf-1')
-
     const register = calls.find((call) => call.method === 'POST' && call.path === '/api/projects')
     expect(register?.body).toEqual({ path: '/workspace/demo' })
+    expect(register?.headers['x-csrf-token']).toBe('csrf-1')
   })
 
   it('moves focus into the dialog when it opens', async () => {

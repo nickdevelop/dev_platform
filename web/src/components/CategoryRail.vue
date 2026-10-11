@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Leftmost category rail. Only the project category is available; the chat
 // category is reserved for a later release and is shown disabled. The footer
-// holds the authorized-roots settings and logout.
+// links to the settings center and logs out.
+import { RouterLink } from 'vue-router'
+
 const emit = defineEmits<{
-  'open-roots': []
   logout: []
 }>()
 </script>
@@ -13,7 +14,9 @@ const emit = defineEmits<{
     <button type="button" class="category active" title="项目" aria-current="page">项目</button>
     <button type="button" class="category reserved" title="Chat（预留）" disabled>Chat</button>
     <div class="spacer"></div>
-    <button type="button" class="footer-btn manage-roots" title="授权工作区" @click="emit('open-roots')">设置</button>
+    <RouterLink class="footer-btn settings" title="设置" :to="{ name: 'settings-appearance' }">
+      设置
+    </RouterLink>
     <button type="button" class="footer-btn logout" title="退出登录" @click="emit('logout')">退出</button>
   </nav>
 </template>
@@ -38,6 +41,9 @@ const emit = defineEmits<{
   color: #aab2c5;
   font-size: 12px;
   cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  display: block;
 }
 
 .category.active {

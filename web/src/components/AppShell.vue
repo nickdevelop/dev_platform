@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Three-pane shell: category rail, project/task tree, and the right pane chosen
-// by the child route. The shell owns the single project-manage dialog and the
-// authorized-roots dialog, and turns tree and panel events into navigation. A
-// project id that is not in the loaded list shows a not-found notice instead of
-// any panel, so a stale or foreign URL never renders another project's content.
+// by the child route. The shell owns the single project-manage dialog and turns
+// tree and panel events into navigation. A project id that is not in the loaded
+// list shows a not-found notice instead of any panel, so a stale or foreign URL
+// never renders another project's content. The settings center hides the
+// project sidebar so it occupies the full pane.
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { Project } from '../api/projects'
@@ -12,7 +13,6 @@ import { useProjectsStore } from '../stores/projects'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from './ProjectManageDialog.vue'
 import ProjectTree from './ProjectTree.vue'
-import WorkspaceRootsDialog from './WorkspaceRootsDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
 
@@ -24,7 +24,6 @@ const projects = useProjectsStore()
 const search = ref('')
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
-const showRoots = ref(false)
 
 const projectId = computed<number | null>(() =>
   route.params.projectId === undefined ? null : Number(route.params.projectId),
@@ -38,6 +37,9 @@ const missingProject = computed(
 // A route whose panel fills the pane (the conversation) declares it, so the pane
 // stops scrolling and the panel's own message log is the only scroller.
 const fullHeightPane = computed(() => route.meta.fullHeight === true)
+// The settings center is a platform-wide area: the project tree would only be
+// noise there, so the shell hides it and lets the settings view use the pane.
+const settingsMode = computed(() => route.meta.settings === true)
 
 onMounted(async () => {
   await projects.load()
@@ -85,10 +87,10 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell">
-    <CategoryRail @open-roots="showRoots = true" @logout="logout" />
+  <div class="app-shell" :class="{ 'settings-mode': settingsMode }">
+    <CategoryRail @logout="logout" />
 
-    <aside class="sidebar" aria-label="项目导航">
+    <aside v-if="!settingsMode" class="sidebar" aria-label="项目导航">
       <div class="sidebar-head">
         <h2>项目</h2>
         <div class="head-actions">
@@ -132,8 +134,6 @@ async function logout() {
       </RouterView>
     </section>
 
-    <WorkspaceRootsDialog v-if="showRoots" @close="showRoots = false" />
-
     <ProjectManageDialog
       v-if="dialog"
       :kind="dialog.kind"
@@ -149,15 +149,20 @@ async function logout() {
   display: grid;
   grid-template-columns: 56px 272px 1fr;
   height: 100%;
-  background: #f4f5f7;
-  color: #1f2328;
-  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: 1rem;
+}
+
+/* The settings center has no project tree, so the middle column collapses. */
+.app-shell.settings-mode {
+  grid-template-columns: 56px 1fr;
 }
 
 .sidebar {
-  background: #fff;
-  border-right: 1px solid #e3e6eb;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   min-width: 0;

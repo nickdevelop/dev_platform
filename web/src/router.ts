@@ -16,6 +16,10 @@ import LoginView from './views/LoginView.vue'
 import ProjectSettingsPanel from './components/ProjectSettingsPanel.vue'
 import NewTaskPanel from './components/NewTaskPanel.vue'
 import TaskChatPanel from './components/TaskChatPanel.vue'
+import SettingsView from './views/SettingsView.vue'
+import AppearanceSettings from './components/settings/AppearanceSettings.vue'
+import ModelSettings from './components/settings/ModelSettings.vue'
+import AgentSettings from './components/settings/AgentSettings.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -32,6 +36,18 @@ export function createAppRouter() {
             name: 'project',
             component: ProjectSettingsPanel,
             props: (route) => ({ projectId: Number(route.params.projectId) }),
+          },
+          {
+            path: 'settings',
+            name: 'settings',
+            component: SettingsView,
+            meta: { settings: true },
+            children: [
+              { path: '', redirect: { name: 'settings-appearance' } },
+              { path: 'appearance', name: 'settings-appearance', component: AppearanceSettings },
+              { path: 'models', name: 'settings-models', component: ModelSettings },
+              { path: 'agents', name: 'settings-agents', component: AgentSettings },
+            ],
           },
           {
             path: 'projects/:projectId/tasks/new',

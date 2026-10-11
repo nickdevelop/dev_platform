@@ -163,4 +163,22 @@ describe('three-pane app shell', () => {
 
     expect(wrapper.find('.pane').classes()).not.toContain('pane-full')
   })
+
+  it('navigates to the settings center from the category rail', async () => {
+    const { wrapper, router } = await setup('/', { ProjectSettingsPanel: true })
+
+    const settings = wrapper.findAll('a').find((link) => link.text() === '设置')
+    expect(settings).toBeTruthy()
+    await settings!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('settings-appearance')
+  })
+
+  it('hides the project sidebar in the settings center', async () => {
+    const { wrapper } = await setup('/settings/appearance')
+
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(wrapper.text()).toContain('外观')
+  })
 })
