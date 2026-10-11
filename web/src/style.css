@@ -1,3 +1,29 @@
+/* Global appearance tokens. The theme palette and density are projected onto
+   the document root by src/theme/apply.ts; the values here are the light /
+   standard defaults used for the pre-JS first paint and as fallbacks. */
+:root {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-text: #1f2328;
+  --color-text-muted: #64748b;
+  --color-border: #e3e6eb;
+  --color-border-strong: #d0d5dd;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-on-primary: #ffffff;
+  --color-danger: #b91c1c;
+  --color-accent: #7c3aed;
+
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --font-size-base: 14px;
+
+  --space-unit: 6px;
+  --control-height: 34px;
+  --radius: 6px;
+}
+
 /* The shell owns the viewport: the document itself must never scroll, so each
    pane manages its own overflow. Without this the body's default margin plus the
    shell's viewport height produce a page-level scrollbar beside the conversation's
@@ -9,6 +35,13 @@ body,
   margin: 0;
 }
 
+html {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
 body {
   overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
