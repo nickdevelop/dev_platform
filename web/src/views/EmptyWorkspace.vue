@@ -12,7 +12,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-text-muted);
   gap: 0.25rem;
 }
 
@@ -22,6 +22,6 @@
 
 .hint {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 </style>

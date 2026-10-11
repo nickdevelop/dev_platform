@@ -26,7 +26,20 @@ export interface ThemeColors {
   primaryHover: string
   onPrimary: string
   danger: string
+  dangerBorder: string
   accent: string
+  success: string
+  successSoft: string
+  successBorder: string
+  warning: string
+  warningSoft: string
+  warningBorder: string
+  info: string
+  infoSoft: string
+  infoBorder: string
+  railBg: string
+  railText: string
+  railActive: string
 }
 
 export interface ThemePreset {
@@ -60,12 +73,25 @@ export const themes: ThemePreset[] = [
       text: '#1f2328',
       textMuted: '#64748b',
       border: '#e3e6eb',
-      borderStrong: '#d0d5dd',
+      borderStrong: '#cbd5e1',
       primary: '#2563eb',
       primaryHover: '#1d4ed8',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
+      dangerBorder: '#fca5a5',
       accent: '#7c3aed',
+      success: '#15803d',
+      successSoft: '#ecfdf5',
+      successBorder: '#86efac',
+      warning: '#92400e',
+      warningSoft: '#fffbeb',
+      warningBorder: '#fcd34d',
+      info: '#0369a1',
+      infoSoft: '#eff6ff',
+      infoBorder: '#93c5fd',
+      railBg: '#1e2330',
+      railText: '#aab2c5',
+      railActive: '#3b4560',
     },
   },
   {
@@ -83,7 +109,20 @@ export const themes: ThemePreset[] = [
       primaryHover: '#6ba0ff',
       onPrimary: '#0b0d11',
       danger: '#f87171',
+      dangerBorder: '#7f1d1d',
       accent: '#a78bfa',
+      success: '#4ade80',
+      successSoft: '#10261a',
+      successBorder: '#1f6b43',
+      warning: '#fbbf24',
+      warningSoft: '#2a2110',
+      warningBorder: '#7a5a16',
+      info: '#60a5fa',
+      infoSoft: '#101a2e',
+      infoBorder: '#2a4a7a',
+      railBg: '#0b0d11',
+      railText: '#9aa3b2',
+      railActive: '#2a2f3a',
     },
   },
   {
@@ -101,7 +140,20 @@ export const themes: ThemePreset[] = [
       primaryHover: '#92400e',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
+      dangerBorder: '#e0a3a3',
       accent: '#9333ea',
+      success: '#15803d',
+      successSoft: '#eef7ee',
+      successBorder: '#a7d8a7',
+      warning: '#92400e',
+      warningSoft: '#fdf6e3',
+      warningBorder: '#e0c98a',
+      info: '#1d4ed8',
+      infoSoft: '#eef2fb',
+      infoBorder: '#b9c8ea',
+      railBg: '#4a3f2f',
+      railText: '#cbbfa8',
+      railActive: '#6b5a3f',
     },
   },
   {
@@ -119,7 +171,20 @@ export const themes: ThemePreset[] = [
       primaryHover: '#115e59',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
+      dangerBorder: '#e0a3a3',
       accent: '#6366f1',
+      success: '#0f766e',
+      successSoft: '#e6f4f1',
+      successBorder: '#8ecfc6',
+      warning: '#b45309',
+      warningSoft: '#fdf3e7',
+      warningBorder: '#e6c79a',
+      info: '#0369a1',
+      infoSoft: '#e8f1f8',
+      infoBorder: '#9cc3dd',
+      railBg: '#1b2733',
+      railText: '#9fb0c0',
+      railActive: '#2f3d4d',
     },
   },
 ]

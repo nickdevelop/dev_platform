@@ -13,7 +13,20 @@
   --color-primary-hover: #1d4ed8;
   --color-on-primary: #ffffff;
   --color-danger: #b91c1c;
+  --color-danger-border: #fca5a5;
   --color-accent: #7c3aed;
+  --color-success: #15803d;
+  --color-success-soft: #ecfdf5;
+  --color-success-border: #86efac;
+  --color-warning: #92400e;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fcd34d;
+  --color-info: #0369a1;
+  --color-info-soft: #eff6ff;
+  --color-info-border: #93c5fd;
+  --rail-bg: #1e2330;
+  --rail-text: #aab2c5;
+  --rail-active: #3b4560;
 
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
     sans-serif;

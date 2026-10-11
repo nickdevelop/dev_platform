@@ -23,23 +23,23 @@ const emit = defineEmits<{
 
 <style scoped>
 .category-rail {
-  background: #1e2330;
+  background: var(--rail-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 12px 0;
-  gap: 8px;
+  padding: calc(var(--space-unit) * 2.000) 0;
+  gap: calc(var(--space-unit) * 1.333);
 }
 
 .category,
 .footer-btn {
   width: 44px;
-  padding: 6px 0;
+  padding: calc(var(--space-unit) * 1.000) 0;
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #aab2c5;
-  font-size: 12px;
+  color: var(--rail-text);
+  font-size: 0.857rem;
   cursor: pointer;
   text-align: center;
   text-decoration: none;
@@ -47,8 +47,8 @@ const emit = defineEmits<{
 }
 
 .category.active {
-  background: #3b4560;
-  color: #fff;
+  background: var(--rail-active);
+  color: var(--color-surface);
 }
 
 .category.reserved,

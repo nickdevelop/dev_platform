@@ -31,7 +31,20 @@ const colorVariables: Record<keyof ThemeColors, string> = {
   primaryHover: '--color-primary-hover',
   onPrimary: '--color-on-primary',
   danger: '--color-danger',
+  dangerBorder: '--color-danger-border',
   accent: '--color-accent',
+  success: '--color-success',
+  successSoft: '--color-success-soft',
+  successBorder: '--color-success-border',
+  warning: '--color-warning',
+  warningSoft: '--color-warning-soft',
+  warningBorder: '--color-warning-border',
+  info: '--color-info',
+  infoSoft: '--color-info-soft',
+  infoBorder: '--color-info-border',
+  railBg: '--rail-bg',
+  railText: '--rail-text',
+  railActive: '--rail-active',
 }
 
 export function applyAppearance(appearance: Appearance): void {

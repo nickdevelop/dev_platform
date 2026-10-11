@@ -174,50 +174,50 @@ async function logout() {
 }
 
 .sidebar-head {
-  padding: 14px 14px 8px;
+  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 1.333);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .sidebar-head h2 {
-  font-size: 15px;
+  font-size: 1.071rem;
   margin: 0;
 }
 
 .head-actions {
   display: flex;
-  gap: 4px;
+  gap: calc(var(--space-unit) * 0.667);
 }
 
 .head-actions button {
-  border: 1px solid #d0d5dd;
-  background: #fff;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
   border-radius: 6px;
-  padding: 3px 8px;
+  padding: calc(var(--space-unit) * 0.500) calc(var(--space-unit) * 1.333);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 0.857rem;
 }
 
 .search {
-  margin: 0 12px 8px;
-  padding: 6px 10px;
-  border: 1px solid #d0d5dd;
+  margin: 0 calc(var(--space-unit) * 2.000) calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.667);
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.929rem;
 }
 
 .tree {
   overflow: auto;
-  padding: 4px 6px 12px;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 2.000);
   flex: 1;
 }
 
 .pane {
   min-width: 0;
   overflow: auto;
-  padding: 18px 20px;
+  padding: calc(var(--space-unit) * 3.000) calc(var(--space-unit) * 3.333);
 }
 
 /* The conversation pane fills the viewport and never scrolls itself: its message
@@ -229,15 +229,15 @@ async function logout() {
 }
 
 .page-error {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .loading {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .missing {
-  color: #64748b;
+  color: var(--color-text-muted);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;

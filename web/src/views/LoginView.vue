@@ -70,7 +70,7 @@ async function submit() {
 
 .login-form input {
   padding: 0.5rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   font-size: 1rem;
 }
@@ -79,19 +79,19 @@ async function submit() {
   padding: 0.5rem;
   border: none;
   border-radius: 6px;
-  background: #2563eb;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-surface);
   font-size: 1rem;
   cursor: pointer;
 }
 
 .login-form button:disabled {
-  background: #93c5fd;
+  background: var(--color-info-border);
   cursor: default;
 }
 
 .login-error {
   margin: 0;
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 </style>
