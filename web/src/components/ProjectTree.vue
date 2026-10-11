@@ -179,7 +179,7 @@ function onProjectClick(projectId: number) {
 .new-task {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--space-unit) * 1.000);
   width: 100%;
   border: none;
   background: transparent;
@@ -192,15 +192,15 @@ function onProjectClick(projectId: number) {
 .project-row {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 0 4px 0 0;
+  gap: calc(var(--space-unit) * 0.333);
+  padding: 0 calc(var(--space-unit) * 0.667) 0 0;
   border-radius: 6px;
 }
 
 .project-toggle {
   flex: 1;
   min-width: 0;
-  padding: 7px 8px;
+  padding: calc(var(--space-unit) * 1.167) calc(var(--space-unit) * 1.333);
   font-weight: 600;
 }
 
@@ -210,23 +210,23 @@ function onProjectClick(projectId: number) {
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.929rem;
   line-height: 1;
-  padding: 6px;
+  padding: calc(var(--space-unit) * 1.000);
   border-radius: 6px;
-  color: #8a93a3;
+  color: var(--color-text-muted);
 }
 
 .project-row:hover,
 .project-settings:hover,
 .project-toggle:hover,
 .task-open:hover {
-  background: #f1f3f6;
+  background: var(--color-surface-muted);
 }
 
 .project-row.selected {
-  background: #e8f0ff;
-  color: #1d4ed8;
+  background: var(--color-info-soft);
+  color: var(--color-primary-hover);
 }
 
 .project-name {
@@ -237,13 +237,13 @@ function onProjectClick(projectId: number) {
 }
 
 .count {
-  color: #8a93a3;
-  font-size: 12px;
+  color: var(--color-text-muted);
+  font-size: 0.857rem;
   font-weight: 400;
 }
 
 .tasks {
-  padding-left: 14px;
+  padding-left: calc(var(--space-unit) * 2.333);
 }
 
 .task {
@@ -251,13 +251,13 @@ function onProjectClick(projectId: number) {
 }
 
 .task.selected .task-open {
-  background: #eef2f7;
+  background: var(--color-surface-muted);
   font-weight: 600;
 }
 
 .task-open {
-  padding: 6px 8px;
-  font-size: 13px;
+  padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.333);
+  font-size: 0.929rem;
 }
 
 .title {
@@ -268,20 +268,20 @@ function onProjectClick(projectId: number) {
 }
 
 .status {
-  color: #64748b;
-  font-size: 11px;
+  color: var(--color-text-muted);
+  font-size: 0.786rem;
   white-space: nowrap;
 }
 
 .new-task {
-  padding: 4px 8px;
-  color: #1d4ed8;
-  font-size: 12px;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  color: var(--color-primary-hover);
+  font-size: 0.857rem;
 }
 
 .empty {
-  padding: 4px 8px;
-  color: #8a93a3;
-  font-size: 12px;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  color: var(--color-text-muted);
+  font-size: 0.857rem;
 }
 </style>

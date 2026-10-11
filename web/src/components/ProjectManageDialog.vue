@@ -202,9 +202,9 @@ async function submit() {
 <style scoped>
 .dialog-actions button {
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
@@ -221,22 +221,22 @@ async function submit() {
 
 .dialog-form input[type='text'] {
   padding: 0.4rem 0.6rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
 }
 
 .dialog-form .hint {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .dialog-form .safe-note {
-  color: #15803d;
+  color: var(--color-success);
 }
 
 .dialog-form .danger-note {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .dialog-form .permanent-option {
@@ -247,7 +247,7 @@ async function submit() {
 }
 
 .dialog-error {
-  color: #b91c1c;
+  color: var(--color-danger);
   margin: 0;
 }
 
@@ -259,24 +259,24 @@ async function submit() {
 }
 
 .dialog-actions .confirm {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
 }
 
 .dialog-actions .confirm:disabled {
-  background: #93c5fd;
-  border-color: #93c5fd;
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
   cursor: default;
 }
 
 :deep(.dialog.danger) .dialog-actions .confirm {
-  background: #b91c1c;
-  border-color: #b91c1c;
+  background: var(--color-danger);
+  border-color: var(--color-danger);
 }
 
 :deep(.dialog.danger) .dialog-actions .confirm:disabled {
-  background: #fca5a5;
-  border-color: #fca5a5;
+  background: var(--color-danger-border);
+  border-color: var(--color-danger-border);
 }
 </style>

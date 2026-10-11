@@ -187,7 +187,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 }
 
 .path {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0.25rem 0 0;
 }
@@ -202,21 +202,21 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 .scan-controls select,
 .scan-controls button {
   padding: 0.35rem 0.7rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
 }
 
 .actions .delete,
 .actions .unregister {
-  color: #b91c1c;
-  border-color: #fca5a5;
+  color: var(--color-danger);
+  border-color: var(--color-danger-border);
 }
 
 .actions .unregister {
-  color: #334155;
-  border-color: #cbd5e1;
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
 }
 
 .backend-config-list {
@@ -238,21 +238,21 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 .scan-controls .hint,
 .hint {
   flex-basis: 100%;
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   margin: 0;
 }
 
 .page-error {
-  color: #b91c1c;
+  color: var(--color-danger);
 }
 
 .discover-notice {
-  color: #15803d;
+  color: var(--color-success);
   font-size: 0.9rem;
 }
 
 .diagnostics-error {
-  color: #92400e;
+  color: var(--color-warning);
 }
 </style>

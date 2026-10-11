@@ -83,8 +83,8 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .dialog {
-  background: #fff;
-  color: #0f172a;
+  background: var(--color-surface);
+  color: var(--color-text);
   border-radius: 8px;
   padding: 1.25rem 1.5rem;
   width: min(30rem, calc(100vw - 2rem));
@@ -94,7 +94,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .dialog.danger {
-  border-top: 4px solid #b91c1c;
+  border-top: 4px solid var(--color-danger);
 }
 
 .dialog-title {

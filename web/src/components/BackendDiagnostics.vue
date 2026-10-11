@@ -167,13 +167,13 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
 }
 
 .backend-item {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
 }
 
 .backend-error {
-  border-color: #fca5a5;
+  border-color: var(--color-danger-border);
 }
 
 .backend-head {
@@ -191,27 +191,27 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
   font-size: 0.75rem;
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  color: #475569;
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text-muted);
 }
 
 .badge-ok {
-  border-color: #86efac;
-  color: #15803d;
+  border-color: var(--color-success-border);
+  color: var(--color-success);
 }
 
 .badge-warning {
-  border-color: #fcd34d;
-  color: #92400e;
+  border-color: var(--color-warning-border);
+  color: var(--color-warning);
 }
 
 .badge-error {
-  border-color: #fca5a5;
-  color: #b91c1c;
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
 }
 
 .version {
-  color: #64748b;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
 }
 
@@ -232,17 +232,17 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
 }
 
 .check-kind {
-  color: #334155;
+  color: var(--color-text);
   min-width: 5.5rem;
 }
 
 .check-message {
-  color: #475569;
+  color: var(--color-text-muted);
   word-break: break-word;
 }
 
 .check-empty {
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .capabilities {
@@ -256,17 +256,17 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
   font-size: 0.75rem;
   padding: 0.1rem 0.45rem;
   border-radius: 6px;
-  background: #ecfdf5;
-  color: #047857;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .capability.off {
-  background: #f1f5f9;
-  color: #94a3b8;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
 }
 
 .empty {
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .instances {
@@ -293,28 +293,28 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
   gap: 0.5rem;
   flex-wrap: wrap;
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--color-text-muted);
 }
 
 .instance-backend,
 .instance-status {
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
-  background: #f1f5f9;
+  background: var(--color-surface-muted);
 }
 
 .instance-id,
 .instance-directory {
   font-family: monospace;
-  color: #64748b;
+  color: var(--color-text-muted);
 }
 
 .instance-item button {
   padding: 0.15rem 0.5rem;
-  border: 1px solid #fca5a5;
+  border: 1px solid var(--color-danger-border);
   border-radius: 6px;
-  background: #fff;
-  color: #b91c1c;
+  background: var(--color-surface);
+  color: var(--color-danger);
   cursor: pointer;
 }
 </style>
