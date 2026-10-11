@@ -14,6 +14,10 @@ import (
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/settings/appearance", s.handleGetAppearance)
 	r.PUT("/settings/appearance", s.handlePutAppearance)
+	r.GET("/agents", s.handleListAgents)
+	r.PUT("/agents/:backend", s.handleSetAgentEnabled)
+	r.PUT("/agents/:backend/path", s.handleSetAgentPath)
+	r.POST("/agents/:backend/detect", s.handleDetectAgent)
 }
 
 // errorResponse is the JSON error envelope for settings API failures.
