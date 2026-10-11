@@ -1985,6 +1985,126 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/resources/sync:
+    get:
+      summary: Preview project resource synchronization
+      description: >-
+        Renders every resource associated with the project and reports what
+        applying it would do, without touching the filesystem. Each preview
+        reports one resource/target pair; a conflict (unmanaged target,
+        external drift or an unwritable target) or an unsupported backend is
+        reported per pair rather than aborting the rest. Secret material is
+        never returned.
+      operationId: previewProjectResourceSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: One preview per resource/target pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPreviewList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Apply project resource synchronization
+      description: >-
+        Applies every resource associated with the project. A conflict is
+        returned in its preview and the target is left untouched unless force
+        is set, which records the user's resolution to overwrite or adopt it.
+        After the first apply the platform owns the target and later changes
+        synchronize without a new consent step.
+      operationId: applyProjectResourceSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplySyncRequest'
+      responses:
+        '200':
+          description: One result per resource/target pair.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPreviewList'
+        '400':
+          description: Malformed body or project id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/resources/sync/resolve:
+    post:
+      summary: Resolve a resource sync conflict
+      description: >-
+        Applies one resource with force after the user resolved a conflict,
+        adopting or overwriting the target.
+      operationId: resolveProjectResourceSync
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceReferenceRequest'
+      responses:
+        '200':
+          description: The resolved resource/target results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPreviewList'
+        '400':
+          description: Malformed body or project id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project or resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -2780,4 +2900,94 @@ components:
         present:
           type: boolean
           description: Whether a value is stored under the reference.
+      additionalProperties: false
+    SyncTarget:
+      type: object
+      required:
+        - projectId
+        - path
+      properties:
+        projectId:
+          type: integer
+          format: int64
+        backendId:
+          type: string
+          description: Backend the target belongs to; empty for a project-level target.
+        path:
+          type: string
+          description: Target path relative to the project directory.
+      additionalProperties: false
+    SyncConflict:
+      type: object
+      required:
+        - kind
+        - resourceId
+        - target
+      properties:
+        kind:
+          type: string
+          enum:
+            - unmanaged-target
+            - external-drift
+            - target-invalid
+        resourceId:
+          type: integer
+          format: int64
+        target:
+          $ref: '#/components/schemas/SyncTarget'
+        detail:
+          type: string
+      additionalProperties: false
+    SyncPreview:
+      type: object
+      required:
+        - resourceId
+        - kind
+        - target
+        - state
+        - changeSummary
+      properties:
+        resourceId:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+            - skill
+            - mcp
+            - prompt
+        target:
+          $ref: '#/components/schemas/SyncTarget'
+        state:
+          type: string
+          enum:
+            - pending
+            - applied
+            - conflict
+            - failed
+            - unsupported
+        changeSummary:
+          type: string
+          description: Human-facing change description; never contains secret material.
+        conflict:
+          $ref: '#/components/schemas/SyncConflict'
+      additionalProperties: false
+    SyncPreviewList:
+      type: object
+      required:
+        - previews
+      properties:
+        previews:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncPreview'
+      additionalProperties: false
+    ApplySyncRequest:
+      type: object
+      properties:
+        force:
+          type: boolean
+          description: >-
+            Explicit user resolution that allows overwriting an unmanaged
+            target or externally-edited managed content.
       additionalProperties: false

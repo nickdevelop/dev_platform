@@ -10,6 +10,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
+	"devplatform/internal/resourcesync"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
@@ -65,6 +66,10 @@ type Dependencies struct {
 	// When set together with Auth, the secret routes are served under
 	// /api/secrets behind RequireSession. Values are write-only.
 	Secrets *secrets.Handler
+	// ResourceSync renders and applies canonical resources to project config
+	// files. When set together with Auth, the sync routes are served under
+	// /api/projects/{id}/resources/sync behind RequireSession.
+	ResourceSync *resourcesync.Coordinator
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -114,6 +119,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Secrets != nil {
 			deps.Secrets.RegisterRoutes(protected)
+		}
+		if deps.ResourceSync != nil {
+			deps.ResourceSync.RegisterRoutes(protected)
 		}
 	}
 

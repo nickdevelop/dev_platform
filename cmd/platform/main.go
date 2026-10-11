@@ -28,6 +28,8 @@ import (
 	platformhttp "devplatform/internal/http"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
+	"devplatform/internal/resourcesync"
+	resourcesyncadapters "devplatform/internal/resourcesync/adapters"
 	platformruntime "devplatform/internal/runtime"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
@@ -254,6 +256,12 @@ func runServer(args []string) error {
 		return fmt.Errorf("open secret store: %w", err)
 	}
 	resourceService := resources.NewService(db, resources.WithSecretStore(secretStore))
+	managedFiles := resourcesync.NewManager(db, projectService, filepath.Join(dataDir, "managed-file-backups"))
+	resourceSync := resourcesync.NewCoordinator(managedFiles, resourceService, secretStore,
+		resourcesyncadapters.ProjectPrompts{},
+		resourcesyncadapters.OpenCode{},
+		resourcesyncadapters.Pi{},
+	)
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -268,14 +276,15 @@ func runServer(args []string) error {
 	}()
 
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
-		Auth:       authService,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projectService,
-		Instances:  instanceService,
-		Sessions:   sessionService,
-		Resources:  resourceService,
-		Secrets:    secrets.NewHandler(secretStore),
-		WebDir:     webDir,
+		Auth:         authService,
+		Workspaces:   workspaces.NewService(db),
+		Projects:     projectService,
+		Instances:    instanceService,
+		Sessions:     sessionService,
+		Resources:    resourceService,
+		Secrets:      secrets.NewHandler(secretStore),
+		ResourceSync: resourceSync,
+		WebDir:       webDir,
 	})
 
 	// Listen explicitly so the log reports the concrete bound address (the

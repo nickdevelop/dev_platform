@@ -24,6 +24,8 @@ import (
 	"devplatform/internal/database"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
+	"devplatform/internal/resourcesync"
+	resourcesyncadapters "devplatform/internal/resourcesync/adapters"
 	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
@@ -810,23 +812,32 @@ func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("secrets.NewStore: %v", err)
 	}
+	resourceService := resources.NewService(db, resources.WithSecretStore(secretStore))
+	managedFiles := resourcesync.NewManager(db, projectService, t.TempDir())
+	resourceSync := resourcesync.NewCoordinator(managedFiles, resourceService, secretStore,
+		resourcesyncadapters.ProjectPrompts{}, resourcesyncadapters.OpenCode{}, resourcesyncadapters.Pi{})
 	// Building the router with every service present is the assertion: gin
 	// panics on a conflicting route tree before any request is served.
 	router := NewRouter(Dependencies{
-		Auth:       authSvc,
-		Workspaces: workspaces.NewService(db),
-		Projects:   projectService,
-		Instances:  instanceService,
-		Sessions:   sessions.NewService(db, registry, instanceService),
-		Resources:  resources.NewService(db, resources.WithSecretStore(secretStore)),
-		Secrets:    secrets.NewHandler(secretStore),
+		Auth:         authSvc,
+		Workspaces:   workspaces.NewService(db),
+		Projects:     projectService,
+		Instances:    instanceService,
+		Sessions:     sessions.NewService(db, registry, instanceService),
+		Resources:    resourceService,
+		Secrets:      secrets.NewHandler(secretStore),
+		ResourceSync: resourceSync,
 	})
 
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 
-	// Unauthenticated resource and secret routes are rejected.
-	for _, path := range []string{"/api/resources", "/api/secrets/sec_missing"} {
+	// Unauthenticated resource, secret and sync routes are rejected.
+	for _, path := range []string{
+		"/api/resources",
+		"/api/secrets/sec_missing",
+		"/api/projects/1/resources/sync",
+	} {
 		resp, err := (&http.Client{}).Get(server.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
