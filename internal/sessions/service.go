@@ -106,6 +106,9 @@ type Session struct {
 type BackendCapabilities struct {
 	Backend      agents.BackendID    `json:"backend"`
 	Capabilities agents.Capabilities `json:"capabilities"`
+	// Enabled reports the platform-level enablement: a disabled backend cannot
+	// be selected for new tasks. It is independent of per-project settings.
+	Enabled bool `json:"enabled"`
 }
 
 // InstanceService is the subset of the instance lifecycle the session layer
@@ -209,7 +212,7 @@ func (s *Service) Backends() []BackendCapabilities {
 	ids := s.registry.Backends()
 	out := make([]BackendCapabilities, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, BackendCapabilities{Backend: id, Capabilities: s.capabilities(id)})
+		out = append(out, BackendCapabilities{Backend: id, Capabilities: s.capabilities(id), Enabled: !s.agentDisabled(id)})
 	}
 	return out
 }

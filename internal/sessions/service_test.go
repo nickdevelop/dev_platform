@@ -1692,3 +1692,17 @@ func TestCreateRejectsPlatformDisabledAgent(t *testing.T) {
 		t.Fatalf("Create error = %v, want ErrAgentDisabled", err)
 	}
 }
+
+// TestBackendsReportsPlatformEnablement verifies the backend list carries the
+// platform-level enablement flags.
+func TestBackendsReportsPlatformEnablement(t *testing.T) {
+	enabled := true
+	env := newTestEnv(t, func(agents.BackendID) bool { return enabled })
+	enabled = false
+
+	for _, backend := range env.svc.Backends() {
+		if backend.Enabled {
+			t.Errorf("backend %s reported enabled while platform-disabled", backend.Backend)
+		}
+	}
+}
