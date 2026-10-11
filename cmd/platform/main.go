@@ -29,6 +29,7 @@ import (
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
 	platformruntime "devplatform/internal/runtime"
+	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
@@ -248,7 +249,11 @@ func runServer(args []string) error {
 	}
 	instanceService := instances.NewService(db, registry, projectService)
 	sessionService := sessions.NewService(db, registry, instanceService)
-	resourceService := resources.NewService(db)
+	secretStore, err := secrets.NewStore(dataDir)
+	if err != nil {
+		return fmt.Errorf("open secret store: %w", err)
+	}
+	resourceService := resources.NewService(db, resources.WithSecretStore(secretStore))
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -269,6 +274,7 @@ func runServer(args []string) error {
 		Instances:  instanceService,
 		Sessions:   sessionService,
 		Resources:  resourceService,
+		Secrets:    secrets.NewHandler(secretStore),
 		WebDir:     webDir,
 	})
 

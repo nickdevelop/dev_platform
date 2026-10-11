@@ -1846,6 +1846,145 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /secrets:
+    post:
+      summary: Store an MCP credential value
+      description: >-
+        Stores a credential value under a fresh opaque reference. The value is
+        write-only: it is never returned by any endpoint, and only the opaque
+        id is exposed. The value is kept in a separate platform-private file
+        with owner-only permissions, which does not protect against same-user
+        processes or backups.
+      operationId: createSecret
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecretWriteRequest'
+      responses:
+        '201':
+          description: Credential stored; only the opaque reference is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /secrets/{id}:
+    get:
+      summary: Check whether a credential reference exists
+      description: >-
+        Reports the opaque reference and whether a value is present. The value
+        itself is never returned.
+      operationId: getSecretMetadata
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SecretId'
+      responses:
+        '200':
+          description: The credential reference metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretMetadata'
+        '400':
+          description: Malformed reference id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No value stored under the reference.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Rotate a stored credential value
+      description: Replaces the value under an existing reference; never echoes it.
+      operationId: rotateSecret
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SecretId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecretWriteRequest'
+      responses:
+        '204':
+          description: Value rotated.
+        '400':
+          description: Malformed body or reference id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No value stored under the reference.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a stored credential value
+      description: Removes the value stored under the reference.
+      operationId: deleteSecret
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SecretId'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Value deleted.
+        '400':
+          description: Malformed reference id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No value stored under the reference.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
 components:
   securitySchemes:
     cookieAuth:
@@ -1881,6 +2020,13 @@ components:
       in: path
       required: true
       description: Platform identifier of the session.
+      schema:
+        type: string
+    SecretId:
+      name: id
+      in: path
+      required: true
+      description: Opaque credential reference.
       schema:
         type: string
   responses:
@@ -2591,6 +2737,13 @@ components:
         secretRef:
           type: string
           description: Opaque credential reference; never a credential value.
+        secretValue:
+          type: string
+          writeOnly: true
+          description: >-
+            Plaintext MCP credential to store. It is written to the private
+            secret store and never returned; the definition keeps only the
+            opaque secretRef.
         backends:
           type: array
           items:
@@ -2604,4 +2757,27 @@ components:
         resourceId:
           type: integer
           format: int64
+      additionalProperties: false
+    SecretWriteRequest:
+      type: object
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          writeOnly: true
+          description: The credential value to store; never echoed back.
+      additionalProperties: false
+    SecretMetadata:
+      type: object
+      required:
+        - id
+        - present
+      properties:
+        id:
+          type: string
+          description: Opaque credential reference.
+        present:
+          type: boolean
+          description: Whether a value is stored under the reference.
       additionalProperties: false

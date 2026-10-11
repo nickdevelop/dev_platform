@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"devplatform/internal/agents"
 	"devplatform/internal/database"
+	"devplatform/internal/secrets"
 )
 
 // openTestDB opens and migrates a throwaway platform database.
@@ -421,4 +423,76 @@ func TestServiceRoutesRegisterWithoutConflict(t *testing.T) {
 	db := openTestDB(t)
 	engine := gin.New()
 	NewService(db).RegisterRoutes(engine.Group("/api"))
+}
+
+// TestServiceStoresMCPSecretOpaquely verifies the resource service keeps only
+// an opaque reference on the MCP definition while the value lives in the
+// secret store, rotates on update and is removed with the resource.
+func TestServiceStoresMCPSecretOpaquely(t *testing.T) {
+	db := openTestDB(t)
+	store, err := secrets.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("secrets.NewStore: %v", err)
+	}
+	svc := NewService(db, WithSecretStore(store))
+	ctx := context.Background()
+
+	in := skillInput()
+	in.Kind = ResourceMCP
+	in.Name = "filesystem-server"
+	in.SecretValue = "plaintext-credential"
+	created, err := svc.Create(in)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.SecretRef == "" {
+		t.Fatal("Create did not assign an opaque secretRef")
+	}
+	data, err := json.Marshal(created)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if strings.Contains(string(data), "plaintext-credential") {
+		t.Fatalf("definition leaked the secret value: %s", data)
+	}
+	if got, err := store.Get(ctx, created.SecretRef); err != nil || got != "plaintext-credential" {
+		t.Fatalf("stored value = %q, %v", got, err)
+	}
+
+	// Rotation keeps the same opaque reference.
+	rotate := in
+	rotate.SecretValue = "rotated-credential"
+	updated, err := svc.Update(created.ID, rotate)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.SecretRef != created.SecretRef {
+		t.Fatalf("rotation changed the reference %q -> %q", created.SecretRef, updated.SecretRef)
+	}
+	if got, err := store.Get(ctx, updated.SecretRef); err != nil || got != "rotated-credential" {
+		t.Fatalf("rotated value = %q, %v", got, err)
+	}
+
+	// Deleting the resource removes the stored value.
+	if err := svc.Delete(created.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Get(ctx, created.SecretRef); !errors.Is(err, secrets.ErrSecretNotFound) {
+		t.Fatalf("secret survived resource delete: %v", err)
+	}
+}
+
+// TestServiceRefusesSecretValueWithoutStore verifies an MCP value cannot be
+// silently dropped when no secret store is configured.
+func TestServiceRefusesSecretValueWithoutStore(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+
+	in := skillInput()
+	in.Kind = ResourceMCP
+	in.Name = "filesystem-server"
+	in.SecretValue = "plaintext-credential"
+	if _, err := svc.Create(in); !errors.Is(err, ErrSecretStoreUnavailable) {
+		t.Fatalf("Create without store = %v, want ErrSecretStoreUnavailable", err)
+	}
 }

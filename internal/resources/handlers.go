@@ -67,6 +67,7 @@ type resourceRequest struct {
 	Enabled     bool     `json:"enabled"`
 	PromptScope string   `json:"promptScope"`
 	SecretRef   string   `json:"secretRef"`
+	SecretValue string   `json:"secretValue"`
 	Backends    []string `json:"backends"`
 }
 
@@ -83,6 +84,7 @@ func (req resourceRequest) input() CreateInput {
 		Enabled:     req.Enabled,
 		PromptScope: PromptScope(req.PromptScope),
 		SecretRef:   req.SecretRef,
+		SecretValue: req.SecretValue,
 		Backends:    backends,
 	}
 }

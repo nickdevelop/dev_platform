@@ -1,6 +1,7 @@
 package resources
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -9,6 +10,7 @@ import (
 
 	"devplatform/internal/agents"
 	"devplatform/internal/database"
+	"devplatform/internal/secrets"
 )
 
 // Sentinel errors reported by the resource service. Callers test for them
@@ -26,6 +28,9 @@ var (
 	// ErrNotPrompt reports an attempt to select a non-prompt resource as a
 	// session prompt.
 	ErrNotPrompt = errors.New("resources: resource is not a prompt")
+	// ErrSecretStoreUnavailable reports a plaintext credential supplied when no
+	// secret store is configured; the value is refused rather than dropped.
+	ErrSecretStoreUnavailable = errors.New("resources: secret store is not configured")
 )
 
 // CreateInput carries the client-settable fields of a resource definition.
@@ -46,6 +51,10 @@ type CreateInput struct {
 	// SecretRef is the opaque credential reference for an MCP definition; it
 	// is never the credential value.
 	SecretRef string
+	// SecretValue is a write-only plaintext credential. When set for an MCP
+	// definition it is stored in the secret store and only the reference is
+	// persisted; it is never returned.
+	SecretValue string
 	// Backends lists the backends the resource applies to (empty is
 	// unrestricted).
 	Backends []agents.BackendID
@@ -60,17 +69,65 @@ func (in CreateInput) Validate() error {
 // and their selection as session prompts. Credentials are referenced only by
 // an opaque id; the service never reads or returns a plaintext secret.
 type Service struct {
-	repo *repository
+	repo    *repository
+	secrets secrets.SecretStore
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithSecretStore configures the store used for MCP credential values. When
+// unset, a caller that supplies a plaintext value is refused rather than
+// having the value silently dropped.
+func WithSecretStore(store secrets.SecretStore) Option {
+	return func(s *Service) {
+		if store != nil {
+			s.secrets = store
+		}
+	}
 }
 
 // NewService builds the resource service over the platform database.
-func NewService(db *gorm.DB) *Service {
-	return &Service{repo: &repository{db: db}}
+func NewService(db *gorm.DB, opts ...Option) *Service {
+	s := &Service{repo: &repository{db: db}}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// resolveSecret returns the opaque reference to persist and, when a plaintext
+// value is supplied, stores it. An empty value leaves providedRef unchanged,
+// so a reference can be set without a value and a value can be rotated
+// without changing the reference.
+func (s *Service) resolveSecret(kind ResourceKind, providedRef, value string) (string, error) {
+	if kind != ResourceMCP || value == "" {
+		return providedRef, nil
+	}
+	if s.secrets == nil {
+		return "", ErrSecretStoreUnavailable
+	}
+	ref := providedRef
+	if ref == "" {
+		generated, err := secrets.NewSecretID()
+		if err != nil {
+			return "", err
+		}
+		ref = generated
+	}
+	if err := s.secrets.Set(context.Background(), ref, value); err != nil {
+		return "", err
+	}
+	return ref, nil
 }
 
 // Create validates and persists a new resource definition.
 func (s *Service) Create(in CreateInput) (ResourceDefinition, error) {
 	if err := in.Validate(); err != nil {
+		return ResourceDefinition{}, err
+	}
+	secretRef, err := s.resolveSecret(in.Kind, in.SecretRef, in.SecretValue)
+	if err != nil {
 		return ResourceDefinition{}, err
 	}
 	now := time.Now().UTC()
@@ -81,7 +138,7 @@ func (s *Service) Create(in CreateInput) (ResourceDefinition, error) {
 		Content:     in.Content,
 		Enabled:     in.Enabled,
 		PromptScope: string(in.PromptScope),
-		SecretRef:   in.SecretRef,
+		SecretRef:   secretRef,
 		Backends:    joinBackends(in.Backends),
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -134,7 +191,15 @@ func (s *Service) Update(id uint, in CreateInput) (ResourceDefinition, error) {
 	row.Content = in.Content
 	row.Enabled = in.Enabled
 	row.PromptScope = string(in.PromptScope)
-	row.SecretRef = in.SecretRef
+	providedRef := in.SecretRef
+	if providedRef == "" {
+		providedRef = row.SecretRef
+	}
+	secretRef, err := s.resolveSecret(in.Kind, providedRef, in.SecretValue)
+	if err != nil {
+		return ResourceDefinition{}, err
+	}
+	row.SecretRef = secretRef
 	row.Backends = joinBackends(in.Backends)
 	row.UpdatedAt = time.Now().UTC()
 	if err := s.repo.update(&row); err != nil {
@@ -143,8 +208,18 @@ func (s *Service) Update(id uint, in CreateInput) (ResourceDefinition, error) {
 	return definitionFromModel(row), nil
 }
 
-// Delete removes a resource and every association that references it.
+// Delete removes a resource, every association that references it, and the
+// credential value it referenced.
 func (s *Service) Delete(id uint) error {
+	row, err := s.repo.get(id)
+	if err != nil {
+		return err
+	}
+	if row.SecretRef != "" && s.secrets != nil {
+		if err := s.secrets.Delete(context.Background(), row.SecretRef); err != nil && !errors.Is(err, secrets.ErrSecretNotFound) {
+			return err
+		}
+	}
 	return s.repo.delete(id)
 }
 

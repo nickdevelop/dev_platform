@@ -10,6 +10,7 @@ import (
 	"devplatform/internal/auth"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
+	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
@@ -60,6 +61,10 @@ type Dependencies struct {
 	// with Auth, the resource routes are served under /api/resources and
 	// /api/projects/{id}/resources behind RequireSession.
 	Resources *resources.Service
+	// Secrets manages MCP credential values in the platform-private store.
+	// When set together with Auth, the secret routes are served under
+	// /api/secrets behind RequireSession. Values are write-only.
+	Secrets *secrets.Handler
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -106,6 +111,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Resources != nil {
 			deps.Resources.RegisterRoutes(protected)
+		}
+		if deps.Secrets != nil {
+			deps.Secrets.RegisterRoutes(protected)
 		}
 	}
 

@@ -24,6 +24,7 @@ import (
 	"devplatform/internal/database"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
+	"devplatform/internal/secrets"
 	"devplatform/internal/sessions"
 	"devplatform/internal/workspaces"
 )
@@ -805,6 +806,10 @@ func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
 	}
 	projectService := projects.NewService(db)
 	instanceService := instances.NewService(db, registry, projectService)
+	secretStore, err := secrets.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("secrets.NewStore: %v", err)
+	}
 	// Building the router with every service present is the assertion: gin
 	// panics on a conflicting route tree before any request is served.
 	router := NewRouter(Dependencies{
@@ -813,20 +818,23 @@ func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
 		Projects:   projectService,
 		Instances:  instanceService,
 		Sessions:   sessions.NewService(db, registry, instanceService),
-		Resources:  resources.NewService(db),
+		Resources:  resources.NewService(db, resources.WithSecretStore(secretStore)),
+		Secrets:    secrets.NewHandler(secretStore),
 	})
 
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 
-	// Unauthenticated resource routes are rejected.
-	resp, err := (&http.Client{}).Get(server.URL + "/api/resources")
-	if err != nil {
-		t.Fatalf("GET resources: %v", err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated GET /api/resources status = %d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	// Unauthenticated resource and secret routes are rejected.
+	for _, path := range []string{"/api/resources", "/api/secrets/sec_missing"} {
+		resp, err := (&http.Client{}).Get(server.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("unauthenticated GET %s status = %d, want %d", path, resp.StatusCode, http.StatusUnauthorized)
+		}
 	}
 
 	jar, err := cookiejar.New(nil)
