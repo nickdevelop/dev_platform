@@ -112,6 +112,20 @@ func TestMigrateDropsWorkspaceRoots(t *testing.T) {
 	}
 }
 
+func TestMigrateCreatesModelTables(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	for _, model := range []any{&ModelService{}, &ModelDef{}} {
+		if !db.Migrator().HasTable(model) {
+			t.Errorf("table for %T does not exist after migration", model)
+		}
+	}
+	if !db.Migrator().HasIndex(&ModelDef{}, "idx_model_service_wire") {
+		t.Error("model_defs (service_id, model_id) unique index is missing")
+	}
+}
+
 func TestOpenEnablesSQLitePragmas(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)

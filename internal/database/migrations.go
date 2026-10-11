@@ -80,6 +80,20 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 14, name: "create_model_services", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&ModelService{})
+	}},
+	{version: 15, name: "create_model_defs", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&ModelDef{})
+	}},
+	{version: 16, name: "create_model_defs_service_index", run: func(tx *gorm.DB) error {
+		// (service_id, model_id) is unique: the same wire id cannot be listed
+		// twice under one service.
+		if tx.Migrator().HasIndex(&ModelDef{}, "idx_model_service_wire") {
+			return nil
+		}
+		return tx.Migrator().CreateIndex(&ModelDef{}, "idx_model_service_wire")
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

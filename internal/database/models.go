@@ -161,3 +161,36 @@ type ManagedResourceFile struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
+
+// ModelService is one OpenAI-compatible model service the operator configured.
+// The API key is never stored here: SecretRef is an opaque reference into the
+// platform-private secret store, empty when the service needs no auth.
+// Table: model_services.
+type ModelService struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Name      string `gorm:"column:name;not null"`
+	BaseURL   string `gorm:"column:base_url;not null"`
+	SecretRef string `gorm:"column:secret_ref"`
+	Enabled   bool   `gorm:"column:enabled;not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// ModelDef is one model offered by a model service. ModelID is the
+// service-native identifier (the value sent as "model"); Name is the display
+// name. The pair (service_id, model_id) is unique so a service cannot list the
+// same wire id twice. Table: model_defs.
+type ModelDef struct {
+	ID            uint   `gorm:"primaryKey;column:id"`
+	ServiceID     uint   `gorm:"column:service_id;not null;index;uniqueIndex:idx_model_service_wire"`
+	ModelID       string `gorm:"column:model_id;not null;uniqueIndex:idx_model_service_wire"`
+	Name          string `gorm:"column:name;not null"`
+	SupportsText  bool   `gorm:"column:supports_text;not null;default:true"`
+	SupportsImage bool   `gorm:"column:supports_image;not null;default:false"`
+	SupportsTools bool   `gorm:"column:supports_tools;not null;default:false"`
+	ContextTokens int    `gorm:"column:context_tokens;not null;default:0"`
+	OutputTokens  int    `gorm:"column:output_tokens;not null;default:0"`
+	Enabled       bool   `gorm:"column:enabled;not null;default:true"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
