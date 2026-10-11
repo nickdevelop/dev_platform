@@ -1114,3 +1114,22 @@ func TestAdapterSubscribeReportsReasoningWithoutDeltas(t *testing.T) {
 		t.Errorf("event[0] = %+v, want the whole reasoning block", got[0])
 	}
 }
+
+// TestExecPathPrefersResolveExecutable verifies the runtime override wins while
+// a nil or empty resolver falls back to the configured executable.
+func TestExecPathPrefersResolveExecutable(t *testing.T) {
+	override := New(Options{Executable: "fallback", ResolveExecutable: func() string { return "/custom/opencode" }})
+	if got := override.execPath(); got != "/custom/opencode" {
+		t.Errorf("execPath() = %q, want /custom/opencode", got)
+	}
+
+	empty := New(Options{Executable: "fallback", ResolveExecutable: func() string { return "" }})
+	if got := empty.execPath(); got != "fallback" {
+		t.Errorf("execPath() with empty resolver = %q, want fallback", got)
+	}
+
+	defaulted := New(Options{Executable: "fallback"})
+	if got := defaulted.execPath(); got != "fallback" {
+		t.Errorf("execPath() without resolver = %q, want fallback", got)
+	}
+}

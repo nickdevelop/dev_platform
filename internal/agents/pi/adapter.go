@@ -31,6 +31,10 @@ const maxSessionScanBytes = 4 * 1024 * 1024
 type Options struct {
 	// Executable is the pi binary name or path. Defaults to "pi".
 	Executable string
+	// ResolveExecutable, when set, is consulted at each use to obtain the
+	// current binary path (the platform-level agent setting). An empty result
+	// falls back to Executable.
+	ResolveExecutable func() string
 	// SessionDir overrides pi's session storage directory. When set it is
 	// passed to pi as --session-dir and scanned by ListSessions, so writes and
 	// reads agree. When empty the adapter uses PI_CODING_AGENT_SESSION_DIR or
@@ -54,13 +58,14 @@ type Options struct {
 // per prompt, so an instance owns the directory, the live prompt processes and
 // the normalized event fan-out rather than a long-lived daemon.
 type Adapter struct {
-	executable     string
-	sessionDir     string
-	passSessionDir bool
-	env            []string
-	now            func() time.Time
-	newID          func() (string, error)
-	versionProbe   func(ctx context.Context) (string, error)
+	executable        string
+	resolveExecutable func() string
+	sessionDir        string
+	passSessionDir    bool
+	env               []string
+	now               func() time.Time
+	newID             func() (string, error)
+	versionProbe      func(ctx context.Context) (string, error)
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -95,14 +100,15 @@ func Register(registry *agents.Registry) error {
 // New builds a pi adapter.
 func New(options Options) *Adapter {
 	adapter := &Adapter{
-		executable:   options.Executable,
-		sessionDir:   options.SessionDir,
-		env:          options.Env,
-		now:          options.Now,
-		newID:        options.NewID,
-		versionProbe: options.VersionProbe,
-		instances:    make(map[string]*instance),
-		sessions:     make(map[sessionKey]*sessionState),
+		executable:        options.Executable,
+		resolveExecutable: options.ResolveExecutable,
+		sessionDir:        options.SessionDir,
+		env:               options.Env,
+		now:               options.Now,
+		newID:             options.NewID,
+		versionProbe:      options.VersionProbe,
+		instances:         make(map[string]*instance),
+		sessions:          make(map[sessionKey]*sessionState),
 	}
 	if adapter.executable == "" {
 		adapter.executable = "pi"
@@ -122,6 +128,18 @@ func New(options Options) *Adapter {
 		adapter.sessionDir = defaultSessionDir()
 	}
 	return adapter
+}
+
+// execPath is the executable to run: the runtime override when one resolves,
+// otherwise the configured default. It keeps a manual agent path effective for
+// every launch without rebuilding the adapter.
+func (a *Adapter) execPath() string {
+	if a.resolveExecutable != nil {
+		if path := a.resolveExecutable(); path != "" {
+			return path
+		}
+	}
+	return a.executable
 }
 
 // Capabilities declares what this adapter supports. It targets pi's documented
@@ -148,9 +166,10 @@ func (a *Adapter) Probe(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path, err := exec.LookPath(a.executable)
+	executable := a.execPath()
+	path, err := exec.LookPath(executable)
 	if err != nil {
-		return fmt.Errorf("pi: executable %q not found: %w", a.executable, err)
+		return fmt.Errorf("pi: executable %q not found: %w", executable, err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -166,7 +185,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.executable, "--version").Output()
+	out, err := exec.CommandContext(ctx, a.execPath(), "--version").Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
@@ -203,7 +222,7 @@ func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
 	report.Checks = append(report.Checks, agents.Diagnostic{
 		Kind:    agents.DiagnosticExecutable,
 		Status:  agents.DiagnosticOK,
-		Message: fmt.Sprintf("pi executable %q found", a.executable),
+		Message: fmt.Sprintf("pi executable %q found", a.execPath()),
 	})
 
 	version, versionCheck := a.checkVersion(ctx, supported)
@@ -456,7 +475,7 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	}
 
 	spec := processSpec{
-		executable: a.executable,
+		executable: a.execPath(),
 		args: promptArgs(promptOptions{
 			sessionID:      ref.SessionID,
 			sessionDir:     a.sessionDir,
@@ -492,7 +511,7 @@ func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.M
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.executable, "--list-models").Output()
+	out, err := exec.CommandContext(ctx, a.execPath(), "--list-models").Output()
 	if err != nil {
 		return nil, fmt.Errorf("pi: list models: %s", redactSecrets(err.Error()))
 	}

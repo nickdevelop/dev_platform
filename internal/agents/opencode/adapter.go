@@ -45,6 +45,10 @@ const (
 type Options struct {
 	// Executable is the opencode binary name or path. Defaults to "opencode".
 	Executable string
+	// ResolveExecutable, when set, is consulted at each use to obtain the
+	// current binary path (the platform-level agent setting). An empty result
+	// falls back to Executable.
+	ResolveExecutable func() string
 	// Hostname is the loopback host the per-instance server binds. Defaults
 	// to 127.0.0.1.
 	Hostname string
@@ -69,14 +73,15 @@ type Options struct {
 // bound to that server, and its own normalized event fan-out; a failure in one
 // instance never touches another.
 type Adapter struct {
-	executable     string
-	hostname       string
-	startupTimeout time.Duration
-	streamIdle     time.Duration
-	now            func() time.Time
-	newID          func() (string, error)
-	launch         launcher
-	versionProbe   func(ctx context.Context) (string, error)
+	executable        string
+	resolveExecutable func() string
+	hostname          string
+	startupTimeout    time.Duration
+	streamIdle        time.Duration
+	now               func() time.Time
+	newID             func() (string, error)
+	launch            launcher
+	versionProbe      func(ctx context.Context) (string, error)
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -109,14 +114,15 @@ func Register(registry *agents.Registry) error {
 // New builds an opencode adapter.
 func New(options Options) *Adapter {
 	adapter := &Adapter{
-		executable:     options.Executable,
-		hostname:       options.Hostname,
-		startupTimeout: options.StartupTimeout,
-		streamIdle:     options.StreamIdleTimeout,
-		now:            options.Now,
-		newID:          options.NewID,
-		versionProbe:   options.VersionProbe,
-		instances:      make(map[string]*instance),
+		executable:        options.Executable,
+		resolveExecutable: options.ResolveExecutable,
+		hostname:          options.Hostname,
+		startupTimeout:    options.StartupTimeout,
+		streamIdle:        options.StreamIdleTimeout,
+		now:               options.Now,
+		newID:             options.NewID,
+		versionProbe:      options.VersionProbe,
+		instances:         make(map[string]*instance),
 	}
 	if adapter.executable == "" {
 		adapter.executable = "opencode"
@@ -141,6 +147,18 @@ func New(options Options) *Adapter {
 	}
 	adapter.launch = adapter.launchServer
 	return adapter
+}
+
+// execPath is the executable to run: the runtime override when one resolves,
+// otherwise the configured default. It keeps a manual agent path effective for
+// every launch without rebuilding the adapter.
+func (a *Adapter) execPath() string {
+	if a.resolveExecutable != nil {
+		if path := a.resolveExecutable(); path != "" {
+			return path
+		}
+	}
+	return a.executable
 }
 
 // Capabilities declares what the v2 API actually supports. Streaming
@@ -170,9 +188,10 @@ func (a *Adapter) Probe(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	path, err := exec.LookPath(a.executable)
+	executable := a.execPath()
+	path, err := exec.LookPath(executable)
 	if err != nil {
-		return fmt.Errorf("opencode: executable %q not found: %w", a.executable, err)
+		return fmt.Errorf("opencode: executable %q not found: %w", executable, err)
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -189,7 +208,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.executable, "--version").Output()
+	out, err := exec.CommandContext(ctx, a.execPath(), "--version").Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
@@ -226,7 +245,7 @@ func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
 	report.Checks = append(report.Checks, agents.Diagnostic{
 		Kind:    agents.DiagnosticExecutable,
 		Status:  agents.DiagnosticOK,
-		Message: fmt.Sprintf("opencode executable %q found", a.executable),
+		Message: fmt.Sprintf("opencode executable %q found", a.execPath()),
 	})
 
 	version, versionCheck := a.checkVersion(ctx, supported)
@@ -1521,7 +1540,7 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	// exec.Command, not CommandContext: the server must outlive the start
 	// request. Teardown is owned by the returned stop hook; a canceled start
 	// context is honored by waitReady.
-	command := exec.Command(a.executable, "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	command := exec.Command(a.execPath(), "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
 	command.Dir = directory
 	command.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
 	output := &limitedWriter{limit: maxStartupOutputBytes}

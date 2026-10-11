@@ -245,10 +245,14 @@ func runServer(args []string) error {
 	// Register the installed backends. Registration only constructs the
 	// adapter; it never probes or starts a backend, so a missing binary is
 	// reported when an instance is started, not at boot.
-	if err := pi.Register(registry); err != nil {
+	if err := registry.Register(agents.BackendPi, pi.New(pi.Options{
+		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendPi) },
+	})); err != nil {
 		return fmt.Errorf("register pi adapter: %w", err)
 	}
-	if err := opencode.Register(registry); err != nil {
+	if err := registry.Register(agents.BackendOpenCodeV2, opencode.New(opencode.Options{
+		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendOpenCodeV2) },
+	})); err != nil {
 		return fmt.Errorf("register opencode adapter: %w", err)
 	}
 	instanceService := instances.NewService(db, registry, projectService)
