@@ -50,6 +50,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusNotFound, "session_not_found")
 	case errors.Is(err, ErrNotPrompt):
 		respondError(c, http.StatusBadRequest, "not_a_prompt")
+	case errors.Is(err, ErrResourceConflict):
+		respondError(c, http.StatusConflict, "resource_conflict")
 	case errors.Is(err, ErrInvalidResource):
 		respondError(c, http.StatusBadRequest, "invalid_resource")
 	default:

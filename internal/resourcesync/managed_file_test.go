@@ -223,6 +223,25 @@ func TestManagedFileTargetTraversal(t *testing.T) {
 	}
 }
 
+func TestManagedFileForceDoesNotBypassInvalidTarget(t *testing.T) {
+	dir, m := newManager(t)
+	adir := filepath.Join(dir, "adir")
+	if err := os.MkdirAll(adir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	patch := managedPatch("adir", "x", "write to a directory")
+
+	// force resolves unmanaged targets and external drift, but never an
+	// unwritable target: a directory (or symlink) is not overwritten.
+	if _, err := m.Apply(patch, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("Apply(force) to a directory = %v, want ErrConflict", err)
+	}
+	info, err := os.Stat(adir)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("target directory was disturbed: %v", err)
+	}
+}
+
 func TestManagedFileTargetInvalid(t *testing.T) {
 	dir, m := newManager(t)
 	if err := os.MkdirAll(filepath.Join(dir, "adir"), 0o755); err != nil {

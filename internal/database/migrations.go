@@ -63,6 +63,14 @@ var migrationSteps = []migrationStep{
 	{version: 11, name: "create_managed_resource_files", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&ManagedResourceFile{})
 	}},
+	{version: 12, name: "create_resources_kind_name_index", run: func(tx *gorm.DB) error {
+		// A resource's (kind, name) is unique: two resources of the same kind
+		// render to the same managed target and would overwrite each other.
+		if tx.Migrator().HasIndex(&Resource{}, "idx_resource_kind_name") {
+			return nil
+		}
+		return tx.Migrator().CreateIndex(&Resource{}, "idx_resource_kind_name")
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

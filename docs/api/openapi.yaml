@@ -1533,6 +1533,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: Another resource of the same kind already uses this name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
   /resources/{id}:
@@ -1604,6 +1610,12 @@ paths:
           $ref: '#/components/responses/CSRFRejected'
         '404':
           description: No such resource.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Another resource of the same kind already uses this name.
           content:
             application/json:
               schema:

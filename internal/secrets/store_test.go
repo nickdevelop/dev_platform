@@ -170,6 +170,29 @@ func TestStoreRejectsSymlinkedFile(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsEmptyValue(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	if err := store.Set(ctx, "sec_1", ""); !errors.Is(err, ErrEmptySecretValue) {
+		t.Fatalf("Set with an empty value = %v, want ErrEmptySecretValue", err)
+	}
+	if _, err := store.Get(ctx, "sec_1"); !errors.Is(err, ErrSecretNotFound) {
+		t.Fatalf("empty Set stored a value: %v", err)
+	}
+
+	// Rotation to an empty value is refused too.
+	if err := store.Set(ctx, "sec_1", "value"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := store.Set(ctx, "sec_1", ""); !errors.Is(err, ErrEmptySecretValue) {
+		t.Fatalf("rotate to empty = %v, want ErrEmptySecretValue", err)
+	}
+	if got, err := store.Get(ctx, "sec_1"); err != nil || got != "value" {
+		t.Fatalf("value after refused rotation = %q, %v", got, err)
+	}
+}
+
 func TestStoreErrorsNeverContainValue(t *testing.T) {
 	store := newTestStore(t)
 	const value = "super-secret-value"
@@ -245,6 +268,15 @@ func TestHandlersNeverReturnSecretValue(t *testing.T) {
 	engine.ServeHTTP(badRec, httptest.NewRequest(http.MethodPost, "/api/secrets", strings.NewReader(`{`)))
 	if badRec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed body status = %d, want 400", badRec.Code)
+	}
+
+	// An empty credential value is refused rather than stored.
+	emptyRec := httptest.NewRecorder()
+	emptyReq := httptest.NewRequest(http.MethodPost, "/api/secrets", strings.NewReader(`{"value":""}`))
+	emptyReq.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(emptyRec, emptyReq)
+	if emptyRec.Code != http.StatusBadRequest {
+		t.Fatalf("empty value status = %d, want 400, body = %s", emptyRec.Code, emptyRec.Body.String())
 	}
 
 	// Delete then the metadata route reports 404.

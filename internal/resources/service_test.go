@@ -425,6 +425,49 @@ func TestServiceRoutesRegisterWithoutConflict(t *testing.T) {
 	NewService(db).RegisterRoutes(engine.Group("/api"))
 }
 
+// TestServiceRejectsDuplicateName verifies that two resources of the same
+// kind cannot share a name: they would render to the same managed target and
+// silently overwrite each other. Names may repeat across kinds because the
+// target directories differ.
+func TestServiceRejectsDuplicateName(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+
+	first, err := svc.Create(skillInput())
+	if err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+	if _, err := svc.Create(skillInput()); !errors.Is(err, ErrResourceConflict) {
+		t.Fatalf("duplicate Create = %v, want ErrResourceConflict", err)
+	}
+
+	// A prompt with the same name is allowed: it targets a different file.
+	sameName := skillInput()
+	sameName.Kind = ResourcePrompt
+	sameName.PromptScope = PromptScopeProject
+	if _, err := svc.Create(sameName); err != nil {
+		t.Fatalf("same name, different kind = %v, want success", err)
+	}
+
+	// Renaming another resource onto an existing name is refused.
+	other := skillInput()
+	other.Name = "other"
+	second, err := svc.Create(other)
+	if err != nil {
+		t.Fatalf("second Create: %v", err)
+	}
+	collide := skillInput()
+	if _, err := svc.Update(second.ID, collide); !errors.Is(err, ErrResourceConflict) {
+		t.Fatalf("Update onto an existing name = %v, want ErrResourceConflict", err)
+	}
+
+	// The original row is untouched and still the only one with that name.
+	got, err := svc.Get(first.ID)
+	if err != nil || got.Name != "commit-style" {
+		t.Fatalf("first resource = %+v, %v", got, err)
+	}
+}
+
 // TestServiceStoresMCPSecretOpaquely verifies the resource service keeps only
 // an opaque reference on the MCP definition while the value lives in the
 // secret store, rotates on update and is removed with the resource.

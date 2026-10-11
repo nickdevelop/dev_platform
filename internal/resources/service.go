@@ -31,6 +31,9 @@ var (
 	// ErrSecretStoreUnavailable reports a plaintext credential supplied when no
 	// secret store is configured; the value is refused rather than dropped.
 	ErrSecretStoreUnavailable = errors.New("resources: secret store is not configured")
+	// ErrResourceConflict reports a resource name already used by another
+	// resource of the same kind; the two would collide on one managed target.
+	ErrResourceConflict = errors.New("resources: resource name already exists")
 )
 
 // CreateInput carries the client-settable fields of a resource definition.

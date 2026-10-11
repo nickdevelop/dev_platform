@@ -119,6 +119,8 @@ const errorMessages: Record<string, string> = {
   directory_missing: '目录已不存在。',
   invalid_target: '目标路径不合法。',
   invalid_name: '名称不合法。',
+  resource_conflict: '同类型下已存在同名资源。',
+  invalid_secret_value: '凭据值不能为空。',
   confirmation_mismatch: '确认输入与项目名不一致。',
   trash_unavailable: '系统回收站不可用。',
   inconsistent_state: '操作未能完成，状态可能不一致，请刷新后确认。',

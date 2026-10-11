@@ -19,6 +19,9 @@ type repository struct {
 
 func (r *repository) create(row *database.Resource) error {
 	if err := r.db.Create(row).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("%w: %s %q", ErrResourceConflict, row.Kind, row.Name)
+		}
 		return fmt.Errorf("resources: create: %w", err)
 	}
 	return nil
@@ -50,6 +53,9 @@ func (r *repository) list(kind string) ([]database.Resource, error) {
 
 func (r *repository) update(row *database.Resource) error {
 	if err := r.db.Save(row).Error; err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return fmt.Errorf("%w: %s %q", ErrResourceConflict, row.Kind, row.Name)
+		}
 		return fmt.Errorf("resources: update %d: %w", row.ID, err)
 	}
 	return nil

@@ -232,6 +232,23 @@ func TestHandlersProjectAssociationAndSessionPrompts(t *testing.T) {
 	}
 }
 
+func TestHandlersDuplicateNameConflict(t *testing.T) {
+	db := openTestDB(t)
+	engine := newTestEngine(t, db)
+
+	body := map[string]any{"kind": "skill", "name": "dup", "content": "x", "enabled": true}
+	if rec := doJSON(t, engine, http.MethodPost, "/api/resources", body); rec.Code != http.StatusCreated {
+		t.Fatalf("first create status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	rec := doJSON(t, engine, http.MethodPost, "/api/resources", body)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate create status = %d, want 409, body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "resource_conflict") {
+		t.Fatalf("duplicate error = %s, want resource_conflict", rec.Body.String())
+	}
+}
+
 func TestHandlersNeverReturnPlaintextSecret(t *testing.T) {
 	db := openTestDB(t)
 	engine := newTestEngine(t, db)

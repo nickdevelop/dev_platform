@@ -44,6 +44,8 @@ func respondServiceError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidSecretID):
 		respondError(c, http.StatusBadRequest, "invalid_secret_id")
+	case errors.Is(err, ErrEmptySecretValue):
+		respondError(c, http.StatusBadRequest, "invalid_secret_value")
 	case errors.Is(err, ErrSecretNotFound):
 		respondError(c, http.StatusNotFound, "secret_not_found")
 	default:

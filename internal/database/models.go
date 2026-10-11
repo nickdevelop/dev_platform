@@ -111,8 +111,8 @@ func (AgentSession) TableName() string { return "agent_sessions" }
 // Table: resources.
 type Resource struct {
 	ID          uint   `gorm:"primaryKey;column:id"`
-	Kind        string `gorm:"column:kind;not null;index"`
-	Name        string `gorm:"column:name;not null"`
+	Kind        string `gorm:"column:kind;not null;index;uniqueIndex:idx_resource_kind_name"`
+	Name        string `gorm:"column:name;not null;uniqueIndex:idx_resource_kind_name"`
 	Description string `gorm:"column:description"`
 	Content     string `gorm:"column:content"`
 	Enabled     bool   `gorm:"column:enabled;not null;default:true"`

@@ -39,6 +39,9 @@ var (
 	ErrSecretNotFound = errors.New("secrets: secret not found")
 	// ErrInvalidSecretID reports a reference that is not a safe opaque id.
 	ErrInvalidSecretID = errors.New("secrets: invalid secret id")
+	// ErrEmptySecretValue reports an empty credential value, which is never
+	// stored: an empty write would destroy a working credential.
+	ErrEmptySecretValue = errors.New("secrets: secret value is empty")
 )
 
 // secretIDPattern bounds an opaque reference to a safe, path-free token.
@@ -68,6 +71,9 @@ func (s *Store) Path() string { return s.path }
 func (s *Store) Set(ctx context.Context, id, value string) error {
 	if err := validateID(id); err != nil {
 		return err
+	}
+	if value == "" {
+		return ErrEmptySecretValue
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

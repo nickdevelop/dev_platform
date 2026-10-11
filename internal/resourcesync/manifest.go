@@ -173,8 +173,18 @@ func (m *Manager) Apply(patch ManagedPatch, force bool) (SyncPreview, error) {
 	if err != nil {
 		return SyncPreview{}, err
 	}
-	if preview.State == SyncStateConflict && !force {
-		return preview, fmt.Errorf("%w: %s", ErrConflict, preview.Conflict.Kind)
+	if preview.State == SyncStateConflict {
+		// force resolves an unmanaged target or external drift after the user
+		// chose to overwrite; it must never overwrite an unwritable target
+		// (a directory or symlink), which is not a content conflict.
+		invalid := preview.Conflict == nil || preview.Conflict.Kind == ConflictTargetInvalid
+		if !force || invalid {
+			kind := ConflictTargetInvalid
+			if preview.Conflict != nil {
+				kind = preview.Conflict.Kind
+			}
+			return preview, fmt.Errorf("%w: %s", ErrConflict, kind)
+		}
 	}
 
 	abs, err := m.resolvePath(patch.Target)
