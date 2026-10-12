@@ -7,7 +7,6 @@ package settings
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"sync"
 	"time"
 
@@ -23,41 +22,29 @@ const appearanceKey = "appearance.config"
 var ErrInvalidAppearance = errors.New("settings: invalid appearance")
 
 // Appearance is the platform's shared visual configuration. It is JSON-stable
-// and mirrors the frontend's Appearance DTO.
+// and mirrors the frontend's Appearance DTO. The type of face is not part of
+// it: the UI bundles its own fonts (web/src/fonts) and always uses them.
 type Appearance struct {
-	Theme      string `json:"theme"`
-	Font       string `json:"font"`
-	CustomFont string `json:"customFont"`
-	FontSize   int    `json:"fontSize"`
-	Density    string `json:"density"`
+	Theme    string `json:"theme"`
+	FontSize int    `json:"fontSize"`
+	Density  string `json:"density"`
 }
 
 // DefaultAppearance is the configuration used before the operator saves one.
 func DefaultAppearance() Appearance {
-	return Appearance{Theme: "light", Font: "system", CustomFont: "", FontSize: 14, Density: "standard"}
+	return Appearance{Theme: "light", FontSize: 14, Density: "standard"}
 }
 
 // Allowed values. The frontend's presets mirror these lists.
 var (
 	validThemes    = map[string]bool{"light": true, "dark": true, "warm": true, "cool": true}
-	validFonts     = map[string]bool{"system": true, "sans": true, "serif": true, "mono": true, "custom": true}
 	validDensities = map[string]bool{"compact": true, "standard": true, "relaxed": true}
 )
-
-// customFontPattern bounds a Google Fonts family name to the characters such a
-// name actually uses, so it can never smuggle markup into the fonts URL.
-var customFontPattern = regexp.MustCompile(`^[A-Za-z0-9 &+',.\-]{1,100}$`)
 
 // Validate reports whether the appearance value is one the platform accepts.
 func (a Appearance) Validate() error {
 	if !validThemes[a.Theme] {
 		return fmt.Errorf("%w: theme %q", ErrInvalidAppearance, a.Theme)
-	}
-	if !validFonts[a.Font] {
-		return fmt.Errorf("%w: font %q", ErrInvalidAppearance, a.Font)
-	}
-	if a.Font == "custom" && !customFontPattern.MatchString(a.CustomFont) {
-		return fmt.Errorf("%w: custom font %q", ErrInvalidAppearance, a.CustomFont)
 	}
 	if a.FontSize < 12 || a.FontSize > 20 {
 		return fmt.Errorf("%w: font size %d", ErrInvalidAppearance, a.FontSize)

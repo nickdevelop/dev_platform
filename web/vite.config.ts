@@ -43,5 +43,10 @@ export default defineConfig({
     // index.html at the root, hashed bundles under assets/.
     outDir: 'dist',
     emptyOutDir: true,
+    // Never inline a font slice into the stylesheet as base64, not even the
+    // small ones: the unicode-range split exists so the browser fetches a slice
+    // once and caches it, and a data URL would bury all 123 of them in the CSS
+    // download instead.
+    assetsInlineLimit: (filePath) => (filePath.endsWith('.woff2') ? false : undefined),
   },
 })

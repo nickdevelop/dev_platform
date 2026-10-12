@@ -121,7 +121,7 @@ function conflictLabel(kind: ConflictKind): string {
 }
 
 .path {
-  font-family: monospace;
+  font-family: var(--font-family);
   word-break: break-all;
 }
 

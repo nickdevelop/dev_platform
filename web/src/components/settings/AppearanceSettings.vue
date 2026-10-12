@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// Appearance settings section: theme, font (with a custom Google Fonts
-// option), font size and interface density. Every change saves immediately and
-// applies to the current page; the shared config means other open pages pick it
-// up on refresh.
-import { computed, onMounted } from 'vue'
+// Appearance settings section: theme palette, font size and interface density.
+// The type of face is not offered — the UI bundles Google Sans Code and Noto
+// Sans SC and always uses them. Every change saves immediately and applies to
+// the current page; the shared config means other open pages pick it up on
+// refresh.
+import { onMounted } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
-import { densities, fonts, themes } from '../../theme/presets'
+import { densities, themes } from '../../theme/presets'
 
 const settings = useSettingsStore()
 
@@ -13,20 +14,8 @@ onMounted(() => {
   void settings.loadAppearance()
 })
 
-const fontSelection = computed(() => settings.appearance.font)
-
 function selectTheme(key: string) {
   if (settings.appearance.theme !== key) void settings.saveAppearance({ theme: key })
-}
-
-function selectFont(event: Event) {
-  const key = (event.target as HTMLSelectElement).value
-  void settings.saveAppearance({ font: key })
-}
-
-function updateCustomFont(event: Event) {
-  const value = (event.target as HTMLInputElement).value
-  void settings.saveAppearance({ font: 'custom', customFont: value })
 }
 
 function updateFontSize(event: Event) {
@@ -67,27 +56,6 @@ function selectDensity(key: string) {
           {{ theme.label }}
         </button>
       </div>
-    </fieldset>
-
-    <fieldset class="group">
-      <legend>字体</legend>
-      <label class="field">
-        <span>字体</span>
-        <select data-font-select :value="fontSelection" @change="selectFont">
-          <option v-for="font in fonts" :key="font.key" :value="font.key">{{ font.label }}</option>
-          <option value="custom">自定义 Google Fonts</option>
-        </select>
-      </label>
-      <label v-if="settings.appearance.font === 'custom'" class="field">
-        <span>字体名称</span>
-        <input
-          type="text"
-          data-custom-font
-          placeholder="例如 Noto Sans SC"
-          :value="settings.appearance.customFont"
-          @change="updateCustomFont"
-        />
-      </label>
     </fieldset>
 
     <fieldset class="group">
@@ -188,17 +156,6 @@ function selectDensity(key: string) {
   flex-direction: column;
   gap: calc(var(--space-unit) * 0.5);
   margin-bottom: calc(var(--space-unit) * 1.5);
-}
-
-.field select,
-.field input[type='text'] {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
 }
 
 .density-row {

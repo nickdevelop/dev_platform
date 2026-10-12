@@ -46,7 +46,7 @@ test('management APIs reject unauthenticated access and enforce CSRF', async ({ 
 
   // A mutation without the CSRF header is rejected even with a session.
   const csrf = await login(request)
-  const appearance = { theme: 'light', font: 'system', customFont: '', fontSize: 14, density: 'standard' }
+  const appearance = { theme: 'light', fontSize: 14, density: 'standard' }
   const noCSRF = await request.put('/api/settings/appearance', { data: appearance })
   expect(noCSRF.status()).toBe(403)
   expect((await noCSRF.json()).error).toBe('invalid_csrf_token')

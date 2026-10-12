@@ -63,7 +63,7 @@ const emit = defineEmits<{
 }
 
 .target {
-  font-family: monospace;
+  font-family: var(--font-family);
   word-break: break-all;
   margin: 0;
 }

@@ -305,7 +305,7 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
 
 .instance-id,
 .instance-directory {
-  font-family: monospace;
+  font-family: var(--font-family);
   color: var(--color-text-muted);
 }
 

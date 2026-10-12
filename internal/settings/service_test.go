@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -36,7 +37,7 @@ func TestAppearanceDefaultsWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "light", Font: "system", CustomFont: "", FontSize: 14, Density: "standard"}
+	want := Appearance{Theme: "light", FontSize: 14, Density: "standard"}
 	if got != want {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}
@@ -46,7 +47,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db)
 
-	input := Appearance{Theme: "dark", Font: "custom", CustomFont: "Noto Sans SC", FontSize: 18, Density: "compact"}
+	input := Appearance{Theme: "dark", FontSize: 18, Density: "compact"}
 	saved, err := svc.SetAppearance(input)
 	if err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -73,12 +74,9 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 		mutate func(*Appearance)
 	}{
 		{"theme", func(a *Appearance) { a.Theme = "neon" }},
-		{"font", func(a *Appearance) { a.Font = "comic" }},
 		{"density", func(a *Appearance) { a.Density = "huge" }},
 		{"font size low", func(a *Appearance) { a.FontSize = 11 }},
 		{"font size high", func(a *Appearance) { a.FontSize = 21 }},
-		{"custom font empty", func(a *Appearance) { a.Font = "custom"; a.CustomFont = "" }},
-		{"custom font illegal", func(a *Appearance) { a.Font = "custom"; a.CustomFont = "bad<script>" }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,5 +95,45 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 	}
 	if got != valid {
 		t.Errorf("stored appearance = %+v, want default %+v", got, valid)
+	}
+}
+
+// The type of face is built into the UI, not operator-selectable, so the
+// stored blob must stop carrying font fields.
+func TestStoredAppearanceHasNoFontFields(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+
+	if _, err := svc.SetAppearance(DefaultAppearance()); err != nil {
+		t.Fatalf("SetAppearance: %v", err)
+	}
+
+	var row database.Setting
+	if err := db.Where("key = ?", appearanceKey).First(&row).Error; err != nil {
+		t.Fatalf("load stored row: %v", err)
+	}
+	for _, key := range []string{`"font"`, `"customFont"`} {
+		if strings.Contains(row.Value, key) {
+			t.Errorf("stored appearance %s contains %s", row.Value, key)
+		}
+	}
+}
+
+// Blobs saved while the font was still selectable carry font and customFont;
+// loading one must ignore those keys instead of failing.
+func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
+	db := openTestDB(t)
+	stored := `{"theme":"dark","font":"mono","customFont":"Fira Code","fontSize":16,"density":"compact"}`
+	if err := db.Save(&database.Setting{Key: appearanceKey, Value: stored}).Error; err != nil {
+		t.Fatalf("store legacy appearance: %v", err)
+	}
+
+	got, err := NewService(db).Appearance()
+	if err != nil {
+		t.Fatalf("Appearance: %v", err)
+	}
+	want := Appearance{Theme: "dark", FontSize: 16, Density: "compact"}
+	if got != want {
+		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}
 }

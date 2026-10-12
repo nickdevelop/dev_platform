@@ -18,6 +18,7 @@ package http
 import (
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -25,6 +26,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// init corrects the media type Go's built-in table gives .woff2 (font/woff).
+// The built-in font slices are served from /assets, and a face served under the
+// wrong type is a face a browser may refuse. The registration cannot fail for a
+// fixed extension and a valid type, so its error is not worth branching on.
+func init() {
+	_ = mime.AddExtensionType(".woff2", "font/woff2")
+}
 
 const (
 	// indexCacheControl makes browsers revalidate the SPA entry so a

@@ -1,22 +1,13 @@
 // applyAppearance projects an Appearance config onto the document root: the
-// theme palette and density become inline CSS custom properties, the font
-// family and size become root variables, and a custom Google Fonts family gets
-// a stylesheet link. style.css carries the same defaults for the pre-JS first
-// paint.
-import {
-  densities,
-  googleFontURL,
-  resolveFontFamily,
-  themes,
-  type Appearance,
-  type ThemeColors,
-} from './presets'
+// theme palette and density become inline CSS custom properties and the font
+// size becomes the root variable. style.css carries the same defaults for the
+// pre-JS first paint, and owns the font family — the faces are built into the
+// build (src/fonts), so applying an appearance never reaches for a stylesheet.
+import { densities, themes, type Appearance, type ThemeColors } from './presets'
 
 // CACHE_KEY is where the last applied appearance is cached so the next page
 // load can paint with it before the server responds.
 export const CACHE_KEY = 'platform.appearance'
-
-const GOOGLE_FONT_LINK_ID = 'platform-google-font'
 
 // colorVariable maps a ThemeColors field to the CSS variable that consumes it.
 const colorVariables: Record<keyof ThemeColors, string> = {
@@ -62,10 +53,7 @@ export function applyAppearance(appearance: Appearance): void {
   root.style.setProperty('--control-height', density.controlHeight)
   root.style.setProperty('--radius', density.radius)
 
-  root.style.setProperty('--font-family', resolveFontFamily(appearance))
   root.style.setProperty('--font-size-base', `${appearance.fontSize}px`)
-
-  applyGoogleFont(appearance)
 }
 
 // applyCachedAppearance paints the last cached appearance before the server
@@ -78,18 +66,4 @@ export function applyCachedAppearance(): void {
   } catch {
     // A corrupt cache is ignored; the server config will replace it.
   }
-}
-
-function applyGoogleFont(appearance: Appearance): void {
-  const existing = document.getElementById(GOOGLE_FONT_LINK_ID)
-  if (appearance.font !== 'custom' || appearance.customFont.trim() === '') {
-    existing?.remove()
-    return
-  }
-
-  const link = (existing as HTMLLinkElement | null) ?? document.createElement('link')
-  link.id = GOOGLE_FONT_LINK_ID
-  link.rel = 'stylesheet'
-  link.href = googleFontURL(appearance.customFont)
-  if (!existing) document.head.appendChild(link)
 }

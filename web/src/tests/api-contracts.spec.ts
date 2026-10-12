@@ -93,7 +93,7 @@ describe('settings and model API contracts', () => {
     expect(calls[0].init?.method).toBe('GET')
 
     await putAppearance(
-      { theme: 'light', font: 'system', customFont: '', fontSize: 14, density: 'standard' },
+      { theme: 'light', fontSize: 14, density: 'standard' },
       'csrf-1',
     )
     expect(calls[1].url).toBe('/api/settings/appearance')

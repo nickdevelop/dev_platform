@@ -3336,13 +3336,13 @@ components:
       additionalProperties: false
     Appearance:
       type: object
-      required: [theme, font, customFont, fontSize, density]
+      description: >-
+        Shared visual configuration. The type of face is not part of it: the UI
+        bundles Google Sans Code (Latin text, digits, code) and Noto Sans SC
+        (Chinese) and always uses them.
+      required: [theme, fontSize, density]
       properties:
         theme:
-          type: string
-        font:
-          type: string
-        customFont:
           type: string
         fontSize:
           type: integer

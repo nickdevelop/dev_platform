@@ -1,6 +1,7 @@
 // Tests for the appearance settings section: it renders every preset, saves a
 // change through the API and applies it to the document, and keeps the last
-// good value when the save fails.
+// good value when the save fails. The font face is built in, so the section
+// offers no control for it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -10,8 +11,6 @@ import { useSettingsStore } from '../stores/settings'
 
 const defaultAppearance = {
   theme: 'light',
-  font: 'system',
-  customFont: '',
   fontSize: 14,
   density: 'standard',
 }
@@ -58,21 +57,20 @@ afterEach(() => {
 })
 
 describe('AppearanceSettings', () => {
-  it('renders every theme, font and density option', async () => {
+  it('renders every theme and density option and no font control', async () => {
     stubFetch()
     const { wrapper } = await mountSettings()
 
     expect(wrapper.findAll('[data-theme-option]')).toHaveLength(4)
     expect(wrapper.findAll('[data-density-option]')).toHaveLength(3)
-    const fontOptions = wrapper.find('[data-font-select]').findAll('option')
-    expect(fontOptions.map((o) => o.attributes('value'))).toEqual([
-      'system',
-      'sans',
-      'serif',
-      'mono',
-      'custom',
+    expect(wrapper.findAll('legend').map((legend) => legend.text())).toEqual([
+      '主题配色',
+      '字号',
+      '界面密度',
     ])
     expect(wrapper.find('[data-font-size]').exists()).toBe(true)
+    expect(wrapper.find('[data-font-select]').exists()).toBe(false)
+    expect(wrapper.find('[data-custom-font]').exists()).toBe(false)
   })
 
   it('saves a theme change and applies it to the document', async () => {
@@ -88,14 +86,17 @@ describe('AppearanceSettings', () => {
     expect(useSettingsStore().appearance.theme).toBe('dark')
   })
 
-  it('reveals the custom font field only for the custom font', async () => {
-    stubFetch()
+  it('saves the font size without sending any font face', async () => {
+    const calls = stubFetch()
     const { wrapper } = await mountSettings()
 
-    expect(wrapper.find('[data-custom-font]').exists()).toBe(false)
-    await wrapper.find('[data-font-select]').setValue('custom')
+    await wrapper.find('[data-font-size]').setValue('18')
     await flushPromises()
-    expect(wrapper.find('[data-custom-font]').exists()).toBe(true)
+
+    const put = calls.find((call) => call.method === 'PUT')
+    expect(Object.keys(put?.body as object).sort()).toEqual(['density', 'fontSize', 'theme'])
+    expect(put?.body).toMatchObject({ fontSize: 18 })
+    expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('18px')
   })
 
   it('keeps the previous appearance and reports an error when saving fails', async () => {

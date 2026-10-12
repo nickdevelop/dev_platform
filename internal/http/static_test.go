@@ -31,6 +31,8 @@ func writeWebDist(t *testing.T) string {
 		"index.html":           "<!doctype html><html><body><div id=\"app\">SPA-ENTRY-MARKER</div></body></html>",
 		"favicon.svg":          "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
 		"assets/app-abc123.js": "console.log(\"bundled\");",
+		// The built-in font slices land here too.
+		"assets/font-abc123.woff2": "woff2-slice",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(name)), []byte(content), 0o644); err != nil {
@@ -132,6 +134,22 @@ func TestStaticServesEntryAssetsAndSPAFallback(t *testing.T) {
 	}
 	if got := body(t, listing); strings.Contains(got, "app-abc123.js") {
 		t.Errorf("GET /assets/ leaked build filenames: %q", got)
+	}
+}
+
+// TestStaticServesFontsAsWOFF2 pins the media type of the bundled font slices:
+// Go's built-in table maps .woff2 to font/woff, and a wrong type is the kind of
+// thing that makes a browser refuse a face.
+func TestStaticServesFontsAsWOFF2(t *testing.T) {
+	resp := get(t, Dependencies{WebDir: writeWebDist(t)}, "/assets/font-abc123.woff2")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET font status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "font/woff2" {
+		t.Errorf("GET font content type = %q, want font/woff2", ct)
+	}
+	if got := body(t, resp); got != "woff2-slice" {
+		t.Errorf("GET font body = %q, want the slice content", got)
 	}
 }
 

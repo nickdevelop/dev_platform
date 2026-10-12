@@ -238,7 +238,7 @@ function toolArgument(entry: ChatEntry): string {
   background: var(--color-border);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family);
   font-size: 0.85em;
 }
 
@@ -368,7 +368,7 @@ function toolArgument(entry: ChatEntry): string {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family);
 }
 
 .tool-args,
@@ -377,7 +377,7 @@ function toolArgument(entry: ChatEntry): string {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-family);
   font-size: 0.8rem;
   color: var(--color-text);
 }

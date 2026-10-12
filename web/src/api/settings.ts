@@ -9,8 +9,6 @@ export type { Appearance }
 // defaultAppearance mirrors the server's default, used before the first load.
 export const defaultAppearance: Appearance = {
   theme: 'light',
-  font: 'system',
-  customFont: '',
   fontSize: 14,
   density: 'standard',
 }

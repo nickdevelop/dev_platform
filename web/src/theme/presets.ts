@@ -1,14 +1,13 @@
-// Appearance presets: the single source of truth for the theme palettes, font
-// stacks and density scales the settings UI offers. applyAppearance projects
-// these onto the document's CSS custom properties, so adding a preset here and
-// a label is all it takes to make it selectable.
+// Appearance presets: the single source of truth for the theme palettes and
+// density scales the settings UI offers. applyAppearance projects these onto the
+// document's CSS custom properties, so adding a preset here and a label is all
+// it takes to make it selectable. The type of face is not a preset: the UI
+// bundles Google Sans Code and Noto Sans SC (src/fonts) and always uses them.
 
 // Appearance is the shared visual configuration. It mirrors the server's
 // settings.Appearance DTO; api/settings.ts re-exports it.
 export interface Appearance {
   theme: string
-  font: string
-  customFont: string
   fontSize: number
   density: string
 }
@@ -46,12 +45,6 @@ export interface ThemePreset {
   key: string
   label: string
   colors: ThemeColors
-}
-
-export interface FontPreset {
-  key: string
-  label: string
-  stack: string
 }
 
 export interface DensityPreset {
@@ -189,49 +182,8 @@ export const themes: ThemePreset[] = [
   },
 ]
 
-const systemStack =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
-
-export const fonts: FontPreset[] = [
-  { key: 'system', label: '系统默认', stack: systemStack },
-  {
-    key: 'sans',
-    label: '无衬线',
-    stack: "'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif",
-  },
-  {
-    key: 'serif',
-    label: '衬线',
-    stack: "'Noto Serif SC', 'Songti SC', Georgia, 'Times New Roman', serif",
-  },
-  {
-    key: 'mono',
-    label: '等宽',
-    stack: "'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Consolas, monospace",
-  },
-]
-
 export const densities: DensityPreset[] = [
   { key: 'compact', label: '紧凑', spaceUnit: '4px', controlHeight: '28px', radius: '5px' },
   { key: 'standard', label: '标准', spaceUnit: '6px', controlHeight: '34px', radius: '6px' },
   { key: 'relaxed', label: '宽松', spaceUnit: '8px', controlHeight: '40px', radius: '8px' },
 ]
-
-// googleFontURL builds the stylesheet URL for one Google Fonts family. Spaces
-// become `+`; everything else is percent-encoded so a family name can never
-// inject query parameters.
-export function googleFontURL(family: string): string {
-  const encoded = encodeURIComponent(family.trim()).replace(/%20/g, '+')
-  return `https://fonts.googleapis.com/css2?family=${encoded}&display=swap`
-}
-
-// resolveFontFamily returns the CSS font-family value for an appearance: the
-// custom family (with the system stack as fallback) or the selected preset's
-// stack. An unknown key falls back to the system stack.
-export function resolveFontFamily(appearance: Appearance): string {
-  if (appearance.font === 'custom' && appearance.customFont.trim() !== '') {
-    return `'${appearance.customFont.trim()}', ${systemStack}`
-  }
-  const preset = fonts.find((font) => font.key === appearance.font)
-  return preset?.stack ?? systemStack
-}

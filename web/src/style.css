@@ -1,3 +1,8 @@
+/* Built-in font faces: Google Sans Code for Latin text, digits, punctuation and
+   code, Noto Sans SC for Chinese. Both are vendored under src/fonts so the
+   platform never loads a font from the network. */
+@import './fonts/fonts.css';
+
 /* Global appearance tokens. The theme palette and density are projected onto
    the document root by src/theme/apply.ts; the values here are the light /
    standard defaults used for the pre-JS first paint and as fallbacks. */
@@ -28,8 +33,11 @@
   --rail-text: #aab2c5;
   --rail-active: #3b4560;
 
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
-    sans-serif;
+  /* The face is built in, not a setting: Google Sans Code is monospaced and
+     covers Latin text, digits and code, and Chinese falls through to Noto Sans
+     SC. Order is the mechanism — the browser takes the first family that has a
+     glyph for the character. */
+  --font-family: 'Google Sans Code', 'Noto Sans SC', sans-serif;
   --font-size-base: 14px;
 
   --space-unit: 6px;
