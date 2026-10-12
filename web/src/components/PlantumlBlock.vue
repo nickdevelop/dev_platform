@@ -11,6 +11,10 @@
 // `ready`. And the toggle belongs to this block alone — a message with three
 // diagrams toggles them one at a time.
 //
+// The head row is a switch, not a disclosure: it never folds the block away, it
+// exchanges the drawing for the source it came from, so it says so in words
+// (查看源码 / 返回预览) and carries no fold marker.
+//
 // A reply that finished without closing the fence (stopped, truncated, or the
 // model simply forgot) is a third case: there is nothing to draw, but the text
 // is final and someone needs to read it, so the source is shown as they would
@@ -94,14 +98,7 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
 
 <template>
   <div class="plantuml-block" data-test="plantuml-block">
-    <button
-      type="button"
-      class="plantuml-head"
-      :disabled="state !== 'ready'"
-      :aria-expanded="state === 'ready' ? String(mode === 'preview') : undefined"
-      @click="toggle"
-    >
-      <span class="plantuml-chev" aria-hidden="true">{{ state === 'ready' && mode === 'preview' ? '▾' : '▸' }}</span>
+    <button type="button" class="plantuml-head" :disabled="state !== 'ready'" @click="toggle">
       <span class="plantuml-title">图表 · plantuml</span>
       <span v-if="headLabel" class="plantuml-mode">{{ headLabel }}</span>
     </button>
@@ -164,10 +161,6 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
   cursor: default;
 }
 
-.plantuml-chev {
-  color: var(--color-text-muted);
-}
-
 .plantuml-title {
   color: var(--color-text);
 }
@@ -190,14 +183,16 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
   background: var(--color-surface-muted);
 }
 
-/* A long sequence diagram must not stretch the message it arrived in. The
-   canvas background follows the flag the drawing was made with: a dark drawing
-   carries light ink, and neither should sit on the opposite background. */
+/* The drawing is shown whole. A diagram you have to scroll inside to read is
+   not a diagram, and the message log is already the scroller here, so this
+   canvas grows the message instead of clipping. A picture wider than the pane
+   is scaled down as a picture (the engine's viewBox carries the ratio), never
+   cropped. The canvas background follows the flag the drawing was made with: a
+   dark drawing carries light ink, and neither should sit on the opposite
+   background. */
 .plantuml-canvas {
   padding: calc(var(--space-unit) * 2);
   background: #ffffff;
-  max-height: 60vh;
-  overflow: auto;
 }
 
 .plantuml-canvas.is-dark {
@@ -205,6 +200,7 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
 }
 
 .plantuml-canvas :deep(svg) {
+  display: block;
   max-width: 100%;
   height: auto;
 }

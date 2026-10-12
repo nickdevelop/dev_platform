@@ -134,4 +134,63 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   const cutOff = lastTurn(page)
   await expect(cutOff.locator('[data-test="plantuml-source"]')).toBeVisible()
   await expect(cutOff.locator('[data-test="plantuml-waiting"]')).toContainText('没画完')
+
+  // 7. A drawing is shown whole: the canvas itself never scrolls, because a
+  // diagram you have to scroll inside to read is not a drawing. A tall one
+  // grows the message (the message log is the one scroller), and the whole
+  // picture sits inside the canvas.
+  const tall = Array.from({ length: 40 }, (_unused, i) => `步骤${i} -> 服务 : 调用 ${i}`).join('\n')
+  await ask(page, `长图\n\`\`\`plantuml\n@startuml\n${tall}\n@enduml\n\`\`\``)
+  const tallCanvas = lastTurn(page).locator('[data-test="plantuml-canvas"]')
+  await expect(tallCanvas.locator('svg')).toBeVisible()
+  await expect
+    .poll(async () => tallCanvas.evaluate((el) => el.scrollHeight - el.clientHeight), {
+      message: 'the tall drawing must not need a scrollbar',
+    })
+    .toBeLessThanOrEqual(0)
+  const tallBox = await tallCanvas.evaluate((el) => {
+    const canvas = el.getBoundingClientRect()
+    const drawing = el.querySelector('svg')!.getBoundingClientRect()
+    return {
+      bottom: canvas.bottom,
+      drawingBottom: drawing.bottom,
+      drawingHeight: drawing.height,
+    }
+  })
+  // The whole drawing is on screen, and it really is tall: a canvas that
+  // collapsed to nothing would satisfy the overflow check above.
+  expect(tallBox.drawingBottom).toBeLessThanOrEqual(Math.ceil(tallBox.bottom))
+  expect(tallBox.drawingHeight).toBeGreaterThan(400)
+
+  // 8. A drawing wider than the pane is scaled down as a picture, not clipped:
+  // the rendered aspect ratio is the one the engine asked for.
+  const wide = Array.from({ length: 22 }, (_unused, i) => `节点${i} --> 节点${i + 1} : 说明${i}`).join('\n')
+  await ask(page, `宽图\n\`\`\`plantuml\n@startuml\n${wide}\n@enduml\n\`\`\``)
+  const wideCanvas = lastTurn(page).locator('[data-test="plantuml-canvas"]')
+  await expect(wideCanvas.locator('svg')).toBeVisible()
+  const wideBox = await wideCanvas.evaluate((el) => {
+    const canvas = el.getBoundingClientRect()
+    const svg = el.querySelector('svg')!
+    const drawing = svg.getBoundingClientRect()
+    const box = svg.getAttribute('viewBox')
+    const parts = box?.split(/[\s,]+/).map(Number)
+    const askedWidth = parts ? parts[2] : parseFloat(svg.getAttribute('width') ?? '0')
+    const askedHeight = parts ? parts[3] : parseFloat(svg.getAttribute('height') ?? '0')
+    return {
+      askedWidth,
+      canvasWidth: canvas.width,
+      drawingWidth: drawing.width,
+      askedRatio: askedWidth / askedHeight,
+      ratio: drawing.width / drawing.height,
+      scrollOverflow: el.scrollWidth - el.clientWidth,
+      viewBox: box,
+    }
+  })
+  expect(wideBox.viewBox, 'the engine must give a viewBox so the drawing can scale').toBeTruthy()
+  // The picture really is wider than the pane, so the checks below are about
+  // scaling and not about a drawing that never needed it.
+  expect(wideBox.askedWidth).toBeGreaterThan(wideBox.canvasWidth)
+  expect(wideBox.scrollOverflow).toBeLessThanOrEqual(0)
+  expect(wideBox.drawingWidth).toBeLessThanOrEqual(wideBox.canvasWidth)
+  expect(wideBox.ratio).toBeCloseTo(wideBox.askedRatio, 1)
 })

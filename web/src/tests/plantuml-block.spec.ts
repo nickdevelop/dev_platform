@@ -44,11 +44,29 @@ describe('PlantumlBlock', () => {
     await wrapper.find('.plantuml-head').trigger('click')
     expect(wrapper.find('[data-test="plantuml-source"]').text()).toContain('@startuml')
     expect(wrapper.find('[data-test="plantuml-canvas"]').exists()).toBe(false)
-    expect(wrapper.find('.plantuml-head').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('.plantuml-head').text()).toContain('返回预览')
 
     await wrapper.find('.plantuml-head').trigger('click')
     expect(wrapper.find('[data-test="plantuml-canvas"]').exists()).toBe(true)
-    expect(wrapper.find('.plantuml-head').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('.plantuml-head').text()).toContain('查看源码')
+  })
+
+  it('carries no fold marker: the head row switches the view, it never collapses', async () => {
+    // The row used to lead with a ▾/▸ chevron, the same glyph the thinking and
+    // tool blocks use for "click to open this part". Clicking it only swaps the
+    // drawing for its source, which is what the label on the right already says
+    // — so the chevron promised a fold that never happens.
+    configureEngineLoader(fakeEngine(() => '<svg/>'))
+    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
+    await flushPromises()
+
+    const head = wrapper.find('.plantuml-head')
+    expect(head.text()).not.toMatch(/[▾▸]/)
+    expect(head.attributes('aria-expanded')).toBeUndefined()
+
+    await head.trigger('click')
+    expect(head.text()).not.toMatch(/[▾▸]/)
+    expect(head.attributes('aria-expanded')).toBeUndefined()
   })
 
   it('waits for a closed fence and never asks the engine while streaming', async () => {
