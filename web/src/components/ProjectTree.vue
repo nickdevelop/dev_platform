@@ -2,7 +2,9 @@
 // Left navigation tree: projects with their tasks (agent sessions). Only one
 // project is expanded at a time; its tasks load on expansion. Tasks are shown
 // only when the session store holds that project's list, so a stale list from a
-// previously opened project is never rendered. Search matches project names and
+// previously opened project is never rendered. Tasks are ordered by last
+// interaction (newest first) and paginated: the list shows the newest 15 and a
+// 「更多」 button appends the next 15. Search matches project names and
 // task titles; the active and expanded projects always stay visible, so the open
 // selection is never hidden by a filter.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -45,18 +47,45 @@ const expandedSessions = computed(() => {
   return sessionsStore.sessions
 })
 
+// Tasks are ordered by last interaction (the session's updated-at, which the
+// backend bumps on send/continue/status change), newest first. Ties keep the
+// server's creation order, because the sort below is stable.
+const sortedSessions = computed(() =>
+  [...expandedSessions.value].sort(
+    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
+  ),
+)
+
 const query = computed(() => props.search.trim().toLowerCase())
 
 // Display fallback shared by the row and the search filter: the platform id
 // must never surface as a name.
 const untitledLabel = '未命名任务'
 
-const visibleSessions = computed(() => {
-  if (query.value === '') return expandedSessions.value
-  return expandedSessions.value.filter((entry) =>
+// Pagination: only the newest PAGE_SIZE tasks render at first; 「更多」 appends
+// the next page. The counter resets whenever a different project is expanded
+// or the search changes, so a long session never grows across contexts.
+const PAGE_SIZE = 15
+const visibleCount = ref(PAGE_SIZE)
+
+watch([expandedId, query], () => {
+  visibleCount.value = PAGE_SIZE
+})
+
+const filteredSessions = computed(() => {
+  if (query.value === '') return sortedSessions.value
+  return sortedSessions.value.filter((entry) =>
     (entry.title || untitledLabel).toLowerCase().includes(query.value),
   )
 })
+
+const visibleSessions = computed(() => filteredSessions.value.slice(0, visibleCount.value))
+
+const hasMoreTasks = computed(() => filteredSessions.value.length > visibleSessions.value.length)
+
+function showMoreTasks() {
+  visibleCount.value += PAGE_SIZE
+}
 
 const visibleProjects = computed(() => {
   if (query.value === '') return projectsStore.projects
@@ -136,6 +165,15 @@ function onProjectClick(projectId: number) {
         </button>
         <button
           type="button"
+          class="project-new-task"
+          :aria-label="`新建任务：${project.name}`"
+          title="新建任务"
+          @click="emit('new-task', project.id)"
+        >
+          ＋
+        </button>
+        <button
+          type="button"
           class="project-settings"
           :aria-label="`项目设置：${project.name}`"
           title="项目设置"
@@ -159,8 +197,8 @@ function onProjectClick(projectId: number) {
         </li>
         <li v-if="expandedSessions.length === 0" class="empty">该项目还没有任务。</li>
         <li v-else-if="visibleSessions.length === 0" class="empty">没有匹配的任务</li>
-        <li>
-          <button type="button" class="new-task" @click="emit('new-task', project.id)">+ 新建任务</button>
+        <li v-if="hasMoreTasks">
+          <button type="button" class="load-more" @click="showMoreTasks">更多</button>
         </li>
       </ul>
     </li>
@@ -179,8 +217,7 @@ function onProjectClick(projectId: number) {
 
 .project-row,
 .project-toggle,
-.task-open,
-.new-task {
+.task-open {
   display: flex;
   align-items: center;
   gap: calc(var(--space-unit) * 1.000);
@@ -208,6 +245,7 @@ function onProjectClick(projectId: number) {
   font-weight: 600;
 }
 
+.project-new-task,
 .project-settings {
   flex-shrink: 0;
   border: none;
@@ -222,6 +260,7 @@ function onProjectClick(projectId: number) {
 }
 
 .project-row:hover,
+.project-new-task:hover,
 .project-settings:hover,
 .project-toggle:hover,
 .task-open:hover {
@@ -277,10 +316,21 @@ function onProjectClick(projectId: number) {
   white-space: nowrap;
 }
 
-.new-task {
+.load-more {
+  width: 100%;
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
-  color: var(--color-primary-hover);
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
   font-size: 0.857rem;
+  cursor: pointer;
+  border-radius: 6px;
+  color: var(--color-primary-hover);
+}
+
+.load-more:hover {
+  background: var(--color-surface-muted);
 }
 
 .empty {

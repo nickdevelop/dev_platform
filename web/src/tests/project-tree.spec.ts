@@ -195,15 +195,23 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('没有匹配的项目')
   })
 
-  it('shows a new-task entry for a project with no tasks', async () => {
+  it('offers a new task from the project row icon, ahead of the settings icon', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
     expect(wrapper.text()).toContain('该项目还没有任务')
-    const newTask = wrapper.findAll('.new-task').find((item) => item.text().includes('新建任务'))
-    expect(newTask).toBeDefined()
-    await newTask!.trigger('click')
+    const classes = wrapper
+      .findAll('.project-row button')
+      .map((button) => button.classes().join(' '))
+    const newTaskIndex = classes.findIndex((value) => value.includes('project-new-task'))
+    const settingsIndex = classes.findIndex((value) => value.includes('project-settings'))
+    expect(newTaskIndex).toBeGreaterThanOrEqual(0)
+    expect(newTaskIndex).toBeLessThan(settingsIndex)
+    const newTask = wrapper.find('.project-new-task')
+    expect(newTask.attributes('title')).toBe('新建任务')
+    expect(newTask.attributes('aria-label')).toBe('新建任务：alpha')
+    await newTask.trigger('click')
     expect(wrapper.emitted('new-task')).toEqual([[1]])
   })
 
@@ -220,6 +228,74 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('Task B')
     expect(wrapper.text()).not.toContain('Task A')
     expect(requested).toContain('/api/projects/2/sessions')
+  })
+
+  it('orders tasks by most recent activity first', async () => {
+    stubSessions({
+      1: [
+        session({ id: 's-old', title: 'Oldest', updatedAt: '2026-10-01T00:00:00Z' }),
+        session({ id: 's-mid', title: 'Middle', updatedAt: '2026-10-05T00:00:00Z' }),
+        session({ id: 's-new', title: 'Newest', updatedAt: '2026-10-09T00:00:00Z' }),
+      ],
+    })
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+
+    const titles = wrapper.findAll('.task').map((item) => item.text())
+    expect(titles[0]).toContain('Newest')
+    expect(titles[1]).toContain('Middle')
+    expect(titles[2]).toContain('Oldest')
+  })
+
+  it('shows only the newest 15 tasks and reveals the next page on demand', async () => {
+    stubSessions({
+      1: Array.from({ length: 40 }, (_, index) =>
+        session({
+          id: `s-${index}`,
+          title: `Task ${index}`,
+          updatedAt: `2026-10-01T00:00:${String(index).padStart(2, '0')}Z`,
+        }),
+      ),
+    })
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+
+    expect(wrapper.findAll('.task').length).toBe(15)
+    // Newest first: index 39 is the most recent interaction.
+    expect(wrapper.findAll('.task')[0].text()).toContain('Task 39')
+    expect(wrapper.text()).not.toContain('Task 24')
+
+    const more = wrapper.find('.load-more')
+    expect(more.exists()).toBe(true)
+    await more.trigger('click')
+    expect(wrapper.findAll('.task').length).toBe(30)
+    expect(wrapper.text()).not.toContain('Task 9')
+
+    await wrapper.find('.load-more').trigger('click')
+    expect(wrapper.findAll('.task').length).toBe(40)
+    expect(wrapper.find('.load-more').exists()).toBe(false)
+  })
+
+  it('resets the visible page when another project is opened', async () => {
+    const many = (projectId: number) =>
+      Array.from({ length: 20 }, (_, index) =>
+        session({
+          id: `p${projectId}-s-${index}`,
+          projectId,
+          title: `Task ${projectId}-${index}`,
+          updatedAt: `2026-10-01T00:0${projectId}:${String(index).padStart(2, '0')}Z`,
+        }),
+      )
+    stubSessions({ 1: many(1), 2: many(2) })
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+    await wrapper.find('.load-more').trigger('click')
+    expect(wrapper.findAll('.task').length).toBe(20)
+
+    await wrapper.setProps({ activeProjectId: 2 })
+    await flushPromises()
+    expect(wrapper.findAll('.task').length).toBe(15)
+    expect(wrapper.text()).toContain('Task 2-19')
   })
 
   it('toggles a project on row click without opening its settings', async () => {
