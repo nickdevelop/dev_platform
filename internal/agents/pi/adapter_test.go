@@ -759,3 +759,61 @@ func TestReadSessionRefPreview(t *testing.T) {
 		}
 	})
 }
+
+// argsLoggingFakePi appends one argv line per invocation, so a test can watch
+// every launch of a session, not just the first.
+const argsLoggingFakePi = `
+printf '%s\n' "$*" >> "$FAKE_PI_ARGS"
+cat <<'EVENTS'
+{"type":"session","version":3,"id":"sess-fake","cwd":"/ignored"}
+{"type":"agent_settled","aborted":false}
+EVENTS
+`
+
+// TestAdapterSendMessageUsesRefTitleAsName checks that a title the platform
+// derived after session creation rides along as --name (pi persists it) and
+// sticks in session metadata for later turns.
+func TestAdapterSendMessageUsesRefTitleAsName(t *testing.T) {
+	dir := t.TempDir()
+	fake := writeFakePi(t, dir, argsLoggingFakePi)
+	argsFile := filepath.Join(dir, "args.log")
+	t.Setenv("FAKE_PI_ARGS", argsFile)
+
+	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	ctx := context.Background()
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref.Title = "部署日志系统"
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "部署日志系统"}); err != nil {
+		t.Fatal(err)
+	}
+	first := waitForFile(t, argsFile)
+	if !strings.Contains(string(first), "--name 部署日志系统") {
+		t.Errorf("first launch argv = %q, want --name 部署日志系统", first)
+	}
+
+	// A later send without a title keeps the remembered name.
+	ref.Title = ""
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "继续"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	var second []byte
+	for time.Now().Before(deadline) {
+		second, _ = os.ReadFile(argsFile)
+		if strings.Count(string(second), "\n") >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	lines := strings.Split(strings.TrimSpace(string(second)), "\n")
+	if len(lines) < 2 || !strings.Contains(lines[len(lines)-1], "--name 部署日志系统") {
+		t.Errorf("second launch argv = %q, want --name 部署日志系统", lines)
+	}
+}

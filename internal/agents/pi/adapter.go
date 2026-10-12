@@ -473,6 +473,17 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if state != nil {
 		name = state.title
 	}
+	// A title the platform set after session creation (an auto-derived title
+	// or a rename) rides along as --name, which pi persists as a session
+	// name; remembering it keeps later launches named too.
+	if ref.Title != "" && ref.Title != name {
+		name = ref.Title
+		if state != nil {
+			a.mu.Lock()
+			state.title = ref.Title
+			a.mu.Unlock()
+		}
+	}
 
 	spec := processSpec{
 		executable: a.execPath(),
