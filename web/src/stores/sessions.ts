@@ -138,6 +138,11 @@ export const useSessionsStore = defineStore('sessions', {
     // historyTailGuard is true right after a replay, when a backend may
     // re-deliver the message the history ended with.
     historyTailGuard: {} as Record<string, boolean>,
+    // echoPending records, per session, the text of the user turn the
+    // workbench just sent locally. The backend echoes that turn once on the
+    // stream; matching the pending text — rather than whatever entry happens
+    // to be last — is what survives diagnostics interleaved before the echo.
+    echoPending: {} as Record<string, string>,
     activeSessionId: null as string | null,
     loading: false,
     error: '',
@@ -169,6 +174,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.historyError = {}
         this.historyTruncated = {}
         this.historyTailGuard = {}
+        this.echoPending = {}
       }
       this.loading = true
       this.projectId = projectId
@@ -355,6 +361,18 @@ export const useSessionsStore = defineStore('sessions', {
       if (event.type === 'message') {
         if (!event.message) return
         if (this.consumeHistoryGuard(sessionId, event.message.role, event.message.text)) return
+        if (
+          event.message.role === 'user' &&
+          this.echoPending[sessionId] === event.message.text
+        ) {
+          // The echo of the turn the workbench sent itself: already shown.
+          delete this.echoPending[sessionId]
+          return
+        }
+        if (event.message.role !== 'user') {
+          // The agent answered; no echo can still be pending for this text.
+          delete this.echoPending[sessionId]
+        }
         this.appendMessage(sessionId, event.message.role, event.message.text, event.message.final, event.sequence)
         return
       }
@@ -407,13 +425,14 @@ export const useSessionsStore = defineStore('sessions', {
           if (event.type === 'message' && event.message) {
             // Replayed messages are complete and are never echo-deduplicated:
             // two identical user turns in a transcript are two real turns.
+            // (Echo dedupe lives in the live path's echoPending; replay never
+            // consults it.)
             this.appendMessage(
               sessionId,
               event.message.role,
               event.message.text,
               event.message.final,
               event.sequence,
-              false,
             )
             continue
           }
@@ -459,7 +478,6 @@ export const useSessionsStore = defineStore('sessions', {
       text: string,
       final: boolean,
       sequence: number,
-      dedupeEcho = true,
     ) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
@@ -472,20 +490,6 @@ export const useSessionsStore = defineStore('sessions', {
       // settled (or never streamed) renders nothing but a blank bubble, so it
       // is dropped rather than pushed.
       if (text === '') return
-      // A user turn echoed by the backend is deduplicated against the copy the
-      // workbench already added when the message was sent. A replay opts out:
-      // a transcript's repeated lines are distinct turns, not echoes.
-      const last = list[list.length - 1]
-      if (
-        dedupeEcho &&
-        role === 'user' &&
-        last &&
-        last.kind === 'message' &&
-        last.role === 'user' &&
-        last.text === text
-      ) {
-        return
-      }
       list.push({
         id: nextEntryID(sessionId, sequence, 'message'),
         kind: 'message',
@@ -562,6 +566,7 @@ export const useSessionsStore = defineStore('sessions', {
       for (const entry of this.messages[sessionId] ?? []) {
         entry.streaming = false
       }
+      delete this.echoPending[sessionId]
     },
 
     setStatus(sessionId: string, status: AgentSession['status']) {
@@ -583,8 +588,10 @@ export const useSessionsStore = defineStore('sessions', {
       const auth = useAuthStore()
       const trimmed = text.trim()
       if (trimmed === '') return null
-      // Show the user's turn immediately; a streamed echo is deduplicated.
+      // Show the user's turn immediately; the stream echo is matched against
+      // this pending text and dropped.
       this.appendMessage(sessionId, 'user', trimmed, true, 0)
+      this.echoPending[sessionId] = trimmed
       try {
         const updated = await sendProjectSessionMessage(
           projectId,

@@ -636,3 +636,89 @@ describe('sessions store interleaved stream merging', () => {
     ])
   })
 })
+
+describe('sessions store user echo dedupe', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubSend() {
+    stubRoutes({
+      '/messages': {
+        id: 's1',
+        projectId: 1,
+        backend: 'pi',
+        instanceId: 'inst-1',
+        nativeSessionId: 'native-s1',
+        title: 's1',
+        status: 'active',
+        turn: 'running',
+        capabilities: capabilities(),
+        createdAt: '2026-10-09T00:00:00Z',
+        updatedAt: '2026-10-09T00:00:00Z',
+      },
+    })
+  }
+
+  function liveUser(text: string, sequence: number) {
+    return historyEvent({ instanceId: 'inst-1', type: 'message', sequence, replayed: false, message: { role: 'user', text, final: true } })
+  }
+
+  function userEntries(sessions: ReturnType<typeof useSessionsStore>) {
+    return sessions.messagesFor('s1').filter((entry) => entry.role === 'user')
+  }
+
+  it('drops the backend echo of the turn just sent', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    useAuthStore().csrfToken = 'token'
+    stubSend()
+
+    await sessions.sendMessage(1, 's1', 'hello pi')
+    sessions.handleEvent('s1', JSON.stringify(liveUser('hello pi', 1)))
+
+    expect(userEntries(sessions)).toHaveLength(1)
+  })
+
+  it('still drops the echo when another entry landed in between', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    useAuthStore().csrfToken = 'token'
+    stubSend()
+
+    await sessions.sendMessage(1, 's1', 'hello pi')
+    // pi reports a diagnostic on stderr before echoing the user turn; an
+    // adjacency check lost the echo behind it and rendered the turn twice.
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'error', sequence: 1, replayed: false, error: { code: 'stderr', message: 'warning: noisy' } })),
+    )
+    sessions.handleEvent('s1', JSON.stringify(liveUser('hello pi', 2)))
+
+    expect(userEntries(sessions)).toHaveLength(1)
+  })
+
+  it('shows a later user turn with the same text once the echo was consumed', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    useAuthStore().csrfToken = 'token'
+    stubSend()
+
+    await sessions.sendMessage(1, 's1', 'again')
+    sessions.handleEvent('s1', JSON.stringify(liveUser('again', 1)))
+    // A steering/follow-up message with identical text is a real second turn.
+    sessions.handleEvent('s1', JSON.stringify(liveUser('again', 2)))
+
+    expect(userEntries(sessions)).toHaveLength(2)
+  })
+})
