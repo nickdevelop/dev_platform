@@ -102,6 +102,7 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
     <div
       v-if="state === 'ready' && mode === 'preview'"
       class="plantuml-canvas"
+      :class="{ 'is-dark': dark }"
       data-test="plantuml-canvas"
       v-html="svg"
     ></div>
@@ -165,12 +166,18 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
   background: var(--color-surface-muted);
 }
 
-/* A long sequence diagram must not stretch the message it arrived in. */
+/* A long sequence diagram must not stretch the message it arrived in. The
+   canvas background follows the flag the drawing was made with: a dark drawing
+   carries light ink, and neither should sit on the opposite background. */
 .plantuml-canvas {
   padding: calc(var(--space-unit) * 2);
-  background: var(--color-surface);
+  background: #ffffff;
   max-height: 60vh;
   overflow: auto;
+}
+
+.plantuml-canvas.is-dark {
+  background: #1e1e2e;
 }
 
 .plantuml-canvas :deep(svg) {

@@ -86,6 +86,21 @@ describe('PlantumlBlock', () => {
     expect(wrapper.find('[data-test="plantuml-canvas"]').exists()).toBe(false)
   })
 
+  it('sits the drawing on a dark canvas only when the palette is dark', async () => {
+    configureEngineLoader(fakeEngine(() => '<svg><text>x</text></svg>'))
+    const settings = useSettingsStore()
+    settings.appearance = { ...settings.appearance, theme: 'dark' }
+    const dark = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    await flushPromises()
+    expect(dark.find('[data-test="plantuml-canvas"]').classes()).toContain('is-dark')
+    dark.unmount()
+
+    settings.appearance = { ...settings.appearance, theme: 'light' }
+    const light = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    await flushPromises()
+    expect(light.find('[data-test="plantuml-canvas"]').classes()).not.toContain('is-dark')
+  })
+
   it('renders in dark mode for the dark palette only', async () => {
     const seen: boolean[] = []
     configureEngineLoader(
