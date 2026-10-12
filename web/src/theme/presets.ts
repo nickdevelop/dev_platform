@@ -44,6 +44,10 @@ export interface ThemeColors {
 export interface ThemePreset {
   key: string
   label: string
+  // dark marks a palette a light-on-dark drawing belongs to. It is not derived
+  // from the colors: the PlantUML engine needs one flag to redraw a diagram in
+  // dark, and asking it to guess per palette would drift.
+  dark: boolean
   colors: ThemeColors
 }
 
@@ -59,6 +63,7 @@ export const themes: ThemePreset[] = [
   {
     key: 'light',
     label: '浅色',
+    dark: false,
     colors: {
       bg: '#f4f5f7',
       surface: '#ffffff',
@@ -90,6 +95,7 @@ export const themes: ThemePreset[] = [
   {
     key: 'dark',
     label: '深色',
+    dark: true,
     colors: {
       bg: '#0f1115',
       surface: '#171a21',
@@ -121,6 +127,7 @@ export const themes: ThemePreset[] = [
   {
     key: 'warm',
     label: '暖阳',
+    dark: false,
     colors: {
       bg: '#f6f1e7',
       surface: '#fffaf0',
@@ -152,6 +159,7 @@ export const themes: ThemePreset[] = [
   {
     key: 'cool',
     label: '冷灰',
+    dark: false,
     colors: {
       bg: '#eef1f5',
       surface: '#f8fafc',
@@ -181,6 +189,12 @@ export const themes: ThemePreset[] = [
     },
   },
 ]
+
+// isDarkTheme reports whether a palette key names a dark palette. An unknown
+// key is treated as light, which is what a missing setting should draw.
+export function isDarkTheme(key: string): boolean {
+  return themes.find((theme) => theme.key === key)?.dark === true
+}
 
 export const densities: DensityPreset[] = [
   { key: 'compact', label: '紧凑', spaceUnit: '4px', controlHeight: '28px', radius: '5px' },
