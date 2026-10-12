@@ -515,3 +515,124 @@ describe('sessions store delete', () => {
     expect(sessions.error).toContain('服务内部错误')
   })
 })
+
+describe('sessions store interleaved stream merging', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function liveThinking(text: string, final: boolean, sequence: number) {
+    return historyEvent({ instanceId: 'inst-1', type: 'thinking', sequence, replayed: false, thinking: { text, final } })
+  }
+
+  function liveMessage(role: string, text: string, final: boolean, sequence: number) {
+    return historyEvent({ instanceId: 'inst-1', type: 'message', sequence, replayed: false, message: { role, text, final } })
+  }
+
+  // pi's real event stream interleaves thinking_delta into a running text
+  // delta and closes the thinking block after the text resumed (observed with
+  // pi 1.1.0 --mode json). The merge must follow the open block, not the last
+  // list position, or the log fills with fragments and empty blocks.
+  it('merges thinking and message deltas that arrive interleaved', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveThinking('甲', false, 1)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', 'A', false, 2)))
+    sessions.handleEvent('s1', JSON.stringify(liveThinking('乙', false, 3)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', 'B', false, 4)))
+    sessions.handleEvent('s1', JSON.stringify(liveThinking('', true, 5)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '', true, 6)))
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message'])
+    expect(entries[0].text).toBe('甲乙')
+    expect(entries[0].streaming).toBe(false)
+    expect(entries[1].text).toBe('AB')
+    expect(entries[1].streaming).toBe(false)
+  })
+
+  it('drops an orphan empty thinking terminator instead of opening an empty block', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答', true, 1)))
+    sessions.handleEvent('s1', JSON.stringify(liveThinking('', true, 2)))
+
+    expect(sessions.messagesFor('s1').map((entry) => entry.kind)).toEqual(['message'])
+  })
+
+  it('ignores empty non-final deltas', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveThinking('', false, 1)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '', false, 2)))
+
+    expect(sessions.messagesFor('s1')).toHaveLength(0)
+  })
+
+  it('settles an open streaming entry when the turn goes idle', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答到一半', false, 1)))
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'lifecycle', sequence: 2, replayed: false, lifecycle: { state: 'agent_settled' } })),
+    )
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries[0].streaming).toBe(false)
+  })
+
+  it('settles an open streaming entry when the turn ends in a process error', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答到一半', false, 1)))
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'error', sequence: 2, replayed: false, error: { code: 'process_exit', message: 'boom' } })),
+    )
+
+    expect(sessions.messagesFor('s1')[0].streaming).toBe(false)
+  })
+
+  // History replay must keep its old semantics: two complete thinking blocks
+  // in the transcript are two entries, never one merged block.
+  it('keeps two adjacent replayed thinking blocks as two entries', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/history': {
+        events: [
+          historyEvent({ type: 'thinking', sequence: 1, thinking: { text: '第一段', final: true } }),
+          historyEvent({ type: 'thinking', sequence: 2, thinking: { text: '第二段', final: true } }),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries.filter((entry) => entry.kind === 'thinking').map((entry) => entry.text)).toEqual([
+      '第一段',
+      '第二段',
+    ])
+  })
+})

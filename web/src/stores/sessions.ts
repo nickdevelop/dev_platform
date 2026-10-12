@@ -59,6 +59,27 @@ function nextEntryID(sessionId: string, sequence: number, kind: string): string 
   return `${sessionId}:${sequence}:${kind}:${entryCounter}`
 }
 
+// findOpenStreaming returns the most recent still-streaming entry of a kind
+// (and, for messages, of the same role), scanning past anything appended in
+// between. Backends interleave their streams — pi emits a thinking_delta in
+// the middle of a running text delta and closes the thinking block after text
+// resumed — so the open block, not the last list position, is what a delta
+// belongs to. Without this, interleaving fragments a block into several
+// entries and its terminator opens an empty one.
+function findOpenStreaming(
+  list: ChatEntry[],
+  kind: ChatEntry['kind'],
+  role?: string,
+): ChatEntry | undefined {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i]
+    if (entry.kind === kind && entry.streaming && (role === undefined || entry.role === role)) {
+      return entry
+    }
+  }
+  return undefined
+}
+
 // entryFromEvent maps one non-message event to its log line, or null when the
 // event renders nothing (lifecycle events are handled separately because they
 // carry no log line of their own). Both the live path and the history replay
@@ -354,6 +375,7 @@ export const useSessionsStore = defineStore('sessions', {
       if (event.type === 'error' && event.error) {
         if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
           this.setTurn(sessionId, 'idle')
+          this.settleStreaming(sessionId)
         }
       }
     },
@@ -440,15 +462,20 @@ export const useSessionsStore = defineStore('sessions', {
       dedupeEcho = true,
     ) {
       const list = this.ensureMessages(sessionId)
-      const last = list[list.length - 1]
-      if (last && last.kind === 'message' && last.streaming && last.role === role) {
-        last.text += text
-        if (final) last.streaming = false
+      const open = findOpenStreaming(list, 'message', role)
+      if (open) {
+        if (text !== '') open.text += text
+        if (final) open.streaming = false
         return
       }
+      // An empty event with no open block: a terminator whose block already
+      // settled (or never streamed) renders nothing but a blank bubble, so it
+      // is dropped rather than pushed.
+      if (text === '') return
       // A user turn echoed by the backend is deduplicated against the copy the
       // workbench already added when the message was sent. A replay opts out:
       // a transcript's repeated lines are distinct turns, not echoes.
+      const last = list[list.length - 1]
       if (
         dedupeEcho &&
         role === 'user' &&
@@ -468,24 +495,28 @@ export const useSessionsStore = defineStore('sessions', {
       })
     },
 
-    // appendThinking adds reasoning to the log, merging a streamed block into
-    // the entry already open so the pane shows one growing block rather than a
-    // line per chunk.
+    // appendThinking adds reasoning to the log, merging into the thinking
+    // block that is still open (see findOpenStreaming) so the pane shows one
+    // growing block rather than a line per chunk. An event that belongs to no
+    // open block — an empty terminator arriving after the block settled, or
+    // an empty delta — renders an empty block and is dropped.
     appendThinking(sessionId: string, text: string, final: boolean, sequence: number) {
       const list = this.ensureMessages(sessionId)
-      const last = list[list.length - 1]
-      if (last && last.kind === 'thinking' && last.streaming) {
-        last.text += text
-        if (final) last.streaming = false
+      const open = findOpenStreaming(list, 'thinking')
+      if (open) {
+        if (text !== '') open.text += text
+        if (final) open.streaming = false
         return
       }
-      list.push({
-        id: nextEntryID(sessionId, sequence, 'thinking'),
-        kind: 'thinking',
-        role: 'assistant',
-        text,
-        streaming: !final,
-      })
+      if (text !== '') {
+        list.push({
+          id: nextEntryID(sessionId, sequence, 'thinking'),
+          kind: 'thinking',
+          role: 'assistant',
+          text,
+          streaming: !final,
+        })
+      }
     },
 
     applyLifecycle(sessionId: string, event: NormalizedEvent) {
@@ -504,6 +535,7 @@ export const useSessionsStore = defineStore('sessions', {
         state === 'agent_end'
       ) {
         this.setTurn(sessionId, 'idle')
+        this.settleStreaming(sessionId)
         return
       }
       if (state === 'stopped') {
@@ -521,6 +553,15 @@ export const useSessionsStore = defineStore('sessions', {
       this.sessions = this.sessions.map((entry) =>
         entry.id === sessionId ? { ...entry, turn } : entry,
       )
+    },
+
+    // settleStreaming closes every still-open entry of a session. A turn that
+    // ended (settled, interrupted or failed) can no longer extend them, and a
+    // block left streaming shows a cursor that never stops blinking.
+    settleStreaming(sessionId: string) {
+      for (const entry of this.messages[sessionId] ?? []) {
+        entry.streaming = false
+      }
     },
 
     setStatus(sessionId: string, status: AgentSession['status']) {
