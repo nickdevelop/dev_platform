@@ -5,9 +5,13 @@
 // collapsed block. Tool activity is shown only when the session's capabilities
 // declare tool-call events. User turns, reasoning and tool output are
 // interpolated as text; agent replies are rendered as sanitized markdown (see
-// ../markdown), so backend content still cannot inject live markup.
+// ../markdown), so backend content still cannot inject live markup. An agent
+// reply is cut around its ```plantuml fences first (see ../markdown-segments):
+// those become PlantumlBlock diagrams instead of code blocks.
 import { computed } from 'vue'
 import { renderMarkdown } from '../markdown'
+import { splitDiagramBlocks } from '../markdown-segments'
+import PlantumlBlock from './PlantumlBlock.vue'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry, StreamStatus } from '../stores/sessions'
 
@@ -114,7 +118,20 @@ function toolArgument(entry: ChatEntry): string {
         <template v-if="entry.kind === 'message'">
           <div class="bubble" :class="entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
             <span v-if="entry.role === 'user'" class="message-text">{{ entry.text }}</span>
-            <div v-else class="message-text markdown-body" v-html="renderMarkdown(entry.text)"></div>
+            <div v-else class="message-text markdown-body">
+              <template v-for="(segment, index) in splitDiagramBlocks(entry.text)" :key="index">
+                <div
+                  v-if="segment.kind === 'markdown'"
+                  class="markdown-seg"
+                  v-html="renderMarkdown(segment.text)"
+                ></div>
+                <PlantumlBlock
+                  v-else
+                  :source="segment.text"
+                  :ready="segment.closed && entry.streaming !== true"
+                />
+              </template>
+            </div>
             <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
           </div>
         </template>

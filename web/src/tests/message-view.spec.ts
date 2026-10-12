@@ -1,8 +1,10 @@
 // Presentation tests for the message log: agent replies render as sanitized
 // markdown, while user turns, reasoning and tool output stay literal text.
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../components/MessageView.vue'
+import { clearDiagramCache, configureEngineLoader, type Engine } from '../plantuml/renderer'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'
 
@@ -163,5 +165,55 @@ describe('MessageView tool and thinking blocks', () => {
     expect(thinking.find('summary').text()).toContain('Thinking')
     await thinking.find('summary').trigger('click')
     expect(thinking.find('.thinking-text').text()).toContain('先分析再回答')
+  })
+})
+
+describe('MessageView plantuml blocks', () => {
+  function fakeEngine(svg: string): Engine {
+    return (_lines, _opts, onSuccess) => onSuccess(svg)
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    clearDiagramCache()
+    configureEngineLoader(null)
+  })
+
+  it('renders a plantuml fence as a diagram block, not as a code block', async () => {
+    configureEngineLoader(fakeEngine('<svg><text>seq</text></svg>'))
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [message('assistant', '看图\n\n```plantuml\n@startuml\nA->B\n@enduml\n```\n\n完毕')],
+        capabilities: capabilities(),
+      },
+    })
+    await flushPromises()
+
+    const block = wrapper.find('[data-test="plantuml-block"]')
+    expect(block.exists()).toBe(true)
+    expect(block.find('[data-test="plantuml-canvas"] svg').exists()).toBe(true)
+    expect(wrapper.find('.bubble-agent .message-text').text()).toContain('看图')
+    expect(wrapper.find('.bubble-agent .message-text').text()).toContain('完毕')
+    expect(wrapper.find('.bubble-agent').html()).not.toContain('<code>@startuml')
+  })
+
+  it('keeps an unterminated fence waiting while the reply streams', () => {
+    const entry: ChatEntry = {
+      ...message('assistant', '```plantuml\n@startuml\nA->B'),
+      streaming: true,
+    }
+    const wrapper = mount(MessageView, { props: { messages: [entry], capabilities: capabilities() } })
+
+    expect(wrapper.find('[data-test="plantuml-waiting"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="plantuml-canvas"]').exists()).toBe(false)
+  })
+
+  it('leaves non-plantuml code blocks alone', () => {
+    const wrapper = mount(MessageView, {
+      props: { messages: [message('assistant', '```go\nfmt.Println("hi")\n```')], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="plantuml-block"]').exists()).toBe(false)
+    expect(wrapper.find('.bubble-agent code').text()).toContain('fmt.Println')
   })
 })
