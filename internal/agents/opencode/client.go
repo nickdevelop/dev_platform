@@ -240,17 +240,57 @@ func (c *Client) ListSessions(ctx context.Context, directory string) ([]SessionI
 	return payload.Data, nil
 }
 
+// maxMessagePages bounds the cursor walk of a single history read: a server
+// that answers every page with a fresh next cursor must not pin the read
+// forever. The bound is generous against real transcripts — the normalized
+// history itself is capped at agents.MaxHistoryEvents — and a read that hits
+// it still returns the pages it collected.
+const maxMessagePages = 64
+
+// messagePage mirrors one page of GET /api/session/{id}/message: the
+// messages in the requested order plus the opaque cursors for more pages.
+type messagePage struct {
+	Data   []Message `json:"data"`
+	Cursor *struct {
+		Previous *string `json:"previous"`
+		Next     *string `json:"next"`
+	} `json:"cursor"`
+}
+
 // ListMessages returns one session's native message log, oldest first. The
 // server stores it on disk, so any running server answers for any session it
 // knows the directory of.
+//
+// The endpoint defaults to newest first, so the first page asks for
+// oldest-first explicitly; later pages follow cursor.next, which already
+// encodes the ordering and must not be combined with order. Pages are
+// followed until the server reports no next cursor, so a transcript longer
+// than one page is read whole rather than silently truncated.
 func (c *Client) ListMessages(ctx context.Context, sessionID string) ([]Message, error) {
-	var payload struct {
-		Data []Message `json:"data"`
+	messages := make([]Message, 0, 64)
+	query := url.Values{}
+	query.Set("order", "asc")
+	cursor := ""
+	for pages := 0; ; pages++ {
+		if cursor != "" {
+			// A cursor carries the original request's ordering; sending
+			// order alongside it is rejected by the server.
+			query = url.Values{}
+			query.Set("cursor", cursor)
+		}
+		var page messagePage
+		if err := c.do(ctx, http.MethodGet, "/api/session/"+sessionID+"/message", query, nil, &page); err != nil {
+			return nil, err
+		}
+		messages = append(messages, page.Data...)
+		if page.Cursor == nil || page.Cursor.Next == nil || *page.Cursor.Next == "" {
+			return messages, nil
+		}
+		if pages+1 >= maxMessagePages {
+			return messages, nil
+		}
+		cursor = *page.Cursor.Next
 	}
-	if err := c.do(ctx, http.MethodGet, "/api/session/"+sessionID+"/message", nil, nil, &payload); err != nil {
-		return nil, err
-	}
-	return payload.Data, nil
 }
 
 // CreateSession creates a native session.

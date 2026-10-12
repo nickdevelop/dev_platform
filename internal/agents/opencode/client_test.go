@@ -397,8 +397,66 @@ func readMessagesFixture(t *testing.T) []byte {
 	return raw
 }
 
-// TestClientListMessages pins the request and the response shape of the
-// native message endpoint history is read from.
+// TestClientListMessagesRequestsAscendingOrder pins the ordering contract:
+// the native endpoint defaults to newest first, so history must ask for
+// oldest first explicitly or a replayed conversation renders reversed.
+func TestClientListMessagesRequestsAscendingOrder(t *testing.T) {
+	fixture := readMessagesFixture(t)
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("order"); got != "asc" {
+			t.Errorf("order query = %q, want asc: the endpoint defaults to newest first", got)
+		}
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(fixture)
+	})
+
+	messages, err := client.ListMessages(context.Background(), "ses_1")
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(messages) != 5 {
+		t.Fatalf("ListMessages returned %d messages, want 5", len(messages))
+	}
+	if messages[0].Type != "user" || messages[0].Text != "历史里的用户消息" {
+		t.Errorf("messages[0] = %+v, want the oldest message first", messages[0])
+	}
+}
+
+// TestClientListMessagesFollowsCursor pins that a multi-page transcript is
+// read whole: the client follows cursor.next until it is empty, keeping page
+// order, instead of stopping at the server's default page size.
+func TestClientListMessagesFollowsCursor(t *testing.T) {
+	var queries []string
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		w.Header().Set("content-type", "application/json")
+		if r.URL.Query().Get("cursor") == "" {
+			io.WriteString(w, `{"data":[
+				{"id":"m1","type":"user","text":"first","time":{"created":1}}
+			],"cursor":{"previous":null,"next":"page2"}}`)
+			return
+		}
+		// The cursor already encodes the ordering: the API forbids combining
+		// it with order.
+		if got := r.URL.Query().Get("order"); got != "" {
+			t.Errorf("follow-up order query = %q, want empty when paging with a cursor", got)
+		}
+		io.WriteString(w, `{"data":[
+			{"id":"m2","type":"user","text":"second","time":{"created":2}}
+		],"cursor":{"previous":null,"next":null}}`)
+	})
+
+	messages, err := client.ListMessages(context.Background(), "ses_1")
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(queries) != 2 {
+		t.Fatalf("ListMessages made %d requests, want 2 (first page + cursor follow-up)", len(queries))
+	}
+	if len(messages) != 2 || messages[0].Text != "first" || messages[1].Text != "second" {
+		t.Fatalf("ListMessages = %+v, want both pages in order", messages)
+	}
+}
 func TestClientListMessages(t *testing.T) {
 	fixture := readMessagesFixture(t)
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
