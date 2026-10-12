@@ -248,4 +248,19 @@ describe('ProjectTree', () => {
     await wrapper.find('.project-settings').trigger('click')
     expect(wrapper.emitted('select-project')).toEqual([[1]])
   })
+
+  it('shows the untitled placeholder instead of the internal id, in list and in search', async () => {
+    stubSessions({ 1: [session({ id: 's-x', title: '' })] })
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('未命名任务')
+    expect(wrapper.text()).not.toContain('s-x')
+
+    // The search filter matches the placeholder, not the hidden id.
+    await wrapper.setProps({ search: '未命名' })
+    expect(wrapper.text()).toContain('未命名任务')
+    await wrapper.setProps({ search: 's-x' })
+    expect(wrapper.text()).toContain('没有匹配的任务')
+  })
 })

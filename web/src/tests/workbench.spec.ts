@@ -216,6 +216,16 @@ describe('session list', () => {
     const selections = wrapper.emitted('select') ?? []
     expect(selections.map((entry) => entry[0])).toEqual(['sess-1', 'sess-1', 'sess-1'])
   })
+
+  it('shows the untitled placeholder instead of leaking the internal session id', () => {
+    const wrapper = mount(SessionList, {
+      props: { sessions: [session({ id: 'sess-untitled', title: '' })] },
+    })
+    mounted.push(wrapper)
+
+    expect(wrapper.text()).toContain('未命名任务')
+    expect(wrapper.text()).not.toContain('sess-untitled')
+  })
 })
 
 describe('capability-gated controls', () => {

@@ -47,10 +47,14 @@ const expandedSessions = computed(() => {
 
 const query = computed(() => props.search.trim().toLowerCase())
 
+// Display fallback shared by the row and the search filter: the platform id
+// must never surface as a name.
+const untitledLabel = '未命名任务'
+
 const visibleSessions = computed(() => {
   if (query.value === '') return expandedSessions.value
   return expandedSessions.value.filter((entry) =>
-    (entry.title || entry.id).toLowerCase().includes(query.value),
+    (entry.title || untitledLabel).toLowerCase().includes(query.value),
   )
 })
 
@@ -148,7 +152,7 @@ function onProjectClick(projectId: number) {
             class="task-open"
             @click="emit('select-session', project.id, entry.id)"
           >
-            <span class="title">{{ entry.title || entry.id }}</span>
+            <span class="title">{{ entry.title || untitledLabel }}</span>
             <BackendTag :backend="entry.backend" />
             <span v-if="statusText(entry)" class="status">{{ statusText(entry) }}</span>
           </button>

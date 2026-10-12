@@ -12,6 +12,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{ select: [sessionId: string] }>()
 
+// Display fallback for sessions with no title yet; the platform id must
+// never surface as a name.
+const untitledLabel = '未命名任务'
+
 const statusLabels: Record<string, string> = {
   active: '进行中',
   stopped: '已停止',
@@ -42,7 +46,7 @@ function select(sessionId: string) {
         @keydown.space.prevent="select(session.id)"
       >
         <span class="session-info">
-          <span class="session-title">{{ session.title || session.id }}</span>
+          <span class="session-title">{{ session.title || untitledLabel }}</span>
           <span class="session-meta">
             <span class="backend">{{ session.backend }}</span>
             <span class="status" :class="`status-${session.status}`">
