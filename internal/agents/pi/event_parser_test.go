@@ -357,3 +357,23 @@ func TestParserStderrSuppressesBenignWarning(t *testing.T) {
 		t.Errorf("event = %+v, want the non-benign warning carried through", got[0])
 	}
 }
+
+// TestParserToolResultMessageIsNotChat pins the fix for tool output rendering
+// twice: pi emits the tool result both as tool_execution_* records AND as a
+// message_start/message_end with role "toolResult". Only the tool events may
+// reach the workbench; a toolResult message must never become a chat message,
+// exactly like the history replay maps it.
+func TestParserToolResultMessageIsNotChat(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"session","version":3,"id":"sess-1","cwd":"/tmp"}`,
+		`{"type":"message_start","message":{"role":"toolResult","toolCallId":"call_1","content":[{"type":"text","text":"TOOL_OUTPUT_MARKER_42"}]}}`,
+		`{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_1","content":[{"type":"text","text":"TOOL_OUTPUT_MARKER_42"}]}}`,
+	}, "\n") + "\n"
+
+	got := collect(t, input)
+	for _, event := range got {
+		if event.Type == agents.EventMessage {
+			t.Fatalf("toolResult message became a chat message: %+v (all: %v)", event, eventTypes(got))
+		}
+	}
+}

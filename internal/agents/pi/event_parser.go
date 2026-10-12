@@ -220,6 +220,13 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			p.deltaOpen = false
 			return nil
 		}
+		// A tool result is conversation plumbing, not speech: the workbench
+		// already renders it inside its tool block from the tool_execution_*
+		// records, and the history replay maps it the same way. Emitting it as
+		// a message shows every tool output twice.
+		if role == "toolResult" {
+			return nil
+		}
 		if text == "" {
 			return nil
 		}
