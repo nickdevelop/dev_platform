@@ -668,6 +668,47 @@ func TestStaleSessionReflectsInstanceLifecycle(t *testing.T) {
 	}
 }
 
+// TestContinueLeavesTheActivityTimestampAlone verifies opening a task is not
+// an interaction: continue persists the re-attach (status, title, a rebound
+// instance) without refreshing updated_at — the column the workbench sorts its
+// task list by — while a real send does refresh it.
+func TestContinueLeavesTheActivityTimestampAlone(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	past := time.Now().UTC().Add(-time.Hour)
+	if err := env.db.Model(&database.AgentSession{}).Where("id = ?", session.ID).
+		Update("updated_at", past).Error; err != nil {
+		t.Fatalf("age session: %v", err)
+	}
+
+	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+
+	var row database.AgentSession
+	if err := env.db.First(&row, "id = ?", session.ID).Error; err != nil {
+		t.Fatalf("load session row: %v", err)
+	}
+	if !row.UpdatedAt.Equal(past) {
+		t.Errorf("persisted updated_at = %v after Continue, want the aged %v: opening a task is not activity", row.UpdatedAt, past)
+	}
+	if continued.Status != SessionActive {
+		t.Errorf("continued status = %s, want active", continued.Status)
+	}
+
+	// A real interaction still moves the timestamp: sending a message must
+	// raise the task to the top of the list.
+	sent, err := env.svc.Send(context.Background(), env.projectID, session.ID, "hello", "")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !sent.UpdatedAt.After(past) {
+		t.Errorf("Send updated_at = %v, want it to refresh past %v", sent.UpdatedAt, past)
+	}
+}
+
 // TestProjectScopingRejectsCrossProjectAccess verifies every session operation
 // validates that the session belongs to the authorized project.
 func TestProjectScopingRejectsCrossProjectAccess(t *testing.T) {

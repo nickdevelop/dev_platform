@@ -91,6 +91,25 @@ func (r *repository) update(row database.AgentSession) error {
 	})
 }
 
+// updateOnContinue persists what one Continue operation may have changed —
+// the status, the title the adapter reported, and the instance the session was
+// rebound to — while pinning updated_at to the value the row was loaded with.
+// The workbench sorts its task list by updated_at as the last-interaction
+// time, and opening a task is not an interaction. GORM refreshes that column
+// on every Save and on any map update that omits it, so the map must carry the
+// loaded value explicitly.
+func (r *repository) updateOnContinue(row database.AgentSession) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&database.AgentSession{}).Where("id = ?", row.ID).
+			Updates(map[string]any{
+				"status":      row.Status,
+				"title":       row.Title,
+				"instance_id": row.InstanceID,
+				"updated_at":  row.UpdatedAt,
+			}).Error
+	})
+}
+
 // updateStatus updates only the status and updated-at columns of one row.
 func (r *repository) updateStatus(id, status string, at time.Time) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {

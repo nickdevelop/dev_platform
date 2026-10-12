@@ -474,8 +474,9 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 		row.Title = updated.Title
 	}
 	row.Status = string(SessionActive)
-	row.UpdatedAt = s.now()
-	if err := s.repo.update(row); err != nil {
+	// Opening a task is not an interaction: the re-attach must not refresh the
+	// row's updated_at, the last-interaction time the task list sorts by.
+	if err := s.repo.updateOnContinue(row); err != nil {
 		return Session{}, err
 	}
 	s.ensureTracker(inst.ID)
@@ -516,7 +517,6 @@ func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instan
 		return err
 	}
 	row.InstanceID = inst.ID
-	row.UpdatedAt = s.now()
 	return nil
 }
 
