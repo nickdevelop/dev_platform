@@ -126,6 +126,24 @@ function entry(id: string, text: string): ChatEntry {
   return { id, kind: 'message', role: 'assistant', text, streaming: false } as ChatEntry
 }
 
+// jsdom performs no layout, so the tests hand the scroller the geometry it
+// would have in a browser, and change scrollHeight to simulate growth.
+function setGeometry(
+  el: HTMLElement,
+  geometry: { scrollHeight: number; clientHeight: number },
+) {
+  Object.defineProperty(el, 'scrollHeight', {
+    configurable: true,
+    writable: true,
+    value: geometry.scrollHeight,
+  })
+  Object.defineProperty(el, 'clientHeight', {
+    configurable: true,
+    writable: true,
+    value: geometry.clientHeight,
+  })
+}
+
 describe('TaskChatPanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -533,5 +551,122 @@ describe('TaskChatPanel conversation layout', () => {
 
     expect(wrapper.find('[data-test="delete-task-dialog"]').exists()).toBe(false)
     expect(remove).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskChatPanel scroll following', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const agents = useAgentsStore()
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+  })
+
+  afterEach(() => {
+    useSessionsStore().unsubscribeAll()
+    clearModelCache()
+    vi.unstubAllGlobals()
+  })
+
+  it('follows new entries while the view is at the bottom, with no jump button', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const el = wrapper.find('[data-test="conversation-scroll"]').element as HTMLElement
+    setGeometry(el, { scrollHeight: 1000, clientHeight: 400 })
+
+    useSessionsStore().pushEntry('sess-1', entry('m1', 'FOLLOWED'))
+    await flushPromises()
+
+    // The view was following, so the new entry pulled it to the bottom.
+    expect(el.scrollTop).toBe(1000)
+    expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(false)
+  })
+
+  it('holds the position when scrolled away and offers a button to the newest entry', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const el = wrapper.find('[data-test="conversation-scroll"]').element as HTMLElement
+    setGeometry(el, { scrollHeight: 1000, clientHeight: 400 })
+    // Park mid-history: 700px from the bottom, well past the follow threshold.
+    el.scrollTop = 300
+    await wrapper.find('[data-test="conversation-scroll"]').trigger('scroll')
+
+    setGeometry(el, { scrollHeight: 1200, clientHeight: 400 })
+    useSessionsStore().pushEntry('sess-1', entry('m2', 'WHILE AWAY'))
+    await flushPromises()
+
+    // The position is untouched, and the button appeared instead.
+    expect(el.scrollTop).toBe(300)
+    const jump = wrapper.find('[data-test="jump-latest"]')
+    expect(jump.exists()).toBe(true)
+
+    // Clicking it scrolls to the newest entry and retires the button. jsdom
+    // has no Element.scrollTo, so the test supplies one that behaves.
+    const scrollTo = vi.fn((options: { top: number }) => {
+      el.scrollTop = options.top
+    })
+    el.scrollTo = scrollTo as unknown as typeof el.scrollTo
+    await jump.trigger('click')
+    await flushPromises()
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1200, behavior: 'smooth' })
+    expect(el.scrollTop).toBe(1200)
+    expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(false)
+  })
+
+  it('resumes following once the user scrolls back to the bottom', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const el = wrapper.find('[data-test="conversation-scroll"]').element as HTMLElement
+    setGeometry(el, { scrollHeight: 1000, clientHeight: 400 })
+    el.scrollTop = 300
+    await wrapper.find('[data-test="conversation-scroll"]').trigger('scroll')
+    useSessionsStore().pushEntry('sess-1', entry('m1', 'FIRST'))
+    await flushPromises()
+    expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(true)
+
+    // Scrolling back to the bottom hides the button and resumes following.
+    el.scrollTop = 1000
+    await wrapper.find('[data-test="conversation-scroll"]').trigger('scroll')
+    expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(false)
+
+    setGeometry(el, { scrollHeight: 1300, clientHeight: 400 })
+    useSessionsStore().pushEntry('sess-1', entry('m2', 'SECOND'))
+    await flushPromises()
+    expect(el.scrollTop).toBe(1300)
+  })
+
+  it('follows streaming text of the open entry, not only new entries', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const el = wrapper.find('[data-test="conversation-scroll"]').element as HTMLElement
+    setGeometry(el, { scrollHeight: 800, clientHeight: 400 })
+
+    const store = useSessionsStore()
+    store.pushEntry('sess-1', {
+      id: 's1',
+      kind: 'message',
+      role: 'assistant',
+      text: 'partial',
+      streaming: true,
+    } as ChatEntry)
+    await flushPromises()
+    expect(el.scrollTop).toBe(800)
+
+    // A delta grows the open entry without appending one; the view follows.
+    setGeometry(el, { scrollHeight: 900, clientHeight: 400 })
+    store.messagesFor('sess-1')[0].text += ' and more'
+    await flushPromises()
+    expect(el.scrollTop).toBe(900)
   })
 })

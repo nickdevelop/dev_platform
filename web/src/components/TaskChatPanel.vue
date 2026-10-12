@@ -4,7 +4,7 @@
 // task closes the previous stream, so its events can never appear here. The
 // composer is the only place a turn is sent or stopped; the send action becomes
 // 停止 while the session's turn is running.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
@@ -35,6 +35,15 @@ const deleteError = ref('')
 const preparing = ref(false)
 const messageText = ref('')
 const selectedModel = ref('')
+// Scrolling follows the newest entry only while the user is at the bottom.
+// The log scrolls by hand in jsdom tests, so every read and write of the
+// scroller geometry goes through the element itself.
+const logScroll = ref<HTMLElement | null>(null)
+const pinnedToBottom = ref(true)
+const showJumpToLatest = ref(false)
+// "At the bottom" tolerates a small rounding gap so subpixel layouts, and a
+// wheel that stops a hair short, still count as following the conversation.
+const FOLLOW_THRESHOLD_PX = 24
 // Whether the model list for the open instance loaded. A failed list disables
 // sending rather than falling back to a free-text model.
 const modelOk = ref(true)
@@ -48,6 +57,18 @@ const instance = computed(() => {
 })
 
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
+// A cheap change signal for the log: a new entry changes the length, and a
+// streaming delta changes the text of an entry still open. Settled entries are
+// immutable, so watching only the open ones catches every visible change
+// without deep-watching the whole transcript.
+const logSignature = computed(() => {
+  const list = activeMessages.value
+  let open = 0
+  for (const entry of list) {
+    if (entry.streaming) open += entry.text.length
+  }
+  return `${props.sessionId}:${list.length}:${open}`
+})
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 const historyError = computed(() => sessions.historyError[props.sessionId] ?? '')
 const historyTruncated = computed(() => sessions.historyTruncated[props.sessionId] === true)
@@ -90,6 +111,46 @@ onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
 onBeforeUnmount(() => sessions.unsubscribeAll())
 
+// onLogScroll tracks where the user is: reaching the bottom resumes following
+// the conversation and retires the jump button; scrolling away stops following
+// so a new entry can never yank the view.
+function onLogScroll() {
+  const el = logScroll.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  const atBottom = distance <= FOLLOW_THRESHOLD_PX
+  pinnedToBottom.value = atBottom
+  if (atBottom) showJumpToLatest.value = false
+}
+
+function scrollToBottom(smooth: boolean) {
+  const el = logScroll.value
+  if (!el) return
+  // The click animates; following the stream lands each delta immediately, so
+  // a fast token stream never queues a pile of smooth scrolls.
+  if (smooth && typeof el.scrollTo === 'function') {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  } else {
+    el.scrollTop = el.scrollHeight
+  }
+  pinnedToBottom.value = true
+  showJumpToLatest.value = false
+}
+
+watch(logSignature, () => {
+  // Wait for the entry to be in the DOM before measuring it.
+  void nextTick(() => {
+    const el = logScroll.value
+    if (!el) return
+    if (pinnedToBottom.value) {
+      el.scrollTop = el.scrollHeight
+      showJumpToLatest.value = false
+    } else {
+      showJumpToLatest.value = true
+    }
+  })
+})
+
 // A directly opened task URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
 // such; an id absent from a successful list is never opened. The model
@@ -103,6 +164,8 @@ async function open() {
   loadError.value = ''
   selectedModel.value = ''
   modelOk.value = true
+  pinnedToBottom.value = true
+  showJumpToLatest.value = false
   await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
   ready.value = true
   if (sessions.error) {
@@ -113,6 +176,10 @@ async function open() {
   preparing.value = true
   try {
     await sessions.openSession(props.projectId, props.sessionId)
+    // Opening a task lands on its newest entry, not on the top of a replayed
+    // history.
+    await nextTick()
+    scrollToBottom(false)
   } finally {
     preparing.value = false
   }
@@ -139,8 +206,13 @@ async function send() {
   const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
   const updated = await sessions.sendMessage(props.projectId, session.id, messageText.value, model)
   // The text is kept on failure so the user can retry without retyping it.
-  if (updated) messageText.value = ''
-  else sendError.value = sessions.error || '发送失败，请重试。'
+  if (updated) {
+    messageText.value = ''
+    // Sending means "look here": the view returns to the turn just made even
+    // when it had been parked mid-history.
+    await nextTick()
+    scrollToBottom(false)
+  } else sendError.value = sessions.error || '发送失败，请重试。'
   sending.value = false
 }
 
@@ -227,15 +299,32 @@ async function removeTask() {
         <button type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
-      <div class="conversation-scroll" data-test="conversation-scroll">
-        <MessageView
-          :messages="activeMessages"
-          :capabilities="activeSession.capabilities"
-          :stream-status="streamStatus"
-        />
+      <div class="conversation-area">
+        <div
+          class="conversation-scroll"
+          data-test="conversation-scroll"
+          ref="logScroll"
+          @scroll.passive="onLogScroll"
+        >
+          <MessageView
+            :messages="activeMessages"
+            :capabilities="activeSession.capabilities"
+            :stream-status="streamStatus"
+          />
 
-        <button v-if="streamStatus === 'error'" type="button" class="reconnect" @click="reconnect">
-          重新连接事件流
+          <button v-if="streamStatus === 'error'" type="button" class="reconnect" @click="reconnect">
+            重新连接事件流
+          </button>
+        </div>
+
+        <button
+          v-if="showJumpToLatest"
+          type="button"
+          class="jump-latest"
+          data-test="jump-latest"
+          @click="scrollToBottom(true)"
+        >
+          ↓ 滚动到最新消息
         </button>
       </div>
 
@@ -330,10 +419,36 @@ async function removeTask() {
   min-height: 0;
 }
 
+.conversation-area {
+  /* The anchor for the floating jump button, which sits over the bottom of
+     the log and above the composer. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .conversation-scroll {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.jump-latest {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .chat-header {
