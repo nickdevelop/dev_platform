@@ -377,3 +377,46 @@ func TestParserToolResultMessageIsNotChat(t *testing.T) {
 		}
 	}
 }
+
+// TestParserThinkingEndCarriesContentWhenNotStreamed covers providers that
+// report reasoning without streaming deltas: thinking_end's content is the
+// authoritative block text, so it must arrive as one final thinking event
+// instead of an empty terminator that leaves the workbench with a blank block.
+func TestParserThinkingEndCarriesContentWhenNotStreamed(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"session","version":3,"id":"sess-1","cwd":"/tmp"}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_end","contentIndex":0,"content":"完整推理"}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"完整推理"},{"type":"text","text":"好"}],"stopReason":"stop"}}`,
+	}, "\n") + "\n"
+
+	got := collect(t, input)
+	if len(got) != 3 {
+		t.Fatalf("got %d events, want 3 (lifecycle, final thinking, message): %v", len(got), eventTypes(got))
+	}
+	if got[1].Type != agents.EventThinking || got[1].Thinking == nil ||
+		!got[1].Thinking.Final || got[1].Thinking.Text != "完整推理" {
+		t.Errorf("event[1] = %+v, want final thinking carrying the authoritative content", got[1])
+	}
+	if got[2].Type != agents.EventMessage || got[2].Message == nil || got[2].Message.Text != "好" {
+		t.Errorf("event[2] = %+v, want the assistant message", got[2])
+	}
+}
+
+// TestParserEmptyAssistantMessageEndIsSilent pins that an assistant message
+// carrying neither streamed deltas nor display text (thinking + toolCall only)
+// produces no message event: an empty final would render a blank bubble.
+func TestParserEmptyAssistantMessageEndIsSilent(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"session","version":3,"id":"sess-1","cwd":"/tmp"}`,
+		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"想"}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"想"},{"type":"toolCall","id":"call_1","name":"bash","arguments":{}}],"stopReason":"toolUse"}}`,
+	}, "\n") + "\n"
+
+	got := collect(t, input)
+	for _, event := range got {
+		if event.Type == agents.EventMessage {
+			t.Fatalf("empty assistant message_end produced a message event: %+v (all: %v)", event, eventTypes(got))
+		}
+	}
+}

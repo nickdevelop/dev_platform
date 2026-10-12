@@ -62,6 +62,11 @@ type parser struct {
 	// without a thinking_end still closes it instead of leaving the workbench
 	// with a block that never settles.
 	thinkingOpen bool
+	// thinkingStreamed records whether any thinking_delta arrived for the open
+	// block. A block that only reports thinking_end carries its authoritative
+	// text in the end record, and that text must reach the workbench instead
+	// of an empty terminator.
+	thinkingStreamed bool
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -185,10 +190,11 @@ type piEvent struct {
 
 // piAssistantEvent is the nested provider event carried by message_update.
 type piAssistantEvent struct {
-	Type   string `json:"type"`
-	Delta  string `json:"delta"`
-	Reason string `json:"reason"`
-	Error  string `json:"error"`
+	Type    string          `json:"type"`
+	Delta   string          `json:"delta"`
+	Content json.RawMessage `json:"content"`
+	Reason  string          `json:"reason"`
+	Error   string          `json:"error"`
 }
 
 // piMessage is the subset of a pi message the adapter needs: its role and its
@@ -249,17 +255,19 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		// The workbench renders it as its own kind of entry.
 		if update != nil && update.Type == "thinking_start" {
 			p.thinkingOpen = true
+			p.thinkingStreamed = false
 			return nil
 		}
 		if update != nil && update.Type == "thinking_delta" {
 			p.thinkingOpen = true
+			p.thinkingStreamed = true
 			out := p.event()
 			out.Type = agents.EventThinking
 			out.Thinking = &agents.ThinkingPayload{Text: update.Delta, Final: false}
 			return []agents.NormalizedEvent{out}
 		}
 		if update != nil && update.Type == "thinking_end" {
-			return p.closeThinking()
+			return p.closeThinking(contentText(update.Content))
 		}
 		if update != nil && update.Type == "error" {
 			return []agents.NormalizedEvent{p.errorEvent("provider", redactSecrets(firstNonEmpty(update.Error, update.Reason)))}
@@ -278,9 +286,14 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		}
 		// A turn that ends while reasoning is open closes the block first, so
 		// the order the user sees stays reasoning-then-reply.
-		events := p.closeThinking()
+		events := p.closeThinking("")
 		streamed := p.deltaOpen
 		p.deltaOpen = false
+		if !streamed && text == "" {
+			// Neither streamed deltas nor display text (a thinking-and-toolCall
+			// message): emitting an empty final would render a blank bubble.
+			return events
+		}
 		out := p.event()
 		out.Type = agents.EventMessage
 		out.Message = &agents.MessagePayload{Role: "assistant", Text: text, Final: true}
@@ -360,19 +373,26 @@ func (p *parser) stderrEvent(line []byte) agents.NormalizedEvent {
 }
 
 // unknown preserves a record the adapter could not normalize, byte for byte.
-// closeThinking emits the empty final terminator for an open reasoning block,
-// mirroring how a streamed message is closed: the deltas already carried the
-// text, so a concatenating consumer would otherwise keep the block streaming.
-// It emits nothing when no reasoning was streamed, so a turn without thinking
-// is unchanged.
-func (p *parser) closeThinking() []agents.NormalizedEvent {
+// closeThinking emits the final terminator for an open reasoning block,
+// mirroring how a streamed message is closed: when deltas already carried the
+// text the terminator is empty, so a concatenating consumer does not double it
+// and keeps the block streaming. When no delta arrived, the authoritative
+// content reported by thinking_end (pi's json.md) is emitted as the block's
+// text instead of an empty terminator. It emits nothing when no reasoning was
+// open, so a turn without thinking is unchanged.
+func (p *parser) closeThinking(content string) []agents.NormalizedEvent {
 	if !p.thinkingOpen {
 		return nil
 	}
+	text := ""
+	if !p.thinkingStreamed {
+		text = content
+	}
 	p.thinkingOpen = false
+	p.thinkingStreamed = false
 	out := p.event()
 	out.Type = agents.EventThinking
-	out.Thinking = &agents.ThinkingPayload{Final: true}
+	out.Thinking = &agents.ThinkingPayload{Text: text, Final: true}
 	return []agents.NormalizedEvent{out}
 }
 
