@@ -335,3 +335,25 @@ func eventTypes(events []agents.NormalizedEvent) []string {
 	}
 	return out
 }
+
+// TestParserStderrSuppressesBenignWarning pins that pi's expected first-prompt
+// notice for a platform-created session id ("No project session found with
+// id …; creating a new session with that id.") never reaches the workbench as
+// an error, while every other stderr line still does.
+func TestParserStderrSuppressesBenignWarning(t *testing.T) {
+	p := newParser("inst-1", "sess-1", parserClock)
+	var got []agents.NormalizedEvent
+	stream := "Warning: No project session found with id '9e21336f-ed58-4631-a3ab-db3f84c7baa6'; creating a new session with that id.\n" +
+		"Warning: something else is wrong\n"
+	if err := p.runStderr(strings.NewReader(stream), func(ev agents.NormalizedEvent) {
+		got = append(got, ev)
+	}); err != nil {
+		t.Fatalf("runStderr() error = %v, want nil", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d events, want 1: %+v", len(got), eventTypes(got))
+	}
+	if got[0].Error == nil || !strings.Contains(got[0].Error.Message, "something else") {
+		t.Errorf("event = %+v, want the non-benign warning carried through", got[0])
+	}
+}

@@ -86,6 +86,29 @@ func (p *parser) run(r io.Reader, emit func(agents.NormalizedEvent)) error {
 	)
 }
 
+// benignStderrPrefixes are stderr lines pi emits that are expected platform
+// behaviour, not diagnostics: a platform-created session id is unknown to pi
+// until the first prompt creates it, and pi says so on stderr while doing
+// exactly the right thing. Surfacing it as an error alarms the user with a
+// warning the workbench cannot act on, so these lines are dropped.
+var benignStderrPrefixes = []string{
+	"Warning: No project session found with id",
+}
+
+// isBenignStderr reports whether a stderr line matches an expected-notice
+// prefix (after trimming surrounding whitespace and pi's color codes' absence
+// is assumed: stderr is plain text when not a TTY, which is how the adapter
+// runs pi).
+func isBenignStderr(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	for _, prefix := range benignStderrPrefixes {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // runStderr turns pi's application logging into bounded diagnostic events.
 // stderr is never parsed as protocol data; each line is surfaced as an
 // EventError with the `stderr` code, redacted and size-limited.
@@ -94,6 +117,9 @@ func (p *parser) runStderr(r io.Reader, emit func(agents.NormalizedEvent)) error
 	return scanLines(r, maxLineBytes,
 		func(line []byte) {
 			if written >= maxStderrBytes {
+				return
+			}
+			if isBenignStderr(string(line)) {
 				return
 			}
 			written += len(line)
