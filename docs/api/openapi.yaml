@@ -1361,6 +1361,303 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/prompt:
+    post:
+      summary: Send a message via the opencode prefix
+      description: >-
+        New-prefix alias of the legacy messages route with identical body and
+        202 semantics. Generic session management stays unchanged; opencode
+        dialogue operations live under /opencode so /pi can diverge.
+      operationId: opencodePrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendAgentSessionMessageRequest'
+      responses:
+        '202':
+          description: Message accepted; output arrives on the event stream.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The instance is not running or the session is not opencode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to accept the message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/permission:
+    get:
+      summary: List pending opencode permission requests
+      operationId: listOpencodePermissions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pending permission requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpencodePermissionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Not an opencode session or tool confirmation unsupported.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/permission/{requestId}/reply:
+    post:
+      summary: Reply to a pending opencode permission request
+      description: Decision is once, always or reject (Permission.Reply).
+      operationId: replyOpencodePermission
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpencodePermissionReply'
+      responses:
+        '204':
+          description: Reply accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            Not an opencode session, tool confirmation unsupported, or the
+            request already expired (error permission_expired) after being
+            answered, cancelled or timed out server-side.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to reply.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/form:
+    get:
+      summary: List pending opencode forms
+      operationId: listOpencodeForms
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pending forms.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpencodeFormList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/form/{formId}/reply:
+    post:
+      summary: Reply to a pending opencode form
+      operationId: replyOpencodeForm
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: formId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpencodeFormReply'
+      responses:
+        '204':
+          description: Reply accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >-
+            The form already expired (error form_expired) after being
+            answered, cancelled or timed out server-side.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: The backend adapter failed to reply.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/opencode/sessions/{sessionId}/raw-events:
+    get:
+      summary: Proxy the shared sidecar's raw SSE bytes
+      description: >-
+        Proxies the opencode sidecar GET /api/event bytes untouched
+        (OpenCodeEvent JSON per data frame) with cookie auth injected
+        server-side. The frontend projects events itself; no normalization or
+        session filtering happens here. Authorization reuses the
+        project-scoped session check.
+      operationId: subscribeOpencodeRawEvents
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A Server-Sent Event stream of raw OpenCodeEvent bytes.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The session's instance is not running or not opencode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /resources:
     get:
       summary: List resource definitions
@@ -3095,6 +3392,89 @@ components:
           description: >-
             Per-message model override; only honored when the backend declares
             modelSelection.
+      additionalProperties: false
+    OpencodePermission:
+      type: object
+      required:
+        - id
+        - sessionId
+        - action
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        action:
+          type: string
+        resources:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+      additionalProperties: false
+    OpencodePermissionList:
+      type: object
+      required:
+        - permissions
+      properties:
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpencodePermission'
+      additionalProperties: false
+    OpencodePermissionReply:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum:
+            - once
+            - always
+            - reject
+        message:
+          type: string
+      additionalProperties: false
+    OpencodeForm:
+      type: object
+      required:
+        - id
+        - sessionId
+        - title
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        title:
+          type: string
+        fields:
+          type: array
+          description: >-
+            Opaque field definitions (Form.Field union: string/number/integer/
+            boolean/multiselect/external) rendered generically by the workbench.
+          items:
+            type: object
+      additionalProperties: false
+    OpencodeFormList:
+      type: object
+      required:
+        - forms
+      properties:
+        forms:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpencodeForm'
+      additionalProperties: false
+    OpencodeFormReply:
+      type: object
+      required:
+        - answer
+      properties:
+        answer:
+          type: object
       additionalProperties: false
     ResourceDefinition:
       type: object

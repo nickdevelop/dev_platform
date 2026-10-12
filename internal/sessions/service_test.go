@@ -72,6 +72,9 @@ type fakeAdapter struct {
 	sends    []agents.SendMessageRequest
 	sentRefs []agents.SessionRef
 
+	// replyErr scripts the opencode-only permission/form reply path.
+	replyErr error
+
 	stopErr   error
 	stopCalls int
 

@@ -89,7 +89,7 @@ func TestAdapterDiagnosticsHealthy(t *testing.T) {
 	if api.Kind != agents.DiagnosticAPI || api.Status != agents.DiagnosticOK {
 		t.Errorf("api check = %+v, want ok", api)
 	}
-	if report.Capabilities == nil || !report.Capabilities.ToolCallEvents || report.Capabilities.ToolConfirmation {
+	if report.Capabilities == nil || !report.Capabilities.ToolCallEvents || !report.Capabilities.ToolConfirmation {
 		t.Errorf("capabilities = %+v, want the adapter declaration", report.Capabilities)
 	}
 }
@@ -246,6 +246,9 @@ func TestAdapterDiagnosticsAPIProbesRunningInstances(t *testing.T) {
 			Executable:   writeVersionScript(t, "unused"),
 			VersionProbe: versionStub("opencode v2.0.24", nil),
 			NewID:        func() (string, error) { return "inst-1", nil },
+			// Isolate from the machine-wide service registration so the
+			// dead fake endpoint is really probed.
+			ServiceFile: filepath.Join(t.TempDir(), "service.json"),
 		})
 		adapter.launch = (&recordingLauncher{client: client, endpoint: endpoint}).launch
 		startTestInstance(t, adapter)

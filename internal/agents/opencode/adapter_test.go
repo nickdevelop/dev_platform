@@ -83,6 +83,9 @@ func newAdapterWithServer(t *testing.T, handler http.HandlerFunc) (*Adapter, *re
 	adapter := New(Options{
 		Executable: executable,
 		NewID:      func() (string, error) { return "inst-1", nil },
+		// Isolate from the machine-wide service registration: tests must
+		// never adopt the real desktop/sidecar service running on the host.
+		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
 	})
 	adapter.launch = launcher.launch
 	return adapter, launcher, server
@@ -135,13 +138,16 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 	if !caps.ModelSelection || !caps.ToolCallEvents || !caps.Interrupt {
 		t.Fatalf("model/tool/interrupt capabilities not declared: %+v", caps)
 	}
+	// Permission/form replies are served by the opencode-only PermissionReplier
+	// extension (AgentAdapter stays frozen for pi), so confirmation must be
+	// declared.
+	if !caps.ToolConfirmation {
+		t.Fatalf("ToolConfirmation must be declared: the adapter replies via PermissionReplier: %+v", caps)
+	}
 	// The adapter reads the server's native message log, so history must be
 	// declared or the platform answers 409 and never asks for it.
 	if !caps.SessionHistory {
 		t.Fatalf("session history not declared: %+v", caps)
-	}
-	if caps.ToolConfirmation {
-		t.Fatalf("ToolConfirmation must stay false: the adapter cannot reply to permission requests: %+v", caps)
 	}
 }
 
@@ -791,7 +797,12 @@ func TestAdapterLaunchDiagnosticRedactsPassword(t *testing.T) {
 		t.Fatalf("write fake executable: %v", err)
 	}
 
-	adapter := New(Options{Executable: script, StartupTimeout: 3 * time.Second})
+	adapter := New(Options{
+		Executable: script,
+		StartupTimeout: 3 * time.Second,
+		// Isolate from the machine-wide service registration.
+		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
+	})
 	_, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()})
 	if err == nil {
 		t.Fatal("expected the launch to fail")
@@ -937,6 +948,9 @@ func twoServerAdapter(t *testing.T, first, second http.HandlerFunc) (*Adapter, [
 	launches := 0
 	adapter := New(Options{
 		Executable: executable,
+		// Isolate from the machine-wide service registration so the
+		// scripted launches are the only servers in play.
+		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
 		NewID: func() (string, error) {
 			calls++
 			return fmt.Sprintf("inst-%d", calls), nil

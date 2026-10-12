@@ -132,6 +132,8 @@ const errorMessages: Record<string, string> = {
   confirmation_mismatch: '确认输入与项目名不一致。',
   trash_unavailable: '系统回收站不可用。',
   inconsistent_state: '操作未能完成，状态可能不一致，请刷新后确认。',
+  permission_expired: '该工具确认请求已过期（对方已处理或超时），列表已刷新。',
+  form_expired: '该提问已过期（对方已处理或超时），列表已刷新。',
   server_error: '服务内部错误。',
   unknown_error: '发生未知错误。',
 }

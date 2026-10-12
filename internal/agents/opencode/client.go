@@ -369,6 +369,89 @@ func (c *Client) Prompt(ctx context.Context, sessionID, text string) error {
 	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/prompt", nil, body, nil)
 }
 
+// PermissionRequest mirrors the subset of Permission.Request the platform
+// needs to render an approval: identity plus human-readable context. Extra
+// server fields are ignored so the client stays forward-compatible.
+type PermissionRequest struct {
+	ID        string   `json:"id"`
+	SessionID string   `json:"sessionID"`
+	Action    string   `json:"action"`
+	Resources []string `json:"resources"`
+	Message   string   `json:"message,omitempty"`
+}
+
+// ListPermissions returns the session's pending permission requests.
+func (c *Client) ListPermissions(ctx context.Context, sessionID string) ([]PermissionRequest, error) {
+	var payload struct {
+		Data []PermissionRequest `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, sessionPath(sessionID)+"/permission", nil, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data, nil
+}
+
+// ReplyPermission answers a pending permission request. Decision is one of
+// "once", "always" or "reject" (see Permission.Reply in the v2 protocol).
+func (c *Client) ReplyPermission(ctx context.Context, sessionID, requestID, decision, message string) error {
+	body := struct {
+		Decision string `json:"decision"`
+		Message  string `json:"message,omitempty"`
+	}{Decision: decision, Message: message}
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/permission/"+url.PathEscape(requestID)+"/reply", nil, body, nil)
+}
+
+// FormInfo mirrors the subset of Form.Info the platform needs: identity,
+// title and fields stay opaque to the backend client.
+type FormInfo struct {
+	ID        string          `json:"id"`
+	SessionID string          `json:"sessionID"`
+	Title     string          `json:"title"`
+	Fields    json.RawMessage `json:"fields,omitempty"`
+}
+
+// ListForms returns the session's pending forms.
+func (c *Client) ListForms(ctx context.Context, sessionID string) ([]FormInfo, error) {
+	var payload struct {
+		Data []FormInfo `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, sessionPath(sessionID)+"/form", nil, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data, nil
+}
+
+// ReplyForm submits an answer to a pending form.
+func (c *Client) ReplyForm(ctx context.Context, sessionID, formID string, answer map[string]any) error {
+	body := struct {
+		Answer map[string]any `json:"answer"`
+	}{Answer: answer}
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/form/"+url.PathEscape(formID)+"/reply", nil, body, nil)
+}
+
+// OpenRawEventStream opens the server's SSE event stream and returns the raw
+// HTTP response. The caller owns the body and must close it. Unlike Events,
+// no SSE parsing happens here: bytes are proxied untouched so the frontend
+// can project OpenCodeEvent itself (desktop data.ts model).
+func (c *Client) OpenRawEventStream(ctx context.Context) (*http.Response, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/event", nil)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: build event request: %w", err)
+	}
+	request.Header.Set("accept", "text/event-stream")
+	c.authorize(request)
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: subscribe events: %w", &redactedError{err: err, redact: c.redact})
+	}
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		defer response.Body.Close()
+		data, _ := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes))
+		return nil, c.apiError(http.MethodGet, "/api/event", response.StatusCode, data)
+	}
+	return response, nil
+}
+
 // Events opens the server's SSE event stream. The caller owns the returned
 // stream and must Close it.
 func (c *Client) Events(ctx context.Context) (*EventStream, error) {

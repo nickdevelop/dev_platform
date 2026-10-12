@@ -8,15 +8,18 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
+import { useOpencodeRawStore } from '../stores/opencodeRaw'
 import BackendTag from './BackendTag.vue'
 import MessageView from './MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './ModelSelect.vue'
+import QuestionForm from './QuestionForm.vue'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
+const opencodeRaw = useOpencodeRawStore()
 const router = useRouter()
 
 const ready = ref(false)
@@ -93,9 +96,20 @@ const composerDisabled = computed(() => {
   return sending.value || messageText.value.trim() === '' || !modelOk.value
 })
 
-// The most recent tool call that has not produced a result yet. Only rendered
-// by CapabilityControls when the session declares toolConfirmation.
+// The tool call awaiting confirmation. For opencode-v2 it comes exclusively
+// from the approval stream (REST list + raw permission.asked/replied): a
+// tool_call entry without a result is NOT a permission — replying with a tool
+// call id can never succeed (the server answers 404/400, surfaced as 502),
+// so the legacy dangling-tool fallback must not render a control for this
+// backend. Other backends keep the fallback for display only; their confirm
+// path still reports that no confirmation API exists.
 const pendingToolCall = computed<{ callId: string; name: string } | null>(() => {
+  const session = activeSession.value
+  if (session?.backend === 'opencode-v2') {
+    if (!session.capabilities.toolConfirmation) return null
+    const approval = opencodeRaw.pendingApprovalFor(props.sessionId)
+    return approval ? { callId: approval.requestId, name: approval.action } : null
+  }
   const resolved = new Set<string>()
   let pending: { callId: string; name: string } | null = null
   for (const entry of activeMessages.value) {
@@ -107,9 +121,21 @@ const pendingToolCall = computed<{ callId: string; name: string } | null>(() => 
   return pending
 })
 
+// Pending question forms for opencode-v2 sessions. Rendered as answerable
+// cards below the confirmation control: without them an agent question blocks
+// the turn forever with no way to answer.
+const pendingForms = computed(() => {
+  const session = activeSession.value
+  if (session?.backend !== 'opencode-v2') return []
+  return opencodeRaw.formsFor(props.sessionId)
+})
+
 onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
-onBeforeUnmount(() => sessions.unsubscribeAll())
+onBeforeUnmount(() => {
+  sessions.unsubscribeAll()
+  opencodeRaw.unsubscribeAllRaw()
+})
 
 // onLogScroll tracks where the user is: reaching the bottom resumes following
 // the conversation and retires the jump button; scrolling away stops following
@@ -174,8 +200,16 @@ async function open() {
   }
   if (!sessions.sessionById(props.sessionId)) return
   preparing.value = true
+  toolNotice.value = ''
+  opencodeRaw.unsubscribeAllRaw()
   try {
     await sessions.openSession(props.projectId, props.sessionId)
+    const session = sessions.sessionById(props.sessionId)
+    if (session?.backend === 'opencode-v2' && session.capabilities.toolConfirmation) {
+      await opencodeRaw.loadApprovals(props.projectId, props.sessionId)
+      if (opencodeRaw.error) toolNotice.value = opencodeRaw.error
+      opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
+    }
     // Opening a task lands on its newest entry, not on the top of a replayed
     // history.
     await nextTick()
@@ -191,11 +225,46 @@ function retryOpen() {
   void open()
 }
 
-// The frozen adapter contract exposes no method to answer a tool-permission
-// request, so even a backend that advertised toolConfirmation could not be
-// driven from here. The handlers surface the limitation instead.
-function onToolDecision() {
+// Tool decisions for opencode-v2 go through the opencode prefix reply API
+// (stores/opencodeRaw.ts); other backends still expose no confirmation
+// method, so the limitation is surfaced instead.
+async function onToolDecision(callId: string, decision: 'once' | 'reject') {
+  const session = activeSession.value
+  if (session?.backend === 'opencode-v2' && session.capabilities.toolConfirmation) {
+    toolNotice.value = ''
+    const ok = await opencodeRaw.replyPermission(props.projectId, props.sessionId, callId, decision)
+    if (!ok) toolNotice.value = opencodeRaw.error || '确认失败，请重试。'
+    return
+  }
   toolNotice.value = '此后端未提供工具确认接口，工作台无法批准或拒绝工具调用。'
+}
+
+function onConfirmTool(callId: string) {
+  void onToolDecision(callId, 'once')
+}
+
+function onDenyTool(callId: string) {
+  void onToolDecision(callId, 'reject')
+}
+
+const answeringForm = ref(false)
+
+// Submits one question-form answer. A settled/expired form drops its card
+// with the server's message instead of leaving an unanswerable question.
+async function onAnswerForm(formId: string, answer: Record<string, unknown>) {
+  if (answeringForm.value) return
+  answeringForm.value = true
+  toolNotice.value = ''
+  try {
+    const ok = await opencodeRaw.replyForm(props.projectId, props.sessionId, formId, answer)
+    if (!ok) toolNotice.value = opencodeRaw.error || '提交失败，请重试。'
+    else {
+      await nextTick()
+      scrollToBottom(false)
+    }
+  } finally {
+    answeringForm.value = false
+  }
 }
 
 async function send() {
@@ -331,8 +400,18 @@ async function removeTask() {
       <CapabilityControls
         :capabilities="activeSession.capabilities"
         :pending-tool-call="pendingToolCall"
-        @confirm-tool="onToolDecision"
-        @deny-tool="onToolDecision"
+        @confirm-tool="onConfirmTool"
+        @deny-tool="onDenyTool"
+      />
+
+      <QuestionForm
+        v-for="form in pendingForms"
+        :key="form.id"
+        :form-id="form.id"
+        :title="form.title"
+        :fields="form.fields"
+        :busy="answeringForm"
+        @submit="(answer) => onAnswerForm(form.id, answer)"
       />
 
       <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>

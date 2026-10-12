@@ -1,0 +1,263 @@
+package opencode
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"strconv"
+	"time"
+)
+
+// sharedServer is the single machine-wide opencode server all adapter
+// instances reuse. It mirrors the desktop background-service model: one
+// `serve --service` process, adopted when healthy and started once otherwise.
+//
+// The password never leaves this package except inside the bound Client.
+type sharedServer struct {
+	client   *Client
+	endpoint string
+	done     <-chan struct{}
+}
+
+// ensureShared returns the shared server, adopting a healthy already-running
+// service first (desktop Service.discover semantics: read the registration
+// file, probe /api/info, reuse when ready) and starting one only when none
+// exists. Safe for concurrent use.
+func (a *Adapter) ensureShared(ctx context.Context, directory string) (*sharedServer, error) {
+	a.sharedMu.Lock()
+	shared := a.shared
+	a.sharedMu.Unlock()
+	if shared != nil {
+		if err := a.probeShared(ctx, shared); err == nil {
+			return shared, nil
+		}
+		a.teardownShared()
+	}
+
+	// Prefer the machine-wide service that is already there — a desktop
+	// sidecar, another platform instance, or a manually started
+	// `opencode serve --service` — over booting a second one.
+	if discovered, err := a.discoverExistingService(ctx); err == nil && discovered != nil {
+		a.sharedMu.Lock()
+		if a.shared != nil {
+			existing := a.shared
+			a.sharedMu.Unlock()
+			if err := a.probeShared(ctx, existing); err == nil {
+				return existing, nil
+			}
+			a.teardownShared()
+			a.sharedMu.Lock()
+			a.shared = discovered
+			a.sharedStop = nil
+			a.sharedMu.Unlock()
+			go a.watchShared(discovered)
+			return discovered, nil
+		}
+		a.shared = discovered
+		a.sharedStop = nil
+		a.sharedMu.Unlock()
+		go a.watchShared(discovered)
+		return discovered, nil
+	}
+
+	result, err := a.launch(ctx, directory)
+	if err != nil {
+		return nil, fmt.Errorf("opencode: start shared server in %q: %w", directory, err)
+	}
+	if result == nil || result.client == nil || result.endpoint == "" {
+		return nil, errors.New("opencode: launcher returned no usable server")
+	}
+	next := &sharedServer{
+		client:   result.client,
+		endpoint: result.endpoint,
+		done:     result.done,
+	}
+	nextStop := result.stop
+
+	a.sharedMu.Lock()
+	if a.shared != nil {
+		existing := a.shared
+		a.sharedMu.Unlock()
+		if nextStop != nil {
+			_ = nextStop(ctx)
+		}
+		if err := a.probeShared(ctx, existing); err == nil {
+			return existing, nil
+		}
+		a.teardownShared()
+		a.sharedMu.Lock()
+		a.shared = next
+		a.sharedStop = nextStop
+		a.sharedMu.Unlock()
+		go a.watchShared(next)
+		return next, nil
+	}
+	a.shared = next
+	a.sharedStop = nextStop
+	a.sharedMu.Unlock()
+	go a.watchShared(next)
+	return next, nil
+}
+
+// probeShared reports whether the shared server answers /api/info.
+func (a *Adapter) probeShared(ctx context.Context, shared *sharedServer) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, err := shared.client.Info(probeCtx)
+	return err
+}
+
+// teardownShared stops the current shared server, if any.
+func (a *Adapter) teardownShared() {
+	a.sharedMu.Lock()
+	shared := a.shared
+	stop := a.sharedStop
+	a.shared = nil
+	a.sharedStop = nil
+	a.sharedMu.Unlock()
+	if shared == nil {
+		return
+	}
+	if stop != nil {
+		_ = stop(context.Background())
+	}
+}
+
+// watchShared observes the shared server: an explicit process exit (the
+// launcher's done channel, used by tests and the real launcher) fails all
+// instances at once; otherwise periodic probing catches a silent death.
+func (a *Adapter) watchShared(shared *sharedServer) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	var done <-chan struct{}
+	if shared.done != nil {
+		done = shared.done
+	}
+	for {
+		select {
+		case <-done:
+			if done == nil {
+				continue
+			}
+			a.sharedMu.Lock()
+			current := a.shared
+			a.sharedMu.Unlock()
+			if current != shared {
+				return
+			}
+			a.failAllInstances("opencode shared server process exited unexpectedly")
+			a.teardownShared()
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := a.probeShared(ctx, shared)
+			cancel()
+			if err == nil {
+				continue
+			}
+			a.sharedMu.Lock()
+			current := a.shared
+			a.sharedMu.Unlock()
+			if current != shared {
+				return
+			}
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+			err2 := a.probeShared(ctx2, shared)
+			cancel2()
+			if err2 == nil {
+				continue
+			}
+			a.failAllInstances("opencode shared server became unreachable")
+			a.teardownShared()
+			return
+		}
+	}
+}
+
+// failAllInstances marks every registered instance failed so the platform
+// record stops reporting usable instances whose server is gone.
+func (a *Adapter) failAllInstances(detail string) {
+	a.mu.Lock()
+	instances := make([]*instance, 0, len(a.instances))
+	for _, inst := range a.instances {
+		instances = append(instances, inst)
+	}
+	a.mu.Unlock()
+	for _, inst := range instances {
+		inst.fail(detail)
+	}
+}
+
+// launchSharedServer starts `opencode serve --service` on a loopback port.
+// It is the default launcher used for the shared server; tests replace
+// Adapter.launch with a fake.
+func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*launchResult, error) {
+	port, err := freePort()
+	if err != nil {
+		return nil, err
+	}
+	password, err := randomPassword()
+	if err != nil {
+		return nil, err
+	}
+
+	command := exec.Command(a.execPath(), "serve", "--service", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	if directory != "" {
+		command.Dir = directory
+	}
+	command.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
+	output := &limitedWriter{limit: maxStartupOutputBytes}
+	command.Stdout = output
+	command.Stderr = output
+	setProcessGroup(command)
+	command.WaitDelay = 2 * time.Second
+
+	if err := command.Start(); err != nil {
+		return nil, fmt.Errorf("opencode: start shared server process: %w", err)
+	}
+	process := &launchedProcess{cmd: command, done: make(chan struct{})}
+	go process.wait()
+
+	endpoint := "http://" + net.JoinHostPort(a.hostname, strconv.Itoa(port))
+	client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: defaultUsername, Password: password})
+	if err != nil {
+		_ = killProcessGroup(command.Process)
+		_ = process.wait()
+		return nil, err
+	}
+	if err := a.waitReady(ctx, process, client); err != nil {
+		_ = killProcessGroup(command.Process)
+		_ = process.wait()
+		return nil, fmt.Errorf("%w: %s", err, client.redact(output.String()))
+	}
+
+	return &launchResult{
+		client:   client,
+		endpoint: endpoint,
+		done:     process.done,
+		stop: func(stopCtx context.Context) error {
+			_ = killProcessGroup(command.Process)
+			waited := make(chan error, 1)
+			go func() { waited <- process.wait() }()
+			select {
+			case <-waited:
+			case <-stopCtx.Done():
+			case <-time.After(3 * time.Second):
+			}
+			return nil
+		},
+	}, nil
+}
+
+// sharedEndpoint reports the shared server endpoint, if any.
+func (a *Adapter) sharedEndpoint() string {
+	a.sharedMu.Lock()
+	defer a.sharedMu.Unlock()
+	if a.shared == nil {
+		return ""
+	}
+	return a.shared.endpoint
+}

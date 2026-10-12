@@ -10,6 +10,7 @@ import BackendTag from '../components/BackendTag.vue'
 import TaskChatPanel from '../components/TaskChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
+import { useOpencodeRawStore } from '../stores/opencodeRaw'
 import { clearModelCache } from '../modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
@@ -172,6 +173,98 @@ describe('TaskChatPanel', () => {
     expect(FakeEventSource.instances[0].url).toContain('/sessions/sess-1/')
     expect(wrapper.text()).toContain('Title sess-1')
   })
+
+describe('TaskChatPanel opencode approvals', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const agents = useAgentsStore()
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+    // Keep the raw fetch stream out of these tests: approval state is driven
+    // directly on the store.
+    vi.spyOn(useOpencodeRawStore(), 'subscribeRaw').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    useSessionsStore().unsubscribeAll()
+    useOpencodeRawStore().unsubscribeAllRaw()
+    clearModelCache()
+    vi.unstubAllGlobals()
+  })
+
+  function opencodeSession(id: string): AgentSession {
+    return session(id, { capabilities: capabilities({ toolConfirmation: true }) })
+  }
+
+  it('shows no confirmation for a dangling tool_call on opencode sessions', async () => {
+    stubSessionList([opencodeSession('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // A tool_call with no result is NOT a permission: replying with its id
+    // can never succeed (server 404/400, surfaced as 502), so no control.
+    useSessionsStore().pushEntry('sess-1', {
+      id: 't1',
+      kind: 'tool_call',
+      role: 'assistant',
+      text: 'read',
+      streaming: false,
+      callId: 'call_1',
+      name: 'read',
+    } as ChatEntry)
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
+    // The section renders (capability declared) but offers no buttons: there
+    // is no real pending approval to answer.
+    expect(wrapper.find('button.confirm-tool').exists()).toBe(false)
+    expect(wrapper.find('button.deny-tool').exists()).toBe(false)
+    expect(wrapper.text()).toContain('没有待确认')
+  })
+
+  it('shows confirmation only for real pending approvals', async () => {
+    stubSessionList([opencodeSession('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('没有待确认')
+
+    useOpencodeRawStore().permissions['sess-1'] = [
+      { id: 'per_1', sessionId: 'sess-1', action: 'write', resources: ['/tmp/x'] },
+    ]
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('write')
+  })
+
+  it('renders pending question forms as answerable cards', async () => {
+    stubSessionList([opencodeSession('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    expect(wrapper.find('[data-test="question-form"]').exists()).toBe(false)
+
+    useOpencodeRawStore().forms['sess-1'] = [
+      {
+        id: 'frm_1',
+        sessionId: 'sess-1',
+        title: '选一个',
+        fields: [{ key: 'scope', type: 'string', title: '范围', required: true }],
+      },
+    ]
+    await flushPromises()
+
+    const card = wrapper.find('[data-test="question-form"]')
+    expect(card.exists()).toBe(true)
+    await card.find('.text-input').setValue('大')
+    await card.find('[data-test="submit-answer"]').trigger('click')
+    await flushPromises()
+
+    expect(useOpencodeRawStore().formsFor('sess-1')).toHaveLength(0)
+  })
+})
 
   it('reports an unknown task and opens no stream', async () => {
     stubSessionList([session('sess-1')])

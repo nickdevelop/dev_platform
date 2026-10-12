@@ -66,12 +66,17 @@ type Options struct {
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
 	NewID func() (string, error)
+	// ServiceFile overrides the desktop registration file path used to
+	// discover an already-running `opencode serve --service`
+	// (XDG_STATE_HOME/opencode/service.json by default). Tests point it at a
+	// temp file.
+	ServiceFile string
 }
 
-// Adapter implements agents.AgentAdapter for the opencode v2 HTTP API. Each
-// instance owns one `opencode serve` process on a loopback port, a typed client
-// bound to that server, and its own normalized event fan-out; a failure in one
-// instance never touches another.
+// Adapter implements agents.AgentAdapter for the opencode v2 HTTP API. All
+// instances share one machine-wide `opencode serve --service` process (the
+// desktop background-service model); each instance keeps its own id, working
+// directory and event routing, while the typed client and endpoint are shared.
 type Adapter struct {
 	executable        string
 	resolveExecutable func() string
@@ -82,9 +87,14 @@ type Adapter struct {
 	newID             func() (string, error)
 	launch            launcher
 	versionProbe      func(ctx context.Context) (string, error)
+	serviceFilePath   string
 
 	mu        sync.Mutex
 	instances map[string]*instance
+
+	sharedMu   sync.Mutex
+	shared     *sharedServer
+	sharedStop func(context.Context) error
 }
 
 // launchResult is a started opencode server: the client bound to it, its
@@ -122,6 +132,7 @@ func New(options Options) *Adapter {
 		now:               options.Now,
 		newID:             options.NewID,
 		versionProbe:      options.VersionProbe,
+		serviceFilePath:   options.ServiceFile,
 		instances:         make(map[string]*instance),
 	}
 	if adapter.executable == "" {
@@ -145,7 +156,7 @@ func New(options Options) *Adapter {
 	if adapter.versionProbe == nil {
 		adapter.versionProbe = adapter.runVersionCommand
 	}
-	adapter.launch = adapter.launchServer
+	adapter.launch = adapter.launchSharedServer
 	return adapter
 }
 
@@ -163,11 +174,9 @@ func (a *Adapter) execPath() string {
 
 // Capabilities declares what the v2 API actually supports. Streaming
 // (session.text.delta), session discovery/create/continue, model selection
-// (session.create model + session.switchModel) and tool call/result events
-// (session.tool.*) are all available. ToolConfirmation stays false: the API
-// emits permission.asked and accepts a reply, but the frozen AgentAdapter
-// interface exposes no method to answer it, so the adapter must not advertise a
-// confirmation control it cannot act on.
+// (session.create model + session.switchModel), tool call/result events
+// (session.tool.*), and tool confirmation (permission.asked + reply, form.* +
+// reply via the opencode-only PermissionReplier extension) are all available.
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
@@ -177,7 +186,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		Stop:             true,
 		ModelSelection:   true,
 		ToolCallEvents:   true,
-		ToolConfirmation: false,
+		ToolConfirmation: true,
 		SessionHistory:   true,
 	}
 }
@@ -301,16 +310,40 @@ type runningTarget struct {
 	client   *Client
 }
 
-// checkAPI probes every running instance's server with GET /api/info. An
-// unreachable server is an error (the instance cannot accept work); a server
-// reporting a version outside the tested range is a warning.
+// checkAPI probes the shared server with GET /api/info. Instances share one
+// server, so endpoints are deduplicated; with no instances the shared server
+// itself is probed when present.
 func (a *Adapter) checkAPI(ctx context.Context, supported agents.SupportedVersion) agents.Diagnostic {
 	a.mu.Lock()
-	targets := make([]runningTarget, 0, len(a.instances))
+	seen := make(map[string]string)
 	for id, inst := range a.instances {
-		targets = append(targets, runningTarget{id: id, endpoint: inst.endpoint, client: inst.client})
+		if _, ok := seen[inst.endpoint]; !ok {
+			seen[inst.endpoint] = id
+		}
+		_ = inst
 	}
 	a.mu.Unlock()
+	a.sharedMu.Lock()
+	sharedClient := (*Client)(nil)
+	sharedEndpoint := ""
+	if a.shared != nil {
+		sharedClient = a.shared.client
+		sharedEndpoint = a.shared.endpoint
+	}
+	a.sharedMu.Unlock()
+	targets := make([]runningTarget, 0, len(seen)+1)
+	for endpoint, id := range seen {
+		var client *Client
+		if sharedClient != nil && endpoint == sharedEndpoint {
+			client = sharedClient
+		} else {
+			continue
+		}
+		targets = append(targets, runningTarget{id: id, endpoint: endpoint, client: client})
+	}
+	if len(targets) == 0 && sharedClient != nil {
+		targets = append(targets, runningTarget{id: "shared", endpoint: sharedEndpoint, client: sharedClient})
+	}
 	sort.Slice(targets, func(i, j int) bool { return targets[i].id < targets[j].id })
 
 	if len(targets) == 0 {
@@ -367,9 +400,10 @@ func capabilitiesOf(capabilities agents.Capabilities) *agents.Capabilities {
 	return &capabilities
 }
 
-// StartInstance validates the directory and binary, launches one opencode
-// server in the directory, waits for it to become ready, and registers a
-// running instance that reports the server endpoint.
+// StartInstance validates the directory and binary, ensures the shared
+// machine-wide server, and registers a running instance bound to it. The
+// server process is shared across directories; per-instance state (sessions,
+// subscriptions) stays isolated.
 func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanceRequest) (*agents.Instance, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -388,20 +422,13 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		return nil, err
 	}
 
-	result, err := a.launch(ctx, request.Directory)
+	shared, err := a.ensureShared(ctx, request.Directory)
 	if err != nil {
-		return nil, fmt.Errorf("opencode: start server in %q: %w", request.Directory, err)
-	}
-	if result == nil || result.client == nil || result.endpoint == "" {
-		return nil, errors.New("opencode: launcher returned no usable server")
+		return nil, err
 	}
 
 	id, err := a.newID()
 	if err != nil {
-		// Never leak a server we cannot name.
-		if result.stop != nil {
-			_ = result.stop(ctx)
-		}
 		return nil, fmt.Errorf("opencode: allocate instance id: %w", err)
 	}
 
@@ -410,9 +437,9 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	inst := &instance{
 		id:         id,
 		directory:  request.Directory,
-		endpoint:   result.endpoint,
-		client:     result.client,
-		proc:       result,
+		endpoint:   shared.endpoint,
+		client:     shared.client,
+		proc:       nil,
 		ctx:        instanceCtx,
 		cancel:     cancel,
 		done:       make(chan struct{}),
@@ -428,29 +455,22 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	a.instances[id] = inst
 	a.mu.Unlock()
 
-	// Watch the server process so an unexpected exit is reported as a failed
-	// instance instead of a silently dead "running" one (finding 2).
-	if result.done != nil {
-		go a.watchProcess(inst, result.done)
-	}
+	// The shared server lifetime is observed by watchShared; per-instance
+	// process watching is intentionally gone.
 
 	return &agents.Instance{
 		ID:        id,
 		Backend:   agents.BackendOpenCodeV2,
 		Directory: request.Directory,
 		Status:    agents.InstanceRunning,
-		Endpoint:  result.endpoint,
+		Endpoint:  shared.endpoint,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
 }
 
-// watchProcess observes the launched server process. If it exits while the
-// instance is still considered active — that is, not because StopInstance tore
-// it down — the instance is marked failed and its stream closed, so the
-// platform record and dependent sessions stop reporting a usable instance whose
-// server is gone. A normal stop (which sets closed before killing the process)
-// is never misreported as a failure.
+// watchProcess is retained for rollback reference. The shared model observes
+// the server via watchShared instead of one watcher per instance.
 func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
 	select {
 	case <-inst.ctx.Done():
@@ -468,8 +488,10 @@ func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
 	inst.fail("opencode server process exited unexpectedly")
 }
 
-// StopInstance terminates the instance's server and closes its event stream.
-// An instance that is already gone is a successful stop.
+// StopInstance detaches the instance and closes its event stream. The shared
+// server is torn down only when the last instance goes away, so stopping one
+// instance never affects another. An instance that is already gone is a
+// successful stop.
 func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -479,11 +501,16 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	if ok {
 		delete(a.instances, instanceID)
 	}
+	remaining := len(a.instances)
 	a.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	return inst.stop(ctx)
+	stopErr := inst.stop(ctx)
+	if remaining == 0 {
+		a.teardownShared()
+	}
+	return stopErr
 }
 
 // Subscribe returns the instance's normalized event stream. It opens the

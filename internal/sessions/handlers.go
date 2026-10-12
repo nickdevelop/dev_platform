@@ -72,6 +72,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
+	case errors.Is(err, ErrPermissionExpired):
+		respondError(c, http.StatusConflict, "permission_expired")
+	case errors.Is(err, ErrFormExpired):
+		respondError(c, http.StatusConflict, "form_expired")
 	case errors.Is(err, ErrBackendFailed), errors.Is(err, ErrInvalidSession):
 		respondError(c, http.StatusBadGateway, "agent_operation_failed")
 	case errors.Is(err, ErrInvalidRequest):
