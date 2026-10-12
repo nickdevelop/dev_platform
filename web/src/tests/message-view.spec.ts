@@ -216,4 +216,40 @@ describe('MessageView plantuml blocks', () => {
     expect(wrapper.find('[data-test="plantuml-block"]').exists()).toBe(false)
     expect(wrapper.find('.bubble-agent code').text()).toContain('fmt.Println')
   })
+
+  it('draws every diagram in one reply, in order', async () => {
+    let calls = 0
+    configureEngineLoader((_lines, _opts, onSuccess) => {
+      calls++
+      onSuccess('<svg><text>d</text></svg>')
+    })
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [
+          message('assistant', '```plantuml\n@startuml\nA->B\n@enduml\n```\n\n中\n\n```puml\n@startuml\nC->D\n@enduml\n```'),
+        ],
+        capabilities: capabilities(),
+      },
+    })
+    await flushPromises()
+
+    const blocks = wrapper.findAll('[data-test="plantuml-block"]')
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.find('[data-test="plantuml-canvas"] svg').exists())).toEqual([true, true])
+    expect(calls).toBe(2)
+    expect(wrapper.text()).toContain('中')
+  })
+
+  it('shows the source of a diagram the reply never finished', async () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [message('assistant', '```plantuml\n@startuml\nA->B\n')],
+        capabilities: capabilities(),
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="plantuml-source"]').text()).toContain('A->B')
+    expect(wrapper.find('[data-test="plantuml-waiting"]').text()).toContain('没画完')
+  })
 })

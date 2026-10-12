@@ -31,6 +31,30 @@ describe('splitDiagramBlocks', () => {
     expect(splitDiagramBlocks(source)).toEqual([{ kind: 'markdown', text: source }])
   })
 
+  it('leaves a diagram fence shown as an example inside another language alone', () => {
+    // Agents document PlantUML by quoting it: a diagram fence inside a
+    // ```markdown example is text to read, not a diagram to draw.
+    const nested = 'explain:\n````markdown\n```plantuml\nA -> B\n```\n````\ndone'
+    expect(splitDiagramBlocks(nested)).toEqual([{ kind: 'markdown', text: nested }])
+
+    // And an unterminated example holds whatever follows it, marked included.
+    const unterminated = 'look\n```java\ncode\n```plantuml\nA -> B\n```'
+    expect(splitDiagramBlocks(unterminated)).toEqual([{ kind: 'markdown', text: unterminated }])
+  })
+
+  it('finds fences in a reply that arrived with CRLF line endings', () => {
+    expect(splitDiagramBlocks('看\r\n```plantuml\r\n@startuml\r\nA->B\r\n@enduml\r\n```\r\n好了')).toEqual([
+      { kind: 'markdown', text: '看\n' },
+      { kind: 'plantuml', text: '@startuml\nA->B\n@enduml', closed: true },
+      { kind: 'markdown', text: '\n好了' },
+    ])
+  })
+
+  it('leaves a diagram fence with nothing in it to markdown', () => {
+    const blank = 'a\n```plantuml\n   \n```\nb'
+    expect(splitDiagramBlocks(blank)).toEqual([{ kind: 'markdown', text: blank }])
+  })
+
   it('does not end the diagram on a fence-looking line inside it', () => {
     const source = '```plantuml\n@startuml\nnote right: ```\nnote left: ~~~\n@enduml\n```\n尾巴'
     expect(splitDiagramBlocks(source)).toEqual([
@@ -62,5 +86,10 @@ describe('splitDiagramBlocks', () => {
     expect(splitDiagramBlocks(source).map((segment) => segment.text).join('')).toBe(
       withoutDiagramFences,
     )
+
+    // CRLF is normalized to \n before cutting — marked does the same — so the
+    // rule is unchanged by the line endings the reply arrived with.
+    const crlf = source.replace(/\n/g, '\r\n')
+    expect(splitDiagramBlocks(crlf).map((segment) => segment.text).join('')).toBe(withoutDiagramFences)
   })
 })

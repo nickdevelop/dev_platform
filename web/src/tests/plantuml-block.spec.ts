@@ -28,7 +28,7 @@ describe('PlantumlBlock', () => {
 
   it('shows the diagram by default once ready', async () => {
     configureEngineLoader(fakeEngine(() => '<svg><text>seq</text></svg>'))
-    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
 
     expect(wrapper.find('[data-test="plantuml-canvas"]').html()).toContain('<svg')
@@ -38,7 +38,7 @@ describe('PlantumlBlock', () => {
 
   it('switches to the source and back with the head row', async () => {
     configureEngineLoader(fakeEngine(() => '<svg/>'))
-    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
 
     await wrapper.find('.plantuml-head').trigger('click')
@@ -59,7 +59,7 @@ describe('PlantumlBlock', () => {
         return '<svg/>'
       }),
     )
-    const wrapper = mount(PlantumlBlock, { props: { source: '@startuml\nA->B', ready: false } })
+    const wrapper = mount(PlantumlBlock, { props: { source: '@startuml\nA->B', ready: false, finished: false } })
     await flushPromises()
 
     expect(calls).toBe(0)
@@ -77,7 +77,7 @@ describe('PlantumlBlock', () => {
       }),
     )
     const wrapper = mount(PlantumlBlock, {
-      props: { source: '@startuml\n!include <C4/C4_Container>\n@enduml', ready: true },
+      props: { source: '@startuml\n!include <C4/C4_Container>\n@enduml', ready: true, finished: true },
     })
     await flushPromises()
 
@@ -86,17 +86,55 @@ describe('PlantumlBlock', () => {
     expect(wrapper.find('[data-test="plantuml-canvas"]').exists()).toBe(false)
   })
 
+  it('shows the source when the reply ended before the fence closed', async () => {
+    // A stopped or truncated reply is final: an empty block that waits forever
+    // would hide the text the person came to read.
+    let calls = 0
+    configureEngineLoader(
+      fakeEngine(() => {
+        calls++
+        return '<svg/>'
+      }),
+    )
+    const wrapper = mount(PlantumlBlock, {
+      props: { source: '@startuml\nA->B', ready: false, finished: false },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="plantuml-waiting"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="plantuml-source"]').exists()).toBe(false)
+
+    await wrapper.setProps({ finished: true })
+    await flushPromises()
+    expect(calls).toBe(0)
+    expect(wrapper.find('[data-test="plantuml-source"]').text()).toContain('A->B')
+    expect(wrapper.find('[data-test="plantuml-waiting"]').text()).toContain('没画完')
+    expect(wrapper.find('.plantuml-head').attributes('disabled')).toBeDefined()
+  })
+
+  it('leaves the source open when the palette changes under it', async () => {
+    configureEngineLoader(fakeEngine(() => '<svg/>'))
+    const wrapper = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
+    await flushPromises()
+    await wrapper.find('.plantuml-head').trigger('click')
+    expect(wrapper.find('[data-test="plantuml-source"]').exists()).toBe(true)
+
+    const settings = useSettingsStore()
+    settings.appearance = { ...settings.appearance, theme: 'dark' }
+    await flushPromises()
+    expect(wrapper.find('[data-test="plantuml-source"]').exists()).toBe(true)
+  })
+
   it('sits the drawing on a dark canvas only when the palette is dark', async () => {
     configureEngineLoader(fakeEngine(() => '<svg><text>x</text></svg>'))
     const settings = useSettingsStore()
     settings.appearance = { ...settings.appearance, theme: 'dark' }
-    const dark = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    const dark = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
     expect(dark.find('[data-test="plantuml-canvas"]').classes()).toContain('is-dark')
     dark.unmount()
 
     settings.appearance = { ...settings.appearance, theme: 'light' }
-    const light = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    const light = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
     expect(light.find('[data-test="plantuml-canvas"]').classes()).not.toContain('is-dark')
   })
@@ -111,14 +149,14 @@ describe('PlantumlBlock', () => {
     )
     const settings = useSettingsStore()
     settings.appearance = { ...settings.appearance, theme: 'cool' }
-    const light = mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    const light = mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
 
     // The light block is unmounted so it cannot redraw itself when the palette
     // changes; this case is about which flag a freshly mounted block sends.
     light.unmount()
     settings.appearance = { ...settings.appearance, theme: 'dark' }
-    mount(PlantumlBlock, { props: { source: SOURCE, ready: true } })
+    mount(PlantumlBlock, { props: { source: SOURCE, ready: true, finished: true } })
     await flushPromises()
 
     expect(seen).toEqual([false, true])

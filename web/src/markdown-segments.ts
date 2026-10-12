@@ -50,57 +50,76 @@ function lineBounds(source: string, from: number): { content: number; next: numb
   return { content, next: content + 1 }
 }
 
+// Where the fence opened at `open` ends: the start of its closing fence line,
+// or -1 when it is never closed and therefore runs to the end of the reply.
+function closingFenceStart(source: string, open: number, char: string, length: number): number {
+  const firstBodyLine = lineBounds(source, open).next
+  for (let scan = firstBodyLine; scan < source.length; ) {
+    const candidate = lineBounds(source, scan)
+    if (closesFence(source.slice(scan, candidate.content), char, length)) return scan
+    scan = candidate.next
+  }
+  return -1
+}
+
 export function splitDiagramBlocks(source: string): Segment[] {
-  if (source === '') return []
+  // marked normalizes line endings; doing it here keeps one grammar for the
+  // fence scanner, so a reply that arrives over CRLF still gets its diagrams.
+  const text = source.includes('\r') ? source.replace(/\r\n/g, '\n') : source
+  if (text === '') return []
 
   const segments: Segment[] = []
   let cursor = 0
   let markdownStart = 0
 
   const flushMarkdown = function (end: number): void {
-    if (end > markdownStart) segments.push({ kind: 'markdown', text: source.slice(markdownStart, end) })
+    if (end > markdownStart) segments.push({ kind: 'markdown', text: text.slice(markdownStart, end) })
   }
 
-  while (cursor < source.length) {
-    const bounds = lineBounds(source, cursor)
-    const line = source.slice(cursor, bounds.content)
-    if (!diagramTag(line)) {
+  while (cursor < text.length) {
+    const bounds = lineBounds(text, cursor)
+    const line = text.slice(cursor, bounds.content)
+    const fence = FENCE.exec(line)
+    if (!fence) {
       cursor = bounds.next
       continue
     }
 
-    const fence = FENCE.exec(line)!
-    const body = bounds.next
-    let open = true
-    let bodyEnd = source.length
-    let after = source.length
-    for (let scan = body; scan < source.length; ) {
-      const candidate = lineBounds(source, scan)
-      if (closesFence(source.slice(scan, candidate.content), fence[1][0], fence[1].length)) {
-        open = false
-        bodyEnd = scan
-        // Stop in front of the newline that ended the closing fence, so that
-        // newline stays with the segment that follows and nothing but the fence
-        // lines is lost.
-        after = candidate.content
-        break
-      }
-      scan = candidate.next
+    const char = fence[1][0]
+    const length = fence[1].length
+    const closing = closingFenceStart(text, cursor, char, length)
+    // Everything a fence that is not a diagram holds — including a plantuml
+    // fence quoted as an example inside it — stays markdown, and scanning
+    // resumes after it. An unclosed one takes the rest of the reply with it.
+    if (!diagramTag(line)) {
+      cursor = closing === -1 ? text.length : lineBounds(text, closing).next
+      continue
+    }
+
+    const bodyEnd = closing === -1 ? text.length : closing
+    const body = text.slice(bounds.next, bodyEnd)
+    // A diagram fence with nothing in it is not a diagram: leave it to markdown
+    // rather than mount a block that has nothing to draw or read.
+    if (closing !== -1 && body.trim() === '') {
+      cursor = lineBounds(text, closing).next
+      continue
     }
 
     flushMarkdown(cursor)
     // A closed fence drops the newline that ended its last body line; an open
     // one runs to the end of the reply and keeps everything it holds.
-    const text = source.slice(body, bodyEnd)
     segments.push({
       kind: 'plantuml',
-      text: open ? text : text.replace(/\n$/, ''),
-      closed: !open,
+      text: closing === -1 ? body : body.replace(/\n$/, ''),
+      closed: closing !== -1,
     })
-    cursor = after
-    markdownStart = after
+    // Stop in front of the newline that ended the closing fence, so that newline
+    // stays with the segment that follows and nothing but the fence lines is
+    // lost.
+    cursor = closing === -1 ? text.length : lineBounds(text, closing).content
+    markdownStart = cursor
   }
 
-  flushMarkdown(source.length)
+  flushMarkdown(text.length)
   return segments
 }

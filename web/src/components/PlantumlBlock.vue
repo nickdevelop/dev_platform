@@ -10,18 +10,23 @@
 // pointless (it errors on the missing @enduml) and noisy, so drawing waits for
 // `ready`. And the toggle belongs to this block alone — a message with three
 // diagrams toggles them one at a time.
+//
+// A reply that finished without closing the fence (stopped, truncated, or the
+// model simply forgot) is a third case: there is nothing to draw, but the text
+// is final and someone needs to read it, so the source is shown as they would
+// have seen it today.
 import { computed, ref, watch } from 'vue'
 import { renderDiagram } from '../plantuml/renderer'
 import { isDarkTheme } from '../theme/presets'
 import { useSettingsStore } from '../stores/settings'
 
-const props = defineProps<{ source: string; ready: boolean }>()
+const props = defineProps<{ source: string; ready: boolean; finished: boolean }>()
 
 const settings = useSettingsStore()
 const dark = computed(() => isDarkTheme(settings.appearance.theme))
 
 const mode = ref<'preview' | 'source'>('preview')
-const state = ref<'waiting' | 'rendering' | 'ready' | 'failed'>('waiting')
+const state = ref<'waiting' | 'rendering' | 'ready' | 'failed' | 'incomplete'>('waiting')
 const svg = ref('')
 const reason = ref('')
 
@@ -29,18 +34,30 @@ const reason = ref('')
 // redraw the diagram that is already there.
 let drawn = ''
 let request = 0
+// Once someone opens the source of a drawing themselves, a redraw for a new
+// palette must not shove them back to the picture.
+const openedSource = ref(false)
 
 const headLabel = computed(() => {
   if (state.value === 'waiting') return '等待完成…'
   if (state.value === 'rendering') return '正在生成图…'
+  if (state.value === 'incomplete') return '图没画完'
   if (state.value === 'failed') return ''
   return mode.value === 'preview' ? '查看源码' : '返回预览'
+})
+
+const note = computed(() => {
+  if (state.value === 'waiting') return '图还没写完,等这条回复结束再画。'
+  if (state.value === 'rendering') return '正在生成图…'
+  return '图没画完(回复在围栏结束前停止了),以下是源码。'
 })
 
 async function draw(): Promise<void> {
   const token = ++request
   if (!props.ready) {
-    state.value = 'waiting'
+    // Settled with an unclosed fence: the drawing can never arrive, so show what
+    // is there instead of an empty promise forever.
+    state.value = props.finished ? 'incomplete' : 'waiting'
     return
   }
 
@@ -56,7 +73,7 @@ async function draw(): Promise<void> {
     drawn = key
     reason.value = ''
     state.value = 'ready'
-    mode.value = 'preview'
+    if (!openedSource.value) mode.value = 'preview'
   } else {
     reason.value = result.reason
     state.value = 'failed'
@@ -65,12 +82,14 @@ async function draw(): Promise<void> {
 }
 
 function toggle(): void {
-  // A failed block has nothing to preview: the source is what it shows.
+  // Only a drawing has two faces: a waiting, failed or unfinished block shows
+  // the one thing it has.
   if (state.value !== 'ready') return
+  openedSource.value = mode.value === 'preview'
   mode.value = mode.value === 'preview' ? 'source' : 'preview'
 }
 
-watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
+watch(() => [props.ready, props.source, dark.value, props.finished], draw, { immediate: true })
 </script>
 
 <template>
@@ -78,7 +97,8 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
     <button
       type="button"
       class="plantuml-head"
-      :aria-expanded="String(state === 'ready' && mode === 'preview')"
+      :disabled="state !== 'ready'"
+      :aria-expanded="state === 'ready' ? String(mode === 'preview') : undefined"
       @click="toggle"
     >
       <span class="plantuml-chev" aria-hidden="true">{{ state === 'ready' && mode === 'preview' ? '▾' : '▸' }}</span>
@@ -87,15 +107,15 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
     </button>
 
     <div
-      v-if="state === 'waiting' || state === 'rendering'"
+      v-if="state === 'waiting' || state === 'rendering' || state === 'incomplete'"
       class="plantuml-note"
+      role="status"
       data-test="plantuml-waiting"
     >
-      <template v-if="state === 'waiting'">图还没写完,等这条回复结束再画。</template>
-      <template v-else>正在生成图…</template>
+      {{ note }}
     </div>
 
-    <p v-if="state === 'failed'" class="plantuml-error" data-test="plantuml-error">
+    <p v-if="state === 'failed'" class="plantuml-error" role="alert" data-test="plantuml-error">
       无法渲染:{{ reason }}
     </p>
 
@@ -108,7 +128,7 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
     ></div>
 
     <pre
-      v-if="state === 'failed' || mode === 'source'"
+      v-if="state === 'failed' || state === 'incomplete' || mode === 'source'"
       class="plantuml-src"
       data-test="plantuml-source"
     >{{ source }}</pre>
@@ -138,6 +158,10 @@ watch(() => [props.ready, props.source, dark.value], draw, { immediate: true })
   font-size: calc(var(--font-size-base) - 1px);
   text-align: left;
   cursor: pointer;
+}
+
+.plantuml-head:disabled {
+  cursor: default;
 }
 
 .plantuml-chev {

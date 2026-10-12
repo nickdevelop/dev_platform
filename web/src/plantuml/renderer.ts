@@ -30,26 +30,57 @@ export type Engine = (
   onError: (message: unknown) => void,
 ) => void
 
-// A reply longer than this is not a diagram anyone can look at, and handing it
-// to the engine risks the whole page instead of one block.
-export const MAX_SOURCE_LINES = 2000
+// What one synchronous render costs, measured in Chromium against the real
+// engine with the main thread blocked for the whole call: a 50-line diagram
+// takes ~0.9 s, a 100-line one ~1.4 s, and anything much larger is either
+// refused by the engine's own size cap or costs tens of seconds. `RENDER_TIMEOUT_MS`
+// cannot interrupt a render — the callback only arrives once the work is done —
+// so these gates are the only protection, and they are set to seconds of freeze
+// rather than to what a diagram could theoretically hold. Rendering in a worker
+// would remove the freeze altogether; see the spec's follow-ups.
+export const MAX_SOURCE_LINES = 400
 
-// How long to wait for one drawing before concluding the engine wedged.
+// A single line can be a whole participant list written without newlines, so
+// the line count alone does not bound the cost.
+export const MAX_SOURCE_CHARS = 20_000
+
+// How long to wait for one drawing before concluding the engine wedged. Only a
+// dropped callback can reach it: a slow render finishes first.
 export const RENDER_TIMEOUT_MS = 15000
+
+// Two timeouts in a row and the engine is treated as gone: the next request is
+// tried (an engine that drops one callback often answers the next), then later
+// ones are refused instead of each burning another timeout.
+const TIMEOUTS_BEFORE_WEDGE = 2
 
 // Diagrams kept for the lifetime of the page: switching preview and source back
 // and forth, or scrolling through a long history, must not redraw anything.
 const CACHE_LIMIT = 32
 
-// What the engine paints inside the SVG when it could not parse the source.
-const ERROR_MARK = /PlantUML version|Fatal parsing error|Syntax Error|Empty description|not a diagram/
+// What the engine paints when it could not parse the source: an SVG that looks
+// like a drawing but holds a failure report. Measured against the real engine,
+// every error board carries this header and no successful drawing does — the
+// English prose under it (`Syntax Error`, `Empty description`) is ordinary label
+// text in a diagram *about* errors, so it cannot be the mark.
+const ERROR_BOARD = /PlantUML version/
+
+// Engine messages worth translating because the person reading them can act on
+// them. Anything else is shown as the engine wrote it: it is the only clue there
+// is.
+const ENGINE_MESSAGES: [RegExp, string][] = [
+  [/too large for browser/i, '图太大,浏览器里画不出来'],
+  [/IndexOutOfBounds/, '图源码不完整,常见原因是缺少 @enduml'],
+]
 
 let injectedEngine: Engine | null = null
 let realEngine: Engine | null = null
 // The queue: one drawing in flight, everything else behind it.
 let queue: Promise<unknown> = Promise.resolve()
-let wedged = false
+let timeouts = 0
 const cache = new Map<string, DiagramResult>()
+// Requests already in the queue, so the same diagram asked for twice in one
+// reply costs one render and one freeze, not two.
+const inFlight = new Map<string, Promise<DiagramResult>>()
 
 function cacheKey(request: DiagramRequest): string {
   return `${request.dark ? 'd' : 'l'}\u0000${request.source}`
@@ -57,6 +88,9 @@ function cacheKey(request: DiagramRequest): string {
 
 function fail(reason: unknown): DiagramResult {
   const first = String(reason).split('\n')[0].slice(0, 200)
+  for (const [pattern, message] of ENGINE_MESSAGES) {
+    if (pattern.test(first)) return { ok: false, reason: `${message}(${first})` }
+  }
   return { ok: false, reason: first }
 }
 
@@ -75,7 +109,7 @@ async function loadEngine(): Promise<Engine> {
 }
 
 async function draw(request: DiagramRequest): Promise<DiagramResult> {
-  if (wedged) return fail('PlantUML 渲染引擎已停止响应')
+  if (timeouts >= TIMEOUTS_BEFORE_WEDGE) return fail('PlantUML 渲染引擎已停止响应')
 
   let engine: Engine
   try {
@@ -94,17 +128,19 @@ async function draw(request: DiagramRequest): Promise<DiagramResult> {
     }
     const timer = setTimeout(() => {
       if (settled) return
-      // A wedged engine never recovers, so later blocks fail fast instead of
-      // each waiting out their own timeout.
-      wedged = true
+      // A dropped callback may be the engine wedging or may be one lost
+      // callback it recovers from, so this only counts; the next request is
+      // still tried, and the one after that is not.
+      timeouts++
       finish(fail(`渲染超时(超过 ${RENDER_TIMEOUT_MS / 1000} 秒)`))
     }, RENDER_TIMEOUT_MS)
 
     try {
       engine(request.source.split('\n'), { dark: request.dark }, (svg) => {
-        if (ERROR_MARK.test(svg)) {
+        if (ERROR_BOARD.test(svg)) {
           finish(fail('PlantUML 无法解析这段图源码'))
         } else {
+          timeouts = 0
           finish({ ok: true, svg: DOMPurify.sanitize(svg) })
         }
       }, (message) => finish(fail(message)))
@@ -115,8 +151,11 @@ async function draw(request: DiagramRequest): Promise<DiagramResult> {
 }
 
 export function renderDiagram(request: DiagramRequest): Promise<DiagramResult> {
-  if (request.source.split('\n').length > MAX_SOURCE_LINES) {
-    return Promise.resolve(fail(`图源码过长(超过 ${MAX_SOURCE_LINES} 行)`))
+  const lines = request.source.split('\n')
+  if (lines.length > MAX_SOURCE_LINES || request.source.length > MAX_SOURCE_CHARS) {
+    return Promise.resolve(
+      fail(`图源码过长(超过 ${MAX_SOURCE_LINES} 行或 ${MAX_SOURCE_CHARS} 字符)`),
+    )
   }
 
   const key = cacheKey(request)
@@ -127,10 +166,13 @@ export function renderDiagram(request: DiagramRequest): Promise<DiagramResult> {
     cache.set(key, cached)
     return Promise.resolve(cached)
   }
+  const alreadyQueued = inFlight.get(key)
+  if (alreadyQueued) return alreadyQueued
 
   const running = queue.then(() => draw(request), () => draw(request))
   queue = running.catch(() => undefined)
-  return running.then((result) => {
+  const settledResult = running.then((result) => {
+    inFlight.delete(key)
     if (result.ok) {
       cache.set(key, result)
       const oldest = cache.keys().next()
@@ -138,16 +180,19 @@ export function renderDiagram(request: DiagramRequest): Promise<DiagramResult> {
     }
     return result
   })
+  inFlight.set(key, settledResult)
+  return settledResult
 }
 
 // Swap the engine out — used by tests, and by nothing in production. Resetting
-// the queue and the wedged flag keeps a stale engine from leaking into the next
+// the queue and the timeout count keeps a stale engine from leaking into the next
 // subject under test.
 export function configureEngineLoader(loader: Engine | null): void {
   injectedEngine = loader
   realEngine = null
-  wedged = false
+  timeouts = 0
   queue = Promise.resolve()
+  inFlight.clear()
 }
 
 export function clearDiagramCache(): void {

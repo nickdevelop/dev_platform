@@ -119,7 +119,7 @@ function toolArgument(entry: ChatEntry): string {
           <div class="bubble" :class="entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
             <span v-if="entry.role === 'user'" class="message-text">{{ entry.text }}</span>
             <div v-else class="message-text markdown-body">
-              <template v-for="(segment, index) in splitDiagramBlocks(entry.text)" :key="index">
+              <template v-for="(segment, index) in splitDiagramBlocks(entry.text)" :key="`${entry.id}:${index}`">
                 <div
                   v-if="segment.kind === 'markdown'"
                   class="markdown-seg"
@@ -129,6 +129,7 @@ function toolArgument(entry: ChatEntry): string {
                   v-else
                   :source="segment.text"
                   :ready="segment.closed && entry.streaming !== true"
+                  :finished="entry.streaming !== true"
                 />
               </template>
             </div>

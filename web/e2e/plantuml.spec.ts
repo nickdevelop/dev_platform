@@ -101,4 +101,31 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   const failed = page.locator('[data-test="plantuml-block"]').last()
   await expect(failed.locator('[data-test="plantuml-error"]')).toContainText('无法渲染')
   await expect(failed.locator('[data-test="plantuml-source"]')).toContainText('!include <C4/C4_Container>')
+
+  // 4. A reply carrying two diagrams draws both, one after the other — the
+  // engine hangs if it is asked for two at once, so this is the queue at work.
+  await ask(
+    page,
+    '两张图\n```plantuml\n@startuml\nA -> B: 一\n@enduml\n```\n中间\n```puml\n@startuml\nC -> D: 二\n@enduml\n```',
+  )
+  const pair = page.locator('[data-test="plantuml-block"]').last()
+  await expect(page.locator('[data-test="plantuml-canvas"] svg').nth(1)).toBeVisible({ timeout: 30_000 })
+  await expect(pair.locator('[data-test="plantuml-canvas"] svg')).toBeVisible()
+
+  // 5. A dark palette asks for a dark drawing and puts it on a dark canvas.
+  await page.goto('/settings/appearance')
+  await page.locator('[data-theme-option="dark"]').click()
+  await expect(page.locator('[data-theme-option="dark"].active')).toBeVisible()
+  await page.goto(`/projects/${project.id}`)
+  await taskRow(page, 'puml-e2e').click()
+  await expect(page.locator('[data-test="plantuml-block"]').first().locator('.plantuml-canvas.is-dark svg')).toBeVisible({
+    timeout: 30_000,
+  })
+
+  // 6. A reply that stopped inside the fence cannot ever draw, so it shows the
+  // source it was cut off in instead of waiting forever.
+  await ask(page, '没写完\n```plantuml\n@startuml\nA -> B\n（回复在这里断了）')
+  const cutOff = page.locator('[data-test="plantuml-block"]').last()
+  await expect(cutOff.locator('[data-test="plantuml-source"]')).toBeVisible()
+  await expect(cutOff.locator('[data-test="plantuml-waiting"]')).toContainText('没画完')
 })
