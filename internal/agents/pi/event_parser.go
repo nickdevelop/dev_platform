@@ -21,9 +21,20 @@ import (
 )
 
 // maxLineBytes bounds one JSONL record on the pi protocol stream. pi's own
-// docs reserve stdout for protocol records and stderr for diagnostics; a record
-// beyond this bound is reported and discarded rather than buffered.
+// docs reserve stdout for protocol records and stderr for diagnostics; a
+// record beyond the stderr bound is reported and discarded rather than
+// buffered.
 const maxLineBytes = agents.MaxRawEventBytes
+
+// maxStreamRecordBytes bounds one JSONL record read from pi's stdout. It is
+// deliberately far larger than MaxRawEventBytes: pi's turn_end, agent_end and
+// message_end records embed complete messages and tool results, and real
+// transcripts carry single records well past 64KiB (tool results with file
+// contents or images were observed at 100KB+). The bound matches the history
+// reader's maxHistoryRecordBytes so a record survives the live stream exactly
+// when it survives the transcript replay. A record beyond it is still
+// reported through line_too_large and discarded so the reader cannot wedge.
+const maxStreamRecordBytes = 8 * 1024 * 1024
 
 // maxStderrBytes bounds how much application logging on stderr is turned into
 // diagnostic events for one process. The reader keeps draining after the bound
@@ -66,11 +77,11 @@ func newParser(instanceID, sessionID string, now func() time.Time) *parser {
 // I/O errors are returned; protocol problems become EventError events so a
 // single bad record cannot tear down the stream.
 func (p *parser) run(r io.Reader, emit func(agents.NormalizedEvent)) error {
-	return scanLines(r, maxLineBytes,
+	return scanLines(r, maxStreamRecordBytes,
 		func(line []byte) { p.parseLine(line, emit) },
 		func() {
 			emit(p.errorEvent("line_too_large",
-				fmt.Sprintf("pi record exceeds the %d byte limit", maxLineBytes)))
+				fmt.Sprintf("pi record exceeds the %d byte limit", maxStreamRecordBytes)))
 		},
 	)
 }

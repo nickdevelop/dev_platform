@@ -231,7 +231,7 @@ func TestParserEndOfStream(t *testing.T) {
 		t.Errorf("final record without newline = %+v, want assistant tail", got)
 	}
 
-	oversized := `{"type":"future_event","pad":"` + strings.Repeat("a", agents.MaxRawEventBytes+10) + `"}`
+	oversized := `{"type":"future_event","pad":"` + strings.Repeat("a", maxStreamRecordBytes+10) + `"}`
 	got = collect(t, oversized+"\n"+`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"after"}]}}`+"\n")
 	if len(got) != 2 {
 		t.Fatalf("got %d events, want 2: %+v", len(got), got)
@@ -308,4 +308,30 @@ func TestParserClosesDanglingThinking(t *testing.T) {
 	if got[3].Type != agents.EventMessage {
 		t.Errorf("event[3] = %+v, want the assistant message", got[3])
 	}
+}
+
+// TestParserKeepsLargeRecord pins the raised stdout bound: a single JSONL
+// record larger than the old 64KiB bound but within the stream bound (a full
+// turn_end/agent_end or tool result easily exceeds 64KiB in real sessions)
+// is parsed, not discarded as line_too_large.
+func TestParserKeepsLargeRecord(t *testing.T) {
+	delta := strings.Repeat("x", 200000)
+	input := `{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"` + delta + `"}}` + "\n"
+
+	got := collect(t, input)
+	if len(got) != 1 {
+		t.Fatalf("got %d events, want 1 (types: %v)", len(got), eventTypes(got))
+	}
+	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != delta {
+		t.Errorf("event[0] = type %v, want the 200KB text delta carried as a message", got[0].Type)
+	}
+}
+
+// eventTypes names each event's type for compact failure messages.
+func eventTypes(events []agents.NormalizedEvent) []string {
+	out := make([]string, 0, len(events))
+	for _, event := range events {
+		out = append(out, string(event.Type))
+	}
+	return out
 }
