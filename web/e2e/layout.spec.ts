@@ -102,3 +102,43 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
   expect(metrics.logScrolls).toBe(true)
   expect(metrics.logOverflow).toBe('auto')
 })
+
+// Regression: a long task tree must scroll inside the sidebar, never stretch
+// the shell grid. An unconstrained implicit grid row sized to the tree's
+// content, which pushed the full-height conversation (and its composer) below
+// the fold while body overflow:hidden hid every scrollbar.
+test('a long task tree scrolls the sidebar and keeps the composer in view', async ({ page, request }) => {
+  const csrf = await operatorLogin(request)
+  const projectId = await registerProject(request, csrf, 'layout-tree')
+  await uiLogin(page)
+  await page.goto(`/projects/${projectId}`)
+
+  await createTask(page, 'pi', 'pi-tree')
+  await taskRow(page, 'pi-tree').click()
+  await expect(page.locator('[data-test="conversation"]')).toHaveAttribute('data-stream-status', 'open')
+
+  // Fill the tree well past the viewport. The grid rule under test is purely
+  // layout, so synthetic rows exercise it without paying for 300 real tasks.
+  await page.evaluate(() => {
+    const tree = document.querySelector('.tree') as HTMLElement
+    tree.innerHTML += Array.from({ length: 300 }, (_, i) => `<div>synthetic task ${i}</div>`).join('')
+  })
+
+  const metrics = await page.evaluate(() => {
+    const doc = document.documentElement
+    const tree = document.querySelector('.tree') as HTMLElement
+    const composer = document.querySelector('#message-text') as HTMLElement
+    const box = composer.getBoundingClientRect()
+    return {
+      docScrolls: doc.scrollHeight > doc.clientHeight + 1,
+      treeScrolls: tree.scrollHeight > tree.clientHeight + 1,
+      treeOverflow: getComputedStyle(tree).overflowY,
+      composerInViewport: box.bottom <= innerHeight && box.top >= 0 && box.height > 0,
+    }
+  })
+
+  expect(metrics.docScrolls).toBe(false)
+  expect(metrics.treeScrolls).toBe(true)
+  expect(metrics.treeOverflow).toBe('auto')
+  expect(metrics.composerInViewport).toBe(true)
+})

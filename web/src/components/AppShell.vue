@@ -153,6 +153,12 @@ async function logout() {
 .app-shell {
   display: grid;
   grid-template-columns: 56px 272px 1fr;
+  /* The single row must be pinned to the viewport: an implicit auto row sizes
+     to its content, so a long task tree stretched the whole shell (and with it
+     the conversation's 100%-height panel) past the fold, pushing the composer
+     out of view with body overflow hidden. minmax(0,1fr) caps the row so each
+     column scrolls inside itself. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   background: var(--color-bg);
   color: var(--color-text);
