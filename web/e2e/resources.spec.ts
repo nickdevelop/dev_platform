@@ -42,12 +42,6 @@ test('synchronizes a resource and pauses on external drift', async ({ page, requ
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const addRoot = await request.post('/api/workspaces/roots', {
-    data: { path: workspaceRoot },
-    headers: { 'X-CSRF-Token': csrf },
-  })
-  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
-
   const projectDir = join(workspaceRoot, `resource-sync-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {

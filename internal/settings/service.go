@@ -90,12 +90,14 @@ func (s *Service) Appearance() (Appearance, error) {
 
 func (s *Service) loadAppearance() (Appearance, error) {
 	var row database.Setting
-	err := s.db.Where("key = ?", appearanceKey).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return DefaultAppearance(), nil
+	// Find (not First) so a missing row is not logged as an error by GORM; the
+	// settings table is read on every page load.
+	result := s.db.Where("key = ?", appearanceKey).Limit(1).Find(&row)
+	if result.Error != nil {
+		return Appearance{}, fmt.Errorf("settings: load appearance: %w", result.Error)
 	}
-	if err != nil {
-		return Appearance{}, fmt.Errorf("settings: load appearance: %w", err)
+	if result.RowsAffected == 0 {
+		return DefaultAppearance(), nil
 	}
 
 	// Decode over the defaults so a stored blob missing a field keeps the

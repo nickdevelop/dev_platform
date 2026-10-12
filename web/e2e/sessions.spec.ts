@@ -63,15 +63,9 @@ async function createTask(page: Page, backendName: string, title: string) {
 test('isolates streamed events and interrupts one turn across agent instances', async ({ page, request }) => {
   test.slow()
 
-  // Operator setup: authorize the workspace root and register a fresh project
+  // Operator setup: register a fresh project
   // directory under it.
   const csrf = await operatorLogin(request)
-  const addRoot = await request.post('/api/workspaces/roots', {
-    data: { path: workspaceRoot },
-    headers: { 'X-CSRF-Token': csrf },
-  })
-  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
-
   const projectDir = join(workspaceRoot, 'agent-workbench')
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {
@@ -138,12 +132,6 @@ test('deletes a task from the conversation header after confirmation', async ({ 
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const addRoot = await request.post('/api/workspaces/roots', {
-    data: { path: workspaceRoot },
-    headers: { 'X-CSRF-Token': csrf },
-  })
-  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
-
   const projectDir = join(workspaceRoot, `delete-task-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {

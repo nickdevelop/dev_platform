@@ -4,6 +4,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
 import { listInstanceModels } from '../api/agents'
+import { createService, fetchModels, testModel } from '../api/models'
+import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -79,5 +81,49 @@ describe('session history API contract', () => {
     expect(calls[0].init?.method).toBe('GET')
     expect(headersOf(calls[0])['X-CSRF-Token']).toBeUndefined()
     expect(history.truncated).toBe(true)
+  })
+})
+
+describe('settings and model API contracts', () => {
+  it('reads and writes appearance at /settings/appearance', async () => {
+    const calls = stubJson({})
+
+    await getAppearance()
+    expect(calls[0].url).toBe('/api/settings/appearance')
+    expect(calls[0].init?.method).toBe('GET')
+
+    await putAppearance(
+      { theme: 'light', font: 'system', customFont: '', fontSize: 14, density: 'standard' },
+      'csrf-1',
+    )
+    expect(calls[1].url).toBe('/api/settings/appearance')
+    expect(calls[1].init?.method).toBe('PUT')
+    expect(headersOf(calls[1])['X-CSRF-Token']).toBe('csrf-1')
+  })
+
+  it('lists agents and toggles platform enablement', async () => {
+    const calls = stubJson({})
+
+    await listAgents()
+    expect(calls[0].url).toBe('/api/agents')
+
+    await setAgentEnabled('pi', false, 'csrf-2')
+    expect(calls[1].url).toBe('/api/agents/pi')
+    expect(calls[1].init?.method).toBe('PUT')
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ enabled: false })
+  })
+
+  it('creates a service, fetches models and tests a model', async () => {
+    const calls = stubJson({})
+
+    await createService({ name: 's', baseUrl: 'https://x/v1', apiKey: 'k', enabled: true }, 'csrf-3')
+    expect(calls[0].url).toBe('/api/model-services')
+    expect(calls[0].init?.method).toBe('POST')
+
+    await fetchModels({ baseUrl: 'https://x/v1', apiKey: 'k' })
+    expect(calls[1].url).toBe('/api/model-services/fetch-models')
+
+    await testModel({ baseUrl: 'https://x/v1', modelId: 'm' })
+    expect(calls[2].url).toBe('/api/models/test')
   })
 })

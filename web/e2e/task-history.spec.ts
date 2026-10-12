@@ -34,17 +34,6 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
 }
 
 async function registerProject(request: APIRequestContext, csrf: string, name: string): Promise<number> {
-  const roots = (await (await request.get('/api/workspaces/roots')).json()) as {
-    roots: Array<{ path: string }>
-  }
-  if (!roots.roots.some((root) => root.path === workspaceRoot)) {
-    const addRoot = await request.post('/api/workspaces/roots', {
-      data: { path: workspaceRoot },
-      headers: { 'X-CSRF-Token': csrf },
-    })
-    expect([201, 409], await addRoot.text()).toContain(addRoot.status())
-  }
-
   const projectDir = join(workspaceRoot, `${name}-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {

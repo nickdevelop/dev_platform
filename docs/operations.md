@@ -40,9 +40,9 @@ command-line arguments, the environment, or pipelines — `set-password`
 refuses them — and it is never logged. Re-running `set-password` does not
 overwrite an existing password.
 
-After starting the service, **authorize at least one workspace root** before
-registering projects (see "Authorize workspace roots" below); project
-register/create is rejected with `path_not_authorized` until a root exists.
+After starting the service, register a project by its absolute path, or create
+one under any directory the platform process can write to. Projects are no
+longer limited to authorized roots.
 
 ## Start and stop
 
@@ -91,29 +91,41 @@ graceful shutdown; a crashed process cannot pin it (the OS drops it when
 the process dies). The zero-byte `platform.lock` file remains on disk; that
 is normal.
 
-## Authorize workspace roots (required before projects)
+## The settings center
 
-Every project register or create is checked against the configured
-**workspace roots**: only a directory at or under an authorized root can be
-managed. A fresh data directory has none, so the first project operation
-fails with `path_not_authorized` until at least one root is added.
+Open **设置** (Settings) from the left rail. It has three sections:
+
+- **外观 (Appearance)** — theme, font, font size and interface density. The
+  configuration is shared platform state and is applied on the next page load;
+  other already-open pages pick it up on refresh.
+- **模型 (Models)** — OpenAI-compatible model services and their models, with
+  "fetch models" (browse a service's `/models` and tick the ones to add) and a
+  per-model connectivity test. API keys live in the platform-private secret
+  file (`0600`) and are never returned by the API; an empty key on save clears
+  the stored one.
+- **Agent** — enable/disable OpenCode and Pi Agent and detect their executable
+  paths and versions. Only enabled agents can be chosen for new tasks;
+  disabling never stops existing instances or invalidates existing tasks.
+
+## Register or create a project
+
+Project paths are no longer restricted to authorized roots. Register any
+absolute existing directory, or create a new one under any absolute parent the
+platform process can write to. The process's own operating-system file
+permissions are the only boundary; paths are still canonicalized and relative
+or ambiguous inputs are rejected.
 
 ### From the web UI
 
 1. Log in and open the projects view.
-2. Click **管理授权工作区** (Manage authorized workspaces).
-3. Enter the absolute path of an existing directory (for example
-   `/home/you/projects`) and click **添加** (Add). Repeat for each root you
-   want to authorize.
-4. Close the dialog and register or create a project under one of those
-   roots. Removing a root only unregisters it; it never deletes the
-   directory.
+2. Click **注册** (Register) and enter an absolute path, or **新建** (Create)
+   and enter a parent directory plus a name.
 
 ### Copy-paste fallback (no browser)
 
-Workspace-root mutations require an authenticated session and the CSRF
-token, so log in first. The following uses `cookies.txt` for the session and
-CSRF cookies:
+Management mutations require an authenticated session and the CSRF token, so
+log in first. The following uses `cookies.txt` for the session and CSRF
+cookies:
 
 ```sh
 BASE=http://localhost:8080
@@ -129,19 +141,22 @@ curl -s -b cookies.txt -c cookies.txt -X POST "$BASE/api/auth/login" \
   -d "{\"password\":\"$PASSWORD\"}"
 unset PASSWORD
 
-# 3. Authorize a root (the path must exist and be a directory).
-curl -s -b cookies.txt -X POST "$BASE/api/workspaces/roots" \
+# 3. Register an existing project directory by absolute path.
+curl -s -b cookies.txt -X POST "$BASE/api/projects" \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
-  -d '{"path":"/home/you/projects"}'
+  -d '{"path":"/home/you/projects/demo"}'
 
-# 4. List roots and remove one by id.
-curl -s -b cookies.txt "$BASE/api/workspaces/roots"
-curl -s -b cookies.txt -X DELETE "$BASE/api/workspaces/roots/1" \
-  -H "X-CSRF-Token: $CSRF"
+# 4. Create a new project directory under any absolute parent.
+curl -s -b cookies.txt -X POST "$BASE/api/projects/create" \
+  -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
+  -d '{"parent":"/home/you/projects","name":"new-app"}'
+
+# 5. Read the appearance and agent configuration.
+curl -s -b cookies.txt "$BASE/api/settings/appearance"
+curl -s -b cookies.txt "$BASE/api/agents"
 ```
 
-`POST /api/workspaces/roots` returns `201` with the canonicalized path;
-`DELETE` returns `204`.
+`POST /api/projects` returns `201` with the canonicalized path.
 
 ## Configuration reference
 
@@ -218,7 +233,7 @@ The data directory contains:
 
 | File            | Purpose |
 |-----------------|---------|
-| `platform.db`   | SQLite database (password hash, sessions, workspace roots, projects) |
+| `platform.db`   | SQLite database (password hash, sessions, projects, model definitions, settings) |
 | `platform.db-wal`, `platform.db-shm` | SQLite WAL sidecars; deleted automatically on clean shutdown |
 | `platform.lock` | single-instance lock file (zero bytes, stays behind) |
 

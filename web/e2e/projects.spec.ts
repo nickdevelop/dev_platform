@@ -1,7 +1,7 @@
 // End-to-end lifecycle: LAN-style login through the real UI against the real
 // Go backend, then a full project lifecycle (register, create, search,
 // rename, move, unregister, delete-to-trash, logout) inside a temporary
-// authorized workspace. Filesystem effects are asserted directly from the
+// scratch directory. Filesystem effects are asserted directly from the
 // Node side, including the freedesktop trash used by the server.
 //
 // Started via `npm run test:e2e`, which provides E2E_PASSWORD,
@@ -25,8 +25,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   mkdirSync(join(workspaceRoot, 'alpha'))
   mkdirSync(join(workspaceRoot, 'archive'))
 
-  // Operator setup: authorize the temporary workspace root through the
-  // workspaces API. The `request` fixture has its own cookie jar, so the
+  // Operator setup: the `request` fixture has its own cookie jar, so the
   // browser context below stays unauthenticated and the login flow is still
   // exercised through the UI.
   const preSession = await (await request.get('/api/auth/session')).json()
@@ -35,14 +34,6 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
     headers: { 'X-CSRF-Token': preSession.csrfToken },
   })
   expect(preLogin.status(), await preLogin.text()).toBe(200)
-  const operatorSession = await (await request.get('/api/auth/session')).json()
-  const addRoot = await request.post('/api/workspaces/roots', {
-    data: { path: workspaceRoot },
-    headers: { 'X-CSRF-Token': operatorSession.csrfToken },
-  })
-  // 409 = security.spec.ts (the sibling spec sharing this run's database)
-  // already authorized the same root; both specs tolerate either outcome.
-  expect([201, 409], await addRoot.text()).toContain(addRoot.status())
 
   // Unauthenticated users land on the login view.
   await page.goto('/')
@@ -57,7 +48,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   // A row click only expands/collapses the project; the gear opens settings.
   const openSettings = (name: string) => row(name).locator('.project-settings').click()
 
-  // Register an existing directory under the authorized root.
+  // Register an existing directory.
   await page.getByRole('button', { name: '注册', exact: true }).click()
   const registerDialog = page.getByRole('dialog')
   await registerDialog.getByLabel('目录的绝对路径').fill(join(workspaceRoot, 'alpha'))

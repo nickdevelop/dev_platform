@@ -37,21 +37,8 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-// registerProject authorizes the workspace root (only when it is not
-// registered yet, so a second test in the same run does not provoke a
-// constraint error) and registers a fresh project, returning its id.
+// registerProject registers a fresh project directory, returning its id.
 async function registerProject(request: APIRequestContext, csrf: string): Promise<number> {
-  const roots = (await (await request.get('/api/workspaces/roots')).json()) as {
-    roots: Array<{ path: string }>
-  }
-  if (!roots.roots.some((root) => root.path === workspaceRoot)) {
-    const addRoot = await request.post('/api/workspaces/roots', {
-      data: { path: workspaceRoot },
-      headers: { 'X-CSRF-Token': csrf },
-    })
-    expect([201, 409], await addRoot.text()).toContain(addRoot.status())
-  }
-
   const projectDir = join(workspaceRoot, `agent-failures-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {

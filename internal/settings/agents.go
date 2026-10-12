@@ -1,12 +1,9 @@
 package settings
 
 import (
-	"errors"
 	"fmt"
 	"os/exec"
 	"time"
-
-	"gorm.io/gorm"
 
 	"devplatform/internal/agents"
 	"devplatform/internal/database"
@@ -46,12 +43,14 @@ func (s *Service) loadAgents() (map[agents.BackendID]AgentSetting, error) {
 	settings := defaultAgentSettings()
 
 	var row database.Setting
-	err := s.db.Where("key = ?", agentsKey).First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return settings, nil
+	// Find (not First) so a missing row is not logged as an error; agent
+	// enablement is consulted on every task start.
+	result := s.db.Where("key = ?", agentsKey).Limit(1).Find(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("settings: load agents: %w", result.Error)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("settings: load agents: %w", err)
+	if result.RowsAffected == 0 {
+		return settings, nil
 	}
 
 	var stored map[agents.BackendID]AgentSetting

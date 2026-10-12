@@ -39,7 +39,6 @@ export function createAppRouter() {
           },
           {
             path: 'settings',
-            name: 'settings',
             component: SettingsView,
             meta: { settings: true },
             children: [
