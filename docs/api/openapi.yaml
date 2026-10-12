@@ -2581,42 +2581,6 @@ components:
         csrfToken:
           type: string
       additionalProperties: false
-    WorkspaceRoot:
-      type: object
-      required:
-        - id
-        - path
-        - createdAt
-      properties:
-        id:
-          type: integer
-          format: int64
-        path:
-          type: string
-          description: Canonical absolute directory path of the root.
-        createdAt:
-          type: string
-          format: date-time
-      additionalProperties: false
-    WorkspaceRootList:
-      type: object
-      required:
-        - roots
-      properties:
-        roots:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkspaceRoot'
-      additionalProperties: false
-    AddWorkspaceRootRequest:
-      type: object
-      required:
-        - path
-      properties:
-        path:
-          type: string
-          description: Absolute path of an existing directory to authorize.
-      additionalProperties: false
     Project:
       type: object
       required:
