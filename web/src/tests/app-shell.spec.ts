@@ -181,4 +181,30 @@ describe('three-pane app shell', () => {
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
     expect(wrapper.text()).toContain('外观')
   })
+
+  it('returns to the project area when the project category is clicked in settings', async () => {
+    const { wrapper, router } = await setup('/settings/appearance')
+
+    const project = wrapper.findAll('a').find((link) => link.text() === '项目')
+    expect(project).toBeTruthy()
+    await project!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('home')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+  })
+
+  it('marks the project category as current only outside the settings center', async () => {
+    const outside = (await setup('/projects/1', { ProjectSettingsPanel: true })).wrapper
+    expect(
+      outside.findAll('a').find((link) => link.text() === '项目')!.attributes('aria-current'),
+    ).toBe('page')
+
+    const inside = (await setup('/settings/appearance')).wrapper
+    const project = inside.findAll('a').find((link) => link.text() === '项目')!
+    expect(project.attributes('aria-current')).toBeUndefined()
+    expect(
+      inside.findAll('a').find((link) => link.text() === '设置')!.attributes('aria-current'),
+    ).toBe('page')
+  })
 })

@@ -57,7 +57,9 @@ function taskRow(page: Page, title: string) {
 }
 
 async function createTask(page: Page, backendName: string, title: string) {
-  await page.locator('.new-task').click()
+  // Scoped to the selected project row: the tree renders one ＋ per
+  // registered project, and earlier specs register their own.
+  await page.locator('.project-row.selected .project-new-task').click()
   await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
   await page.locator('#backend-select').selectOption(backendName)
   await page.locator('#session-title').fill(title)
