@@ -432,9 +432,7 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 		return nil, err
 	}
 	if ref.Title == "" {
-		if state, ok := a.lookupSession(ref.InstanceID, ref.SessionID); ok {
-			ref.Title = state.title
-		}
+		ref.Title = a.sessionTitle(ref.InstanceID, ref.SessionID)
 	}
 	return &ref, nil
 }
@@ -469,20 +467,16 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if model == "" && state != nil {
 		model = state.model
 	}
-	name := ""
-	if state != nil {
-		name = state.title
-	}
 	// A title the platform set after session creation (an auto-derived title
 	// or a rename) rides along as --name, which pi persists as a session
-	// name; remembering it keeps later launches named too.
-	if ref.Title != "" && ref.Title != name {
-		name = ref.Title
-		if state != nil {
-			a.mu.Lock()
-			state.title = ref.Title
-			a.mu.Unlock()
-		}
+	// name; remembering it keeps later launches named too. Title reads and
+	// writes go through helpers that hold the adapter lock: sends for one
+	// session run concurrently.
+	name := ref.Title
+	if name != "" {
+		a.rememberSessionTitle(ref.InstanceID, ref.SessionID, name)
+	} else {
+		name = a.sessionTitle(ref.InstanceID, ref.SessionID)
 	}
 
 	spec := processSpec{
@@ -609,6 +603,26 @@ func (a *Adapter) lookupSession(instanceID, sessionID string) (*sessionState, bo
 	defer a.mu.Unlock()
 	state, ok := a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}]
 	return state, ok
+}
+
+// sessionTitle returns the cached display title for a session (empty when
+// there is none). Locks: titles are read and written from concurrent sends.
+func (a *Adapter) sessionTitle(instanceID, sessionID string) string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if state, ok := a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}]; ok {
+		return state.title
+	}
+	return ""
+}
+
+// rememberSessionTitle caches a session's display title for later launches.
+func (a *Adapter) rememberSessionTitle(instanceID, sessionID, title string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if state, ok := a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}]; ok {
+		state.title = title
+	}
 }
 
 // instance is a logical pi instance: a directory, its live prompt processes and

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"strconv"
 	"strings"
 	"syscall"
@@ -815,5 +816,65 @@ func TestAdapterSendMessageUsesRefTitleAsName(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(string(second)), "\n")
 	if len(lines) < 2 || !strings.Contains(lines[len(lines)-1], "--name 部署日志系统") {
 		t.Errorf("second launch argv = %q, want --name 部署日志系统", lines)
+	}
+}
+
+// TestAdapterConcurrentSendsShareSessionTitle hammers one session with a
+// titling send and untitled sends at once: the title must be remembered for
+// later turns, and (under -race) the shared metadata must show no data race.
+func TestAdapterConcurrentSendsShareSessionTitle(t *testing.T) {
+	dir := t.TempDir()
+	fake := writeFakePi(t, dir, argsLoggingFakePi)
+	argsFile := filepath.Join(dir, "args.log")
+	t.Setenv("FAKE_PI_ARGS", argsFile)
+
+	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	ctx := context.Background()
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for round := 0; round < 10; round++ {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			named := *ref
+			named.Title = "共享标题"
+			if err := adapter.SendMessage(ctx, named, agents.SendMessageRequest{Text: "命名"}); err != nil {
+				t.Errorf("named SendMessage: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "无名"}); err != nil {
+				t.Errorf("untitled SendMessage: %v", err)
+			}
+		}()
+		wg.Wait()
+	}
+
+	// Whichever send won, the remembered title must ride on later launches.
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "收尾"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	var log string
+	for time.Now().Before(deadline) {
+		data, _ := os.ReadFile(argsFile)
+		log = string(data)
+		if strings.Count(strings.TrimSpace(log), "\n") >= 20 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	lines := strings.Split(strings.TrimSpace(log), "\n")
+	if len(lines) < 21 || !strings.Contains(lines[len(lines)-1], "--name 共享标题") {
+		t.Errorf("last launch argv = %q, want --name 共享标题", lines[len(lines)-1])
 	}
 }
