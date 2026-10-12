@@ -12,6 +12,7 @@
     "test:e2e": "node scripts/run-e2e.mjs"
   },
   "dependencies": {
+    "@plantuml/core": "1.2026.8",
     "dompurify": "^3.4.16",
     "marked": "^18.1.0",
     "pinia": "^4.0.3",
