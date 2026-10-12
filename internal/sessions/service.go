@@ -604,6 +604,12 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	if err != nil {
 		return Session{}, err
 	}
+	// Backends do not name new sessions themselves (pi only records a name
+	// when one is given), so the first message becomes the title while it
+	// travels down: the adapter carries it to the backend for persistence.
+	if row.Title == "" {
+		row.Title = agents.DeriveTitle(text)
+	}
 	ref := agents.SessionRef{
 		InstanceID: row.InstanceID,
 		Backend:    agents.BackendID(row.Backend),
@@ -949,7 +955,9 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 }
 
 // upsertRef indexes a discovered native session, updating its title in place
-// when it already has an index row.
+// when it already has an index row. Title precedence: an explicit agent name
+// wins over whatever the platform holds; a preview never overwrites a title,
+// it only fills an empty one.
 func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.SessionRef) (database.AgentSession, error) {
 	existing, err := s.repo.getByNative(inst.ID, ref.SessionID)
 	if err == nil {
@@ -959,6 +967,12 @@ func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.
 		}
 		if ref.Title != "" && ref.Title != existing.Title {
 			existing.Title = ref.Title
+			existing.UpdatedAt = s.now()
+			if err := s.repo.update(existing); err != nil {
+				return database.AgentSession{}, err
+			}
+		} else if existing.Title == "" && ref.Preview != "" {
+			existing.Title = ref.Preview
 			existing.UpdatedAt = s.now()
 			if err := s.repo.update(existing); err != nil {
 				return database.AgentSession{}, err
@@ -985,6 +999,12 @@ func (s *Service) newSessionRow(projectID uint, inst instances.Instance, ref age
 	if err != nil {
 		return database.AgentSession{}, fmt.Errorf("sessions: allocate id: %w", err)
 	}
+	title := ref.Title
+	if title == "" {
+		// A discovered session pi never named still deserves its first
+		// message as a display title.
+		title = ref.Preview
+	}
 	now := s.now()
 	return database.AgentSession{
 		ID:              id,
@@ -992,7 +1012,7 @@ func (s *Service) newSessionRow(projectID uint, inst instances.Instance, ref age
 		Backend:         string(inst.Backend),
 		InstanceID:      inst.ID,
 		NativeSessionID: ref.SessionID,
-		Title:           ref.Title,
+		Title:           title,
 		Status:          string(status),
 		CreatedAt:       now,
 		UpdatedAt:       now,

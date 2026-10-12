@@ -1706,3 +1706,145 @@ func TestBackendsReportsPlatformEnablement(t *testing.T) {
 		}
 	}
 }
+
+// TestSendBackfillsEmptyTitleFromFirstMessage verifies a session created
+// without a title derives one from the first message, and that the derived
+// title reaches the adapter so the backend can persist it.
+func TestSendBackfillsEmptyTitleFromFirstMessage(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-t1"}
+	env.fake.mu.Unlock()
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if session.Title != "" {
+		t.Fatalf("created session title = %q, want empty", session.Title)
+	}
+
+	sent, err := env.svc.Send(context.Background(), env.projectID, session.ID, "帮我\n部署日志系统", "")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if sent.Title != "帮我 部署日志系统" {
+		t.Errorf("sent session title = %q, want %q", sent.Title, "帮我 部署日志系统")
+	}
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.sentRefs) != 1 || env.fake.sentRefs[0].Title != "帮我 部署日志系统" {
+		t.Errorf("adapter sentRefs = %+v, want the derived title so the backend persists it", env.fake.sentRefs)
+	}
+}
+
+// TestSendKeepsExistingTitle verifies Send never rewrites a title that exists.
+func TestSendKeepsExistingTitle(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-t2") // helper titles it "native-t2"
+
+	sent, err := env.svc.Send(context.Background(), env.projectID, session.ID, "新消息", "")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if sent.Title != "native-t2" {
+		t.Errorf("sent session title = %q, want native-t2 unchanged", sent.Title)
+	}
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.sentRefs) != 1 || env.fake.sentRefs[0].Title != "native-t2" {
+		t.Errorf("adapter sentRefs = %+v, want the existing title", env.fake.sentRefs)
+	}
+}
+
+// TestDiscoverPreviewFillsOnlyEmptyTitles verifies a preview-derived title
+// indexes new rows and revives empty ones, but never overwrites a title.
+func TestDiscoverPreviewFillsOnlyEmptyTitles(t *testing.T) {
+	env := newTestEnv(t)
+
+	// An existing titled row and an existing empty-title row.
+	titled := createNativeSession(t, env, "n-keep")
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-empty"}
+	env.fake.mu.Unlock()
+	blank, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-keep", Preview: "新预览"},
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-empty", Preview: "预览"},
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-new", Preview: "预览新"},
+	}
+	env.fake.mu.Unlock()
+
+	sessions, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	titles := map[string]string{}
+	for _, s := range sessions {
+		titles[s.NativeSessionID] = s.Title
+	}
+	if titles["n-keep"] != titled.Title {
+		t.Errorf("n-keep title = %q, want %q unchanged", titles["n-keep"], titled.Title)
+	}
+	if titles["n-empty"] != "预览" {
+		t.Errorf("n-empty title = %q, want the preview 预览", titles["n-empty"])
+	}
+	if titles["n-new"] != "预览新" {
+		t.Errorf("n-new title = %q, want preview 预览新 on the fresh row", titles["n-new"])
+	}
+	_ = blank
+}
+
+// TestDiscoverExplicitTitleStillWins verifies an agent-side explicit name
+// keeps overwriting a stale platform title.
+func TestDiscoverExplicitTitleStillWins(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "旧名"}
+	env.fake.mu.Unlock()
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "旧名")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "显式名", Preview: "预览"},
+	}
+	env.fake.mu.Unlock()
+
+	sessions, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].Title != "显式名" {
+		t.Errorf("Discover = %+v, want title 显式名 for session %s", sessions, session.ID)
+	}
+}
+
+// TestCreateWithoutTitleLeavesTitleEmpty verifies an untitled create stores
+// no placeholder — never the platform id.
+func TestCreateWithoutTitleLeavesTitleEmpty(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-untitled"}
+	env.fake.mu.Unlock()
+
+	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if session.Title != "" {
+		t.Errorf("created title = %q, want empty", session.Title)
+	}
+	var row database.AgentSession
+	if err := env.db.First(&row, "id = ?", session.ID).Error; err != nil {
+		t.Fatalf("load row: %v", err)
+	}
+	if row.Title != "" {
+		t.Errorf("row title = %q, want empty", row.Title)
+	}
+}
