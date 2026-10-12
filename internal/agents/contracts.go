@@ -221,6 +221,10 @@ type SessionRef struct {
 	SessionID string `json:"sessionId"`
 	// Title is the agent-reported display title, when it has one.
 	Title string `json:"title,omitempty"`
+	// Preview is agent-derived fallback display text (the first user
+	// message), not an explicit name: consumers must never let it
+	// overwrite an explicit title.
+	Preview string `json:"preview,omitempty"`
 }
 
 // Validate reports whether the session reference satisfies the contract.

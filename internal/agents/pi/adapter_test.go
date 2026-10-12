@@ -669,3 +669,93 @@ func TestExecPathPrefersResolveExecutable(t *testing.T) {
 		t.Errorf("execPath() without resolver = %q, want fallback", got)
 	}
 }
+
+// TestReadSessionRefPreview checks that discovery surfaces the first user
+// message as a preview title without disturbing explicit naming.
+func TestReadSessionRefPreview(t *testing.T) {
+	dir := t.TempDir()
+	header := `{"type":"session","version":3,"id":"sess-1","timestamp":"2026-10-09T00:00:00.000Z","cwd":"` + dir + `"}`
+
+	writeSession := func(t *testing.T, lines ...string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "sess.jsonl")
+		content := append([]string{header}, lines...)
+		if err := os.WriteFile(path, []byte(strings.Join(content, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	t.Run("string content", func(t *testing.T) {
+		path := writeSession(t,
+			`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"部署日志系统"}}`)
+		ref, ok := readSessionRef(path, "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Title != "" || ref.Preview != "部署日志系统" {
+			t.Errorf("ref = %+v, want empty Title and Preview 部署日志系统", ref)
+		}
+	})
+
+	t.Run("block content collapses whitespace", func(t *testing.T) {
+		path := writeSession(t,
+			`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":[{"type":"text","text":"修复 登录\n\n问题"}]}}`)
+		ref, ok := readSessionRef(path, "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Preview != "修复 登录 问题" {
+			t.Errorf("Preview = %q, want %q", ref.Preview, "修复 登录 问题")
+		}
+	})
+
+	t.Run("first empty text falls to next user message", func(t *testing.T) {
+		path := writeSession(t,
+			`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":""}}`,
+			`{"type":"message","id":"u2","parentId":"u1","message":{"role":"user","content":"次条消息"}}`)
+		ref, ok := readSessionRef(path, "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Preview != "次条消息" {
+			t.Errorf("Preview = %q, want 次条消息", ref.Preview)
+		}
+	})
+
+	t.Run("non-user messages yield no preview", func(t *testing.T) {
+		path := writeSession(t,
+			`{"type":"message","id":"s1","parentId":null,"message":{"role":"system","content":"系统提示"}}`,
+			`{"type":"message","id":"a1","parentId":"s1","message":{"role":"assistant","content":"回复"}}`)
+		ref, ok := readSessionRef(path, "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Preview != "" {
+			t.Errorf("Preview = %q, want empty", ref.Preview)
+		}
+	})
+
+	t.Run("explicit name and preview are independent", func(t *testing.T) {
+		path := writeSession(t,
+			`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","content":"部署日志系统"}}`,
+			`{"type":"session_info","id":"b","parentId":"u1","name":"My Session"}`)
+		ref, ok := readSessionRef(path, "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Title != "My Session" || ref.Preview != "部署日志系统" {
+			t.Errorf("ref = %+v, want Title My Session and Preview 部署日志系统", ref)
+		}
+	})
+
+	t.Run("no messages yield no preview", func(t *testing.T) {
+		ref, ok := readSessionRef(writeSession(t), "inst-1", dir)
+		if !ok {
+			t.Fatal("readSessionRef() = not ok")
+		}
+		if ref.Preview != "" {
+			t.Errorf("Preview = %q, want empty", ref.Preview)
+		}
+	})
+}

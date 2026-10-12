@@ -497,9 +497,6 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	return nil
 }
 
-// ListSessions reads pi's on-disk JSONL sessions for the instance directory.
-// pi groups session files by working directory, so a project's sessions live in
-// a single folder under the session root. Missing folders are not an error.
 // ListModels runs `pi --list-models` and returns the models it reports. pi's
 // catalog is not tied to a session, so the instance only has to exist.
 func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
@@ -539,6 +536,12 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	return nil
 }
 
+// ListSessions reads pi's on-disk JSONL sessions for the instance directory.
+// pi groups session files by working directory, so a project's sessions live in
+// a single folder under the session root. Missing folders are not an error.
+// Each reference carries the session's explicit name (if any) in Title and the
+// first user message in Preview, so discovery can index a display title even
+// for sessions pi never named.
 func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents.SessionRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -922,9 +925,9 @@ func sessionDirName(directory string) string {
 	return "--" + replacer.Replace(trimmed) + "--"
 }
 
-// readSessionRef reads a pi session file's header and display name without
-// loading the whole conversation. It returns false for files that do not look
-// like a session for the expected directory.
+// readSessionRef reads a pi session file's header, display name and first-user-
+// message preview without loading the whole conversation. It returns false for
+// files that do not look like a session for the expected directory.
 func readSessionRef(path, instanceID, expectedDirectory string) (agents.SessionRef, bool) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -957,11 +960,31 @@ func readSessionRef(path, instanceID, expectedDirectory string) (agents.SessionR
 			break
 		}
 		var entry struct {
-			Type string `json:"type"`
-			Name string `json:"name"`
+			Type    string `json:"type"`
+			Name    string `json:"name"`
+			Message *struct {
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
 		}
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err == nil && entry.Type == "session_info" {
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		switch entry.Type {
+		case "session_info":
 			ref.Title = entry.Name
+		case "message":
+			// pi never writes an automatic name, so the first user
+			// message is the best display text discovery can offer.
+			if ref.Preview == "" && entry.Message != nil && entry.Message.Role == "user" {
+				var texts []string
+				for _, block := range decodeHistoryContent(entry.Message.Content) {
+					if block.Type == "text" {
+						texts = append(texts, block.Text)
+					}
+				}
+				ref.Preview = agents.DeriveTitle(strings.Join(texts, " "))
+			}
 		}
 	}
 	return ref, true
