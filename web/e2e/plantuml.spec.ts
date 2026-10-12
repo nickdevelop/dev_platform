@@ -37,6 +37,12 @@ function taskRow(page: Page, title: string) {
   return page.locator('.task', { hasText: title })
 }
 
+// The most recent agent turn, so an assertion cannot be satisfied by a diagram
+// an earlier turn already drew.
+function lastTurn(page: Page) {
+  return page.locator('.chat-entry.kind-message').last()
+}
+
 // ask sends one prompt and waits for the reply to land in the conversation.
 async function ask(page: Page, prompt: string) {
   await page.locator('#message-text').fill(prompt)
@@ -98,7 +104,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
     page,
     '换成 C4\n```plantuml\n@startuml\n!include <C4/C4_Container>\nA -> B: x\n@enduml\n```',
   )
-  const failed = page.locator('[data-test="plantuml-block"]').last()
+  const failed = lastTurn(page)
   await expect(failed.locator('[data-test="plantuml-error"]')).toContainText('无法渲染')
   await expect(failed.locator('[data-test="plantuml-source"]')).toContainText('!include <C4/C4_Container>')
 
@@ -108,9 +114,9 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
     page,
     '两张图\n```plantuml\n@startuml\nA -> B: 一\n@enduml\n```\n中间\n```puml\n@startuml\nC -> D: 二\n@enduml\n```',
   )
-  const pair = page.locator('[data-test="plantuml-block"]').last()
-  await expect(page.locator('[data-test="plantuml-canvas"] svg').nth(1)).toBeVisible({ timeout: 30_000 })
-  await expect(pair.locator('[data-test="plantuml-canvas"] svg')).toBeVisible()
+  const pair = lastTurn(page)
+  await expect(pair.locator('[data-test="plantuml-canvas"] svg')).toHaveCount(2)
+  await expect(pair.getByText('中间')).toBeVisible()
 
   // 5. A dark palette asks for a dark drawing and puts it on a dark canvas.
   await page.goto('/settings/appearance')
@@ -125,7 +131,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   // 6. A reply that stopped inside the fence cannot ever draw, so it shows the
   // source it was cut off in instead of waiting forever.
   await ask(page, '没写完\n```plantuml\n@startuml\nA -> B\n（回复在这里断了）')
-  const cutOff = page.locator('[data-test="plantuml-block"]').last()
+  const cutOff = lastTurn(page)
   await expect(cutOff.locator('[data-test="plantuml-source"]')).toBeVisible()
   await expect(cutOff.locator('[data-test="plantuml-waiting"]')).toContainText('没画完')
 })

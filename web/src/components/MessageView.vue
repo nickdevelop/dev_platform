@@ -27,6 +27,14 @@ function toolEventsVisible(): boolean {
   return props.capabilities?.toolCallEvents === true
 }
 
+// Whether a reply is finished with. An event stream that died without a
+// turn-ending event leaves its entry flagged as streaming forever, and a
+// diagram fence in that reply would wait for a closing token that can never
+// arrive — once the stream is gone, what is on screen is all there is.
+function settled(entry: ChatEntry): boolean {
+  return entry.streaming !== true || props.streamStatus === 'error'
+}
+
 // A tool call and its result are one block, keyed by the call id. An agent can
 // report a result more than once; only the latest is kept so a call never
 // renders several results.
@@ -128,8 +136,8 @@ function toolArgument(entry: ChatEntry): string {
                 <PlantumlBlock
                   v-else
                   :source="segment.text"
-                  :ready="segment.closed && entry.streaming !== true"
-                  :finished="entry.streaming !== true"
+                  :ready="segment.closed && settled(entry)"
+                  :finished="settled(entry)"
                 />
               </template>
             </div>

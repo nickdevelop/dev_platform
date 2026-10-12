@@ -48,10 +48,14 @@ export const MAX_SOURCE_CHARS = 20_000
 // dropped callback can reach it: a slow render finishes first.
 export const RENDER_TIMEOUT_MS = 15000
 
-// Two timeouts in a row and the engine is treated as gone: the next request is
-// tried (an engine that drops one callback often answers the next), then later
-// ones are refused instead of each burning another timeout.
+// Two timeouts in a row stop the queue from being held hostage by a wedged
+// engine — but only for a while: a refused request can never answer, so a
+// permanent refusal could never be lifted, and an engine that dropped one
+// callback usually answers the next. After the cooldown the next request is
+// tried again, and any answer — a drawing, an error board, an engine error —
+// puts the engine back in credit.
 const TIMEOUTS_BEFORE_WEDGE = 2
+export const WEDGE_COOLDOWN_MS = 60000
 
 // Diagrams kept for the lifetime of the page: switching preview and source back
 // and forth, or scrolling through a long history, must not redraw anything.
@@ -77,6 +81,7 @@ let realEngine: Engine | null = null
 // The queue: one drawing in flight, everything else behind it.
 let queue: Promise<unknown> = Promise.resolve()
 let timeouts = 0
+let refusedUntil = 0
 const cache = new Map<string, DiagramResult>()
 // Requests already in the queue, so the same diagram asked for twice in one
 // reply costs one render and one freeze, not two.
@@ -109,7 +114,9 @@ async function loadEngine(): Promise<Engine> {
 }
 
 async function draw(request: DiagramRequest): Promise<DiagramResult> {
-  if (timeouts >= TIMEOUTS_BEFORE_WEDGE) return fail('PlantUML 渲染引擎已停止响应')
+  if (timeouts >= TIMEOUTS_BEFORE_WEDGE && Date.now() < refusedUntil) {
+    return fail('PlantUML 渲染引擎已停止响应')
+  }
 
   let engine: Engine
   try {
@@ -126,24 +133,31 @@ async function draw(request: DiagramRequest): Promise<DiagramResult> {
       clearTimeout(timer)
       resolve(result)
     }
+    // Any reply is evidence the engine is alive, including a reply that says the
+    // diagram could not be drawn: that is the engine working, not wedging.
+    const answered = function (): void {
+      timeouts = 0
+      refusedUntil = 0
+    }
     const timer = setTimeout(() => {
       if (settled) return
-      // A dropped callback may be the engine wedging or may be one lost
-      // callback it recovers from, so this only counts; the next request is
-      // still tried, and the one after that is not.
       timeouts++
+      if (timeouts >= TIMEOUTS_BEFORE_WEDGE) refusedUntil = Date.now() + WEDGE_COOLDOWN_MS
       finish(fail(`渲染超时(超过 ${RENDER_TIMEOUT_MS / 1000} 秒)`))
     }, RENDER_TIMEOUT_MS)
 
     try {
       engine(request.source.split('\n'), { dark: request.dark }, (svg) => {
+        answered()
         if (ERROR_BOARD.test(svg)) {
           finish(fail('PlantUML 无法解析这段图源码'))
         } else {
-          timeouts = 0
           finish({ ok: true, svg: DOMPurify.sanitize(svg) })
         }
-      }, (message) => finish(fail(message)))
+      }, (message) => {
+        answered()
+        finish(fail(message))
+      })
     } catch (error) {
       finish(fail(error))
     }
@@ -191,6 +205,7 @@ export function configureEngineLoader(loader: Engine | null): void {
   injectedEngine = loader
   realEngine = null
   timeouts = 0
+  refusedUntil = 0
   queue = Promise.resolve()
   inFlight.clear()
 }

@@ -217,6 +217,21 @@ describe('MessageView plantuml blocks', () => {
     expect(wrapper.find('.bubble-agent code').text()).toContain('fmt.Println')
   })
 
+  it('draws a closed fence whose event stream died mid-reply', async () => {
+    // An EventSource that closes without a turn-ending event leaves the entry
+    // flagged as streaming forever; the text is all there is and all there will be.
+    configureEngineLoader((_lines, _opts, onSuccess) => onSuccess('<svg><text>x</text></svg>'))
+    const entry: ChatEntry = {
+      ...message('assistant', '```plantuml\n@startuml\nA->B\n@enduml\n```'),
+      streaming: true,
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [entry], capabilities: capabilities(), streamStatus: 'error' },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="plantuml-canvas"] svg').exists()).toBe(true)
+  })
+
   it('draws every diagram in one reply, in order', async () => {
     let calls = 0
     configureEngineLoader((_lines, _opts, onSuccess) => {

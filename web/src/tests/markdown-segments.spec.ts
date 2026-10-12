@@ -50,6 +50,21 @@ describe('splitDiagramBlocks', () => {
     ])
   })
 
+  it('does not read a sentence about fences as a fence', () => {
+    // marked says a backtick fence cannot carry a backtick in its info string,
+    // and an agent explaining the syntax writes exactly this sentence.
+    const prose = '先说明:\n```puml 与 ```plantuml 是同一种语言\n正文 **粗体**\n'
+    expect(splitDiagramBlocks(prose)).toEqual([{ kind: 'markdown', text: prose }])
+  })
+
+  it('finds fences in a reply that arrived with lone carriage returns', () => {
+    expect(splitDiagramBlocks('看\r```plantuml\r@startuml\rA->B\r@enduml\r```\r好了')).toEqual([
+      { kind: 'markdown', text: '看\n' },
+      { kind: 'plantuml', text: '@startuml\nA->B\n@enduml', closed: true },
+      { kind: 'markdown', text: '\n好了' },
+    ])
+  })
+
   it('leaves a diagram fence with nothing in it to markdown', () => {
     const blank = 'a\n```plantuml\n   \n```\nb'
     expect(splitDiagramBlocks(blank)).toEqual([{ kind: 'markdown', text: blank }])

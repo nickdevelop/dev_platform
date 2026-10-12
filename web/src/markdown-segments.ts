@@ -30,16 +30,24 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$/
 // The language tag of a diagram fence line, or null when the line is not one.
 function diagramTag(line: string): boolean {
   const fence = FENCE.exec(line)
-  if (!fence) return false
+  if (!fence || !isFenceLine(fence)) return false
   const language = fence[2].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
   return DIAGRAM_LANGUAGES.includes(language)
+}
+
+// A backtick fence whose info string holds a backtick is not a fence: it is a
+// sentence talking about fences, and marked reads it the same way.
+function isFenceLine(fence: RegExpExecArray): boolean {
+  return !(fence[1][0] === '`' && fence[2].includes('`'))
 }
 
 // The closing fence repeats the opening character, is at least as long, and
 // carries no info string.
 function closesFence(line: string, char: string, length: number): boolean {
   const fence = FENCE.exec(line)
-  return fence !== null && fence[1][0] === char && fence[1].length >= length && fence[2].trim() === ''
+  return (
+    fence !== null && fence[1][0] === char && fence[1].length >= length && fence[2].trim() === ''
+  )
 }
 
 // The bounds of one line starting at `from`: where its content ends and where
@@ -63,9 +71,10 @@ function closingFenceStart(source: string, open: number, char: string, length: n
 }
 
 export function splitDiagramBlocks(source: string): Segment[] {
-  // marked normalizes line endings; doing it here keeps one grammar for the
-  // fence scanner, so a reply that arrives over CRLF still gets its diagrams.
-  const text = source.includes('\r') ? source.replace(/\r\n/g, '\n') : source
+  // marked normalizes line endings (\r\n and a lone \r both become \n); doing the
+  // same here keeps one grammar for the fence scanner, so a reply that arrives
+  // with Windows or classic Mac line endings still gets its diagrams.
+  const text = source.includes('\r') ? source.replace(/\r\n?/g, '\n') : source
   if (text === '') return []
 
   const segments: Segment[] = []
@@ -80,7 +89,7 @@ export function splitDiagramBlocks(source: string): Segment[] {
     const bounds = lineBounds(text, cursor)
     const line = text.slice(cursor, bounds.content)
     const fence = FENCE.exec(line)
-    if (!fence) {
+    if (!fence || !isFenceLine(fence)) {
       cursor = bounds.next
       continue
     }

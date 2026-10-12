@@ -11,6 +11,7 @@ import {
   MAX_SOURCE_LINES,
   renderDiagram,
   RENDER_TIMEOUT_MS,
+  WEDGE_COOLDOWN_MS,
   type Engine,
 } from '../plantuml/renderer'
 
@@ -97,6 +98,96 @@ describe('plantuml renderer', () => {
       fakeEngine(() => '<svg><text>Syntax Error</text><text>PlantUML version 1.2026.8</text></svg>'),
     )
     expect((await renderDiagram({ source: '@startuml\nA --> B : Syntax Error\n@enduml', dark: true })).ok).toBe(false)
+  })
+
+  it('believes an engine that answers after a timeout', async () => {
+    // The wedge is about an engine that stopped answering, so any answer is
+    // evidence against it. Without this, one timeout plus one working diagram
+    // plus one slow request silences the page while the engine is replying.
+    vi.useFakeTimers()
+    let mode = 'stuck'
+    let calls = 0
+    configureEngineLoader((lines, _opts, onSuccess, onError) => {
+      calls++
+      if (mode === 'stuck') return
+      if (/bad/.test(lines.join(''))) onError('java.lang.WeirdThing')
+      else onSuccess('<svg/>')
+    })
+    const first = renderDiagram({ source: '@startuml\nA->B\n@enduml', dark: false })
+    await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS)
+    expect(await first).toEqual({ ok: false, reason: expect.stringContaining('超时') })
+
+    // The engine answers the next request — with a failure, which is still an
+    // answer. This is the case that matters: a draw that answers is believed,
+    // one that fails on purpose must not be held against it.
+    mode = 'live'
+    expect((await renderDiagram({ source: '@startuml\nbad\n@enduml', dark: false })).ok).toBe(false)
+
+    // So a later slow request is tried rather than refused.
+    mode = 'stuck'
+    const last = renderDiagram({ source: '@startuml\nE->F\n@enduml', dark: false })
+    await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS)
+    expect(await last).toEqual({ ok: false, reason: expect.stringContaining('超时') })
+    expect(calls).toBe(3)
+  })
+
+  it('gives a wedged engine another chance instead of silencing the page', async () => {
+    // Two timeouts refuse the next request; that refusal must not be forever,
+    // because a refused request cannot answer and so could never lift it.
+    vi.useFakeTimers()
+    let mode = 'stuck'
+    let calls = 0
+    configureEngineLoader((lines, _opts, onSuccess, onError) => {
+      calls++
+      if (mode === 'stuck') return
+      if (/bad/.test(lines.join(''))) onError('java.lang.WeirdThing')
+      else onSuccess('<svg/>')
+    })
+    for (const source of ['@startuml\nA->B\n@enduml', '@startuml\nC->D\n@enduml']) {
+      const pending = renderDiagram({ source, dark: false })
+      await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS)
+      expect(await pending).toEqual({ ok: false, reason: expect.stringContaining('超时') })
+    }
+    expect(await renderDiagram({ source: '@startuml\nE->F\n@enduml', dark: false })).toEqual({
+      ok: false,
+      reason: expect.stringContaining('停止响应'),
+    })
+    expect(calls).toBe(2)
+
+    // After the cooldown the engine is asked again, and an answer — even a
+    // failure — puts it back in credit for the next slow one.
+    await vi.advanceTimersByTimeAsync(WEDGE_COOLDOWN_MS)
+    mode = 'live'
+    expect((await renderDiagram({ source: '@startuml\nbad\n@enduml', dark: false })).ok).toBe(false)
+    expect(calls).toBe(3)
+
+    mode = 'stuck'
+    const slow = renderDiagram({ source: '@startuml\nG->H\n@enduml', dark: false })
+    await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS)
+    expect(await slow).toEqual({ ok: false, reason: expect.stringContaining('超时') })
+    expect(calls).toBe(4)
+
+    // One slow draw after an answer is not a wedge: it takes two in a row
+    // again, so the next request is tried instead of refused.
+    const next = renderDiagram({ source: '@startuml\nI->J\n@enduml', dark: false })
+    await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS)
+    expect(await next).toEqual({ ok: false, reason: expect.stringContaining('超时') })
+    expect(calls).toBe(5)
+  })
+
+  it('asks the engine again for a diagram that failed before', async () => {
+    let calls = 0
+    let works = false
+    configureEngineLoader((_lines, _opts, onSuccess, onError) => {
+      calls++
+      if (works) onSuccess('<svg/>')
+      else onError('java.lang.WeirdThing')
+    })
+    const source = '@startuml\nA->B\n@enduml'
+    expect((await renderDiagram({ source, dark: false })).ok).toBe(false)
+    works = true
+    expect((await renderDiagram({ source, dark: false })).ok).toBe(true)
+    expect(calls).toBe(2)
   })
 
   it('answers the same diagram asked for twice with one engine call', async () => {
