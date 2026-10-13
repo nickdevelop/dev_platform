@@ -852,3 +852,79 @@ describe('sessions store stale stream', () => {
     expect(first.readyState).toBe(RecordingEventSource.OPEN)
   })
 })
+
+// The drop does not always arrive while the user is away: the agent process can
+// die a moment after the task was opened, while they are looking right at it.
+// The browser will not dial again, so the store makes one repair attempt of its
+// own — and only one, because an operator who stopped a service deliberately
+// must not find the platform dialling it on a loop. After that the user decides.
+describe('sessions store stall repair', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    vi.useFakeTimers()
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('re-dials a stalled stream once, then leaves the decision to the user', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [], truncated: false },
+    })
+
+    await sessions.openSession(1, 's1')
+    const first = RecordingEventSource.instances[0]
+    first.readyState = RecordingEventSource.OPEN
+    first.onopen?.()
+
+    first.readyState = RecordingEventSource.CONNECTING
+    first.onerror?.()
+    expect(RecordingEventSource.instances).toHaveLength(1)
+
+    // Nothing happens before the stall window closes...
+    vi.advanceTimersByTime(2000)
+    expect(RecordingEventSource.instances).toHaveLength(1)
+
+    // ...and one repair after it.
+    vi.advanceTimersByTime(2000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(RecordingEventSource.instances).toHaveLength(2)
+    expect(first.readyState).toBe(RecordingEventSource.CLOSED)
+
+    // The repair itself fails: no second attempt behind the user's back.
+    const second = RecordingEventSource.instances[1]
+    second.readyState = RecordingEventSource.CONNECTING
+    second.onerror?.()
+    vi.advanceTimersByTime(30_000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(RecordingEventSource.instances).toHaveLength(2)
+    expect(sessions.statusFor('s1')).toBe('reconnecting')
+  })
+
+  it('does not re-dial a stream that was closed on purpose', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [], truncated: false },
+    })
+    await sessions.openSession(1, 's1')
+    sessions.unsubscribe('s1')
+
+    vi.advanceTimersByTime(30_000)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(RecordingEventSource.instances).toHaveLength(1)
+    expect(sessions.statusFor('s1')).toBe('idle')
+  })
+})

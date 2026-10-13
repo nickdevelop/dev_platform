@@ -52,6 +52,22 @@ export type StreamStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'er
 // are browser resources, not view data, and must not be proxied by Vue.
 const sources = new Map<string, EventSource>()
 
+// A dropped EventSource is not always re-established by the browser: when the
+// process behind a session dies, it fires one error and then sits in CONNECTING
+// without dialling again — measured over 24s with nothing reaching the server.
+// The store therefore re-dials once. `repairs` holds the pending attempt, and
+// `repaired` marks a session that already used its one attempt, so a service an
+// operator stopped on purpose is not reached for on a loop.
+const stallMs = 3000
+const repairs = new Map<string, ReturnType<typeof setTimeout>>()
+const repaired = new Set<string>()
+
+function clearStreamRepair(sessionId: string) {
+  const timer = repairs.get(sessionId)
+  if (timer) clearTimeout(timer)
+  repairs.delete(sessionId)
+}
+
 let entryCounter = 0
 
 function nextEntryID(sessionId: string, sequence: number, kind: string): string {
@@ -314,8 +330,7 @@ export const useSessionsStore = defineStore('sessions', {
     // stream. A stream that has reported an error is the exception: after a
     // drop the browser may sit in CONNECTING forever without dialling again —
     // observed when the process behind a session dies — so the task would stay
-    // at 正在重连 for the rest of the session. Opening the task again is the
-    // user asking for live events, and the dead stream is replaced.
+    // at 正在重连 for the rest of the session.
     subscribe(projectId: number, sessionId: string) {
       const existing = sources.get(sessionId)
       if (existing) {
@@ -328,6 +343,8 @@ export const useSessionsStore = defineStore('sessions', {
       sources.set(sessionId, source)
 
       source.onopen = () => {
+        clearStreamRepair(sessionId)
+        repaired.delete(sessionId)
         this.streamStatus[sessionId] = 'open'
       }
       source.onerror = () => {
@@ -336,6 +353,21 @@ export const useSessionsStore = defineStore('sessions', {
           sources.delete(sessionId)
         } else {
           this.streamStatus[sessionId] = 'reconnecting'
+          // One repair, no more. The browser may simply stop dialling, and a
+          // conversation that went quiet with the user watching it has no other
+          // way back; but an operator who stopped a service on purpose must not
+          // find the platform reaching for it on a loop, so a second stall is
+          // the user's decision, made with the reconnect button.
+          if (repaired.has(sessionId) || repairs.has(sessionId)) return
+          repairs.set(
+            sessionId,
+            setTimeout(() => {
+              repairs.delete(sessionId)
+              if (this.streamStatus[sessionId] !== 'reconnecting') return
+              repaired.add(sessionId)
+              this.subscribe(projectId, sessionId)
+            }, stallMs),
+          )
         }
       }
       for (const type of ['lifecycle', 'message', 'thinking', 'tool_call', 'tool_result', 'error', 'unknown']) {
@@ -364,6 +396,8 @@ export const useSessionsStore = defineStore('sessions', {
 
     unsubscribe(sessionId: string) {
       const source = sources.get(sessionId)
+      clearStreamRepair(sessionId)
+      repaired.delete(sessionId)
       if (source) {
         source.close()
         sources.delete(sessionId)
