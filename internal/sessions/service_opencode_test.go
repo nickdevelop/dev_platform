@@ -83,6 +83,7 @@ func newOpencodeTestEnv(t *testing.T) *testEnv {
 	registry := agents.NewRegistry()
 	fake := newFakeAdapter()
 	fake.caps.ToolConfirmation = true
+	fake.caps.RawEvents = true
 	if err := registry.Register(agents.BackendOpenCodeV2, fake); err != nil {
 		t.Fatalf("register fake opencode adapter: %v", err)
 	}
@@ -212,5 +213,29 @@ func TestOpencodeRawStreamCopiesBytes(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "server.connected") {
 		t.Fatalf("raw output = %q, want server.connected", out.String())
+	}
+}
+
+// TestRawEventsRefusedWithoutCapability proves the raw stream is gated by the
+// declared RawEvents capability, not by the backend id: a backend that streams
+// but does not declare raw events is refused before any byte is read.
+func TestRawEventsRefusedWithoutCapability(t *testing.T) {
+	env := newOpencodeTestEnv(t)
+	ctx := context.Background()
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
+	env.fake.caps.RawEvents = false
+	env.fake.mu.Unlock()
+	session, err := env.svc.Create(ctx, env.projectID, agents.BackendOpenCodeV2, "t")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var out strings.Builder
+	err = env.svc.StreamOpencodeRaw(ctx, env.projectID, session.ID, &out, nil)
+	if !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("StreamOpencodeRaw = %v, want ErrUnsupportedCapability", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("raw output = %q, want nothing written", out.String())
 	}
 }

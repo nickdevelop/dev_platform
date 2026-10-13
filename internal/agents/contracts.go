@@ -103,6 +103,10 @@ type Capabilities struct {
 	// must not be asked for history, and the workbench must not offer a
 	// history view for it.
 	SessionHistory bool `json:"sessionHistory"`
+	// RawEvents reports whether the backend's untouched event stream can be
+	// proxied to the workbench (RawEventOpener). It drives backend-specific
+	// views only; the platform never interprets the bytes.
+	RawEvents bool `json:"rawEvents"`
 }
 
 // ModelInfo is one model an agent can run, as the backend reports it. ID is

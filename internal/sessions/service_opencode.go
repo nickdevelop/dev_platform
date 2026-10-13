@@ -179,8 +179,8 @@ func (s *Service) StreamOpencodeRaw(ctx context.Context, projectID uint, session
 		return fmt.Errorf("%w: session is stopped", ErrInvalidRequest)
 	}
 	backend := agents.BackendID(row.Backend)
-	if !s.capabilities(backend).Streaming {
-		return fmt.Errorf("%w: streaming", ErrUnsupportedCapability)
+	if !s.capabilities(backend).RawEvents {
+		return fmt.Errorf("%w: raw events", ErrUnsupportedCapability)
 	}
 	inst, err := s.scopedInstance(projectID, row.InstanceID)
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *Service) StreamOpencodeRaw(ctx context.Context, projectID uint, session
 	}
 	opener, ok := adapter.(agents.RawEventOpener)
 	if !ok {
-		return fmt.Errorf("%w: streaming", ErrUnsupportedCapability)
+		return fmt.Errorf("%w: raw events", ErrUnsupportedCapability)
 	}
 	body, err := opener.OpenRawEvents(ctx)
 	if err != nil {

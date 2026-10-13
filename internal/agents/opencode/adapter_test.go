@@ -194,6 +194,9 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 	if !caps.SessionHistory {
 		t.Fatalf("session history not declared: %+v", caps)
 	}
+	if !caps.RawEvents {
+		t.Fatalf("raw events not declared: %+v", caps)
+	}
 }
 
 func TestAdapterProbe(t *testing.T) {

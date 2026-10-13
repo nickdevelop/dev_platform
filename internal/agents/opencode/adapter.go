@@ -202,6 +202,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		ToolCallEvents:   true,
 		ToolConfirmation: true,
 		SessionHistory:   true,
+		RawEvents:        true,
 	}
 }
 
