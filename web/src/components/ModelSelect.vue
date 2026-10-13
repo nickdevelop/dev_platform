@@ -1,10 +1,13 @@
 <script setup lang="ts">
-// Model picker for the composer. It shows the backend's last known model list
-// (from the in-memory cache) the moment a task opens, then refreshes it from the
-// open instance in the background. A failed refresh with a cache present is
-// silent: the user already has models and sending stays enabled. With no cache,
-// a failure is reported and sending is gated so a free-text model is never used.
-import { onMounted, ref, watch } from 'vue'
+// Model picker for the composer, laid out like the opencode desktop client: a
+// compact button shows the current model and opens a searchable list on click,
+// instead of an always-visible dropdown. It shows the backend's last known
+// model list (from the in-memory cache) the moment a task opens, then refreshes
+// it from the open instance in the background. A failed refresh with a cache
+// present is silent: the user already has models and sending stays enabled.
+// With no cache, a failure is reported and sending is gated so a free-text
+// model is never used.
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listInstanceModels, type BackendId, type ModelInfo } from '../api/agents'
 import { cachedModels, rememberModels } from '../modelCache'
 
@@ -27,6 +30,16 @@ const failed = ref(false)
 // A token per request: a response that arrives after a newer one was issued is
 // discarded, so switching tasks can never show the previous task's models.
 let requestToken = 0
+
+// Popover state. The list is rendered only while open, which is the point of
+// the redesign: the composer stays compact until the user asks for the models.
+const open = ref(false)
+const query = ref('')
+const root = ref<HTMLElement | null>(null)
+const searchInput = ref<HTMLInputElement | null>(null)
+// Above this many models a search field is worth the space; below it the list
+// is short enough to scan directly.
+const SEARCH_THRESHOLD = 6
 
 // applyModels shows a list and keeps the selection valid: an unknown previous
 // value falls back to the first model.
@@ -74,12 +87,16 @@ async function load() {
   await refresh(true)
 }
 
-onMounted(load)
+onMounted(() => {
+  document.addEventListener('mousedown', onDocumentClick)
+  void load()
+})
+onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick))
 watch(() => [props.projectId, props.instanceId, props.backend, props.modelSelection], load)
 
-// When the parent clears the selection (switching to another task on the same
-// instance does not reload the list), default to the first model again so the
-// picker is never left blank.
+// When the parent has no selection for the current task (a task never opened
+// before), default to the first model so the picker is never left blank. A task
+// that already chose one keeps it: the parent's value survives a task switch.
 watch(
   () => props.modelValue,
   (value) => {
@@ -89,41 +106,250 @@ watch(
   },
 )
 
-function onSelect(event: Event) {
-  emit('update:modelValue', (event.target as HTMLSelectElement).value)
+// activeId is the model the composer would send right now: the parent's value
+// when it is still in the list, otherwise the first model (the same fallback
+// applyModels emits). It keeps the trigger and the selected row showing the
+// real choice even in the instant before the parent echoes the emitted value.
+const activeId = computed(() => {
+  if (models.value.some((model) => model.id === props.modelValue)) return props.modelValue
+  return models.value[0]?.id ?? props.modelValue
+})
+const selected = computed(() => models.value.find((model) => model.id === activeId.value) ?? null)
+const selectedLabel = computed(() => {
+  if (selected.value) return selected.value.name || selected.value.id
+  if (props.modelValue !== '') return props.modelValue
+  return loading.value ? '加载模型…' : '选择模型'
+})
+const showSearch = computed(() => models.value.length > SEARCH_THRESHOLD)
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (q === '') return models.value
+  return models.value.filter((model) => {
+    const name = (model.name || model.id).toLowerCase()
+    return name.includes(q) || model.id.toLowerCase().includes(q)
+  })
+})
+
+function toggle() {
+  if (props.modelSelection && loading.value && models.value.length === 0) return
+  open.value = !open.value
+  query.value = ''
+  if (open.value) void nextTick(() => searchInput.value?.focus())
+}
+
+function close() {
+  open.value = false
+  query.value = ''
+}
+
+function choose(id: string) {
+  emit('update:modelValue', id)
+  close()
+}
+
+// A click anywhere outside the picker dismisses the popover, so the list does
+// not linger over the conversation.
+function onDocumentClick(event: MouseEvent) {
+  if (!open.value) return
+  const el = root.value
+  if (el && !el.contains(event.target as Node)) close()
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && open.value) {
+    event.stopPropagation()
+    close()
+  }
 }
 </script>
 
 <template>
-  <div v-if="props.modelSelection" class="model-select">
+  <div v-if="props.modelSelection" ref="root" class="model-select" @keydown="onKeydown">
     <p v-if="failed" class="model-error" role="alert">模型列表加载失败</p>
-    <select
-      v-else
-      class="model-options"
-      :value="props.modelValue"
-      :disabled="loading && models.length === 0"
-      aria-label="模型"
-      @change="onSelect"
-    >
-      <option v-for="model in models" :key="model.id" :value="model.id">
-        {{ model.name || model.id }}
-      </option>
-    </select>
+    <template v-else>
+      <button
+        type="button"
+        class="model-trigger"
+        :class="{ open }"
+        :disabled="loading && models.length === 0"
+        aria-haspopup="listbox"
+        :aria-expanded="open"
+        aria-label="模型"
+        data-test="model-trigger"
+        @click="toggle"
+      >
+        <span class="model-trigger-name">{{ selectedLabel }}</span>
+        <span class="model-trigger-caret" aria-hidden="true">▾</span>
+      </button>
+
+      <div v-if="open" class="model-menu" role="listbox" aria-label="模型列表" data-test="model-menu">
+        <input
+          v-if="showSearch"
+          ref="searchInput"
+          v-model="query"
+          class="model-search"
+          type="search"
+          placeholder="搜索模型"
+          aria-label="搜索模型"
+        />
+        <ul class="model-list">
+          <li v-for="model in filtered" :key="model.id">
+            <button
+              type="button"
+              class="model-option"
+              :class="{ selected: model.id === activeId }"
+              role="option"
+              :aria-selected="model.id === activeId"
+              :data-model-id="model.id"
+              @click="choose(model.id)"
+            >
+              <span class="model-option-name">{{ model.name || model.id }}</span>
+              <span v-if="model.name" class="model-option-id">{{ model.id }}</span>
+            </button>
+          </li>
+        </ul>
+        <p v-if="filtered.length === 0" class="model-empty">没有匹配的模型</p>
+      </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .model-select {
+  position: relative;
   display: flex;
   align-items: center;
 }
 
-.model-options {
-  padding: 0.25rem 0.4rem;
+/* A compact pill rather than a full-width dropdown: the composer is about
+   sending a message, and the model name is a badge the user can open. */
+.model-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.model-trigger:hover:not(:disabled),
+.model-trigger.open {
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+}
+
+.model-trigger:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.model-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-trigger-caret {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 16rem;
+  max-width: min(24rem, 80vw);
+  max-height: 18rem;
+  padding: 0.35rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+  overflow: auto;
+}
+
+.model-search {
+  margin: 0.1rem 0.1rem 0.35rem;
+  padding: 0.3rem 0.5rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
   font: inherit;
-  background: var(--color-surface);
+  font-size: 0.85rem;
+}
+
+.model-search:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-option:hover,
+.model-option:focus-visible {
+  background: var(--color-surface-muted);
+  outline: none;
+}
+
+.model-option.selected {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.model-option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.model-option-id {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.model-empty {
+  margin: 0.35rem 0.5rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
 }
 
 .model-error {
