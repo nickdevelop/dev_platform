@@ -205,8 +205,24 @@ describe('TaskChatPanel opencode approvals', () => {
   })
 
   function opencodeSession(id: string): AgentSession {
-    return session(id, { capabilities: capabilities({ toolConfirmation: true }) })
+    return session(id, { capabilities: capabilities({ toolConfirmation: true, rawEvents: true }) })
   }
+
+  it('opens the raw event stream only when the backend declares it', async () => {
+    const subscribe = vi.spyOn(useOpencodeRawStore(), 'subscribeRaw')
+    stubSessionList([session('sess-1', { capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) })])
+    mountPanel('sess-1')
+    await flushPromises()
+    expect(subscribe).not.toHaveBeenCalled()
+  })
+
+  it('subscribes to the raw event stream when the backend declares raw events', async () => {
+    const subscribe = vi.spyOn(useOpencodeRawStore(), 'subscribeRaw')
+    stubSessionList([opencodeSession('sess-1')])
+    mountPanel('sess-1')
+    await flushPromises()
+    expect(subscribe).toHaveBeenCalledWith(expect.any(Number), 'sess-1', expect.any(String))
+  })
 
   it('shows no confirmation for a dangling tool_call on opencode sessions', async () => {
     stubSessionList([opencodeSession('sess-1')])

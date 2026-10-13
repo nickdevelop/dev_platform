@@ -5,12 +5,17 @@ workbench: what each backend adapter declares, which versions were tested, and
 which behaviors are **provisional** because they cannot be verified without a
 configured model provider.
 
-The tested version ranges live in `internal/agents/diagnostics.go` and are
-pinned by `internal/agents/diagnostics_test.go`, so the code and this document
+The tested version ranges live in each adapter's `Descriptor` (`internal/agents/opencode/descriptor.go`,
+`internal/agents/pi/descriptor.go`) and are pinned by their `descriptor_test.go`, so the code and this document
 cannot drift apart. Each backend's capability declaration lives in its
-adapter's `Capabilities()` and is pinned by that adapter's own tests (for
-example `TestAdapterCapabilitiesDeclared` in `internal/agents/opencode`), not
-by the diagnostics tests.
+adapter's `Capabilities()`. The method is part of the `AgentAdapter` contract,
+so a backend cannot be registered without one, and it is pinned by that
+adapter's own tests (for example `TestAdapterCapabilitiesDeclared` in
+`internal/agents/opencode`), not by the diagnostics tests. Each adapter also
+exports a `Descriptor` (display label, executable name, default enablement,
+tested version range, machine-service support) that the platform reads for
+settings, diagnostics and the UI; `internal/agents/*/descriptor_test.go` pins
+those values to the tables below. See `docs/architecture/backend-boundaries.md`.
 
 Tested environment: Go 1.27.1, Node 22, `opencode` 2.0.24, `pi` 1.1.0. No live
 model provider was configured during verification (an opencode probe without
@@ -47,6 +52,13 @@ must never expose a control for a capability a backend did not declare.
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
 | `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ❌ — print/JSON mode cannot pause a tool call for confirmation. |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
+| `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. |
+
+`rawEvents` gates only that proxy. A backend that does not declare it gets
+`unsupported_capability` on the raw-events route, and the workbench never
+subscribes to it. Tool approval and question forms are not a separate flag:
+they travel on the optional `agents.PermissionReplier` extension, and the
+workbench shows them when `toolConfirmation` is declared.
 
 ## Machine-level service (`opencode-v2`)
 

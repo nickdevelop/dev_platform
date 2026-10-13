@@ -241,6 +241,10 @@ async function open() {
     if (session?.capabilities.toolConfirmation) {
       await opencodeRaw.loadApprovals(props.projectId, props.sessionId)
       if (opencodeRaw.error) toolNotice.value = opencodeRaw.error
+    }
+    // Approvals arrive on the raw event stream, so it is opened exactly when the
+    // backend declares it.
+    if (session?.capabilities.rawEvents) {
       opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
     }
     // Opening a task lands on its newest entry, not on the top of a replayed

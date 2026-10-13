@@ -40,3 +40,31 @@ func TestSessionsDoesNotImportBackendPackages(t *testing.T) {
 		}
 	}
 }
+
+// TestGenericPackagesNameNoBackend keeps the generic layers free of backend
+// identifiers: they learn about a backend from the catalog and the registry,
+// never from a literal. The composition root is the one place that names them.
+func TestGenericPackagesNameNoBackend(t *testing.T) {
+	forbidden := []string{"BackendOpenCodeV2", "BackendPi", `"opencode-v2"`, `"pi"`}
+	for _, dir := range []string{".", "../settings", "../http"} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			data, err := os.ReadFile(dir + "/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, literal := range forbidden {
+				if strings.Contains(string(data), literal) {
+					t.Errorf("%s/%s names backend %s; take it from the catalog or the registry", dir, name, literal)
+				}
+			}
+		}
+	}
+}
