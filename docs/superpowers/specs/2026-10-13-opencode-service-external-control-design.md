@@ -200,7 +200,7 @@ type OpenTab =
 
 service 不可用期间，**所有 opencode 类型的任务**统一表现为不可用（实例已被 `failAllInstances` 广播为 failed，reconcile 自然产出 disconnected，pi 任务不受影响）：
 
-- **任务面板**（`TaskChatPanel.vue`，现有 `data-test="session-unavailable"` 区块）：显示上述不可用文案 + 一个「重新连接」按钮（`data-test="reconnect-service"`），输入框禁用。文案**不出现“实例”**（决策 8）。
+- **任务面板**（`TaskChatPanel.vue`，现有 `data-test="session-unavailable"` 区块）：显示上述不可用文案 + 一个「重新连接」按钮（`data-test="session-reconnect"`），输入框禁用。文案**不出现“实例”**（决策 8）。
 - **任务列表 / 项目树**：该会话的状态点沿用现有 disconnected 样式，hover/副标题文案改为「服务无法连接」（避免两个名字）。
 
 **重新连接 = 用户触发的显式重绑，就是现有的 `POST /sessions/:id/continue`**（它已经做“探到可用 service → 后台注册新实例 → 重绑会话”），无需新端点；service 仍未启动时它返回 `service_not_running`，前端就地换成带链接的提示。重连成功后恢复 active，不补发被中断那一轮的残缺内容（历史以后端的原生消息为准）。后端无需区分“未启动”与“不可达”也可以：continue 失败一律回 `service_not_running` 同构结构，`message` 根据 `DetectService` 的快速探测结果措辞。
