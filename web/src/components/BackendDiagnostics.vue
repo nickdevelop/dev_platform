@@ -30,7 +30,7 @@ const capabilityLabels: Record<string, string> = {
   streaming: '流式输出',
   sessionDiscovery: '会话发现',
   sessionContinue: '会话续聊',
-  stop: '停止任务',
+  stop: '停止会话',
   modelSelection: '模型选择',
   toolCallEvents: '工具事件',
   toolConfirmation: '工具确认',

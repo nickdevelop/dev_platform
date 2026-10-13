@@ -6,7 +6,7 @@
 //   - a reply produced in one page visit is still shown after a full page
 //     reload, replayed from the agent's own transcript and continuing in the
 //     same conversation as the resumed turn,
-//   - a task whose instance was stopped becomes usable again by opening it:
+//   - a session whose instance was stopped becomes usable again by opening it:
 //     the platform re-attaches the session and the composer accepts a message
 //     without the user starting anything.
 //
@@ -53,23 +53,23 @@ async function uiLogin(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
-function taskRow(page: Page, title: string) {
-  return page.locator('.task', { hasText: title })
+function sessionRow(page: Page, title: string) {
+  return page.locator('.session', { hasText: title })
 }
 
-async function createTask(page: Page, backendName: string, title: string) {
+async function createSession(page: Page, backendName: string, title: string) {
   // Scoped to the selected project row: the tree renders one ＋ per
   // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-task').click()
-  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#backend-select').selectOption(backendName)
-  await page.locator('#session-title').fill(title)
+  await page.locator('.project-row.selected .project-new-session').click()
+  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
+  await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
+  await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
-  await expect(taskRow(page, title)).toBeVisible()
+  await expect(sessionRow(page, title)).toBeVisible()
 }
 
-async function openTask(page: Page, title: string) {
-  await taskRow(page, title).click()
+async function openSessionTab(page: Page, title: string) {
+  await sessionRow(page, title).click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
@@ -88,17 +88,17 @@ test('a reply survives a page reload and continues in the same conversation', as
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf, 'task-history')
+  const projectId = await registerProject(request, csrf, 'session-history')
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createTask(page, 'pi', 'pi-history')
-  const conversation = await openTask(page, 'pi-history')
+  await createSession(page, 'pi', 'pi-history')
+  const conversation = await openSessionTab(page, 'pi-history')
   await send(page, 'remember this turn')
   await expect(conversation).toContainText('pi reply: remember this turn', { timeout: 20_000 })
 
-  await createTask(page, 'opencode-v2', 'oc-history')
-  const ocConversation = await openTask(page, 'oc-history')
+  await createSession(page, 'opencode-v2', 'oc-history')
+  const ocConversation = await openSessionTab(page, 'oc-history')
   await send(page, 'remember this opencode turn')
   await expect(ocConversation).toContainText('opencode reply: remember this opencode turn', {
     timeout: 20_000,
@@ -107,7 +107,7 @@ test('a reply survives a page reload and continues in the same conversation', as
   // A full reload throws away every in-browser buffer: what is shown next can
   // only have come from the agent's own transcript.
   await page.reload()
-  const replayed = await openTask(page, 'pi-history')
+  const replayed = await openSessionTab(page, 'pi-history')
 
   await expect(replayed).toContainText('remember this turn', { timeout: 20_000 })
   await expect(replayed).toContainText('pi reply: remember this turn', { timeout: 20_000 })
@@ -118,32 +118,32 @@ test('a reply survives a page reload and continues in the same conversation', as
   await expect(piThinking.locator('summary')).toContainText('Thinking')
   await expect(piThinking).toContainText('thinking about: remember this turn')
 
-  // And the task is usable again: the replayed turn is not the end of the log.
+  // And the session is usable again: the replayed turn is not the end of the log.
   await send(page, 'and this one')
   await expect(replayed).toContainText('pi reply: and this one', { timeout: 20_000 })
 
   // The other backend's history comes from its own native log, reasoning
   // included.
-  const replayedOC = await openTask(page, 'oc-history')
+  const replayedOC = await openSessionTab(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
   const ocThinking = replayedOC.locator('[data-test="thinking"]')
   await expect(ocThinking.locator('summary')).toContainText('Thinking')
   await expect(ocThinking).toContainText('internal reasoning is not conversation')
 })
 
-test('opening a task whose instance was stopped re-attaches it without any manual start', async ({
+test('opening a session whose instance was stopped re-attaches it without any manual start', async ({
   page,
   request,
 }) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf, 'task-resume')
+  const projectId = await registerProject(request, csrf, 'session-resume')
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createTask(page, 'pi', 'pi-resume')
-  const conversation = await openTask(page, 'pi-resume')
+  await createSession(page, 'pi', 'pi-resume')
+  const conversation = await openSessionTab(page, 'pi-resume')
   await send(page, 'first turn')
   await expect(conversation).toContainText('pi reply: first turn', { timeout: 20_000 })
 
@@ -162,10 +162,10 @@ test('opening a task whose instance was stopped re-attaches it without any manua
     expect(stopped.status(), await stopped.text()).toBe(200)
   }
 
-  // Reload so the page starts from the session list alone, then open the task:
+  // Reload so the page starts from the session list alone, then open the session:
   // it must repair itself and accept a message.
   await page.reload()
-  const resumed = await openTask(page, 'pi-resume')
+  const resumed = await openSessionTab(page, 'pi-resume')
   await expect(resumed).toContainText('pi reply: first turn', { timeout: 20_000 })
 
   await send(page, 'after resume')

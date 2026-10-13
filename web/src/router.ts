@@ -1,7 +1,7 @@
 // Application router: the login view outside the shell, and the three-pane
 // shell for every authenticated view. The shell's child routes select the right
-// pane (project settings, new task, or task conversation) and pass the ids from
-// the URL, so a refreshed or shared task URL restores the same selection.
+// pane (project settings, new session, or session conversation) and pass the ids from
+// the URL, so a refreshed or shared session URL restores the same selection.
 // The router owns the two navigation security behaviors:
 //   - a navigation guard that redirects unauthenticated users to /login, and
 //   - the global handler that returns the user to /login whenever an API
@@ -14,8 +14,8 @@ import AppShell from './components/AppShell.vue'
 import EmptyWorkspace from './views/EmptyWorkspace.vue'
 import LoginView from './views/LoginView.vue'
 import ProjectSettingsPanel from './components/ProjectSettingsPanel.vue'
-import NewTaskPanel from './components/NewTaskPanel.vue'
-import TaskChatPanel from './components/TaskChatPanel.vue'
+import NewSessionPanel from './components/NewSessionPanel.vue'
+import SessionChatPanel from './components/SessionChatPanel.vue'
 import SettingsView from './views/SettingsView.vue'
 import AppearanceSettings from './components/settings/AppearanceSettings.vue'
 import ModelSettings from './components/settings/ModelSettings.vue'
@@ -33,7 +33,7 @@ export function createAppRouter() {
           { path: '', name: 'home', component: EmptyWorkspace },
           {
             // A project is not a page of its own any more: its settings open as
-            // a workbench tab, and its name in the tree only expands its tasks.
+            // a workbench tab, and its name in the tree only expands its sessions.
             // The old URL would otherwise render a panel no tab points to.
             path: 'projects/:projectId',
             redirect: { name: 'home' },
@@ -56,21 +56,37 @@ export function createAppRouter() {
             ],
           },
           {
-            path: 'projects/:projectId/tasks/new',
-            name: 'task-new',
-            component: NewTaskPanel,
+            path: 'projects/:projectId/sessions/new',
+            name: 'session-new',
+            component: NewSessionPanel,
             props: (route) => ({ projectId: Number(route.params.projectId) }),
           },
           {
-            path: 'projects/:projectId/tasks/:sessionId',
-            name: 'task',
-            component: TaskChatPanel,
+            path: 'projects/:projectId/sessions/:sessionId',
+            name: 'session',
+            component: SessionChatPanel,
             // The conversation fills the pane and owns the only scroller (its
             // message log); the shell must not scroll it as well.
             meta: { fullHeight: true },
             props: (route) => ({
               projectId: Number(route.params.projectId),
               sessionId: String(route.params.sessionId),
+            }),
+          },
+          // Back-compat: the same pages used to live under /tasks. Keep old
+          // bookmarks working by redirecting to the renamed session URLs.
+          {
+            path: 'projects/:projectId/tasks/new',
+            redirect: (to) => ({ name: 'session-new', params: { projectId: String(to.params.projectId) } }),
+          },
+          {
+            path: 'projects/:projectId/tasks/:sessionId',
+            redirect: (to) => ({
+              name: 'session',
+              params: {
+                projectId: String(to.params.projectId),
+                sessionId: String(to.params.sessionId),
+              },
             }),
           },
         ],

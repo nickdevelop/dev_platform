@@ -1,6 +1,6 @@
 // Unit tests for the sessions store's project list: a slow response for a project
 // the user already left must never replace the list of the project now open, and
-// the list is cleared when the project changes so a previous project's tasks are
+// the list is cleared when the project changes so a previous project's sessions are
 // never shown under the new one.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
@@ -918,7 +918,7 @@ describe('sessions store interrupt', () => {
 // What the browser actually does when the agent process behind a session dies:
 // it fires one error and then sits in CONNECTING forever, dialling never again.
 // A stream in that state is not a live subscription, so the next time the user
-// opens the task it must be replaced rather than reused.
+// opens the session it must be replaced rather than reused.
 describe('sessions store stale stream', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -931,7 +931,7 @@ describe('sessions store stale stream', () => {
     vi.unstubAllGlobals()
   })
 
-  it('replaces the stream of a task the user comes back to after a drop', async () => {
+  it('replaces the stream of a session the user comes back to after a drop', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -951,7 +951,7 @@ describe('sessions store stale stream', () => {
     first.onerror?.()
     expect(sessions.statusFor('s1')).toBe('reconnecting')
 
-    // The user opens the task again.
+    // The user opens the session again.
     await sessions.openSession(1, 's1')
 
     expect(first.readyState).toBe(RecordingEventSource.CLOSED)
@@ -959,7 +959,7 @@ describe('sessions store stale stream', () => {
     expect(RecordingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
   })
 
-  it('leaves a stream that never dropped alone when the task is reopened', async () => {
+  it('leaves a stream that never dropped alone when the session is reopened', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -981,7 +981,7 @@ describe('sessions store stale stream', () => {
 })
 
 // The drop does not always arrive while the user is away: the agent process can
-// die a moment after the task was opened, while they are looking right at it.
+// die a moment after the session was opened, while they are looking right at it.
 // The browser will not dial again, so the store makes one repair attempt of its
 // own — and only one, because an operator who stopped a service deliberately
 // must not find the platform dialling it on a loop. After that the user decides.
@@ -1065,7 +1065,7 @@ describe('sessions store composer model', () => {
     vi.unstubAllGlobals()
   })
 
-  it('remembers a model per session so switching tasks restores it', () => {
+  it('remembers a model per session so switching sessions restores it', () => {
     const sessions = useSessionsStore()
 
     sessions.setModel('s1', 'pi/a')
@@ -1076,7 +1076,7 @@ describe('sessions store composer model', () => {
     expect(sessions.modelFor('never-opened')).toBe('')
   })
 
-  it('drops the remembered model when the task is deleted', async () => {
+  it('drops the remembered model when the session is deleted', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -1103,7 +1103,7 @@ describe('sessions store composer model', () => {
   })
 
   // A session's own model comes from the per-message stamp the backend now
-  // sends: opening a task shows the model it actually ran, not the backend's
+  // sends: opening a session shows the model it actually ran, not the backend's
   // first, even before the user has picked anything in the composer.
   it('defaults to the model the session actually used', () => {
     const sessions = useSessionsStore()
@@ -1148,13 +1148,13 @@ describe('sessions store composer model', () => {
     sessions.handleEvent('s1', assistant(2, 'pi/new'))
     expect(sessions.modelFor('s1')).toBe('pi/new')
 
-    // The user picked a model for this task: their choice wins over the
+    // The user picked a model for this session: their choice wins over the
     // session's, even after another model answered.
     sessions.setModel('s1', 'pi/picked')
     expect(sessions.modelFor('s1')).toBe('pi/picked')
   })
 
-  it('drops the picker fallback with the task too', async () => {
+  it('drops the picker fallback with the session too', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]

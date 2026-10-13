@@ -1,5 +1,5 @@
 // The last model list seen per agent backend, kept in memory for the browser
-// session so a newly opened task shows its models immediately while a fresh
+// session so a newly opened session shows its models immediately while a fresh
 // list loads in the background. It is a cache, not state: a page reload starts
 // empty and the backend remains the source of truth.
 import type { BackendId, ModelInfo } from './api/agents'

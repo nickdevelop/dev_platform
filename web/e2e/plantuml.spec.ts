@@ -33,8 +33,8 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-function taskRow(page: Page, title: string) {
-  return page.locator('.task', { hasText: title })
+function sessionRow(page: Page, title: string) {
+  return page.locator('.session', { hasText: title })
 }
 
 // The most recent agent turn, so an assertion cannot be satisfied by a diagram
@@ -70,12 +70,12 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   await expect(page).toHaveURL(/\/$/)
 
   await page.goto(`/projects/${project.id}/settings`)
-  await page.locator('.project-row.selected .project-new-task').click()
-  await page.locator('#backend-select').selectOption('pi')
-  await page.locator('#session-title').fill('puml-e2e')
+  await page.locator('.project-row.selected .project-new-session').click()
+  await page.locator('.backend-switch [data-backend="pi"]').click()
+  await page.locator('#first-message').fill('puml-e2e')
   await page.locator('form.create-session button.create').click()
-  await expect(taskRow(page, 'puml-e2e')).toBeVisible()
-  await taskRow(page, 'puml-e2e').click()
+  await expect(sessionRow(page, 'puml-e2e')).toBeVisible()
+  await sessionRow(page, 'puml-e2e').click()
   await expect(page.locator('[data-test="conversation"]')).toHaveAttribute('data-stream-status', 'open')
 
   // 1. A closed fence renders as a diagram: the engine really ran, so there is
@@ -123,7 +123,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   await page.locator('[data-theme-option="dark"]').click()
   await expect(page.locator('[data-theme-option="dark"].active')).toBeVisible()
   await page.goto(`/projects/${project.id}/settings`)
-  await taskRow(page, 'puml-e2e').click()
+  await sessionRow(page, 'puml-e2e').click()
   await expect(page.locator('[data-test="plantuml-block"]').first().locator('.plantuml-canvas.is-dark svg')).toBeVisible({
     timeout: 30_000,
   })

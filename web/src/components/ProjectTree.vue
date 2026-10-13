@@ -1,10 +1,10 @@
 <script setup lang="ts">
-// Left navigation tree: projects with their tasks (agent sessions). Multiple
-// projects can stay expanded at once; each expanded project's tasks load
+// Left navigation tree: projects with their sessions (agent sessions). Multiple
+// projects can stay expanded at once; each expanded project's sessions load
 // independently into a per-project cache, so opening one project never clears
-// another's list. Tasks are ordered by last interaction (newest first) and
+// another's list. Sessions are ordered by last interaction (newest first) and
 // paginated per project: the list shows the newest 15 and a 「更多」 button
-// appends the next 15. Search matches project names and task titles; the
+// appends the next 15. Search matches project names and session titles; the
 // active and expanded projects always stay visible, so the open selection is
 // never hidden by a filter.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -23,7 +23,7 @@ const emit = defineEmits<{
   // A project's settings are a workbench tab, not a page the tree navigates to.
   'open-settings': [projectId: number]
   'select-session': [projectId: number, sessionId: string]
-  'new-task': [projectId: number]
+  'new-session': [projectId: number]
 }>()
 
 const projectsStore = useProjectsStore()
@@ -39,7 +39,7 @@ function isExpanded(projectId: number): boolean {
   return expandedIds.value.includes(projectId)
 }
 
-// Per-project task cache: each expanded project loads its own list, so lists
+// Per-project session cache: each expanded project loads its own list, so lists
 // never clobber each other like a single shared store list would.
 const sessionsByProject = ref<Record<number, AgentSession[]>>({})
 const loadFailed = ref<Record<number, boolean>>({})
@@ -62,16 +62,16 @@ const statusLabels: Record<string, string> = {
   running: '运行中',
 }
 
-// The task label is driven by the turn alone: a running turn shows 「运行中」
+// The session label is driven by the turn alone: a running turn shows 「运行中」
 // and every other state is silent. A disconnected session carries no badge,
-// because opening a task re-attaches it — a marker there would only ask the
+// because opening a session re-attaches it — a marker there would only ask the
 // user to fix something the platform already repairs.
 function statusText(entry: AgentSession): string {
   if (entry.turn === 'running') return statusLabels.running
   return ''
 }
 
-// Tasks are ordered by last interaction (the session's updated-at, which the
+// Sessions are ordered by last interaction (the session's updated-at, which the
 // backend bumps on send/continue/status change), newest first. Ties keep the
 // server's creation order, because the sort below is stable.
 function sortedFor(projectId: number): AgentSession[] {
@@ -84,9 +84,9 @@ const query = computed(() => props.search.trim().toLowerCase())
 
 // Display fallback shared by the row and the search filter: the platform id
 // must never surface as a name.
-const untitledLabel = '未命名任务'
+const untitledLabel = '未命名会话'
 
-// Pagination per project: only the newest PAGE_SIZE tasks render at first;
+// Pagination per project: only the newest PAGE_SIZE sessions render at first;
 // 「更多」 appends the next page. Counters reset when the search changes.
 const PAGE_SIZE = 15
 const visibleCountByProject = ref<Record<number, number>>({})
@@ -111,11 +111,11 @@ function visibleSessionsFor(projectId: number): AgentSession[] {
   return filteredFor(projectId).slice(0, visibleCountFor(projectId))
 }
 
-function hasMoreTasks(projectId: number): boolean {
+function hasMoreSessions(projectId: number): boolean {
   return filteredFor(projectId).length > visibleSessionsFor(projectId).length
 }
 
-function showMoreTasks(projectId: number) {
+function showMoreSessions(projectId: number) {
   visibleCountByProject.value = {
     ...visibleCountByProject.value,
     [projectId]: visibleCountFor(projectId) + PAGE_SIZE,
@@ -151,7 +151,7 @@ watch(
   { immediate: true },
 )
 
-// A task created in the main pane — or deleted from it — is not in any list the
+// A session created in the main pane — or deleted from it — is not in any list the
 // tree holds, and the tree polls only while a turn runs. The store records every
 // change it makes to the session index; each expanded project is refetched then.
 watch(
@@ -163,7 +163,7 @@ watch(
 
 // The 「运行中」 label is read from the cached list, so a turn started in the
 // conversation pane would never show: the tree polls a project only once its own
-// list already says a task is running. When the store reports a turn starting or
+// list already says a session is running. When the store reports a turn starting or
 // ending in the project it is showing, that project is refetched — once per
 // change of turns, not once per event — and the tree's own polling carries on.
 const storeTurns = computed(() => sessionsStore.sessions.map((entry) => entry.id + ':' + entry.turn).join(','))
@@ -173,8 +173,8 @@ watch(storeTurns, () => {
   if (projectId !== null && isExpanded(projectId)) void loadProject(projectId)
 })
 
-// Tasks whose turn is running get no SSE events in the tree, so the tree polls
-// every expanded project that has any running task. It stops for a project as
+// Sessions whose turn is running get no SSE events in the tree, so the tree polls
+// every expanded project that has any running session. It stops for a project as
 // soon as its list reports none, and entirely on unmount.
 function projectHasRunning(projectId: number): boolean {
   return sessionsFor(projectId).some((entry) => entry.turn === 'running')
@@ -223,7 +223,7 @@ function retryProject(projectId: number) {
 </script>
 
 <template>
-  <ul class="project-tree" aria-label="项目与任务">
+  <ul class="project-tree" aria-label="项目与会话">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
       <div class="project-row" :class="{ selected: project.id === props.activeProjectId }">
         <button
@@ -238,10 +238,10 @@ function retryProject(projectId: number) {
         </button>
         <button
           type="button"
-          class="project-new-task"
-          :aria-label="`新建任务：${project.name}`"
-          title="新建任务"
-          @click="emit('new-task', project.id)"
+          class="project-new-session"
+          :aria-label="`新建会话：${project.name}`"
+          title="新建会话"
+          @click="emit('new-session', project.id)"
         >
           ＋
         </button>
@@ -256,11 +256,11 @@ function retryProject(projectId: number) {
         </button>
       </div>
 
-      <ul v-if="isExpanded(project.id)" class="tasks">
-        <li v-for="entry in visibleSessionsFor(project.id)" :key="entry.id" class="task" :class="{ selected: entry.id === props.activeSessionId }">
+      <ul v-if="isExpanded(project.id)" class="sessions">
+        <li v-for="entry in visibleSessionsFor(project.id)" :key="entry.id" class="session" :class="{ selected: entry.id === props.activeSessionId }">
           <button
             type="button"
-            class="task-open"
+            class="session-open"
             @click="emit('select-session', project.id, entry.id)"
           >
             <span class="title">{{ entry.title || untitledLabel }}</span>
@@ -268,11 +268,11 @@ function retryProject(projectId: number) {
             <span v-if="statusText(entry)" class="status">{{ statusText(entry) }}</span>
           </button>
         </li>
-        <li v-if="loadFailed[project.id]" class="empty">任务加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
-        <li v-else-if="sessionsFor(project.id).length === 0" class="empty">该项目还没有任务。</li>
-        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty">没有匹配的任务</li>
-        <li v-if="hasMoreTasks(project.id)">
-          <button type="button" class="load-more" @click="showMoreTasks(project.id)">更多</button>
+        <li v-if="loadFailed[project.id]" class="empty">会话加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
+        <li v-else-if="sessionsFor(project.id).length === 0" class="empty">该项目还没有会话。</li>
+        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty">没有匹配的会话</li>
+        <li v-if="hasMoreSessions(project.id)">
+          <button type="button" class="load-more" @click="showMoreSessions(project.id)">更多</button>
         </li>
       </ul>
     </li>
@@ -283,7 +283,7 @@ function retryProject(projectId: number) {
 
 <style scoped>
 .project-tree,
-.tasks {
+.sessions {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -291,7 +291,7 @@ function retryProject(projectId: number) {
 
 .project-row,
 .project-toggle,
-.task-open {
+.session-open {
   display: flex;
   align-items: center;
   gap: calc(var(--space-unit) * 1.000);
@@ -319,7 +319,7 @@ function retryProject(projectId: number) {
   font-weight: 600;
 }
 
-.project-new-task,
+.project-new-session,
 .project-settings {
   flex-shrink: 0;
   border: none;
@@ -334,10 +334,10 @@ function retryProject(projectId: number) {
 }
 
 .project-row:hover,
-.project-new-task:hover,
+.project-new-session:hover,
 .project-settings:hover,
 .project-toggle:hover,
-.task-open:hover {
+.session-open:hover {
   background: var(--color-surface-muted);
 }
 
@@ -359,20 +359,20 @@ function retryProject(projectId: number) {
   font-weight: 400;
 }
 
-.tasks {
+.sessions {
   padding-left: calc(var(--space-unit) * 2.333);
 }
 
-.task {
+.session {
   border-radius: 6px;
 }
 
-.task.selected .task-open {
+.session.selected .session-open {
   background: var(--color-surface-muted);
   font-weight: 600;
 }
 
-.task-open {
+.session-open {
   padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.333);
   font-size: 0.929rem;
 }

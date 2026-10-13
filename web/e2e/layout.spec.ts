@@ -46,19 +46,19 @@ async function uiLogin(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
-function taskRow(page: Page, title: string) {
-  return page.locator('.task', { hasText: title })
+function sessionRow(page: Page, title: string) {
+  return page.locator('.session', { hasText: title })
 }
 
-async function createTask(page: Page, backendName: string, title: string) {
+async function createSession(page: Page, backendName: string, title: string) {
   // Scoped to the selected project row: the tree renders one ＋ per
   // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-task').click()
-  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#backend-select').selectOption(backendName)
-  await page.locator('#session-title').fill(title)
+  await page.locator('.project-row.selected .project-new-session').click()
+  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
+  await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
+  await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
-  await expect(taskRow(page, title)).toBeVisible()
+  await expect(sessionRow(page, title)).toBeVisible()
 }
 
 test('a long turn scrolls the message log, not the page or the outer pane', async ({ page, request }) => {
@@ -69,8 +69,8 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createTask(page, 'pi', 'pi-layout')
-  await taskRow(page, 'pi-layout').click()
+  await createSession(page, 'pi', 'pi-layout')
+  await sessionRow(page, 'pi-layout').click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 
@@ -105,25 +105,25 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
   expect(metrics.logOverflow).toBe('auto')
 })
 
-// Regression: a long task tree must scroll inside the sidebar, never stretch
+// Regression: a long session tree must scroll inside the sidebar, never stretch
 // the shell grid. An unconstrained implicit grid row sized to the tree's
 // content, which pushed the full-height conversation (and its composer) below
 // the fold while body overflow:hidden hid every scrollbar.
-test('a long task tree scrolls the sidebar and keeps the composer in view', async ({ page, request }) => {
+test('a long session tree scrolls the sidebar and keeps the composer in view', async ({ page, request }) => {
   const csrf = await operatorLogin(request)
   const projectId = await registerProject(request, csrf, 'layout-tree')
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createTask(page, 'pi', 'pi-tree')
-  await taskRow(page, 'pi-tree').click()
+  await createSession(page, 'pi', 'pi-tree')
+  await sessionRow(page, 'pi-tree').click()
   await expect(page.locator('[data-test="conversation"]')).toHaveAttribute('data-stream-status', 'open')
 
   // Fill the tree well past the viewport. The grid rule under test is purely
-  // layout, so synthetic rows exercise it without paying for 300 real tasks.
+  // layout, so synthetic rows exercise it without paying for 300 real sessions.
   await page.evaluate(() => {
     const tree = document.querySelector('.tree') as HTMLElement
-    tree.innerHTML += Array.from({ length: 300 }, (_, i) => `<div>synthetic task ${i}</div>`).join('')
+    tree.innerHTML += Array.from({ length: 300 }, (_, i) => `<div>synthetic session ${i}</div>`).join('')
   })
 
   const metrics = await page.evaluate(() => {
@@ -157,8 +157,8 @@ test('a step group never adds a horizontal scroller to the conversation', async 
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createTask(page, 'opencode-v2', 'oc-steps')
-  await taskRow(page, 'oc-steps').click()
+  await createSession(page, 'opencode-v2', 'oc-steps')
+  await sessionRow(page, 'oc-steps').click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 

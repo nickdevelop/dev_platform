@@ -59,29 +59,29 @@ async function uiLogin(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
-// openSession selects a task in the tree and waits until its SSE stream is open.
+// openSession selects a session in the tree and waits until its SSE stream is open.
 async function openSession(page: Page, title: string) {
-  await taskRow(page, title).click()
+  await sessionRow(page, title).click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 }
 
-function taskRow(page: Page, title: string) {
-  return page.locator('.task', { hasText: title })
+function sessionRow(page: Page, title: string) {
+  return page.locator('.session', { hasText: title })
 }
 
-// createTask opens the project's new-task form from the tree, chooses the agent
-// backend, and waits for the task to appear.
-async function createTask(page: Page, backendName: string, title: string) {
+// createSession opens the project's new-session form from the tree, chooses the agent
+// backend, and waits for the session to appear.
+async function createSession(page: Page, backendName: string, title: string) {
   // Scoped to the selected project row: the tree renders one ＋ per
   // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-task').click()
-  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#backend-select').selectOption(backendName)
-  await page.locator('#session-title').fill(title)
+  await page.locator('.project-row.selected .project-new-session').click()
+  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
+  await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
+  await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
-  await expect(taskRow(page, title)).toBeVisible()
+  await expect(sessionRow(page, title)).toBeVisible()
 }
 
 test('a failing pi turn never disturbs the opencode instance in the same project', async ({ page, request }) => {
@@ -102,10 +102,11 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   await expect(piReport).toContainText('1.1.0')
   await expect(ocReport).toContainText('2.0.24')
 
-  // One task per backend, created by choosing only the agent; the platform
+  // One session per backend, created by choosing the agent and giving a first
+  // message; the platform
   // starts whatever backend service each one needs.
-  await createTask(page, 'pi', 'pi-failing')
-  await createTask(page, 'opencode-v2', 'oc-healthy')
+  await createSession(page, 'pi', 'pi-failing')
+  await createSession(page, 'opencode-v2', 'oc-healthy')
 
   // The pi turn fails: the fake CLI writes one stderr diagnostic and exits
   // non-zero. The error is surfaced in the failing session's conversation.

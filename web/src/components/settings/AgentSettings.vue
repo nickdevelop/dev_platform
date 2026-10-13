@@ -114,7 +114,7 @@ function cancelStop() {
 <template>
   <section class="agents" aria-label="Agent 设置">
     <h1>Agent</h1>
-    <p class="intro">启用后可在项目中选择并创建新任务。停用只禁止新建，已有任务继续可用。</p>
+    <p class="intro">启用后可在项目中选择并创建新会话。停用只禁止新建，已有会话继续可用。</p>
 
     <p v-if="settings.agentsError" class="error" role="alert">{{ settings.agentsError }}</p>
 
@@ -229,7 +229,7 @@ function cancelStop() {
           </button>
         </div>
         <div v-if="confirmStop === agent.backend" class="service-confirm" data-test="service-stop-dialog">
-          <p>这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的任务会被中断。</p>
+          <p>这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。</p>
           <div class="service-actions">
             <button
               type="button"

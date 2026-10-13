@@ -161,7 +161,7 @@ function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | 
 
 // sessionUsedModel returns the model a session actually ran, taken from its most
 // recent assistant message that reported one. '' when the transcript has no such
-// message yet — a brand-new task, or a backend that records no per-message
+// message yet — a brand-new session, or a backend that records no per-message
 // model (pi) — so callers can fall back to another default.
 function sessionUsedModel(list: ChatEntry[]): string {
   for (let i = list.length - 1; i >= 0; i -= 1) {
@@ -199,7 +199,7 @@ export const useSessionsStore = defineStore('sessions', {
     // then consumes the record.
     firstMessageFailures: {} as Record<string, { text: string; error: string }>,
     // The model the user explicitly chose in the composer, kept per session so
-    // switching tasks restores the model the user last picked for each task.
+    // switching sessions restores the model the user last picked for each session.
     // It is a deliberate choice and outranks the session's own model.
     selectedModels: {} as Record<string, string>,
     // The model the picker selected on its own (the backend's first model) for a
@@ -216,8 +216,8 @@ export const useSessionsStore = defineStore('sessions', {
     // arrives after a newer request was issued is discarded.
     listRequest: 0,
     // Counts the times this store changed the session index itself — a created
-    // task, a deleted one. Components that keep their own copy of a project's
-    // list (the task tree does, one list per expanded project) watch it to know
+    // session, a deleted one. Components that keep their own copy of a project's
+    // list (the session tree does, one list per expanded project) watch it to know
     // their copy went stale. A page load is not a change, so loading does not
     // bump it.
     revision: 0,
@@ -230,7 +230,7 @@ export const useSessionsStore = defineStore('sessions', {
       state.sessions.find((entry) => entry.id === sessionId) ?? null,
     // modelFor is the model the composer shows and sends for a session. The
     // user's explicit choice wins; otherwise the session's own model — the model
-    // of its most recent assistant message — so switching to a task restores the
+    // of its most recent assistant message — so switching to a session restores the
     // model it actually used; otherwise the picker's own first-model fallback;
     // '' when none applies yet and the picker has not loaded any model.
     modelFor: (state) => (sessionId: string): string => {
@@ -396,7 +396,7 @@ export const useSessionsStore = defineStore('sessions', {
     // same session is a no-op, so a view re-render never opens a duplicate
     // stream. A stream that has reported an error is the exception: after a
     // drop the browser may sit in CONNECTING forever without dialling again —
-    // observed when the process behind a session dies — so the task would stay
+    // observed when the process behind a session dies — so the session would stay
     // at 正在重连 for the rest of the session.
     subscribe(projectId: number, sessionId: string) {
       const existing = sources.get(sessionId)
@@ -445,12 +445,12 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    // Marks a session active and opens its stream. Multiple tasks can stay
+    // Marks a session active and opens its stream. Multiple sessions can stay
     // open at once (tab bar), so activating one session never closes another
-    // session's stream; each subscription lives until its task is closed or
+    // session's stream; each subscription lives until its session is closed or
     // deleted. Re-activating the same session is a no-op.
     // activateSession is the low-level subscription switch; callers opening a
-    // task use openSession so the replay always lands before the stream.
+    // session use openSession so the replay always lands before the stream.
     activateSession(projectId: number, sessionId: string) {
       this.activeSessionId = sessionId
       this.subscribe(projectId, sessionId)
@@ -601,7 +601,7 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    // openSession makes a task usable in one ordered step: re-attach the
+    // openSession makes a session usable in one ordered step: re-attach the
     // session (starting a backend instance when none is running), replay its
     // history, then subscribe. The order is load-bearing, not an optimization:
     // subscribing first would render live events above the history that

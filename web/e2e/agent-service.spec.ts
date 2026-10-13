@@ -5,9 +5,9 @@
 //
 //   - settings shows the service the harness started, as 运行中,
 //   - stopping it asks for confirmation first, and then it really stops,
-//   - a task created while it is down is refused with the one sentence the
+//   - a session created while it is down is refused with the one sentence the
 //     product chose, pointing at the settings page,
-//   - starting it from that page makes task creation work again,
+//   - starting it from that page makes session creation work again,
 //
 // and it leaves the service running for the specs that follow.
 //
@@ -59,20 +59,20 @@ async function openAgentSettings(page: Page) {
   await expect(page).toHaveURL(/\/settings\/agents$/)
 }
 
-// createOpencodeTask submits the new-task form for a project whose row is
-// selected, and waits for the task's conversation to mount. It asserts on the
+// createOpencodeTask submits the new-session form for a project whose row is
+// selected, and waits for the session's conversation to mount. It asserts on the
 // conversation rather than the tree row, because the tree's refresh cycle is
 // covered by its own specs.
 async function createOpencodeTask(page: Page, title: string) {
-  await page.locator('.project-row.selected .project-new-task').click()
-  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#backend-select').selectOption('opencode-v2')
-  await page.locator('#session-title').fill(title)
+  await page.locator('.project-row.selected .project-new-session').click()
+  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
+  await page.locator('.backend-switch [data-backend="opencode-v2"]').click()
+  await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
 }
 
 // openProject shows one project's settings tab, which is what marks its tree row
-// selected and gives the new-task control a unique target: several specs
+// selected and gives the new-session control a unique target: several specs
 // register projects, and the tree lists them all.
 async function openProject(page: Page, projectId: number) {
   await page.goto(`/projects/${projectId}/settings`)
@@ -106,7 +106,7 @@ test('the service is observed, stopped, refused, and started again by an operato
     await expect(page.locator('[data-test="service-start"]')).toBeDisabled()
   })
 
-  await test.step('a task works while the service runs', async () => {
+  await test.step('a session works while the service runs', async () => {
     await openProject(page, projectId)
     await createOpencodeTask(page, 'oc-running')
     await expect(page.locator('[data-test="conversation"]')).toBeVisible({ timeout: 20_000 })
@@ -121,7 +121,7 @@ test('the service is observed, stopped, refused, and started again by an operato
     await page.locator('[data-test="service-stop"]').click()
     const dialog = page.locator('[data-test="service-stop-dialog"]')
     await expect(dialog).toContainText('桌面端 opencode')
-    await expect(dialog).toContainText('正在运行的任务会被中断')
+    await expect(dialog).toContainText('正在运行的会话会被中断')
     // The confirmation is not the stop: nothing has happened yet.
     await expect(page.locator('[data-test="service-state-opencode-v2"]')).toContainText('运行中')
 
@@ -132,18 +132,18 @@ test('the service is observed, stopped, refused, and started again by an operato
     await expect(page.locator('[data-test="service-stop"]')).toBeDisabled()
   })
 
-  await test.step('a task is refused with the sentence that names the fix', async () => {
+  await test.step('a session is refused with the sentence that names the fix', async () => {
     await openProject(page, projectId)
     await createOpencodeTask(page, 'oc-refused')
 
-    const error = page.locator('[data-test="new-task-error"]')
+    const error = page.locator('[data-test="new-session-error"]')
     await expect(error).toContainText('opencode service 未启动，请到平台设置 → Agent 检测并启动。')
-    await expect(page.locator('[data-test="new-task-service-link"]')).toBeVisible()
-    // A refused task leaves nothing behind to clean up.
+    await expect(page.locator('[data-test="new-session-service-link"]')).toBeVisible()
+    // A refused session leaves nothing behind to clean up.
     await expect(page.locator('[data-test="conversation"]')).toHaveCount(0)
   })
 
-  await test.step('the operator starts it and tasks work again', async () => {
+  await test.step('the operator starts it and sessions work again', async () => {
     await openAgentSettings(page)
     await page.locator('[data-test="service-detect"]').click()
     await expect(page.locator('[data-test="service-state-opencode-v2"]')).toContainText('未启动')

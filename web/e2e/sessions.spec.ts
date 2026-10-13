@@ -3,7 +3,8 @@
 // scripts/run-e2e.mjs) concurrently in one project, then drives the UI:
 //
 //   - two agent instances in one project (pi and opencode-v2),
-//   - tasks are created by choosing only an agent backend,
+//   - sessions are created by choosing an agent backend and giving a first
+//     message, which names the session,
 //   - sessions on each instance stream their own replies,
 //   - events from one instance never render in another instance's view,
 //   - a running turn offers 停止, which interrupts only that turn and returns
@@ -35,31 +36,31 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-// openSession selects a task in the tree and waits until its SSE stream is open.
+// openSession selects a session in the tree and waits until its SSE stream is open.
 // The conversation section exposes data-stream-session/-status so the wait is
 // on an observable signal instead of a fixed timeout.
 async function openSession(page: Page, title: string) {
-  await taskRow(page, title).click()
+  await sessionRow(page, title).click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 }
 
-function taskRow(page: Page, title: string) {
-  return page.locator('.task', { hasText: title })
+function sessionRow(page: Page, title: string) {
+  return page.locator('.session', { hasText: title })
 }
 
-// createTask opens the project's new-task form from the tree, chooses the agent
-// backend, and waits for the task to appear.
-async function createTask(page: Page, backendName: string, title: string) {
+// createSession opens the project's new-session form from the tree, chooses the agent
+// backend, and waits for the session to appear.
+async function createSession(page: Page, backendName: string, title: string) {
   // Scoped to the selected project row: the tree renders one ＋ per
   // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-task').click()
-  await expect(page.getByRole('heading', { name: '新建任务' })).toBeVisible()
-  await page.locator('#backend-select').selectOption(backendName)
-  await page.locator('#session-title').fill(title)
+  await page.locator('.project-row.selected .project-new-session').click()
+  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
+  await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
+  await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
-  await expect(taskRow(page, title)).toBeVisible()
+  await expect(sessionRow(page, title)).toBeVisible()
 }
 
 test('isolates streamed events and interrupts one turn across agent instances', async ({ page, request }) => {
@@ -87,11 +88,12 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await page.goto(`/projects/${project.id}/settings`)
   await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
 
-  // Tasks are created by choosing only the agent backend; the platform starts
+  // Sessions are created by choosing the agent backend and giving a first message
+  // (which names the session); the platform starts
   // whatever backend service each one needs.
-  await createTask(page, 'pi', 'pi-session')
-  await createTask(page, 'opencode-v2', 'oc-session-1')
-  await createTask(page, 'opencode-v2', 'oc-hold')
+  await createSession(page, 'pi', 'pi-session')
+  await createSession(page, 'opencode-v2', 'oc-session-1')
+  await createSession(page, 'opencode-v2', 'oc-hold')
 
   // The pi session streams its reply into its own conversation.
   await openSession(page, 'pi-session')
@@ -120,21 +122,21 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await openSession(page, 'oc-hold')
   await page.locator('#message-text').fill('__e2e_hold__ keep this turn open')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(taskRow(page, 'oc-hold')).toContainText('运行中', { timeout: 20_000 })
+  await expect(sessionRow(page, 'oc-hold')).toContainText('运行中', { timeout: 20_000 })
   await page.getByRole('button', { name: '停止', exact: true }).click()
-  await expect(taskRow(page, 'oc-hold')).not.toContainText('运行中', { timeout: 20_000 })
+  await expect(sessionRow(page, 'oc-hold')).not.toContainText('运行中', { timeout: 20_000 })
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
 
   // The other sessions' turns are untouched.
-  await expect(taskRow(page, 'oc-session-1')).not.toContainText('断开')
-  await expect(taskRow(page, 'pi-session')).not.toContainText('断开')
+  await expect(sessionRow(page, 'oc-session-1')).not.toContainText('断开')
+  await expect(sessionRow(page, 'pi-session')).not.toContainText('断开')
 })
 
-test('deletes a task from the conversation header after confirmation', async ({ page, request }) => {
+test('deletes a session from the conversation header after confirmation', async ({ page, request }) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectDir = join(workspaceRoot, `delete-task-${Date.now()}-${process.pid}`)
+  const projectDir = join(workspaceRoot, `delete-session-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {
     data: { path: projectDir },
@@ -150,21 +152,21 @@ test('deletes a task from the conversation header after confirmation', async ({ 
   await expect(page).toHaveURL(/\/$/)
   await page.goto(`/projects/${project.id}/settings`)
 
-  await createTask(page, 'pi', 'pi-delete')
+  await createSession(page, 'pi', 'pi-delete')
   await openSession(page, 'pi-delete')
 
-  // Cancelling the confirmation leaves the task in place.
-  await page.locator('[data-test="delete-task"]').click()
-  const dialog = page.locator('[data-test="delete-task-dialog"]')
+  // Cancelling the confirmation leaves the session in place.
+  await page.locator('[data-test="delete-session"]').click()
+  const dialog = page.locator('[data-test="delete-session-dialog"]')
   await expect(dialog).toBeVisible()
   await dialog.locator('.confirm-cancel').click()
   await expect(dialog).toBeHidden()
-  await expect(taskRow(page, 'pi-delete')).toBeVisible()
+  await expect(sessionRow(page, 'pi-delete')).toBeVisible()
 
-  // Confirming removes the task and returns to the workbench: a project has no
+  // Confirming removes the session and returns to the workbench: a project has no
   // page of its own to return to, and its settings are a tab like any other.
-  await page.locator('[data-test="delete-task"]').click()
+  await page.locator('[data-test="delete-session"]').click()
   await dialog.locator('[data-test="confirm-delete"]').click()
   await expect(page).toHaveURL(/\/$/)
-  await expect(taskRow(page, 'pi-delete')).toHaveCount(0)
+  await expect(sessionRow(page, 'pi-delete')).toHaveCount(0)
 })

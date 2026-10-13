@@ -15,7 +15,7 @@ const emit = defineEmits<{ select: [sessionId: string] }>()
 
 // Display fallback for sessions with no title yet; the platform id must
 // never surface as a name.
-const untitledLabel = '未命名任务'
+const untitledLabel = '未命名会话'
 
 const statusLabels: Record<string, string> = {
   active: '进行中',
@@ -25,7 +25,7 @@ const statusLabels: Record<string, string> = {
 
 const agents = useAgentsStore()
 
-// A task whose backend runs a machine-level service is disconnected for one
+// A session whose backend runs a machine-level service is disconnected for one
 // reason the user can act on: that service is not reachable. Saying "已断开"
 // would suggest the conversation, not the service, is the thing that needs
 // attention.

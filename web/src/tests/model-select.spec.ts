@@ -3,7 +3,7 @@
 // backend's models for the open instance, defaults to the first, reports its
 // load status so the parent can gate sending, and renders nothing for a backend
 // without model selection. The last list is cached per backend so a newly
-// opened task shows its models immediately while a fresh list loads.
+// opened session shows its models immediately while a fresh list loads.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ModelSelect from '../components/ModelSelect.vue'
@@ -143,7 +143,7 @@ describe('ModelSelect', () => {
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
 
-    // Switching to a task that never chose a model clears the parent's
+    // Switching to a session that never chose a model clears the parent's
     // selection; it must default to the first again.
     await wrapper.setProps({ modelValue: '' })
     await flushPromises()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Tab bar for the workbench. Two kinds of tab share one strip — an open task and
+// Tab bar for the workbench. Two kinds of tab share one strip — an open session and
 // a project's settings page — because to the user they are the same thing: pages
 // they have open. Identity, activation and closing all go through the tab's key,
 // so the strip never branches on kind except to label and decorate.
@@ -37,7 +37,7 @@ function isSettings(tab: OpenTab): boolean {
 </script>
 
 <template>
-  <div v-if="props.tabs.length > 0" class="task-tabs" role="tablist" aria-label="已打开的任务">
+  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的会话">
     <div
       v-for="tab in props.tabs"
       :key="tabKey(tab)"
@@ -48,7 +48,7 @@ function isSettings(tab: OpenTab): boolean {
       :title="titleOf(tab)"
       data-test="open-tab"
       :data-tab-key="tabKey(tab)"
-      :data-session-id="tab.kind === 'task' ? tab.sessionId : undefined"
+      :data-session-id="tab.kind === 'session' ? tab.sessionId : undefined"
     >
       <button type="button" class="tab-select" @click="emit('select', tab)">
         <span v-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
@@ -58,7 +58,7 @@ function isSettings(tab: OpenTab): boolean {
       <button
         type="button"
         class="tab-close"
-        :aria-label="isSettings(tab) ? '关闭项目设置' : `关闭任务：${label(tab)}`"
+        :aria-label="isSettings(tab) ? '关闭项目设置' : `关闭会话：${label(tab)}`"
         title="关闭"
         data-test="close-tab"
         @click.stop="emit('close', tab)"
@@ -70,7 +70,7 @@ function isSettings(tab: OpenTab): boolean {
 </template>
 
 <style scoped>
-.task-tabs {
+.session-tabs {
   display: flex;
   align-items: stretch;
   gap: 0.35rem;

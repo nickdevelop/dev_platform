@@ -1,6 +1,6 @@
-// Unit tests for the project tree: only the current project expands, tasks
-// carry their backend tag and status, search never clears the active task,
-// and an empty project still offers a new task.
+// Unit tests for the project tree: only the current project expands, sessions
+// carry their backend tag and status, search never clears the active session,
+// and an empty project still offers a new session.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -39,7 +39,7 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
     backend: 'pi',
     instanceId: 'inst-1',
     nativeSessionId: 'native-1',
-    title: 'Task A',
+    title: 'Session A',
     status: 'active',
     turn: 'idle',
     capabilities: noCapabilities(),
@@ -50,7 +50,7 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 // Serves /api/projects/{id}/sessions from a map and records every request so a
-// test can prove which projects' tasks were fetched.
+// test can prove which projects' sessions were fetched.
 function stubSessions(byProject: Record<number, AgentSession[]>): string[] {
   const requested: string[] = []
   vi.stubGlobal(
@@ -98,30 +98,30 @@ describe('ProjectTree', () => {
 
   it('expands only the current project and never fetches the others', async () => {
     const requested = stubSessions({
-      1: [session({ id: 's1', title: 'Task A' })],
-      2: [session({ id: 's2', projectId: 2, title: 'Task B' })],
+      1: [session({ id: 's1', title: 'Session A' })],
+      2: [session({ id: 's2', projectId: 2, title: 'Session B' })],
     })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
     expect(wrapper.text()).toContain('alpha')
     expect(wrapper.text()).toContain('beta')
-    expect(wrapper.text()).toContain('Task A')
-    expect(wrapper.text()).not.toContain('Task B')
+    expect(wrapper.text()).toContain('Session A')
+    expect(wrapper.text()).not.toContain('Session B')
     expect(requested).toEqual(['/api/projects/1/sessions'])
   })
 
   it('shows a running turn as 运行中 and hides idle status', async () => {
     stubSessions({
       1: [
-        session({ id: 's1', title: 'Task A', backend: 'opencode-v2', turn: 'running' }),
-        session({ id: 's2', title: 'Task B', status: 'active', turn: 'idle' }),
+        session({ id: 's1', title: 'Session A', backend: 'opencode-v2', turn: 'running' }),
+        session({ id: 's2', title: 'Session B', status: 'active', turn: 'idle' }),
       ],
     })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    const running = wrapper.findAll('.task').find((item) => item.text().includes('Task A'))
+    const running = wrapper.findAll('.session').find((item) => item.text().includes('Session A'))
     expect(running).toBeDefined()
     const tag = running!.findComponent(BackendTag)
     expect(tag.exists()).toBe(true)
@@ -129,15 +129,15 @@ describe('ProjectTree', () => {
     expect(tag.text()).toBe('OpenCode')
     expect(running!.find('.status').text()).toBe('运行中')
 
-    const idle = wrapper.findAll('.task').find((item) => item.text().includes('Task B'))
+    const idle = wrapper.findAll('.session').find((item) => item.text().includes('Session B'))
     expect(idle).toBeDefined()
     expect(idle!.find('.status').exists()).toBe(false)
   })
 
   it('shows no status label for a disconnected session', async () => {
     // Only a running turn carries a marker: a disconnected session needs no
-    // badge once opening a task repairs it.
-    stubSessions({ 1: [session({ id: 's1', title: 'Task A', status: 'disconnected' })] })
+    // badge once opening a session repairs it.
+    stubSessions({ 1: [session({ id: 's1', title: 'Session A', status: 'disconnected' })] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
@@ -145,7 +145,7 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('断开')
   })
 
-  it('polls while the expanded project has a running task and stops when none is', async () => {
+  it('polls while the expanded project has a running session and stops when none is', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const byProject: Record<number, AgentSession[]> = { 1: [session({ id: 's1', turn: 'running' })] }
     const requested = stubSessions(byProject)
@@ -157,7 +157,7 @@ describe('ProjectTree', () => {
     await flushPromises()
     expect(requested.length).toBe(2)
 
-    // The turn finished: the next refresh carries no running task and the poll
+    // The turn finished: the next refresh carries no running session and the poll
     // stops, so further time passes issue no more requests.
     byProject[1] = [session({ id: 's1', turn: 'idle' })]
     vi.advanceTimersByTime(2000)
@@ -169,14 +169,14 @@ describe('ProjectTree', () => {
     expect(requested.length).toBe(3)
   })
 
-  it('keeps the active task selected and emits nothing when search has no match', async () => {
+  it('keeps the active session selected and emits nothing when search has no match', async () => {
     stubSessions({
-      1: [session({ id: 's1', title: 'Task A' })],
+      1: [session({ id: 's1', title: 'Session A' })],
     })
     const wrapper = mountTree({ activeProjectId: 1, activeSessionId: 's1', search: 'zzz' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('没有匹配的任务')
+    expect(wrapper.text()).toContain('没有匹配的会话')
     expect(wrapper.text()).toContain('alpha')
     expect(wrapper.emitted('select-session')).toBeUndefined()
     expect(wrapper.emitted('select-project')).toBeUndefined()
@@ -200,44 +200,44 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('没有匹配的项目')
   })
 
-  it('offers a new task from the project row icon, ahead of the settings icon', async () => {
+  it('offers a new session from the project row icon, ahead of the settings icon', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('该项目还没有任务')
+    expect(wrapper.text()).toContain('该项目还没有会话')
     const classes = wrapper
       .findAll('.project-row button')
       .map((button) => button.classes().join(' '))
-    const newTaskIndex = classes.findIndex((value) => value.includes('project-new-task'))
+    const newTaskIndex = classes.findIndex((value) => value.includes('project-new-session'))
     const settingsIndex = classes.findIndex((value) => value.includes('project-settings'))
     expect(newTaskIndex).toBeGreaterThanOrEqual(0)
     expect(newTaskIndex).toBeLessThan(settingsIndex)
-    const newTask = wrapper.find('.project-new-task')
-    expect(newTask.attributes('title')).toBe('新建任务')
-    expect(newTask.attributes('aria-label')).toBe('新建任务：alpha')
+    const newTask = wrapper.find('.project-new-session')
+    expect(newTask.attributes('title')).toBe('新建会话')
+    expect(newTask.attributes('aria-label')).toBe('新建会话：alpha')
     await newTask.trigger('click')
-    expect(wrapper.emitted('new-task')).toEqual([[1]])
+    expect(wrapper.emitted('new-session')).toEqual([[1]])
   })
 
   it('keeps both projects expanded when the active project changes', async () => {
     const requested = stubSessions({
-      1: [session({ id: 's1', title: 'Task A' })],
-      2: [session({ id: 's2', projectId: 2, title: 'Task B' })],
+      1: [session({ id: 's1', title: 'Session A' })],
+      2: [session({ id: 's2', projectId: 2, title: 'Session B' })],
     })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
     await wrapper.setProps({ activeProjectId: 2 })
     await flushPromises()
 
-    // Multiple projects stay expanded at once: the previous project's tasks
+    // Multiple projects stay expanded at once: the previous project's sessions
     // remain visible instead of collapsing.
-    expect(wrapper.text()).toContain('Task B')
-    expect(wrapper.text()).toContain('Task A')
+    expect(wrapper.text()).toContain('Session B')
+    expect(wrapper.text()).toContain('Session A')
     expect(requested).toContain('/api/projects/2/sessions')
   })
 
-  it('orders tasks by most recent activity first', async () => {
+  it('orders sessions by most recent activity first', async () => {
     stubSessions({
       1: [
         session({ id: 's-old', title: 'Oldest', updatedAt: '2026-10-01T00:00:00Z' }),
@@ -248,18 +248,18 @@ describe('ProjectTree', () => {
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    const titles = wrapper.findAll('.task').map((item) => item.text())
+    const titles = wrapper.findAll('.session').map((item) => item.text())
     expect(titles[0]).toContain('Newest')
     expect(titles[1]).toContain('Middle')
     expect(titles[2]).toContain('Oldest')
   })
 
-  it('shows only the newest 15 tasks and reveals the next page on demand', async () => {
+  it('shows only the newest 15 sessions and reveals the next page on demand', async () => {
     stubSessions({
       1: Array.from({ length: 40 }, (_, index) =>
         session({
           id: `s-${index}`,
-          title: `Task ${index}`,
+          title: `Session ${index}`,
           updatedAt: `2026-10-01T00:00:${String(index).padStart(2, '0')}Z`,
         }),
       ),
@@ -267,19 +267,19 @@ describe('ProjectTree', () => {
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    expect(wrapper.findAll('.task').length).toBe(15)
+    expect(wrapper.findAll('.session').length).toBe(15)
     // Newest first: index 39 is the most recent interaction.
-    expect(wrapper.findAll('.task')[0].text()).toContain('Task 39')
-    expect(wrapper.text()).not.toContain('Task 24')
+    expect(wrapper.findAll('.session')[0].text()).toContain('Session 39')
+    expect(wrapper.text()).not.toContain('Session 24')
 
     const more = wrapper.find('.load-more')
     expect(more.exists()).toBe(true)
     await more.trigger('click')
-    expect(wrapper.findAll('.task').length).toBe(30)
-    expect(wrapper.text()).not.toContain('Task 9')
+    expect(wrapper.findAll('.session').length).toBe(30)
+    expect(wrapper.text()).not.toContain('Session 9')
 
     await wrapper.find('.load-more').trigger('click')
-    expect(wrapper.findAll('.task').length).toBe(40)
+    expect(wrapper.findAll('.session').length).toBe(40)
     expect(wrapper.find('.load-more').exists()).toBe(false)
   })
 
@@ -289,7 +289,7 @@ describe('ProjectTree', () => {
         session({
           id: `p${projectId}-s-${index}`,
           projectId,
-          title: `Task ${projectId}-${index}`,
+          title: `Session ${projectId}-${index}`,
           updatedAt: `2026-10-01T00:0${projectId}:${String(index).padStart(2, '0')}Z`,
         }),
       )
@@ -297,20 +297,20 @@ describe('ProjectTree', () => {
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
     await wrapper.find('.load-more').trigger('click')
-    expect(wrapper.findAll('.task').length).toBe(20)
+    expect(wrapper.findAll('.session').length).toBe(20)
 
     // Opening another project expands it alongside the first: both lists stay
     // visible, each with its own page (project 1 expanded to 20, project 2 at
     // the first 15).
     await wrapper.setProps({ activeProjectId: 2 })
     await flushPromises()
-    expect(wrapper.findAll('.task').length).toBe(35)
-    expect(wrapper.text()).toContain('Task 2-19')
-    expect(wrapper.text()).toContain('Task 1-19')
+    expect(wrapper.findAll('.session').length).toBe(35)
+    expect(wrapper.text()).toContain('Session 2-19')
+    expect(wrapper.text()).toContain('Session 1-19')
   })
 
   it('toggles a project on row click without opening its settings', async () => {
-    stubSessions({ 1: [session({ id: 's1', title: 'Task A' })] })
+    stubSessions({ 1: [session({ id: 's1', title: 'Session A' })] })
     const wrapper = mountTree({ activeProjectId: null })
     await flushPromises()
 
@@ -319,12 +319,12 @@ describe('ProjectTree', () => {
 
     await toggle.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Task A')
+    expect(wrapper.text()).toContain('Session A')
     expect(wrapper.emitted('select-project')).toBeUndefined()
 
     await toggle.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).not.toContain('Task A')
+    expect(wrapper.text()).not.toContain('Session A')
   })
 
   it('opens project settings from the settings control', async () => {
@@ -359,23 +359,23 @@ describe('ProjectTree', () => {
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('未命名任务')
+    expect(wrapper.text()).toContain('未命名会话')
     expect(wrapper.text()).not.toContain('s-x')
 
     // The search filter matches the placeholder, not the hidden id.
     await wrapper.setProps({ search: '未命名' })
-    expect(wrapper.text()).toContain('未命名任务')
+    expect(wrapper.text()).toContain('未命名会话')
     await wrapper.setProps({ search: 's-x' })
-    expect(wrapper.text()).toContain('没有匹配的任务')
+    expect(wrapper.text()).toContain('没有匹配的会话')
   })
 
   // The tree keeps one list per expanded project and polls only while a turn
-  // runs, so a task created or deleted in the main pane would otherwise stay
+  // runs, so a session created or deleted in the main pane would otherwise stay
   // invisible — or linger after deletion — until the project was toggled.
-  it('shows a task the moment the store creates one, and drops it when deleted', async () => {
+  it('shows a session the moment the store creates one, and drops it when deleted', async () => {
     const sessions = useSessionsStore()
     sessions.sessions = [session()]
-    // A new task, then a delete, both served from this list.
+    // A new session, then a delete, both served from this list.
     const live = [session()]
     let created: AgentSession | null = null
     vi.stubGlobal(
@@ -387,7 +387,7 @@ describe('ProjectTree', () => {
           return { status: 200, json: async () => ({ sessions: live }) } as Response
         }
         if (url.pathname === '/api/projects/1/sessions' && method === 'POST') {
-          created = session({ id: 'sess-2', title: 'Task B' })
+          created = session({ id: 'sess-2', title: 'Session B' })
           live.push(created)
           return { status: 201, json: async () => ({ session: created }) } as Response
         }
@@ -404,16 +404,16 @@ describe('ProjectTree', () => {
 
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
-    expect(wrapper.text()).toContain('Task A')
-    expect(wrapper.text()).not.toContain('Task B')
+    expect(wrapper.text()).toContain('Session A')
+    expect(wrapper.text()).not.toContain('Session B')
 
-    await sessions.createSession(1, { backend: 'pi', title: 'Task B' })
+    await sessions.createSession(1, { backend: 'pi', title: 'Session B' })
     await flushPromises()
-    expect(wrapper.text()).toContain('Task B')
+    expect(wrapper.text()).toContain('Session B')
 
     await sessions.deleteSession(1, 'sess-2')
     await flushPromises()
-    expect(wrapper.text()).not.toContain('Task B')
-    expect(wrapper.text()).toContain('Task A')
+    expect(wrapper.text()).not.toContain('Session B')
+    expect(wrapper.text()).toContain('Session A')
   })
 })

@@ -1,7 +1,7 @@
 // Unit tests for the agent-service API surface and store actions: the platform
 // settings page is the only caller, and what it renders is what these actions
 // leave in the store — including the failure wording, which is the same sentence
-// the workbench shows when a task is refused.
+// the workbench shows when a session is refused.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAgentsStore } from '../stores/agents'
@@ -95,7 +95,7 @@ describe('agent service api and store', () => {
     expect(store.serviceError).toBe('opencode service 已在运行。')
   })
 
-  it('names the settings page when a task is refused because the service is down', () => {
+  it('names the settings page when a session is refused because the service is down', () => {
     expect(describeApiError(new ApiError(409, 'service_not_running'))).toBe(
       'opencode service 未启动，请到平台设置 → Agent 检测并启动。',
     )

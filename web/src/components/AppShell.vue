@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Three-pane shell: category rail, project/task tree, and the right pane chosen
+// Three-pane shell: category rail, project/session tree, and the right pane chosen
 // by the child route. The shell owns the single project-manage dialog and turns
-// tree and panel events into navigation, and keeps the open-task tab bar above
-// the right pane so several tasks stay open at once. A project id that is not
+// tree and panel events into navigation, and keeps the open-session tab bar above
+// the right pane so several sessions stay open at once. A project id that is not
 // in the loaded list shows a not-found notice instead of any panel, so a stale
 // or foreign URL never renders another project's content. The settings center
 // hides the project sidebar so it occupies the full pane.
@@ -18,7 +18,7 @@ import { useSettingsStore } from '../stores/settings'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from './ProjectManageDialog.vue'
 import ProjectTree from './ProjectTree.vue'
-import TaskTabs from './TaskTabs.vue'
+import SessionTabs from './SessionTabs.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
 
@@ -42,7 +42,7 @@ const sessionId = computed<string | null>(() =>
   route.params.sessionId === undefined ? null : String(route.params.sessionId),
 )
 // Which tab the URL is showing. A project-settings route has no session, and a
-// task route is identified by its session id — the same keys the strip renders.
+// session route is identified by its session id — the same keys the strip renders.
 const settingsRoute = computed(() => route.name === 'project-settings')
 const activeKey = computed<string | null>(() => {
   if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
@@ -60,7 +60,7 @@ const settingsMode = computed(() => route.meta.settings === true)
 
 onMounted(async () => {
   // The backend catalog facts (labels, order, service support) are read by
-  // every task tag and session row, so they load with the shell, once.
+  // every session tag and session row, so they load with the shell, once.
   void agents.loadBackends()
   await projects.load()
   ready.value = true
@@ -70,7 +70,7 @@ onMounted(async () => {
   syncTabWithRoute()
 })
 
-// The tab bar mirrors the current route: opening a task or a project's settings
+// The tab bar mirrors the current route: opening a session or a project's settings
 // URL registers (or refreshes) its tab, and a tab title follows the session list
 // once it loads. Tabs are never removed implicitly except when their project is
 // gone.
@@ -108,15 +108,15 @@ function selectTab(tab: OpenTab) {
     void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return
   }
-  void router.push({ name: 'task', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
+  void router.push({ name: 'session', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
 }
 
 function closeTab(tab: OpenTab) {
   const wasActive = tabKey(tab) === activeKey.value
-  // Releasing the tab's streams keeps background tasks from lingering: only the
-  // closed task is unsubscribed — a settings page has no stream — and the other
+  // Releasing the tab's streams keeps background sessions from lingering: only the
+  // closed session is unsubscribed — a settings page has no stream — and the other
   // tabs stay live.
-  if (tab.kind === 'task') sessions.unsubscribe(tab.sessionId)
+  if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
   openTabs.closeTabByKey(tabKey(tab))
   if (!wasActive) return
   const remaining = openTabs.tabs
@@ -128,21 +128,21 @@ function closeTab(tab: OpenTab) {
 }
 
 // A project's gear opens its settings as a tab. The project name in the tree
-// only expands its tasks — there is no project page to navigate to.
+// only expands its sessions — there is no project page to navigate to.
 function openSettings(id: number) {
   void router.push({ name: 'project-settings', params: { projectId: String(id) } })
 }
 
-function openTask(id: number, taskId: string) {
-  void router.push({ name: 'task', params: { projectId: String(id), sessionId: taskId } })
+function openSessionTab(id: number, sessionId: string) {
+  void router.push({ name: 'session', params: { projectId: String(id), sessionId } })
 }
 
-function onCreated(taskId: string) {
-  if (projectId.value !== null) openTask(projectId.value, taskId)
+function onCreated(sessionId: string) {
+  if (projectId.value !== null) openSessionTab(projectId.value, sessionId)
 }
 
-function openNewTask(id: number) {
-  void router.push({ name: 'task-new', params: { projectId: String(id) } })
+function openNewSession(id: number) {
+  void router.push({ name: 'session-new', params: { projectId: String(id) } })
 }
 
 function openManage(kind: DialogKind, project: Project | null = null) {
@@ -157,7 +157,7 @@ async function onSubmitted(kind: DialogKind) {
   await projects.load()
   if ((kind === 'unregister' || kind === 'delete') && removed) {
     for (const tab of openTabs.tabs.filter((entry) => entry.projectId === removed.id)) {
-      if (tab.kind === 'task') sessions.unsubscribe(tab.sessionId)
+      if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
       openTabs.closeTabByKey(tabKey(tab))
     }
     if (projectId.value === removed.id) {
@@ -192,8 +192,8 @@ async function logout() {
         v-model="search"
         class="search"
         type="search"
-        placeholder="搜索项目或任务"
-        aria-label="搜索项目或任务"
+        placeholder="搜索项目或会话"
+        aria-label="搜索项目或会话"
       />
       <div class="tree">
         <ProjectTree
@@ -201,14 +201,14 @@ async function logout() {
           :active-session-id="sessionId"
           :search="search"
           @open-settings="openSettings"
-          @select-session="openTask"
-          @new-task="openNewTask"
+          @select-session="openSessionTab"
+          @new-session="openNewSession"
         />
       </div>
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
-      <TaskTabs
+      <SessionTabs
         v-if="!settingsMode && openTabs.tabs.length > 0"
         :tabs="openTabs.tabs"
         :active-key="activeKey"
@@ -247,7 +247,7 @@ async function logout() {
   display: grid;
   grid-template-columns: 56px 272px 1fr;
   /* The single row must be pinned to the viewport: an implicit auto row sizes
-     to its content, so a long task tree stretched the whole shell (and with it
+     to its content, so a long session tree stretched the whole shell (and with it
      the conversation's 100%-height panel) past the fold, pushing the composer
      out of view with body overflow hidden. minmax(0,1fr) caps the row so each
      column scrolls inside itself. */

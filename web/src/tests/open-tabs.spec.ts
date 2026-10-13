@@ -1,4 +1,4 @@
-// The open-tab model: tasks and project-settings pages share one tab strip, in
+// The open-tab model: sessions and project-settings pages share one tab strip, in
 // the order the user opened them, with one tab per session and one per project
 // settings page. Tab identity is a single key, so closing, activating and
 // rendering never have to know which kind they are dealing with.
@@ -15,9 +15,9 @@ describe('open tabs store', () => {
   beforeEach(() => localStorage.clear())
 
   it('gives each kind its own key', () => {
-    const task: OpenTab = { kind: 'task', projectId: 3, sessionId: 'ses-1', title: 'x' }
+    const session: OpenTab = { kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'x' }
     const settings: OpenTab = { kind: 'project-settings', projectId: 3 }
-    expect(tabKey(task)).toBe('ses-1')
+    expect(tabKey(session)).toBe('ses-1')
     expect(tabKey(settings)).toBe('settings:3')
   })
 
@@ -29,7 +29,7 @@ describe('open tabs store', () => {
     expect(store.tabs[0]).toEqual({ kind: 'project-settings', projectId: 3 })
   })
 
-  it('keeps tasks and settings side by side in opening order', () => {
+  it('keeps sessions and settings side by side in opening order', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
     store.openProjectSettings(3)
@@ -38,7 +38,7 @@ describe('open tabs store', () => {
     expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'settings:3', 'ses-2'])
   })
 
-  it('closes by key for either kind, and by session id for tasks', () => {
+  it('closes by key for either kind, and by session id for sessions', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
     store.openProjectSettings(3)
@@ -62,15 +62,15 @@ describe('open tabs store', () => {
   it('migrates the tabs a previous version stored', () => {
     localStorage.setItem(
       'dev-platform-open-tabs',
-      JSON.stringify([{ projectId: 7, sessionId: 'ses-old', title: 'old task' }]),
+      JSON.stringify([{ projectId: 7, sessionId: 'ses-old', title: 'old session' }]),
     )
     const store = freshStore()
 
-    expect(store.tabs).toEqual([{ kind: 'task', projectId: 7, sessionId: 'ses-old', title: 'old task' }])
+    expect(store.tabs).toEqual([{ kind: 'session', projectId: 7, sessionId: 'ses-old', title: 'old session' }])
     // The migrated set is written under the new key, so a later load never
     // sees the old shape again.
     expect(JSON.parse(localStorage.getItem('dev-platform-open-tabs-v2') ?? '[]')).toEqual([
-      { kind: 'task', projectId: 7, sessionId: 'ses-old', title: 'old task' },
+      { kind: 'session', projectId: 7, sessionId: 'ses-old', title: 'old session' },
     ])
   })
 
@@ -86,13 +86,13 @@ describe('open tabs store', () => {
     expect(freshStore().tabs).toEqual([])
   })
 
-  it('renames a task tab without touching the settings tab', () => {
+  it('renames a session tab without touching the settings tab', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', '')
     store.openProjectSettings(3)
     store.updateTitle('ses-1', 'now titled')
 
-    expect(store.tabs[0]).toEqual({ kind: 'task', projectId: 3, sessionId: 'ses-1', title: 'now titled' })
+    expect(store.tabs[0]).toEqual({ kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'now titled' })
     expect(store.tabs[1]).toEqual({ kind: 'project-settings', projectId: 3 })
   })
 })

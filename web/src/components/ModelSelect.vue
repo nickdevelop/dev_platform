@@ -2,7 +2,7 @@
 // Model picker for the composer, laid out like the opencode desktop client: a
 // compact button shows the current model and opens a searchable list on click,
 // instead of an always-visible dropdown. It shows the backend's last known
-// model list (from the in-memory cache) the moment a task opens, then refreshes
+// model list (from the in-memory cache) the moment a session opens, then refreshes
 // it from the open instance in the background. A failed refresh with a cache
 // present is silent: the user already has models and sending stays enabled.
 // With no cache, a failure is reported and sending is gated so a free-text
@@ -31,7 +31,7 @@ const models = ref<ModelInfo[]>([])
 const loading = ref(false)
 const failed = ref(false)
 // A token per request: a response that arrives after a newer one was issued is
-// discarded, so switching tasks can never show the previous task's models.
+// discarded, so switching sessions can never show the previous session's models.
 let requestToken = 0
 
 // Popover state. The list is rendered only while open, which is the point of
@@ -97,9 +97,9 @@ onMounted(() => {
 onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick))
 watch(() => [props.projectId, props.instanceId, props.backend, props.modelSelection], load)
 
-// When the parent has no selection for the current task (a task never opened
-// before), default to the first model so the picker is never left blank. A task
-// that already chose one keeps it: the parent's value survives a task switch.
+// When the parent has no selection for the current session (a session never opened
+// before), default to the first model so the picker is never left blank. A session
+// that already chose one keeps it: the parent's value survives a session switch.
 watch(
   () => props.modelValue,
   (value) => {

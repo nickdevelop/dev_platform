@@ -1,7 +1,7 @@
 <template>
   <section class="empty-workspace" aria-label="未选择内容">
-    <p>从左侧选择一个项目或任务。</p>
-    <p class="hint">项目设置与任务对话会显示在这里。</p>
+    <p>从左侧选择一个项目或会话。</p>
+    <p class="hint">项目设置与会话对话会显示在这里。</p>
   </section>
 </template>
 

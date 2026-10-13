@@ -1,16 +1,16 @@
 // Routing and shell tests for the three-pane layout. The real router and App are
 // mounted; the right-pane panels are stubbed in routing tests so each test checks
 // only which panel the URL selects and which ids it passes. Covers the direct
-// task URL (refresh), an unknown project id, the login boundary, and creating a
-// task navigating to it.
+// session URL (refresh), an unknown project id, the login boundary, and creating a
+// session navigating to it.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import App from '../App.vue'
 import ProjectTree from '../components/ProjectTree.vue'
 import ProjectSettingsPanel from '../components/ProjectSettingsPanel.vue'
-import TaskChatPanel from '../components/TaskChatPanel.vue'
-import NewTaskPanel from '../components/NewTaskPanel.vue'
+import SessionChatPanel from '../components/SessionChatPanel.vue'
+import NewSessionPanel from '../components/NewSessionPanel.vue'
 import { createAppRouter } from '../router'
 import { useAgentsStore } from '../stores/agents'
 import { useAuthStore } from '../stores/auth'
@@ -71,7 +71,7 @@ describe('three-pane app shell', () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
-    expect(wrapper.text()).toContain('从左侧选择一个项目或任务')
+    expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
     expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)
     const chat = wrapper.findAll('button').find((button) => button.text() === 'Chat')
     expect(chat?.attributes('disabled')).toBeDefined()
@@ -94,8 +94,8 @@ describe('three-pane app shell', () => {
   })
 
   it('opens one settings tab per project however often it is visited', async () => {
-    const { wrapper, router } = await setup('/projects/1/tasks/sess-1', {
-      TaskChatPanel: true,
+    const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
       ProjectSettingsPanel: true,
     })
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(1)
@@ -119,10 +119,10 @@ describe('three-pane app shell', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('restores the same task from a directly opened task URL', async () => {
-    const { wrapper } = await setup('/projects/1/tasks/sess-1', { TaskChatPanel: true })
+  it('restores the same session from a directly opened session URL', async () => {
+    const { wrapper } = await setup('/projects/1/sessions/sess-1', { SessionChatPanel: true })
 
-    expect(wrapper.findComponent(TaskChatPanel).props()).toMatchObject({
+    expect(wrapper.findComponent(SessionChatPanel).props()).toMatchObject({
       projectId: 1,
       sessionId: 'sess-1',
     })
@@ -161,8 +161,8 @@ describe('three-pane app shell', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('opens the created task after a new task is created', async () => {
-    const { wrapper, router } = await setup('/projects/1/tasks/new', {}, () => {
+  it('opens the created session after a new session is created', async () => {
+    const { wrapper, router } = await setup('/projects/1/sessions/new', {}, () => {
       const agents = useAgentsStore()
       agents.backends = [{ backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false }]
       agents.instances = [
@@ -180,16 +180,16 @@ describe('three-pane app shell', () => {
       vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined)
       vi.spyOn(useSessionsStore(), 'createSession').mockResolvedValue({ id: 'sess-new' } as never)
     })
-    expect(wrapper.findComponent(NewTaskPanel).exists()).toBe(true)
+    expect(wrapper.findComponent(NewSessionPanel).exists()).toBe(true)
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
-    expect(router.currentRoute.value.name).toBe('task')
+    expect(router.currentRoute.value.name).toBe('session')
     expect(router.currentRoute.value.params.sessionId).toBe('sess-new')
   })
 
-  it('gives the task conversation a non-scrolling outer pane', async () => {
-    const { wrapper } = await setup('/projects/1/tasks/sess-1', { TaskChatPanel: true })
+  it('gives the session conversation a non-scrolling outer pane', async () => {
+    const { wrapper } = await setup('/projects/1/sessions/sess-1', { SessionChatPanel: true })
 
     // The conversation owns the only scroller (the message log); the shell's
     // content pane must not scroll as well, or the page shows two scrollbars.

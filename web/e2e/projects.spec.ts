@@ -69,10 +69,10 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
 
   // Search matches project names: other projects are hidden, the open one stays.
-  await page.getByLabel('搜索项目或任务').fill('alp')
+  await page.getByLabel('搜索项目或会话').fill('alp')
   await expect(betaItem).toBeHidden()
   await expect(alphaItem).toBeVisible()
-  await page.getByLabel('搜索项目或任务').fill('')
+  await page.getByLabel('搜索项目或会话').fill('')
 
   // Rename requires typing the project's current name.
   await openSettings('beta')

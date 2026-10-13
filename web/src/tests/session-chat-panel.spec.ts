@@ -1,13 +1,13 @@
-// Unit tests for the task chat panel: a directly opened task URL loads its
-// project's sessions first, an unknown task is reported rather than subscribed,
-// switching tasks closes the previous stream and hides its messages, and
+// Unit tests for the session chat panel: a directly opened session URL loads its
+// project's sessions first, an unknown session is reported rather than subscribed,
+// switching sessions closes the previous stream and hides its messages, and
 // unsupported controls are not rendered.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import BackendTag from '../components/BackendTag.vue'
-import TaskChatPanel from '../components/TaskChatPanel.vue'
+import SessionChatPanel from '../components/SessionChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
@@ -80,7 +80,7 @@ class FakeEventSource {
   }
 }
 
-// stubSessionList serves every request opening a task makes: the project's
+// stubSessionList serves every request opening a session makes: the project's
 // session list, the continue that re-attaches the session, and the history
 // replay. Routing by path keeps each response shaped as its endpoint promises.
 function stubSessionList(
@@ -109,13 +109,13 @@ function testRouter() {
     routes: [
       { path: '/', name: 'home', component: { render: () => null } },
       { path: '/projects/:projectId/settings', name: 'project-settings', component: { render: () => null } },
-      { path: '/projects/:projectId/tasks/:sessionId', name: 'task', component: { render: () => null } },
+      { path: '/projects/:projectId/sessions/:sessionId', name: 'session', component: { render: () => null } },
     ],
   })
 }
 
 function mountPanel(sessionId: string, router = testRouter()) {
-  return mount(TaskChatPanel, {
+  return mount(SessionChatPanel, {
     props: { projectId: 1, sessionId },
     global: { plugins: [router] },
   })
@@ -155,7 +155,7 @@ function setGeometry(
   })
 }
 
-describe('TaskChatPanel', () => {
+describe('SessionChatPanel', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     FakeEventSource.instances = []
@@ -173,7 +173,7 @@ describe('TaskChatPanel', () => {
     vi.unstubAllGlobals()
   })
 
-  it('loads the project sessions first when a task URL is opened directly', async () => {
+  it('loads the project sessions first when a session URL is opened directly', async () => {
     const fetchSpy = stubSessionList([session('sess-1'), session('sess-2')])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -184,7 +184,7 @@ describe('TaskChatPanel', () => {
     expect(wrapper.text()).toContain('Title sess-1')
   })
 
-describe('TaskChatPanel opencode approvals', () => {
+describe('SessionChatPanel opencode approvals', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     FakeEventSource.instances = []
@@ -309,17 +309,17 @@ describe('TaskChatPanel opencode approvals', () => {
   })
 })
 
-  it('reports an unknown task and opens no stream', async () => {
+  it('reports an unknown session and opens no stream', async () => {
     stubSessionList([session('sess-1')])
     const wrapper = mountPanel('missing')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('任务不存在')
+    expect(wrapper.text()).toContain('会话不存在')
     expect(wrapper.find('a').attributes('href')).toBe('/')
     expect(FakeEventSource.instances).toHaveLength(0)
   })
 
-  it('shows a failed project load as an error with a way back, not as a missing task', async () => {
+  it('shows a failed project load as an error with a way back, not as a missing session', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ status: 500, json: async () => ({}) }) as Response),
@@ -328,7 +328,7 @@ describe('TaskChatPanel opencode approvals', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
-    expect(wrapper.text()).not.toContain('任务不存在')
+    expect(wrapper.text()).not.toContain('会话不存在')
     expect(wrapper.find('a').attributes('href')).toBe('/')
   })
 
@@ -338,14 +338,14 @@ describe('TaskChatPanel opencode approvals', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    // Opening the task repairs the session, so a stale instance status in the
+    // Opening the session repairs the session, so a stale instance status in the
     // project list no longer gates sending.
     expect(wrapper.text()).not.toContain('实例已停止')
     await wrapper.find('#message-text').setValue('hello')
     expect(wrapper.find('button.send-button').attributes('disabled')).toBeUndefined()
   })
 
-  it('opens the task with openSession rather than subscribing directly', async () => {
+  it('opens the session with openSession rather than subscribing directly', async () => {
     const fetchSpy = stubSessionList([session('sess-1')])
     const store = useSessionsStore()
     const openSession = vi.spyOn(store, 'openSession')
@@ -438,7 +438,7 @@ describe('TaskChatPanel opencode approvals', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    // A pi task has no service to blame, so it keeps the plain retry affordance:
+    // A pi session has no service to blame, so it keeps the plain retry affordance:
     // the backend reports a code, not prose, and the note shows the platform's
     // message for that code.
     const note = wrapper.find('[data-test="session-unavailable"]')
@@ -552,7 +552,7 @@ describe('TaskChatPanel opencode approvals', () => {
     )
   })
 
-  it('keeps the previous stream open and shows the new messages when the task switches', async () => {
+  it('keeps the previous stream open and shows the new messages when the session switches', async () => {
     stubSessionList([session('sess-1'), session('sess-2')])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -564,7 +564,7 @@ describe('TaskChatPanel opencode approvals', () => {
     await wrapper.setProps({ sessionId: 'sess-2' })
     await flushPromises()
 
-    // Tabs keep both tasks live: the previous stream stays open for its tab.
+    // Tabs keep both sessions live: the previous stream stays open for its tab.
     expect(FakeEventSource.instances).toHaveLength(2)
     expect(FakeEventSource.instances[1].url).toContain('/sessions/sess-2/')
     expect(wrapper.text()).not.toContain('OLD MESSAGE')
@@ -656,7 +656,7 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
   })
 
-  it('keeps each task’s chosen model when switching tasks', async () => {
+  it('keeps each session’s chosen model when switching sessions', async () => {
     const models = [
       { id: 'pi/a', name: 'Model A', provider: 'pi' },
       { id: 'pi/b', name: 'Model B', provider: 'pi' },
@@ -690,28 +690,28 @@ describe('TaskChatPanel opencode approvals', () => {
     const wrapper = mountPanel('s1')
     await flushPromises()
 
-    // A task opened for the first time defaults to the backend's first model.
+    // A session opened for the first time defaults to the backend's first model.
     expect(store.modelFor('s1')).toBe('pi/a')
 
-    // The user chooses the second model for this task.
+    // The user chooses the second model for this session.
     await wrapper.find('.model-trigger').trigger('click')
     await wrapper.find('[data-model-id="pi/b"]').trigger('click')
     expect(store.modelFor('s1')).toBe('pi/b')
 
-    // Opening another task does not disturb the first task's choice.
+    // Opening another session does not disturb the first session's choice.
     await wrapper.setProps({ sessionId: 's2' })
     await flushPromises()
     expect(store.modelFor('s1')).toBe('pi/b')
     expect(store.modelFor('s2')).toBe('pi/a')
 
-    // Coming back restores the model this task chose, not the first one.
+    // Coming back restores the model this session chose, not the first one.
     await wrapper.setProps({ sessionId: 's1' })
     await flushPromises()
     expect(store.modelFor('s1')).toBe('pi/b')
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
   })
 
-  it('opens a task on the model it actually used, not the backend’s first', async () => {
+  it('opens a session on the model it actually used, not the backend’s first', async () => {
     const models = [
       { id: 'pi/a', name: 'Model A', provider: 'pi' },
       { id: 'pi/b', name: 'Model B', provider: 'pi' },
@@ -770,18 +770,18 @@ describe('TaskChatPanel opencode approvals', () => {
     const wrapper = mountPanel('s1')
     await flushPromises()
 
-    // The task replayed a model-B reply, so the composer opens on model B even
+    // The session replayed a model-B reply, so the composer opens on model B even
     // though the backend lists model A first.
     expect(store.modelFor('s1')).toBe('pi/b')
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
 
-    // Switching tasks follows each task's own model.
+    // Switching sessions follows each session's own model.
     await wrapper.setProps({ sessionId: 's2' })
     await flushPromises()
     expect(store.modelFor('s2')).toBe('pi/c')
     expect(wrapper.find('.model-trigger').text()).toContain('Model C')
 
-    // Coming back restores the first task's model, not the backend's first.
+    // Coming back restores the first session's model, not the backend's first.
     await wrapper.setProps({ sessionId: 's1' })
     await flushPromises()
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
@@ -808,7 +808,7 @@ describe('TaskChatPanel opencode approvals', () => {
   })
 })
 
-describe('TaskChatPanel conversation layout', () => {
+describe('SessionChatPanel conversation layout', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     FakeEventSource.instances = []
@@ -824,7 +824,7 @@ describe('TaskChatPanel conversation layout', () => {
     vi.unstubAllGlobals()
   })
 
-  it('puts the agent tag before the task title', async () => {
+  it('puts the agent tag before the session title', async () => {
     stubSessionList([session('sess-1')])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -851,7 +851,7 @@ describe('TaskChatPanel conversation layout', () => {
     expect(wrapper.find('form.send').exists()).toBe(true)
   })
 
-  it('marks only a running task with a status chip', async () => {
+  it('marks only a running session with a status chip', async () => {
     stubSessionList([session('sess-1', { status: 'disconnected', turn: 'idle' })])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -859,7 +859,7 @@ describe('TaskChatPanel conversation layout', () => {
     expect(wrapper.find('.turn-status').exists()).toBe(false)
   })
 
-  it('deletes the task after a confirmation and returns to the project', async () => {
+  it('deletes the session after a confirmation and returns to the project', async () => {
     stubSessionList([session('sess-1')])
     const store = useSessionsStore()
     const remove = vi.spyOn(store, 'deleteSession').mockResolvedValue(true)
@@ -867,8 +867,8 @@ describe('TaskChatPanel conversation layout', () => {
     const wrapper = mountPanel('sess-1', router)
     await flushPromises()
 
-    await wrapper.find('[data-test="delete-task"]').trigger('click')
-    const dialog = wrapper.find('[data-test="delete-task-dialog"]')
+    await wrapper.find('[data-test="delete-session"]').trigger('click')
+    const dialog = wrapper.find('[data-test="delete-session-dialog"]')
     expect(dialog.exists()).toBe(true)
     // Nothing is removed until the user confirms.
     expect(remove).not.toHaveBeenCalled()
@@ -881,23 +881,23 @@ describe('TaskChatPanel conversation layout', () => {
     expect(router.currentRoute.value.name).toBe('home')
   })
 
-  it('cancels the delete without removing the task', async () => {
+  it('cancels the delete without removing the session', async () => {
     stubSessionList([session('sess-1')])
     const store = useSessionsStore()
     const remove = vi.spyOn(store, 'deleteSession').mockResolvedValue(true)
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    await wrapper.find('[data-test="delete-task"]').trigger('click')
+    await wrapper.find('[data-test="delete-session"]').trigger('click')
     await wrapper.find('.confirm-cancel').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="delete-task-dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="delete-session-dialog"]').exists()).toBe(false)
     expect(remove).not.toHaveBeenCalled()
   })
 })
 
-describe('TaskChatPanel scroll following', () => {
+describe('SessionChatPanel scroll following', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     FakeEventSource.instances = []

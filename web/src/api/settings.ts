@@ -21,7 +21,7 @@ export function putAppearance(appearance: Appearance, csrfToken: string): Promis
   return apiRequest<Appearance>('PUT', '/settings/appearance', { body: appearance, csrfToken })
 }
 
-// Agent management DTOs and calls. enabled gates new task creation; pathSource
+// Agent management DTOs and calls. enabled gates new session creation; pathSource
 // is auto when the executable was found on PATH, manual when the operator set a
 // path, none when neither applies.
 export interface AgentDto {

@@ -1,6 +1,6 @@
 // Unit tests for the unified agent session workbench: per-instance isolation,
 // streamed messages, capability-gated controls, stop semantics and tool
-// confirmation rendering. The stores consume the Task 5 JSON/SSE APIs; the SSE
+// confirmation rendering. The stores consume the Session 5 JSON/SSE APIs; the SSE
 // transport is faked with a controllable EventSource so event routing can be
 // driven deterministically.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,7 +15,7 @@ import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
-import TaskChatPanel from '../components/TaskChatPanel.vue'
+import SessionChatPanel from '../components/SessionChatPanel.vue'
 
 // A fully-false capability declaration: the workbench must expose no controls.
 function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -232,7 +232,7 @@ describe('session list', () => {
     })
     mounted.push(wrapper)
 
-    expect(wrapper.text()).toContain('未命名任务')
+    expect(wrapper.text()).toContain('未命名会话')
     expect(wrapper.text()).not.toContain('sess-untitled')
   })
 })
@@ -438,7 +438,7 @@ describe('session store streaming and isolation', () => {
     first.open()
 
     sessions.activateSession(1, 'sess-2')
-    // Tabs keep both tasks live: the old stream stays open for its tab.
+    // Tabs keep both sessions live: the old stream stays open for its tab.
     expect(first.readyState).not.toBe(FakeEventSource.CLOSED)
     expect(sessions.statusFor('sess-1')).toBe('open')
     expect(FakeEventSource.instances).toHaveLength(2)
@@ -484,7 +484,7 @@ describe('stop semantics', () => {
   })
 })
 
-describe('task chat and new task panels', () => {
+describe('session chat and new session panels', () => {
   async function mountPanel(component: Parameters<typeof mount>[0], props: Record<string, unknown>) {
     const stores = setupStores()
     const wrapper = mount(component, { props, global: { plugins: [pinia] } })
@@ -493,13 +493,13 @@ describe('task chat and new task panels', () => {
     return { wrapper, ...stores }
   }
 
-  it('opens a task and renders its stream controls', async () => {
+  it('opens a session and renders its stream controls', async () => {
     stubRoutes([
       ['GET', '/api/projects/1/sessions', { status: 200, body: { sessions: [session({ title: 'Demo session' })] } }],
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { wrapper, sessions } = await mountPanel(TaskChatPanel, { projectId: 1, sessionId: 'sess-1' })
+    const { wrapper, sessions } = await mountPanel(SessionChatPanel, { projectId: 1, sessionId: 'sess-1' })
 
     expect(wrapper.text()).toContain('Demo session')
     expect(FakeEventSource.instances).toHaveLength(1)
@@ -507,7 +507,7 @@ describe('task chat and new task panels', () => {
     expect(sessions.activeSessionId).toBe('sess-1')
   })
 
-  it('derives send-time model support from the open task, not the create instance', async () => {
+  it('derives send-time model support from the open session, not the create instance', async () => {
     const piSession = session({
       id: 'sess-pi',
       backend: 'pi',
@@ -521,10 +521,10 @@ describe('task chat and new task panels', () => {
     ])
     vi.stubGlobal('EventSource', FakeEventSource)
 
-    const { wrapper, auth } = await mountPanel(TaskChatPanel, { projectId: 1, sessionId: 'sess-pi' })
+    const { wrapper, auth } = await mountPanel(SessionChatPanel, { projectId: 1, sessionId: 'sess-pi' })
     auth.csrfToken = 'csrf-1'
 
-    // The open task's backend does not advertise modelSelection, so no model picker is shown.
+    // The open session's backend does not advertise modelSelection, so no model picker is shown.
     expect(wrapper.find('.model-select').exists()).toBe(false)
 
     await wrapper.find('#message-text').setValue('hello')

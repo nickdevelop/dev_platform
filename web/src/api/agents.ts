@@ -35,7 +35,7 @@ export interface AgentBackend {
   backend: BackendId
   capabilities: Capabilities
   // Platform-level enablement: a disabled backend cannot be chosen for new
-  // tasks. Absent is treated as enabled (the server always sends it).
+  // sessions. Absent is treated as enabled (the server always sends it).
   enabled?: boolean
   // Display name from the platform catalog; falls back to the raw id.
   label: string

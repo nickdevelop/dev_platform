@@ -180,7 +180,7 @@ describe('AgentSettings service block', () => {
     const dialog = wrapper.find('[data-test="service-stop-dialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('桌面端 opencode')
-    expect(dialog.text()).toContain('正在运行的任务会被中断')
+    expect(dialog.text()).toContain('正在运行的会话会被中断')
     expect(calls.some((c) => c.path === '/agent-services/opencode-v2/stop')).toBe(false)
 
     await wrapper.find('[data-test="service-stop-confirm"]').trigger('click')

@@ -45,14 +45,14 @@ async function load() {
     agents.loadDiagnostics(),
     agents.loadBackendConfigs(props.projectId),
     // One look per service-backed backend, on open, so the notice below tells
-    // the truth about whether a task could start here at all. The platform
+    // the truth about whether a session could start here at all. The platform
     // neither polls nor starts it.
     ...agents.serviceBackends.map((entry) => agents.detectService(entry.backend)),
   ])
 }
 
 // serviceDown is the one backend state a project cannot work around: when the
-// selected backend's machine-level service is down, no task of that backend
+// selected backend's machine-level service is down, no session of that backend
 // can start here. The panel says so and points at the only page that can
 // change it.
 const serviceDown = computed(() => {
@@ -130,7 +130,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
     </p>
 
     <p v-if="serviceDown" class="service-down" role="alert" data-test="project-service-down">
-      {{ serviceName }} 未启动，无法在此项目创建任务。请到
+      {{ serviceName }} 未启动，无法在此项目创建会话。请到
       <RouterLink :to="{ name: 'settings-agents' }">平台设置 → Agent</RouterLink>
       检测并启动。
     </p>
@@ -152,7 +152,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
           </label>
         </li>
       </ul>
-      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中创建新任务。</p>
+      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中创建新会话。</p>
     </section>
 
     <section class="scan-sessions" aria-label="扫描原生会话">
@@ -175,7 +175,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
           扫描发现原生会话
         </button>
       </div>
-      <p class="hint">扫描会把 Agent 原生保存的会话登记为任务。</p>
+      <p class="hint">扫描会把 Agent 原生保存的会话登记为会话。</p>
     </section>
 
     <p v-if="scanning" class="loading">扫描中…</p>

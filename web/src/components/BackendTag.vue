@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Agent backend tag shown on tasks, the chat header and the new-task form. The
+// Agent backend tag shown on sessions, the chat header and the new-session form. The
 // label comes from the platform catalog; the colour follows the backend's
 // presentation order so a new backend needs no UI change. A backend the list
 // does not know shows its raw id in the neutral tone, never another backend's

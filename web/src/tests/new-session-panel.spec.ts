@@ -1,10 +1,11 @@
-// Unit tests for the new task panel: it selects only an agent backend (never an
-// instance or a model), marks a backend disabled for the project, submits the
-// {backend, title} body, and reports a failed creation without navigating.
+// Unit tests for the new session panel: it chooses an agent backend through a
+// segmented switch (never a select, instance, or model field), submits the
+// {backend, message?, model?} body with no title, and reports a failed
+// creation without navigating.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import NewTaskPanel from '../components/NewTaskPanel.vue'
+import NewSessionPanel from '../components/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
 import type { AgentInstance } from '../api/agents'
@@ -55,11 +56,15 @@ function setup(options: {
 
   const sessions = useSessionsStore()
   const createSpy = vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-new' } as never)
-  const wrapper = mount(NewTaskPanel, { props: { projectId: 1 } })
+  const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
   return { wrapper, createSpy, sessions, agents }
 }
 
-describe('NewTaskPanel', () => {
+function backendButton(wrapper: ReturnType<typeof mount>, backend: string) {
+  return wrapper.find(`.backend-switch [data-backend="${backend}"]`)
+}
+
+describe('NewSessionPanel', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
   })
@@ -68,39 +73,57 @@ describe('NewTaskPanel', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders only an agent select and an optional title', async () => {
+  it('renders a backend switch and a message composer, without a select or title', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
-    expect(wrapper.find('#backend-select').exists()).toBe(true)
-    expect(wrapper.find('#session-title').exists()).toBe(true)
+    expect(wrapper.find('.backend-switch[role="radiogroup"]').exists()).toBe(true)
+    expect(wrapper.find('.backend-switch [data-backend="opencode-v2"]').exists()).toBe(true)
+    expect(wrapper.find('.backend-switch [data-backend="pi"]').exists()).toBe(true)
+    expect(wrapper.find('#first-message').exists()).toBe(true)
+    expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.find('#session-title').exists()).toBe(false)
+    expect(wrapper.find('#backend-select').exists()).toBe(false)
     expect(wrapper.find('#instance-select').exists()).toBe(false)
     expect(wrapper.find('#new-session-model').exists()).toBe(false)
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
   })
 
-  it('submits { backend, title } and never an instanceId or model', async () => {
+  it('submits { backend, message } and never a title, instanceId', async () => {
     const { wrapper, createSpy } = setup()
     await flushPromises()
 
-    await wrapper.find('#backend-select').setValue('pi')
-    await wrapper.find('#session-title').setValue('Chat 预留')
+    await backendButton(wrapper, 'pi').trigger('click')
+    await wrapper.find('#first-message').setValue('帮我检查构建')
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
-    expect(createSpy).toHaveBeenCalledWith(1, { backend: 'pi', title: 'Chat 预留' })
+    expect(createSpy).toHaveBeenCalledWith(1, { backend: 'pi', message: '帮我检查构建' })
     const body = createSpy.mock.calls[0][1]
+    expect(body).not.toHaveProperty('title')
     expect(body).not.toHaveProperty('instanceId')
     expect(body).not.toHaveProperty('model')
-    expect(body).not.toHaveProperty('message')
     expect(wrapper.emitted('created')).toEqual([['sess-new']])
+  })
+
+  it('creates an empty session without a message field', async () => {
+    const { wrapper, createSpy } = setup()
+    await flushPromises()
+
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const body = createSpy.mock.calls[0][1]
+    expect(body).not.toHaveProperty('message')
+    expect(body).not.toHaveProperty('title')
   })
 
   it('labels the submit as 开始对话 when a first message is present', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
-    expect(wrapper.find('button.create').text()).toBe('新建任务')
+    expect(wrapper.find('button.create').text()).toBe('新建会话')
     await wrapper.find('#first-message').setValue('帮我检查构建')
     expect(wrapper.find('button.create').text()).toBe('创建并开始对话')
   })
@@ -135,7 +158,7 @@ describe('NewTaskPanel', () => {
     )
     await flushPromises()
 
-    await wrapper.find('#backend-select').setValue('opencode-v2')
+    await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()
     await wrapper.find('#first-message').setValue('帮我检查构建失败')
     await flushPromises()
@@ -147,45 +170,42 @@ describe('NewTaskPanel', () => {
     expect(body.backend).toBe('opencode-v2')
     expect(body.message).toBe('帮我检查构建失败')
     expect(body.model).toBe('p/m')
+    expect(body).not.toHaveProperty('title')
     expect(body).not.toHaveProperty('instanceId')
     expect(wrapper.emitted('created')).toEqual([['sess-new']])
   })
 
-  it('blocks a first message when no running instance can serve the model list', async () => {
+  it('sends the first message on the default model when no instance serves the list', async () => {
     const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
-    await wrapper.find('#backend-select').setValue('opencode-v2')
+    await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="model-unavailable"]').exists()).toBe(true)
 
     await wrapper.find('#first-message').setValue('帮我检查构建失败')
     await flushPromises()
-    expect(wrapper.find('button.create').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.create').attributes('disabled')).toBeUndefined()
 
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
-    expect(createSpy).not.toHaveBeenCalled()
-
-    // Without a message the plain create stays available.
-    await wrapper.find('#first-message').setValue('')
-    await flushPromises()
-    expect(wrapper.find('button.create').attributes('disabled')).toBeUndefined()
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const body = createSpy.mock.calls[0][1]
+    expect(body.message).toBe('帮我检查构建失败')
+    expect(body).not.toHaveProperty('model')
   })
 
   it('disables a backend disabled for the project and labels it', async () => {
     const { wrapper } = setup({ piEnabled: false })
     await flushPromises()
 
-    const piOption = wrapper
-      .findAll('#backend-select option')
-      .find((option) => option.text().includes('pi'))!
-    expect(piOption.attributes('disabled')).toBeDefined()
-    expect(piOption.text()).toContain('已在项目中禁用')
+    const piButton = backendButton(wrapper, 'pi')
+    expect(piButton.attributes('disabled')).toBeDefined()
+    expect(piButton.text()).toContain('已在项目中禁用')
 
-    await wrapper.find('#backend-select').setValue('pi')
+    await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()
-    expect(wrapper.find('button.create').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('button.create').attributes('disabled')).toBeUndefined()
   })
 
   it('shows an error and does not report success when creation fails', async () => {
@@ -205,7 +225,7 @@ describe('NewTaskPanel', () => {
       ),
     )
     const sessions = useSessionsStore()
-    const wrapper = mount(NewTaskPanel, { props: { projectId: 1 } })
+    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
     await flushPromises()
 
     await wrapper.find('form.create-session').trigger('submit')

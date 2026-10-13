@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Task conversation for the right pane of the shell. The task is an agent
-// session of the project. Several tasks can stay open at once via the tab bar:
+// Session conversation for the right pane of the shell. The session is an agent
+// session of the project. Several sessions can stay open at once via the tab bar:
 // each session keeps its own cached transcript and live streams, so switching
 // tabs never loses state. The composer is the only place a turn is sent or
 // stopped; the send action becomes 停止 while the session's turn is running.
@@ -28,17 +28,17 @@ const loadError = ref('')
 const sendError = ref('')
 const sending = ref(false)
 const busy = ref(false)
-// The delete confirmation is a modal inside the pane: the task leaves the
+// The delete confirmation is a modal inside the pane: the session leaves the
 // platform index only after the user confirms.
 const confirmingDelete = ref(false)
 const deleting = ref(false)
 const deleteError = ref('')
-// preparing covers the window in which the task is being re-attached and its
+// preparing covers the window in which the session is being re-attached and its
 // history replayed, so the pane says what it is waiting for instead of looking
 // like an empty conversation.
 const preparing = ref(false)
 const messageText = ref('')
-// The composer's model for this task: the store resolves it from the user's
+// The composer's model for this session: the store resolves it from the user's
 // explicit choice, the model the session actually used, or the picker's own
 // first-model fallback. An update:modelValue from the picker is that automatic
 // fallback, so it is recorded as such; a deliberate pick is recorded separately
@@ -92,7 +92,7 @@ const historyTruncated = computed(() => sessions.historyTruncated[props.sessionI
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
 const canInterrupt = computed(() => activeSession.value?.capabilities.interrupt === true)
-// The composer is gated on the session itself. Opening a task repairs a
+// The composer is gated on the session itself. Opening a session repairs a
 // stopped instance, so an instance's status is no longer a precondition the
 // user has to fix from another pane.
 const interactEnabled = computed(() => activeSession.value?.status === 'active')
@@ -101,7 +101,7 @@ const interactEnabled = computed(() => activeSession.value?.status === 'active')
 const unavailable = computed(
   () => activeSession.value !== null && activeSession.value.status === 'disconnected',
 )
-// For a task whose backend runs a machine-level service, "disconnected" has one
+// For a session whose backend runs a machine-level service, "disconnected" has one
 // common cause the user can act on: that service is not running. The platform
 // will not start it on its own, so the panel names the page that can, and
 // offers the reconnect the operator's start makes possible — never an automatic
@@ -117,7 +117,7 @@ const unavailableMessage = computed(() => {
     const service = `${agents.backendLabel(activeSession.value.backend).toLowerCase()} service`
     return `无法连接 ${service}，请到平台设置 → Agent 检测并启动。`
   }
-  return sessions.error || '任务当前不可用，请重试。'
+  return sessions.error || '会话当前不可用，请重试。'
 })
 
 const composerLabel = computed(() => (isRunning.value && canInterrupt.value ? '停止' : '发送'))
@@ -164,9 +164,9 @@ const pendingForms = computed(() => {
 onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
 onBeforeUnmount(() => {
-  // Tabs keep other tasks alive: unmounting this panel must not close other
+  // Tabs keep other sessions alive: unmounting this panel must not close other
   // sessions' streams. The session's own subscriptions stay open so returning
-  // via a tab is instant; they are released when the tab closes or the task
+  // via a tab is instant; they are released when the tab closes or the session
   // is deleted.
 })
 
@@ -240,10 +240,10 @@ watch(logSignature, () => {
   })
 })
 
-// A directly opened task URL arrives before the project's sessions are loaded,
+// A directly opened session URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
 // such; an id absent from a successful list is never opened. The model choice
-// survives task switches: it is kept per session in the store, not reset here.
+// survives session switches: it is kept per session in the store, not reset here.
 //
 // Opening goes through the store's openSession, which re-attaches the session
 // (starting a backend instance when none is running), replays the agent-native
@@ -271,7 +271,7 @@ async function open() {
   const failedFirstMessage = sessions.consumeFirstMessageFailure(props.sessionId)
   if (failedFirstMessage) {
     messageText.value = failedFirstMessage.text
-    sendError.value = '首条消息未能随任务一起发送，已保留文本，请重新发送。'
+    sendError.value = '首条消息未能随会话一起发送，已保留文本，请重新发送。'
   }
   try {
     await sessions.openSession(props.projectId, props.sessionId)
@@ -285,10 +285,10 @@ async function open() {
     if (session?.capabilities.rawEvents) {
       opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
     }
-    // A turn may already be running when the task is opened; start polling so
+    // A turn may already be running when the session is opened; start polling so
     // its permission cards appear even without a push channel.
     startApprovalPoll()
-    // Opening a task lands on its newest entry, not on the top of a replayed
+    // Opening a session lands on its newest entry, not on the top of a replayed
     // history.
     await nextTick()
     scrollToBottom(false)
@@ -383,10 +383,10 @@ function reconnect() {
   if (activeSession.value) sessions.resubscribe(props.projectId, activeSession.value.id)
 }
 
-// removeTask deletes the platform index entry and returns to the project. The
+// removeSession deletes the platform index entry and returns to the project. The
 // agent-native transcript is untouched, which the confirmation says. The
-// deleted task also leaves the tab bar and releases its streams.
-async function removeTask() {
+// deleted session also leaves the tab bar and releases its streams.
+async function removeSession() {
   const session = activeSession.value
   if (!session || deleting.value) return
   deleting.value = true
@@ -410,8 +410,8 @@ async function removeTask() {
 
 <template>
   <section
-    class="task-chat"
-    aria-label="任务对话"
+    class="session-chat"
+    aria-label="会话对话"
     data-test="conversation"
     :data-stream-session="activeSession ? props.sessionId : ''"
     :data-stream-status="streamStatus"
@@ -422,9 +422,9 @@ async function removeTask() {
         <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
         <button
           type="button"
-          class="delete-task"
-          data-test="delete-task"
-          title="删除任务"
+          class="delete-session"
+          data-test="delete-session"
+          title="删除会话"
           @click="confirmingDelete = true"
         >
           删除
@@ -557,11 +557,11 @@ async function removeTask() {
         class="confirm-backdrop"
         role="dialog"
         aria-modal="true"
-        aria-label="删除任务"
-        data-test="delete-task-dialog"
+        aria-label="删除会话"
+        data-test="delete-session-dialog"
       >
         <div class="confirm-panel">
-          <p class="confirm-title">确定删除任务「{{ activeSession.title || activeSession.id }}」吗？</p>
+          <p class="confirm-title">确定删除会话「{{ activeSession.title || activeSession.id }}」吗？</p>
           <p class="confirm-hint">仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。</p>
           <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
           <div class="confirm-actions">
@@ -571,7 +571,7 @@ async function removeTask() {
               class="confirm-delete"
               data-test="confirm-delete"
               :disabled="deleting"
-              @click="removeTask"
+              @click="removeSession"
             >
               删除
             </button>
@@ -584,7 +584,7 @@ async function removeTask() {
       <RouterLink :to="{ name: 'home' }">返回工作台</RouterLink>
     </template>
     <template v-else-if="ready">
-      <p class="empty">任务不存在或已被移除。</p>
+      <p class="empty">会话不存在或已被移除。</p>
       <RouterLink :to="{ name: 'home' }">返回工作台</RouterLink>
     </template>
     <p v-else class="loading">加载中…</p>
@@ -592,7 +592,7 @@ async function removeTask() {
 </template>
 
 <style scoped>
-.task-chat {
+.session-chat {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -641,7 +641,7 @@ async function removeTask() {
   flex-wrap: wrap;
 }
 
-.delete-task {
+.delete-session {
   padding: 0.15rem 0.5rem;
   border: 1px solid var(--color-danger-border);
   border-radius: 6px;
