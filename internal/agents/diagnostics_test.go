@@ -258,8 +258,8 @@ func TestCollectDiagnosticsWithoutDiagnostician(t *testing.T) {
 	}
 
 	pi := byBackend[BackendPi]
-	if pi.Status != DiagnosticUnknown || pi.Checks == nil || len(pi.Checks) != 0 || pi.Capabilities != nil {
-		t.Errorf("pi report = %+v, want unknown status with an empty (non-nil) checks array and no capabilities", pi)
+	if pi.Status != DiagnosticUnknown || pi.Checks == nil || len(pi.Checks) != 0 || pi.Capabilities == nil || *pi.Capabilities != (Capabilities{}) {
+		t.Errorf("pi report = %+v, want unknown status with an empty (non-nil) checks array and the adapter's declared (zero) capabilities", pi)
 	}
 	opencode := byBackend[BackendOpenCodeV2]
 	if opencode.Status != DiagnosticUnknown {

@@ -124,8 +124,8 @@ type BackendDiagnostics struct {
 	TestedVersion string `json:"testedVersion,omitempty"`
 	// Checks are the individual results, in a stable order.
 	Checks []Diagnostic `json:"checks"`
-	// Capabilities repeats the backend's declaration; nil when the adapter
-	// does not publish one.
+	// Capabilities repeats the backend's declaration; nil only for a report
+	// that never reached the adapter (a crashed adapter).
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 
@@ -278,12 +278,6 @@ type Diagnostician interface {
 	Diagnostics(ctx context.Context) BackendDiagnostics
 }
 
-// capabilitySource is the optional adapter method publishing a capability
-// declaration; the same shape the sessions layer asserts.
-type capabilitySource interface {
-	Capabilities() Capabilities
-}
-
 // CollectDiagnostics runs the diagnostics of every registered backend and
 // returns one report per backend in the registry's (sorted) order. A backend
 // that fails to produce a report — including a panicking adapter — is
@@ -335,20 +329,14 @@ func collectBackendDiagnostics(ctx context.Context, id BackendID, adapter AgentA
 			report.Status = AggregateStatus(report.Checks)
 		}
 		if report.Capabilities == nil {
-			if source, ok := adapter.(capabilitySource); ok {
-				capabilities := source.Capabilities()
-				report.Capabilities = &capabilities
-			}
+			capabilities := adapter.Capabilities()
+			report.Capabilities = &capabilities
 		}
 		return report
 	}
 
 	// An adapter without diagnostics support is reported honestly as unknown
 	// instead of being silently dropped.
-	report = BackendDiagnostics{Backend: id, Status: DiagnosticUnknown, Checks: []Diagnostic{}}
-	if source, ok := adapter.(capabilitySource); ok {
-		capabilities := source.Capabilities()
-		report.Capabilities = &capabilities
-	}
-	return report
+	capabilities := adapter.Capabilities()
+	return BackendDiagnostics{Backend: id, Status: DiagnosticUnknown, Checks: []Diagnostic{}, Capabilities: &capabilities}
 }

@@ -140,13 +140,6 @@ type InstanceService interface {
 	Stop(ctx context.Context, instanceID string) (instances.Instance, error)
 }
 
-// capabilityReporter is the optional adapter method that publishes a backend's
-// capability declaration. The frozen AgentAdapter interface does not include
-// it, so the sessions layer asserts it rather than changing the contract.
-type capabilityReporter interface {
-	Capabilities() agents.Capabilities
-}
-
 // Service manages the platform's session index and the operations built on the
 // adapter registry.
 type Service struct {
@@ -1097,10 +1090,7 @@ func (s *Service) capabilities(backend agents.BackendID) agents.Capabilities {
 	if !ok {
 		return agents.Capabilities{}
 	}
-	if reporter, ok := adapter.(capabilityReporter); ok {
-		return reporter.Capabilities()
-	}
-	return agents.Capabilities{}
+	return adapter.Capabilities()
 }
 
 // instanceRunnable reports whether an instance can accept session work.

@@ -728,3 +728,5 @@ func TestThinkingEventJSONRoundTrip(t *testing.T) {
 		t.Errorf("decoded thinking payload = %+v, want the original", decoded.Thinking)
 	}
 }
+
+func (stubAdapter) Capabilities() Capabilities { return Capabilities{} }

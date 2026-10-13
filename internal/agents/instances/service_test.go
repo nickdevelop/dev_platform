@@ -991,3 +991,5 @@ func TestStartRejectsPlatformDisabledAgent(t *testing.T) {
 		t.Fatalf("Start error = %v, want ErrAgentDisabled", err)
 	}
 }
+
+func (f *fakeAdapter) Capabilities() agents.Capabilities { return agents.Capabilities{} }

@@ -795,3 +795,5 @@ func TestRouterServesResourcesBehindSessionAndCSRF(t *testing.T) {
 		t.Fatalf("GET resources status = %d, want 200", listed.StatusCode)
 	}
 }
+
+func (f *routerFakeAdapter) Capabilities() agents.Capabilities { return agents.Capabilities{} }

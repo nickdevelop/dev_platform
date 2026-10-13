@@ -302,6 +302,11 @@ type SendMessageRequest struct {
 // context, returning its cancellation or deadline error when the context is
 // done.
 type AgentAdapter interface {
+	// Capabilities declares what this backend supports. It is pure data: it
+	// must not touch the backend or the filesystem, and it must be stable for
+	// the life of the adapter.
+	Capabilities() Capabilities
+
 	// Probe reports whether the backend is usable on this machine right now
 	// (installed binary, reachable server). It must not start anything.
 	Probe(ctx context.Context) error
