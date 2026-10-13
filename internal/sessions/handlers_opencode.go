@@ -7,14 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterOpencodeRoutes registers the opencode-specific interaction routes.
-// Generic management (list/create/delete/discover/history, legacy
-// messages/interrupt/events) stays in RegisterRoutes untouched; agent-specific
-// dialogue operations live under the /opencode prefix, with /pi reserved for
-// the other backend.
+// RegisterOpencodeRoutes registers the opencode-only interaction routes:
+// tool approval, question forms and the raw event stream. Sending messages and
+// interrupting a turn are generic and live in RegisterRoutes.
 func (s *Service) RegisterOpencodeRoutes(r gin.IRouter) {
-	r.POST("/projects/:id/opencode/sessions/:sessionId/prompt", s.handleOpencodePrompt)
-	r.POST("/projects/:id/opencode/sessions/:sessionId/interrupt", s.handleInterrupt)
 	r.GET("/projects/:id/opencode/sessions/:sessionId/permission", s.handleOpencodePermissionList)
 	r.POST("/projects/:id/opencode/sessions/:sessionId/permission/:requestId/reply", s.handleOpencodePermissionReply)
 	r.GET("/projects/:id/opencode/sessions/:sessionId/form", s.handleOpencodeFormList)
@@ -37,31 +33,6 @@ type formListResponse struct {
 
 type formReplyRequest struct {
 	Answer map[string]any `json:"answer"`
-}
-
-// handleOpencodePrompt delivers one user turn via the opencode prefix. The
-// legacy messages route stays as a compat垫片; new clients use this path.
-func (s *Service) handleOpencodePrompt(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	sessionID := c.Param("sessionId")
-	if sessionID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	var req sendMessageRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	session, err := s.Send(c.Request.Context(), id, sessionID, req.Text, req.Model)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, session)
 }
 
 func (s *Service) handleOpencodePermissionList(c *gin.Context) {
