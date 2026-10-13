@@ -37,6 +37,9 @@ async function setup(
   stubs: Record<string, boolean> = {},
   prepare: () => void = () => {},
 ) {
+  // Tabs persist in this browser's storage; a test must see only the tabs its
+  // own route opened.
+  localStorage.clear()
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
@@ -73,12 +76,46 @@ describe('three-pane app shell', () => {
     expect(chat?.attributes('disabled')).toBeDefined()
   })
 
-  it('selects project settings for /projects/:projectId', async () => {
-    const { wrapper } = await setup('/projects/1', { ProjectSettingsPanel: true })
+  it('opens project settings as a tab at /projects/:projectId/settings', async () => {
+    const { wrapper, router } = await setup('/projects/1/settings', { ProjectSettingsPanel: true })
 
     expect(wrapper.findComponent(ProjectSettingsPanel).props('projectId')).toBe(1)
     expect(wrapper.findComponent(ProjectTree).props('activeProjectId')).toBe(1)
     expect(wrapper.findComponent(ProjectTree).props('activeSessionId')).toBeNull()
+
+    // The settings page is a tab like any other, and it is the active one.
+    const tabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0].attributes('data-tab-key')).toBe('settings:1')
+    expect(tabs[0].attributes('aria-selected')).toBe('true')
+    expect(tabs[0].text()).toContain('alpha · 设置')
+    expect(router.currentRoute.value.name).toBe('project-settings')
+  })
+
+  it('opens one settings tab per project however often it is visited', async () => {
+    const { wrapper, router } = await setup('/projects/1/tasks/sess-1', {
+      TaskChatPanel: true,
+      ProjectSettingsPanel: true,
+    })
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(1)
+
+    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await flushPromises()
+    await router.push({ name: 'home' })
+    await flushPromises()
+    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await flushPromises()
+
+    const keys = wrapper.findAll('[data-test="open-tab"]').map((tab) => tab.attributes('data-tab-key'))
+    expect(keys).toEqual(['sess-1', 'settings:1'])
+  })
+
+  it('redirects the old project URL to the workbench', async () => {
+    const { router } = await setup('/projects/1', { ProjectSettingsPanel: true })
+
+    // A project has no page of its own any more: its settings are a tab, so the
+    // stale URL must not render a panel no tab points at.
+    expect(router.currentRoute.value.name).toBe('home')
   })
 
   it('restores the same task from a directly opened task URL', async () => {
@@ -93,7 +130,7 @@ describe('three-pane app shell', () => {
   })
 
   it('reports a missing project instead of rendering another project', async () => {
-    const { wrapper } = await setup('/projects/999', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/projects/999/settings', { ProjectSettingsPanel: true })
 
     expect(wrapper.text()).toContain('项目不存在或已移除')
     expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)

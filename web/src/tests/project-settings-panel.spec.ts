@@ -3,7 +3,8 @@
 // hand off to the manage dialog, and the resource placeholder that must not call
 // any resource endpoint.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, flushPromises, h, mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsPanel from '../components/ProjectSettingsPanel.vue'
 import { useAgentsStore } from '../stores/agents'
@@ -137,7 +138,6 @@ describe('ProjectSettingsPanel', () => {
     expect(agents.detectService).toHaveBeenCalledWith('opencode-v2')
     // A backend with no machine-level service is never even asked.
     expect(agents.detectService).not.toHaveBeenCalledWith('pi')
-    expect(agents.loadInstances).toBeUndefined()
   })
 
   it('points at the one page that can start a stopped service', async () => {

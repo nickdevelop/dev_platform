@@ -239,8 +239,25 @@ describe('project management', () => {
     return [
       { method: 'GET', path: '/api/agent-backends', status: 200, body: { backends: [] } },
       { method: 'GET', path: '/api/agent-backends/diagnostics', status: 200, body: { diagnostics: [] } },
-      { method: 'GET', path: '/api/projects/1/instances', status: 200, body: { instances: [] } },
       { method: 'GET', path: '/api/projects/1/agent-backends', status: 200, body: { backends: [] } },
+      {
+        method: 'GET',
+        path: '/api/agent-services/opencode-v2',
+        status: 200,
+        body: {
+          status: {
+            backend: 'opencode-v2',
+            supported: true,
+            state: 'running',
+            endpoint: 'http://127.0.0.1:4096',
+            pid: 1,
+            version: '2.0.24',
+            executable: '/usr/bin/opencode',
+            detail: '',
+            checkedAt: '2026-10-13T00:00:00Z',
+          },
+        },
+      },
     ]
   }
 
@@ -261,7 +278,7 @@ describe('project management', () => {
         ...settingsRoutes(),
         { method: 'POST', path: '/api/projects/1/unregister', status: 204 },
       ],
-      '/projects/1',
+      '/projects/1/settings',
     )
 
     // Both actions exist as separate, clearly-labeled buttons.
@@ -314,7 +331,7 @@ describe('project management', () => {
         { method: 'POST', path: '/api/projects/1/delete', status: 409, body: { error: 'trash_unavailable' } },
         { method: 'POST', path: '/api/projects/1/delete', status: 204 },
       ],
-      '/projects/1',
+      '/projects/1/settings',
     )
 
     await wrapper.find('button.delete').trigger('click')
@@ -365,7 +382,7 @@ describe('project management', () => {
   })
 
   it('moves focus into the dialog when it opens', async () => {
-    const { wrapper } = await mountWithProjects(settingsRoutes(), '/projects/1')
+    const { wrapper } = await mountWithProjects(settingsRoutes(), '/projects/1/settings')
 
     await wrapper.find('button.unregister').trigger('click')
     await flushPromises()

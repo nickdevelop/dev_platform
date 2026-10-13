@@ -6,7 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../components/MessageView.vue'
 import QuestionQueue from '../components/QuestionQueue.vue'
 import TaskTabs from '../components/TaskTabs.vue'
-import { useOpenTabsStore } from '../stores/openTabs'
+import { tabKey, useOpenTabsStore } from '../stores/openTabs'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'
 
@@ -111,6 +111,7 @@ describe('question queue', () => {
 
 describe('task tabs and open-tabs store', () => {
   it('opens, labels and closes tabs', () => {
+    localStorage.clear()
     setActivePinia(createPinia())
     const store = useOpenTabsStore()
     store.closeAllTabs()
@@ -118,19 +119,19 @@ describe('task tabs and open-tabs store', () => {
     store.openTab(1, 's2', 'Task Two')
     expect(store.tabs).toHaveLength(2)
     store.updateTitle('s1', 'Renamed')
-    expect(store.tabs[0].title).toBe('Renamed')
+    expect(store.tabs[0]).toMatchObject({ kind: 'task', sessionId: 's1', title: 'Renamed' })
     store.closeTab('s1')
-    expect(store.tabs.map((tab) => tab.sessionId)).toEqual(['s2'])
+    expect(store.tabs.map(tabKey)).toEqual(['s2'])
   })
 
   it('renders tabs with active state and emits select/close', async () => {
     const wrapper = mount(TaskTabs, {
       props: {
         tabs: [
-          { projectId: 1, sessionId: 's1', title: 'One' },
-          { projectId: 1, sessionId: 's2', title: 'Two' },
+          { kind: 'task', projectId: 1, sessionId: 's1', title: 'One' },
+          { kind: 'task', projectId: 1, sessionId: 's2', title: 'Two' },
         ],
-        activeSessionId: 's2',
+        activeKey: 's2',
       },
     })
     const tabs = wrapper.findAll('[data-test="open-tab"]')

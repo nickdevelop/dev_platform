@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import AgentSettings from '../components/settings/AgentSettings.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAgentsStore } from '../stores/agents'
+import type { AgentServiceStatus } from '../api/agents'
 
 type Call = { method: string; path: string; body: any }
 
@@ -92,7 +93,7 @@ describe('AgentSettings', () => {
 // The machine-level service block: the settings page is the only place the
 // platform starts or stops it, so what it shows must be exactly what the last
 // detection observed, and stopping must never happen without a confirmation.
-const runningStatus = {
+const runningStatus: AgentServiceStatus = {
   backend: 'opencode-v2',
   supported: true,
   state: 'running',

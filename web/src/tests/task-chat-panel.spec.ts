@@ -30,6 +30,12 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   }
 }
 
+// continues lists the continue calls a stub fetch recorded, so a test can count
+// reconnects rather than total traffic.
+function continues(fetchSpy: ReturnType<typeof vi.fn>): string[] {
+  return (fetchSpy.mock.calls as unknown as [string][]).map((call) => String(call[0])).filter((url) => url.endsWith('/continue'))
+}
+
 function session(id: string, overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     id,
@@ -93,12 +99,14 @@ function stubSessionList(
   return fetchSpy
 }
 
-// The panel links back to its project, so the test router knows both shapes.
+// The panel links back to the workbench (a project has no page of its own), so
+// the test router knows both shapes.
 function testRouter() {
   return createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/projects/:projectId', name: 'project', component: { render: () => null } },
+      { path: '/', name: 'home', component: { render: () => null } },
+      { path: '/projects/:projectId/settings', name: 'project-settings', component: { render: () => null } },
       { path: '/projects/:projectId/tasks/:sessionId', name: 'task', component: { render: () => null } },
     ],
   })
@@ -272,7 +280,7 @@ describe('TaskChatPanel opencode approvals', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('任务不存在')
-    expect(wrapper.find('a').attributes('href')).toBe('/projects/1')
+    expect(wrapper.find('a').attributes('href')).toBe('/')
     expect(FakeEventSource.instances).toHaveLength(0)
   })
 
@@ -286,7 +294,7 @@ describe('TaskChatPanel opencode approvals', () => {
 
     expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
     expect(wrapper.text()).not.toContain('任务不存在')
-    expect(wrapper.find('a').attributes('href')).toBe('/projects/1')
+    expect(wrapper.find('a').attributes('href')).toBe('/')
   })
 
   it('does not block the composer on an instance the project list calls stopped', async () => {
@@ -389,6 +397,41 @@ describe('TaskChatPanel opencode approvals', () => {
       }
       return {
         status: 200,
+        json: async () => ({ sessions: [session('sess-1', { status: 'disconnected', backend: 'pi' })] }),
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // A pi task has no service to blame, so it keeps the plain retry affordance:
+    // the backend reports a code, not prose, and the note shows the platform's
+    // message for that code.
+    const note = wrapper.find('[data-test="session-unavailable"]')
+    expect(note.text()).toContain('Agent 实例启动失败')
+    expect(note.text()).not.toContain('service')
+    expect(wrapper.find('[data-test="session-retry"]').exists()).toBe(true)
+
+    const before = fetchSpy.mock.calls.length
+    await wrapper.find('[data-test="session-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(before)
+  })
+
+  // The opencode service is a third-party process the platform never starts.
+  // So the panel says what is missing, points at the one page that can start it,
+  // and offers a reconnect the user clicks — it never retries by itself.
+  it('points an unreachable opencode service at platform settings and offers reconnect', async () => {
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/history')) {
+        return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+      }
+      if (url.endsWith('/continue')) {
+        return { status: 409, json: async () => ({ error: 'service_not_running' }) } as Response
+      }
+      return {
+        status: 200,
         json: async () => ({ sessions: [session('sess-1', { status: 'disconnected' })] }),
       } as Response
     })
@@ -396,14 +439,21 @@ describe('TaskChatPanel opencode approvals', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    // The backend reports a code, not prose; the note shows the platform's
-    // message for that code, which names the failure and where to look.
-    expect(wrapper.find('[data-test="session-unavailable"]').text()).toContain('Agent 实例启动失败')
+    const note = wrapper.find('[data-test="session-unavailable"]')
+    expect(note.text()).toContain('无法连接 opencode service')
+    expect(note.text()).toContain('平台设置 → Agent')
+    expect(note.text()).not.toContain('实例')
+    const reconnect = wrapper.find('[data-test="session-reconnect"]')
+    expect(reconnect.text()).toBe('重新连接')
 
-    const before = fetchSpy.mock.calls.length
-    await wrapper.find('[data-test="session-retry"]').trigger('click')
+    const continuedBefore = continues(fetchSpy)
+    await reconnect.trigger('click')
     await flushPromises()
-    expect(fetchSpy.mock.calls.length).toBeGreaterThan(before)
+
+    // Exactly one reconnect per click, on this session — the same endpoint the
+    // platform already used to open it.
+    expect(continues(fetchSpy).length).toBe(continuedBefore.length + 1)
+    expect(continues(fetchSpy)).toContain('/api/projects/1/sessions/sess-1/continue')
   })
 
   it('keeps the typed message and reports the error when sending fails', async () => {
@@ -629,7 +679,8 @@ describe('TaskChatPanel conversation layout', () => {
     await flushPromises()
 
     expect(remove).toHaveBeenCalledWith(1, 'sess-1')
-    expect(router.currentRoute.value.name).toBe('project')
+    // The project has no page to return to; the workbench does.
+    expect(router.currentRoute.value.name).toBe('home')
   })
 
   it('cancels the delete without removing the task', async () => {
