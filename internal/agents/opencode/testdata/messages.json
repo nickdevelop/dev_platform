@@ -10,7 +10,7 @@
       "id": "msg_asst_1",
       "type": "assistant",
       "agent": "build",
-      "model": { "id": "acme/acme-code", "providerID": "acme", "variant": "default" },
+      "model": { "id": "acme-code", "providerID": "acme", "variant": "default" },
       "content": [
         { "type": "reasoning", "text": "这段推理必须被跳过" },
         { "type": "text", "text": "历史里的助手回复" },

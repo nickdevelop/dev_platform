@@ -147,7 +147,10 @@ type SessionInfo struct {
 	ProjectID string       `json:"projectID"`
 	Title     string       `json:"title,omitempty"`
 	Location  *LocationRef `json:"location,omitempty"`
-	Time      SessionTime  `json:"time"`
+	// Model is the session's current model, when the server reports one. It is
+	// the model new assistant messages will run unless a switch intervenes.
+	Model *ModelRef   `json:"model,omitempty"`
+	Time  SessionTime `json:"time"`
 }
 
 // CreateSessionRequest is the body of POST /api/session.
@@ -160,12 +163,14 @@ type CreateSessionRequest struct {
 // Message is one entry of GET /api/session/{id}/message. The endpoint mixes
 // conversation entries with turn markers: Type is "user", "assistant",
 // "idle" or "model-switched". A user message carries its body in Text; an
-// assistant message carries blocks in Content.
+// assistant message carries blocks in Content and the model that produced it
+// in Model.
 type Message struct {
 	ID      string         `json:"id"`
 	Type    string         `json:"type"`
 	Text    string         `json:"text,omitempty"`
 	Content []ContentBlock `json:"content,omitempty"`
+	Model   *ModelRef      `json:"model,omitempty"`
 	Time    MessageTime    `json:"time"`
 }
 

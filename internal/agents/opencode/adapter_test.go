@@ -419,6 +419,21 @@ func TestAdapterSendMessagePromptsAndSwitchesModel(t *testing.T) {
 	if len(paths) != 2 || !strings.HasSuffix(paths[0], "/model") || !strings.HasSuffix(paths[1], "/prompt") {
 		t.Fatalf("request order = %v, want model then prompt", paths)
 	}
+	// The switch took effect: live assistant events from now on are stamped
+	// with the model the platform just switched to.
+	inst := adapter.instances[instance.ID]
+	streamed := inst.normalize(&Event{
+		ID:   "evt_1",
+		Type: "session.text.delta",
+		Data: json.RawMessage(`{"sessionID":"ses_1","assistantMessageID":"msg_9","ordinal":1,"delta":"ok"}`),
+	})
+	if len(streamed) != 1 || streamed[0].Message == nil {
+		t.Fatalf("normalize produced %+v, want one message", streamed)
+	}
+	model := streamed[0].Message.Model
+	if model == nil || model.ID != "prov/model" || model.Provider != "prov" || model.Variant != "fast" {
+		t.Fatalf("stamped model = %+v, want prov/model (prov, fast)", model)
+	}
 }
 
 func TestAdapterSendMessageValidation(t *testing.T) {
@@ -532,6 +547,67 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 		}
 		if ev.SessionID != "ses_1" {
 			t.Fatalf("event %d session = %q, want ses_1", i, ev.SessionID)
+		}
+	}
+}
+
+// TestAdapterSubscribeStampsSessionModel pins the realtime model stamp: the
+// live stream's assistant events carry no model of their own, so the adapter
+// stamps them with the session's current model — learned from the create
+// response — in the platform's provider/model form.
+func TestAdapterSubscribeStampsSessionModel(t *testing.T) {
+	events := strings.Join([]string{
+		sseEvent("evt_1", "session.text.delta", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"delta":"Hel"}`, "/x"),
+		sseEvent("evt_2", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"text":"Hello"}`, "/x"),
+	}, "")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"Live","model":{"id":"model-x","providerID":"prj","variant":"fast"},"time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	got := collectEvents(t, ch, 2)
+	// The deltas carried the text, so the ended event closes with an empty
+	// terminator.
+	for i, want := range []struct {
+		text    string
+		final   bool
+		modelID string
+	}{
+		{"Hel", false, "prj/model-x"},
+		{"", true, "prj/model-x"},
+	} {
+		if got[i].Type != agents.EventMessage || got[i].Message == nil {
+			t.Fatalf("event %d = %+v, want a message", i, got[i])
+		}
+		if got[i].Message.Text != want.text || got[i].Message.Final != want.final {
+			t.Fatalf("event %d message = %+v, want text %q final %v", i, got[i].Message, want.text, want.final)
+		}
+		model := got[i].Message.Model
+		if model == nil || model.ID != want.modelID || model.Provider != "prj" || model.Variant != "fast" {
+			t.Fatalf("event %d model = %+v, want %s (prj, fast)", i, model, want.modelID)
 		}
 	}
 }
@@ -954,6 +1030,18 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 	if events[2].Type != agents.EventMessage || events[2].Message == nil ||
 		events[2].Message.Role != "assistant" || events[2].Message.Text != "历史里的助手回复" {
 		t.Errorf("events[2] = %+v, want the assistant message", events[2])
+	}
+	// The replayed assistant message carries the model that produced it, in
+	// the platform's provider/model form.
+	if events[2].Message == nil || events[2].Message.Model == nil ||
+		events[2].Message.Model.ID != "acme/acme-code" ||
+		events[2].Message.Model.Provider != "acme" ||
+		events[2].Message.Model.Variant != "default" {
+		t.Errorf("events[2].Message.Model = %+v, want acme/acme-code (acme, default)", events[2].Message.Model)
+	}
+	// A user message never carries a model.
+	if events[0].Message != nil && events[0].Message.Model != nil {
+		t.Errorf("events[0].Message.Model = %+v, want none on a user message", events[0].Message.Model)
 	}
 	if events[3].Type != agents.EventToolCall || events[3].ToolCall == nil ||
 		events[3].ToolCall.CallID != "call_1" || events[3].ToolCall.Name != "execute" {

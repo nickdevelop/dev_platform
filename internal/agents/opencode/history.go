@@ -123,7 +123,14 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 				}
 				event := envelope
 				event.Type = agents.EventMessage
-				event.Message = &agents.MessagePayload{Role: "assistant", Text: block.Text, Final: true}
+				payload := &agents.MessagePayload{Role: "assistant", Text: block.Text, Final: true}
+				if message.Model != nil {
+					// Each assistant message records the model that produced
+					// it, so a replay is accurate per message even after a
+					// mid-session switch.
+					payload.Model = messageModel(*message.Model)
+				}
+				event.Message = payload
 				events = append(events, event)
 			case "tool":
 				events = append(events, toolHistoryEvents(envelope, block)...)

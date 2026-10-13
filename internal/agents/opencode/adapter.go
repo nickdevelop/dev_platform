@@ -449,20 +449,21 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	now := a.now()
 	instanceCtx, cancel := context.WithCancel(context.Background())
 	inst := &instance{
-		id:         id,
-		directory:  request.Directory,
-		endpoint:   shared.endpoint,
-		client:     shared.client,
-		proc:       nil,
-		ctx:        instanceCtx,
-		cancel:     cancel,
-		done:       make(chan struct{}),
-		now:        a.now,
-		streamIdle: a.streamIdle,
-		subs:       make(map[*subscriber]struct{}),
-		sessions:   make(map[string]string),
-		toolNames:  make(map[string]string),
-		deltaOpen:  make(map[string]bool),
+		id:            id,
+		directory:     request.Directory,
+		endpoint:      shared.endpoint,
+		client:        shared.client,
+		proc:          nil,
+		ctx:           instanceCtx,
+		cancel:        cancel,
+		done:          make(chan struct{}),
+		now:           a.now,
+		streamIdle:    a.streamIdle,
+		subs:          make(map[*subscriber]struct{}),
+		sessions:      make(map[string]string),
+		sessionModels: make(map[string]agents.MessageModel),
+		toolNames:     make(map[string]string),
+		deltaOpen:     make(map[string]bool),
 	}
 
 	a.mu.Lock()
@@ -576,6 +577,9 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		return nil, errors.New("opencode: server returned a session without an id")
 	}
 	inst.registerSession(info.ID, info.Title)
+	if info.Model != nil {
+		inst.setSessionModel(info.ID, *info.Model)
+	}
 	return &agents.SessionRef{
 		InstanceID: instanceID,
 		Backend:    agents.BackendOpenCodeV2,
@@ -612,6 +616,9 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 		title = info.Title
 	}
 	inst.registerSession(ref.SessionID, title)
+	if info.Model != nil {
+		inst.setSessionModel(ref.SessionID, *info.Model)
+	}
 	return &agents.SessionRef{
 		InstanceID: ref.InstanceID,
 		Backend:    agents.BackendOpenCodeV2,
@@ -650,6 +657,9 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		if err := inst.client.SwitchModel(ctx, ref.SessionID, model); err != nil {
 			return fmt.Errorf("opencode: switch model for session %q: %w", ref.SessionID, err)
 		}
+		// The switch took effect, so the session's live messages now run this
+		// model; remember it before the turn's events can arrive.
+		inst.setSessionModel(ref.SessionID, model)
 	}
 	if err := inst.client.Prompt(ctx, ref.SessionID, message.Text); err != nil {
 		return fmt.Errorf("opencode: send message on instance %q: %w", ref.InstanceID, err)
@@ -678,6 +688,9 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 			continue
 		}
 		inst.registerSession(session.ID, session.Title)
+		if session.Model != nil {
+			inst.setSessionModel(session.ID, *session.Model)
+		}
 		refs = append(refs, agents.SessionRef{
 			InstanceID: instanceID,
 			Backend:    agents.BackendOpenCodeV2,
@@ -720,6 +733,11 @@ type instance struct {
 	seq           uint64
 	subs          map[*subscriber]struct{}
 	sessions      map[string]string
+	// sessionModels records the model each session currently runs, learned when
+	// the session is created, continued or listed, and refreshed on a switch.
+	// Live assistant events carry no model of their own, so the adapter stamps
+	// them with this; replayed history uses each message's own model instead.
+	sessionModels map[string]agents.MessageModel
 	toolNames     map[string]string
 	deltaOpen     map[string]bool
 }
@@ -808,6 +826,44 @@ func (inst *instance) knownSession(sessionID string) bool {
 	defer inst.mu.Unlock()
 	_, ok := inst.sessions[sessionID]
 	return ok
+}
+
+// setSessionModel records the model a session currently runs, keyed by the
+// native session id. It is learned from session create/continue/list and
+// refreshed when the platform switches the model for a turn.
+func (inst *instance) setSessionModel(sessionID string, ref ModelRef) {
+	model := messageModel(ref)
+	if sessionID == "" || model == nil {
+		return
+	}
+	inst.mu.Lock()
+	inst.sessionModels[sessionID] = *model
+	inst.mu.Unlock()
+}
+
+// sessionModel returns the session's current model, or nil when none is known.
+func (inst *instance) sessionModel(sessionID string) *agents.MessageModel {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	model, ok := inst.sessionModels[sessionID]
+	if !ok {
+		return nil
+	}
+	return &model
+}
+
+// messageModel converts a native ModelRef into the platform's MessageModel,
+// using the provider/model id form the rest of the platform speaks. A ref with
+// no id is not a model and yields nil.
+func messageModel(ref ModelRef) *agents.MessageModel {
+	if ref.ID == "" {
+		return nil
+	}
+	id := ref.ID
+	if ref.ProviderID != "" {
+		id = ref.ProviderID + "/" + ref.ID
+	}
+	return &agents.MessageModel{ID: id, Provider: ref.ProviderID, Variant: ref.Variant}
 }
 
 // addSubscriber registers a subscriber unless the instance is already closed.
@@ -1109,7 +1165,7 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		inst.setDelta(sessionID, data.AssistantMessageID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventMessage
-		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Delta, Final: false}
+		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Delta, Final: false, Model: inst.sessionModel(sessionID)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.text.ended":
@@ -1121,7 +1177,7 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		}
 		out := inst.event(sessionID)
 		out.Type = agents.EventMessage
-		out.Message = &agents.MessagePayload{Role: "assistant", Text: text, Final: true}
+		out.Message = &agents.MessagePayload{Role: "assistant", Text: text, Final: true, Model: inst.sessionModel(sessionID)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.text.started":

@@ -106,6 +106,15 @@ become their own event kinds, so a replayed conversation shows what the user
 watched. The workbench renders history first, then subscribes, and draws a
 separator where the replay ends.
 
+Each assistant message also names the model that produced it (`MessagePayload.Model`,
+in the platform's `provider/model` form with the variant alongside). A replay
+uses the model recorded on the message itself, so a conversation that switched
+models mid-session replays accurately per message; a live assistant event
+carries no model of its own, so the opencode adapter stamps it with the
+session's current model, learned at session create/continue/list and refreshed
+on every switch. Backends that do not report a per-message model (pi) simply
+omit the field.
+
 Because the read is scoped by working directory and agent-native session id
 rather than by an instance, a task whose instance has stopped — or whose
 platform was restarted — still replays.

@@ -77,6 +77,19 @@ type MessagePayload struct {
 	Text string `json:"text"`
 	// Final reports whether this payload completes the message.
 	Final bool `json:"final"`
+	// Model identifies the model that produced an assistant message, when the
+	// backend reports it. It is absent on user messages and on backends that
+	// do not record a per-message model.
+	Model *MessageModel `json:"model,omitempty"`
+}
+
+// MessageModel identifies the model that produced one assistant message. ID is
+// the provider-scoped "provider/model" form the platform uses for model
+// selection (ModelInfo.ID); Variant is set when the model ran a named variant.
+type MessageModel struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	Variant  string `json:"variant,omitempty"`
 }
 
 // ThinkingPayload carries the agent's reasoning, or one streaming chunk of it:
