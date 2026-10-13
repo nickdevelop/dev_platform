@@ -64,10 +64,14 @@ mkdirSync(xdgStateHome, { recursive: true })
 const children = []
 let shuttingDown = false
 
+// start spawns a helper process for the run. `tolerateExit` is for the opencode
+// service: it is a third-party process the suite is allowed to stop and start,
+// so its death is a test action, not a harness failure.
 function start(name, command, args, options = {}) {
-  const child = spawn(command, args, { stdio: 'inherit', ...options })
+  const { tolerateExit = false, ...spawnOptions } = options
+  const child = spawn(command, args, { stdio: 'inherit', ...spawnOptions })
   child.on('exit', (code, signal) => {
-    if (!shuttingDown && signal !== 'SIGTERM') {
+    if (!tolerateExit && !shuttingDown && signal !== 'SIGTERM') {
       console.error(`e2e: ${name} exited unexpectedly (code=${code} signal=${signal})`)
       shutdown(1)
     }
@@ -167,6 +171,9 @@ try {
     {
       env: { ...process.env, XDG_STATE_HOME: xdgStateHome, OPENCODE_MOCK_STORE_DIR: opencodeStoreDir },
       stdio: 'ignore',
+      // The suite stops and starts this service on purpose; its death is not a
+      // harness failure and must not tear the run down.
+      tolerateExit: true,
     },
   )
   await waitForServiceRegistration(serviceRegistration)

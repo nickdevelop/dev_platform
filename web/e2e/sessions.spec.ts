@@ -84,7 +84,7 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  await page.goto(`/projects/${project.id}`)
+  await page.goto(`/projects/${project.id}/settings`)
   await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
 
   // Tasks are created by choosing only the agent backend; the platform starts
@@ -148,7 +148,7 @@ test('deletes a task from the conversation header after confirmation', async ({ 
   await page.getByLabel('平台密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
-  await page.goto(`/projects/${project.id}`)
+  await page.goto(`/projects/${project.id}/settings`)
 
   await createTask(page, 'pi', 'pi-delete')
   await openSession(page, 'pi-delete')
@@ -161,9 +161,10 @@ test('deletes a task from the conversation header after confirmation', async ({ 
   await expect(dialog).toBeHidden()
   await expect(taskRow(page, 'pi-delete')).toBeVisible()
 
-  // Confirming removes it and returns to the project settings.
+  // Confirming removes the task and returns to the workbench: a project has no
+  // page of its own to return to, and its settings are a tab like any other.
   await page.locator('[data-test="delete-task"]').click()
   await dialog.locator('[data-test="confirm-delete"]').click()
-  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
+  await expect(page).toHaveURL(/\/$/)
   await expect(taskRow(page, 'pi-delete')).toHaveCount(0)
 })

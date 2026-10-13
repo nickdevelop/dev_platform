@@ -76,7 +76,7 @@ test('synchronizes a resource and pauses on external drift', async ({ page, requ
   expect(associated.status(), await associated.text()).toBe(204)
 
   await login(page)
-  await page.goto(`/projects/${project.id}`)
+  await page.goto(`/projects/${project.id}/settings`)
   await expect(page.getByRole('region', { name: '资源关联' })).toBeVisible()
   await expect(page.getByText('e2e-server')).toBeVisible()
   // The credential value never renders in the UI.

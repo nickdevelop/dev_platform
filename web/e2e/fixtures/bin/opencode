@@ -419,7 +419,11 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 }
 
 server.listen(port, host, () => {
-  const url = `http://${host}:${port}`
+  // The port is usually 0 ("any free port"), so the bound address — not the
+  // requested one — is what a client must be told.
+  const address = server.address()
+  const bound = address && typeof address === 'object' ? address.port : port
+  const url = `http://${host}:${bound}`
   if (serviceMode) publishRegistration(url)
   process.stderr.write(`mock opencode listening on ${url}${serviceMode ? ' (service mode)' : ''}\n`)
 })

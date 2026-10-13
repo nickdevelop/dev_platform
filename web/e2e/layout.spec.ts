@@ -67,7 +67,7 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
   const csrf = await operatorLogin(request)
   const projectId = await registerProject(request, csrf, 'layout')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
 
   await createTask(page, 'pi', 'pi-layout')
   await taskRow(page, 'pi-layout').click()
@@ -113,7 +113,7 @@ test('a long task tree scrolls the sidebar and keeps the composer in view', asyn
   const csrf = await operatorLogin(request)
   const projectId = await registerProject(request, csrf, 'layout-tree')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
 
   await createTask(page, 'pi', 'pi-tree')
   await taskRow(page, 'pi-tree').click()

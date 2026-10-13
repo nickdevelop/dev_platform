@@ -93,7 +93,7 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
   // The diagnostics panel reports both backends with the versions their
   // fixtures mimic, inside the tested ranges.
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
   await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
   const piReport = page.locator('[data-backend-diagnostics="pi"]')
   const ocReport = page.locator('[data-backend-diagnostics="opencode-v2"]')
@@ -130,7 +130,7 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
   // The diagnostics panel still reports both backends usable after the
   // failure: a failed turn is a session problem, not a broken backend.
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
   await expect(piReport.locator('[data-diagnostics-status]')).toHaveText('正常')
   await expect(ocReport.locator('[data-diagnostics-status]')).toHaveText('正常')
 })

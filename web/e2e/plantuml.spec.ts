@@ -69,7 +69,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  await page.goto(`/projects/${project.id}`)
+  await page.goto(`/projects/${project.id}/settings`)
   await page.locator('.project-row.selected .project-new-task').click()
   await page.locator('#backend-select').selectOption('pi')
   await page.locator('#session-title').fill('puml-e2e')
@@ -122,7 +122,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   await page.goto('/settings/appearance')
   await page.locator('[data-theme-option="dark"]').click()
   await expect(page.locator('[data-theme-option="dark"].active')).toBeVisible()
-  await page.goto(`/projects/${project.id}`)
+  await page.goto(`/projects/${project.id}/settings`)
   await taskRow(page, 'puml-e2e').click()
   await expect(page.locator('[data-test="plantuml-block"]').first().locator('.plantuml-canvas.is-dark svg')).toBeVisible({
     timeout: 30_000,

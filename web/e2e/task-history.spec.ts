@@ -86,7 +86,7 @@ test('a reply survives a page reload, shown above the history separator', async 
   const csrf = await operatorLogin(request)
   const projectId = await registerProject(request, csrf, 'task-history')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
 
   await createTask(page, 'pi', 'pi-history')
   const conversation = await openTask(page, 'pi-history')
@@ -138,7 +138,7 @@ test('opening a task whose instance was stopped re-attaches it without any manua
   const csrf = await operatorLogin(request)
   const projectId = await registerProject(request, csrf, 'task-resume')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}`)
+  await page.goto(`/projects/${projectId}/settings`)
 
   await createTask(page, 'pi', 'pi-resume')
   const conversation = await openTask(page, 'pi-resume')
