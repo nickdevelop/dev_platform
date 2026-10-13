@@ -1083,4 +1083,68 @@ describe('sessions store composer model', () => {
     pending.get(2)!([session('b-1', 2)])
     await second
   })
+
+  // A session's own model comes from the per-message stamp the backend now
+  // sends: opening a task shows the model it actually ran, not the backend's
+  // first, even before the user has picked anything in the composer.
+  it('defaults to the model the session actually used', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    // The picker's own first-model fallback must not outrank the used model.
+    sessions.setAutoModel('s1', 'pi/first')
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(
+        historyEvent({
+          instanceId: 'inst-1',
+          type: 'message',
+          sequence: 1,
+          message: {
+            role: 'assistant',
+            text: '答',
+            final: true,
+            model: { id: 'pi/used', provider: 'pi' },
+          },
+        }),
+      ),
+    )
+
+    expect(sessions.modelFor('s1')).toBe('pi/used')
+  })
+
+  it('keeps the latest assistant model and lets an explicit choice outrank it', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    const assistant = (sequence: number, id: string) =>
+      JSON.stringify(
+        historyEvent({
+          instanceId: 'inst-1',
+          type: 'message',
+          sequence,
+          message: { role: 'assistant', text: '答', final: true, model: { id, provider: 'pi' } },
+        }),
+      )
+    sessions.handleEvent('s1', assistant(1, 'pi/old'))
+    sessions.handleEvent('s1', assistant(2, 'pi/new'))
+    expect(sessions.modelFor('s1')).toBe('pi/new')
+
+    // The user picked a model for this task: their choice wins over the
+    // session's, even after another model answered.
+    sessions.setModel('s1', 'pi/picked')
+    expect(sessions.modelFor('s1')).toBe('pi/picked')
+  })
+
+  it('drops the picker fallback with the task too', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    sessions.setAutoModel('s1', 'pi/a')
+    stubRoutes({ '/sessions/s1': {} })
+
+    await sessions.deleteSession(1, 's1')
+
+    expect(sessions.modelFor('s1')).toBe('')
+  })
 })

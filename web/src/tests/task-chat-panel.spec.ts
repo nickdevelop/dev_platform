@@ -676,6 +676,82 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
   })
 
+  it('opens a task on the model it actually used, not the backend’s first', async () => {
+    const models = [
+      { id: 'pi/a', name: 'Model A', provider: 'pi' },
+      { id: 'pi/b', name: 'Model B', provider: 'pi' },
+      { id: 'pi/c', name: 'Model C', provider: 'pi' },
+    ]
+    const selectable = capabilities({ modelSelection: true })
+    const used: Record<string, string> = { s1: 'pi/b', s2: 'pi/c' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/models')) return { status: 200, json: async () => ({ models }) } as Response
+        if (url.endsWith('/history')) {
+          const id = url.split('/')[5]
+          const model = used[id] ?? 'pi/a'
+          return {
+            status: 200,
+            json: async () => ({
+              events: [
+                {
+                  instanceId: '',
+                  backend: 'opencode-v2',
+                  sequence: 1,
+                  timestamp: '2026-10-09T00:00:00Z',
+                  replayed: true,
+                  type: 'message',
+                  message: {
+                    role: 'assistant',
+                    text: '历史回复',
+                    final: true,
+                    model: { id: model, provider: 'pi' },
+                  },
+                },
+              ],
+              truncated: false,
+            }),
+          } as Response
+        }
+        if (url.endsWith('/continue')) {
+          const id = url.split('/')[5]
+          return { status: 200, json: async () => session(id, { capabilities: selectable }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            sessions: [
+              session('s1', { capabilities: selectable }),
+              session('s2', { capabilities: selectable }),
+            ],
+          }),
+        } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const store = useSessionsStore()
+    const wrapper = mountPanel('s1')
+    await flushPromises()
+
+    // The task replayed a model-B reply, so the composer opens on model B even
+    // though the backend lists model A first.
+    expect(store.modelFor('s1')).toBe('pi/b')
+    expect(wrapper.find('.model-trigger').text()).toContain('Model B')
+
+    // Switching tasks follows each task's own model.
+    await wrapper.setProps({ sessionId: 's2' })
+    await flushPromises()
+    expect(store.modelFor('s2')).toBe('pi/c')
+    expect(wrapper.find('.model-trigger').text()).toContain('Model C')
+
+    // Coming back restores the first task's model, not the backend's first.
+    await wrapper.setProps({ sessionId: 's1' })
+    await flushPromises()
+    expect(wrapper.find('.model-trigger').text()).toContain('Model B')
+  })
+
   it('keeps an aborted pi turn idle without a process_exit error entry', () => {
     const store = useSessionsStore()
     store.sessions = [session('sess-1', { turn: 'running' })]

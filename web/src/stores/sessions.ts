@@ -155,6 +155,20 @@ function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | 
   }
 }
 
+// sessionUsedModel returns the model a session actually ran, taken from its most
+// recent assistant message that reported one. '' when the transcript has no such
+// message yet — a brand-new task, or a backend that records no per-message
+// model (pi) — so callers can fall back to another default.
+function sessionUsedModel(list: ChatEntry[]): string {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i]
+    if (entry.kind === 'message' && entry.role === 'assistant' && entry.model?.id) {
+      return entry.model.id
+    }
+  }
+  return ''
+}
+
 export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as AgentSession[],
@@ -175,10 +189,14 @@ export const useSessionsStore = defineStore('sessions', {
     // stream; matching the pending text — rather than whatever entry happens
     // to be last — is what survives diagnostics interleaved before the echo.
     echoPending: {} as Record<string, string>,
-    // The model chosen in the composer, kept per session so switching tasks
-    // restores the model the user last picked for each task instead of
-    // resetting the picker to the backend's first model.
+    // The model the user explicitly chose in the composer, kept per session so
+    // switching tasks restores the model the user last picked for each task.
+    // It is a deliberate choice and outranks the session's own model.
     selectedModels: {} as Record<string, string>,
+    // The model the picker selected on its own (the backend's first model) for a
+    // session. Kept apart from selectedModels so the session's actually-used
+    // model can take precedence without being mistaken for a deliberate pick.
+    autoModels: {} as Record<string, string>,
     activeSessionId: null as string | null,
     loading: false,
     error: '',
@@ -201,9 +219,18 @@ export const useSessionsStore = defineStore('sessions', {
     statusFor: (state) => (sessionId: string) => state.streamStatus[sessionId] ?? 'idle',
     sessionById: (state) => (sessionId: string) =>
       state.sessions.find((entry) => entry.id === sessionId) ?? null,
-    // modelFor is the composer's remembered model for a session; '' means none
-    // has been chosen yet and the picker may default to the first model.
-    modelFor: (state) => (sessionId: string) => state.selectedModels[sessionId] ?? '',
+    // modelFor is the model the composer shows and sends for a session. The
+    // user's explicit choice wins; otherwise the session's own model — the model
+    // of its most recent assistant message — so switching to a task restores the
+    // model it actually used; otherwise the picker's own first-model fallback;
+    // '' when none applies yet and the picker has not loaded any model.
+    modelFor: (state) => (sessionId: string): string => {
+      const explicit = state.selectedModels[sessionId]
+      if (explicit !== undefined && explicit !== '') return explicit
+      const used = sessionUsedModel(state.messages[sessionId] ?? [])
+      if (used !== '') return used
+      return state.autoModels[sessionId] ?? ''
+    },
     activeSession(state): AgentSession | null {
       return state.sessions.find((entry) => entry.id === state.activeSessionId) ?? null
     },
@@ -224,6 +251,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.historyTailGuard = {}
         this.echoPending = {}
         this.selectedModels = {}
+        this.autoModels = {}
       }
       this.loading = true
       this.projectId = projectId
@@ -334,6 +362,7 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.historyTruncated[sessionId]
       delete this.historyTailGuard[sessionId]
       delete this.selectedModels[sessionId]
+      delete this.autoModels[sessionId]
       this.error = ''
       return true
     },
@@ -674,12 +703,23 @@ export const useSessionsStore = defineStore('sessions', {
       this.ensureMessages(sessionId).push(entry)
     },
 
-    // setModel remembers the composer's model for one session. It is view state
-    // the platform keeps for convenience — the model is not persisted to the
-    // session index; the backend still receives it with each message.
+    // setModel remembers a model the user explicitly chose for one session. It
+    // is view state the platform keeps for convenience — the model is not
+    // persisted to the session index; the backend still receives it with each
+    // message. It outranks the session's own model when the composer resolves
+    // which model to show and send.
     setModel(sessionId: string, model: string) {
       if (this.selectedModels[sessionId] === model) return
       this.selectedModels[sessionId] = model
+    },
+
+    // setAutoModel records the model the picker selected on its own (the
+    // backend's first model) for a session. It is kept apart from the user's
+    // explicit choice so a session's own model can take precedence without
+    // being mistaken for a deliberate pick.
+    setAutoModel(sessionId: string, model: string) {
+      if (this.autoModels[sessionId] === model) return
+      this.autoModels[sessionId] = model
     },
 
     async sendMessage(projectId: number, sessionId: string, text: string, model?: string) {

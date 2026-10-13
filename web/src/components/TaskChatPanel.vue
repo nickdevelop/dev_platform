@@ -38,13 +38,19 @@ const deleteError = ref('')
 // like an empty conversation.
 const preparing = ref(false)
 const messageText = ref('')
-// The composer's model is remembered per task in the sessions store, so
-// switching tasks restores the model chosen for each one instead of resetting
-// the picker to the backend's first model.
+// The composer's model for this task: the store resolves it from the user's
+// explicit choice, the model the session actually used, or the picker's own
+// first-model fallback. An update:modelValue from the picker is that automatic
+// fallback, so it is recorded as such; a deliberate pick is recorded separately
+// via the picker's `picked` event so it is never mistaken for a fallback.
 const selectedModel = computed({
   get: () => sessions.modelFor(props.sessionId),
-  set: (value: string) => sessions.setModel(props.sessionId, value),
+  set: (value: string) => sessions.setAutoModel(props.sessionId, value),
 })
+
+function onModelPicked(id: string) {
+  sessions.setModel(props.sessionId, id)
+}
 // Scrolling follows the newest entry only while the user is at the bottom.
 // The log scrolls by hand in jsdom tests, so every read and write of the
 // scroller geometry goes through the element itself.
@@ -479,6 +485,7 @@ async function removeTask() {
                 :backend="activeSession.backend"
                 :model-selection="activeSession.capabilities.modelSelection"
                 @status="modelOk = $event"
+                @picked="onModelPicked"
               />
               <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
             </div>

@@ -21,6 +21,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:modelValue': [id: string]
+  // picked fires only when the user chose from the list, so the parent can tell
+  // a deliberate choice from the picker's own first-model fallback.
+  picked: [id: string]
   status: [ok: boolean]
 }>()
 
@@ -144,6 +147,7 @@ function close() {
 
 function choose(id: string) {
   emit('update:modelValue', id)
+  emit('picked', id)
   close()
 }
 
