@@ -22,7 +22,8 @@
           "state": {
             "status": "completed",
             "input": { "code": "ls -la" },
-            "output": "历史里的工具输出"
+            "content": [{ "type": "text", "text": "历史里的工具输出" }],
+            "metadata": {}
           },
           "time": { "created": 1791600000100, "ran": 1791600000200, "completed": 1791600000300 }
         }
@@ -41,7 +42,7 @@
           "state": {
             "status": "error",
             "input": { "command": "false" },
-            "output": "工具失败输出"
+            "error": { "type": "ToolFailed", "message": "工具失败原因" }
           }
         }
       ],

@@ -147,7 +147,10 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 }
 
 // toolHistoryEvents turns one tool block into the call/result pair the live
-// stream emits for the same execution.
+// stream emits for the same execution. The result text comes from the state's
+// content blocks (the same shape the live session.tool.* events carry); a
+// failed block without content falls back to its structured error so the
+// replay never renders an empty result.
 func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []agents.NormalizedEvent {
 	call := envelope
 	call.Type = agents.EventToolCall
@@ -159,10 +162,30 @@ func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []ag
 
 	if block.State != nil {
 		call.ToolCall.Input = block.State.Input
-		result.ToolResult.Output = block.State.Output
+		result.ToolResult.Output = flattenContent(block.State.Content)
 		result.ToolResult.IsError = block.State.Status != "completed"
+		if result.ToolResult.IsError && result.ToolResult.Output == "" {
+			result.ToolResult.Output = historyErrorMessage(block.State)
+		}
 	}
 	return []agents.NormalizedEvent{call, result}
+}
+
+// historyErrorMessage extracts a failed tool block's message from its
+// structured error, mirroring the live path's structuredErrorMessage.
+func historyErrorMessage(state *ToolState) string {
+	if state == nil {
+		return "opencode reported a failure"
+	}
+	if state.Error != nil {
+		if state.Error.Message != "" {
+			return state.Error.Message
+		}
+		if state.Error.Type != "" {
+			return state.Error.Type
+		}
+	}
+	return "opencode reported a failure"
 }
 
 // boundHistory keeps the most recent agents.MaxHistoryEvents and renumbers them

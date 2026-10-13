@@ -883,6 +883,11 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		events[6].ToolResult.CallID != "call_2" || !events[6].ToolResult.IsError {
 		t.Errorf("events[6] = %+v, want a failed tool result for call_2", events[6])
 	}
+	// A failed block without content falls back to its structured error so
+	// the replay never renders an empty result.
+	if events[6].ToolResult == nil || events[6].ToolResult.Output != "工具失败原因" {
+		t.Errorf("events[6] = %+v, want the structured error message", events[6])
+	}
 
 	for i, event := range events {
 		if !event.Replayed {
@@ -897,6 +902,33 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		if event.Sequence != uint64(i+1) {
 			t.Errorf("events[%d].Sequence = %d, want %d", i, event.Sequence, i+1)
 		}
+	}
+}
+
+// TestListHistoryKeepsSubagentResult pins the reopen gap: a subagent tool
+// block carries its report in state.content (there is no `output` field on
+// the wire), and the replayed result must preserve it verbatim.
+func TestListHistoryKeepsSubagentResult(t *testing.T) {
+	block := ContentBlock{
+		Type: "tool",
+		ID:   "call_sub",
+		Name: "subagent",
+		State: &ToolState{
+			Status:  "completed",
+			Input:   json.RawMessage(`{"agent":"explore","description":"desc","prompt":"do it"}`),
+			Content: json.RawMessage(`[{"type":"text","text":"<subagent sessionID=\"ses_child\" state=\"completed\">\n# report"}]`),
+		},
+	}
+	events := normalizeHistoryMessage(Message{ID: "msg_1", Type: "assistant", Content: []ContentBlock{block}})
+	if len(events) != 2 {
+		t.Fatalf("normalizeHistoryMessage returned %d events, want 2", len(events))
+	}
+	result := events[1].ToolResult
+	if result == nil || result.IsError {
+		t.Fatalf("result = %+v, want a successful result", result)
+	}
+	if !strings.Contains(result.Output, "# report") || !strings.Contains(result.Output, "ses_child") {
+		t.Errorf("result output = %q, want the subagent report preserved", result.Output)
 	}
 }
 

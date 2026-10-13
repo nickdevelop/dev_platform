@@ -75,8 +75,9 @@ function toolName(entry: ChatEntry): string {
 }
 
 // The argument keys that name what a tool acted on, in preference order, so the
-// collapsed line reads like `read /path` or `bash ls`. Unknown tools fall back
-// to their first string argument.
+// collapsed line reads like `read /path` or `bash ls`. Description wins over a
+// full prompt (subagent/question cards read like the TUI), and unknown tools
+// fall back to their first string argument.
 const ARGUMENT_KEYS = [
   'path',
   'filePath',
@@ -86,8 +87,8 @@ const ARGUMENT_KEYS = [
   'pattern',
   'query',
   'url',
-  'prompt',
   'description',
+  'prompt',
   'name',
 ]
 

@@ -185,12 +185,17 @@ type ContentBlock struct {
 	State *ToolState `json:"state,omitempty"`
 }
 
-// ToolState is a tool block's execution state: the arguments it ran with, its
-// output and whether it completed.
+// ToolState is a tool block's execution state: the arguments it ran with and
+// how it finished. It mirrors the v2 protocol union (streaming/running/
+// completed/error): a finished block carries its result in Content (an array
+// of content blocks, like the live session.tool.* events), while a failed one
+// carries the failure in Error. There is no `output` field on the wire —
+// reading one yields empty results after reopen.
 type ToolState struct {
-	Status string          `json:"status"`
-	Input  json.RawMessage `json:"input,omitempty"`
-	Output string          `json:"output,omitempty"`
+	Status  string           `json:"status"`
+	Input   json.RawMessage  `json:"input,omitempty"`
+	Content json.RawMessage  `json:"content,omitempty"`
+	Error   *structuredError `json:"error,omitempty"`
 }
 
 // APIError reports a non-2xx response from the opencode API. Message is
