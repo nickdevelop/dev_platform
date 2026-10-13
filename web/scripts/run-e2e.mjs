@@ -3,13 +3,14 @@
 //   1. builds the Go server and the E2E password-setup helper,
 //   2. prepares an isolated scratch directory (SQLite data dir, authorized
 //      workspace root, XDG data home so server-side trash deletes stay local),
-//   3. starts the backend and the Vite dev server (same-origin /api proxy),
+//   3. starts the mock opencode machine-wide service, then the backend and the
+//      Vite dev server (same-origin /api proxy),
 //   4. runs Playwright, forwarding any CLI arguments (e.g. a spec filter),
 //   5. tears everything down and removes the scratch directory.
 //
 // Usage: npm run test:e2e [-- <playwright args...>]
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -46,11 +47,19 @@ const piSessionDir = path.join(scratch, 'pi-sessions')
 // The mock opencode server keeps session data on disk (like the real one), so
 // the store lives in the scratch directory too.
 const opencodeStoreDir = path.join(scratch, 'opencode-store')
+// `opencode serve --service` is a machine-wide third-party process the platform
+// never starts or stops itself — so the harness starts it the way an operator
+// (or the desktop app) would, and the platform adopts its registration file.
+// Pointing XDG_STATE_HOME into the scratch directory keeps the run from reading
+// or writing the developer's own opencode service.
+const xdgStateHome = path.join(scratch, 'xdg-state')
+const serviceRegistration = path.join(xdgStateHome, 'opencode', 'service.json')
 const serverBin = path.join(scratch, 'platform-server')
 const setupBin = path.join(scratch, 'platform-setup')
 mkdirSync(workspaceRoot, { recursive: true })
 mkdirSync(xdgDataHome, { recursive: true })
 mkdirSync(piSessionDir, { recursive: true })
+mkdirSync(xdgStateHome, { recursive: true })
 
 const children = []
 let shuttingDown = false
@@ -105,6 +114,27 @@ async function waitFor(url, label, timeoutMs = 60_000) {
   throw new Error(`e2e: ${label} did not become ready at ${url}`)
 }
 
+// waitForServiceRegistration polls the opencode service registration file — the
+// file the real binary writes when it starts its machine-wide service — and then
+// authenticates against the endpoint it names. Readiness is "a client can reach
+// the service with the published credential", which is exactly what the platform
+// will do, rather than a port guess the mock never publishes ahead of time.
+async function waitForServiceRegistration(file, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const registration = JSON.parse(readFileSync(file, 'utf8'))
+      const credentials = Buffer.from(`opencode:${registration.password}`).toString('base64')
+      const response = await fetch(`${registration.url}/api/info`, { headers: { authorization: `Basic ${credentials}` } })
+      if (response.ok) return registration
+    } catch {
+      // Not registered yet, or not answering yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`e2e: the mock opencode service never became reachable via ${file}`)
+}
+
 try {
   const build = spawnSync(
     'go',
@@ -127,10 +157,25 @@ try {
   })
   if (setup.status !== 0) throw new Error('e2e: configuring the throwaway password failed')
 
+  // The service exists before the platform does, and independently of it: no
+  // business path in the platform may bring it up, so the harness must not give
+  // the platform the chance to appear to do so.
+  start(
+    'opencode-service',
+    process.execPath,
+    [path.join(fixtureBin, 'opencode'), 'serve', '--service', '--hostname', '127.0.0.1', '--port', '0'],
+    {
+      env: { ...process.env, XDG_STATE_HOME: xdgStateHome, OPENCODE_MOCK_STORE_DIR: opencodeStoreDir },
+      stdio: 'ignore',
+    },
+  )
+  await waitForServiceRegistration(serviceRegistration)
+
   start('server', serverBin, ['-data-dir', dataDir], {
     env: {
       ...process.env,
       XDG_DATA_HOME: xdgDataHome,
+      XDG_STATE_HOME: xdgStateHome,
       PLATFORM_LISTEN_ADDR: apiAddr,
       PI_CODING_AGENT_SESSION_DIR: piSessionDir,
       OPENCODE_MOCK_STORE_DIR: opencodeStoreDir,

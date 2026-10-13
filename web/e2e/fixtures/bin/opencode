@@ -17,6 +17,9 @@
 // adapter normalizes it into the platform's message events.
 //
 // Invoked as: opencode serve --hostname H --port P
+// In `opencode serve --service` mode it behaves like the real machine-wide
+// service: it generates its own credential and registers itself in
+// $XDG_STATE_HOME/opencode/service.json, which the platform only ever reads.
 // It also answers `--version` for the platform's diagnostics probe (a version
 // inside the adapter's tested range) and reports the same version on
 // /api/info, so the API check classifies the mock as the version it mimics.
@@ -41,8 +44,15 @@ function flagValue(name, fallback) {
 
 const host = flagValue('--hostname', '127.0.0.1')
 const port = Number.parseInt(flagValue('--port', '0'), 10)
-const password = process.env.OPENCODE_SERVER_PASSWORD || ''
+// `serve --service` is how the real opencode runs one machine-wide service:
+// it generates its own credential and publishes it, with its url and pid, in
+// $XDG_STATE_HOME/opencode/service.json. The platform only reads that file —
+// so the mock has to publish it, exactly as the real binary does.
+const serviceMode = process.argv.includes('--service')
+const serviceId = crypto.randomUUID()
+const password = process.env.OPENCODE_SERVER_PASSWORD || (serviceMode ? crypto.randomBytes(12).toString('hex') : '')
 const directory = process.cwd()
+const version = '2.0.24-mock'
 
 const sessions = new Map()
 // messages mirrors the real server's machine-wide message storage. The real
@@ -98,20 +108,27 @@ function readBody(request) {
   })
 }
 
+// sessionDirectory is the working directory one session belongs to. One
+// machine-wide service serves every project, so a session's own directory —
+// not the server's — is what the platform filters events and listings by.
+function sessionDirectory(id) {
+  return sessions.get(id)?.directory || directory
+}
+
 function sessionInfo(id) {
   return {
     id,
     projectID: 'mock-project',
     title: sessions.get(id)?.title || '',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     time: { created: sessions.get(id)?.created || Date.now(), updated: Date.now() },
   }
 }
 
-// messageStorePath is one session's message log, scoped by working directory
-// the way the real server scopes its per-project data.
+// messageStorePath is one session's message log, scoped by the session's
+// working directory the way the real server scopes its per-project data.
 function messageStorePath(sessionId) {
-  const slug = directory.replace(/^[/\\]+/, '').replace(/[/\\:]/g, '-')
+  const slug = sessionDirectory(sessionId).replace(/^[/\\]+/, '').replace(/[/\\:]/g, '-')
   return path.join(storeRoot, slug, `${sessionId}.json`)
 }
 
@@ -144,7 +161,7 @@ function createdEvent(id, title) {
   return {
     id: `evt-${sequence}`,
     type: 'session.created',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id, title },
     durable: { aggregateID: id, seq: sequence, version: 1 },
   }
@@ -157,7 +174,7 @@ function executionEvent(id, state) {
   return {
     id: `evt-${sequence}`,
     type: `session.execution.${state}`,
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id },
     durable: { aggregateID: id, seq: sequence, version: 1 },
   }
@@ -177,7 +194,7 @@ function promptEvents(id, text) {
   events.push({
     id: `evt-${sequence}`,
     type: 'session.reasoning.started',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, ordinal: 1 },
   })
   const reasoningSplit = Math.ceil(reasoning.length / 2)
@@ -186,7 +203,7 @@ function promptEvents(id, text) {
     events.push({
       id: `evt-${sequence}`,
       type: 'session.reasoning.delta',
-      location: { directory },
+      location: { directory: sessionDirectory(id) },
       data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, delta: chunk },
     })
   }
@@ -194,7 +211,7 @@ function promptEvents(id, text) {
   events.push({
     id: `evt-${sequence}`,
     type: 'session.reasoning.ended',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id, assistantMessageID: messageId, reasoningID: reasoningId, text: reasoning },
   })
 
@@ -202,7 +219,7 @@ function promptEvents(id, text) {
   events.push({
     id: `evt-${sequence}`,
     type: 'session.text.started',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id, assistantMessageID: messageId },
   })
   const split = Math.ceil(reply.length / 2)
@@ -211,7 +228,7 @@ function promptEvents(id, text) {
     events.push({
       id: `evt-${sequence}`,
       type: 'session.text.delta',
-      location: { directory },
+      location: { directory: sessionDirectory(id) },
       data: { sessionID: id, assistantMessageID: messageId, delta: chunk },
     })
   }
@@ -219,7 +236,7 @@ function promptEvents(id, text) {
   events.push({
     id: `evt-${sequence}`,
     type: 'session.text.ended',
-    location: { directory },
+    location: { directory: sessionDirectory(id) },
     data: { sessionID: id, assistantMessageID: messageId, text: reply },
   })
   return events
@@ -248,7 +265,7 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'GET' && url.pathname === '/api/info') {
     sendJSON(response, 200, {
-      version: '2.0.24-mock',
+      version,
       pid: process.pid,
       urls: [`http://${host}:${port}`],
       paths: { tmp: '/tmp' },
@@ -257,7 +274,12 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (request.method === 'GET' && url.pathname === '/api/session') {
-    const list = [...sessions.keys()].map(sessionInfo)
+    // A machine-wide service holds every project's sessions; the caller's
+    // ?directory= is what scopes a listing, exactly as the real server does.
+    const wanted = url.searchParams.get('directory')
+    const list = [...sessions.keys()]
+      .filter((id) => !wanted || sessionDirectory(id) === wanted)
+      .map(sessionInfo)
     sendJSON(response, 200, { data: list })
     return
   }
@@ -283,7 +305,11 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'POST' && url.pathname === '/api/session') {
     const body = await readBody(request)
     const id = `oc-${crypto.randomBytes(6).toString('hex')}`
-    sessions.set(id, { title: body.title || '', created: Date.now() })
+    sessions.set(id, {
+      title: body.title || '',
+      created: Date.now(),
+      directory: body.location?.directory || directory,
+    })
     broadcast(createdEvent(id, body.title || ''))
     sendJSON(response, 200, { data: sessionInfo(id) })
     return
@@ -353,6 +379,47 @@ const server = http.createServer(async (request, response) => {
   sendJSON(response, 404, { _tag: 'not_found', message: `no route for ${request.method} ${url.pathname}` })
 })
 
+// serviceFilePath is where the real opencode publishes its machine-wide
+// registration; the platform reads it and never writes it.
+function serviceFilePath() {
+  const stateRoot = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state')
+  return path.join(stateRoot, 'opencode', 'service.json')
+}
+
+let publishedRegistration = ''
+
+// publishRegistration writes the file a real `opencode serve --service` writes,
+// including the generated credential a client needs to authenticate.
+function publishRegistration(url) {
+  const file = serviceFilePath()
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, JSON.stringify({ id: serviceId, version, url, pid: process.pid, password }))
+  publishedRegistration = file
+}
+
+// retractRegistration removes only our own registration: a newer service may
+// have replaced us, and stealing its file would be a lie.
+function retractRegistration() {
+  if (!publishedRegistration) return
+  try {
+    if (JSON.parse(fs.readFileSync(publishedRegistration, 'utf8')).id === serviceId) {
+      fs.rmSync(publishedRegistration, { force: true })
+    }
+  } catch {
+    // Nothing to retract.
+  }
+}
+
+process.on('exit', retractRegistration)
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    retractRegistration()
+    process.exit(0)
+  })
+}
+
 server.listen(port, host, () => {
-  process.stderr.write(`mock opencode listening on http://${host}:${port}\n`)
+  const url = `http://${host}:${port}`
+  if (serviceMode) publishRegistration(url)
+  process.stderr.write(`mock opencode listening on ${url}${serviceMode ? ' (service mode)' : ''}\n`)
 })
