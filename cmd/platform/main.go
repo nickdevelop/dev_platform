@@ -286,7 +286,10 @@ func runServer(args []string) error {
 		return err
 	}
 	instanceService := instances.NewService(db, registry, projectService, instances.WithPlatformEnabled(settingsService.Enabled))
-	sessionService := sessions.NewService(db, registry, instanceService, sessions.WithPlatformEnabled(settingsService.Enabled))
+	sessionService := sessions.NewService(db, registry, instanceService,
+		sessions.WithPlatformEnabled(settingsService.Enabled),
+		sessions.WithCatalog(catalog),
+	)
 	secretStore, err := secrets.NewStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("open secret store: %w", err)

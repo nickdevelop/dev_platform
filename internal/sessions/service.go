@@ -114,6 +114,14 @@ type BackendCapabilities struct {
 	// Enabled reports the platform-level enablement: a disabled backend cannot
 	// be selected for new tasks. It is independent of per-project settings.
 	Enabled bool `json:"enabled"`
+	// Label is the backend's display name from the catalog; it falls back to
+	// the raw id when the catalog does not describe the backend.
+	Label string `json:"label"`
+	// Order is the catalog's presentation order.
+	Order int `json:"order"`
+	// ServiceSupported reports whether the backend runs a machine-level
+	// service the operator can start and stop.
+	ServiceSupported bool `json:"serviceSupported"`
 }
 
 // InstanceService is the subset of the instance lifecycle the session layer
@@ -156,6 +164,10 @@ type Service struct {
 	// streamBuffer bounds one SSE subscriber's backlog; tests may lower it.
 	streamBuffer int
 
+	// catalog describes the backends' display facts. Nil leaves the labels as
+	// raw ids and reports no service support.
+	catalog *agents.Catalog
+
 	// turnMu guards trackers and turns. turns maps instance id to native
 	// session id to the session's current turn state; trackers records the
 	// instances that already have a turn tracker.
@@ -187,6 +199,14 @@ func NewService(db *gorm.DB, registry *agents.Registry, instanceService Instance
 // Option configures a Service.
 type Option func(*Service)
 
+// WithCatalog supplies the backend catalog that provides display labels,
+// presentation order and service support for the backend list.
+func WithCatalog(catalog *agents.Catalog) Option {
+	return func(s *Service) {
+		s.catalog = catalog
+	}
+}
+
 // WithPlatformEnabled supplies the platform-level agent enablement lookup. A
 // nil lookup leaves every backend enabled (the zero-config default).
 func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
@@ -216,7 +236,13 @@ func (s *Service) Backends() []BackendCapabilities {
 	ids := s.registry.Backends()
 	out := make([]BackendCapabilities, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, BackendCapabilities{Backend: id, Capabilities: s.capabilities(id), Enabled: !s.agentDisabled(id)})
+		entry := BackendCapabilities{Backend: id, Capabilities: s.capabilities(id), Enabled: !s.agentDisabled(id), Label: string(id)}
+		if descriptor, known := s.catalog.Get(id); known {
+			entry.Label = descriptor.Label
+			entry.Order = descriptor.Order
+			entry.ServiceSupported = descriptor.ServiceSupported
+		}
+		out = append(out, entry)
 	}
 	return out
 }

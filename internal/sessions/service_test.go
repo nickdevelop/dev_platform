@@ -1892,3 +1892,30 @@ func TestCreateWithoutTitleLeavesTitleEmpty(t *testing.T) {
 		t.Errorf("row title = %q, want empty", row.Title)
 	}
 }
+
+// TestBackendsCarryCatalogMetadata proves the list gives the workbench the
+// display label, presentation order and service support from the catalog, and
+// falls back to the raw id for a backend the catalog does not describe.
+func TestBackendsCarryCatalogMetadata(t *testing.T) {
+	env := newTestEnv(t)
+	catalog, err := agents.NewCatalog(agents.BackendDescriptor{
+		ID: agents.BackendPi, Label: "Pi Agent", Binary: "pi", Order: 2, ServiceSupported: false,
+	})
+	if err != nil {
+		t.Fatalf("NewCatalog: %v", err)
+	}
+	WithCatalog(catalog)(env.svc)
+
+	backends := env.svc.Backends()
+	if len(backends) != 1 {
+		t.Fatalf("Backends = %+v, want one", backends)
+	}
+	if got := backends[0]; got.Label != "Pi Agent" || got.Order != 2 || got.ServiceSupported {
+		t.Fatalf("metadata = %+v, want label Pi Agent, order 2, no service", got)
+	}
+
+	WithCatalog(nil)(env.svc)
+	if got := env.svc.Backends()[0]; got.Label != string(agents.BackendPi) {
+		t.Fatalf("label without catalog = %q, want the raw id", got.Label)
+	}
+}
