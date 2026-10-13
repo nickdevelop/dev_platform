@@ -235,6 +235,14 @@ async function open() {
   if (!sessions.sessionById(props.sessionId)) return
   preparing.value = true
   toolNotice.value = ''
+  // A first message the create request could not admit keeps its text here:
+  // the composer is pre-filled and the failure is reported, so sending again
+  // needs no retyping.
+  const failedFirstMessage = sessions.consumeFirstMessageFailure(props.sessionId)
+  if (failedFirstMessage) {
+    messageText.value = failedFirstMessage.text
+    sendError.value = '首条消息未能随任务一起发送，已保留文本，请重新发送。'
+  }
   try {
     await sessions.openSession(props.projectId, props.sessionId)
     const session = sessions.sessionById(props.sessionId)

@@ -695,18 +695,19 @@ describe('sessions store per-message model', () => {
     expect(entries[1].model).toBeUndefined()
   })
 
-  it('fills the model in when a later streaming chunk carries it', () => {
+  it('fills the model in when the final snapshot carries it', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
 
     // The first delta may arrive before the adapter knows the session's
-    // model; a later chunk of the same open block completes the stamp.
+    // model; the final event carries the block's full snapshot, so it both
+    // settles the text and completes the stamp.
     sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', 'A', false, 1)))
     sessions.handleEvent(
       's1',
       JSON.stringify(
-        liveMessage('assistant', 'B', true, 2, { id: 'prj/model-x', provider: 'prj' }),
+        liveMessage('assistant', 'AB', true, 2, { id: 'prj/model-x', provider: 'prj' }),
       ),
     )
 
@@ -714,6 +715,23 @@ describe('sessions store per-message model', () => {
     expect(entries).toHaveLength(1)
     expect(entries[0].text).toBe('AB')
     expect(entries[0].model).toEqual({ id: 'prj/model-x', provider: 'prj' })
+  })
+
+  it('replaces the accumulated prefix with the final full-text snapshot', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    // A viewer that joined mid-message holds a truncated prefix (from a
+    // history snapshot or missed deltas); the final full-text snapshot
+    // converges the block instead of appending to the fragment.
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答案的', false, 1)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答案的全文', true, 2)))
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries).toHaveLength(1)
+    expect(entries[0].text).toBe('答案的全文')
+    expect(entries[0].streaming).toBe(false)
   })
 
   it('replays history with each message model', async () => {
@@ -1147,5 +1165,162 @@ describe('sessions store composer model', () => {
     await sessions.deleteSession(1, 's1')
 
     expect(sessions.modelFor('s1')).toBe('')
+  })
+})
+
+// A first message admitted at create time rides the create request, so its
+// echo arrives on the stream without a composer send ever happening: the
+// echo dedupe must hold it all the same, and a refused message must keep
+// its text for the composer to offer again.
+describe('sessions store create with first message', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubCreate(payload: unknown) {
+    stubRoutes({ '/sessions': payload })
+  }
+
+  it('holds the echo of a first message admitted at create time', async () => {
+    const sessions = useSessionsStore()
+    stubCreate({ session: session('s1', 1) })
+
+    await sessions.createSession(1, { backend: 'pi', message: 'hello pi' })
+    expect(sessions.echoPending['s1']).toBe('hello pi')
+
+    // The user turn in the log comes from the history replay, not from an
+    // optimistic composer entry.
+    sessions.messages['s1'] = [
+      { id: 'e1', kind: 'message', role: 'user', text: 'hello pi', streaming: false },
+    ]
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'message', sequence: 1, replayed: false, message: { role: 'user', text: 'hello pi', final: true } })),
+    )
+    expect(sessions.messagesFor('s1').filter((entry) => entry.role === 'user')).toHaveLength(1)
+  })
+
+  it('records a refused first message and consumes it once', async () => {
+    const sessions = useSessionsStore()
+    stubCreate({ session: session('s1', 1), messageError: 'agent_operation_failed' })
+
+    const created = await sessions.createSession(1, { backend: 'pi', message: 'hello pi' })
+    expect(created?.id).toBe('s1')
+    expect(sessions.firstMessageFailures['s1']).toEqual({
+      text: 'hello pi',
+      error: 'agent_operation_failed',
+    })
+
+    const record = sessions.consumeFirstMessageFailure('s1')
+    expect(record).toEqual({ text: 'hello pi', error: 'agent_operation_failed' })
+    expect(sessions.consumeFirstMessageFailure('s1')).toBeNull()
+  })
+})
+
+// A turn that finished before the stream opened leaves entries streaming:
+// history replayed an in-flight snapshot and the final full-text event was
+// broadcast to nobody. One history re-fetch settles them.
+describe('sessions store dangling entry repair', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('settles a streamed assistant entry from the final history snapshot', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    sessions.messages['s1'] = [
+      { id: 'e1', kind: 'message', role: 'user', text: '问', streaming: false },
+      { id: 'e2', kind: 'message', role: 'assistant', text: '部分的', streaming: true },
+    ]
+    stubRoutes({
+      '/history': {
+        events: [
+          messageEvent('user', '问', 1),
+          messageEvent('assistant', '部分的回答全文', 2),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.repairDanglingEntries(1, 's1')
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries[1].text).toBe('部分的回答全文')
+    expect(entries[1].streaming).toBe(false)
+  })
+
+  it('leaves entries alone while the turn is still running', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1, { turn: 'running' })]
+    sessions.messages['s1'] = [
+      { id: 'e1', kind: 'message', role: 'assistant', text: '部分的', streaming: true },
+    ]
+    const calls = stubRoutes({ '/history': { events: [], truncated: false } })
+
+    await sessions.repairDanglingEntries(1, 's1')
+
+    expect(calls).toHaveLength(0)
+    expect(sessions.messagesFor('s1')[0].streaming).toBe(true)
+  })
+
+  it('does nothing when every entry already settled', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    sessions.messages['s1'] = [
+      { id: 'e1', kind: 'message', role: 'assistant', text: '完成', streaming: false },
+    ]
+    const calls = stubRoutes({ '/history': { events: [], truncated: false } })
+
+    await sessions.repairDanglingEntries(1, 's1')
+
+    expect(calls).toHaveLength(0)
+  })
+
+  it('aborts the repair when entries changed while history was in flight', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    sessions.messages['s1'] = [
+      { id: 'e1', kind: 'message', role: 'assistant', text: '部分的', streaming: true },
+    ]
+    // The history response resolves only after a live entry landed, so the
+    // stale snapshot must never overwrite what the stream just delivered.
+    let resolveHistory: (value: unknown) => void = () => {}
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveHistory = (payload) =>
+              resolve({ status: 200, json: async () => payload } as Response)
+          }),
+      ),
+    )
+
+    const repair = sessions.repairDanglingEntries(1, 's1')
+    sessions.messages['s1']!.push({
+      id: 'e2',
+      kind: 'message',
+      role: 'user',
+      text: '新消息',
+      streaming: false,
+    })
+    resolveHistory({ events: [messageEvent('assistant', '过期的全文', 2)], truncated: false })
+    await repair
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries[0].text).toBe('部分的')
+    expect(entries[0].streaming).toBe(true)
   })
 })

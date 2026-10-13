@@ -39,15 +39,17 @@ func TestTurnTracksOnlyTheSessionWhoseTurnChanged(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-busy"}
-	busy, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "busy")
+	busyOutcome, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "busy", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	busy := busyOutcome.Session
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-other"}
-	other, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "other")
+	otherOutcome, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "other", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	other := otherOutcome.Session
 	if busy.Turn != TurnIdle {
 		t.Fatalf("new session turn = %q, want idle", busy.Turn)
 	}
@@ -64,10 +66,11 @@ func TestTurnEndsOnFailureAndProcessExit(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-failing"}
-	session, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "failing")
+	sessionOutcome, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "failing", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	session := sessionOutcome.Session
 
 	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "agent_start"))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)

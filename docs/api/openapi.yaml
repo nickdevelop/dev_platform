@@ -887,6 +887,10 @@ paths:
         recently created running instance of that backend, starting one when
         none is running; a start failure leaves no session behind. The removed
         instanceId field is ignored, so a body without backend is rejected.
+        An optional first message is admitted on the created session in the
+        same request, on the optional model the session is created with (the
+        backend must declare modelSelection); the response's messageError
+        reports a refused message while the session itself stays live.
       operationId: createProjectSession
       security:
         - cookieAuth: []
@@ -907,11 +911,11 @@ paths:
               $ref: '#/components/schemas/CreateAgentSessionRequest'
       responses:
         '201':
-          description: Session created and indexed.
+          description: Session created and indexed, with the optional first message admitted.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AgentSession'
+                $ref: '#/components/schemas/CreateAgentSessionResult'
         '400':
           description: Malformed body or missing/invalid backend.
           content:
@@ -3500,7 +3504,35 @@ components:
             one when none is running.
         title:
           type: string
-          description: Display title for the new session, when supported.
+          description: >-
+            Display title for the new session, when supported. An untitled
+            create with a message derives the title from that message.
+        message:
+          type: string
+          description: >-
+            Optional first message admitted on the created session in the same
+            request. A refused message leaves the session live and is reported
+            through the response's messageError.
+        model:
+          type: string
+          description: >-
+            Model the session is created with, only honored when the backend
+            declares modelSelection. Meaningful together with message; later
+            messages can still switch models per message.
+      additionalProperties: false
+    CreateAgentSessionResult:
+      type: object
+      required:
+        - session
+      properties:
+        session:
+          $ref: '#/components/schemas/AgentSession'
+        messageError:
+          type: string
+          description: >-
+            Error code of a refused optional first message (the session was
+            still created). Absent when the message was admitted or none was
+            requested.
       additionalProperties: false
     SendAgentSessionMessageRequest:
       type: object

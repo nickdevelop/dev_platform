@@ -24,7 +24,10 @@ import {
   type BackendId,
   type CreateSessionBody,
   type MessageModel,
+  type MessagePayload,
   type NormalizedEvent,
+  type SessionHistory,
+  type ThinkingPayload,
 } from '../api/sessions'
 import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
@@ -189,6 +192,11 @@ export const useSessionsStore = defineStore('sessions', {
     // stream; matching the pending text — rather than whatever entry happens
     // to be last — is what survives diagnostics interleaved before the echo.
     echoPending: {} as Record<string, string>,
+    // firstMessageFailures records, per session, a first message the create
+    // request could not admit (the session itself was created). The chat
+    // panel pre-fills the composer with the text and reports the error once,
+    // then consumes the record.
+    firstMessageFailures: {} as Record<string, { text: string; error: string }>,
     // The model the user explicitly chose in the composer, kept per session so
     // switching tasks restores the model the user last picked for each task.
     // It is a deliberate choice and outranks the session's own model.
@@ -325,11 +333,27 @@ export const useSessionsStore = defineStore('sessions', {
     async createSession(projectId: number, body: CreateSessionBody) {
       const auth = useAuthStore()
       try {
-        const created = await createProjectSession(projectId, body, auth.csrfToken)
+        const result = await createProjectSession(projectId, body, auth.csrfToken)
+        const created = result.session
         this.sessions = [...this.sessions, created]
         this.revision++
         this.error = ''
         this.errorCode = ''
+        // A first message admitted at create time is echoed once on the
+        // stream; the optimistic user entry the history replay shows must not
+        // double it, so the echo dedupe holds the text like a composer send.
+        if (created && body.message !== undefined && result.messageError === undefined) {
+          this.echoPending[created.id] = body.message.trim()
+        }
+        // A refused first message keeps the session but reports the failure to
+        // the chat panel, which pre-fills the composer so the user can send
+        // again without retyping.
+        if (created && result.messageError !== undefined) {
+          this.firstMessageFailures[created.id] = {
+            text: (body.message ?? '').trim(),
+            error: result.messageError,
+          }
+        }
         return created
       } catch (error) {
         if (error instanceof UnauthorizedError) return null
@@ -388,6 +412,7 @@ export const useSessionsStore = defineStore('sessions', {
         clearStreamRepair(sessionId)
         repaired.delete(sessionId)
         this.streamStatus[sessionId] = 'open'
+        void this.repairDanglingEntries(projectId, sessionId)
       }
       source.onerror = () => {
         if (source.readyState === EventSource.CLOSED) {
@@ -599,9 +624,17 @@ export const useSessionsStore = defineStore('sessions', {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
       if (open) {
-        if (text !== '') open.text += text
+        if (final) {
+          // A final event carries the block's full snapshot (the adapter no
+          // longer collapses it after deltas), so it replaces the accumulated
+          // prefix — this is also how a viewer that joined mid-message
+          // converges instead of keeping a truncated text.
+          if (text !== '') open.text = text
+          open.streaming = false
+        } else if (text !== '') {
+          open.text += text
+        }
         if (model) open.model = model
-        if (final) open.streaming = false
         return
       }
       // An empty event with no open block: a terminator whose block already
@@ -620,15 +653,21 @@ export const useSessionsStore = defineStore('sessions', {
 
     // appendThinking adds reasoning to the log, merging into the thinking
     // block that is still open (see findOpenStreaming) so the pane shows one
-    // growing block rather than a line per chunk. An event that belongs to no
-    // open block — an empty terminator arriving after the block settled, or
-    // an empty delta — renders an empty block and is dropped.
+    // growing block rather than a line per chunk. A final event carries the
+    // block's full snapshot and replaces the accumulated prefix, like
+    // appendMessage. An event that belongs to no open block — an empty
+    // terminator arriving after the block settled, or an empty delta —
+    // renders an empty block and is dropped.
     appendThinking(sessionId: string, text: string, final: boolean, sequence: number) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'thinking')
       if (open) {
+        if (final) {
+          if (text !== '') open.text = text
+          open.streaming = false
+          return
+        }
         if (text !== '') open.text += text
-        if (final) open.streaming = false
         return
       }
       if (text !== '') {
@@ -676,6 +715,68 @@ export const useSessionsStore = defineStore('sessions', {
       this.sessions = this.sessions.map((entry) =>
         entry.id === sessionId ? { ...entry, turn } : entry,
       )
+    },
+
+    // consumeFirstMessageFailure returns and clears the failed-first-message
+    // record of a session, if any. The chat panel calls it once when it opens
+    // so the composer can offer the text again.
+    consumeFirstMessageFailure(sessionId: string) {
+      const record = this.firstMessageFailures[sessionId]
+      if (record) delete this.firstMessageFailures[sessionId]
+      return record ?? null
+    },
+
+    // repairDanglingEntries settles transcript entries left streaming by a
+    // turn that finished before the stream opened: history replayed an
+    // in-flight snapshot, and the final full-text event was broadcast before
+    // any subscriber existed, so no event will ever close those entries.
+    // One history re-fetch repairs the last streamed assistant message and
+    // thinking block from their final snapshots. A turn still running
+    // settles through its own events and is left alone; the repair aborts
+    // when entries changed meanwhile, so it never races a live turn into a
+    // stale overwrite. A failed repair is silent — the entries keep their
+    // streaming cursor until the next open repairs them.
+    async repairDanglingEntries(projectId: number, sessionId: string) {
+      const before = this.messages[sessionId]
+      if (!before || !before.some((entry) => entry.streaming)) return
+      const session = this.sessionById(sessionId)
+      if (!session || session.turn === 'running') return
+      // Snapshot the log's shape now: the fetch below awaits, and any entry
+      // that lands meanwhile means the live stream owns the log again.
+      const beforeCount = before.length
+      const beforeLastId = before.length > 0 ? before[before.length - 1].id : ''
+      let history: SessionHistory
+      try {
+        history = await getSessionHistory(projectId, sessionId)
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        return
+      }
+      let lastMessage: MessagePayload | null = null
+      let lastThinking: ThinkingPayload | null = null
+      for (const event of history.events) {
+        if (event.type === 'message' && event.message && event.message.final && event.message.role === 'assistant') {
+          lastMessage = event.message
+        }
+        if (event.type === 'thinking' && event.thinking && event.thinking.final) {
+          lastThinking = event.thinking
+        }
+      }
+      const list = this.messages[sessionId]
+      // Something arrived while the history was in flight: the live stream
+      // owns the entries now, so the stale snapshots must not overwrite it.
+      if (!list || list.length !== beforeCount) return
+      if (list.length > 0 && list[list.length - 1].id !== beforeLastId) return
+      for (const entry of list) {
+        if (!entry.streaming) continue
+        if (entry.kind === 'message' && entry.role === 'assistant' && lastMessage) {
+          entry.text = lastMessage.text
+          entry.streaming = false
+        } else if (entry.kind === 'thinking' && lastThinking) {
+          entry.text = lastThinking.text
+          entry.streaming = false
+        }
+      }
     },
 
     // settleStreaming closes every still-open entry of a session. A turn that

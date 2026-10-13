@@ -502,14 +502,15 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 
 	got := collectEvents(t, ch, 9)
 
-	// 1-3: a streamed assistant message: deltas then an empty final terminator.
+	// 1-3: a streamed assistant message: deltas then a final full-text
+	// snapshot.
 	if got[0].Type != agents.EventMessage || got[0].Message.Text != "Hel" || got[0].Message.Final {
 		t.Fatalf("event 0 = %+v", got[0])
 	}
 	if got[1].Type != agents.EventMessage || got[1].Message.Text != "lo" || got[1].Message.Final {
 		t.Fatalf("event 1 = %+v", got[1])
 	}
-	if got[2].Type != agents.EventMessage || !got[2].Message.Final || got[2].Message.Text != "" {
+	if got[2].Type != agents.EventMessage || !got[2].Message.Final || got[2].Message.Text != "Hello" {
 		t.Fatalf("event 2 = %+v", got[2])
 	}
 	// 4: text.started is lifecycle.
@@ -592,15 +593,16 @@ func TestAdapterSubscribeStampsSessionModel(t *testing.T) {
 	defer adapter.StopInstance(context.Background(), instance.ID)
 
 	got := collectEvents(t, ch, 2)
-	// The deltas carried the text, so the ended event closes with an empty
-	// terminator.
+	// The ended event always carries the part's full snapshot, even after
+	// deltas: consumers replace on final, so a subscriber that joined late
+	// still converges on the whole text.
 	for i, want := range []struct {
 		text    string
 		final   bool
 		modelID string
 	}{
 		{"Hel", false, "prj/model-x"},
-		{"", true, "prj/model-x"},
+		{"Hello", true, "prj/model-x"},
 	} {
 		if got[i].Type != agents.EventMessage || got[i].Message == nil {
 			t.Fatalf("event %d = %+v, want a message", i, got[i])
@@ -1167,8 +1169,8 @@ func TestListHistoryReadsThroughTheSharedServiceForAnyDirectory(t *testing.T) {
 
 // TestAdapterSubscribeStreamsReasoning pins that the reasoning event family
 // becomes its own event kind rather than being folded into the reply: deltas
-// stream non-final and the block closes with an empty final terminator, exactly
-// like the text family, and the text stream is unaffected.
+// stream non-final and the block closes with a final full-text snapshot,
+// exactly like the text family, and the text stream is unaffected.
 func TestAdapterSubscribeStreamsReasoning(t *testing.T) {
 	events := strings.Join([]string{
 		sseEvent("evt_1", "session.reasoning.started", `{"sessionID":"ses_1","assistantMessageID":"msg_1","ordinal":1,"reasoningID":"rs_1"}`, "/x"),
@@ -1215,14 +1217,14 @@ func TestAdapterSubscribeStreamsReasoning(t *testing.T) {
 			t.Errorf("event[%d] = %+v, want a non-final thinking chunk %q", i, event, want)
 		}
 	}
-	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || got[2].Thinking.Text != "" || !got[2].Thinking.Final {
-		t.Errorf("event[2] = %+v, want an empty final thinking terminator", got[2])
+	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || got[2].Thinking.Text != "先看再看" || !got[2].Thinking.Final {
+		t.Errorf("event[2] = %+v, want the final full-text thinking snapshot", got[2])
 	}
 	if got[3].Type != agents.EventMessage || got[3].Message == nil || got[3].Message.Text != "答案" || got[3].Message.Final {
 		t.Errorf("event[3] = %+v, want the streamed text delta", got[3])
 	}
-	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "" || !got[4].Message.Final {
-		t.Errorf("event[4] = %+v, want the text terminator", got[4])
+	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "答案" || !got[4].Message.Final {
+		t.Errorf("event[4] = %+v, want the final full-text text snapshot", got[4])
 	}
 }
 

@@ -110,9 +110,21 @@ type backendDiagnosticsResponse struct {
 // createSessionRequest is the JSON body of POST /api/projects/{id}/sessions.
 // The backend selects the instance: the server reuses a running one of that
 // backend in the project or starts one. instanceId is no longer accepted.
+// Message and model are optional: when present, the session is created on the
+// model and the message is admitted as its first turn in the same request.
 type createSessionRequest struct {
 	Backend agents.BackendID `json:"backend"`
 	Title   string           `json:"title,omitempty"`
+	Message string           `json:"message,omitempty"`
+	Model   string           `json:"model,omitempty"`
+}
+
+// createSessionResponse is the JSON body of a successful create. MessageError
+// carries the code of a failed optional first message; the session itself is
+// always live.
+type createSessionResponse struct {
+	Session      Session `json:"session"`
+	MessageError string  `json:"messageError,omitempty"`
 }
 
 // sendMessageRequest is the JSON body of a session message.
@@ -159,7 +171,9 @@ func (s *Service) handleList(c *gin.Context) {
 }
 
 // handleCreate starts a new session for the requested backend in the project,
-// reusing or starting an instance as needed.
+// reusing or starting an instance as needed. An optional first message is
+// admitted on the created session in the same request; its failure is reported
+// in the response while the session itself is still created.
 func (s *Service) handleCreate(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
@@ -170,12 +184,12 @@ func (s *Service) handleCreate(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	session, err := s.Create(c.Request.Context(), id, req.Backend, req.Title)
+	outcome, err := s.Create(c.Request.Context(), id, req.Backend, req.Title, req.Message, req.Model)
 	if err != nil {
 		respondServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, session)
+	c.JSON(http.StatusCreated, createSessionResponse{Session: outcome.Session, MessageError: outcome.MessageError})
 }
 
 // handleDiscover lists and indexes an instance's native sessions.

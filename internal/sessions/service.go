@@ -328,40 +328,79 @@ func (s *Service) Delete(projectID uint, sessionID string) error {
 	return nil
 }
 
+// CreateOutcome reports the result of creating a session with an optional
+// first message. A failed first message leaves the session usable — the
+// MessageError carries the failure code and the user sends again from the
+// composer — so the create itself still succeeds.
+type CreateOutcome struct {
+	Session Session
+	// MessageError is the error code of a failed first message; empty when
+	// the message was admitted or none was requested.
+	MessageError string
+}
+
 // Create starts a new agent-native session for the project's backend. It
 // reuses the project's most recently created running instance of that backend
-// and starts one when none is running, then indexes the new session. A model
-// is never chosen here: the workbench sends one with each message.
-func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title string) (Session, error) {
+// and starts one when none is running, then indexes the new session. When a
+// first message is supplied, the model is chosen at creation (backends create
+// the session on that model directly, so no switch call is needed) and the
+// message is admitted right after: the turn runs while the workbench opens
+// the task. The message failing to be admitted does not fail the create — the
+// session is already live and the caller surfaces MessageError instead.
+func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string) (CreateOutcome, error) {
 	if !backend.Valid() {
-		return Session{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
+		return CreateOutcome{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
 	}
 	if s.agentDisabled(backend) {
-		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
+		return CreateOutcome{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
 	}
 	inst, err := s.instanceForBackend(ctx, projectID, backend)
 	if err != nil {
-		return Session{}, err
+		return CreateOutcome{}, err
 	}
 	if !instanceRunnable(inst) {
-		return Session{}, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
+		return CreateOutcome{}, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
+	}
+	if model != "" && !s.capabilities(inst.Backend).ModelSelection {
+		return CreateOutcome{}, fmt.Errorf("%w: model selection", ErrUnsupportedCapability)
 	}
 	adapter, err := s.adapter(inst.Backend)
 	if err != nil {
-		return Session{}, err
+		return CreateOutcome{}, err
 	}
-	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title})
+	// Backends do not name new sessions themselves (pi only records a name
+	// when one is given), so an untitled first message names the session the
+	// same way a first composer message would.
+	message = strings.TrimSpace(message)
+	if title == "" && message != "" {
+		title = agents.DeriveTitle(message)
+	}
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
 	if err != nil {
-		return Session{}, fmt.Errorf("%w: create session: %w", ErrBackendFailed, err)
+		return CreateOutcome{}, fmt.Errorf("%w: create session: %w", ErrBackendFailed, err)
 	}
 	if ref == nil {
-		return Session{}, fmt.Errorf("%w: adapter returned no session", ErrBackendFailed)
+		return CreateOutcome{}, fmt.Errorf("%w: adapter returned no session", ErrBackendFailed)
 	}
 	if err := validateRef(ref, inst); err != nil {
-		return Session{}, err
+		return CreateOutcome{}, err
 	}
+	// The tracker subscribes before the message is admitted so the turn's
+	// first lifecycle events are never ahead of the subscription.
 	s.ensureTracker(inst.ID)
-	return s.indexRef(projectID, inst, *ref, SessionActive)
+	row, err := s.indexRef(projectID, inst, *ref, SessionActive)
+	if err != nil {
+		return CreateOutcome{}, err
+	}
+	outcome := CreateOutcome{Session: row}
+	if message != "" {
+		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message}); err != nil {
+			// The session stays; the workbench pre-fills the composer and
+			// reports the failure so the user can send again.
+			outcome.MessageError = "agent_operation_failed"
+		}
+	}
+	return outcome, nil
 }
 
 // instanceForBackend returns the project's most recently created running

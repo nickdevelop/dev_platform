@@ -97,7 +97,7 @@ func TestCreateRefusedWhenServiceNotRunning(t *testing.T) {
 	env, gate := newGatedEnv(t)
 	gate.availableErr = serviceNotRunning()
 
-	_, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "first task")
+	_, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "first task", "", "")
 	if !errors.Is(err, ErrServiceNotRunning) {
 		t.Fatalf("Create error = %v, want it to wrap %v", err, ErrServiceNotRunning)
 	}
@@ -133,18 +133,18 @@ func TestContinueRebindRefusedWhenServiceNotRunning(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "native-gated", Title: "gated"}
 	env.fake.mu.Unlock()
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "gated")
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "gated", "", "")
 	if err != nil {
 		t.Fatalf("create session while the service is up: %v", err)
 	}
 	before := instanceRowCount(t, env)
 
-	if _, err := env.instances.Stop(context.Background(), session.InstanceID); err != nil {
+	if _, err := env.instances.Stop(context.Background(), outcome.Session.InstanceID); err != nil {
 		t.Fatalf("stop instance: %v", err)
 	}
 	gate.availableErr = serviceNotRunning()
 
-	if _, err := env.svc.Continue(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrServiceNotRunning) {
+	if _, err := env.svc.Continue(context.Background(), env.projectID, outcome.Session.ID); !errors.Is(err, ErrServiceNotRunning) {
 		t.Fatalf("Continue error = %v, want it to wrap %v", err, ErrServiceNotRunning)
 	}
 	if count := instanceRowCount(t, env); count != before {
@@ -161,20 +161,20 @@ func TestContinueSucceedsAfterServiceStarted(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "native-gated", Title: "gated"}
 	env.fake.mu.Unlock()
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "gated")
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "gated", "", "")
 	if err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	if _, err := env.instances.Stop(context.Background(), session.InstanceID); err != nil {
+	if _, err := env.instances.Stop(context.Background(), outcome.Session.InstanceID); err != nil {
 		t.Fatalf("stop instance: %v", err)
 	}
 	gate.availableErr = serviceNotRunning()
-	if _, err := env.svc.Continue(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrServiceNotRunning) {
+	if _, err := env.svc.Continue(context.Background(), env.projectID, outcome.Session.ID); !errors.Is(err, ErrServiceNotRunning) {
 		t.Fatalf("Continue = %v, want the refusal while the service is down", err)
 	}
 
 	gate.availableErr = nil
-	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
+	continued, err := env.svc.Continue(context.Background(), env.projectID, outcome.Session.ID)
 	if err != nil {
 		t.Fatalf("Continue after the service was started: %v", err)
 	}

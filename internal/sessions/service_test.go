@@ -400,10 +400,11 @@ func createNativeSession(t *testing.T, env *testEnv, nativeID string) Session {
 	}
 	env.fake.mu.Unlock()
 
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, nativeID)
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, nativeID, "", "")
 	if err != nil {
 		t.Fatalf("Create(%s): %v", nativeID, err)
 	}
+	session := created.Session
 	return session
 }
 
@@ -475,10 +476,11 @@ func TestCreateReusesRunningInstanceForBackend(t *testing.T) {
 	env.fake.mu.Unlock()
 
 	before := env.fake.startCount()
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "reuse")
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "reuse", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	session := created.Session
 	if session.InstanceID != env.instanceID {
 		t.Errorf("session instance = %q, want the running instance %q", session.InstanceID, env.instanceID)
 	}
@@ -500,10 +502,11 @@ func TestCreateStartsInstanceWhenNoneRunning(t *testing.T) {
 	env.fake.mu.Unlock()
 
 	before := env.fake.startCount()
-	session, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "started")
+	created, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "started", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	session := created.Session
 	if got := env.fake.startCount(); got != before+1 {
 		t.Errorf("StartInstance calls = %d, want %d (one auto-start)", got, before+1)
 	}
@@ -524,7 +527,7 @@ func TestCreateReportsStartFailureWithoutIndexing(t *testing.T) {
 	env.fake.startErr = errors.New("adapter cannot start")
 	env.fake.mu.Unlock()
 
-	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "nope")
+	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "nope", "", "")
 	if !errors.Is(err, instances.ErrStartFailed) {
 		t.Fatalf("Create error = %v, want instances.ErrStartFailed", err)
 	}
@@ -542,7 +545,7 @@ func TestCreateRefusesDisabledBackend(t *testing.T) {
 		t.Fatalf("disable backend: %v", err)
 	}
 
-	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "t")
+	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "t", "", "")
 	if !errors.Is(err, instances.ErrBackendDisabled) {
 		t.Fatalf("Create error = %v, want instances.ErrBackendDisabled", err)
 	}
@@ -553,10 +556,10 @@ func TestCreateRefusesDisabledBackend(t *testing.T) {
 func TestCreateRejectsInvalidBackend(t *testing.T) {
 	env := newTestEnv(t)
 
-	if _, err := env.svc.Create(context.Background(), env.projectID, "", "t"); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := env.svc.Create(context.Background(), env.projectID, "", "t", "", ""); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("Create with empty backend error = %v, want ErrInvalidRequest", err)
 	}
-	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendID("nope"), "t"); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendID("nope"), "t", "", ""); !errors.Is(err, ErrInvalidRequest) {
 		t.Errorf("Create with unknown backend error = %v, want ErrInvalidRequest", err)
 	}
 }
@@ -587,10 +590,11 @@ func TestCreateResolvesDuplicateNativeSessionRace(t *testing.T) {
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-race"}
 	env.fake.mu.Unlock()
 
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
 	if err != nil {
 		t.Fatalf("Create after a duplicate native-session race: %v", err)
 	}
+	session := created.Session
 	if session.ID != "existing-1" {
 		t.Errorf("Create returned %q, want the already-indexed id existing-1", session.ID)
 	}
@@ -1068,12 +1072,12 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST sessions = %d %s", rec.Code, rec.Body.String())
 	}
-	var created Session
+	var created createSessionResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode created session: %v", err)
 	}
-	if created.NativeSessionID != "native-http" {
-		t.Errorf("created session = %+v, want native native-http", created)
+	if created.Session.NativeSessionID != "native-http" {
+		t.Errorf("created session = %+v, want native native-http", created.Session)
 	}
 
 	// A body that still carries the removed instanceId is ignored: without a
@@ -1090,7 +1094,7 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	// Sending an empty message is a 400.
 	empty, _ := json.Marshal(sendMessageRequest{Text: "  "})
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/messages", env.projectID, created.ID), strings.NewReader(string(empty)))
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/messages", env.projectID, created.Session.ID), strings.NewReader(string(empty)))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -1100,7 +1104,7 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	// The SSE route sets text/event-stream for an active session.
 	ctx, cancel := context.WithCancel(context.Background())
 	rec = httptest.NewRecorder()
-	sseReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions/%s/events", env.projectID, created.ID), nil).WithContext(ctx)
+	sseReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions/%s/events", env.projectID, created.Session.ID), nil).WithContext(ctx)
 	done := make(chan struct{})
 	go func() {
 		router.ServeHTTP(rec, sseReq)
@@ -1118,7 +1122,7 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	env.fake.stopErr = errors.New("adapter boom")
 	env.fake.mu.Unlock()
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/stop", env.projectID, created.ID), nil)
+	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/stop", env.projectID, created.Session.ID), nil)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadGateway {
 		t.Errorf("POST stop with adapter failure = %d, want 502", rec.Code)
@@ -1732,7 +1736,7 @@ func TestCreateRejectsPlatformDisabledAgent(t *testing.T) {
 	env := newTestEnv(t, func(agents.BackendID) bool { return enabled })
 	enabled = false
 
-	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "blocked"); !errors.Is(err, ErrAgentDisabled) {
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "blocked", "", ""); !errors.Is(err, ErrAgentDisabled) {
 		t.Fatalf("Create error = %v, want ErrAgentDisabled", err)
 	}
 }
@@ -1759,10 +1763,11 @@ func TestSendBackfillsEmptyTitleFromFirstMessage(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-t1"}
 	env.fake.mu.Unlock()
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	session := created.Session
 	if session.Title != "" {
 		t.Fatalf("created session title = %q, want empty", session.Title)
 	}
@@ -1810,10 +1815,11 @@ func TestDiscoverPreviewFillsOnlyEmptyTitles(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-empty"}
 	env.fake.mu.Unlock()
-	blank, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	createdBlank, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	blank := createdBlank.Session
 
 	env.fake.mu.Lock()
 	env.fake.listRefs = []agents.SessionRef{
@@ -1850,10 +1856,11 @@ func TestDiscoverExplicitTitleStillWins(t *testing.T) {
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "旧名"}
 	env.fake.mu.Unlock()
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "旧名")
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "旧名", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	session := created.Session
 	env.fake.mu.Lock()
 	env.fake.listRefs = []agents.SessionRef{
 		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "显式名", Preview: "预览"},
@@ -1869,6 +1876,81 @@ func TestDiscoverExplicitTitleStillWins(t *testing.T) {
 	}
 }
 
+// TestCreateWithFirstMessageAdmitsTheTurn pins the merged create: the model
+// rides on the session create itself (no switch call follows), an untitled
+// message names the session, and the message is admitted on the created
+// native ref with no per-message model.
+func TestCreateWithFirstMessageAdmitsTheTurn(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-first"}
+	env.fake.mu.Unlock()
+
+	const text = "帮我检查构建失败"
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", text, "pi/model-x")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if outcome.MessageError != "" {
+		t.Fatalf("MessageError = %q, want empty", outcome.MessageError)
+	}
+	if outcome.Session.ID == "" || outcome.Session.NativeSessionID != "native-first" {
+		t.Fatalf("session = %+v, want the indexed native-first mapping", outcome.Session)
+	}
+	if len(env.fake.createOpts) != 1 || env.fake.createOpts[0].Model != "pi/model-x" {
+		t.Fatalf("createOpts = %+v, want the model chosen at create", env.fake.createOpts)
+	}
+	if env.fake.createOpts[0].Title != agents.DeriveTitle(text) {
+		t.Fatalf("create title = %q, want the message-derived %q", env.fake.createOpts[0].Title, agents.DeriveTitle(text))
+	}
+	if len(env.fake.sends) != 1 || env.fake.sends[0].Text != text || env.fake.sends[0].Model != "" {
+		t.Fatalf("sends = %+v, want one model-less message with the text", env.fake.sends)
+	}
+	if len(env.fake.sentRefs) != 1 || env.fake.sentRefs[0].SessionID != "native-first" {
+		t.Fatalf("sentRefs = %+v, want the created native ref", env.fake.sentRefs)
+	}
+}
+
+// TestCreateWithFirstMessageFailureKeepsSession pins the recovery contract: a
+// refused first message does not fail the create — the session stays indexed
+// and the outcome carries the failure code the workbench reports.
+func TestCreateWithFirstMessageFailureKeepsSession(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-refused"}
+	env.fake.sendErr = errors.New("backend refused the prompt")
+	env.fake.mu.Unlock()
+
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "t", "hello", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if outcome.MessageError != "agent_operation_failed" {
+		t.Fatalf("MessageError = %q, want agent_operation_failed", outcome.MessageError)
+	}
+	if outcome.Session.ID == "" {
+		t.Fatal("session missing despite the created ref")
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want 1 (the session survives the failed message)", got)
+	}
+}
+
+// TestCreateWithModelRequiresCapability keeps the model parameter honest: a
+// backend without model selection refuses a create-with-model instead of
+// ignoring it.
+func TestCreateWithModelRequiresCapability(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.caps.ModelSelection = false
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n"}
+	env.fake.mu.Unlock()
+
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "hi", "pi/model-x"); !errors.Is(err, ErrUnsupportedCapability) {
+		t.Fatalf("Create = %v, want ErrUnsupportedCapability", err)
+	}
+}
+
 // TestCreateWithoutTitleLeavesTitleEmpty verifies an untitled create stores
 // no placeholder — never the platform id.
 func TestCreateWithoutTitleLeavesTitleEmpty(t *testing.T) {
@@ -1877,10 +1959,11 @@ func TestCreateWithoutTitleLeavesTitleEmpty(t *testing.T) {
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-untitled"}
 	env.fake.mu.Unlock()
 
-	session, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "")
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	session := created.Session
 	if session.Title != "" {
 		t.Errorf("created title = %q, want empty", session.Title)
 	}

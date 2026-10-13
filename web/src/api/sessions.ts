@@ -39,10 +39,21 @@ export interface AgentSessionList {
 
 // Mirrors #/components/schemas/CreateAgentSessionRequest. The backend selects
 // the instance: the server reuses a running one or starts one. instanceId is
-// no longer accepted.
+// no longer accepted. message and model are optional: when present, the
+// session is created on the model and the message becomes its first turn in
+// the same request.
 export interface CreateSessionBody {
   backend: BackendId
   title?: string
+  message?: string
+  model?: string
+}
+
+// Mirrors #/components/schemas/CreateAgentSessionResult. messageError carries
+// the code of a refused optional first message; the session is always live.
+export interface CreateSessionResult {
+  session: AgentSession
+  messageError?: string
 }
 
 // Mirrors #/components/schemas/SendAgentSessionMessageRequest.
@@ -143,8 +154,8 @@ export function createProjectSession(
   projectId: number,
   body: CreateSessionBody,
   csrfToken: string,
-): Promise<AgentSession> {
-  return apiRequest<AgentSession>('POST', `/projects/${projectId}/sessions`, {
+): Promise<CreateSessionResult> {
+  return apiRequest<CreateSessionResult>('POST', `/projects/${projectId}/sessions`, {
     body,
     csrfToken,
   })

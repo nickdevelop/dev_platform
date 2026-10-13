@@ -464,7 +464,6 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		sessions:      make(map[string]string),
 		sessionModels: make(map[string]agents.MessageModel),
 		toolNames:     make(map[string]string),
-		deltaOpen:     make(map[string]bool),
 	}
 
 	a.mu.Lock()
@@ -740,7 +739,6 @@ type instance struct {
 	// them with this; replayed history uses each message's own model instead.
 	sessionModels map[string]agents.MessageModel
 	toolNames     map[string]string
-	deltaOpen     map[string]bool
 }
 
 // ensureRunning reports whether the instance can accept work.
@@ -1163,51 +1161,46 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 
 	switch event.Type {
 	case "session.text.delta":
-		inst.setDelta(sessionID, data.AssistantMessageID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventMessage
 		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Delta, Final: false, Model: inst.sessionModel(sessionID)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.text.ended":
-		text := data.Text
-		if inst.takeDelta(sessionID, data.AssistantMessageID) {
-			// Deltas already carried the text; close with an empty
-			// terminator so a concatenating consumer does not double it.
-			text = ""
-		}
+		// Always carry the part's full text: opencode ends each text part with
+		// a complete snapshot, so a consumer that joined after the deltas
+		// streamed — a chat pane opened while create-with-first-message
+		// already started the turn — converges on the whole block instead of
+		// keeping a truncated prefix. Consumers replace on final instead of
+		// concatenating.
 		out := inst.event(sessionID)
 		out.Type = agents.EventMessage
-		out.Message = &agents.MessagePayload{Role: "assistant", Text: text, Final: true, Model: inst.sessionModel(sessionID)}
+		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Text, Final: true, Model: inst.sessionModel(sessionID)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.text.started":
 		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "text_started", "")}
 
 	// Reasoning streams under its own event family and becomes its own kind of
-	// entry: the deltas carry it and reasoning.ended closes the block. No event
-	// is emitted for reasoning.started, because nothing consumes a start marker
-	// — the workbench opens the block on the first chunk.
+	// entry: the deltas carry it and reasoning.ended closes the block with its
+	// full snapshot. No event is emitted for reasoning.started, because nothing
+	// consumes a start marker — the workbench opens the block on the first
+	// chunk.
 	case "session.reasoning.started":
 		return nil
 
 	case "session.reasoning.delta":
-		inst.setReasoningOpen(sessionID, data.AssistantMessageID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventThinking
 		out.Thinking = &agents.ThinkingPayload{Text: data.Delta, Final: false}
 		return []agents.NormalizedEvent{out}
 
 	case "session.reasoning.ended":
-		text := data.Text
-		if inst.takeReasoningOpen(sessionID, data.AssistantMessageID) {
-			// Deltas already carried the text; close with an empty
-			// terminator so a concatenating consumer does not double it.
-			text = ""
-		}
+		// The same full-snapshot rule as session.text.ended: the ended event
+		// always carries the block's whole text so a late subscriber converges.
 		out := inst.event(sessionID)
 		out.Type = agents.EventThinking
-		out.Thinking = &agents.ThinkingPayload{Text: text, Final: true}
+		out.Thinking = &agents.ThinkingPayload{Text: data.Text, Final: true}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.input.started":
@@ -1261,23 +1254,6 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 	}
 }
 
-// setDelta records that an assistant message is streaming text deltas.
-func (inst *instance) setDelta(sessionID, messageID string) {
-	inst.mu.Lock()
-	inst.deltaOpen[deltaKey(sessionID, messageID)] = true
-	inst.mu.Unlock()
-}
-
-// takeDelta reports whether deltas were streamed and clears the marker.
-func (inst *instance) takeDelta(sessionID, messageID string) bool {
-	key := deltaKey(sessionID, messageID)
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	open := inst.deltaOpen[key]
-	delete(inst.deltaOpen, key)
-	return open
-}
-
 // rememberToolName records a tool's name until its call is emitted.
 func (inst *instance) rememberToolName(sessionID, messageID, toolID, name string) {
 	if toolID == "" {
@@ -1302,35 +1278,7 @@ func (inst *instance) forgetToolName(sessionID, messageID, toolID string) {
 	inst.mu.Unlock()
 }
 
-// deltaKey and toolKey scope adapter-side bookkeeping to a message/tool.
-func deltaKey(sessionID, messageID string) string {
-	return sessionID + "|" + messageID
-}
-
-// reasoningKey namespaces the reasoning block in the same open-chunk map the
-// text stream uses, so a message with both streams keeps them independent.
-func reasoningKey(sessionID, messageID string) string {
-	return "reasoning|" + deltaKey(sessionID, messageID)
-}
-
-// setReasoningOpen marks that reasoning deltas were streamed for one message.
-func (inst *instance) setReasoningOpen(sessionID, messageID string) {
-	inst.mu.Lock()
-	inst.deltaOpen[reasoningKey(sessionID, messageID)] = true
-	inst.mu.Unlock()
-}
-
-// takeReasoningOpen reports whether reasoning deltas were streamed and clears
-// the marker.
-func (inst *instance) takeReasoningOpen(sessionID, messageID string) bool {
-	key := reasoningKey(sessionID, messageID)
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	open := inst.deltaOpen[key]
-	delete(inst.deltaOpen, key)
-	return open
-}
-
+// toolKey scopes adapter-side tool bookkeeping to one message's tool.
 func toolKey(sessionID, messageID, toolID string) string {
 	return sessionID + "|" + messageID + "|" + toolID
 }

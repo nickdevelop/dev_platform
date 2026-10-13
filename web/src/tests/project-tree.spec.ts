@@ -389,7 +389,7 @@ describe('ProjectTree', () => {
         if (url.pathname === '/api/projects/1/sessions' && method === 'POST') {
           created = session({ id: 'sess-2', title: 'Task B' })
           live.push(created)
-          return { status: 201, json: async () => created } as Response
+          return { status: 201, json: async () => ({ session: created }) } as Response
         }
         if (url.pathname === '/api/projects/1/sessions/sess-2' && method === 'DELETE') {
           live.splice(1, 1)
