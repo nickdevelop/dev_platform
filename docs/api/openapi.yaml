@@ -750,6 +750,106 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /agent-services/{backend}:
+    get:
+      summary: Detect a backend's machine-level service
+      description: >-
+        Observes the machine-wide service a backend type runs — for
+        `opencode-v2`, the single `opencode serve --service` registered in
+        `service.json` — and reports its state: `stopped`, `running`, or
+        `unreachable` with a reason. Detection changes nothing. A backend with
+        no machine-level service (such as `pi`) is reported with
+        `supported: false` and no start/stop controls.
+      operationId: detectAgentService
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+      responses:
+        '200':
+          description: The observed service status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentServiceStatusResponse'
+        '400':
+          description: No such backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /agent-services/{backend}/start:
+    post:
+      summary: Start a backend's machine-level service
+      description: >-
+        Starts the machine-wide service. This is the only path that starts it:
+        no session, instance, or other business operation ever launches a
+        service on its own. When a service is already serving, nothing is
+        started and the platform answers `service_already_running` — it never
+        replaces a service that may be serving other clients.
+      operationId: startAgentService
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The service is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentServiceStatusResponse'
+        '400':
+          description: No such backend, or that backend has no machine-level service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: A service is already serving (`service_already_running`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /agent-services/{backend}/stop:
+    post:
+      summary: Stop a backend's machine-level service
+      description: >-
+        Stops the machine-wide service at an operator's explicit request,
+        whoever started it. The confirmation and its consequences belong to the
+        operator: any other client of the same service — including the desktop
+        `opencode` app — loses its server, and running tasks are interrupted and
+        reported `failed`.
+      operationId: stopAgentService
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The service is stopped; stopping an already stopped service is also reported here.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentServiceStatusResponse'
+        '400':
+          description: No such backend, or that backend has no machine-level service.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
   /projects/{id}/sessions:
     get:
       summary: List a project's indexed sessions
@@ -3139,6 +3239,67 @@ components:
             Platform-level enablement. A disabled backend cannot be selected for
             new tasks; existing instances and sessions stay usable.
       additionalProperties: false
+    AgentServiceStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/AgentServiceStatus'
+    AgentServiceStatus:
+      type: object
+      additionalProperties: false
+      description: >-
+        What the platform observes of a backend's machine-level service. The
+        service is a third-party process: the platform adopts it, reports it,
+        and starts or stops it only when an operator asks on the platform
+        settings page. `detail` carries an actionable, redacted reason whenever
+        the service is unreachable.
+      required:
+        - backend
+        - supported
+        - state
+        - endpoint
+        - pid
+        - version
+        - executable
+        - detail
+        - checkedAt
+      properties:
+        backend:
+          type: string
+          enum:
+            - opencode-v2
+            - pi
+        supported:
+          type: boolean
+          description: False when the backend has no machine-level service at all.
+        state:
+          type: string
+          enum:
+            - stopped
+            - running
+            - unreachable
+        endpoint:
+          type: string
+          description: Base url of the registered service, when one is registered.
+        pid:
+          type: integer
+          format: int64
+          description: Process id the registration names, 0 when nothing is registered.
+        version:
+          type: string
+          description: Service-reported version, when the service answered.
+        executable:
+          type: string
+          description: Path of the executable the platform would use for a start.
+        detail:
+          type: string
+          description: Actionable, redacted reason for an unusable service; empty when there is nothing to say.
+        checkedAt:
+          type: string
+          format: date-time
     AgentBackendList:
       type: object
       required:

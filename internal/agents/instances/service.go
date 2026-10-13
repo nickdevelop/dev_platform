@@ -254,6 +254,74 @@ func (s *Service) recordStartFailure(projectID uint, backend agents.BackendID, d
 	return instanceFromModel(row), fmt.Errorf("%w: %w", ErrStartFailed, cause)
 }
 
+// serviceController resolves the optional machine-service control of a
+// registered adapter. A backend that does not expose one (a CLI backend such as
+// pi) is reported by ok=false, not as an error.
+func (s *Service) serviceController(backend agents.BackendID) (agents.ServiceController, bool, error) {
+	adapter, ok := s.registry.Get(backend)
+	if !ok {
+		return nil, false, fmt.Errorf("%w: %q (%w)", ErrUnknownBackend, backend, agents.ErrBackendNotRegistered)
+	}
+	controller, ok := adapter.(agents.ServiceController)
+	return controller, ok, nil
+}
+
+// DetectService reports the machine-level service of a backend. A backend with
+// no such service is reported as `supported: false` rather than as an error:
+// the settings page shows the service block only where one exists.
+func (s *Service) DetectService(ctx context.Context, backend agents.BackendID) (agents.ServiceStatus, error) {
+	controller, ok, err := s.serviceController(backend)
+	if err != nil {
+		return agents.ServiceStatus{}, err
+	}
+	if !ok {
+		return agents.ServiceStatus{Backend: backend, Supported: false, State: agents.ServiceStopped, CheckedAt: s.now()}, nil
+	}
+	status, err := controller.DetectService(ctx)
+	if err != nil {
+		return agents.ServiceStatus{}, err
+	}
+	status.Supported = true
+	status.Backend = backend
+	return status, nil
+}
+
+// StartService starts a backend's machine-level service on an operator's
+// request. Only the platform settings page calls it.
+func (s *Service) StartService(ctx context.Context, backend agents.BackendID) (agents.ServiceStatus, error) {
+	controller, ok, err := s.serviceController(backend)
+	if err != nil {
+		return agents.ServiceStatus{}, err
+	}
+	if !ok {
+		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
+	}
+	return controller.StartService(ctx)
+}
+
+// StopService stops a backend's machine-level service on an operator's request.
+// The operator owns the consequences: the service may be serving other clients.
+func (s *Service) StopService(ctx context.Context, backend agents.BackendID) (agents.ServiceStatus, error) {
+	controller, ok, err := s.serviceController(backend)
+	if err != nil {
+		return agents.ServiceStatus{}, err
+	}
+	if !ok {
+		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
+	}
+	return controller.StopService(ctx)
+}
+
+// ServiceAvailable is the cheap gate the session layer consults before it starts
+// an instance: a backend with no machine-level service is always available.
+func (s *Service) ServiceAvailable(backend agents.BackendID) error {
+	controller, ok, err := s.serviceController(backend)
+	if err != nil || !ok {
+		return err
+	}
+	return controller.ServiceAvailable()
+}
+
 // List returns the project's instances in creation order.
 func (s *Service) List(projectID uint) ([]Instance, error) {
 	var rows []database.AgentInstance
