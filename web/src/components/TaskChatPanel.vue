@@ -38,7 +38,13 @@ const deleteError = ref('')
 // like an empty conversation.
 const preparing = ref(false)
 const messageText = ref('')
-const selectedModel = ref('')
+// The composer's model is remembered per task in the sessions store, so
+// switching tasks restores the model chosen for each one instead of resetting
+// the picker to the backend's first model.
+const selectedModel = computed({
+  get: () => sessions.modelFor(props.sessionId),
+  set: (value: string) => sessions.setModel(props.sessionId, value),
+})
 // Scrolling follows the newest entry only while the user is at the bottom.
 // The log scrolls by hand in jsdom tests, so every read and write of the
 // scroller geometry goes through the element itself.
@@ -196,8 +202,8 @@ watch(logSignature, () => {
 
 // A directly opened task URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
-// such; an id absent from a successful list is never opened. The model
-// selection is reset per task, because it is chosen per message.
+// such; an id absent from a successful list is never opened. The model choice
+// survives task switches: it is kept per session in the store, not reset here.
 //
 // Opening goes through the store's openSession, which re-attaches the session
 // (starting a backend instance when none is running), replays the agent-native
@@ -205,7 +211,6 @@ watch(logSignature, () => {
 async function open() {
   ready.value = false
   loadError.value = ''
-  selectedModel.value = ''
   modelOk.value = true
   pinnedToBottom.value = true
   showJumpToLatest.value = false

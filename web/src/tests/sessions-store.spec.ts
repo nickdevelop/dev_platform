@@ -928,3 +928,50 @@ describe('sessions store stall repair', () => {
     expect(sessions.statusFor('s1')).toBe('idle')
   })
 })
+
+describe('sessions store composer model', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('remembers a model per session so switching tasks restores it', () => {
+    const sessions = useSessionsStore()
+
+    sessions.setModel('s1', 'pi/a')
+    sessions.setModel('s2', 'pi/b')
+
+    expect(sessions.modelFor('s1')).toBe('pi/a')
+    expect(sessions.modelFor('s2')).toBe('pi/b')
+    expect(sessions.modelFor('never-opened')).toBe('')
+  })
+
+  it('drops the remembered model when the task is deleted', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    sessions.setModel('s1', 'pi/a')
+    stubRoutes({ '/sessions/s1': {} })
+
+    await sessions.deleteSession(1, 's1')
+
+    expect(sessions.modelFor('s1')).toBe('')
+  })
+
+  it('clears remembered models when a different project is loaded', async () => {
+    const pending = deferredLists()
+    const sessions = useSessionsStore()
+    const first = sessions.loadSessions(1)
+    pending.get(1)!([session('a-1', 1)])
+    await first
+    sessions.setModel('a-1', 'pi/a')
+
+    const second = sessions.loadSessions(2)
+    expect(sessions.modelFor('a-1')).toBe('')
+    pending.get(2)!([session('b-1', 2)])
+    await second
+  })
+})

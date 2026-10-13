@@ -171,6 +171,10 @@ export const useSessionsStore = defineStore('sessions', {
     // stream; matching the pending text — rather than whatever entry happens
     // to be last — is what survives diagnostics interleaved before the echo.
     echoPending: {} as Record<string, string>,
+    // The model chosen in the composer, kept per session so switching tasks
+    // restores the model the user last picked for each task instead of
+    // resetting the picker to the backend's first model.
+    selectedModels: {} as Record<string, string>,
     activeSessionId: null as string | null,
     loading: false,
     error: '',
@@ -193,6 +197,9 @@ export const useSessionsStore = defineStore('sessions', {
     statusFor: (state) => (sessionId: string) => state.streamStatus[sessionId] ?? 'idle',
     sessionById: (state) => (sessionId: string) =>
       state.sessions.find((entry) => entry.id === sessionId) ?? null,
+    // modelFor is the composer's remembered model for a session; '' means none
+    // has been chosen yet and the picker may default to the first model.
+    modelFor: (state) => (sessionId: string) => state.selectedModels[sessionId] ?? '',
     activeSession(state): AgentSession | null {
       return state.sessions.find((entry) => entry.id === state.activeSessionId) ?? null
     },
@@ -212,6 +219,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.historyTruncated = {}
         this.historyTailGuard = {}
         this.echoPending = {}
+        this.selectedModels = {}
       }
       this.loading = true
       this.projectId = projectId
@@ -321,6 +329,7 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.historyError[sessionId]
       delete this.historyTruncated[sessionId]
       delete this.historyTailGuard[sessionId]
+      delete this.selectedModels[sessionId]
       this.error = ''
       return true
     },
@@ -648,6 +657,14 @@ export const useSessionsStore = defineStore('sessions', {
 
     pushEntry(sessionId: string, entry: ChatEntry) {
       this.ensureMessages(sessionId).push(entry)
+    },
+
+    // setModel remembers the composer's model for one session. It is view state
+    // the platform keeps for convenience — the model is not persisted to the
+    // session index; the backend still receives it with each message.
+    setModel(sessionId: string, model: string) {
+      if (this.selectedModels[sessionId] === model) return
+      this.selectedModels[sessionId] = model
     },
 
     async sendMessage(projectId: number, sessionId: string, text: string, model?: string) {

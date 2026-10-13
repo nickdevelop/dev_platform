@@ -621,6 +621,61 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
   })
 
+  it('keeps each task’s chosen model when switching tasks', async () => {
+    const models = [
+      { id: 'pi/a', name: 'Model A', provider: 'pi' },
+      { id: 'pi/b', name: 'Model B', provider: 'pi' },
+    ]
+    const selectable = capabilities({ modelSelection: true })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/models')) return { status: 200, json: async () => ({ models }) } as Response
+        if (url.endsWith('/history')) {
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+        }
+        if (url.endsWith('/continue')) {
+          const id = url.split('/')[5]
+          return { status: 200, json: async () => session(id, { capabilities: selectable }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            sessions: [
+              session('s1', { capabilities: selectable }),
+              session('s2', { capabilities: selectable }),
+            ],
+          }),
+        } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const store = useSessionsStore()
+    const wrapper = mountPanel('s1')
+    await flushPromises()
+
+    // A task opened for the first time defaults to the backend's first model.
+    expect(store.modelFor('s1')).toBe('pi/a')
+
+    // The user chooses the second model for this task.
+    await wrapper.find('.model-trigger').trigger('click')
+    await wrapper.find('[data-model-id="pi/b"]').trigger('click')
+    expect(store.modelFor('s1')).toBe('pi/b')
+
+    // Opening another task does not disturb the first task's choice.
+    await wrapper.setProps({ sessionId: 's2' })
+    await flushPromises()
+    expect(store.modelFor('s1')).toBe('pi/b')
+    expect(store.modelFor('s2')).toBe('pi/a')
+
+    // Coming back restores the model this task chose, not the first one.
+    await wrapper.setProps({ sessionId: 's1' })
+    await flushPromises()
+    expect(store.modelFor('s1')).toBe('pi/b')
+    expect(wrapper.find('.model-trigger').text()).toContain('Model B')
+  })
+
   it('keeps an aborted pi turn idle without a process_exit error entry', () => {
     const store = useSessionsStore()
     store.sessions = [session('sess-1', { turn: 'running' })]
