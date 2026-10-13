@@ -4,6 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { backendFixtures } from './backend-fixtures'
+import { useAgentsStore } from '../stores/agents'
 import BackendTag from '../components/BackendTag.vue'
 import ProjectTree from '../components/ProjectTree.vue'
 import { useProjectsStore } from '../stores/projects'
@@ -22,6 +24,7 @@ function noCapabilities(): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
   }
 }
 
@@ -83,6 +86,7 @@ describe('ProjectTree', () => {
     setActivePinia(createPinia())
     const projects = useProjectsStore()
     projects.projects = [project(1, 'alpha'), project(2, 'beta')]
+    useAgentsStore().backends = backendFixtures()
   })
 
   afterEach(() => {
@@ -122,7 +126,7 @@ describe('ProjectTree', () => {
     const tag = running!.findComponent(BackendTag)
     expect(tag.exists()).toBe(true)
     expect(tag.props('backend')).toBe('opencode-v2')
-    expect(tag.text()).toBe('opencode')
+    expect(tag.text()).toBe('OpenCode')
     expect(running!.find('.status').text()).toBe('运行中')
 
     const idle = wrapper.findAll('.task').find((item) => item.text().includes('Task B'))

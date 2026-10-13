@@ -11,6 +11,19 @@ import type { AgentServiceStatus } from '../api/agents'
 
 type Call = { method: string; path: string; body: any }
 
+function backendList() {
+  const capabilities = (sessionHistory: boolean) => ({
+    streaming: true, sessionDiscovery: false, sessionContinue: false, stop: true, interrupt: false,
+    modelSelection: false, toolCallEvents: false, toolConfirmation: false, sessionHistory, rawEvents: false,
+  })
+  return {
+    backends: [
+      { backend: 'opencode-v2', capabilities: capabilities(true), enabled: true, label: 'OpenCode', order: 1, serviceSupported: true },
+      { backend: 'pi', capabilities: capabilities(false), enabled: true, label: 'Pi Agent', order: 2, serviceSupported: false },
+    ],
+  }
+}
+
 function stubFetch(extra: Record<string, unknown> = {}) {
   const calls: Call[] = []
   const agents = {
@@ -38,6 +51,7 @@ function stubFetch(extra: Record<string, unknown> = {}) {
         return { status, json: async () => body } as Response
       }
       if (key === 'GET /agents') return { status: 200, json: async () => agents } as Response
+      if (key === 'GET /agent-backends') return { status: 200, json: async () => backendList() } as Response
       return { status: 200, json: async () => ({}) } as Response
     }),
   )

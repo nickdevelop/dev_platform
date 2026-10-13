@@ -10,6 +10,7 @@ import CapabilityControls from '../components/CapabilityControls.vue'
 import MessageView from '../components/MessageView.vue'
 import SessionList from '../components/SessionList.vue'
 import { useAgentsStore } from '../stores/agents'
+import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
@@ -28,6 +29,7 @@ function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
     ...overrides,
   }
 }
@@ -170,8 +172,10 @@ function setupStores() {
   pinia = createPinia()
   setActivePinia(pinia)
   liveSessions = useSessionsStore()
+  const agents = useAgentsStore()
+  agents.backends = backendFixtures()
   return {
-    agents: useAgentsStore(),
+    agents,
     sessions: liveSessions,
     auth: useAuthStore(),
   }
@@ -192,6 +196,11 @@ afterEach(() => {
 })
 
 describe('session list', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useAgentsStore().backends = backendFixtures()
+  })
+
   it('opens a session with the keyboard (Enter and Space) as well as the pointer', async () => {
     const wrapper = mount(SessionList, {
       props: { sessions: [session({ id: 'sess-1', title: 'Demo' })] },

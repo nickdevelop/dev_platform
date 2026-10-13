@@ -2,8 +2,9 @@
 // Resource editor for Skill, MCP and prompt definitions. The credential value
 // is write-only: the editor never receives a stored value, and only includes
 // `secretValue` in the submitted body when the user typed one.
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import type { BackendId } from '../../api/agents'
+import { useAgentsStore } from '../../stores/agents'
 import type {
   PromptScope,
   ResourceDefinition,
@@ -28,6 +29,11 @@ const content = ref('')
 const enabled = ref(true)
 const promptScope = ref<PromptScope>('project')
 const backends = ref<BackendId[]>([])
+const agents = useAgentsStore()
+
+onMounted(() => {
+  void agents.loadBackends()
+})
 const secretValue = ref('')
 
 function reset() {
@@ -118,23 +124,14 @@ function submit() {
 
     <fieldset v-if="kind === 'mcp'" class="backends">
       <legend>适用后端（不选表示全部）</legend>
-      <label>
+      <label v-for="entry in agents.orderedBackends" :key="entry.backend">
         <input
           type="checkbox"
-          :checked="backends.includes('opencode-v2')"
-          data-test="backend-opencode-v2"
-          @change="toggleBackend('opencode-v2', $event)"
+          :checked="backends.includes(entry.backend)"
+          :data-test="`backend-${entry.backend}`"
+          @change="toggleBackend(entry.backend, $event)"
         />
-        opencode-v2
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          :checked="backends.includes('pi')"
-          data-test="backend-pi"
-          @change="toggleBackend('pi', $event)"
-        />
-        pi
+        {{ entry.backend }}
       </label>
     </fieldset>
 

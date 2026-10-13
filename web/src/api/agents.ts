@@ -20,10 +20,12 @@ export interface Capabilities {
   toolCallEvents: boolean
   toolConfirmation: boolean
   sessionHistory: boolean
+  rawEvents: boolean
 }
 
-// Mirrors the AgentInstance/AgentBackend backend enum.
-export type BackendId = 'opencode-v2' | 'pi'
+// A backend id as the platform catalog names it. The set is not enumerated in
+// the UI: every label, order and service fact comes from the backend list.
+export type BackendId = string
 
 // Mirrors the AgentInstance status enum.
 export type InstanceStatus = 'starting' | 'running' | 'stopped' | 'failed'
@@ -35,6 +37,13 @@ export interface AgentBackend {
   // Platform-level enablement: a disabled backend cannot be chosen for new
   // tasks. Absent is treated as enabled (the server always sends it).
   enabled?: boolean
+  // Display name from the platform catalog; falls back to the raw id.
+  label: string
+  // Presentation order from the platform catalog; lower comes first.
+  order: number
+  // Whether the backend runs a machine-level service the operator can start
+  // and stop.
+  serviceSupported: boolean
 }
 
 // Mirrors #/components/schemas/AgentBackendList.

@@ -101,18 +101,22 @@ const interactEnabled = computed(() => activeSession.value?.status === 'active')
 const unavailable = computed(
   () => activeSession.value !== null && activeSession.value.status === 'disconnected',
 )
-// For an opencode task, "disconnected" has one common cause the user can act
-// on: the machine-wide service is not running. The platform will not start it
-// on its own, so the panel names the page that can, and offers the reconnect
-// the operator's start makes possible — never an automatic retry.
+// For a task whose backend runs a machine-level service, "disconnected" has one
+// common cause the user can act on: that service is not running. The platform
+// will not start it on its own, so the panel names the page that can, and
+// offers the reconnect the operator's start makes possible — never an automatic
+// retry.
 const serviceDown = computed(
   () =>
     activeSession.value !== null &&
     activeSession.value.status === 'disconnected' &&
-    activeSession.value.backend === 'opencode-v2',
+    agents.backendFor(activeSession.value.backend)?.serviceSupported === true,
 )
 const unavailableMessage = computed(() => {
-  if (serviceDown.value) return '无法连接 opencode service，请到平台设置 → Agent 检测并启动。'
+  if (serviceDown.value && activeSession.value) {
+    const service = `${agents.backendLabel(activeSession.value.backend).toLowerCase()} service`
+    return `无法连接 ${service}，请到平台设置 → Agent 检测并启动。`
+  }
   return sessions.error || '任务当前不可用，请重试。'
 })
 
@@ -123,17 +127,16 @@ const composerDisabled = computed(() => {
   return sending.value || messageText.value.trim() === '' || !modelOk.value
 })
 
-// The tool call awaiting confirmation. For opencode-v2 it comes exclusively
-// from the approval stream (REST list + raw permission.asked/replied): a
-// tool_call entry without a result is NOT a permission — replying with a tool
-// call id can never succeed (the server answers 404/400, surfaced as 502),
-// so the legacy dangling-tool fallback must not render a control for this
-// backend. Other backends keep the fallback for display only; their confirm
-// path still reports that no confirmation API exists.
+// The tool call awaiting confirmation. A backend that declares tool
+// confirmation gets it exclusively from its approval stream (REST list + raw
+// permission events): a tool_call entry without a result is NOT a permission —
+// replying with a tool call id can never succeed (the server answers 404/400,
+// surfaced as 502), so the dangling-tool fallback must not render a control for
+// such a backend. Other backends keep the fallback for display only; their
+// confirm path still reports that no confirmation API exists.
 const pendingToolCall = computed<{ callId: string; name: string } | null>(() => {
   const session = activeSession.value
-  if (session?.backend === 'opencode-v2') {
-    if (!session.capabilities.toolConfirmation) return null
+  if (session?.capabilities.toolConfirmation) {
     const approval = opencodeRaw.pendingApprovalFor(props.sessionId)
     return approval ? { callId: approval.requestId, name: approval.action } : null
   }
@@ -148,12 +151,13 @@ const pendingToolCall = computed<{ callId: string; name: string } | null>(() => 
   return pending
 })
 
-// Pending question forms for opencode-v2 sessions. Rendered as answerable
-// cards below the confirmation control: without them an agent question blocks
-// the turn forever with no way to answer.
+// Pending question forms. They travel on the same reply extension as tool
+// confirmation, so they are shown exactly when that capability is declared.
+// Rendered as answerable cards below the confirmation control: without them an
+// agent question blocks the turn forever with no way to answer.
 const pendingForms = computed(() => {
   const session = activeSession.value
-  if (session?.backend !== 'opencode-v2') return []
+  if (!session?.capabilities.toolConfirmation) return []
   return opencodeRaw.formsFor(props.sessionId)
 })
 
@@ -234,7 +238,7 @@ async function open() {
   try {
     await sessions.openSession(props.projectId, props.sessionId)
     const session = sessions.sessionById(props.sessionId)
-    if (session?.backend === 'opencode-v2' && session.capabilities.toolConfirmation) {
+    if (session?.capabilities.toolConfirmation) {
       await opencodeRaw.loadApprovals(props.projectId, props.sessionId)
       if (opencodeRaw.error) toolNotice.value = opencodeRaw.error
       opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
@@ -254,12 +258,12 @@ function retryOpen() {
   void open()
 }
 
-// Tool decisions for opencode-v2 go through the opencode prefix reply API
-// (stores/opencodeRaw.ts); other backends still expose no confirmation
-// method, so the limitation is surfaced instead.
+// Tool decisions for a backend that declares tool confirmation go through its
+// reply API (stores/opencodeRaw.ts); other backends still expose no
+// confirmation method, so the limitation is surfaced instead.
 async function onToolDecision(callId: string, decision: 'once' | 'reject') {
   const session = activeSession.value
-  if (session?.backend === 'opencode-v2' && session.capabilities.toolConfirmation) {
+  if (session?.capabilities.toolConfirmation) {
     toolNotice.value = ''
     const ok = await opencodeRaw.replyPermission(props.projectId, props.sessionId, callId, decision)
     if (!ok) toolNotice.value = opencodeRaw.error || '确认失败，请重试。'

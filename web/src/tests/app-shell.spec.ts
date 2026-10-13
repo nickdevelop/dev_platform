@@ -29,6 +29,7 @@ function capabilities(): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
   }
 }
 
@@ -163,7 +164,7 @@ describe('three-pane app shell', () => {
   it('opens the created task after a new task is created', async () => {
     const { wrapper, router } = await setup('/projects/1/tasks/new', {}, () => {
       const agents = useAgentsStore()
-      agents.backends = [{ backend: 'pi', capabilities: capabilities() }]
+      agents.backends = [{ backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false }]
       agents.instances = [
         {
           id: 'inst-1',

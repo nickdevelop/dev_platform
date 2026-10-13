@@ -4,6 +4,7 @@
 // Each row is a keyboard-operable control: Enter and Space open the session,
 // matching the pointer behavior.
 import type { AgentSession } from '../api/sessions'
+import { useAgentsStore } from '../stores/agents'
 
 const props = defineProps<{
   sessions: AgentSession[]
@@ -22,11 +23,16 @@ const statusLabels: Record<string, string> = {
   disconnected: '已断开',
 }
 
-// An opencode task is disconnected for one reason the user can act on: the
-// machine-wide service is not reachable. Saying "已断开" would suggest the
-// conversation, not the service, is the thing that needs attention.
+const agents = useAgentsStore()
+
+// A task whose backend runs a machine-level service is disconnected for one
+// reason the user can act on: that service is not reachable. Saying "已断开"
+// would suggest the conversation, not the service, is the thing that needs
+// attention.
 function statusLabel(session: AgentSession): string {
-  if (session.status === 'disconnected' && session.backend === 'opencode-v2') return '服务无法连接'
+  if (session.status === 'disconnected' && agents.backendFor(session.backend)?.serviceSupported) {
+    return '服务无法连接'
+  }
   return statusLabels[session.status] ?? session.status
 }
 

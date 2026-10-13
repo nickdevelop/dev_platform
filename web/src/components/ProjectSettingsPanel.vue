@@ -44,19 +44,27 @@ async function load() {
   await Promise.all([
     agents.loadDiagnostics(),
     agents.loadBackendConfigs(props.projectId),
-    // One look, on open, so the notice below tells the truth about whether a
-    // task could start here at all. The platform neither polls nor starts it.
-    agents.detectService('opencode-v2'),
+    // One look per service-backed backend, on open, so the notice below tells
+    // the truth about whether a task could start here at all. The platform
+    // neither polls nor starts it.
+    ...agents.serviceBackends.map((entry) => agents.detectService(entry.backend)),
   ])
 }
 
-// serviceDown is the one backend state a project cannot work around: with no
-// opencode service, no task of that backend can start here. The panel says so
-// and points at the only page that can change it.
+// serviceDown is the one backend state a project cannot work around: when the
+// selected backend's machine-level service is down, no task of that backend
+// can start here. The panel says so and points at the only page that can
+// change it.
 const serviceDown = computed(() => {
-  const status = agents.services['opencode-v2']
+  if (selectedBackend.value === '' || !agents.backendFor(selectedBackend.value)?.serviceSupported) {
+    return false
+  }
+  const status = agents.services[selectedBackend.value]
   return status !== undefined && status !== null && status.state !== 'running'
 })
+
+// The service's name in the operator's words, e.g. "opencode service".
+const serviceName = computed(() => `${agents.backendLabel(selectedBackend.value).toLowerCase()} service`)
 
 async function scan() {
   if (selectedBackend.value === '' || scanning.value) return
@@ -122,7 +130,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
     </p>
 
     <p v-if="serviceDown" class="service-down" role="alert" data-test="project-service-down">
-      opencode service 未启动，无法在此项目创建任务。请到
+      {{ serviceName }} 未启动，无法在此项目创建任务。请到
       <RouterLink :to="{ name: 'settings-agents' }">平台设置 → Agent</RouterLink>
       检测并启动。
     </p>

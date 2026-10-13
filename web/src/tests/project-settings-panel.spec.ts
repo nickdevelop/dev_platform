@@ -24,6 +24,7 @@ function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
     ...overrides,
   }
 }
@@ -59,8 +60,8 @@ describe('ProjectSettingsPanel', () => {
 
     const agents = useAgentsStore()
     agents.backends = [
-      { backend: 'opencode-v2', capabilities: noCapabilities() },
-      { backend: 'pi', capabilities: noCapabilities() },
+      { backend: 'opencode-v2', capabilities: noCapabilities(), label: 'OpenCode', order: 1, serviceSupported: true },
+      { backend: 'pi', capabilities: noCapabilities(), label: 'Pi Agent', order: 2, serviceSupported: false },
     ]
     vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
     // The panel no longer asks about instances; a service look happens once.
@@ -177,7 +178,7 @@ describe('ProjectSettingsPanel', () => {
 
   it('asks for discovery from the project page without picking an instance', async () => {
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false }]
     const sessions = useSessionsStore()
     const discover = vi.spyOn(sessions, 'discoverProjectSessions').mockResolvedValue([] as never)
 
@@ -193,7 +194,7 @@ describe('ProjectSettingsPanel', () => {
 
   it('offers no discovery action when the selected backend cannot discover sessions', async () => {
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: false }) }]
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: false }), label: 'Pi Agent', order: 2, serviceSupported: false }]
 
     const wrapper = mountPanel()
     await flushPromises()
@@ -202,7 +203,7 @@ describe('ProjectSettingsPanel', () => {
 
   it('disables discovery when the selected backend is disabled for the project', async () => {
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
+    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false }]
     agents.backendConfigs = [{ projectId: 1, backend: 'pi', enabled: false } as never]
 
     const wrapper = mountPanel()

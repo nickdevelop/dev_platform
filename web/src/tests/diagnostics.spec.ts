@@ -38,6 +38,7 @@ function report(overrides: Partial<BackendDiagnosticsReport> = {}): BackendDiagn
       toolCallEvents: true,
       toolConfirmation: false,
       sessionHistory: false,
+      rawEvents: false,
     },
     ...overrides,
   }

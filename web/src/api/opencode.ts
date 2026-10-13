@@ -34,21 +34,6 @@ interface FormListResponse {
   forms: OpencodeForm[]
 }
 
-// POST /api/projects/{id}/opencode/sessions/{sessionId}/prompt (new prefix;
-// same body and 202 semantics as the legacy messages route).
-export function opencodePrompt(
-  projectId: number,
-  sessionId: string,
-  body: { text: string; model?: string },
-  csrfToken: string,
-): Promise<unknown> {
-  return apiRequest<unknown>(
-    'POST',
-    `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/prompt`,
-    { body, csrfToken },
-  )
-}
-
 // GET /api/projects/{id}/opencode/sessions/{sessionId}/permission
 export function listOpencodePermissions(
   projectId: number,

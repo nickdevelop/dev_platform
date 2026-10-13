@@ -1464,66 +1464,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/opencode/sessions/{sessionId}/prompt:
-    post:
-      summary: Send a message via the opencode prefix
-      description: >-
-        New-prefix alias of the legacy messages route with identical body and
-        202 semantics. Generic session management stays unchanged; opencode
-        dialogue operations live under /opencode so /pi can diverge.
-      operationId: opencodePrompt
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
-        - $ref: '#/components/parameters/CSRFToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SendAgentSessionMessageRequest'
-      responses:
-        '202':
-          description: Message accepted; output arrives on the event stream.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentSession'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/CSRFRejected'
-        '404':
-          description: No such session in this project.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: The instance is not running or the session is not opencode.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '502':
-          description: The backend adapter failed to accept the message.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/opencode/sessions/{sessionId}/permission:
     get:
       summary: List pending opencode permission requests
@@ -2863,12 +2803,11 @@ components:
       name: backend
       in: path
       required: true
-      description: Agent backend id.
+      description: >-
+        Agent backend id as listed by GET /api/agent-backends. The server rejects
+        ids the platform catalog does not describe.
       schema:
         type: string
-        enum:
-          - opencode-v2
-          - pi
     ModelServiceId:
       name: id
       in: path
@@ -3202,6 +3141,7 @@ components:
         - toolCallEvents
         - toolConfirmation
         - sessionHistory
+        - rawEvents
       properties:
         streaming:
           type: boolean
@@ -3221,6 +3161,11 @@ components:
           type: boolean
         sessionHistory:
           type: boolean
+        rawEvents:
+          type: boolean
+          description: >-
+            The backend's untouched event stream can be proxied to the
+            workbench. Drives backend-specific views only.
       additionalProperties: false
     AgentBackend:
       type: object
@@ -3228,12 +3173,15 @@ components:
         - backend
         - capabilities
         - enabled
+        - label
+        - order
+        - serviceSupported
       properties:
         backend:
           type: string
-          enum:
-            - opencode-v2
-            - pi
+          description: >-
+            Backend identifier as the platform catalog names it. The set is not
+            enumerated here: clients read the list instead of hard-coding it.
         capabilities:
           $ref: '#/components/schemas/AgentCapabilities'
         enabled:
@@ -3241,6 +3189,17 @@ components:
           description: >-
             Platform-level enablement. A disabled backend cannot be selected for
             new tasks; existing instances and sessions stay usable.
+        label:
+          type: string
+          description: Display name from the catalog; falls back to the backend id.
+        order:
+          type: integer
+          description: Presentation order from the catalog; lower comes first.
+        serviceSupported:
+          type: boolean
+          description: >-
+            Whether the backend runs a machine-level service the operator can
+            start and stop.
       additionalProperties: false
     AgentServiceStatusResponse:
       type: object

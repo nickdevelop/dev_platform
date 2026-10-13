@@ -21,6 +21,7 @@ function capabilities(): Capabilities {
     toolCallEvents: true,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
   }
 }
 

@@ -9,6 +9,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import BackendTag from '../components/BackendTag.vue'
 import TaskChatPanel from '../components/TaskChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
+import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useOpencodeRawStore } from '../stores/opencodeRaw'
 import { clearModelCache } from '../modelCache'
@@ -26,6 +27,7 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
     ...overrides,
   }
 }
@@ -422,6 +424,7 @@ describe('TaskChatPanel opencode approvals', () => {
   // So the panel says what is missing, points at the one page that can start it,
   // and offers a reconnect the user clicks — it never retries by itself.
   it('points an unreachable opencode service at platform settings and offers reconnect', async () => {
+    useAgentsStore().backends = backendFixtures()
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/history')) {

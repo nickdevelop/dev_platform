@@ -57,6 +57,24 @@ export const useAgentsStore = defineStore('agents', {
       (state) =>
       (backend: BackendId | string): Capabilities | null =>
         state.backends.find((entry) => entry.backend === backend)?.capabilities ?? null,
+    // The backend entry for an id, or undefined while the list is unknown.
+    backendFor:
+      (state) =>
+      (backend: BackendId | string): AgentBackend | undefined =>
+        state.backends.find((entry) => entry.backend === backend),
+    // Display label for a backend. An unknown backend shows its raw id, never
+    // another backend's name.
+    backendLabel() {
+      return (backend: BackendId | string): string =>
+        this.backendFor(backend)?.label || String(backend)
+    },
+    // Backends in the catalog's presentation order.
+    orderedBackends: (state) =>
+      [...state.backends].sort((a, b) => a.order - b.order),
+    // Backends whose machine-level service the operator can start and stop.
+    serviceBackends(): AgentBackend[] {
+      return this.orderedBackends.filter((entry) => entry.serviceSupported)
+    },
     runningInstances: (state) => state.instances.filter((entry) => entry.status === 'running'),
     // Whether a backend is enabled for the open project. Unknown backends
     // default to enabled, matching the server.
@@ -73,7 +91,7 @@ export const useAgentsStore = defineStore('agents', {
       if (this.backendsLoaded) return
       try {
         const list = await listAgentBackends()
-        this.backends = list.backends
+        this.backends = list.backends ?? []
         this.backendsLoaded = true
       } catch (error) {
         if (error instanceof UnauthorizedError) return // global handler went to login

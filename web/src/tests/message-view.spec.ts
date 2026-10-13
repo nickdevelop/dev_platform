@@ -19,6 +19,7 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     toolCallEvents: true,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
     ...overrides,
   }
 }

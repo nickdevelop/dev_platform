@@ -20,6 +20,7 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     toolCallEvents: false,
     toolConfirmation: false,
     sessionHistory: false,
+    rawEvents: false,
     ...overrides,
   }
 }
@@ -28,8 +29,8 @@ function setup(options: { piEnabled?: boolean } = {}) {
   setActivePinia(createPinia())
   const agents = useAgentsStore()
   agents.backends = [
-    { backend: 'opencode-v2', capabilities: capabilities() },
-    { backend: 'pi', capabilities: capabilities() },
+    { backend: 'opencode-v2', capabilities: capabilities(), label: 'OpenCode', order: 1, serviceSupported: true },
+    { backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false },
   ]
   if (options.piEnabled === false) {
     agents.backendConfigs = [{ projectId: 1, backend: 'pi', enabled: false } as never]
@@ -97,7 +98,7 @@ describe('NewTaskPanel', () => {
   it('shows an error and does not report success when creation fails', async () => {
     setActivePinia(createPinia())
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: capabilities() }]
+    agents.backends = [{ backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false }]
     vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
     vi.stubGlobal(

@@ -37,8 +37,6 @@ export const useResourcesStore = defineStore('resources', {
     // Project-scoped prompts and skills/MCP associated with the project.
     isAssociated: (state) => (id: number): boolean =>
       state.projectResources.some((resource) => resource.id === id),
-    // Backend selection is stored as a list; empty means every backend.
-    backendOptions: () => ['opencode-v2', 'pi'] as const,
   },
 
   actions: {

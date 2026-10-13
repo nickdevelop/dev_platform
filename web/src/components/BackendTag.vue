@@ -1,16 +1,29 @@
 <script setup lang="ts">
-// Agent backend tag shown on tasks, the chat header and the new-task form.
-// Colors are fixed per backend so a task's agent is readable at a glance.
+// Agent backend tag shown on tasks, the chat header and the new-task form. The
+// label comes from the platform catalog; the colour follows the backend's
+// presentation order so a new backend needs no UI change. A backend the list
+// does not know shows its raw id in the neutral tone, never another backend's
+// name.
 import { computed } from 'vue'
 import type { BackendId } from '../api/agents'
+import { useAgentsStore } from '../stores/agents'
 
 const props = defineProps<{ backend: BackendId }>()
 
-const label = computed(() => (props.backend === 'pi' ? 'pi' : 'opencode'))
+const agents = useAgentsStore()
+
+const label = computed(() => agents.backendLabel(props.backend))
+
+const tone = computed(() => {
+  const index = agents.orderedBackends.findIndex((entry) => entry.backend === props.backend)
+  if (index === 0) return 'tone-primary'
+  if (index === 1) return 'tone-secondary'
+  return 'tone-neutral'
+})
 </script>
 
 <template>
-  <span class="tag" :class="props.backend === 'pi' ? 'pi' : 'opencode'">{{ label }}</span>
+  <span class="tag" :class="tone">{{ label }}</span>
 </template>
 
 <style scoped>
@@ -21,13 +34,18 @@ const label = computed(() => (props.backend === 'pi' ? 'pi' : 'opencode'))
   white-space: nowrap;
 }
 
-.tag.opencode {
+.tag.tone-primary {
   background: var(--color-info-soft);
   color: var(--color-info);
 }
 
-.tag.pi {
+.tag.tone-secondary {
   background: var(--color-warning-soft);
   color: var(--color-warning);
+}
+
+.tag.tone-neutral {
+  background: var(--color-surface-muted, transparent);
+  color: var(--color-text-muted, inherit);
 }
 </style>

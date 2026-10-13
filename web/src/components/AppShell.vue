@@ -9,6 +9,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { Project } from '../api/projects'
+import { useAgentsStore } from '../stores/agents'
 import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
@@ -25,6 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const projects = useProjectsStore()
+const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const openTabs = useOpenTabsStore()
 const settings = useSettingsStore()
@@ -57,6 +59,9 @@ const fullHeightPane = computed(() => route.meta.fullHeight === true)
 const settingsMode = computed(() => route.meta.settings === true)
 
 onMounted(async () => {
+  // The backend catalog facts (labels, order, service support) are read by
+  // every task tag and session row, so they load with the shell, once.
+  void agents.loadBackends()
   await projects.load()
   ready.value = true
   // The appearance is shared platform config: fetch it after auth and apply

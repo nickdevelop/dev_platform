@@ -18,24 +18,19 @@ const detections = reactive<Record<string, AgentDetection | null>>({})
 // this confirmation is never the click that stops it.
 const confirmStop = ref<string | null>(null)
 
-// Which backends run a machine-wide service at all. Mirrors the platform's own
-// adapters: pi is a CLI per prompt and has no service to start, stop or show.
-const serviceBackends = ['opencode-v2']
-
-onMounted(() => {
+onMounted(async () => {
   void settings.loadAgents()
+  await agents.loadBackends()
   // One look per page load, and after that only when the operator presses the
   // button. The service is a third-party process: the platform does not poll it
   // and never acts on its state by itself.
-  for (const backend of serviceBackends) {
-    void agents.detectService(backend)
+  for (const entry of agents.serviceBackends) {
+    void agents.detectService(entry.backend)
   }
 })
 
 function label(backend: string): string {
-  if (backend === 'opencode-v2') return 'OpenCode'
-  if (backend === 'pi') return 'Pi Agent'
-  return backend
+  return agents.backendLabel(backend)
 }
 
 function onPathInput(backend: string, value: string) {
@@ -63,7 +58,7 @@ function showsService(backend: string): boolean {
   // A backend listed here is one the platform has a service controller for; a
   // server answer of `supported: false` overrides it, because the server is
   // right and the platform must not offer a control that does not apply.
-  return serviceBackends.includes(backend) && serviceFor(backend)?.supported !== false
+  return agents.backendFor(backend)?.serviceSupported === true && serviceFor(backend)?.supported !== false
 }
 
 // stateLabel is the operator's wording for what detection found. "未启动" and
