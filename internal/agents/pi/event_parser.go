@@ -186,6 +186,10 @@ type piEvent struct {
 	// Error records.
 	Error        string `json:"error"`
 	ErrorMessage string `json:"errorMessage"`
+
+	// Lifecycle records. agent_settled carries aborted=true when the run was
+	// aborted, which the adapter surfaces as the turn's settled detail.
+	Aborted bool `json:"aborted"`
 }
 
 // piAssistantEvent is the nested provider event carried by message_update.
@@ -329,7 +333,11 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		if isLifecycleType(event.Type) {
 			out := p.event()
 			out.Type = agents.EventLifecycle
-			out.Lifecycle = &agents.LifecycleEvent{State: event.Type}
+			detail := ""
+			if event.Type == "agent_settled" && event.Aborted {
+				detail = "aborted"
+			}
+			out.Lifecycle = &agents.LifecycleEvent{State: event.Type, Detail: detail}
 			out.Raw = append(json.RawMessage(nil), raw...)
 			return []agents.NormalizedEvent{out}
 		}

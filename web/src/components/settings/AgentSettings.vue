@@ -50,6 +50,10 @@ function toggle(backend: string, value: boolean) {
   void settings.setAgentEnabled(backend, value)
 }
 
+function onModeChange(backend: string, mode: string) {
+  void settings.setAgentMode(backend, mode)
+}
+
 function serviceFor(backend: string): AgentServiceStatus | null {
   return agents.services[backend] ?? null
 }
@@ -154,6 +158,20 @@ function cancelStop() {
         <span>{{ agent.available ? '已检测到' : '未检测到' }}</span>
         <span v-if="agent.version">版本 {{ agent.version }}</span>
       </p>
+
+      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row">
+        <label class="inline">
+          传输模式
+          <select
+            :data-agent-mode="agent.backend"
+            :value="agent.mode || agent.modes[0]"
+            @change="onModeChange(agent.backend, ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="mode in agent.modes" :key="mode" :value="mode">{{ mode }}</option>
+          </select>
+        </label>
+        <span class="mode-hint">修改后需重启平台生效</span>
+      </div>
 
       <p
         v-if="detections[agent.backend]"

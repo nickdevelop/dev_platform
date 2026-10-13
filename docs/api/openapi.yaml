@@ -2501,6 +2501,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /agents/{backend}/mode:
+    put:
+      summary: Set an agent transport mode
+      description: >-
+        Sets the transport mode for a backend that has more than one (pi: cli or
+        rpc); an empty mode restores the default. The change takes effect on the
+        next platform restart. A backend without modes, or an unknown mode, is
+        refused with 400.
+      operationId: setAgentMode
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+      responses:
+        '200':
+          description: The updated backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
   /agents/{backend}/detect:
     post:
       summary: Detect an agent executable
@@ -3899,6 +3935,16 @@ components:
           enum: [auto, manual, none]
         available:
           type: boolean
+        mode:
+          type: string
+          description: >-
+            Configured transport for backends with more than one mode (pi:
+            cli or rpc); absent means the backend default.
+        modes:
+          type: array
+          items:
+            type: string
+          description: The transport choices a multi-mode backend offers.
         version:
           type: string
         checkedAt:

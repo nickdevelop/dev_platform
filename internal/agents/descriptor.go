@@ -35,6 +35,10 @@ type BackendDescriptor struct {
 	// ServiceSupported reports whether the backend runs a machine-level
 	// service that the operator can start and stop.
 	ServiceSupported bool
+	// Modes lists the transport modes a backend with more than one offers
+	// (for example pi's "cli" and "rpc"). Empty means the backend has a
+	// single transport and no mode control is shown.
+	Modes []string
 }
 
 // Catalog is the immutable set of backend descriptors the platform knows. It

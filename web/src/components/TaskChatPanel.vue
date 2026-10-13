@@ -170,6 +170,36 @@ onBeforeUnmount(() => {
   // is deleted.
 })
 
+// Approval polling. opencode pushes permission cards on its raw event stream;
+// a backend that declares tool confirmation without raw events (pi over RPC)
+// has no push channel, so the workbench polls while a turn runs and stops when
+// it settles. Replying already refreshes the list through the store.
+let approvalPoll: ReturnType<typeof setInterval> | null = null
+let approvalPollBusy = false
+function stopApprovalPoll() {
+  if (approvalPoll !== null) {
+    clearInterval(approvalPoll)
+    approvalPoll = null
+  }
+}
+function startApprovalPoll() {
+  stopApprovalPoll()
+  const session = activeSession.value
+  if (!session?.capabilities.toolConfirmation || session.capabilities.rawEvents) return
+  approvalPoll = setInterval(() => {
+    if (approvalPollBusy) return
+    approvalPollBusy = true
+    void opencodeRaw.loadApprovals(props.projectId, props.sessionId).finally(() => {
+      approvalPollBusy = false
+    })
+  }, 1500)
+}
+watch(isRunning, (running) => {
+  if (running) startApprovalPoll()
+  else stopApprovalPoll()
+})
+onBeforeUnmount(stopApprovalPoll)
+
 // onLogScroll tracks where the user is: reaching the bottom resumes following
 // the conversation and retires the jump button; scrolling away stops following
 // so a new entry can never yank the view.
@@ -255,6 +285,9 @@ async function open() {
     if (session?.capabilities.rawEvents) {
       opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
     }
+    // A turn may already be running when the task is opened; start polling so
+    // its permission cards appear even without a push channel.
+    startApprovalPoll()
     // Opening a task lands on its newest entry, not on the top of a replayed
     // history.
     await nextTick()

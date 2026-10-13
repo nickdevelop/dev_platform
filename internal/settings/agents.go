@@ -19,8 +19,14 @@ const agentsKey = "agents.config"
 type AgentSetting struct {
 	Enabled    bool   `json:"enabled"`
 	ManualPath string `json:"manualPath"`
-	Version    string `json:"version"`
-	CheckedAt  string `json:"checkedAt"`
+	// Mode selects a backend-specific transport when the backend has more
+	// than one (pi: "cli" or "rpc"). Empty means the backend's default, and
+	// an unknown value is treated as the default by the adapter. It is the
+	// operator's rollback lever when a new transport misbehaves: switch back
+	// to the previous mode and restart the platform.
+	Mode      string `json:"mode,omitempty"`
+	Version   string `json:"version"`
+	CheckedAt string `json:"checkedAt"`
 }
 
 // defaultAgentSettings returns every catalog backend at its descriptor's
@@ -114,6 +120,38 @@ func (s *Service) SetAgentPath(backend agents.BackendID, manualPath string) (Age
 		return AgentSetting{}, err
 	}
 	return setting, nil
+}
+
+// SetAgentMode records a backend transport mode. An empty mode restores the
+// backend's default. The value is stored verbatim; the adapter ignores values
+// it does not recognize.
+func (s *Service) SetAgentMode(backend agents.BackendID, mode string) (AgentSetting, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	settings, err := s.loadAgents()
+	if err != nil {
+		return AgentSetting{}, err
+	}
+	setting := settings[backend]
+	setting.Mode = mode
+	settings[backend] = setting
+	if err := s.saveAgents(settings); err != nil {
+		return AgentSetting{}, err
+	}
+	return setting, nil
+}
+
+// AgentMode returns the configured transport mode for a backend (empty when
+// unset), used by the composition root when constructing the adapter.
+func (s *Service) AgentMode(backend agents.BackendID) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		return ""
+	}
+	return settings[backend].Mode
 }
 
 // RecordDetection stores the version a successful detection reported.

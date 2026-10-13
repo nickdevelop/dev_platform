@@ -26,6 +26,17 @@ var _ agents.AgentAdapter = (*Adapter)(nil)
 // loads a whole conversation into memory.
 const maxSessionScanBytes = 4 * 1024 * 1024
 
+// Operating modes for the pi adapter. CLI is the one-shot `pi --mode json`
+// process per prompt; RPC is a long-lived `pi --mode rpc` child per active
+// session. CLI remains the default until RPC has soaked, and the switch is the
+// rollback lever if a protocol drift breaks RPC.
+const (
+	// ModeCLI drives pi with one `--mode json` process per prompt.
+	ModeCLI = "cli"
+	// ModeRPC drives pi with one long-lived `--mode rpc` child per session.
+	ModeRPC = "rpc"
+)
+
 // Options configures the pi adapter. The zero value is usable when the `pi`
 // binary is on PATH: it uses pi's own default session directory.
 type Options struct {
@@ -43,6 +54,12 @@ type Options struct {
 	// Env overrides the child environment. The zero value inherits the parent
 	// process environment.
 	Env []string
+	// Mode selects the transport: ModeCLI (default) or ModeRPC.
+	Mode string
+	// Extensions lists pi extension paths passed as --extension to every RPC
+	// child. An approval extension lives here: pi's core does not request tool
+	// approval, so confirmations only exist when an extension asks for them.
+	Extensions []string
 	// VersionProbe overrides how the CLI version is obtained. When nil the
 	// adapter runs `<executable> --version`. Tests inject a stub so they do
 	// not have to execute a real binary.
@@ -51,18 +68,30 @@ type Options struct {
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
 	NewID func() (string, error)
+	// RPCIdleTimeout overrides how long an RPC child may sit idle before it is
+	// reclaimed. Zero uses defaultRPCIdleTimeout; a negative value disables
+	// reclamation (tests that want to inspect a live child).
+	RPCIdleTimeout time.Duration
+	// RPCReapInterval overrides how often the idle reaper runs. Zero uses
+	// defaultRPCReapInterval.
+	RPCReapInterval time.Duration
 }
 
 // Adapter implements agents.AgentAdapter for the pi CLI. Each instance is a
-// logical handle (id + authorized directory): pi itself is a one-shot process
-// per prompt, so an instance owns the directory, the live prompt processes and
-// the normalized event fan-out rather than a long-lived daemon.
+// logical handle (id + authorized directory) that owns the directory, the
+// live prompt processes or per-session RPC children, and the normalized event
+// fan-out. In CLI mode pi is a one-shot process per prompt; in RPC mode each
+// active session gets a long-lived child (see rpc_child.go).
 type Adapter struct {
 	executable        string
 	resolveExecutable func() string
 	sessionDir        string
 	passSessionDir    bool
 	env               []string
+	mode              string
+	extensions        []string
+	rpcIdleTimeout    time.Duration
+	rpcReapInterval   time.Duration
 	now               func() time.Time
 	newID             func() (string, error)
 	versionProbe      func(ctx context.Context) (string, error)
@@ -79,11 +108,12 @@ type sessionKey struct {
 }
 
 // sessionState is the small amount of platform-side metadata the adapter keeps
-// for a session (a display title and a default model). It is not conversation
-// state: the transcript stays inside pi.
+// for a session (a display title, a default model and any "always" approval
+// rules). It is not conversation state: the transcript stays inside pi.
 type sessionState struct {
-	title string
-	model string
+	title     string
+	model     string
+	approvals map[string]bool
 }
 
 // Register installs a default pi adapter (executable "pi", pi's own session
@@ -99,11 +129,19 @@ func Register(registry *agents.Registry) error {
 
 // New builds a pi adapter.
 func New(options Options) *Adapter {
+	mode := options.Mode
+	if mode != ModeRPC {
+		mode = ModeCLI
+	}
 	adapter := &Adapter{
 		executable:        options.Executable,
 		resolveExecutable: options.ResolveExecutable,
 		sessionDir:        options.SessionDir,
 		env:               options.Env,
+		mode:              mode,
+		extensions:        options.Extensions,
+		rpcIdleTimeout:    options.RPCIdleTimeout,
+		rpcReapInterval:   options.RPCReapInterval,
 		now:               options.Now,
 		newID:             options.NewID,
 		versionProbe:      options.VersionProbe,
@@ -121,6 +159,12 @@ func New(options Options) *Adapter {
 	}
 	if adapter.versionProbe == nil {
 		adapter.versionProbe = adapter.runVersionCommand
+	}
+	if adapter.rpcIdleTimeout == 0 {
+		adapter.rpcIdleTimeout = defaultRPCIdleTimeout
+	}
+	if adapter.rpcReapInterval <= 0 {
+		adapter.rpcReapInterval = defaultRPCReapInterval
 	}
 	if adapter.sessionDir != "" {
 		adapter.passSessionDir = true
@@ -142,11 +186,12 @@ func (a *Adapter) execPath() string {
 	return a.executable
 }
 
-// Capabilities declares what this adapter supports. It targets pi's documented
-// `--mode json` protocol: streaming text deltas, tool call/result records and
-// on-disk session files are all part of that protocol, so the adapter can
-// truthfully expose them. Print mode cannot pause a tool call for confirmation,
-// so ToolConfirmation stays false.
+// Capabilities declares what this adapter supports. It targets pi's event
+// stream, which both `--mode json` and `--mode rpc` share: streaming text
+// deltas, tool call/result records and on-disk session files. Tool
+// confirmation requires the extension UI subprotocol, which only exists in
+// RPC mode, so it is declared exactly when the adapter runs in RPC mode and an
+// approval extension can ask for confirmation.
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
@@ -155,7 +200,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		Stop:             true,
 		ModelSelection:   true,
 		ToolCallEvents:   true,
-		ToolConfirmation: false,
+		ToolConfirmation: a.mode == ModeRPC,
 		Interrupt:        true,
 		SessionHistory:   true,
 	}
@@ -311,7 +356,10 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		done:      make(chan struct{}),
 		subs:      make(map[*subscriber]struct{}),
 		procs:     make(map[*process]struct{}),
+		children:  make(map[string]*rpcChild),
+		starts:    make(map[string]*childStart),
 	}
+	inst.startReaper(a.rpcIdleTimeout, a.rpcReapInterval)
 
 	a.mu.Lock()
 	a.instances[id] = inst
@@ -400,7 +448,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		a.mu.Unlock()
 		return nil, fmt.Errorf("pi: instance %q is not running", instanceID)
 	}
-	a.sessions[sessionKey{instanceID: instanceID, sessionID: id}] = &sessionState{title: options.Title, model: options.Model}
+	a.sessions[sessionKey{instanceID: instanceID, sessionID: id}] = &sessionState{title: options.Title, model: options.Model, approvals: make(map[string]bool)}
 	a.mu.Unlock()
 
 	return &agents.SessionRef{
@@ -437,10 +485,11 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	return &ref, nil
 }
 
-// SendMessage launches one `pi --mode json` process for the turn. It returns
-// once the process is accepted; the reply, tool activity and diagnostics arrive
-// on the subscription stream. The process outlives the call and is bound to the
-// instance's lifetime, so StopInstance terminates it.
+// SendMessage delivers one user turn to a session. In CLI mode it launches one
+// `pi --mode json` process for the turn; in RPC mode it ensures the session's
+// long-lived child is running and sends a prompt command. In both modes it
+// returns once the turn is accepted; the reply, tool activity and diagnostics
+// arrive on the subscription stream.
 func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, message agents.SendMessageRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -479,6 +528,10 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		name = a.sessionTitle(ref.InstanceID, ref.SessionID)
 	}
 
+	if a.mode == ModeRPC {
+		return a.sendRPC(ctx, inst, ref, message, model, name)
+	}
+
 	spec := processSpec{
 		executable: a.execPath(),
 		args: promptArgs(promptOptions{
@@ -502,14 +555,89 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	return nil
 }
 
+// sendRPC delivers a turn through the session's RPC child, starting it lazily
+// if this is the session's first prompt after a reclaim or restart. While a run
+// is streaming, a second prompt is queued with followUp rather than rejected,
+// matching pi's own queueing semantics.
+func (a *Adapter) sendRPC(ctx context.Context, inst *instance, ref agents.SessionRef, message agents.SendMessageRequest, model, name string) error {
+	child, err := inst.ensureChild(ctx, ref.SessionID, func() (*rpcChild, error) {
+		return a.startRPCChild(inst, ref.SessionID, model, name)
+	})
+	if err != nil {
+		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
+	}
+	defer child.touch()
+
+	// Apply a model or name the platform changed after the child started.
+	if model != "" && model != child.currentModel() {
+		if err := child.setModel(ctx, model); err != nil {
+			return fmt.Errorf("pi: switch model before prompt: %w", err)
+		}
+	}
+	if name != "" && name != child.currentName() {
+		if err := child.setName(ctx, name); err != nil {
+			return fmt.Errorf("pi: set session name before prompt: %w", err)
+		}
+	}
+
+	behavior := ""
+	if child.isStreaming() {
+		behavior = "followUp"
+	}
+	response, err := child.conn.request(ctx, newPromptCommand("", message.Text, behavior), rpcCommandTimeout)
+	if err != nil {
+		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
+	}
+	if !response.Success {
+		// A run may have started between our state read and the command. The
+		// protocol requires an explicit behavior mid-run, so retry once as a
+		// follow-up instead of surfacing a spurious failure.
+		if behavior == "" && isStreamingRejection(response.Error) {
+			response, err = child.conn.request(ctx, newPromptCommand("", message.Text, "followUp"), rpcCommandTimeout)
+			if err != nil {
+				return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
+			}
+		}
+		if !response.Success {
+			return fmt.Errorf("pi: prompt rejected: %s", redactSecrets(firstNonEmpty(response.Error, "unknown error")))
+		}
+	}
+	// Run state is tracked from lifecycle events (agent_start/agent_settled),
+	// not set optimistically here: a fast turn can settle before this call
+	// returns, and a late "streaming = true" would leave the child stuck busy.
+	return nil
+}
+
+// isStreamingRejection reports whether pi refused a prompt because a run was
+// already streaming and no streaming behavior was given.
+func isStreamingRejection(message string) bool {
+	return strings.Contains(strings.ToLower(message), "streaming")
+}
+
 // ListModels runs `pi --list-models` and returns the models it reports. pi's
 // catalog is not tied to a session, so the instance only has to exist.
+// ListModels returns pi's configured models. In RPC mode, when a child is
+// already running, it asks that child with get_available_models; otherwise it
+// falls back to `pi --list-models`. pi's catalog is not tied to a session, so
+// any live child on the instance answers for all of them.
 func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if _, err := a.getInstance(instanceID); err != nil {
+	inst, err := a.getInstance(instanceID)
+	if err != nil {
 		return nil, err
+	}
+	if a.mode == ModeRPC {
+		if child := inst.anyChild(); child != nil {
+			rpcCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if response, err := child.conn.request(rpcCtx, newGetAvailableModelsCommand(""), rpcCommandTimeout); err == nil && response.Success {
+				if models, err := parseAvailableModels(response.Data); err == nil && len(models) > 0 {
+					return models, nil
+				}
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -520,9 +648,11 @@ func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.M
 	return parseModelList(string(out)), nil
 }
 
-// Interrupt ends the running prompt of one session. The process is killed
-// and its turn is settled as aborted; the instance and the instance's other
-// sessions keep running. A session with no running prompt is a no-op.
+// Interrupt ends the running prompt of one session. In CLI mode the process is
+// killed and its turn settles as aborted; in RPC mode an abort command asks pi
+// to cancel gracefully, with the process-group kill reserved as a backstop. The
+// instance and its other sessions keep running. A session with no running
+// prompt is a no-op.
 func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -536,6 +666,16 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	inst, err := a.getInstance(ref.InstanceID)
 	if err != nil {
 		return err
+	}
+	if a.mode == ModeRPC {
+		child := inst.child(ref.SessionID)
+		if child == nil {
+			return nil
+		}
+		if err := child.abort(ctx); err != nil && !errors.Is(err, errRPCClosed) {
+			return fmt.Errorf("pi: interrupt session %q: %w", ref.SessionID, err)
+		}
+		return nil
 	}
 	inst.interruptSession(ref.SessionID)
 	return nil
@@ -625,9 +765,37 @@ func (a *Adapter) rememberSessionTitle(instanceID, sessionID, title string) {
 	}
 }
 
-// instance is a logical pi instance: a directory, its live prompt processes and
-// its subscriber set. Sequence allocation and status are guarded by mu, which
-// is never held while blocking on a subscriber or a process.
+// sessionApproved reports whether an "always" approval rule already covers the
+// confirmation key for a session.
+func (a *Adapter) sessionApproved(instanceID, sessionID, key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, ok := a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}]
+	if !ok || state.approvals == nil {
+		return false
+	}
+	return state.approvals[key]
+}
+
+// rememberApproval records an "always" approval rule for a session. Rules are
+// dropped with the instance's session metadata, so they never outlive it.
+func (a *Adapter) rememberApproval(instanceID, sessionID, key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, ok := a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}]
+	if !ok {
+		return
+	}
+	if state.approvals == nil {
+		state.approvals = make(map[string]bool)
+	}
+	state.approvals[key] = true
+}
+
+// instance is a logical pi instance: a directory, its live prompt processes,
+// its per-session RPC children and its subscriber set. Sequence allocation and
+// status are guarded by mu, which is never held while blocking on a subscriber
+// or a process.
 type instance struct {
 	id        string
 	directory string
@@ -636,12 +804,21 @@ type instance struct {
 	now       func() time.Time
 	done      chan struct{}
 
-	mu     sync.Mutex
-	status agents.InstanceStatus
-	closed bool
-	seq    uint64
-	subs   map[*subscriber]struct{}
-	procs  map[*process]struct{}
+	mu       sync.Mutex
+	status   agents.InstanceStatus
+	closed   bool
+	seq      uint64
+	subs     map[*subscriber]struct{}
+	procs    map[*process]struct{}
+	children map[string]*rpcChild
+	starts   map[string]*childStart
+}
+
+// childStart is an in-flight lazy start of one session's RPC child. Concurrent
+// sends wait on ready instead of launching a second child.
+type childStart struct {
+	ready chan struct{}
+	err   error
 }
 
 // ensureRunning reports whether the instance can accept work.
@@ -661,8 +838,8 @@ func (inst *instance) isClosed() bool {
 	return inst.closed
 }
 
-// stop closes the instance's stream, cancels its prompt processes and waits
-// briefly for them to be reaped. It is idempotent.
+// stop closes the instance's stream, stops its RPC children in an orderly way,
+// then cancels and kills any prompt process still alive. It is idempotent.
 func (inst *instance) stop(ctx context.Context) {
 	inst.mu.Lock()
 	if inst.closed {
@@ -676,13 +853,41 @@ func (inst *instance) stop(ctx context.Context) {
 	for proc := range inst.procs {
 		procs = append(procs, proc)
 	}
+	children := make([]*rpcChild, 0, len(inst.children))
+	for _, child := range inst.children {
+		children = append(children, child)
+	}
 	inst.mu.Unlock()
+
+	// RPC children stop orderly first: closing stdin asks pi to dispose its
+	// runtime and exit, which preserves an in-progress turn's transcript. The
+	// wait is bounded so a hung child cannot stall the stop.
+	if len(children) > 0 {
+		var wg sync.WaitGroup
+		for _, child := range children {
+			wg.Add(1)
+			go func(c *rpcChild) {
+				defer wg.Done()
+				c.shutdown(ctx)
+			}(child)
+		}
+		waited := make(chan struct{})
+		go func() { wg.Wait(); close(waited) }()
+		select {
+		case <-waited:
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+		}
+	}
 
 	// Cancel the shared context so CommandContext kills every live prompt
 	// process group, then reinforce with an explicit kill.
 	inst.cancel()
 	for _, proc := range procs {
 		proc.kill()
+	}
+	for _, child := range children {
+		child.kill()
 	}
 	for _, proc := range procs {
 		select {
@@ -761,6 +966,138 @@ func (inst *instance) removeProcess(proc *process) {
 	inst.mu.Lock()
 	delete(inst.procs, proc)
 	inst.mu.Unlock()
+}
+
+// child returns the live RPC child for a session, or nil when none exists.
+func (inst *instance) child(sessionID string) *rpcChild {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	child := inst.children[sessionID]
+	if child != nil && (child.dead.Load() || child.retiring.Load()) {
+		return nil
+	}
+	return child
+}
+
+// anyChild returns any live RPC child on the instance, or nil. It backs
+// instance-scoped operations (get_available_models) that any session's child
+// can answer.
+func (inst *instance) anyChild() *rpcChild {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	for _, child := range inst.children {
+		if !child.dead.Load() && !child.retiring.Load() {
+			return child
+		}
+	}
+	return nil
+}
+
+// ensureChild returns the session's RPC child, starting one lazily on first
+// use. Concurrent sends for one session share a single start; a child that
+// died is replaced with a fresh process bound to the same session id, so the
+// transcript on disk continues where it left off.
+func (inst *instance) ensureChild(ctx context.Context, sessionID string, start func() (*rpcChild, error)) (*rpcChild, error) {
+	for {
+		inst.mu.Lock()
+		if inst.closed {
+			inst.mu.Unlock()
+			return nil, fmt.Errorf("pi: instance %q is not running", inst.id)
+		}
+		if child, ok := inst.children[sessionID]; ok && !child.dead.Load() && !child.retiring.Load() {
+			inst.mu.Unlock()
+			return child, nil
+		}
+		if inFlight, ok := inst.starts[sessionID]; ok {
+			inst.mu.Unlock()
+			select {
+			case <-inFlight.ready:
+				if inFlight.err != nil {
+					return nil, inFlight.err
+				}
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		startEntry := &childStart{ready: make(chan struct{})}
+		inst.starts[sessionID] = startEntry
+		inst.mu.Unlock()
+
+		child, err := start()
+
+		inst.mu.Lock()
+		startEntry.err = err
+		if err == nil {
+			if child.dead.Load() {
+				startEntry.err = errRPCClosed
+			} else {
+				inst.children[sessionID] = child
+			}
+		}
+		delete(inst.starts, sessionID)
+		inst.mu.Unlock()
+		close(startEntry.ready)
+
+		if startEntry.err != nil {
+			return nil, startEntry.err
+		}
+		return child, nil
+	}
+}
+
+// removeChild unregisters a child that exited, if it is still the registered
+// one (a replacement may already have taken its place).
+func (inst *instance) removeChild(child *rpcChild) {
+	inst.mu.Lock()
+	if inst.children[child.sessionID] == child {
+		delete(inst.children, child.sessionID)
+	}
+	inst.mu.Unlock()
+}
+
+// startReaper launches the idle reaper. A non-positive timeout disables it.
+func (inst *instance) startReaper(idleTimeout, interval time.Duration) {
+	if idleTimeout <= 0 {
+		return
+	}
+	if interval <= 0 {
+		interval = defaultRPCReapInterval
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-inst.done:
+				return
+			case <-ticker.C:
+				inst.reapIdle(idleTimeout)
+			}
+		}
+	}()
+}
+
+// reapIdle shuts down RPC children that have been unused past the timeout and
+// are not mid-run. Reclamation runs in the background so it never blocks the
+// ticker.
+func (inst *instance) reapIdle(idleTimeout time.Duration) {
+	inst.mu.Lock()
+	var idle []*rpcChild
+	for _, child := range inst.children {
+		if child.idle(idleTimeout) {
+			idle = append(idle, child)
+		}
+	}
+	inst.mu.Unlock()
+	for _, child := range idle {
+		// Only the reaper that claims the child shuts it down, so a send
+		// that read the map concurrently starts a fresh child instead of
+		// using a child whose stdin is about to close.
+		if child.beginRetire() {
+			go child.shutdown(context.Background())
+		}
+	}
 }
 
 // publish stamps the envelope, assigns the next per-instance sequence and

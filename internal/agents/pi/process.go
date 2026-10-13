@@ -20,11 +20,16 @@ type processSpec struct {
 	args       []string
 	dir        string
 	env        []string
+	// stdin requests a writable stdin pipe. It is set for RPC children,
+	// which receive commands on stdin; one-shot JSON-mode prompts leave it
+	// unset and inherit an empty stdin.
+	stdin bool
 }
 
 // process is a started pi child process with its protocol pipes.
 type process struct {
 	cmd    *exec.Cmd
+	stdin  io.WriteCloser
 	stdout io.ReadCloser
 	stderr io.ReadCloser
 
@@ -58,6 +63,14 @@ func startProcess(ctx context.Context, spec processSpec) (*process, error) {
 	}
 	setProcessGroup(cmd)
 
+	var stdin io.WriteCloser
+	var err error
+	if spec.stdin {
+		stdin, err = cmd.StdinPipe()
+		if err != nil {
+			return nil, fmt.Errorf("pi: stdin pipe: %w", err)
+		}
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("pi: stdout pipe: %w", err)
@@ -75,7 +88,7 @@ func startProcess(ctx context.Context, spec processSpec) (*process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("pi: start process: %w", err)
 	}
-	return &process{cmd: cmd, stdout: stdout, stderr: stderr, done: make(chan struct{})}, nil
+	return &process{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr, done: make(chan struct{})}, nil
 }
 
 // wait reaps the child and closes the process's done channel. Callers must

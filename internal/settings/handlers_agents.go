@@ -22,8 +22,13 @@ type agentDTO struct {
 	Path       string `json:"path"`
 	PathSource string `json:"pathSource"`
 	Available  bool   `json:"available"`
-	Version    string `json:"version,omitempty"`
-	CheckedAt  string `json:"checkedAt,omitempty"`
+	// Mode is the configured transport for backends that have more than one
+	// (pi: "cli" or "rpc"); empty means the backend default. Modes lists the
+	// choices so the workbench can render the control.
+	Mode      string   `json:"mode,omitempty"`
+	Modes     []string `json:"modes,omitempty"`
+	Version   string   `json:"version,omitempty"`
+	CheckedAt string   `json:"checkedAt,omitempty"`
 }
 
 type agentListResponse struct {
@@ -103,6 +108,48 @@ func (s *Service) handleSetAgentPath(c *gin.Context) {
 	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
 }
 
+// handleSetAgentMode sets a backend's transport mode. The value is validated
+// against the modes the platform knows (or empty to restore the default); an
+// adapter ignores anything else anyway.
+func (s *Service) handleSetAgentMode(c *gin.Context) {
+	backend, ok := s.backendParam(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	mode := strings.TrimSpace(request.Mode)
+	if mode != "" {
+		descriptor, ok := s.catalog.Get(backend)
+		if !ok {
+			respondError(c, http.StatusNotFound, "unknown_backend")
+			return
+		}
+		valid := false
+		for _, allowed := range descriptor.Modes {
+			if mode == allowed {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			respondError(c, http.StatusBadRequest, "invalid_mode")
+			return
+		}
+	}
+	setting, err := s.SetAgentMode(backend, mode)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
+}
+
 func (s *Service) handleDetectAgent(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
@@ -131,12 +178,15 @@ func (s *Service) handleDetectAgent(c *gin.Context) {
 // agentDTO resolves the backend's current path and builds its API view.
 func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agentDTO {
 	path, source := s.ResolvePath(backend)
+	descriptor, _ := s.catalog.Get(backend)
 	return agentDTO{
 		Backend:    string(backend),
 		Enabled:    setting.Enabled,
 		Path:       path,
 		PathSource: source,
 		Available:  source != "none" && isExecutable(path),
+		Mode:       setting.Mode,
+		Modes:      descriptor.Modes,
 		Version:    setting.Version,
 		CheckedAt:  setting.CheckedAt,
 	}

@@ -17,6 +17,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/agents", s.handleListAgents)
 	r.PUT("/agents/:backend", s.handleSetAgentEnabled)
 	r.PUT("/agents/:backend/path", s.handleSetAgentPath)
+	r.PUT("/agents/:backend/mode", s.handleSetAgentMode)
 	r.POST("/agents/:backend/detect", s.handleDetectAgent)
 }
 

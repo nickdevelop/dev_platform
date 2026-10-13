@@ -18,7 +18,7 @@
 
 - **能力声明 `Capabilities`**：`AgentAdapter` 的一部分，每个布尔值都必须显式声明。通用层用能力门控控件，不用后端 ID 分支。
 - **可选扩展接口**：`agents.PermissionReplier`（工具确认与表单）、`agents.RawEventOpener`（原始事件流）、`agents.HistoryReader`（历史）、`agents.ServiceController`（机器级服务）。适配器实现才可用，未实现时通用层返回 `ErrUnsupportedCapability`。
-- **后端描述符 `BackendDescriptor` 与 `Catalog`**：每个适配器包导出 `Descriptor`，包含显示名、可执行文件名、默认启用、展示顺序、测试版本范围、是否有机器级服务。组合根用它们构建 catalog。
+- **后端描述符 `BackendDescriptor` 与 `Catalog`**：每个适配器包导出 `Descriptor`，包含显示名、可执行文件名、默认启用、展示顺序、测试版本范围、是否有机器级服务，以及可选的传输模式列表（如 pi 的 `cli`/`rpc`）。组合根用它们构建 catalog。
 - **注册表 `Registry`**：适配器的显式注册点。组合根在启动时调用 `checkBackendWiring`，确认注册表与 catalog 描述的后端集合完全一致，否则启动失败。
 
 ## 新增一个后端的步骤

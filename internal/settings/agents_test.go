@@ -24,6 +24,28 @@ func TestAgentDefaultsAreEnabled(t *testing.T) {
 	}
 }
 
+func TestSetAgentModeRoundTrips(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, testCatalog(t))
+
+	if got := svc.AgentMode(agents.BackendPi); got != "" {
+		t.Fatalf("default AgentMode = %q, want empty", got)
+	}
+	if _, err := svc.SetAgentMode(agents.BackendPi, "rpc"); err != nil {
+		t.Fatalf("SetAgentMode: %v", err)
+	}
+	if got := NewService(db, testCatalog(t)).AgentMode(agents.BackendPi); got != "rpc" {
+		t.Errorf("AgentMode after write = %q, want rpc", got)
+	}
+	// Clearing restores the default for this backend only.
+	if _, err := svc.SetAgentMode(agents.BackendPi, ""); err != nil {
+		t.Fatalf("SetAgentMode(clear): %v", err)
+	}
+	if got := svc.AgentMode(agents.BackendPi); got != "" {
+		t.Errorf("AgentMode after clear = %q, want empty", got)
+	}
+}
+
 func TestSetAgentEnabledRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))

@@ -216,6 +216,23 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(subscribe).not.toHaveBeenCalled()
   })
 
+  it('polls approvals while a turn runs for a backend without raw events', async () => {
+    vi.useFakeTimers()
+    try {
+      stubSessionList([
+        session('sess-1', { turn: 'running', capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) }),
+      ])
+      const load = vi.spyOn(useOpencodeRawStore(), 'loadApprovals')
+      mountPanel('sess-1')
+      await vi.advanceTimersByTimeAsync(0)
+      const initial = load.mock.calls.length
+      await vi.advanceTimersByTimeAsync(1600)
+      expect(load.mock.calls.length).toBeGreaterThan(initial)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('subscribes to the raw event stream when the backend declares raw events', async () => {
     const subscribe = vi.spyOn(useOpencodeRawStore(), 'subscribeRaw')
     stubSessionList([opencodeSession('sess-1')])

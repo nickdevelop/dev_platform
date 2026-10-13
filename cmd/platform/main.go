@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -104,6 +105,22 @@ func resolveWebDir(flagValue string) string {
 // checkBackendWiring fails startup when the registered adapters and the
 // descriptor catalog name different backends, so a backend cannot be wired
 // without its facts or described without an implementation.
+// splitList parses a comma-separated setting, trimming blanks and dropping
+// empty entries so a trailing comma is harmless.
+func splitList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 func checkBackendWiring(registry *agents.Registry, catalog *agents.Catalog) error {
 	for _, id := range registry.Backends() {
 		if _, ok := catalog.Get(id); !ok {
@@ -269,8 +286,27 @@ func runServer(args []string) error {
 	// Register the installed backends. Registration only constructs the
 	// adapter; it never probes or starts a backend, so a missing binary is
 	// reported when an instance is started, not at boot.
+	piMode := settingsService.AgentMode(agents.BackendPi)
+	piExtensions := splitList(os.Getenv("PI_EXTENSIONS"))
+	// The bundled approval extension is what makes RPC-mode tool confirmation
+	// real: pi core never asks on its own. Install it only for RPC so CLI mode
+	// keeps its exact previous behavior.
+	if piMode == pi.ModeRPC {
+		extensionPath, err := pi.EnsureApprovalExtension(filepath.Join(dataDir, "pi-extensions"))
+		if err != nil {
+			return fmt.Errorf("install pi approval extension: %w", err)
+		}
+		piExtensions = append(piExtensions, extensionPath)
+	}
 	if err := registry.Register(agents.BackendPi, pi.New(pi.Options{
 		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendPi) },
+		// Mode selects the pi transport; empty falls back to the CLI default.
+		// The operator can switch it from Platform Settings and restart to roll
+		// back RPC without a deployment.
+		Mode: piMode,
+		// Extensions lists pi extension paths; the approval gate above and any
+		// operator-provided PI_EXTENSIONS are passed to every RPC child.
+		Extensions: piExtensions,
 	})); err != nil {
 		return fmt.Errorf("register pi adapter: %w", err)
 	}

@@ -10,6 +10,7 @@ import {
   listAgents,
   putAppearance,
   setAgentEnabled,
+  setAgentMode,
   setAgentPath,
   type AgentDetection,
   type AgentDto,
@@ -104,6 +105,18 @@ export const useSettingsStore = defineStore('settings', {
     async setAgentPath(backend: string, path: string): Promise<boolean> {
       try {
         await setAgentPath(backend, path, useAuthStore().csrfToken)
+        await this.loadAgents()
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentsError = describeApiError(error)
+        return false
+      }
+    },
+
+    async setAgentMode(backend: string, mode: string): Promise<boolean> {
+      try {
+        await setAgentMode(backend, mode, useAuthStore().csrfToken)
         await this.loadAgents()
         return true
       } catch (error) {

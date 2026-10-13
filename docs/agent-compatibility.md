@@ -27,7 +27,7 @@ listed as provisional below.
 | Backend | Tested version | Supported range | Notes |
 | --- | --- | --- | --- |
 | `opencode-v2` | **2.0.24** | `[2.0.0, 3.0.0)` | One binary provides both the CLI and the v2 API server, so the CLI version is also the API version. |
-| `pi` | **1.1.0** | `[1.0.0, 2.0.0)` | CLI only; `--mode json` protocol. |
+| `pi` | **1.1.0** | `[1.0.0, 2.0.0)` | CLI (`--mode json`) or RPC (`--mode rpc`); the transport is selectable, CLI is the default. |
 
 Diagnostics classify a detected version as follows:
 
@@ -47,10 +47,10 @@ must never expose a control for a capability a backend did not declare.
 | `streaming` | ✅ — `session.text.delta` normalized into incremental message events. Verified against the mock v2 server. | ✅ — `--mode json` `text_delta` provider events. Verified against the fake CLI. |
 | `sessionDiscovery` | ✅ — `GET /api/session?directory=…`. Verified. | ✅ — bounded scan of pi's on-disk JSONL session files for the instance directory. Verified. |
 | `sessionContinue` | ✅ — `GET /api/session/{id}` re-attach. Verified. | ✅ — the next prompt re-uses `--session-id`. Verified at the adapter level; end-to-end transcript continuity is **provisional** (see below). |
-| `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — terminates the per-prompt process group. Verified. |
+| `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — RPC closes the session child's stdin for an orderly shutdown, bounded then backed by a process-group kill; CLI terminates the per-prompt process group. Verified. |
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through (verified argv plumbing); real model resolution is **provisional**. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
-| `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ❌ — print/JSON mode cannot pause a tool call for confirmation. |
+| `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. ❌ in CLI mode, which has no dialog channel. |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
 | `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. |
 
@@ -59,6 +59,26 @@ must never expose a control for a capability a backend did not declare.
 subscribes to it. Tool approval and question forms are not a separate flag:
 they travel on the optional `agents.PermissionReplier` extension, and the
 workbench shows them when `toolConfirmation` is declared.
+
+### pi transports (CLI vs RPC)
+
+The pi adapter supports two transports, selected per backend in Platform
+Settings (`PUT /api/settings/agents/pi/mode`) and applied on restart:
+
+| | `cli` (default) | `rpc` |
+| --- | --- | --- |
+| Process model | one `pi --mode json` process per prompt | one long-lived `pi --mode rpc` child per active session, lazily started and reclaimed after 10 idle minutes |
+| Events | one-shot stdout JSONL | long-lived stdout JSONL: response records correlated by id, session events normalized the same way |
+| Interrupt | kills the prompt's process group | `abort` command (process-group kill as backstop) |
+| Stop | cancels and kills the process group | closes child stdin for an orderly shutdown, bounded then killed |
+| Tool confirmation | unsupported | supported through the extension UI subprotocol and the bundled approval extension (`internal/agents/pi/extension/approval.ts`) |
+| Same-session concurrency | parallel one-shot prompts | serialized per session; a prompt during a run is queued with `followUp` |
+
+The CLI default is the rollback lever: if RPC misbehaves, switch the mode back
+and restart — no deployment rollback. Both transports share the same session
+files, so a transcript opened under one can be continued under the other.
+Operator-supplied pi extensions can be added with the `PI_EXTENSIONS`
+environment variable (comma-separated paths).
 
 ## Machine-level service (`opencode-v2`)
 

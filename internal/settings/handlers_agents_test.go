@@ -141,3 +141,53 @@ func TestAgentHandlerDetectReportsVersion(t *testing.T) {
 		t.Errorf("GET body %s does not include the detected version", get.Body.String())
 	}
 }
+
+func TestAgentHandlerSetMode(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	router, _ := newAppearanceRouter(t)
+
+	// The list advertises pi's modes and no configured mode by default.
+	list := agentReq(t, router, http.MethodGet, "/api/agents", "")
+	var payload struct {
+		Agents []struct {
+			Backend string   `json:"backend"`
+			Mode    string   `json:"mode"`
+			Modes   []string `json:"modes"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	var piEntry struct {
+		Mode  string
+		Modes []string
+	}
+	for _, agent := range payload.Agents {
+		if agent.Backend == "pi" {
+			piEntry.Mode = agent.Mode
+			piEntry.Modes = agent.Modes
+		}
+	}
+	if piEntry.Mode != "" || len(piEntry.Modes) != 2 {
+		t.Fatalf("pi agent = %+v, want empty mode and two choices", piEntry)
+	}
+
+	ok := agentReq(t, router, http.MethodPut, "/api/agents/pi/mode", `{"mode":"rpc"}`)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("set mode status = %d, body %s", ok.Code, ok.Body.String())
+	}
+	if !strings.Contains(ok.Body.String(), `"mode":"rpc"`) {
+		t.Errorf("set mode body = %s, want mode rpc", ok.Body.String())
+	}
+
+	bad := agentReq(t, router, http.MethodPut, "/api/agents/pi/mode", `{"mode":"warp"}`)
+	if bad.Code != http.StatusBadRequest {
+		t.Errorf("invalid mode status = %d, want 400", bad.Code)
+	}
+
+	// opencode has no modes, so any non-empty mode is refused.
+	none := agentReq(t, router, http.MethodPut, "/api/agents/opencode-v2/mode", `{"mode":"rpc"}`)
+	if none.Code != http.StatusBadRequest {
+		t.Errorf("opencode mode status = %d, want 400", none.Code)
+	}
+}

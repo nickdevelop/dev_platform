@@ -30,6 +30,10 @@ export interface AgentDto {
   path: string
   pathSource: 'auto' | 'manual' | 'none'
   available: boolean
+  // mode selects a backend transport when the backend has more than one
+  // (pi: cli or rpc). modes lists the choices; both are absent otherwise.
+  mode?: string
+  modes?: string[]
   version?: string
   checkedAt?: string
 }
@@ -64,6 +68,13 @@ export function setAgentEnabled(
 export function setAgentPath(backend: string, path: string, csrfToken: string): Promise<AgentDto> {
   return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/path`, {
     body: { path },
+    csrfToken,
+  })
+}
+
+export function setAgentMode(backend: string, mode: string, csrfToken: string): Promise<AgentDto> {
+  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/mode`, {
+    body: { mode },
     csrfToken,
   })
 }
