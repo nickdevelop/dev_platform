@@ -34,11 +34,12 @@ import { useAuthStore } from './auth'
 
 // One rendered line in a session's log. Agent replies are rendered as sanitized
 // markdown in the view (see ../markdown); every other kind is plain text. A
-// `separator` line marks where replayed history ends and the live stream begins;
-// a `thinking` line is the agent's reasoning, which the pane shows collapsed.
+// `thinking` line is the agent's reasoning, which the pane shows collapsed.
+// Replayed history and the live stream share this log directly: there is no
+// separator between them, so a resumed turn appends to the same blocks.
 export interface ChatEntry {
   id: string
-  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'separator'
+  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error'
   role: string
   text: string
   streaming: boolean
@@ -584,14 +585,12 @@ export const useSessionsStore = defineStore('sessions', {
           const entry = entryFromEvent(sessionId, event)
           if (entry) entries.push(entry)
         }
+        // The live stream may re-deliver the message the replay ended with;
+        // historyTailGuard spends one live message on that. The guard stays even
+        // though history is no longer marked off by a separator: history and the
+        // resumed turn render as one continuous log, so a boundary marker would
+        // only cut a trailing step group in two.
         if (history.events.length > 0) {
-          entries.push({
-            id: nextEntryID(sessionId, 0, 'separator'),
-            kind: 'separator',
-            role: 'system',
-            text: '以上为历史记录',
-            streaming: false,
-          })
           this.historyTailGuard[sessionId] = true
         }
         this.historyTruncated[sessionId] = history.truncated

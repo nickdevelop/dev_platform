@@ -4,7 +4,8 @@
 // read back, and drives the UI:
 //
 //   - a reply produced in one page visit is still shown after a full page
-//     reload, above the separator that marks where replayed history ends,
+//     reload, replayed from the agent's own transcript and continuing in the
+//     same conversation as the resumed turn,
 //   - a task whose instance was stopped becomes usable again by opening it:
 //     the platform re-attaches the session and the composer accepts a message
 //     without the user starting anything.
@@ -80,7 +81,10 @@ async function send(page: Page, text: string) {
   await page.getByRole('button', { name: '发送', exact: true }).click()
 }
 
-test('a reply survives a page reload, shown above the history separator', async ({ page, request }) => {
+test('a reply survives a page reload and continues in the same conversation', async ({
+  page,
+  request,
+}) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
@@ -107,7 +111,6 @@ test('a reply survives a page reload, shown above the history separator', async 
 
   await expect(replayed).toContainText('remember this turn', { timeout: 20_000 })
   await expect(replayed).toContainText('pi reply: remember this turn', { timeout: 20_000 })
-  await expect(replayed.locator('[data-test="history-separator"]')).toBeVisible()
 
   // Reasoning is replayed as its own collapsed block, above the reply.
   const piThinking = replayed.locator('[data-test="thinking"]')
@@ -123,7 +126,6 @@ test('a reply survives a page reload, shown above the history separator', async 
   // included.
   const replayedOC = await openTask(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
-  await expect(replayedOC.locator('[data-test="history-separator"]')).toBeVisible()
   const ocThinking = replayedOC.locator('[data-test="thinking"]')
   await expect(ocThinking.locator('summary')).toContainText('Thinking')
   await expect(ocThinking).toContainText('internal reasoning is not conversation')

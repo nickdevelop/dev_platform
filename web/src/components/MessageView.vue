@@ -10,7 +10,7 @@
 // (see ../markdown), so backend content cannot inject live markup. An agent
 // reply is cut around its ```plantuml fences first (see ../markdown-segments).
 // Subagent tool calls offer a popup dialog with the full input/output.
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
@@ -28,6 +28,25 @@ const props = defineProps<{
   capabilities?: Capabilities | null
   streamStatus?: StreamStatus
 }>()
+
+// Manually opened blocks stay open while the turn streams. A native <details>
+// loses its `open` state whenever Vue re-creates the element, and a step group
+// is re-created whenever an activity entry is appended to it, so the view owns
+// the state instead: a step group and each inner thinking/tool block remember
+// whether the user opened them, keyed by the group id / entry id. Without this,
+// expanding a running step collapses it again on the next tool call.
+const openSteps = reactive(new Set<string>())
+const openItems = reactive(new Set<string>())
+
+function onStepToggle(id: string, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) openSteps.add(id)
+  else openSteps.delete(id)
+}
+
+function onItemToggle(id: string, event: Event) {
+  if ((event.target as HTMLDetailsElement).open) openItems.add(id)
+  else openItems.delete(id)
+}
 
 // Tool entries are gated on the capability, exactly like the live controls: a
 // backend that does not report tool events must not show tool activity.
@@ -130,12 +149,17 @@ function isActivity(entry: ChatEntry): boolean {
 // Consecutive thinking/tool entries between messages form one step group, so
 // a long agent turn reads as one collapsible card instead of a flat list of
 // blocks. Single entries stay ungrouped only when isolated by messages.
+//
+// The group id is its first entry's id, not a join of every member: entries are
+// only ever appended to a running group, so the first member is stable while
+// the group grows. A key that changed on every append would make Vue re-create
+// the <details> and drop the state the user opened it in.
 const renderBlocks = computed<RenderBlock[]>(() => {
   const blocks: RenderBlock[] = []
   let current: ChatEntry[] | null = null
   const flush = () => {
     if (current && current.length > 0) {
-      blocks.push({ kind: 'step', id: current.map((entry) => entry.id).join('|'), entries: current })
+      blocks.push({ kind: 'step', id: `step:${current[0].id}`, entries: current })
       current = null
     }
   }
@@ -153,7 +177,7 @@ const renderBlocks = computed<RenderBlock[]>(() => {
 })
 
 function toolEventsVisibleFor(entry: ChatEntry): boolean {
-  if (entry.kind === 'message' || entry.kind === 'error' || entry.kind === 'separator') return true
+  if (entry.kind === 'message' || entry.kind === 'error') return true
   return toolEventsVisible()
 }
 
@@ -257,11 +281,6 @@ function prettyInput(entry: ChatEntry): string {
             <p class="agent-error" data-test="agent-error">{{ block.entry.text }}</p>
           </template>
 
-          <template v-else-if="block.entry.kind === 'separator'">
-            <hr class="separator-rule" />
-            <span class="separator-text" data-test="history-separator">{{ block.entry.text }}</span>
-          </template>
-
           <template v-else>
             <!-- Activity entries always render inside step groups; this fallback
                  only covers backends without tool events. -->
@@ -269,7 +288,12 @@ function prettyInput(entry: ChatEntry): string {
         </template>
 
         <template v-else>
-          <details class="step-group" data-test="step-group">
+          <details
+            class="step-group"
+            data-test="step-group"
+            :open="openSteps.has(block.id)"
+            @toggle="onStepToggle(block.id, $event)"
+          >
             <summary class="step-summary">
               <span class="step-icon" aria-hidden="true">⚙️</span>
               <span class="step-title">{{ stepSummary(block.entries) }}</span>
@@ -277,7 +301,13 @@ function prettyInput(entry: ChatEntry): string {
             </summary>
             <div class="step-body">
               <template v-for="entry in block.entries" :key="entry.id">
-                <details v-if="entry.kind === 'thinking'" class="thinking" data-test="thinking">
+                <details
+                  v-if="entry.kind === 'thinking'"
+                  class="thinking"
+                  data-test="thinking"
+                  :open="openItems.has(entry.id)"
+                  @toggle="onItemToggle(entry.id, $event)"
+                >
                   <summary>
                     <span class="thinking-icon" aria-hidden="true">🧠</span>
                     <span class="thinking-title">Thinking</span>
@@ -285,7 +315,13 @@ function prettyInput(entry: ChatEntry): string {
                   <p class="thinking-text">{{ entry.text }}</p>
                 </details>
 
-                <details v-else-if="entry.kind === 'tool_call' && toolEventsVisible()" class="tool" data-test="tool-call">
+                <details
+                  v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
+                  class="tool"
+                  data-test="tool-call"
+                  :open="openItems.has(entry.id)"
+                  @toggle="onItemToggle(entry.id, $event)"
+                >
                   <summary>
                     <span class="tool-icon" aria-hidden="true">🔧</span>
                     <span class="tool-name">{{ toolName(entry) }}</span>
@@ -316,6 +352,8 @@ function prettyInput(entry: ChatEntry): string {
                   v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
                   class="tool"
                   data-test="tool-result"
+                  :open="openItems.has(entry.id)"
+                  @toggle="onItemToggle(entry.id, $event)"
                 >
                   <summary>
                     <span class="tool-icon" aria-hidden="true">🔧</span>
@@ -742,24 +780,5 @@ function prettyInput(entry: ChatEntry): string {
 
 .empty {
   color: var(--color-text-muted);
-}
-
-.kind-separator {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.separator-rule {
-  flex: 1;
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 0;
-}
-
-.separator-text {
-  flex-shrink: 0;
 }
 </style>

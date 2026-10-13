@@ -351,7 +351,7 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.text()).not.toContain('inst-1')
   })
 
-  it('shows the replayed history with a separator and a truncation note', async () => {
+  it('shows the replayed history with a truncation note', async () => {
     stubSessionList([session('sess-1')], {
       events: [
         {
@@ -371,7 +371,6 @@ describe('TaskChatPanel opencode approvals', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('OLD REPLAYED')
-    expect(wrapper.find('[data-test="history-separator"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="history-truncated"]').text()).toContain('历史')
   })
 

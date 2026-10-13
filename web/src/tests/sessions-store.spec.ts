@@ -281,7 +281,7 @@ describe('sessions store history', () => {
     expect(RecordingEventSource.instances[0].url).toBe('/api/projects/1/sessions/s1/events')
   })
 
-  it('replays history into the log and marks where it ends', async () => {
+  it('replays history into the log as one continuous conversation', async () => {
     const sessions = useSessionsStore()
     stubRoutes({
       '/history': {
@@ -293,10 +293,9 @@ describe('sessions store history', () => {
     await sessions.loadHistory(1, 's1')
 
     const entries = sessions.messagesFor('s1')
-    expect(entries.map((entry) => entry.kind)).toEqual(['message', 'message', 'separator'])
+    expect(entries.map((entry) => entry.kind)).toEqual(['message', 'message'])
     expect(entries[0].text).toBe('历史里的问题')
     expect(entries[1].text).toBe('历史里的回答')
-    expect(entries[2].text).toContain('历史')
   })
 
   it('loads history only once per session', async () => {
@@ -417,7 +416,7 @@ describe('sessions store thinking entries', () => {
     await sessions.loadHistory(1, 's1')
 
     const entries = sessions.messagesFor('s1')
-    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message', 'separator'])
+    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message'])
     expect(entries[0].text).toBe('历史推理')
     expect(entries[0].streaming).toBe(false)
   })

@@ -169,6 +169,87 @@ describe('MessageView tool and thinking blocks', () => {
   })
 })
 
+describe('MessageView collapsible state', () => {
+  function toolCall(id: string, name: string): ChatEntry {
+    return {
+      id,
+      kind: 'tool_call',
+      role: 'assistant',
+      text: name,
+      name,
+      callId: `call-${id}`,
+      input: { path: `/${id}` },
+      streaming: false,
+    }
+  }
+
+  // jsdom toggles a <details> on a summary click but, unlike a browser, fires
+  // no `toggle` event, so the state is applied the way the view observes it:
+  // flip `open`, then dispatch the event the view listens for.
+  function openByHand(details: Element) {
+    const el = details as HTMLDetailsElement
+    el.open = true
+    el.dispatchEvent(new Event('toggle'))
+  }
+
+  // A step group is re-created whenever its key changes; that reset the
+  // user's expansion on the next streamed tool call. The key is now stable, so
+  // the element is patched in place and stays open.
+  it('keeps a hand-opened step group open when the turn appends more activity', async () => {
+    const wrapper = mount(MessageView, {
+      props: { messages: [toolCall('c1', 'read')], capabilities: capabilities({ toolCallEvents: true }) },
+    })
+    const before = wrapper.find('[data-test="step-group"]')
+    openByHand(before.element)
+
+    await wrapper.setProps({ messages: [toolCall('c1', 'read'), toolCall('c2', 'grep')] })
+
+    const after = wrapper.find('[data-test="step-group"]')
+    expect(after.element).toBe(before.element)
+    expect((after.element as HTMLDetailsElement).open).toBe(true)
+  })
+
+  it('keeps a hand-expanded thinking block open when the turn appends more activity', async () => {
+    const thinking: ChatEntry = {
+      id: 't1',
+      kind: 'thinking',
+      role: 'assistant',
+      text: 'plan',
+      streaming: false,
+    }
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [thinking, toolCall('c1', 'read')],
+        capabilities: capabilities({ toolCallEvents: true }),
+      },
+    })
+    const before = wrapper.find('[data-test="thinking"]')
+    openByHand(before.element)
+
+    await wrapper.setProps({
+      messages: [thinking, toolCall('c1', 'read'), toolCall('c2', 'grep')],
+    })
+
+    const after = wrapper.find('[data-test="thinking"]')
+    expect(after.element).toBe(before.element)
+    expect((after.element as HTMLDetailsElement).open).toBe(true)
+  })
+
+  it('keeps a hand-expanded tool block open when a later block joins the group', async () => {
+    const wrapper = mount(MessageView, {
+      props: { messages: [toolCall('c1', 'read')], capabilities: capabilities({ toolCallEvents: true }) },
+    })
+    const before = wrapper.find('[data-test="tool-call"]')
+    openByHand(before.element)
+
+    await wrapper.setProps({ messages: [toolCall('c1', 'read'), toolCall('c2', 'grep')] })
+
+    const after = wrapper.find('[data-test="tool-call"]')
+    expect(after.element).toBe(before.element)
+    expect((after.element as HTMLDetailsElement).open).toBe(true)
+  })
+})
+
 describe('MessageView per-message model', () => {
   it('labels an assistant reply with the model that produced it', () => {
     const entry: ChatEntry = {
