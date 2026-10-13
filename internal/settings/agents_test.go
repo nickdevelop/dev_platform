@@ -10,7 +10,7 @@ import (
 )
 
 func TestAgentDefaultsAreEnabled(t *testing.T) {
-	svc := NewService(openTestDB(t))
+	svc := NewService(openTestDB(t), testCatalog(t))
 
 	got, err := svc.Agents()
 	if err != nil {
@@ -26,15 +26,15 @@ func TestAgentDefaultsAreEnabled(t *testing.T) {
 
 func TestSetAgentEnabledRoundTrips(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db, testCatalog(t))
 
 	if _, err := svc.SetAgentEnabled(agents.BackendPi, false); err != nil {
 		t.Fatalf("SetAgentEnabled: %v", err)
 	}
-	if NewService(db).Enabled(agents.BackendPi) {
+	if NewService(db, testCatalog(t)).Enabled(agents.BackendPi) {
 		t.Error("pi should be disabled after the write")
 	}
-	if !NewService(db).Enabled(agents.BackendOpenCodeV2) {
+	if !NewService(db, testCatalog(t)).Enabled(agents.BackendOpenCodeV2) {
 		t.Error("opencode should remain enabled")
 	}
 }
@@ -47,7 +47,7 @@ func TestResolvePathPrefersManualThenLookPath(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 
-	svc := NewService(openTestDB(t))
+	svc := NewService(openTestDB(t), testCatalog(t))
 
 	path, source := svc.ResolvePath(agents.BackendPi)
 	if path != piPath || source != "auto" {
@@ -75,7 +75,7 @@ func TestResolvePathPrefersManualThenLookPath(t *testing.T) {
 
 func TestRecordDetectionStoresVersion(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db, testCatalog(t))
 	fixed := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
 	svc.now = func() time.Time { return fixed }
 
@@ -87,7 +87,7 @@ func TestRecordDetectionStoresVersion(t *testing.T) {
 		t.Errorf("setting = %+v, want version 1.1.0 at %s", setting, fixed.Format(time.RFC3339))
 	}
 
-	reloaded, err := NewService(db).Agents()
+	reloaded, err := NewService(db, testCatalog(t)).Agents()
 	if err != nil {
 		t.Fatalf("reload Agents: %v", err)
 	}

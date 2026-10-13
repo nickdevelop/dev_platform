@@ -12,6 +12,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"devplatform/internal/agents"
 	"devplatform/internal/database"
 )
 
@@ -61,11 +62,15 @@ type Service struct {
 	mu sync.Mutex
 	// now is the clock used for detection timestamps; tests override it.
 	now func() time.Time
+	// catalog describes every backend the platform knows: its default
+	// enablement, executable name and presentation order.
+	catalog *agents.Catalog
 }
 
-// NewService builds the settings service over the platform database.
-func NewService(db *gorm.DB) *Service {
-	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }}
+// NewService builds the settings service over the platform database and the
+// backend catalog.
+func NewService(db *gorm.DB, catalog *agents.Catalog) *Service {
+	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }, catalog: catalog}
 }
 
 // Appearance returns the saved appearance, or the default when none is saved.

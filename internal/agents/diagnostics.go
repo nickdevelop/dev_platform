@@ -162,19 +162,6 @@ type SupportedVersion struct {
 	Maximum string
 }
 
-// supportedVersions is the compatibility matrix's version axis, declared once
-// so adapters, docs and tests cannot drift apart.
-var supportedVersions = map[BackendID]SupportedVersion{
-	BackendOpenCodeV2: {Tested: "2.0.24", Minimum: "2.0.0", Maximum: "3.0.0"},
-	BackendPi:         {Tested: "1.1.0", Minimum: "1.0.0", Maximum: "2.0.0"},
-}
-
-// SupportedVersionFor returns the tested version range declared for id.
-func SupportedVersionFor(id BackendID) (SupportedVersion, bool) {
-	supported, ok := supportedVersions[id]
-	return supported, ok
-}
-
 // Version is a parsed MAJOR.MINOR.PATCH version. Pre-release suffixes
 // ("1.1.0-mock") and build metadata are ignored for comparison, so a packaged
 // backport still classifies by its numbers.

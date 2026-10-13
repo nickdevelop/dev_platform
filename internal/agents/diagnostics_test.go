@@ -6,48 +6,6 @@ import (
 	"testing"
 )
 
-// TestSupportedVersionDeclarations pins the tested CLI version ranges. The
-// values must match docs/agent-compatibility.md verbatim: the documented
-// matrix and the code must not drift apart.
-func TestSupportedVersionDeclarations(t *testing.T) {
-	opencode, ok := SupportedVersionFor(BackendOpenCodeV2)
-	if !ok {
-		t.Fatal("no supported version declared for opencode-v2")
-	}
-	if opencode.Tested != "2.0.24" || opencode.Minimum != "2.0.0" || opencode.Maximum != "3.0.0" {
-		t.Errorf("opencode-v2 range = %+v, want tested 2.0.24 in [2.0.0, 3.0.0)", opencode)
-	}
-
-	pi, ok := SupportedVersionFor(BackendPi)
-	if !ok {
-		t.Fatal("no supported version declared for pi")
-	}
-	if pi.Tested != "1.1.0" || pi.Minimum != "1.0.0" || pi.Maximum != "2.0.0" {
-		t.Errorf("pi range = %+v, want tested 1.1.0 in [1.0.0, 2.0.0)", pi)
-	}
-
-	if _, ok := SupportedVersionFor("claude-code"); ok {
-		t.Error("unknown backend must not declare a supported version")
-	}
-
-	// Every declared bound must itself be parseable, or the range can never
-	// classify anything.
-	for id, sv := range map[BackendID]SupportedVersion{BackendOpenCodeV2: opencode, BackendPi: pi} {
-		if _, ok := ParseVersion(sv.Minimum); !ok {
-			t.Errorf("%s minimum %q is not a parseable version", id, sv.Minimum)
-		}
-		if _, ok := ParseVersion(sv.Maximum); !ok {
-			t.Errorf("%s maximum %q is not a parseable version", id, sv.Maximum)
-		}
-		if _, ok := ParseVersion(sv.Tested); !ok {
-			t.Errorf("%s tested version %q is not a parseable version", id, sv.Tested)
-		}
-		if tested, ok := ParseVersion(sv.Tested); !ok || !tested.InRange(sv) {
-			t.Errorf("%s tested version %q is not inside its own declared range", id, sv.Tested)
-		}
-	}
-}
-
 // TestParseVersion extracts versions from real tool output shapes: pi prints
 // "1.1.0", opencode prints "opencode v2.0.24", and pre-release suffixes must
 // not break the parse.
@@ -82,8 +40,8 @@ func TestParseVersion(t *testing.T) {
 // TestVersionInRange checks the tested-range boundaries: the minimum is
 // inclusive, the maximum exclusive.
 func TestVersionInRange(t *testing.T) {
-	opencode, _ := SupportedVersionFor(BackendOpenCodeV2)
-	pi, _ := SupportedVersionFor(BackendPi)
+	opencode := SupportedVersion{Tested: "2.0.24", Minimum: "2.0.0", Maximum: "3.0.0"}
+	pi := SupportedVersion{Tested: "1.1.0", Minimum: "1.0.0", Maximum: "2.0.0"}
 
 	cases := []struct {
 		version Version

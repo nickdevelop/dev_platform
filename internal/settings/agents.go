@@ -23,12 +23,14 @@ type AgentSetting struct {
 	CheckedAt  string `json:"checkedAt"`
 }
 
-// defaultAgentSettings returns every known backend enabled with no override.
-func defaultAgentSettings() map[agents.BackendID]AgentSetting {
-	return map[agents.BackendID]AgentSetting{
-		agents.BackendOpenCodeV2: {Enabled: true},
-		agents.BackendPi:         {Enabled: true},
+// defaultAgentSettings returns every catalog backend at its descriptor's
+// default enablement, with no override.
+func (s *Service) defaultAgentSettings() map[agents.BackendID]AgentSetting {
+	defaults := make(map[agents.BackendID]AgentSetting)
+	for _, descriptor := range s.catalog.All() {
+		defaults[descriptor.ID] = AgentSetting{Enabled: descriptor.DefaultEnabled}
 	}
+	return defaults
 }
 
 // Agents returns the configuration of every known backend, filling defaults for
@@ -40,7 +42,7 @@ func (s *Service) Agents() (map[agents.BackendID]AgentSetting, error) {
 }
 
 func (s *Service) loadAgents() (map[agents.BackendID]AgentSetting, error) {
-	settings := defaultAgentSettings()
+	settings := s.defaultAgentSettings()
 
 	var row database.Setting
 	// Find (not First) so a missing row is not logged as an error; agent
@@ -164,18 +166,12 @@ func (s *Service) ResolvePath(backend agents.BackendID) (string, string) {
 			return manual, "manual"
 		}
 	}
-	if path, lookErr := exec.LookPath(backendBinary(backend)); lookErr == nil {
+	descriptor, known := s.catalog.Get(backend)
+	if !known {
+		return "", "none"
+	}
+	if path, lookErr := exec.LookPath(descriptor.Binary); lookErr == nil {
 		return path, "auto"
 	}
 	return "", "none"
-}
-
-// backendBinary is the default executable name of a backend.
-func backendBinary(backend agents.BackendID) string {
-	switch backend {
-	case agents.BackendOpenCodeV2:
-		return "opencode"
-	default:
-		return "pi"
-	}
 }

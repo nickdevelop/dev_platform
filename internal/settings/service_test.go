@@ -31,7 +31,7 @@ func openTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestAppearanceDefaultsWhenUnset(t *testing.T) {
-	svc := NewService(openTestDB(t))
+	svc := NewService(openTestDB(t), testCatalog(t))
 
 	got, err := svc.Appearance()
 	if err != nil {
@@ -45,7 +45,7 @@ func TestAppearanceDefaultsWhenUnset(t *testing.T) {
 
 func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db, testCatalog(t))
 
 	input := Appearance{Theme: "dark", FontSize: 18, Density: "compact"}
 	saved, err := svc.SetAppearance(input)
@@ -56,7 +56,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 		t.Errorf("SetAppearance returned %+v, want %+v", saved, input)
 	}
 
-	got, err := NewService(db).Appearance()
+	got, err := NewService(db, testCatalog(t)).Appearance()
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 }
 
 func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
-	svc := NewService(openTestDB(t))
+	svc := NewService(openTestDB(t), testCatalog(t))
 	valid := DefaultAppearance()
 
 	cases := []struct {
@@ -102,7 +102,7 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 // stored blob must stop carrying font fields.
 func TestStoredAppearanceHasNoFontFields(t *testing.T) {
 	db := openTestDB(t)
-	svc := NewService(db)
+	svc := NewService(db, testCatalog(t))
 
 	if _, err := svc.SetAppearance(DefaultAppearance()); err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -128,7 +128,7 @@ func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
 		t.Fatalf("store legacy appearance: %v", err)
 	}
 
-	got, err := NewService(db).Appearance()
+	got, err := NewService(db, testCatalog(t)).Appearance()
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}

@@ -29,3 +29,13 @@ func TestDescriptorServiceFlagMatchesAdapter(t *testing.T) {
 		t.Fatalf("pi must not expose a machine-level service: descriptor=%v implements=%v", Descriptor.ServiceSupported, implements)
 	}
 }
+
+// TestDescriptorBoundsAreParseable proves every declared bound can classify a
+// version; an unparseable bound would make the range match nothing.
+func TestDescriptorBoundsAreParseable(t *testing.T) {
+	for name, bound := range map[string]string{"tested": Descriptor.Tested, "minimum": Descriptor.Minimum, "maximum": Descriptor.Maximum} {
+		if _, ok := agents.ParseVersion(bound); !ok {
+			t.Errorf("%s bound %q is not a MAJOR.MINOR.PATCH version", name, bound)
+		}
+	}
+}

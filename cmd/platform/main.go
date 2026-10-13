@@ -101,6 +101,23 @@ func resolveWebDir(flagValue string) string {
 	return ""
 }
 
+// checkBackendWiring fails startup when the registered adapters and the
+// descriptor catalog name different backends, so a backend cannot be wired
+// without its facts or described without an implementation.
+func checkBackendWiring(registry *agents.Registry, catalog *agents.Catalog) error {
+	for _, id := range registry.Backends() {
+		if _, ok := catalog.Get(id); !ok {
+			return fmt.Errorf("backend %q is registered without a descriptor", id)
+		}
+	}
+	for _, descriptor := range catalog.All() {
+		if _, ok := registry.Get(descriptor.ID); !ok {
+			return fmt.Errorf("backend %q is described but has no registered adapter", descriptor.ID)
+		}
+	}
+	return nil
+}
+
 // openDatabase opens and migrates the platform database.
 func openDatabase(dataDir string) (*gorm.DB, error) {
 	db, err := database.Open(dataDir)
@@ -236,7 +253,14 @@ func runServer(args []string) error {
 	}
 
 	projectService := projects.NewService(db)
-	settingsService := settings.NewService(db)
+	// The catalog is built from the adapter packages' own descriptors before
+	// anything reads backend facts, so settings, diagnostics and the API all
+	// describe the same backends.
+	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor)
+	if err != nil {
+		return fmt.Errorf("build backend catalog: %w", err)
+	}
+	settingsService := settings.NewService(db, catalog)
 	// Backend adapters register themselves explicitly here (or through their
 	// own Register helper); there is no package-init side effect, so tests can
 	// build an isolated registry. Until an adapter is registered, starting an
@@ -257,6 +281,9 @@ func runServer(args []string) error {
 		ServiceDirectory: dataDir,
 	})); err != nil {
 		return fmt.Errorf("register opencode adapter: %w", err)
+	}
+	if err := checkBackendWiring(registry, catalog); err != nil {
+		return err
 	}
 	instanceService := instances.NewService(db, registry, projectService, instances.WithPlatformEnabled(settingsService.Enabled))
 	sessionService := sessions.NewService(db, registry, instanceService, sessions.WithPlatformEnabled(settingsService.Enabled))

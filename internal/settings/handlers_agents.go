@@ -14,9 +14,6 @@ import (
 	"devplatform/internal/agents"
 )
 
-// orderedBackends is the stable presentation order of the known backends.
-var orderedBackends = []agents.BackendID{agents.BackendOpenCodeV2, agents.BackendPi}
-
 // agentDTO is the JSON-stable representation of one backend's configuration and
 // resolved path.
 type agentDTO struct {
@@ -48,15 +45,16 @@ func (s *Service) handleListAgents(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, "server_error")
 		return
 	}
-	out := make([]agentDTO, 0, len(orderedBackends))
-	for _, backend := range orderedBackends {
-		out = append(out, s.agentDTO(backend, settings[backend]))
+	descriptors := s.catalog.All()
+	out := make([]agentDTO, 0, len(descriptors))
+	for _, descriptor := range descriptors {
+		out = append(out, s.agentDTO(descriptor.ID, settings[descriptor.ID]))
 	}
 	c.JSON(http.StatusOK, agentListResponse{Agents: out})
 }
 
 func (s *Service) handleSetAgentEnabled(c *gin.Context) {
-	backend, ok := backendParam(c)
+	backend, ok := s.backendParam(c)
 	if !ok {
 		return
 	}
@@ -76,7 +74,7 @@ func (s *Service) handleSetAgentEnabled(c *gin.Context) {
 }
 
 func (s *Service) handleSetAgentPath(c *gin.Context) {
-	backend, ok := backendParam(c)
+	backend, ok := s.backendParam(c)
 	if !ok {
 		return
 	}
@@ -106,7 +104,7 @@ func (s *Service) handleSetAgentPath(c *gin.Context) {
 }
 
 func (s *Service) handleDetectAgent(c *gin.Context) {
-	backend, ok := backendParam(c)
+	backend, ok := s.backendParam(c)
 	if !ok {
 		return
 	}
@@ -178,10 +176,11 @@ func isExecutable(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-// backendParam parses and validates the :backend path parameter.
-func backendParam(c *gin.Context) (agents.BackendID, bool) {
+// backendParam parses and validates the :backend path parameter against the
+// catalog, so only described backends can be configured.
+func (s *Service) backendParam(c *gin.Context) (agents.BackendID, bool) {
 	backend := agents.BackendID(c.Param("backend"))
-	if !backend.Valid() {
+	if _, known := s.catalog.Get(backend); !known {
 		respondError(c, http.StatusBadRequest, "invalid_backend")
 		return "", false
 	}

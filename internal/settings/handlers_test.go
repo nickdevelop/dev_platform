@@ -14,7 +14,7 @@ func newAppearanceRouter(t *testing.T) (*gin.Engine, *Service) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	svc := NewService(openTestDB(t))
+	svc := NewService(openTestDB(t), testCatalog(t))
 	router := gin.New()
 	svc.RegisterRoutes(router.Group("/api"))
 	return router, svc
