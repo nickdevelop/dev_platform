@@ -8,6 +8,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import NewSessionPanel from '../components/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
+import { clearModelCache } from '../modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { Capabilities } from '../api/sessions'
 
@@ -67,6 +68,10 @@ function backendButton(wrapper: ReturnType<typeof mount>, backend: string) {
 describe('NewSessionPanel', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
+    // The model list cache is module state: a list one test loaded would let
+    // the next one's picker answer instantly and hide the loading it means to
+    // assert.
+    clearModelCache()
   })
 
   afterEach(() => {
@@ -129,33 +134,23 @@ describe('NewSessionPanel', () => {
   })
 
   it('sends the first message and model with the create request', async () => {
-    // A running instance of the selected backend is what the model picker
-    // loads from, mirroring the instance the create request will reuse.
-    const { wrapper, createSpy } = setup({
-      modelSelection: true,
-      instances: [
-        {
-          id: 'inst-1',
-          projectId: 1,
-          backend: 'opencode-v2',
-          directory: '/tmp/proj',
-          status: 'running',
-          createdAt: '',
-          updatedAt: '',
-        },
-      ],
-    })
+    // A backend's model list is scoped to the project, not to a running
+    // instance, so the picker loads it here even though the project has no
+    // instance at all — the create request is what starts one.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
         ({
           status: 200,
           json: async () => ({
-            models: [{ id: 'p/m', provider: 'p', label: 'Model M' }],
+            models: [{ id: 'p/m', provider: 'p', name: 'Model M' }],
+            updatedAt: '2026-10-13T12:00:00Z',
+            stale: false,
           }),
         }) as Response,
       ),
     )
+    const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
     await backendButton(wrapper, 'opencode-v2').trigger('click')
@@ -175,24 +170,33 @@ describe('NewSessionPanel', () => {
     expect(wrapper.emitted('created')).toEqual([['sess-new']])
   })
 
-  it('sends the first message on the default model when no instance serves the list', async () => {
+  it('holds a first message until the model list arrives', async () => {
+    // Sending on a model the user never saw would be worse than waiting a
+    // moment, so the create is held while the list is still loading and the
+    // reason is shown.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>(() => {
+            // never resolves: the list is still loading
+          }),
+      ),
+    )
     const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
     await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="model-unavailable"]').exists()).toBe(true)
-
     await wrapper.find('#first-message').setValue('帮我检查构建失败')
     await flushPromises()
-    expect(wrapper.find('button.create').attributes('disabled')).toBeUndefined()
+
+    expect(wrapper.find('button.create').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="model-required-hint"]').exists()).toBe(true)
 
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
-    expect(createSpy).toHaveBeenCalledTimes(1)
-    const body = createSpy.mock.calls[0][1]
-    expect(body.message).toBe('帮我检查构建失败')
-    expect(body).not.toHaveProperty('model')
+    expect(createSpy).not.toHaveBeenCalled()
   })
 
   it('disables a backend disabled for the project and labels it', async () => {

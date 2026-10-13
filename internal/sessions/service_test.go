@@ -1167,50 +1167,6 @@ func TestHandleCreateMapsStartFailures(t *testing.T) {
 	}
 }
 
-// TestListModelsReturnsAdapterModels verifies the model list surfaces the
-// adapter's result unchanged.
-func TestListModelsReturnsAdapterModels(t *testing.T) {
-	env := newTestEnv(t)
-	env.fake.mu.Lock()
-	env.fake.models = []agents.ModelInfo{
-		{ID: "pi/gpt-5", Name: "gpt-5", Provider: "pi"},
-		{ID: "pi/claude", Name: "claude", Provider: "pi", Variants: []string{"fast"}},
-	}
-	env.fake.mu.Unlock()
-
-	models, err := env.svc.ListModels(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-	if len(models) != 2 || models[0].ID != "pi/gpt-5" || len(models[1].Variants) != 1 {
-		t.Errorf("ListModels = %+v, want the adapter's two models", models)
-	}
-}
-
-// TestListModelsRejectsUnsupportedCapability verifies a backend without model
-// selection is refused rather than asked for models.
-func TestListModelsRejectsUnsupportedCapability(t *testing.T) {
-	env := newTestEnv(t)
-	env.fake.mu.Lock()
-	env.fake.caps = agents.Capabilities{Streaming: true}
-	env.fake.mu.Unlock()
-
-	if _, err := env.svc.ListModels(context.Background(), env.projectID, env.instanceID); !errors.Is(err, ErrUnsupportedCapability) {
-		t.Fatalf("ListModels error = %v, want ErrUnsupportedCapability", err)
-	}
-}
-
-// TestListModelsRejectsCrossProjectInstance verifies the instance must belong
-// to the authorized project.
-func TestListModelsRejectsCrossProjectInstance(t *testing.T) {
-	env := newTestEnv(t)
-	otherProject := env.registerProject(t, "beta")
-
-	if _, err := env.svc.ListModels(context.Background(), otherProject, env.instanceID); !errors.Is(err, instances.ErrInstanceNotFound) {
-		t.Fatalf("ListModels cross-project error = %v, want ErrInstanceNotFound", err)
-	}
-}
-
 // TestInterruptIdleSessionIsNoop verifies interrupting an idle session succeeds
 // without calling the adapter and leaves the turn idle.
 func TestInterruptIdleSessionIsNoop(t *testing.T) {
@@ -1281,30 +1237,17 @@ func TestInterruptReportsBackendFailure(t *testing.T) {
 	}
 }
 
-// TestHandleModelsAndInterrupt verifies the routes expose the model list and
-// return the session DTO for an interrupt, mapping unsupported capability to
-// 409.
-func TestHandleModelsAndInterrupt(t *testing.T) {
+// TestHandleInterruptReturnsSessionDTO verifies the interrupt route returns the
+// session DTO for an idle session.
+func TestHandleInterruptReturnsSessionDTO(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	env := newTestEnv(t)
 	router := gin.New()
 	env.svc.RegisterRoutes(router)
 	session := createNativeSession(t, env, "native-1")
 
-	env.fake.mu.Lock()
-	env.fake.models = []agents.ModelInfo{{ID: "pi/gpt", Name: "gpt", Provider: "pi"}}
-	env.fake.mu.Unlock()
-
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/instances/%s/models", env.projectID, env.instanceID), nil)
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"pi/gpt"`) {
-		t.Fatalf("GET models = %d %s, want 200 with the model", rec.Code, rec.Body.String())
-	}
-
-	// Interrupting an idle session is idempotent and returns the session DTO.
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/interrupt", env.projectID, session.ID), nil)
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/interrupt", env.projectID, session.ID), nil)
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST interrupt = %d %s, want 200", rec.Code, rec.Body.String())
@@ -1315,17 +1258,6 @@ func TestHandleModelsAndInterrupt(t *testing.T) {
 	}
 	if got.ID != session.ID || got.Turn != TurnIdle {
 		t.Errorf("interrupted session = %+v, want idle session %s", got, session.ID)
-	}
-
-	// A backend without model selection is refused with 409.
-	env.fake.mu.Lock()
-	env.fake.caps = agents.Capabilities{Streaming: true}
-	env.fake.mu.Unlock()
-	rec = httptest.NewRecorder()
-	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/instances/%s/models", env.projectID, env.instanceID), nil)
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "unsupported_capability") {
-		t.Fatalf("GET models unsupported = %d %s, want 409 unsupported_capability", rec.Code, rec.Body.String())
 	}
 }
 

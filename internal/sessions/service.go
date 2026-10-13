@@ -705,28 +705,6 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	return s.sessionFromModel(row), nil
 }
 
-// ListModels returns the models the instance's backend offers. It is available
-// only for backends that declare model selection, so an unsupported control is
-// never presented as available.
-func (s *Service) ListModels(ctx context.Context, projectID uint, instanceID string) ([]agents.ModelInfo, error) {
-	inst, err := s.scopedInstance(projectID, instanceID)
-	if err != nil {
-		return nil, err
-	}
-	if !s.capabilities(inst.Backend).ModelSelection {
-		return nil, fmt.Errorf("%w: model selection", ErrUnsupportedCapability)
-	}
-	adapter, err := s.adapter(inst.Backend)
-	if err != nil {
-		return nil, err
-	}
-	models, err := adapter.ListModels(ctx, instanceID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: list models: %w", ErrBackendFailed, err)
-	}
-	return models, nil
-}
-
 // Interrupt ends the session's current turn. It is idempotent: a session whose
 // turn is not running is returned untouched without calling the backend. Only
 // the session's own turn is interrupted; the instance and its other sessions

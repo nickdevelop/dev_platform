@@ -69,6 +69,16 @@ type fakeAdapter struct {
 
 	subs  map[string]chan agents.NormalizedEvent
 	subEr map[string]error
+
+	// caps is what Capabilities reports; tests set it to declare (or withhold)
+	// model selection.
+	caps agents.Capabilities
+	// models and modelsErr are the scripted answer of ListModels; modelDirs
+	// records the directories it was asked about.
+	models     []agents.ModelInfo
+	modelsErr  error
+	modelDirs  []string
+	modelCalls int
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -145,8 +155,32 @@ func (f *fakeAdapter) SendMessage(context.Context, agents.SessionRef, agents.Sen
 	return nil
 }
 
-func (f *fakeAdapter) ListModels(context.Context, string) ([]agents.ModelInfo, error) {
-	return nil, nil
+// ListModels answers with the scripted catalog and records the directory the
+// platform derived for the project, so a test can prove the request reached the
+// adapter without an instance.
+func (f *fakeAdapter) ListModels(_ context.Context, directory string) ([]agents.ModelInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.modelCalls++
+	f.modelDirs = append(f.modelDirs, directory)
+	if f.modelsErr != nil {
+		return nil, f.modelsErr
+	}
+	return append([]agents.ModelInfo(nil), f.models...), nil
+}
+
+// modelCallCount reports how many times the adapter was asked for models.
+func (f *fakeAdapter) modelCallCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.modelCalls
+}
+
+// askedDirectories reports the directories ListModels was asked about, in order.
+func (f *fakeAdapter) askedDirectories() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.modelDirs...)
 }
 
 func (f *fakeAdapter) Interrupt(context.Context, agents.SessionRef) error { return nil }
@@ -992,4 +1026,8 @@ func TestStartRejectsPlatformDisabledAgent(t *testing.T) {
 	}
 }
 
-func (f *fakeAdapter) Capabilities() agents.Capabilities { return agents.Capabilities{} }
+func (f *fakeAdapter) Capabilities() agents.Capabilities {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.caps
+}

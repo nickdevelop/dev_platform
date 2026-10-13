@@ -3,7 +3,7 @@
 // wire format fails here rather than in an integration no test covers.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
-import { listInstanceModels } from '../api/agents'
+import { listBackendModels } from '../api/agents'
 import { createService, fetchModels, testModel } from '../api/models'
 import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
 
@@ -59,14 +59,27 @@ describe('session API contracts', () => {
 })
 
 describe('agents API contracts', () => {
-  it('lists an instance models from the instance models route', async () => {
-    const calls = stubJson({ models: [{ id: 'pi/gpt', name: 'gpt', provider: 'pi' }] })
+  it('lists a backend models from the project backend models route', async () => {
+    const calls = stubJson({
+      models: [{ id: 'pi/gpt', name: 'gpt', provider: 'pi' }],
+      updatedAt: '2026-10-13T12:00:00Z',
+      stale: false,
+    })
 
-    const result = await listInstanceModels(7, 'inst/1')
+    const result = await listBackendModels(7, 'pi/1')
 
-    expect(calls[0].url).toBe('/api/projects/7/instances/inst%2F1/models')
+    expect(calls[0].url).toBe('/api/projects/7/agent-backends/pi%2F1/models')
     expect(calls[0].init?.method).toBe('GET')
     expect(result.models[0].id).toBe('pi/gpt')
+    expect(result.stale).toBe(false)
+  })
+
+  it('asks the backend models route for a forced refresh when told to', async () => {
+    const calls = stubJson({ models: [], updatedAt: '2026-10-13T12:00:00Z', stale: false })
+
+    await listBackendModels(7, 'pi', true)
+
+    expect(calls[0].url).toBe('/api/projects/7/agent-backends/pi/models?refresh=1')
   })
 })
 

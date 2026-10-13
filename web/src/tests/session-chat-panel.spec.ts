@@ -656,6 +656,54 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
   })
 
+  it('re-reads the model list when the backend refuses the message', async () => {
+    const modelRequests: string[] = []
+    const models = [{ id: 'pi/a', name: 'Model A', provider: 'pi' }]
+    const selectable = capabilities({ modelSelection: true })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/models')) {
+          modelRequests.push(url)
+          return {
+            status: 200,
+            json: async () => ({ models, updatedAt: '2026-10-13T12:00:00Z', stale: false }),
+          } as Response
+        }
+        if (url.endsWith('/messages')) {
+          return { status: 502, json: async () => ({ error: 'agent_operation_failed' }) } as Response
+        }
+        if (url.endsWith('/continue')) {
+          return { status: 200, json: async () => session('sess-1', { capabilities: selectable }) } as Response
+        }
+        if (url.endsWith('/history')) {
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({ sessions: [session('sess-1', { capabilities: selectable })] }),
+        } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    expect(modelRequests).toHaveLength(1)
+
+    await wrapper.find('#message-text').setValue('hello')
+    await wrapper.find('form.send').trigger('submit')
+    await flushPromises()
+
+    // A refusal can mean the backend no longer runs the model that list offered.
+    // The picker re-reads it past the platform cache, so the retry chooses from
+    // what the backend really runs instead of offering the same model again.
+    expect(modelRequests).toEqual([
+      '/api/projects/1/agent-backends/opencode-v2/models',
+      '/api/projects/1/agent-backends/opencode-v2/models?refresh=1',
+    ])
+  })
+
   it('keeps each session’s chosen model when switching sessions', async () => {
     const models = [
       { id: 'pi/a', name: 'Model A', provider: 'pi' },

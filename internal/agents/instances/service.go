@@ -98,6 +98,10 @@ type Service struct {
 	// means every backend is enabled.
 	platformEnabled func(agents.BackendID) bool
 
+	// modelCatalog serves each backend's model list from cache so opening a
+	// session never waits on a subprocess or a server round trip.
+	modelCatalog *agents.ModelCatalog
+
 	// mu guards streams, the per-instance upstream subscriptions.
 	mu      sync.Mutex
 	streams map[string]*stream
@@ -126,13 +130,14 @@ type stopGate struct {
 // adapters; projects resolves project ids to authorized working directories.
 func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirectoryResolver, opts ...Option) *Service {
 	s := &Service{
-		db:        db,
-		registry:  registry,
-		projects:  projects,
-		newID:     randomID,
-		now:       func() time.Time { return time.Now().UTC() },
-		streams:   make(map[string]*stream),
-		stopGates: make(map[string]*stopGate),
+		db:           db,
+		registry:     registry,
+		projects:     projects,
+		newID:        randomID,
+		now:          func() time.Time { return time.Now().UTC() },
+		streams:      make(map[string]*stream),
+		stopGates:    make(map[string]*stopGate),
+		modelCatalog: agents.NewModelCatalog(agents.WithModelTTL(defaultModelTTL)),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -150,6 +155,15 @@ func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
 		if fn != nil {
 			s.platformEnabled = fn
 		}
+	}
+}
+
+// WithModelCatalogOptions rebuilds the model list cache with opts (freshness
+// window, clock). It exists for tests and for operators who want the workbench
+// to track a backend's catalog more closely than the default.
+func WithModelCatalogOptions(opts ...agents.ModelCatalogOption) Option {
+	return func(s *Service) {
+		s.modelCatalog = agents.NewModelCatalog(opts...)
 	}
 }
 
@@ -296,7 +310,11 @@ func (s *Service) StartService(ctx context.Context, backend agents.BackendID) (a
 	if !ok {
 		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
 	}
-	return controller.StartService(ctx)
+	status, err := controller.StartService(ctx)
+	// Whatever the outcome, what the backend can answer about its models may
+	// have just changed, so a list cached about the previous state is dropped.
+	s.invalidateModels(backend)
+	return status, err
 }
 
 // StopService stops a backend's machine-level service on an operator's request.
@@ -309,7 +327,9 @@ func (s *Service) StopService(ctx context.Context, backend agents.BackendID) (ag
 	if !ok {
 		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
 	}
-	return controller.StopService(ctx)
+	status, err := controller.StopService(ctx)
+	s.invalidateModels(backend)
+	return status, err
 }
 
 // ServiceAvailable is the cheap gate the session layer consults before it starts

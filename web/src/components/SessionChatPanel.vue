@@ -60,9 +60,11 @@ const showJumpToLatest = ref(false)
 // "At the bottom" tolerates a small rounding gap so subpixel layouts, and a
 // wheel that stops a hair short, still count as following the conversation.
 const FOLLOW_THRESHOLD_PX = 24
-// Whether the model list for the open instance loaded. A failed list disables
-// sending rather than falling back to a free-text model.
+// Whether the project's model list for the session's backend loaded. A failed
+// list disables sending rather than falling back to a free-text model.
 const modelOk = ref(true)
+// The picker, so a send the backend refused can ask it to re-read the catalog.
+const modelPicker = ref<{ reloadForces: () => Promise<void> } | null>(null)
 const toolNotice = ref('')
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
@@ -359,7 +361,14 @@ async function send() {
     // when it had been parked mid-history.
     await nextTick()
     scrollToBottom(false)
-  } else sendError.value = sessions.error || '发送失败，请重试。'
+  } else {
+    sendError.value = sessions.error || '发送失败，请重试。'
+    // The backend may have dropped the model the list offered it. Re-reading
+    // the catalog costs the user nothing (the platform answers from its own
+    // cache while the refresh runs) and the retry then chooses from what the
+    // backend really runs.
+    if (model) void modelPicker.value?.reloadForces()
+  }
   sending.value = false
 }
 
@@ -528,9 +537,9 @@ async function removeSession() {
           <div class="composer-bar">
             <div class="composer-tools">
               <ModelSelect
+                ref="modelPicker"
                 v-model="selectedModel"
                 :project-id="props.projectId"
-                :instance-id="activeSession.instanceId"
                 :backend="activeSession.backend"
                 :model-selection="activeSession.capabilities.modelSelection"
                 @status="modelOk = $event"

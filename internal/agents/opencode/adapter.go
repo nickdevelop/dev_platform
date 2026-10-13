@@ -1734,19 +1734,22 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
 
-// ListModels returns the models the instance's server can run, identified as
-// provider/model with each variant listed under its model.
-func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
+// ListModels returns the models the machine-wide server offers for a working
+// directory, identified as provider/model with each variant listed under its
+// model. The shared service answers, so no instance has to exist: the workbench
+// chooses a model before it has an instance, and a platform restart does not
+// hide the catalog behind a stale instance record.
+func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	inst, err := a.getInstance(instanceID)
+	shared, err := a.ensureShared(ctx)
 	if err != nil {
 		return nil, err
 	}
-	records, err := inst.client.ListModels(ctx, inst.directory)
+	records, err := shared.client.ListModels(ctx, directory)
 	if err != nil {
-		return nil, fmt.Errorf("opencode: list models on instance %q: %w", instanceID, err)
+		return nil, fmt.Errorf("opencode: list models for %q: %w", directory, err)
 	}
 	models := make([]agents.ModelInfo, 0, len(records))
 	for _, record := range records {

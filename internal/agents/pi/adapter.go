@@ -614,22 +614,19 @@ func isStreamingRejection(message string) bool {
 	return strings.Contains(strings.ToLower(message), "streaming")
 }
 
-// ListModels runs `pi --list-models` and returns the models it reports. pi's
-// catalog is not tied to a session, so the instance only has to exist.
-// ListModels returns pi's configured models. In RPC mode, when a child is
-// already running, it asks that child with get_available_models; otherwise it
-// falls back to `pi --list-models`. pi's catalog is not tied to a session, so
-// any live child on the instance answers for all of them.
-func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.ModelInfo, error) {
+// ListModels returns pi's configured models. The catalog is pi's own
+// configuration — not a session's or an instance's property — so a caller with
+// no instance yet gets the same answer as one that has: when an RPC child is
+// already running it is asked with get_available_models (it holds the loaded
+// configuration), otherwise `pi --list-models` answers in a short-lived
+// process. pi's catalog does not depend on the working directory, so the
+// directory is not consulted.
+func (a *Adapter) ListModels(ctx context.Context, _ string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	inst, err := a.getInstance(instanceID)
-	if err != nil {
-		return nil, err
-	}
 	if a.mode == ModeRPC {
-		if child := inst.anyChild(); child != nil {
+		if child := a.anyChild(); child != nil {
 			rpcCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 			if response, err := child.conn.request(rpcCtx, newGetAvailableModelsCommand(""), rpcCommandTimeout); err == nil && response.Success {
@@ -646,6 +643,24 @@ func (a *Adapter) ListModels(ctx context.Context, instanceID string) ([]agents.M
 		return nil, fmt.Errorf("pi: list models: %s", redactSecrets(err.Error()))
 	}
 	return parseModelList(string(out)), nil
+}
+
+// anyChild returns a live RPC child from any instance, or nil. Any child answers
+// get_available_models for the whole machine, so the workbench's model list does
+// not depend on which instance happens to have a session running.
+func (a *Adapter) anyChild() *rpcChild {
+	a.mu.Lock()
+	instances := make([]*instance, 0, len(a.instances))
+	for _, inst := range a.instances {
+		instances = append(instances, inst)
+	}
+	a.mu.Unlock()
+	for _, inst := range instances {
+		if child := inst.anyChild(); child != nil {
+			return child
+		}
+	}
+	return nil
 }
 
 // Interrupt ends the running prompt of one session. In CLI mode the process is

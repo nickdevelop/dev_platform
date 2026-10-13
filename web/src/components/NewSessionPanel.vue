@@ -37,25 +37,14 @@ const selectedEnabled = computed(
   () => selectedBackend.value !== '' && agents.backendEnabledFor(selectedBackend.value),
 )
 
-// candidateInstance is the running instance the model picker can load from:
-// the create request will reuse the project's running instance of the backend,
-// and that instance already knows its model list. Without one the list cannot
-// load and a first message cannot pick a model.
-const candidateInstance = computed(() => {
-  if (selectedBackend.value === '') return null
-  const running = agents.runningInstances.filter((entry) => entry.backend === selectedBackend.value)
-  return running.length > 0 ? running[running.length - 1] : null
-})
-
-// A first message that needs a model (the backend supports choosing one) can
-// only pick a specific model when the picker actually loaded models. Without
-// a running instance there is no list to pick from, so the message still goes
-// with the create request on the backend default — blocking it would make the
-// very first session of a modelSelection backend uncreatable with a message.
+// A first message that needs a model (the backend supports choosing one) waits
+// for the model list, which is always available: a backend's catalog is scoped to
+// the project, not to a running instance, so creating the very first session of a
+// project can still name a model. Until the list arrives the create is held back
+// rather than silently sending on the backend's default model.
 const firstMessageReady = computed(() => {
   if (messageText.value.trim() === '') return true
   if (!selectedCapabilities.value?.modelSelection) return true
-  if (!candidateInstance.value) return true
   return modelOk.value && selectedModel.value !== ''
 })
 
@@ -73,11 +62,7 @@ const createLabel = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([
-    agents.loadBackends(),
-    agents.loadBackendConfigs(props.projectId),
-    agents.loadInstances(props.projectId),
-  ])
+  await Promise.all([agents.loadBackends(), agents.loadBackendConfigs(props.projectId)])
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
     selectedBackend.value = selectableBackends.value[0].backend
   }
@@ -164,20 +149,15 @@ function onComposerEnter() {
           ></textarea>
           <div class="composer-bar">
             <div class="composer-tools">
-              <template v-if="selectedCapabilities?.modelSelection">
-                <ModelSelect
-                  v-if="candidateInstance"
-                  v-model="selectedModel"
-                  :project-id="props.projectId"
-                  :instance-id="candidateInstance.id"
-                  :backend="selectedBackend"
-                  :model-selection="true"
-                  @status="modelOk = $event"
-                />
-                <span v-else class="hint" data-test="model-unavailable">
-                  该后端当前没有运行中的实例，首条消息将使用后端默认模型发送。
-                </span>
-              </template>
+              <ModelSelect
+                v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
+                v-model="selectedModel"
+                :key="selectedBackend"
+                :project-id="props.projectId"
+                :backend="selectedBackend"
+                :model-selection="true"
+                @status="modelOk = $event"
+              />
               <span class="composer-hint">Enter 创建 · Shift+Enter 换行</span>
             </div>
             <button type="submit" class="create send-button" :disabled="!canCreate">

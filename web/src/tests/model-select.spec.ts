@@ -1,14 +1,17 @@
 // Unit tests for the model picker in the composer. It is a compact trigger that
 // opens a searchable list (not an always-visible dropdown): it loads the
-// backend's models for the open instance, defaults to the first, reports its
-// load status so the parent can gate sending, and renders nothing for a backend
-// without model selection. The last list is cached per backend so a newly
-// opened session shows its models immediately while a fresh list loads.
+// backend's models for the project (no instance needed), defaults to the first,
+// reports its load status so the parent can gate sending, and renders nothing for
+// a backend without model selection. The last list is cached per project and
+// backend so a newly opened session shows its models immediately while a fresh
+// list loads, and a stale answer is retried once so the refreshed list appears.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ModelSelect from '../components/ModelSelect.vue'
 import { clearModelCache } from '../modelCache'
 import type { BackendId } from '../api/agents'
+
+const MODELS_URL = '/api/projects/1/agent-backends/pi/models'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -28,12 +31,11 @@ function stubModels(payload: unknown, status = 200): string[] {
 }
 
 function mountSelect(
-  overrides: Partial<{ modelSelection: boolean; modelValue: string; instanceId: string; backend: BackendId }> = {},
+  overrides: Partial<{ modelSelection: boolean; modelValue: string; backend: BackendId }> = {},
 ) {
   return mount(ModelSelect, {
     props: {
       projectId: 1,
-      instanceId: 'inst-1',
       backend: 'pi',
       modelSelection: true,
       modelValue: '',
@@ -49,12 +51,14 @@ describe('ModelSelect', () => {
         { id: 'pi/a', name: 'Model A', provider: 'pi' },
         { id: 'pi/b', name: 'Model B', provider: 'pi' },
       ],
+      updatedAt: '2026-10-13T12:00:00Z',
+      stale: false,
     })
 
     const wrapper = mountSelect()
     await flushPromises()
 
-    expect(calls[0]).toBe('/api/projects/1/instances/inst-1/models')
+    expect(calls[0]).toBe(MODELS_URL)
     // Not a native dropdown, and the list stays closed until asked for.
     expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.find('.model-menu').exists()).toBe(false)
@@ -168,14 +172,18 @@ describe('ModelSelect', () => {
       ),
     )
 
-    const second = mountSelect({ instanceId: 'inst-2' })
+    const second = mountSelect()
     await flushPromises()
 
     // The cached list is shown at once: no blank picker and sending is allowed.
     expect(second.find('.model-trigger').text()).toContain('Model A')
     expect(second.emitted('status')?.[0]).toEqual([true])
 
-    resolveRefresh({ models: [{ id: 'pi/b', name: 'Model B', provider: 'pi' }] })
+    resolveRefresh({
+      models: [{ id: 'pi/b', name: 'Model B', provider: 'pi' }],
+      updatedAt: '2026-10-13T12:00:00Z',
+      stale: false,
+    })
     await flushPromises()
     expect(second.find('.model-trigger').text()).toContain('Model B')
   })
@@ -187,11 +195,78 @@ describe('ModelSelect', () => {
     first.unmount()
 
     stubModels({}, 500)
-    const second = mountSelect({ instanceId: 'inst-2' })
+    const second = mountSelect()
     await flushPromises()
 
     expect(second.find('.model-trigger').text()).toContain('Model A')
     expect(second.text()).not.toContain('模型列表加载失败')
     expect(second.emitted('status')?.at(-1)).toEqual([true])
+  })
+
+  it('asks again after a stale answer, so the refreshed list appears on its own', async () => {
+    vi.useFakeTimers()
+    // One stub serving both reads: replacing it mid-test would rebind fetch and
+    // the calls recorded so far would not be the ones the picker made.
+    const answers = [
+      {
+        models: [{ id: 'pi/a', name: 'Model A', provider: 'pi' }],
+        updatedAt: '2026-10-13T11:59:00Z',
+        stale: true,
+      },
+      {
+        models: [{ id: 'pi/b', name: 'Model B', provider: 'pi' }],
+        updatedAt: '2026-10-13T12:00:00Z',
+        stale: false,
+      },
+    ]
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        calls.push(String(input))
+        return {
+          status: 200,
+          json: async () => (answers.length > 1 ? answers.shift() : answers[0]),
+        } as Response
+      }),
+    )
+    try {
+      const wrapper = mountSelect()
+      await vi.advanceTimersByTimeAsync(0)
+      await flushPromises()
+
+      // The stale list is shown right away: the user is never kept waiting for
+      // a backend the platform is only now asking.
+      expect(wrapper.find('.model-trigger').text()).toContain('Model A')
+      expect(calls).toEqual([MODELS_URL])
+
+      // Once the platform's own refresh has had a moment, the picker asks again
+      // and shows what the backend actually runs.
+      await vi.advanceTimersByTimeAsync(1500)
+      await flushPromises()
+
+      expect(calls).toHaveLength(2)
+      expect(wrapper.find('.model-trigger').text()).toContain('Model B')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('forces a backend read when the parent reports a refused model', async () => {
+    const calls = stubModels({
+      models: [{ id: 'pi/a', name: 'Model A', provider: 'pi' }],
+      updatedAt: '2026-10-13T12:00:00Z',
+      stale: false,
+    })
+    const wrapper = mountSelect()
+    await flushPromises()
+    expect(calls).toEqual([MODELS_URL])
+
+    // The exposed reload is what a parent calls after the backend rejected the
+    // model this list offered: it must bypass the platform cache.
+    await (wrapper.vm as unknown as { reloadForces: () => Promise<void> }).reloadForces()
+
+    expect(calls[1]).toBe(`${MODELS_URL}?refresh=1`)
   })
 })

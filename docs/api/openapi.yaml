@@ -559,15 +559,21 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /projects/{id}/instances/{instanceId}/models:
+  /projects/{id}/agent-backends/{backend}/models:
     get:
-      summary: List the models an instance's backend offers
+      summary: List the models a backend offers to a project
       description: >-
-        Returns the models the instance's backend currently offers. Requires
-        the backend to declare modelSelection; the instance must belong to the
-        project. The id uses the same provider/model[#variant] form as the
-        message model override.
-      operationId: listProjectInstanceModels
+        Returns the models the backend offers as seen from the project's
+        authorized directory. The catalog belongs to the backend and the
+        directory, not to a running instance, so a project with no instance yet
+        still offers its models while a session is being created. The platform
+        caches the list per backend and directory and refreshes it behind the
+        response: updatedAt says when the backend was last asked, and stale says
+        the answer is an aged snapshot whose refresh is already running. Set
+        refresh to read the backend now. Requires the backend to declare
+        modelSelection. The id uses the same provider/model[#variant] form as
+        the message model override.
+      operationId: listProjectBackendModels
       security:
         - cookieAuth: []
       parameters:
@@ -578,29 +584,48 @@ paths:
           schema:
             type: integer
             format: int64
-        - name: instanceId
+        - name: backend
           in: path
           required: true
-          description: Durable identifier of the instance to query.
+          description: Backend whose catalog is requested.
+          schema:
+            type: string
+            enum:
+              - opencode-v2
+              - pi
+        - name: refresh
+          in: query
+          required: false
+          description: >-
+            Set to 1 (or true) to read the backend now instead of accepting the
+            cached list. Any other value is ignored.
           schema:
             type: string
       responses:
         '200':
-          description: The models the backend offers.
+          description: The models the backend offers, and how current they are.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelInfoList'
+                $ref: '#/components/schemas/BackendModelList'
+        '400':
+          description: The backend id is not a known backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
-          description: No such instance in this project.
+          description: No such project.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: The backend does not declare model selection.
+          description: >-
+            The backend does not declare model selection (unsupported_capability)
+            or its machine-level service is not running (service_not_running).
           content:
             application/json:
               schema:
@@ -3514,15 +3539,26 @@ components:
             type: string
           description: Optional variants accepted in the id's #variant suffix.
       additionalProperties: false
-    ModelInfoList:
+    BackendModelList:
       type: object
       required:
         - models
+        - updatedAt
+        - stale
       properties:
         models:
           type: array
           items:
             $ref: '#/components/schemas/ModelInfo'
+        updatedAt:
+          type: string
+          format: date-time
+          description: When the backend was last asked for this list.
+        stale:
+          type: boolean
+          description: >-
+            True when the answer is a cached snapshot the platform is
+            refreshing right now: show these models and expect a newer list.
       additionalProperties: false
     CreateAgentSessionRequest:
       type: object

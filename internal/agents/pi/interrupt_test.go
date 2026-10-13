@@ -33,6 +33,9 @@ func TestParseModelListEmpty(t *testing.T) {
 	}
 }
 
+// TestAdapterListModelsReadsPiCatalog checks pi's catalog is read without an
+// instance: pi's model list is its own configuration, so the workbench can
+// offer it before a session — and therefore an instance — exists.
 func TestAdapterListModelsReadsPiCatalog(t *testing.T) {
 	dir := t.TempDir()
 	fake := writeFakePi(t, dir, `if [ "$1" = "--list-models" ]; then printf 'provider model\nacme gpt-1\n'; exit 0; fi
@@ -40,20 +43,13 @@ exit 0
 `)
 	adapter := newTestAdapter(t, fake, "")
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := adapter.ListModels(ctx, inst.ID)
+	got, err := adapter.ListModels(ctx, dir)
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
 	want := []agents.ModelInfo{{ID: "acme/gpt-1", Name: "gpt-1", Provider: "acme"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("ListModels() = %+v, want %+v", got, want)
-	}
-	if _, err := adapter.ListModels(ctx, "missing"); err == nil {
-		t.Error("ListModels(unknown instance) = nil, want error")
 	}
 }
 

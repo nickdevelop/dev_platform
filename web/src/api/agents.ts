@@ -130,9 +130,14 @@ export interface ModelInfo {
   variants?: string[]
 }
 
-// Mirrors #/components/schemas/ModelInfoList.
-export interface ModelInfoList {
+// Mirrors #/components/schemas/BackendModelList: the models one backend offers
+// to a project, and how current the answer is. updatedAt is when the backend was
+// last asked; stale means that answer is a cached snapshot with a fresher read
+// already running — show these models now, and ask again shortly.
+export interface BackendModelList {
   models: ModelInfo[]
+  updatedAt: string
+  stale: boolean
 }
 
 // Mirrors the per-project backend enable/disable state
@@ -240,13 +245,19 @@ export function stopProjectInstance(
   )
 }
 
-// GET /api/projects/{id}/instances/{instanceId}/models
-export function listInstanceModels(
+// GET /api/projects/{id}/agent-backends/{backend}/models
+//
+// The model catalog belongs to the backend and the project's directory, not to a
+// running instance, so a project that has no instance yet can still offer its
+// models. refresh asks the backend now instead of accepting the cached snapshot.
+export function listBackendModels(
   projectId: number,
-  instanceId: string,
-): Promise<ModelInfoList> {
-  return apiRequest<ModelInfoList>(
+  backend: BackendId,
+  refresh = false,
+): Promise<BackendModelList> {
+  const query = refresh ? '?refresh=1' : ''
+  return apiRequest<BackendModelList>(
     'GET',
-    `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/models`,
+    `/projects/${projectId}/agent-backends/${encodeURIComponent(backend)}/models${query}`,
   )
 }

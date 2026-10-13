@@ -30,9 +30,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	// Discovery is instance-scoped: the adapter needs to know which instance
 	// (and therefore which working directory) to ask.
 	r.GET("/projects/:id/instances/:instanceId/sessions", s.handleDiscover)
-	// The model list is instance-scoped too: a running instance knows which
-	// models its backend offers right now.
-	r.GET("/projects/:id/instances/:instanceId/models", s.handleModels)
 
 	r.POST("/projects/:id/sessions/:sessionId/continue", s.handleContinue)
 	r.POST("/projects/:id/sessions/:sessionId/messages", s.handleSend)
@@ -133,12 +130,6 @@ type sendMessageRequest struct {
 	Model string `json:"model"`
 }
 
-// modelsResponse is the JSON body of
-// GET /api/projects/{id}/instances/{instanceId}/models.
-type modelsResponse struct {
-	Models []agents.ModelInfo `json:"models"`
-}
-
 // handleBackends returns the registered backends with their declared
 // capabilities so the workbench can hide unsupported controls.
 func (s *Service) handleBackends(c *gin.Context) {
@@ -209,28 +200,6 @@ func (s *Service) handleDiscover(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
-}
-
-// handleModels returns the models the instance's backend offers.
-func (s *Service) handleModels(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	instanceID := c.Param("instanceId")
-	if instanceID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	models, err := s.ListModels(c.Request.Context(), id, instanceID)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	if models == nil {
-		models = []agents.ModelInfo{}
-	}
-	c.JSON(http.StatusOK, modelsResponse{Models: models})
 }
 
 // handleInterrupt ends the session's current turn. The operation is idempotent.

@@ -476,7 +476,9 @@ func TestRPCListModelsUsesLiveChild(t *testing.T) {
 		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
 	})
 
-	models, err := adapter.ListModels(ctx, inst.ID)
+	// The child is live, so it answers even though the directory means nothing
+	// to pi's catalog.
+	models, err := adapter.ListModels(ctx, inst.Directory)
 	if err != nil {
 		t.Fatalf("ListModels() error = %v", err)
 	}
