@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import BackendTag from '../components/BackendTag.vue'
 import ProjectTree from '../components/ProjectTree.vue'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
 import type { AgentSession, Capabilities } from '../api/sessions'
 import type { Project } from '../api/projects'
 
@@ -328,7 +329,25 @@ describe('ProjectTree', () => {
     await flushPromises()
 
     await wrapper.find('.project-settings').trigger('click')
-    expect(wrapper.emitted('select-project')).toEqual([[1]])
+    // Settings open as a workbench tab; the tree never navigates to a project
+    // page, because there is none.
+    expect(wrapper.emitted('open-settings')).toEqual([[1]])
+    expect(wrapper.emitted('select-project')).toBeUndefined()
+  })
+
+  it('expands a project from its name without asking to navigate anywhere', async () => {
+    stubSessions({ 1: [] })
+    const wrapper = mountTree({ activeProjectId: null })
+    await flushPromises()
+
+    const toggle = wrapper.find('.project-toggle')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.project-toggle').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.emitted('open-settings')).toBeUndefined()
+    expect(wrapper.emitted('select-project')).toBeUndefined()
   })
 
   it('shows the untitled placeholder instead of the internal id, in list and in search', async () => {
@@ -344,5 +363,53 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('未命名任务')
     await wrapper.setProps({ search: 's-x' })
     expect(wrapper.text()).toContain('没有匹配的任务')
+  })
+
+  // The tree keeps one list per expanded project and polls only while a turn
+  // runs, so a task created or deleted in the main pane would otherwise stay
+  // invisible — or linger after deletion — until the project was toggled.
+  it('shows a task the moment the store creates one, and drops it when deleted', async () => {
+    const sessions = useSessionsStore()
+    sessions.sessions = [session()]
+    // A new task, then a delete, both served from this list.
+    const live = [session()]
+    let created: AgentSession | null = null
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'http://localhost')
+        const method = (init?.method ?? 'GET').toUpperCase()
+        if (url.pathname === '/api/projects/1/sessions' && method === 'GET') {
+          return { status: 200, json: async () => ({ sessions: live }) } as Response
+        }
+        if (url.pathname === '/api/projects/1/sessions' && method === 'POST') {
+          created = session({ id: 'sess-2', title: 'Task B' })
+          live.push(created)
+          return { status: 201, json: async () => created } as Response
+        }
+        if (url.pathname === '/api/projects/1/sessions/sess-2' && method === 'DELETE') {
+          live.splice(1, 1)
+          return { status: 204, json: async () => ({}) } as Response
+        }
+        if (url.pathname === '/api/auth/session') {
+          return { status: 200, json: async () => ({ authenticated: true, csrfToken: 'csrf' }) } as Response
+        }
+        throw new Error(`unexpected ${method} ${url.pathname}`)
+      }),
+    )
+
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Task A')
+    expect(wrapper.text()).not.toContain('Task B')
+
+    await sessions.createSession(1, { backend: 'pi', title: 'Task B' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Task B')
+
+    await sessions.deleteSession(1, 'sess-2')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Task B')
+    expect(wrapper.text()).toContain('Task A')
   })
 })

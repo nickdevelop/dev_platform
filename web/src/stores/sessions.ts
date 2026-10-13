@@ -84,6 +84,18 @@ function findOpenStreaming(
 // event renders nothing (lifecycle events are handled separately because they
 // carry no log line of their own). Both the live path and the history replay
 // go through it, so a replayed tool call looks exactly like a live one.
+// keepSettledTurn merges an interrupt's response into the entry the live stream
+// may have settled first. The backend answers from the session row as it stood
+// when the interrupt was accepted; the stream reports the interruption as soon
+// as the agent stops. When the stream already settled the turn, the entry keeps
+// it settled — an interrupt can only end a turn, never restart one.
+function keepSettledTurn(current: AgentSession, incoming: AgentSession): AgentSession {
+  if (current.turn !== 'running' && incoming.turn === 'running') {
+    return { ...incoming, turn: current.turn }
+  }
+  return incoming
+}
+
 function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | null {
   switch (event.type) {
     case 'tool_call':
@@ -152,6 +164,12 @@ export const useSessionsStore = defineStore('sessions', {
     // Sequence number of the latest project-list request; a response that
     // arrives after a newer request was issued is discarded.
     listRequest: 0,
+    // Counts the times this store changed the session index itself — a created
+    // task, a deleted one. Components that keep their own copy of a project's
+    // list (the task tree does, one list per expanded project) watch it to know
+    // their copy went stale. A page load is not a change, so loading does not
+    // bump it.
+    revision: 0,
   }),
 
   getters: {
@@ -253,6 +271,7 @@ export const useSessionsStore = defineStore('sessions', {
       try {
         const created = await createProjectSession(projectId, body, auth.csrfToken)
         this.sessions = [...this.sessions, created]
+        this.revision++
         this.error = ''
         this.errorCode = ''
         return created
@@ -278,6 +297,7 @@ export const useSessionsStore = defineStore('sessions', {
       }
       this.unsubscribe(sessionId)
       this.sessions = this.sessions.filter((entry) => entry.id !== sessionId)
+      this.revision++
       if (this.activeSessionId === sessionId) this.activeSessionId = null
       delete this.messages[sessionId]
       delete this.streamStatus[sessionId]
@@ -633,12 +653,19 @@ export const useSessionsStore = defineStore('sessions', {
     // Interrupts the session's current turn. The server's returned DTO
     // replaces the list entry, so the turn state is never optimistic; an idle
     // session is an idempotent success and produces no error.
+    //
+    // One thing the DTO may not be trusted about: the turn. The backend builds
+    // the response from the row as it stood when the interrupt was accepted,
+    // while the event stream reports the interruption as soon as the agent
+    // stops — so a response can arrive *after* the stream already settled the
+    // turn and say it is still running. An interrupt can only end a turn, so a
+    // turn the live stream has settled is never rewound.
     async interrupt(projectId: number, sessionId: string) {
       const auth = useAuthStore()
       try {
         const interrupted = await interruptProjectSession(projectId, sessionId, auth.csrfToken)
         this.sessions = this.sessions.map((entry) =>
-          entry.id === sessionId ? interrupted : entry,
+          entry.id === sessionId ? keepSettledTurn(entry, interrupted) : entry,
         )
         this.error = ''
         return interrupted

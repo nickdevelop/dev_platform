@@ -722,3 +722,68 @@ describe('sessions store user echo dedupe', () => {
     expect(userEntries(sessions)).toHaveLength(2)
   })
 })
+
+// The interrupt action answers from the session row as it stood when the
+// interruption was accepted, while the event stream reports the interruption as
+// soon as the agent stops. The stream is the fresher witness, and an interrupt
+// can only end a turn — so the response must never rewind one.
+describe('sessions store interrupt', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  function interruptedEvent() {
+    return historyEvent({
+      instanceId: 'inst-1',
+      type: 'lifecycle',
+      sequence: 3,
+      replayed: false,
+      lifecycle: { state: 'execution_interrupted' },
+    })
+  }
+
+  it('keeps a turn the stream settled while the response was still in flight', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1, { turn: 'running' })]
+    useAuthStore().csrfToken = 'token'
+
+    let settle!: (dto: AgentSession) => void
+    const response = new Promise<AgentSession>((resolve) => {
+      settle = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ status: 200, json: async () => response }) as unknown as Response),
+    )
+
+    const inFlight = sessions.interrupt(1, 's1')
+    sessions.handleEvent('s1', JSON.stringify(interruptedEvent()))
+    expect(sessions.sessionById('s1')?.turn).toBe('idle')
+
+    // The stale answer arrives last and still claims the turn is running.
+    settle(session('s1', 1, { turn: 'running' }))
+    await inFlight
+
+    expect(sessions.sessionById('s1')?.turn).toBe('idle')
+  })
+
+  it('takes the settled turn the response carries when the stream has not spoken', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1, { turn: 'running' })]
+    useAuthStore().csrfToken = 'token'
+    stubRoutes({ '/interrupt': session('s1', 1, { turn: 'idle' }) })
+
+    await sessions.interrupt(1, 's1')
+
+    expect(sessions.sessionById('s1')?.turn).toBe('idle')
+  })
+})

@@ -10,6 +10,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { listProjectSessions, type AgentSession } from '../api/sessions'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
 
 const props = defineProps<{
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>()
 
 const projectsStore = useProjectsStore()
+const sessionsStore = useSessionsStore()
 
 // Multiple projects stay expanded at once: an array (reactive) instead of a
 // single id. The active project is added, never replaces the set.
@@ -148,6 +150,28 @@ watch(
   },
   { immediate: true },
 )
+
+// A task created in the main pane — or deleted from it — is not in any list the
+// tree holds, and the tree polls only while a turn runs. The store records every
+// change it makes to the session index; each expanded project is refetched then.
+watch(
+  () => sessionsStore.revision,
+  () => {
+    for (const projectId of expandedIds.value) void loadProject(projectId)
+  },
+)
+
+// The 「运行中」 label is read from the cached list, so a turn started in the
+// conversation pane would never show: the tree polls a project only once its own
+// list already says a task is running. When the store reports a turn starting or
+// ending in the project it is showing, that project is refetched — once per
+// change of turns, not once per event — and the tree's own polling carries on.
+const storeTurns = computed(() => sessionsStore.sessions.map((entry) => entry.id + ':' + entry.turn).join(','))
+
+watch(storeTurns, () => {
+  const projectId = sessionsStore.projectId
+  if (projectId !== null && isExpanded(projectId)) void loadProject(projectId)
+})
 
 // Tasks whose turn is running get no SSE events in the tree, so the tree polls
 // every expanded project that has any running task. It stops for a project as
