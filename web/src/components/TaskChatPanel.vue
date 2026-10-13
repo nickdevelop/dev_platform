@@ -415,7 +415,13 @@ async function removeTask() {
             :stream-status="streamStatus"
           />
 
-          <button v-if="streamStatus === 'error'" type="button" class="reconnect" @click="reconnect">
+          <button
+            v-if="streamStatus === 'error' || streamStatus === 'reconnecting'"
+            type="button"
+            class="reconnect"
+            data-test="stream-reconnect"
+            @click="reconnect"
+          >
             重新连接事件流
           </button>
         </div>

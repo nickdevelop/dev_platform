@@ -787,3 +787,68 @@ describe('sessions store interrupt', () => {
     expect(sessions.sessionById('s1')?.turn).toBe('idle')
   })
 })
+
+// What the browser actually does when the agent process behind a session dies:
+// it fires one error and then sits in CONNECTING forever, dialling never again.
+// A stream in that state is not a live subscription, so the next time the user
+// opens the task it must be replaced rather than reused.
+describe('sessions store stale stream', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('replaces the stream of a task the user comes back to after a drop', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [], truncated: false },
+    })
+
+    await sessions.openSession(1, 's1')
+    const first = RecordingEventSource.instances[0]
+    first.readyState = RecordingEventSource.OPEN
+    first.onopen?.()
+    expect(sessions.statusFor('s1')).toBe('open')
+
+    // The drop: one error, the browser still claims it is connecting.
+    first.readyState = RecordingEventSource.CONNECTING
+    first.onerror?.()
+    expect(sessions.statusFor('s1')).toBe('reconnecting')
+
+    // The user opens the task again.
+    await sessions.openSession(1, 's1')
+
+    expect(first.readyState).toBe(RecordingEventSource.CLOSED)
+    expect(RecordingEventSource.instances).toHaveLength(2)
+    expect(RecordingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
+  })
+
+  it('leaves a stream that never dropped alone when the task is reopened', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [], truncated: false },
+    })
+
+    await sessions.openSession(1, 's1')
+    const first = RecordingEventSource.instances[0]
+    first.readyState = RecordingEventSource.OPEN
+    first.onopen?.()
+
+    await sessions.openSession(1, 's1')
+
+    expect(RecordingEventSource.instances).toHaveLength(1)
+    expect(first.readyState).toBe(RecordingEventSource.OPEN)
+  })
+})

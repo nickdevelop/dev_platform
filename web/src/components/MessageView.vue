@@ -213,7 +213,7 @@ function prettyInput(entry: ChatEntry): string {
       role="status"
       aria-live="polite"
     >
-      <template v-if="props.streamStatus === 'reconnecting'">事件流已断开，正在重连…</template>
+      <template v-if="props.streamStatus === 'reconnecting'">事件流已断开，如未自行恢复可重新连接。</template>
       <template v-else>事件流已断开，无法接收新消息。</template>
     </p>
 

@@ -311,10 +311,18 @@ export const useSessionsStore = defineStore('sessions', {
 
     // Subscribes to a session's normalized event stream. A second call for the
     // same session is a no-op, so a view re-render never opens a duplicate
-    // stream. EventSource reconnects transparently after a transient drop; a
-    // terminal close is surfaced as `error` without touching other sessions.
+    // stream. A stream that has reported an error is the exception: after a
+    // drop the browser may sit in CONNECTING forever without dialling again —
+    // observed when the process behind a session dies — so the task would stay
+    // at 正在重连 for the rest of the session. Opening the task again is the
+    // user asking for live events, and the dead stream is replaced.
     subscribe(projectId: number, sessionId: string) {
-      if (sources.has(sessionId)) return
+      const existing = sources.get(sessionId)
+      if (existing) {
+        if (this.streamStatus[sessionId] !== 'reconnecting') return
+        existing.close()
+        sources.delete(sessionId)
+      }
       this.streamStatus[sessionId] = 'connecting'
       const source = new EventSource(sessionEventsPath(projectId, sessionId))
       sources.set(sessionId, source)

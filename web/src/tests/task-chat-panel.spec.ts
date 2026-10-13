@@ -485,6 +485,38 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
   })
 
+  // The browser does not always recover a dropped stream by itself: when the
+  // process behind the session dies it fires one error and then sits in
+  // CONNECTING forever. A conversation stuck on 正在重连 with no way out is a
+  // dead end, so the stalled state offers the same reconnect the failed one
+  // does, and clicking it opens a fresh stream rather than reusing the old.
+  it('offers a reconnect while the stream is stalled in reconnecting', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const source = FakeEventSource.instances[0]
+    source.readyState = FakeEventSource.OPEN
+    source.onopen?.()
+    source.readyState = FakeEventSource.CONNECTING
+    source.onerror?.()
+    await flushPromises()
+    expect(wrapper.find('[data-test=\"conversation\"]').attributes('data-stream-status')).toBe(
+      'reconnecting',
+    )
+
+    const reconnect = wrapper.find('[data-test=\"stream-reconnect\"]')
+    expect(reconnect.exists()).toBe(true)
+    await reconnect.trigger('click')
+    await flushPromises()
+
+    expect(source.readyState).toBe(FakeEventSource.CLOSED)
+    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(wrapper.find('[data-test=\"conversation\"]').attributes('data-stream-status')).toBe(
+      'connecting',
+    )
+  })
+
   it('keeps the previous stream open and shows the new messages when the task switches', async () => {
     stubSessionList([session('sess-1'), session('sess-2')])
     const wrapper = mountPanel('sess-1')
