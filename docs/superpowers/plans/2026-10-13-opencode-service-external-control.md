@@ -207,7 +207,7 @@ export type OpenTab =
   | { kind: 'project-settings'; projectId: number }
 export function tabKey(tab: OpenTab): string  // task → sessionId；settings → `settings:${projectId}`
 ```
-actions：`openTab(projectId, sessionId, title?)`（只处理 task，签名不变）、`openProjectSettings(projectId)`（同项目幂等）、`closeTab(tab: OpenTab)`、`closeTabByKey(key: string)`、保留 `updateTitle`/`closeAllTabs`；storage key 为 `dev-platform-open-tabs-v2`。
+actions：`openTab(projectId, sessionId, title?)`（只处理 task，签名不变）、`openProjectSettings(projectId)`（同项目幂等）、`closeTab(sessionId string)`（**保留现有签名**，关闭该 sessionId 的 task tab，供 `TaskChatPanel.vue:326` 等现有调用点使用）、`closeTabByKey(key string)`（关闭任一类 tab，`AppShell` 用这个）、保留 `updateTitle`/`closeAllTabs`；storage key 为 `dev-platform-open-tabs-v2`。
 
 - [ ] **Step 1: 写失败测试** — `open-tabs.spec.ts`：`openProjectSettings(3)` 两次只有一条；task 与 settings 可共存且顺序为打开顺序；`tabKey` 两类不同；**迁移测试**：`localStorage['dev-platform-open-tabs']` 写一条 v1 任务 tab → 新 store 读取后它出现在 `tabs` 且带 `kind:'task'`，且写入 v2 key（Review Focus 4）。
 - [ ] **Step 2: 运行确认失败** — `cd web && npm test -- --run src/tests/open-tabs.spec.ts` → FAIL。

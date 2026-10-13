@@ -252,6 +252,9 @@ func runServer(args []string) error {
 	}
 	if err := registry.Register(agents.BackendOpenCodeV2, opencode.New(opencode.Options{
 		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendOpenCodeV2) },
+		// The service is machine-wide and serves no project, so a start from the
+		// settings page runs it in the platform's own data directory.
+		ServiceDirectory: dataDir,
 	})); err != nil {
 		return fmt.Errorf("register opencode adapter: %w", err)
 	}

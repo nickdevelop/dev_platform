@@ -221,6 +221,7 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 	return &launchResult{
 		client:   client,
 		endpoint: endpoint,
+		pid:      command.Process.Pid,
 		done:     process.done,
 		stop: func(stopCtx context.Context) error {
 			_ = killProcessGroup(command.Process)

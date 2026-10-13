@@ -44,6 +44,32 @@ func defaultServiceFile() string {
 	return filepath.Join(state, "opencode", "service.json")
 }
 
+// readRegistration reads the machine-wide registration file and applies the
+// minimal validation both adoption and detection need: the file must parse and
+// name a url and a pid. Process liveness and API health are separate questions,
+// answered by the callers.
+func (a *Adapter) readRegistration() (serviceRegistration, bool) {
+	path := a.serviceFile()
+	if path == "" {
+		return serviceRegistration{}, false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return serviceRegistration{}, false
+	}
+	var reg serviceRegistration
+	if err := json.Unmarshal(raw, &reg); err != nil {
+		return serviceRegistration{}, false
+	}
+	if reg.URL == "" || reg.PID <= 0 {
+		return serviceRegistration{}, false
+	}
+	if parsed, err := url.Parse(reg.URL); err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return serviceRegistration{}, false
+	}
+	return reg, true
+}
+
 // discoverExistingService adopts a healthy machine-wide service without
 // starting one (desktop Service.discover semantics). It returns nil when no
 // usable registration exists: missing/unparseable file, unreachable server,
@@ -51,27 +77,11 @@ func defaultServiceFile() string {
 // the tested range is still adopted — diagnostics already warns about it —
 // because killing a user's running service to replace it would be worse.
 //
-// The adopted server is external: the returned stop hook is nil so teardown
-// only drops the reference and never kills a process the platform did not
-// start.
+// The adopted server is external: the returned stop hook is nil so dropping the
+// reference never kills a process the platform did not start.
 func (a *Adapter) discoverExistingService(ctx context.Context) (*sharedServer, error) {
-	path := a.serviceFile()
-	if path == "" {
-		return nil, nil
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil
-	}
-	var reg serviceRegistration
-	if err := json.Unmarshal(raw, &reg); err != nil {
-		return nil, nil
-	}
-	if reg.URL == "" || reg.PID <= 0 {
-		return nil, nil
-	}
-	parsed, err := url.Parse(reg.URL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	reg, ok := a.readRegistration()
+	if !ok {
 		return nil, nil
 	}
 	if !processAlive(reg.PID) {

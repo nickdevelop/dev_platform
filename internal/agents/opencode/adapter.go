@@ -71,6 +71,11 @@ type Options struct {
 	// (XDG_STATE_HOME/opencode/service.json by default). Tests point it at a
 	// temp file.
 	ServiceFile string
+	// ServiceDirectory is the working directory the service is started in when
+	// the operator starts it from the platform settings. The service is
+	// machine-wide and serves no project of its own, so this is a neutral
+	// scratch directory (the platform data directory), not a project path.
+	ServiceDirectory string
 }
 
 // Adapter implements agents.AgentAdapter for the opencode v2 HTTP API. All
@@ -88,6 +93,7 @@ type Adapter struct {
 	launch            launcher
 	versionProbe      func(ctx context.Context) (string, error)
 	serviceFilePath   string
+	serviceDirectory  string
 	// watchInterval bounds how often watchShared re-probes the service. Tests
 	// shorten it; production keeps the default.
 	watchInterval time.Duration
@@ -107,8 +113,11 @@ type Adapter struct {
 type launchResult struct {
 	client   *Client
 	endpoint string
-	stop     func(context.Context) error
-	done     <-chan struct{}
+	// pid is the launched process's id, so a stop requested from the settings
+	// page can report what it stopped.
+	pid  int
+	done <-chan struct{}
+	stop func(context.Context) error
 }
 
 // launcher starts one server in a directory. It is a field so tests can inject
@@ -136,6 +145,7 @@ func New(options Options) *Adapter {
 		newID:             options.NewID,
 		versionProbe:      options.VersionProbe,
 		serviceFilePath:   options.ServiceFile,
+		serviceDirectory:  options.ServiceDirectory,
 		instances:         make(map[string]*instance),
 	}
 	if adapter.executable == "" {
