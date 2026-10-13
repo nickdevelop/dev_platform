@@ -380,15 +380,9 @@ func (c *Client) Prompt(ctx context.Context, sessionID, text string) error {
 }
 
 // PermissionRequest mirrors the subset of Permission.Request the platform
-// needs to render an approval: identity plus human-readable context. Extra
-// server fields are ignored so the client stays forward-compatible.
-type PermissionRequest struct {
-	ID        string   `json:"id"`
-	SessionID string   `json:"sessionID"`
-	Action    string   `json:"action"`
-	Resources []string `json:"resources"`
-	Message   string   `json:"message,omitempty"`
-}
+// needs to render an approval. Extra server fields are ignored so the client
+// stays forward-compatible.
+type PermissionRequest = agents.PermissionRequest
 
 // ListPermissions returns the session's pending permission requests.
 func (c *Client) ListPermissions(ctx context.Context, sessionID string) ([]PermissionRequest, error) {
@@ -413,12 +407,7 @@ func (c *Client) ReplyPermission(ctx context.Context, sessionID, requestID, deci
 
 // FormInfo mirrors the subset of Form.Info the platform needs: identity,
 // title and fields stay opaque to the backend client.
-type FormInfo struct {
-	ID        string          `json:"id"`
-	SessionID string          `json:"sessionID"`
-	Title     string          `json:"title"`
-	Fields    json.RawMessage `json:"fields,omitempty"`
-}
+type FormInfo = agents.FormInfo
 
 // ListForms returns the session's pending forms.
 func (c *Client) ListForms(ctx context.Context, sessionID string) ([]FormInfo, error) {

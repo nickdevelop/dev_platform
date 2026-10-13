@@ -18,22 +18,12 @@ const (
 	PermissionReject = "reject"
 )
 
-// PermissionReplier is the optional opencode-only extension for tool approval
-// and form replies. It is deliberately separate from agents.AgentAdapter so
-// the pi backend is untouched: callers assert it and report
-// unsupported_capability when absent.
-type PermissionReplier interface {
-	ListPermissions(ctx context.Context, ref agents.SessionRef) ([]PermissionRequest, error)
-	ReplyPermission(ctx context.Context, ref agents.SessionRef, requestID, decision, message string) error
-	ListForms(ctx context.Context, ref agents.SessionRef) ([]FormInfo, error)
-	ReplyForm(ctx context.Context, ref agents.SessionRef, formID string, answer map[string]any) error
-}
-
-// RawEventOpener exposes the shared server's untouched SSE byte stream for
-// the透传 model: the platform proxies bytes, the frontend projects events.
-type RawEventOpener interface {
-	OpenRawEvents(ctx context.Context) (io.ReadCloser, error)
-}
+// PermissionReplier and RawEventOpener are the shared agents extensions; the
+// aliases keep existing opencode-package callers compiling.
+type (
+	PermissionReplier = agents.PermissionReplier
+	RawEventOpener    = agents.RawEventOpener
+)
 
 var (
 	_ PermissionReplier = (*Adapter)(nil)
@@ -112,6 +102,9 @@ func (a *Adapter) ReplyPermission(ctx context.Context, ref agents.SessionRef, re
 		return err
 	}
 	if err := inst.client.ReplyPermission(ctx, ref.SessionID, requestID, decision, message); err != nil {
+		if IsExpiredReplyError(err) {
+			return fmt.Errorf("%w: opencode: reply permission %q: %w", agents.ErrReplyExpired, requestID, err)
+		}
 		return fmt.Errorf("opencode: reply permission %q: %w", requestID, err)
 	}
 	return nil
@@ -161,6 +154,9 @@ func (a *Adapter) ReplyForm(ctx context.Context, ref agents.SessionRef, formID s
 		return err
 	}
 	if err := inst.client.ReplyForm(ctx, ref.SessionID, formID, answer); err != nil {
+		if IsExpiredReplyError(err) {
+			return fmt.Errorf("%w: opencode: reply form %q: %w", agents.ErrReplyExpired, formID, err)
+		}
 		return fmt.Errorf("opencode: reply form %q: %w", formID, err)
 	}
 	return nil
