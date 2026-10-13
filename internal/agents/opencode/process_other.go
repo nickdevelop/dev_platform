@@ -24,6 +24,10 @@ func killRegisteredProcess(pid int) error {
 	return proc.Kill()
 }
 
+// processIsZombie cannot tell: these platforms have no zombie pid that keeps a
+// listener closed, so a live pid is treated as live.
+func processIsZombie(pid int) bool { return false }
+
 // killProcessGroup kills the server directly where process groups are
 // unavailable.
 func killProcessGroup(proc *os.Process) error {

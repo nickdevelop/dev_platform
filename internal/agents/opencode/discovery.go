@@ -116,7 +116,8 @@ func processAlive(pid int) bool {
 	if err := syscall.Kill(pid, 0); err != nil {
 		return false
 	}
-	return true
+	// A zombie pid takes a signal but serves nothing.
+	return !processIsZombie(pid)
 }
 
 var _ = fmt.Sprint
