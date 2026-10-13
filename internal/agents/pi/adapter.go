@@ -202,7 +202,7 @@ func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 // diagnosed at runtime as a parse_error event without ending the stream.
 // Messages are actionable and redacted, and nothing is started.
 func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
-	supported, _ := agents.SupportedVersionFor(agents.BackendPi)
+	supported := Descriptor.SupportedVersion()
 	report := agents.BackendDiagnostics{
 		Backend:       agents.BackendPi,
 		TestedVersion: supported.Tested,

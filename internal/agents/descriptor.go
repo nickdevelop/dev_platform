@@ -84,3 +84,9 @@ func (c *Catalog) All() []BackendDescriptor {
 	copy(out, c.ordered)
 	return out
 }
+
+// SupportedVersion returns the version range the descriptor declares, in the
+// shape the diagnostics checks classify against.
+func (d BackendDescriptor) SupportedVersion() SupportedVersion {
+	return SupportedVersion{Tested: d.Tested, Minimum: d.Minimum, Maximum: d.Maximum}
+}

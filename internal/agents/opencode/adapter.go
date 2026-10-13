@@ -249,7 +249,7 @@ func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 // is actionable and redacted. A missing binary short-circuits the report:
 // without it there is nothing left to probe.
 func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
-	supported, _ := agents.SupportedVersionFor(agents.BackendOpenCodeV2)
+	supported := Descriptor.SupportedVersion()
 	report := agents.BackendDiagnostics{
 		Backend:       agents.BackendOpenCodeV2,
 		TestedVersion: supported.Tested,
