@@ -637,6 +637,115 @@ describe('sessions store interleaved stream merging', () => {
   })
 })
 
+describe('sessions store per-message model', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    RecordingEventSource.instances = []
+    vi.stubGlobal('EventSource', RecordingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function liveMessage(
+    role: string,
+    text: string,
+    final: boolean,
+    sequence: number,
+    model?: { id: string; provider: string; variant?: string },
+  ) {
+    return historyEvent({
+      instanceId: 'inst-1',
+      type: 'message',
+      sequence,
+      replayed: false,
+      message: { role, text, final, ...(model ? { model } : {}) },
+    })
+  }
+
+  it('keeps the model an assistant message arrives with', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(
+        liveMessage('assistant', '答', true, 1, { id: 'prj/model-x', provider: 'prj', variant: 'fast' }),
+      ),
+    )
+
+    const [entry] = sessions.messagesFor('s1')
+    expect(entry.model).toEqual({ id: 'prj/model-x', provider: 'prj', variant: 'fast' })
+  })
+
+  it('keeps no model on a user message or a message sent without one', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('user', '问', true, 1)))
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答', true, 2)))
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries[0].model).toBeUndefined()
+    expect(entries[1].model).toBeUndefined()
+  })
+
+  it('fills the model in when a later streaming chunk carries it', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    // The first delta may arrive before the adapter knows the session's
+    // model; a later chunk of the same open block completes the stamp.
+    sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', 'A', false, 1)))
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(
+        liveMessage('assistant', 'B', true, 2, { id: 'prj/model-x', provider: 'prj' }),
+      ),
+    )
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries).toHaveLength(1)
+    expect(entries[0].text).toBe('AB')
+    expect(entries[0].model).toEqual({ id: 'prj/model-x', provider: 'prj' })
+  })
+
+  it('replays history with each message model', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    stubRoutes({
+      '/history': {
+        events: [
+          historyEvent({ type: 'message', sequence: 1, message: { role: 'user', text: '历史问', final: true } }),
+          historyEvent({
+            type: 'message',
+            sequence: 2,
+            message: {
+              role: 'assistant',
+              text: '历史答',
+              final: true,
+              model: { id: 'acme/acme-code', provider: 'acme', variant: 'default' },
+            },
+          }),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    const entries = sessions.messagesFor('s1')
+    expect(entries[0].model).toBeUndefined()
+    expect(entries[1].model).toEqual({ id: 'acme/acme-code', provider: 'acme', variant: 'default' })
+  })
+})
+
 describe('sessions store user echo dedupe', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

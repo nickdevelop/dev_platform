@@ -23,6 +23,7 @@ import {
   type AgentSession,
   type BackendId,
   type CreateSessionBody,
+  type MessageModel,
   type NormalizedEvent,
 } from '../api/sessions'
 import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
@@ -38,6 +39,9 @@ export interface ChatEntry {
   role: string
   text: string
   streaming: boolean
+  // The model that produced an assistant message, when the backend reports
+  // one. Absent on user messages and on backends without per-message models.
+  model?: MessageModel
   callId?: string
   name?: string
   // Tool calls carry the raw argument payload so the view can summarise it
@@ -448,7 +452,14 @@ export const useSessionsStore = defineStore('sessions', {
           // The agent answered; no echo can still be pending for this text.
           delete this.echoPending[sessionId]
         }
-        this.appendMessage(sessionId, event.message.role, event.message.text, event.message.final, event.sequence)
+        this.appendMessage(
+          sessionId,
+          event.message.role,
+          event.message.text,
+          event.message.final,
+          event.sequence,
+          event.message.model,
+        )
         return
       }
       if (event.type === 'thinking') {
@@ -508,6 +519,7 @@ export const useSessionsStore = defineStore('sessions', {
               event.message.text,
               event.message.final,
               event.sequence,
+              event.message.model,
             )
             continue
           }
@@ -553,11 +565,13 @@ export const useSessionsStore = defineStore('sessions', {
       text: string,
       final: boolean,
       sequence: number,
+      model?: MessageModel,
     ) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
       if (open) {
         if (text !== '') open.text += text
+        if (model) open.model = model
         if (final) open.streaming = false
         return
       }
@@ -571,6 +585,7 @@ export const useSessionsStore = defineStore('sessions', {
         role,
         text,
         streaming: !final,
+        model,
       })
     },
 

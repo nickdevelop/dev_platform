@@ -62,10 +62,20 @@ export type NormalizedEventType =
   | 'error'
   | 'unknown'
 
+// Mirrors agents.MessageModel: the model that produced one assistant message.
+// id is the provider-scoped "provider/model" form; variant is set when the
+// model ran a named variant.
+export interface MessageModel {
+  id: string
+  provider: string
+  variant?: string
+}
+
 export interface MessagePayload {
   role: string
   text: string
   final: boolean
+  model?: MessageModel
 }
 
 // Mirrors agents.ThinkingPayload: the agent's reasoning, or one streaming chunk

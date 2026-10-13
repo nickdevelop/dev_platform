@@ -168,6 +168,54 @@ describe('MessageView tool and thinking blocks', () => {
   })
 })
 
+describe('MessageView per-message model', () => {
+  it('labels an assistant reply with the model that produced it', () => {
+    const entry: ChatEntry = {
+      ...message('assistant', '回复'),
+      model: { id: 'acme/acme-code', provider: 'acme', variant: 'default' },
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [entry], capabilities: capabilities() },
+    })
+
+    const tag = wrapper.find('[data-test="message-model"]')
+    expect(tag.exists()).toBe(true)
+    expect(tag.text()).toBe('acme/acme-code#default')
+  })
+
+  it('omits the variant suffix when the model ran without one', () => {
+    const entry: ChatEntry = {
+      ...message('assistant', '回复'),
+      model: { id: 'acme/acme-code', provider: 'acme' },
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [entry], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="message-model"]').text()).toBe('acme/acme-code')
+  })
+
+  it('renders no model tag when the message carries none', () => {
+    const wrapper = mount(MessageView, {
+      props: { messages: [message('assistant', '回复')], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="message-model"]').exists()).toBe(false)
+  })
+
+  it('never labels a user turn even if it somehow carries a model', () => {
+    const entry: ChatEntry = {
+      ...message('user', '你好'),
+      model: { id: 'acme/acme-code', provider: 'acme' },
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [entry], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="message-model"]').exists()).toBe(false)
+  })
+})
+
 describe('MessageView plantuml blocks', () => {
   function fakeEngine(svg: string): Engine {
     return (_lines, _opts, onSuccess) => onSuccess(svg)

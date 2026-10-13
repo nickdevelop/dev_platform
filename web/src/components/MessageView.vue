@@ -14,8 +14,14 @@ import { computed, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
-import type { Capabilities } from '../api/sessions'
+import type { Capabilities, MessageModel } from '../api/sessions'
 import type { ChatEntry, StreamStatus } from '../stores/sessions'
+
+// modelLabel is the small tag under an agent reply: the model that produced
+// it, with the named variant appended when one ran.
+function modelLabel(model: MessageModel): string {
+  return model.variant ? `${model.id}#${model.variant}` : model.id
+}
 
 const props = defineProps<{
   messages: ChatEntry[]
@@ -239,6 +245,11 @@ function prettyInput(entry: ChatEntry): string {
                 </template>
               </div>
               <span v-if="block.entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
+              <span
+                v-if="block.entry.role !== 'user' && block.entry.model"
+                class="message-model"
+                data-test="message-model"
+              >{{ modelLabel(block.entry.model) }}</span>
             </div>
           </template>
 
@@ -439,6 +450,15 @@ function prettyInput(entry: ChatEntry): string {
 
 .markdown-body :deep(a) {
   color: var(--color-primary);
+}
+
+/* The per-message model tag: small, muted, and set apart from the reply text
+   it belongs to. */
+.message-model {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .markdown-body :deep(table) {

@@ -121,6 +121,7 @@ function sessionInfo(id) {
     projectID: 'mock-project',
     title: sessions.get(id)?.title || '',
     location: { directory: sessionDirectory(id) },
+    model: { id: 'model-a', providerID: 'mock' },
     time: { created: sessions.get(id)?.created || Date.now(), updated: Date.now() },
   }
 }
@@ -358,6 +359,7 @@ const server = http.createServer(async (request, response) => {
         recordMessage(id, {
           type: 'assistant',
           agent: 'build',
+          model: { id: 'model-a', providerID: 'mock' },
           content: [
             { type: 'reasoning', text: 'internal reasoning is not conversation' },
             { type: 'text', text: `opencode reply: ${text}` },
