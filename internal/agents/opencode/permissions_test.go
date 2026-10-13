@@ -3,10 +3,13 @@ package opencode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"devplatform/internal/agents"
 )
 
 // TestClientPermissionAndFormRoundTrip proves the new v2 client methods hit
@@ -89,4 +92,22 @@ func newPermissionStub(t *testing.T, permissionReply, formReply *map[string]any)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return server
+}
+
+// TestReplyFailureMapsExpiredTargets proves a reply the server rejects as
+// already gone is reported as agents.ErrReplyExpired, while any other failure
+// stays a plain backend error.
+func TestReplyFailureMapsExpiredTargets(t *testing.T) {
+	gone := &APIError{StatusCode: 404, Code: "PermissionNotFoundError", Message: "gone", Method: "POST", Path: "/reply"}
+	if err := replyFailure(gone, `reply permission "per_1"`); !errors.Is(err, agents.ErrReplyExpired) {
+		t.Fatalf("expired reply = %v, want agents.ErrReplyExpired", err)
+	}
+	settled := &APIError{StatusCode: 409, Code: "FormAlreadySettledError", Message: "settled", Method: "POST", Path: "/reply"}
+	if err := replyFailure(settled, `reply form "frm_1"`); !errors.Is(err, agents.ErrReplyExpired) {
+		t.Fatalf("settled form = %v, want agents.ErrReplyExpired", err)
+	}
+	other := &APIError{StatusCode: 500, Code: "InternalError", Message: "boom", Method: "POST", Path: "/reply"}
+	if err := replyFailure(other, `reply form "frm_1"`); errors.Is(err, agents.ErrReplyExpired) {
+		t.Fatalf("server error = %v, must not be ErrReplyExpired", err)
+	}
 }

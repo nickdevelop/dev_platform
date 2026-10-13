@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -152,7 +153,7 @@ func TestOpencodeReplyExpiredMapsTo409(t *testing.T) {
 	ctx := context.Background()
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
-	env.fake.replyErr = &opencode.APIError{StatusCode: 404, Code: "PermissionNotFoundError", Message: "gone", Method: "POST", Path: "/reply"}
+	env.fake.replyErr = fmt.Errorf("%w: gone", agents.ErrReplyExpired)
 	env.fake.mu.Unlock()
 	session, err := env.svc.Create(ctx, env.projectID, agents.BackendOpenCodeV2, "t")
 	if err != nil {
@@ -169,7 +170,7 @@ func TestOpencodeReplyExpiredMapsTo409(t *testing.T) {
 	}
 
 	env.fake.mu.Lock()
-	env.fake.replyErr = &opencode.APIError{StatusCode: 409, Code: "FormAlreadySettledError", Message: "settled", Method: "POST", Path: "/reply"}
+	env.fake.replyErr = fmt.Errorf("%w: settled", agents.ErrReplyExpired)
 	env.fake.mu.Unlock()
 	err = env.svc.ReplyOpencodeForm(ctx, env.projectID, session.ID, "frm_gone", map[string]any{"a": "b"})
 	if !errors.Is(err, ErrFormExpired) {

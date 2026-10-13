@@ -58,6 +58,16 @@ func IsExpiredReplyError(err error) bool {
 	}
 }
 
+// replyFailure maps a failed permission or form reply onto the agents
+// contract: a reply whose target the server no longer holds wraps
+// agents.ErrReplyExpired, anything else is a plain backend failure.
+func replyFailure(err error, what string) error {
+	if IsExpiredReplyError(err) {
+		return fmt.Errorf("%w: opencode: %s: %w", agents.ErrReplyExpired, what, err)
+	}
+	return fmt.Errorf("opencode: %s: %w", what, err)
+}
+
 // ListPermissions returns the native session's pending permission requests.
 func (a *Adapter) ListPermissions(ctx context.Context, ref agents.SessionRef) ([]PermissionRequest, error) {
 	if err := ctx.Err(); err != nil {
@@ -102,10 +112,7 @@ func (a *Adapter) ReplyPermission(ctx context.Context, ref agents.SessionRef, re
 		return err
 	}
 	if err := inst.client.ReplyPermission(ctx, ref.SessionID, requestID, decision, message); err != nil {
-		if IsExpiredReplyError(err) {
-			return fmt.Errorf("%w: opencode: reply permission %q: %w", agents.ErrReplyExpired, requestID, err)
-		}
-		return fmt.Errorf("opencode: reply permission %q: %w", requestID, err)
+		return replyFailure(err, fmt.Sprintf("reply permission %q", requestID))
 	}
 	return nil
 }
@@ -154,10 +161,7 @@ func (a *Adapter) ReplyForm(ctx context.Context, ref agents.SessionRef, formID s
 		return err
 	}
 	if err := inst.client.ReplyForm(ctx, ref.SessionID, formID, answer); err != nil {
-		if IsExpiredReplyError(err) {
-			return fmt.Errorf("%w: opencode: reply form %q: %w", agents.ErrReplyExpired, formID, err)
-		}
-		return fmt.Errorf("opencode: reply form %q: %w", formID, err)
+		return replyFailure(err, fmt.Sprintf("reply form %q", formID))
 	}
 	return nil
 }
