@@ -3,7 +3,7 @@
 // hand off to the manage dialog, and the resource placeholder that must not call
 // any resource endpoint.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent, flushPromises, h, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsPanel from '../components/ProjectSettingsPanel.vue'
 import { useAgentsStore } from '../stores/agents'
@@ -27,8 +27,22 @@ function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   }
 }
 
+// The panel links to the settings page that can start the service; the test
+// harness has no router, so the link is rendered as a plain anchor.
+const RouterLinkStub = defineComponent({
+  name: 'RouterLinkStub',
+  props: { to: { type: Object, required: true } },
+  setup(props, { slots }) {
+    const name = String((props.to as { name?: string }).name ?? '')
+    return () => h('a', { href: `/${name}` }, slots.default?.())
+  },
+})
+
 function mountPanel() {
-  return mount(ProjectSettingsPanel, { props: { projectId: 1 } })
+  return mount(ProjectSettingsPanel, {
+    props: { projectId: 1 },
+    global: { stubs: { RouterLink: RouterLinkStub } },
+  })
 }
 
 describe('ProjectSettingsPanel', () => {
@@ -48,7 +62,8 @@ describe('ProjectSettingsPanel', () => {
       { backend: 'pi', capabilities: noCapabilities() },
     ]
     vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
-    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+    // The panel no longer asks about instances; a service look happens once.
+    vi.spyOn(agents, 'detectService').mockResolvedValue(null as never)
     vi.spyOn(agents, 'loadDiagnostics').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'setBackendEnabled').mockResolvedValue(true as never)
@@ -108,6 +123,58 @@ describe('ProjectSettingsPanel', () => {
     expect(wrapper.text()).not.toContain('待资源管理功能接入')
   })
 
+  // The whole "instance" concept is background plumbing: a user reading this
+  // panel must never meet the word, nor a control that pretends to operate one.
+  it('shows nothing about instances, and looks at the service exactly once', async () => {
+    const agents = useAgentsStore()
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('实例')
+    expect(wrapper.find('[data-test="instance-list"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="stop-instance"]').exists()).toBe(false)
+    expect(agents.detectService).toHaveBeenCalledTimes(1)
+    expect(agents.detectService).toHaveBeenCalledWith('opencode-v2')
+    // A backend with no machine-level service is never even asked.
+    expect(agents.detectService).not.toHaveBeenCalledWith('pi')
+    expect(agents.loadInstances).toBeUndefined()
+  })
+
+  it('points at the one page that can start a stopped service', async () => {
+    const agents = useAgentsStore()
+    agents.services = {
+      'opencode-v2': {
+        backend: 'opencode-v2',
+        supported: true,
+        state: 'stopped',
+        checkedAt: '2026-10-13T00:00:00Z',
+      },
+    }
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const notice = wrapper.find('[data-test="project-service-down"]')
+    expect(notice.exists()).toBe(true)
+    expect(notice.text()).toContain('平台设置 → Agent')
+    expect(notice.find('a').attributes('href')).toBe('/settings-agents')
+  })
+
+  it('stays quiet about the service while it is running', async () => {
+    const agents = useAgentsStore()
+    agents.services = {
+      'opencode-v2': {
+        backend: 'opencode-v2',
+        supported: true,
+        state: 'running',
+        checkedAt: '2026-10-13T00:00:00Z',
+      },
+    }
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="project-service-down"]').exists()).toBe(false)
+  })
+
   it('asks for discovery from the project page without picking an instance', async () => {
     const agents = useAgentsStore()
     agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }) }]
@@ -116,10 +183,6 @@ describe('ProjectSettingsPanel', () => {
 
     const wrapper = mountPanel()
     await flushPromises()
-
-    // The instance list is gone from the project page: which instance serves
-    // the backend is the platform's business, not the user's.
-    expect(wrapper.find('.instance-list').exists()).toBe(false)
 
     const button = wrapper.find('[data-test="discover-sessions"]')
     expect(button.exists()).toBe(true)

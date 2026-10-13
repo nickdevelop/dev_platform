@@ -32,8 +32,15 @@ export function createAppRouter() {
         children: [
           { path: '', name: 'home', component: EmptyWorkspace },
           {
+            // A project is not a page of its own any more: its settings open as
+            // a workbench tab, and its name in the tree only expands its tasks.
+            // The old URL would otherwise render a panel no tab points to.
             path: 'projects/:projectId',
-            name: 'project',
+            redirect: { name: 'home' },
+          },
+          {
+            path: 'projects/:projectId/settings',
+            name: 'project-settings',
             component: ProjectSettingsPanel,
             props: (route) => ({ projectId: Number(route.params.projectId) }),
           },

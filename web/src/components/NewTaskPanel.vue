@@ -4,6 +4,7 @@
 // The model is chosen in the chat composer, and native-session discovery lives
 // in project settings. On success the shell navigates to the new task.
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
 import type { BackendId } from '../api/agents'
@@ -87,7 +88,17 @@ async function createSession() {
         autocomplete="off"
       />
 
-      <p v-if="sessions.error" class="page-error" role="alert">{{ sessions.error }}</p>
+      <!-- A refused task usually means the machine-wide service is not running.
+           The platform will not start it for you, so the refusal says where to. -->
+      <p v-if="sessions.error" class="page-error" role="alert" data-test="new-task-error">
+        {{ sessions.error }}
+        <RouterLink
+          v-if="sessions.errorCode === 'service_not_running'"
+          :to="{ name: 'settings-agents' }"
+          data-test="new-task-service-link"
+          >前往平台设置 → Agent</RouterLink
+        >
+      </p>
 
       <div class="actions">
         <button

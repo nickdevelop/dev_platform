@@ -1,37 +1,71 @@
-// Open task tabs: the set of tasks the user has opened in this browser.
-// Tabs let several tasks stay open at once; switching tabs is navigation,
-// while each tab keeps its cached transcript in stores/sessions.ts and its
-// live SSE subscription. Tabs persist in localStorage so a refresh restores
-// the working set.
+// Open workbench tabs: what this browser has open right now. Two kinds share
+// the strip — a task (a session with its cached transcript and live SSE
+// subscription) and a project's settings page. Switching a tab is navigation;
+// the tab strip renders both kinds from one `tabKey`, so nothing downstream has
+// to know which is which. Tabs persist in localStorage so a refresh restores the
+// working set.
 import { defineStore } from 'pinia'
 
-export interface OpenTab {
-  projectId: number
-  sessionId: string
-  title: string
+export type OpenTab =
+  | { kind: 'task'; projectId: number; sessionId: string; title: string }
+  | { kind: 'project-settings'; projectId: number }
+
+// tabKey identifies a tab. A task is identified by its session (machine-unique),
+// a settings page by its project; the prefixes keep the two namespaces apart.
+export function tabKey(tab: OpenTab): string {
+  return tab.kind === 'task' ? tab.sessionId : `settings:${tab.projectId}`
 }
 
-const STORAGE_KEY = 'dev-platform-open-tabs'
+const STORAGE_KEY = 'dev-platform-open-tabs-v2'
+// The pre-tab-model key: it stored task tabs without a kind. Read once, then
+// never written again, so a user who installed this version keeps their tabs and
+// never sees the old shape again.
+const LEGACY_STORAGE_KEY = 'dev-platform-open-tabs'
 
-function loadPersisted(): OpenTab[] {
+const MAX_TABS = 20
+
+function isTask(entry: unknown): entry is Extract<OpenTab, { kind: 'task' }> {
+  const tab = entry as Record<string, unknown>
+  return (
+    typeof tab === 'object' &&
+    tab !== null &&
+    typeof tab.sessionId === 'string' &&
+    typeof tab.projectId === 'number'
+  )
+}
+
+function normalize(entry: unknown): OpenTab | null {
+  const tab = entry as Record<string, unknown>
+  if (typeof tab !== 'object' || tab === null || typeof tab.projectId !== 'number') return null
+  if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId }
+  if (tab.kind === 'task' || tab.kind === undefined) {
+    if (!isTask(entry)) return null
+    return { kind: 'task', projectId: tab.projectId, sessionId: tab.sessionId, title: tab.title ?? '' }
+  }
+  return null
+}
+
+function read(key: string): unknown[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return []
     const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter(
-        (entry): entry is OpenTab =>
-          typeof entry === 'object' &&
-          entry !== null &&
-          typeof (entry as OpenTab).sessionId === 'string' &&
-          typeof (entry as OpenTab).projectId === 'number',
-      )
-      .map((entry) => ({ projectId: entry.projectId, sessionId: entry.sessionId, title: entry.title ?? '' }))
-      .slice(0, 20)
+    return Array.isArray(parsed) ? parsed : []
   } catch {
     return []
   }
+}
+
+function loadPersisted(): OpenTab[] {
+  const current = read(STORAGE_KEY)
+    .map(normalize)
+    .filter((tab): tab is OpenTab => tab !== null)
+  if (current.length > 0) return current.slice(0, MAX_TABS)
+
+  const legacy = read(LEGACY_STORAGE_KEY)
+    .map(normalize)
+    .filter((tab): tab is OpenTab => tab !== null)
+  return legacy.slice(0, MAX_TABS)
 }
 
 function persist(tabs: OpenTab[]) {
@@ -48,33 +82,65 @@ export const useOpenTabsStore = defineStore('openTabs', {
   }),
 
   actions: {
+    // Opens a task tab, or updates the existing one in place: re-opening the
+    // task the user is already looking at must not reshuffle the strip.
     openTab(projectId: number, sessionId: string, title = '') {
-      const existing = this.tabs.find((tab) => tab.sessionId === sessionId)
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'task' }> =>
+          tab.kind === 'task' && tab.sessionId === sessionId,
+      )
       if (existing) {
         existing.projectId = projectId
         if (title !== '') existing.title = title
       } else {
-        this.tabs.push({ projectId, sessionId, title })
-        if (this.tabs.length > 20) this.tabs.shift()
+        this.tabs.push({ kind: 'task', projectId, sessionId, title })
+        if (this.tabs.length > MAX_TABS) this.tabs.shift()
+      }
+      persist(this.tabs)
+    },
+
+    // Opens (or brings to front) a project's settings tab — one per project.
+    openProjectSettings(projectId: number) {
+      const existing = this.tabs.find(
+        (tab) => tab.kind === 'project-settings' && tab.projectId === projectId,
+      )
+      if (existing) {
+        this.tabs = [...this.tabs.filter((tab) => tab !== existing), existing]
+      } else {
+        this.tabs.push({ kind: 'project-settings', projectId })
+        if (this.tabs.length > MAX_TABS) this.tabs.shift()
       }
       persist(this.tabs)
     },
 
     updateTitle(sessionId: string, title: string) {
-      const existing = this.tabs.find((tab) => tab.sessionId === sessionId)
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'task' }> =>
+          tab.kind === 'task' && tab.sessionId === sessionId,
+      )
       if (existing && existing.title !== title) {
         existing.title = title
         persist(this.tabs)
       }
     },
 
+    // closeTab closes a task tab by session id — the shape callers that know
+    // they are finished with a session already use.
     closeTab(sessionId: string) {
-      this.tabs = this.tabs.filter((tab) => tab.sessionId !== sessionId)
+      this.tabs = this.tabs.filter((tab) => !(tab.kind === 'task' && tab.sessionId === sessionId))
+      persist(this.tabs)
+    },
+
+    // closeTabByKey closes either kind of tab, which is what a tab strip needs.
+    closeTabByKey(key: string) {
+      this.tabs = this.tabs.filter((tab) => tabKey(tab) !== key)
       persist(this.tabs)
     },
 
     closeOtherTabs(sessionId: string) {
-      this.tabs = this.tabs.filter((tab) => tab.sessionId === sessionId)
+      this.tabs = this.tabs.filter(
+        (tab) => tab.kind === 'project-settings' || tab.sessionId === sessionId,
+      )
       persist(this.tabs)
     },
 

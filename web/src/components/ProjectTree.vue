@@ -19,7 +19,8 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'select-project': [projectId: number]
+  // A project's settings are a workbench tab, not a page the tree navigates to.
+  'open-settings': [projectId: number]
   'select-session': [projectId: number, sessionId: string]
   'new-task': [projectId: number]
 }>()
@@ -225,7 +226,7 @@ function retryProject(projectId: number) {
           class="project-settings"
           :aria-label="`项目设置：${project.name}`"
           title="项目设置"
-          @click="emit('select-project', project.id)"
+          @click="emit('open-settings', project.id)"
         >
           ⚙
         </button>

@@ -66,6 +66,29 @@ export interface AgentDiagnosticsReport {
   diagnostics: BackendDiagnostics[]
 }
 
+// Mirrors #/components/schemas/AgentServiceStatus.
+export type ServiceState = 'running' | 'stopped' | 'unreachable'
+
+export interface AgentServiceStatus {
+  backend: BackendId
+  // False when the backend has no machine-level service at all (pi), in which
+  // case no start/stop control may be offered.
+  supported: boolean
+  state: ServiceState
+  endpoint?: string
+  pid?: number
+  version?: string
+  executable?: string
+  // Actionable, already-redacted reason for an unusable service.
+  detail?: string
+  checkedAt: string
+}
+
+// Mirrors #/components/schemas/AgentServiceStatusResponse.
+export interface AgentServiceStatusResponse {
+  status: AgentServiceStatus
+}
+
 // Mirrors #/components/schemas/AgentInstance.
 export interface AgentInstance {
   id: string
@@ -142,6 +165,40 @@ export function listAgentBackends(): Promise<AgentBackendList> {
 // GET /api/agent-backends/diagnostics
 export function fetchAgentDiagnostics(): Promise<AgentDiagnosticsReport> {
   return apiRequest<AgentDiagnosticsReport>('GET', '/agent-backends/diagnostics')
+}
+
+// GET /api/agent-services/{backend}
+// Observes a backend's machine-level service. Only the platform settings page
+// calls it: no business path starts or stops a service, and none polls it.
+export function getServiceStatus(backend: BackendId): Promise<AgentServiceStatus> {
+  return apiRequest<AgentServiceStatusResponse>(
+    'GET',
+    `/agent-services/${encodeURIComponent(backend)}`,
+  ).then((response) => response.status)
+}
+
+// POST /api/agent-services/{backend}/start
+export function startAgentService(
+  backend: BackendId,
+  csrfToken: string,
+): Promise<AgentServiceStatus> {
+  return apiRequest<AgentServiceStatusResponse>(
+    'POST',
+    `/agent-services/${encodeURIComponent(backend)}/start`,
+    { csrfToken },
+  ).then((response) => response.status)
+}
+
+// POST /api/agent-services/{backend}/stop
+export function stopAgentService(
+  backend: BackendId,
+  csrfToken: string,
+): Promise<AgentServiceStatus> {
+  return apiRequest<AgentServiceStatusResponse>(
+    'POST',
+    `/agent-services/${encodeURIComponent(backend)}/stop`,
+    { csrfToken },
+  ).then((response) => response.status)
 }
 
 // GET /api/projects/{id}/instances

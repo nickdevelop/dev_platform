@@ -1,9 +1,14 @@
 <script setup lang="ts">
-// Project settings for the right pane of the shell: project facts, the project's
-// Agent backends and running instances, and the danger-zone actions. The actions
-// are handed up as `manage` events so the shell owns the single manage dialog.
-// Starting or stopping an instance never affects the project's other instances.
+// Project settings, opened as a workbench tab: project facts, the project's
+// Agent backends, session discovery, resources and the danger-zone actions. The
+// manage actions are handed up so the shell owns the single manage dialog.
+//
+// Instances are deliberately absent. They are how a backend serves the
+// workbench, not something the user operates; what a user can act on is the
+// backend's machine-level service, and that lives in platform settings — so this
+// panel only points there when the service is down.
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import type { BackendId } from '../api/agents'
 import type { Project } from '../api/projects'
 import { useAgentsStore } from '../stores/agents'
@@ -37,11 +42,21 @@ async function load() {
     selectedBackend.value = agents.backends[0].backend
   }
   await Promise.all([
-    agents.loadInstances(props.projectId),
     agents.loadDiagnostics(),
     agents.loadBackendConfigs(props.projectId),
+    // One look, on open, so the notice below tells the truth about whether a
+    // task could start here at all. The platform neither polls nor starts it.
+    agents.detectService('opencode-v2'),
   ])
 }
+
+// serviceDown is the one backend state a project cannot work around: with no
+// opencode service, no task of that backend can start here. The panel says so
+// and points at the only page that can change it.
+const serviceDown = computed(() => {
+  const status = agents.services['opencode-v2']
+  return status !== undefined && status !== null && status.state !== 'running'
+})
 
 async function scan() {
   if (selectedBackend.value === '' || scanning.value) return
@@ -57,12 +72,6 @@ async function scan() {
     discoverNotice.value = `已发现 ${found.length} 个原生会话。`
   }
   scanning.value = false
-}
-
-async function stopInstance(instanceId: string) {
-  actionError.value = ''
-  const stopped = await agents.stopInstance(props.projectId, instanceId)
-  if (!stopped) actionError.value = agents.error
 }
 
 async function toggleBackend(backend: BackendId, event: Event) {
@@ -112,12 +121,13 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
       {{ agents.diagnosticsError }}
     </p>
 
-    <BackendDiagnostics
-      :diagnostics="agents.diagnostics"
-      :instances="agents.instances"
-      :capabilities-for="agents.capabilitiesFor"
-      @stop="stopInstance"
-    />
+    <p v-if="serviceDown" class="service-down" role="alert" data-test="project-service-down">
+      opencode service 未启动，无法在此项目创建任务。请到
+      <RouterLink :to="{ name: 'settings-agents' }">平台设置 → Agent</RouterLink>
+      检测并启动。
+    </p>
+
+    <BackendDiagnostics :diagnostics="agents.diagnostics" />
 
     <section class="backend-config" aria-label="项目 Agent 后端启用">
       <h2>项目后端启用</h2>
@@ -134,7 +144,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
           </label>
         </li>
       </ul>
-      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中启动实例。</p>
+      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中创建新任务。</p>
     </section>
 
     <section class="scan-sessions" aria-label="扫描原生会话">
@@ -157,7 +167,7 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
           扫描发现原生会话
         </button>
       </div>
-      <p class="hint">扫描会把 Agent 原生保存的会话登记为任务；无需选择实例。</p>
+      <p class="hint">扫描会把 Agent 原生保存的会话登记为任务。</p>
     </section>
 
     <p v-if="scanning" class="loading">扫描中…</p>
@@ -254,5 +264,14 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 
 .diagnostics-error {
   color: var(--color-warning);
+}
+
+.service-down {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  color: var(--color-warning);
+  background: var(--color-surface);
 }
 </style>

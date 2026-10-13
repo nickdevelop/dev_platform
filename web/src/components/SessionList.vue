@@ -22,6 +22,14 @@ const statusLabels: Record<string, string> = {
   disconnected: '已断开',
 }
 
+// An opencode task is disconnected for one reason the user can act on: the
+// machine-wide service is not reachable. Saying "已断开" would suggest the
+// conversation, not the service, is the thing that needs attention.
+function statusLabel(session: AgentSession): string {
+  if (session.status === 'disconnected' && session.backend === 'opencode-v2') return '服务无法连接'
+  return statusLabels[session.status] ?? session.status
+}
+
 function select(sessionId: string) {
   emit('select', sessionId)
 }
@@ -50,7 +58,7 @@ function select(sessionId: string) {
           <span class="session-meta">
             <span class="backend">{{ session.backend }}</span>
             <span class="status" :class="`status-${session.status}`">
-              {{ statusLabels[session.status] ?? session.status }}
+              {{ statusLabel(session) }}
             </span>
           </span>
         </span>

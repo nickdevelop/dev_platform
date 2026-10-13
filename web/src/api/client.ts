@@ -121,6 +121,12 @@ const errorMessages: Record<string, string> = {
   path_conflict: '目标路径已存在。',
   project_not_found: '项目不存在。',
   backend_disabled: '该项目已禁用此 Agent 后端，请先在项目 Agent 设置中启用。',
+  // The opencode service is a third-party process the platform never starts on
+  // its own, so every message about it points at the one place an operator can
+  // act. These two strings are the product's wording, not a paraphrase.
+  service_not_running: 'opencode service 未启动，请到平台设置 → Agent 检测并启动。',
+  service_already_running: 'opencode service 已在运行。',
+  service_unsupported: '该 Agent 后端不需要单独启动 service。',
   instance_start_failed: 'Agent 实例启动失败，请查看诊断信息。',
   unknown_backend: '未知的 Agent 后端。',
   directory_missing: '目录已不存在。',

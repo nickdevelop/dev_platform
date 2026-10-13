@@ -12,7 +12,7 @@ import type { Project } from '../api/projects'
 import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
-import { useOpenTabsStore, type OpenTab } from '../stores/openTabs'
+import { useOpenTabsStore, tabKey, type OpenTab } from '../stores/openTabs'
 import { useSettingsStore } from '../stores/settings'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from './ProjectManageDialog.vue'
@@ -39,6 +39,13 @@ const projectId = computed<number | null>(() =>
 const sessionId = computed<string | null>(() =>
   route.params.sessionId === undefined ? null : String(route.params.sessionId),
 )
+// Which tab the URL is showing. A project-settings route has no session, and a
+// task route is identified by its session id — the same keys the strip renders.
+const settingsRoute = computed(() => route.name === 'project-settings')
+const activeKey = computed<string | null>(() => {
+  if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
+  return sessionId.value
+})
 const missingProject = computed(
   () => ready.value && projectId.value !== null && !projects.byId(projectId.value),
 )
@@ -58,16 +65,22 @@ onMounted(async () => {
   syncTabWithRoute()
 })
 
-// The tab bar mirrors the current task route: opening a task URL registers
-// (or refreshes) its tab, and a tab title follows the session list once it
-// loads. Tabs are never removed implicitly except when their project is gone.
+// The tab bar mirrors the current route: opening a task or a project's settings
+// URL registers (or refreshes) its tab, and a tab title follows the session list
+// once it loads. Tabs are never removed implicitly except when their project is
+// gone.
 function syncTabWithRoute() {
-  if (projectId.value === null || sessionId.value === null) return
+  if (projectId.value === null) return
+  if (settingsRoute.value) {
+    openTabs.openProjectSettings(projectId.value)
+    return
+  }
+  if (sessionId.value === null) return
   const known = sessions.sessionById(sessionId.value)
   openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
 }
 
-watch([projectId, sessionId], syncTabWithRoute)
+watch([() => route.fullPath], syncTabWithRoute)
 
 // Session titles arrive after the list loads; keep the matching tab label
 // fresh without touching other tabs.
@@ -86,29 +99,33 @@ const projectNames = computed<Record<number, string>>(() =>
 )
 
 function selectTab(tab: OpenTab) {
+  if (tab.kind === 'project-settings') {
+    void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
+    return
+  }
   void router.push({ name: 'task', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
 }
 
 function closeTab(tab: OpenTab) {
-  const wasActive = tab.sessionId === sessionId.value
-  // Releasing the tab's streams keeps background tasks from lingering: only
-  // the closed session is unsubscribed, other tabs stay live.
-  sessions.unsubscribe(tab.sessionId)
-  openTabs.closeTab(tab.sessionId)
+  const wasActive = tabKey(tab) === activeKey.value
+  // Releasing the tab's streams keeps background tasks from lingering: only the
+  // closed task is unsubscribed — a settings page has no stream — and the other
+  // tabs stay live.
+  if (tab.kind === 'task') sessions.unsubscribe(tab.sessionId)
+  openTabs.closeTabByKey(tabKey(tab))
   if (!wasActive) return
   const remaining = openTabs.tabs
   if (remaining.length > 0) {
-    const next = remaining[remaining.length - 1]
-    selectTab(next)
-  } else if (projectId.value !== null) {
-    void router.push({ name: 'project', params: { projectId: String(projectId.value) } })
+    selectTab(remaining[remaining.length - 1])
   } else {
     void router.push({ name: 'home' })
   }
 }
 
-function openProject(id: number) {
-  void router.push({ name: 'project', params: { projectId: String(id) } })
+// A project's gear opens its settings as a tab. The project name in the tree
+// only expands its tasks — there is no project page to navigate to.
+function openSettings(id: number) {
+  void router.push({ name: 'project-settings', params: { projectId: String(id) } })
 }
 
 function openTask(id: number, taskId: string) {
@@ -135,8 +152,8 @@ async function onSubmitted(kind: DialogKind) {
   await projects.load()
   if ((kind === 'unregister' || kind === 'delete') && removed) {
     for (const tab of openTabs.tabs.filter((entry) => entry.projectId === removed.id)) {
-      sessions.unsubscribe(tab.sessionId)
-      openTabs.closeTab(tab.sessionId)
+      if (tab.kind === 'task') sessions.unsubscribe(tab.sessionId)
+      openTabs.closeTabByKey(tabKey(tab))
     }
     if (projectId.value === removed.id) {
       void router.push({ name: 'home' })
@@ -178,7 +195,7 @@ async function logout() {
           :active-project-id="projectId"
           :active-session-id="sessionId"
           :search="search"
-          @select-project="openProject"
+          @open-settings="openSettings"
           @select-session="openTask"
           @new-task="openNewTask"
         />
@@ -189,7 +206,7 @@ async function logout() {
       <TaskTabs
         v-if="!settingsMode && openTabs.tabs.length > 0"
         :tabs="openTabs.tabs"
-        :active-session-id="sessionId"
+        :active-key="activeKey"
         :project-names="projectNames"
         @select="selectTab"
         @close="closeTab"

@@ -89,6 +89,20 @@ const interactEnabled = computed(() => activeSession.value?.status === 'active')
 const unavailable = computed(
   () => activeSession.value !== null && activeSession.value.status === 'disconnected',
 )
+// For an opencode task, "disconnected" has one common cause the user can act
+// on: the machine-wide service is not running. The platform will not start it
+// on its own, so the panel names the page that can, and offers the reconnect
+// the operator's start makes possible — never an automatic retry.
+const serviceDown = computed(
+  () =>
+    activeSession.value !== null &&
+    activeSession.value.status === 'disconnected' &&
+    activeSession.value.backend === 'opencode-v2',
+)
+const unavailableMessage = computed(() => {
+  if (serviceDown.value) return '无法连接 opencode service，请到平台设置 → Agent 检测并启动。'
+  return sessions.error || '任务当前不可用，请重试。'
+})
 
 const composerLabel = computed(() => (isRunning.value && canInterrupt.value ? '停止' : '发送'))
 const composerDisabled = computed(() => {
@@ -195,6 +209,8 @@ async function open() {
   modelOk.value = true
   pinnedToBottom.value = true
   showJumpToLatest.value = false
+  // The instance list is loaded only to label the conversation's working
+  // directory — the user never sees or operates an instance itself.
   await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
   ready.value = true
   if (sessions.error) {
@@ -328,7 +344,7 @@ async function removeTask() {
   } catch {
     // Tab cleanup is best-effort; navigation still happens.
   }
-  void router.push({ name: 'project', params: { projectId: String(props.projectId) } })
+  void router.push({ name: 'home' })
 }
 </script>
 
@@ -373,8 +389,17 @@ async function removeTask() {
       </p>
 
       <p v-if="unavailable" class="instance-note" role="alert" data-test="session-unavailable">
-        {{ sessions.error || '任务当前不可用，请重试。' }}
-        <button type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
+        {{ unavailableMessage }}
+        <button
+          v-if="serviceDown"
+          type="button"
+          class="retry"
+          data-test="session-reconnect"
+          @click="retryOpen"
+        >
+          重新连接
+        </button>
+        <button v-else type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
       <div class="conversation-area">
@@ -489,11 +514,11 @@ async function removeTask() {
     </template>
     <template v-else-if="loadError">
       <p class="empty" role="alert">{{ loadError }}</p>
-      <RouterLink :to="{ name: 'project', params: { projectId: String(props.projectId) } }">返回项目</RouterLink>
+      <RouterLink :to="{ name: 'home' }">返回工作台</RouterLink>
     </template>
     <template v-else-if="ready">
       <p class="empty">任务不存在或已被移除。</p>
-      <RouterLink :to="{ name: 'project', params: { projectId: String(props.projectId) } }">返回项目</RouterLink>
+      <RouterLink :to="{ name: 'home' }">返回工作台</RouterLink>
     </template>
     <p v-else class="loading">加载中…</p>
   </section>

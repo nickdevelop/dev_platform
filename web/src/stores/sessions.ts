@@ -25,7 +25,7 @@ import {
   type CreateSessionBody,
   type NormalizedEvent,
 } from '../api/sessions'
-import { describeApiError, UnauthorizedError } from '../api/client'
+import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
 
 // One rendered line in a session's log. Agent replies are rendered as sanitized
@@ -146,6 +146,9 @@ export const useSessionsStore = defineStore('sessions', {
     activeSessionId: null as string | null,
     loading: false,
     error: '',
+    // The code of the last API failure, so a view can act on a specific
+    // refusal (the service is down) instead of recognising its own copy.
+    errorCode: '',
     // Sequence number of the latest project-list request; a response that
     // arrives after a newer request was issued is discarded.
     listRequest: 0,
@@ -251,10 +254,12 @@ export const useSessionsStore = defineStore('sessions', {
         const created = await createProjectSession(projectId, body, auth.csrfToken)
         this.sessions = [...this.sessions, created]
         this.error = ''
+        this.errorCode = ''
         return created
       } catch (error) {
         if (error instanceof UnauthorizedError) return null
         this.error = describeApiError(error)
+        this.errorCode = error instanceof ApiError ? error.code : ''
         return null
       }
     },
@@ -613,10 +618,14 @@ export const useSessionsStore = defineStore('sessions', {
         const updated = await continueProjectSession(projectId, sessionId, auth.csrfToken)
         this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
         this.error = ''
+        this.errorCode = ''
         return updated
       } catch (error) {
         if (error instanceof UnauthorizedError) return null
         this.error = describeApiError(error)
+        // A refused reconnect is the case the panel renders as "reconnect once
+        // the service is up", so the code has to survive the copy.
+        this.errorCode = error instanceof ApiError ? error.code : ''
         return null
       }
     },

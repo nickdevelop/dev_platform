@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Tab bar for open tasks. One tab per opened session; the active tab follows
-// the current route. Switching navigates, closing drops the tab (its stream
-// and cached transcript are released by the caller).
-import type { OpenTab } from '../stores/openTabs'
+// Tab bar for the workbench. Two kinds of tab share one strip — an open task and
+// a project's settings page — because to the user they are the same thing: pages
+// they have open. Identity, activation and closing all go through the tab's key,
+// so the strip never branches on kind except to label and decorate.
+import { tabKey, type OpenTab } from '../stores/openTabs'
 
 const props = defineProps<{
   tabs: OpenTab[]
-  activeSessionId: string | null
+  activeKey: string | null
   projectNames?: Record<number, string>
 }>()
 
@@ -16,13 +17,22 @@ const emit = defineEmits<{
 }>()
 
 function label(tab: OpenTab): string {
+  if (tab.kind === 'project-settings') {
+    const project = props.projectNames?.[tab.projectId]
+    return project ? `${project} · 设置` : '项目设置'
+  }
   return tab.title !== '' ? tab.title : tab.sessionId.slice(0, 8)
 }
 
 function titleOf(tab: OpenTab): string {
+  if (tab.kind === 'project-settings') return label(tab)
   const project = props.projectNames?.[tab.projectId]
   const name = label(tab)
   return project ? `${name} · ${project}` : name
+}
+
+function isSettings(tab: OpenTab): boolean {
+  return tab.kind === 'project-settings'
 }
 </script>
 
@@ -30,23 +40,25 @@ function titleOf(tab: OpenTab): string {
   <div v-if="props.tabs.length > 0" class="task-tabs" role="tablist" aria-label="已打开的任务">
     <div
       v-for="tab in props.tabs"
-      :key="tab.sessionId"
+      :key="tabKey(tab)"
       class="tab"
-      :class="{ active: tab.sessionId === props.activeSessionId }"
+      :class="{ active: tabKey(tab) === props.activeKey }"
       role="tab"
-      :aria-selected="tab.sessionId === props.activeSessionId"
+      :aria-selected="tabKey(tab) === props.activeKey"
       :title="titleOf(tab)"
       data-test="open-tab"
-      :data-session-id="tab.sessionId"
+      :data-tab-key="tabKey(tab)"
+      :data-session-id="tab.kind === 'task' ? tab.sessionId : undefined"
     >
       <button type="button" class="tab-select" @click="emit('select', tab)">
-        <span class="tab-dot" aria-hidden="true"></span>
+        <span v-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
+        <span v-else class="tab-dot" aria-hidden="true"></span>
         <span class="tab-label">{{ label(tab) }}</span>
       </button>
       <button
         type="button"
         class="tab-close"
-        :aria-label="`关闭任务：${label(tab)}`"
+        :aria-label="isSettings(tab) ? '关闭项目设置' : `关闭任务：${label(tab)}`"
         title="关闭"
         data-test="close-tab"
         @click.stop="emit('close', tab)"
@@ -112,6 +124,12 @@ function titleOf(tab: OpenTab): string {
   border-radius: 999px;
   background: var(--color-border-strong);
   flex-shrink: 0;
+}
+
+.tab-icon {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .tab.active .tab-dot {

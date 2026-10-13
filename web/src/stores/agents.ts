@@ -5,14 +5,18 @@
 import { defineStore } from 'pinia'
 import {
   fetchAgentDiagnostics,
+  getServiceStatus,
   listAgentBackends,
   listProjectBackendConfigs,
   listProjectInstances,
   setProjectBackendConfig,
+  startAgentService,
   startProjectInstance,
+  stopAgentService,
   stopProjectInstance,
   type AgentBackend,
   type AgentInstance,
+  type AgentServiceStatus,
   type BackendConfig,
   type BackendDiagnostics,
   type BackendId,
@@ -39,6 +43,11 @@ export const useAgentsStore = defineStore('agents', {
     diagnosticsError: '',
     loading: false,
     error: '',
+    // Per-backend machine-level service status, as last observed by the
+    // platform settings page. null means "not looked at yet" — deliberately not
+    // "stopped": the platform never guesses about a third-party process.
+    services: {} as Record<string, AgentServiceStatus | null>,
+    serviceError: '',
   }),
 
   getters: {
@@ -85,6 +94,53 @@ export const useAgentsStore = defineStore('agents', {
         this.diagnosticsError = describeApiError(error)
       } finally {
         this.diagnosticsLoading = false
+      }
+    },
+
+    // Detects one backend's machine-level service. Called on page load and by
+    // the operator's "检测" button — never on a timer.
+    async detectService(backend: BackendId): Promise<AgentServiceStatus | null> {
+      try {
+        const status = await getServiceStatus(backend)
+        this.services = { ...this.services, [backend]: status }
+        this.serviceError = ''
+        return status
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.serviceError = describeApiError(error)
+        return null
+      }
+    },
+
+    // Starts the service because the operator asked. A service that is already
+    // running is refused by the backend and reported as-is.
+    async startService(backend: BackendId): Promise<AgentServiceStatus | null> {
+      const auth = useAuthStore()
+      try {
+        const status = await startAgentService(backend, auth.csrfToken)
+        this.services = { ...this.services, [backend]: status }
+        this.serviceError = ''
+        return status
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.serviceError = describeApiError(error)
+        return null
+      }
+    },
+
+    // Stops the service because the operator asked, after confirming what that
+    // costs the other clients of the same service.
+    async stopService(backend: BackendId): Promise<AgentServiceStatus | null> {
+      const auth = useAuthStore()
+      try {
+        const status = await stopAgentService(backend, auth.csrfToken)
+        this.services = { ...this.services, [backend]: status }
+        this.serviceError = ''
+        return status
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.serviceError = describeApiError(error)
+        return null
       }
     },
 

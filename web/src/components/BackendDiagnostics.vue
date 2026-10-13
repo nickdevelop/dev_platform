@@ -2,28 +2,14 @@
 // Per-backend startup diagnostics panel: overall status, detected vs tested
 // version, the individual redacted checks and the declared capability matrix.
 // The panel is read-only: it never presents a backend as usable when its
-// diagnostics say otherwise.
-import type { AgentInstance, BackendDiagnostics, BackendId, Capabilities } from '../api/agents'
+// diagnostics say otherwise. Instances are not shown here — they are an
+// internal detail of how a backend serves the workbench, and the operator who
+// needs to act on a backend acts on its service, in platform settings.
+import type { BackendDiagnostics } from '../api/agents'
 
 const props = defineProps<{
   diagnostics: BackendDiagnostics[]
-  // Running instances of the project. They are listed here, and only here:
-  // the workbench hides instances from the task flow and keeps the start/stop
-  // verbs in the pane an operator opens on purpose.
-  instances?: AgentInstance[]
-  // capabilitiesFor gates the stop control: a backend that cannot stop an
-  // instance must not be offered one.
-  capabilitiesFor?: (backend: BackendId) => Capabilities | undefined
 }>()
-
-const emit = defineEmits<{ stop: [instanceId: string] }>()
-
-const instancesOf = (): AgentInstance[] => props.instances ?? []
-
-function canStop(instance: AgentInstance): boolean {
-  if (instance.status !== 'running' && instance.status !== 'starting') return false
-  return props.capabilitiesFor?.(instance.backend)?.stop === true
-}
 
 const statusLabels: Record<string, string> = {
   ok: '正常',
@@ -44,7 +30,7 @@ const capabilityLabels: Record<string, string> = {
   streaming: '流式输出',
   sessionDiscovery: '会话发现',
   sessionContinue: '会话续聊',
-  stop: '停止实例',
+  stop: '停止任务',
   modelSelection: '模型选择',
   toolCallEvents: '工具事件',
   toolConfirmation: '工具确认',
@@ -125,25 +111,6 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
       <li v-if="props.diagnostics.length === 0" class="empty">暂无后端诊断信息。</li>
     </ul>
 
-    <div v-if="instancesOf().length > 0" class="instances" data-test="instance-list">
-      <h3>运行中实例</h3>
-      <ul class="instance-items">
-        <li v-for="instance in instancesOf()" :key="instance.id" class="instance-item">
-          <span class="instance-backend">{{ instance.backend }}</span>
-          <span class="instance-status">{{ instance.status }}</span>
-          <span class="instance-id">{{ instance.id }}</span>
-          <span class="instance-directory">{{ instance.directory }}</span>
-          <button
-            v-if="canStop(instance)"
-            type="button"
-            data-test="stop-instance"
-            @click="emit('stop', instance.id)"
-          >
-            停止服务
-          </button>
-        </li>
-      </ul>
-    </div>
   </section>
 </template>
 
@@ -269,52 +236,10 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
   color: var(--color-text-muted);
 }
 
-.instances {
-  margin-top: 0.75rem;
-}
 
-.instances h3 {
-  font-size: 0.95rem;
-  margin: 0 0 0.4rem;
-}
 
-.instance-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
 
-.instance-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
 
-.instance-backend,
-.instance-status {
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  background: var(--color-surface-muted);
-}
 
-.instance-id,
-.instance-directory {
-  font-family: var(--font-family);
-  color: var(--color-text-muted);
-}
 
-.instance-item button {
-  padding: 0.15rem 0.5rem;
-  border: 1px solid var(--color-danger-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-danger);
-  cursor: pointer;
-}
 </style>
