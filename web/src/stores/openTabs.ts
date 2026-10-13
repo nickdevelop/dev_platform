@@ -40,7 +40,10 @@ function normalize(entry: unknown): OpenTab | null {
   if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId }
   if (tab.kind === 'task' || tab.kind === undefined) {
     if (!isTask(entry)) return null
-    return { kind: 'task', projectId: tab.projectId, sessionId: tab.sessionId, title: tab.title ?? '' }
+    // A stored task tab may predate any title being set; only a string title is
+    // carried over, so a hand-edited store cannot inject one.
+    const title = typeof tab.title === 'string' ? tab.title : ''
+    return { kind: 'task', projectId: entry.projectId, sessionId: entry.sessionId, title }
   }
   return null
 }
@@ -62,10 +65,14 @@ function loadPersisted(): OpenTab[] {
     .filter((tab): tab is OpenTab => tab !== null)
   if (current.length > 0) return current.slice(0, MAX_TABS)
 
-  const legacy = read(LEGACY_STORAGE_KEY)
+  const migrated = read(LEGACY_STORAGE_KEY)
     .map(normalize)
     .filter((tab): tab is OpenTab => tab !== null)
-  return legacy.slice(0, MAX_TABS)
+    .slice(0, MAX_TABS)
+  // Writing the migrated set down at once means the old shape is read exactly
+  // once, and a later visit never has to know it existed.
+  if (migrated.length > 0) persist(migrated)
+  return migrated
 }
 
 function persist(tabs: OpenTab[]) {
