@@ -286,6 +286,32 @@ func TestEventStreamParsesEventsAndHeartbeats(t *testing.T) {
 	}
 }
 
+func TestEventStreamHeartbeatCountsAsActivity(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		// A comment heartbeat decodes to no event but is still bytes on the
+		// wire; the idle watchdog relies on seeing it.
+		io.WriteString(w, ": heartbeat\n\n")
+		io.WriteString(w, "data: {\"id\":\"evt_1\",\"type\":\"server.connected\",\"data\":{}}\n\n")
+	})
+
+	stream, err := client.Events(context.Background())
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	defer stream.Close()
+
+	activity := 0
+	stream.SetActivity(func() { activity++ })
+
+	if _, err := stream.Next(); err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if activity == 0 {
+		t.Fatal("the heartbeat was not reported as stream activity")
+	}
+}
+
 func TestEventStreamDisconnectMidStream(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")

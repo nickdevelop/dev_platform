@@ -649,6 +649,12 @@ type EventStream struct {
 	body    io.ReadCloser
 	scanner *bufio.Scanner
 	closed  bool
+	// onActivity, when set, fires on every line read from the server —
+	// including SSE comment heartbeats, which are otherwise skipped. The
+	// adapter's idle watchdog uses it to tell a live-but-quiet connection
+	// (opencode sends ": heartbeat" every few seconds) from a hung one. Without
+	// it, a stream that only sends heartbeats looks silent and is torn down.
+	onActivity func()
 }
 
 // newEventStream wraps a response body.
@@ -658,11 +664,21 @@ func newEventStream(body io.ReadCloser) *EventStream {
 	return &EventStream{body: body, scanner: scanner}
 }
 
+// SetActivity registers a callback invoked whenever a line arrives from the
+// server, heartbeats included. It must be called before the first Next; it is
+// not safe to change concurrently with reads.
+func (s *EventStream) SetActivity(onActivity func()) {
+	s.onActivity = onActivity
+}
+
 // Next returns the next event, io.EOF when the stream ends, or an error when
 // the connection breaks or the payload exceeds the bound.
 func (s *EventStream) Next() (*Event, error) {
 	var data []byte
 	for s.scanner.Scan() {
+		if s.onActivity != nil {
+			s.onActivity()
+		}
 		line := bytes.TrimRight(s.scanner.Bytes(), "\r\n")
 		if len(line) == 0 {
 			if len(data) > 0 {

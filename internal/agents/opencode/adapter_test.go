@@ -826,6 +826,53 @@ func TestAdapterStreamIdleTimeoutReconnects(t *testing.T) {
 	}
 }
 
+func TestAdapterStreamHeartbeatKeepsIdleWatchdogAlive(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			flusher, _ := w.(http.Flusher)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			// opencode keeps an idle stream alive with ": heartbeat" comments
+			// and sends no other event while a turn is quiet. The watchdog must
+			// treat those comments as activity, not as silence.
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case <-ticker.C:
+					if _, err := io.WriteString(w, ": heartbeat\n\n"); err != nil {
+						return
+					}
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+			}
+		},
+	}))
+	adapter.streamIdle = 40 * time.Millisecond
+	instance := startTestInstance(t, adapter)
+
+	ch, err := adapter.Subscribe(context.Background(), instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	// Several idle windows pass. A heartbeat-only stream is healthy and must
+	// not be torn down with a stream_error.
+	select {
+	case ev := <-ch:
+		t.Fatalf("a heartbeat-only stream was treated as dead: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
 func TestAdapterLaunchDiagnosticRedactsPassword(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "password.txt")
 	t.Setenv("OC_TEST_OUT", outFile)

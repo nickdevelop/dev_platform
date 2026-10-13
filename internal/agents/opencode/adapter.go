@@ -950,12 +950,17 @@ func (inst *instance) consume() (int, error) {
 		<-watchdogDone
 		return 0, err
 	}
-	events, err := inst.pump(stream, func() {
+	// Every line from the server — heartbeat comments included — resets the
+	// idle watchdog. opencode sends ": heartbeat" every few seconds while a
+	// turn is quiet, so only decoded events would let a healthy stream look
+	// silent and be wrongly canceled.
+	stream.SetActivity(func() {
 		select {
 		case activity <- struct{}{}:
 		default:
 		}
 	})
+	events, err := inst.pump(stream)
 	_ = stream.Close()
 	cancel()
 	<-watchdogDone
@@ -965,7 +970,7 @@ func (inst *instance) consume() (int, error) {
 // pump reads one stream to completion, normalizing and publishing each event.
 // It returns the number of events read so the caller can tell a healthy
 // connection from one that closed without ever producing data.
-func (inst *instance) pump(stream *EventStream, onProgress func()) (int, error) {
+func (inst *instance) pump(stream *EventStream) (int, error) {
 	events := 0
 	for {
 		event, err := stream.Next()
@@ -973,9 +978,6 @@ func (inst *instance) pump(stream *EventStream, onProgress func()) (int, error) 
 			return events, err
 		}
 		events++
-		if onProgress != nil {
-			onProgress()
-		}
 		for _, normalized := range inst.normalize(event) {
 			inst.publish(normalized)
 		}
