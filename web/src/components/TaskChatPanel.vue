@@ -1,19 +1,20 @@
 <script setup lang="ts">
 // Task conversation for the right pane of the shell. The task is an agent
-// session of the project. Its stream is scoped to this session: opening another
-// task closes the previous stream, so its events can never appear here. The
-// composer is the only place a turn is sent or stopped; the send action becomes
-// 停止 while the session's turn is running.
+// session of the project. Several tasks can stay open at once via the tab bar:
+// each session keeps its own cached transcript and live streams, so switching
+// tabs never loses state. The composer is the only place a turn is sent or
+// stopped; the send action becomes 停止 while the session's turn is running.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useOpencodeRawStore } from '../stores/opencodeRaw'
+import { useOpenTabsStore } from '../stores/openTabs'
 import BackendTag from './BackendTag.vue'
 import MessageView from './MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './ModelSelect.vue'
-import QuestionForm from './QuestionForm.vue'
+import QuestionQueue from './QuestionQueue.vue'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
@@ -133,8 +134,10 @@ const pendingForms = computed(() => {
 onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
 onBeforeUnmount(() => {
-  sessions.unsubscribeAll()
-  opencodeRaw.unsubscribeAllRaw()
+  // Tabs keep other tasks alive: unmounting this panel must not close other
+  // sessions' streams. The session's own subscriptions stay open so returning
+  // via a tab is instant; they are released when the tab closes or the task
+  // is deleted.
 })
 
 // onLogScroll tracks where the user is: reaching the bottom resumes following
@@ -201,7 +204,6 @@ async function open() {
   if (!sessions.sessionById(props.sessionId)) return
   preparing.value = true
   toolNotice.value = ''
-  opencodeRaw.unsubscribeAllRaw()
   try {
     await sessions.openSession(props.projectId, props.sessionId)
     const session = sessions.sessionById(props.sessionId)
@@ -306,7 +308,8 @@ function reconnect() {
 }
 
 // removeTask deletes the platform index entry and returns to the project. The
-// agent-native transcript is untouched, which the confirmation says.
+// agent-native transcript is untouched, which the confirmation says. The
+// deleted task also leaves the tab bar and releases its streams.
 async function removeTask() {
   const session = activeSession.value
   if (!session || deleting.value) return
@@ -319,6 +322,12 @@ async function removeTask() {
     return
   }
   confirmingDelete.value = false
+  try {
+    useOpenTabsStore().closeTab(session.id)
+    useOpencodeRawStore().unsubscribeRaw(props.projectId, session.id)
+  } catch {
+    // Tab cleanup is best-effort; navigation still happens.
+  }
   void router.push({ name: 'project', params: { projectId: String(props.projectId) } })
 }
 </script>
@@ -404,47 +413,50 @@ async function removeTask() {
         @deny-tool="onDenyTool"
       />
 
-      <QuestionForm
-        v-for="form in pendingForms"
-        :key="form.id"
-        :form-id="form.id"
-        :title="form.title"
-        :fields="form.fields"
+      <QuestionQueue
+        v-if="pendingForms.length > 0"
+        :forms="pendingForms"
         :busy="answeringForm"
-        @submit="(answer) => onAnswerForm(form.id, answer)"
+        @submit="(formId, answer) => onAnswerForm(formId, answer)"
       />
 
       <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
 
       <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
 
-      <form class="send" @submit.prevent="onSubmit">
-        <label for="message-text">发送消息</label>
-        <textarea
-          id="message-text"
-          v-model="messageText"
-          rows="3"
-          placeholder="向 Agent 发送消息…（Enter 发送，Shift+Enter 换行）"
-          @keydown.enter.exact.prevent="onSubmit"
-        ></textarea>
-        <div class="composer-bar">
-          <ModelSelect
-            v-model="selectedModel"
-            :project-id="props.projectId"
-            :instance-id="activeSession.instanceId"
-            :backend="activeSession.backend"
-            :model-selection="activeSession.capabilities.modelSelection"
-            @status="modelOk = $event"
-          />
-          <button
-            type="button"
-            class="composer-action"
-            :class="isRunning ? 'stop-button' : 'send-button'"
-            :disabled="composerDisabled"
-            @click="onSubmit"
-          >
-            {{ composerLabel }}
-          </button>
+      <form class="send composer" @submit.prevent="onSubmit">
+        <div class="composer-box">
+          <label class="composer-label" for="message-text">发送消息</label>
+          <textarea
+            id="message-text"
+            v-model="messageText"
+            rows="3"
+            placeholder="向 Agent 发送消息…"
+            @keydown.enter.exact.prevent="onSubmit"
+          ></textarea>
+          <div class="composer-bar">
+            <div class="composer-tools">
+              <ModelSelect
+                v-model="selectedModel"
+                :project-id="props.projectId"
+                :instance-id="activeSession.instanceId"
+                :backend="activeSession.backend"
+                :model-selection="activeSession.capabilities.modelSelection"
+                @status="modelOk = $event"
+              />
+              <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            </div>
+            <button
+              type="button"
+              class="composer-action"
+              :class="isRunning ? 'stop-button' : 'send-button'"
+              :disabled="composerDisabled"
+              :title="isRunning ? '停止' : '发送'"
+              @click="onSubmit"
+            >
+              {{ composerLabel }}
+            </button>
+          </div>
         </div>
       </form>
 
@@ -666,11 +678,48 @@ async function removeTask() {
   gap: 0.4rem;
 }
 
-.send textarea {
-  padding: 0.4rem 0.6rem;
+/* Desktop-style composer: one rounded box holds the input and its toolbar,
+   like the opencode desktop client. */
+.composer-box {
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  padding: 0.6rem 0.7rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.composer-box:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-info-soft);
+}
+
+.composer-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.send textarea {
+  padding: 0.15rem 0.1rem;
+  border: none;
+  outline: none;
+  resize: none;
   font: inherit;
+  line-height: 1.5;
+  background: transparent;
+  color: var(--color-text);
+  min-height: 3.2rem;
+  max-height: 12rem;
+}
+
+.send textarea::placeholder {
+  color: var(--color-text-muted);
 }
 
 .composer-bar {
@@ -678,16 +727,34 @@ async function removeTask() {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.composer-hint {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .composer-action,
 .reconnect {
-  align-self: flex-start;
-  padding: 0.35rem 0.7rem;
+  align-self: center;
+  min-width: 3.4rem;
+  padding: 0.35rem 0.9rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: 999px;
   background: var(--color-surface);
   cursor: pointer;
+  font: inherit;
+  font-weight: 600;
 }
 
 .composer-action.send-button {

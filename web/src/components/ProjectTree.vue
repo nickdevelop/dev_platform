@@ -1,15 +1,15 @@
 <script setup lang="ts">
-// Left navigation tree: projects with their tasks (agent sessions). Only one
-// project is expanded at a time; its tasks load on expansion. Tasks are shown
-// only when the session store holds that project's list, so a stale list from a
-// previously opened project is never rendered. Tasks are ordered by last
-// interaction (newest first) and paginated: the list shows the newest 15 and a
-// 「更多」 button appends the next 15. Search matches project names and
-// task titles; the active and expanded projects always stay visible, so the open
-// selection is never hidden by a filter.
+// Left navigation tree: projects with their tasks (agent sessions). Multiple
+// projects can stay expanded at once; each expanded project's tasks load
+// independently into a per-project cache, so opening one project never clears
+// another's list. Tasks are ordered by last interaction (newest first) and
+// paginated per project: the list shows the newest 15 and a 「更多」 button
+// appends the next 15. Search matches project names and task titles; the
+// active and expanded projects always stay visible, so the open selection is
+// never hidden by a filter.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { listProjectSessions, type AgentSession } from '../api/sessions'
 import { useProjectsStore } from '../stores/projects'
-import { useSessionsStore } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
 
 const props = defineProps<{
@@ -25,9 +25,35 @@ const emit = defineEmits<{
 }>()
 
 const projectsStore = useProjectsStore()
-const sessionsStore = useSessionsStore()
 
-const expandedId = ref<number | null>(props.activeProjectId)
+// Multiple projects stay expanded at once: an array (reactive) instead of a
+// single id. The active project is added, never replaces the set.
+const expandedIds = ref<number[]>(
+  props.activeProjectId === null ? [] : [props.activeProjectId],
+)
+
+function isExpanded(projectId: number): boolean {
+  return expandedIds.value.includes(projectId)
+}
+
+// Per-project task cache: each expanded project loads its own list, so lists
+// never clobber each other like a single shared store list would.
+const sessionsByProject = ref<Record<number, AgentSession[]>>({})
+const loadFailed = ref<Record<number, boolean>>({})
+
+async function loadProject(projectId: number) {
+  try {
+    const list = await listProjectSessions(projectId)
+    sessionsByProject.value = { ...sessionsByProject.value, [projectId]: list.sessions }
+    loadFailed.value = { ...loadFailed.value, [projectId]: false }
+  } catch {
+    loadFailed.value = { ...loadFailed.value, [projectId]: true }
+  }
+}
+
+function sessionsFor(projectId: number): AgentSession[] {
+  return sessionsByProject.value[projectId] ?? []
+}
 
 const statusLabels: Record<string, string> = {
   running: '运行中',
@@ -42,19 +68,14 @@ function statusText(entry: AgentSession): string {
   return ''
 }
 
-const expandedSessions = computed(() => {
-  if (expandedId.value === null || sessionsStore.projectId !== expandedId.value) return []
-  return sessionsStore.sessions
-})
-
 // Tasks are ordered by last interaction (the session's updated-at, which the
 // backend bumps on send/continue/status change), newest first. Ties keep the
 // server's creation order, because the sort below is stable.
-const sortedSessions = computed(() =>
-  [...expandedSessions.value].sort(
+function sortedFor(projectId: number): AgentSession[] {
+  return [...sessionsFor(projectId)].sort(
     (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-  ),
-)
+  )
+}
 
 const query = computed(() => props.search.trim().toLowerCase())
 
@@ -62,29 +83,40 @@ const query = computed(() => props.search.trim().toLowerCase())
 // must never surface as a name.
 const untitledLabel = '未命名任务'
 
-// Pagination: only the newest PAGE_SIZE tasks render at first; 「更多」 appends
-// the next page. The counter resets whenever a different project is expanded
-// or the search changes, so a long session never grows across contexts.
+// Pagination per project: only the newest PAGE_SIZE tasks render at first;
+// 「更多」 appends the next page. Counters reset when the search changes.
 const PAGE_SIZE = 15
-const visibleCount = ref(PAGE_SIZE)
+const visibleCountByProject = ref<Record<number, number>>({})
 
-watch([expandedId, query], () => {
-  visibleCount.value = PAGE_SIZE
+function visibleCountFor(projectId: number): number {
+  return visibleCountByProject.value[projectId] ?? PAGE_SIZE
+}
+
+watch(query, () => {
+  visibleCountByProject.value = {}
 })
 
-const filteredSessions = computed(() => {
-  if (query.value === '') return sortedSessions.value
-  return sortedSessions.value.filter((entry) =>
+function filteredFor(projectId: number): AgentSession[] {
+  const sorted = sortedFor(projectId)
+  if (query.value === '') return sorted
+  return sorted.filter((entry) =>
     (entry.title || untitledLabel).toLowerCase().includes(query.value),
   )
-})
+}
 
-const visibleSessions = computed(() => filteredSessions.value.slice(0, visibleCount.value))
+function visibleSessionsFor(projectId: number): AgentSession[] {
+  return filteredFor(projectId).slice(0, visibleCountFor(projectId))
+}
 
-const hasMoreTasks = computed(() => filteredSessions.value.length > visibleSessions.value.length)
+function hasMoreTasks(projectId: number): boolean {
+  return filteredFor(projectId).length > visibleSessionsFor(projectId).length
+}
 
-function showMoreTasks() {
-  visibleCount.value += PAGE_SIZE
+function showMoreTasks(projectId: number) {
+  visibleCountByProject.value = {
+    ...visibleCountByProject.value,
+    [projectId]: visibleCountFor(projectId) + PAGE_SIZE,
+  }
 }
 
 const visibleProjects = computed(() => {
@@ -92,7 +124,7 @@ const visibleProjects = computed(() => {
   return projectsStore.projects.filter(
     (project) =>
       project.id === props.activeProjectId ||
-      project.id === expandedId.value ||
+      isExpanded(project.id) ||
       project.name.toLowerCase().includes(query.value),
   )
 })
@@ -100,22 +132,30 @@ const visibleProjects = computed(() => {
 watch(
   () => props.activeProjectId,
   (projectId) => {
-    expandedId.value = projectId
+    if (projectId !== null && !isExpanded(projectId)) {
+      expandedIds.value = [...expandedIds.value, projectId]
+    }
   },
 )
 
 watch(
-  expandedId,
-  (projectId) => {
-    if (projectId !== null) void sessionsStore.loadSessions(projectId)
+  expandedIds,
+  (ids) => {
+    for (const projectId of ids) {
+      if (!(projectId in sessionsByProject.value)) void loadProject(projectId)
+    }
   },
   { immediate: true },
 )
 
-// A task whose turn is not the open one gets no SSE events, so the tree polls
-// the session list while the expanded project has any running task. It stops as
-// soon as the list reports none, and on unmount.
-const hasRunningTasks = computed(() => expandedSessions.value.some((entry) => entry.turn === 'running'))
+// Tasks whose turn is running get no SSE events in the tree, so the tree polls
+// every expanded project that has any running task. It stops for a project as
+// soon as its list reports none, and entirely on unmount.
+function projectHasRunning(projectId: number): boolean {
+  return sessionsFor(projectId).some((entry) => entry.turn === 'running')
+}
+
+const anyRunning = computed(() => expandedIds.value.some((id) => projectHasRunning(id)))
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -127,12 +167,14 @@ function stopPolling() {
 }
 
 watch(
-  [expandedId, hasRunningTasks],
-  ([projectId, running]) => {
+  [expandedIds, anyRunning],
+  ([ids, running]) => {
     stopPolling()
-    if (projectId !== null && running) {
+    if ((ids as number[]).length > 0 && running) {
       pollTimer = setInterval(() => {
-        void sessionsStore.refreshSessions(projectId)
+        for (const projectId of expandedIds.value) {
+          if (projectHasRunning(projectId)) void loadProject(projectId)
+        }
       }, 2000)
     }
   },
@@ -141,11 +183,17 @@ watch(
 
 onBeforeUnmount(stopPolling)
 
-// Clicking the expanded project collapses it; clicking another project expands
-// it and collapses the previous one. Expanding never navigates: the settings
-// control is the only way into the project configuration.
+// Clicking a project toggles only that project; other expanded projects stay
+// open. Toggling never navigates: the settings control is the only way into
+// the project configuration.
 function onProjectClick(projectId: number) {
-  expandedId.value = projectId === expandedId.value ? null : projectId
+  expandedIds.value = isExpanded(projectId)
+    ? expandedIds.value.filter((id) => id !== projectId)
+    : [...expandedIds.value, projectId]
+}
+
+function retryProject(projectId: number) {
+  void loadProject(projectId)
 }
 </script>
 
@@ -156,12 +204,12 @@ function onProjectClick(projectId: number) {
         <button
           type="button"
           class="project-toggle"
-          :aria-expanded="expandedId === project.id"
+          :aria-expanded="isExpanded(project.id)"
           @click="onProjectClick(project.id)"
         >
-          <span class="caret">{{ expandedId === project.id ? '▾' : '▸' }}</span>
+          <span class="caret">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
           <span class="project-name">{{ project.name }}</span>
-          <span v-if="expandedId === project.id" class="count">{{ expandedSessions.length }}</span>
+          <span v-if="isExpanded(project.id)" class="count">{{ sessionsFor(project.id).length }}</span>
         </button>
         <button
           type="button"
@@ -183,8 +231,8 @@ function onProjectClick(projectId: number) {
         </button>
       </div>
 
-      <ul v-if="expandedId === project.id" class="tasks">
-        <li v-for="entry in visibleSessions" :key="entry.id" class="task" :class="{ selected: entry.id === props.activeSessionId }">
+      <ul v-if="isExpanded(project.id)" class="tasks">
+        <li v-for="entry in visibleSessionsFor(project.id)" :key="entry.id" class="task" :class="{ selected: entry.id === props.activeSessionId }">
           <button
             type="button"
             class="task-open"
@@ -195,10 +243,11 @@ function onProjectClick(projectId: number) {
             <span v-if="statusText(entry)" class="status">{{ statusText(entry) }}</span>
           </button>
         </li>
-        <li v-if="expandedSessions.length === 0" class="empty">该项目还没有任务。</li>
-        <li v-else-if="visibleSessions.length === 0" class="empty">没有匹配的任务</li>
-        <li v-if="hasMoreTasks">
-          <button type="button" class="load-more" @click="showMoreTasks">更多</button>
+        <li v-if="loadFailed[project.id]" class="empty">任务加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
+        <li v-else-if="sessionsFor(project.id).length === 0" class="empty">该项目还没有任务。</li>
+        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty">没有匹配的任务</li>
+        <li v-if="hasMoreTasks(project.id)">
+          <button type="button" class="load-more" @click="showMoreTasks(project.id)">更多</button>
         </li>
       </ul>
     </li>

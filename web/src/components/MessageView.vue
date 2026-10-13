@@ -1,14 +1,16 @@
 <script setup lang="ts">
-// Renders one session's message log, one line per kind: a user turn is a
-// right-aligned bubble, agent replies are full-width text, reasoning is a
-// collapsed Thinking block, and each tool call and its result form one
-// collapsed block. Tool activity is shown only when the session's capabilities
-// declare tool-call events. User turns, reasoning and tool output are
-// interpolated as text; agent replies are rendered as sanitized markdown (see
-// ../markdown), so backend content still cannot inject live markup. An agent
-// reply is cut around its ```plantuml fences first (see ../markdown-segments):
-// those become PlantumlBlock diagrams instead of code blocks.
-import { computed } from 'vue'
+// Renders one session's message log. A user turn is a right-aligned bubble,
+// agent replies are full-width markdown text, and agent activity (reasoning +
+// tool calls) is grouped into collapsible step cards like the opencode desktop
+// client: consecutive thinking/tool entries between two messages form one step
+// group whose summary names the tools involved. Each tool call and its result
+// is still one collapsed block inside the group. Tool activity shows only when
+// the session's capabilities declare tool-call events. User turns, reasoning
+// and tool output stay literal text; agent replies render as sanitized markdown
+// (see ../markdown), so backend content cannot inject live markup. An agent
+// reply is cut around its ```plantuml fences first (see ../markdown-segments).
+// Subagent tool calls offer a popup dialog with the full input/output.
+import { computed, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
@@ -108,6 +110,99 @@ function toolArgument(entry: ChatEntry): string {
   }
   return ''
 }
+
+// --- Step grouping (opencode desktop style) ---
+
+type RenderBlock =
+  | { kind: 'entry'; entry: ChatEntry }
+  | { kind: 'step'; id: string; entries: ChatEntry[] }
+
+function isActivity(entry: ChatEntry): boolean {
+  return entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result'
+}
+
+// Consecutive thinking/tool entries between messages form one step group, so
+// a long agent turn reads as one collapsible card instead of a flat list of
+// blocks. Single entries stay ungrouped only when isolated by messages.
+const renderBlocks = computed<RenderBlock[]>(() => {
+  const blocks: RenderBlock[] = []
+  let current: ChatEntry[] | null = null
+  const flush = () => {
+    if (current && current.length > 0) {
+      blocks.push({ kind: 'step', id: current.map((entry) => entry.id).join('|'), entries: current })
+      current = null
+    }
+  }
+  for (const entry of visibleEntries.value) {
+    if (isActivity(entry) && toolEventsVisibleFor(entry)) {
+      if (!current) current = []
+      current.push(entry)
+    } else {
+      flush()
+      blocks.push({ kind: 'entry', entry })
+    }
+  }
+  flush()
+  return blocks
+})
+
+function toolEventsVisibleFor(entry: ChatEntry): boolean {
+  if (entry.kind === 'message' || entry.kind === 'error' || entry.kind === 'separator') return true
+  return toolEventsVisible()
+}
+
+function stepSummary(entries: ChatEntry[]): string {
+  const tools = entries.filter((entry) => entry.kind === 'tool_call')
+  const thinkings = entries.filter((entry) => entry.kind === 'thinking')
+  const parts: string[] = []
+  if (tools.length > 0) {
+    const names = [...new Set(tools.map((entry) => toolName(entry)))].slice(0, 3)
+    parts.push(`${tools.length} 个工具 · ${names.join('、')}`)
+  }
+  if (thinkings.length > 0) parts.push('思考')
+  const running = entries.some((entry) => entry.kind === 'tool_call' && !resultForCall(entry))
+  return parts.length > 0 ? parts.join(' · ') + (running ? ' · 运行中' : '') : 'Agent 活动'
+}
+
+// --- Subagent popup ---
+
+const SUBAGENT_NAMES = new Set(['task', 'subagent', 'Task', 'Subagent', 'delegate', 'spawn'])
+
+function isSubagentCall(entry: ChatEntry): boolean {
+  if (entry.kind !== 'tool_call') return false
+  const name = (entry.name ?? entry.text ?? '').toLowerCase()
+  if (SUBAGENT_NAMES.has(entry.name ?? '') || SUBAGENT_NAMES.has(name)) return true
+  const result = resultForCall(entry)
+  const haystack = `${typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input ?? '')} ${result?.text ?? ''}`
+  return haystack.includes('<subagent') || haystack.includes('sessionID=')
+}
+
+function subagentSessionId(entry: ChatEntry): string {
+  const result = resultForCall(entry)
+  const haystack = `${typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input ?? '')} ${result?.text ?? ''}`
+  const match = haystack.match(/sessionID=["']([^"']+)["']/)
+  return match?.[1] ?? ''
+}
+
+const subagentModal = ref<ChatEntry | null>(null)
+
+function openSubagent(entry: ChatEntry) {
+  subagentModal.value = entry
+}
+
+function closeSubagent() {
+  subagentModal.value = null
+}
+
+function prettyInput(entry: ChatEntry): string {
+  if (entry.input === null || entry.input === undefined) return ''
+  if (typeof entry.input === 'string') return entry.input
+  try {
+    return JSON.stringify(entry.input, null, 2)
+  } catch {
+    return String(entry.input)
+  }
+}
 </script>
 
 <template>
@@ -123,86 +218,136 @@ function toolArgument(entry: ChatEntry): string {
     </p>
 
     <ol class="entries" role="log" aria-live="polite" aria-label="会话消息">
-      <li v-for="entry in visibleEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
-        <template v-if="entry.kind === 'message'">
-          <div class="bubble" :class="entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
-            <span v-if="entry.role === 'user'" class="message-text">{{ entry.text }}</span>
-            <div v-else class="message-text markdown-body">
-              <template v-for="(segment, index) in splitDiagramBlocks(entry.text)" :key="`${entry.id}:${index}`">
-                <div
-                  v-if="segment.kind === 'markdown'"
-                  class="markdown-seg"
-                  v-html="renderMarkdown(segment.text)"
-                ></div>
-                <PlantumlBlock
-                  v-else
-                  :source="segment.text"
-                  :ready="segment.closed && settled(entry)"
-                  :finished="settled(entry)"
-                />
+      <li v-for="block in renderBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
+        <template v-if="block.kind === 'entry'">
+          <template v-if="block.entry.kind === 'message'">
+            <div class="bubble" :class="block.entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
+              <span v-if="block.entry.role === 'user'" class="message-text">{{ block.entry.text }}</span>
+              <div v-else class="message-text markdown-body">
+                <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
+                  <div
+                    v-if="segment.kind === 'markdown'"
+                    class="markdown-seg"
+                    v-html="renderMarkdown(segment.text)"
+                  ></div>
+                  <PlantumlBlock
+                    v-else
+                    :source="segment.text"
+                    :ready="segment.closed && settled(block.entry)"
+                    :finished="settled(block.entry)"
+                  />
+                </template>
+              </div>
+              <span v-if="block.entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
+            </div>
+          </template>
+
+          <template v-else-if="block.entry.kind === 'error'">
+            <p class="agent-error" data-test="agent-error">{{ block.entry.text }}</p>
+          </template>
+
+          <template v-else-if="block.entry.kind === 'separator'">
+            <hr class="separator-rule" />
+            <span class="separator-text" data-test="history-separator">{{ block.entry.text }}</span>
+          </template>
+
+          <template v-else>
+            <!-- Activity entries always render inside step groups; this fallback
+                 only covers backends without tool events. -->
+          </template>
+        </template>
+
+        <template v-else>
+          <details class="step-group" data-test="step-group" open>
+            <summary class="step-summary">
+              <span class="step-icon" aria-hidden="true">⚙️</span>
+              <span class="step-title">{{ stepSummary(block.entries) }}</span>
+              <span class="step-count">{{ block.entries.length }} 步</span>
+            </summary>
+            <div class="step-body">
+              <template v-for="entry in block.entries" :key="entry.id">
+                <details v-if="entry.kind === 'thinking'" class="thinking" data-test="thinking">
+                  <summary>
+                    <span class="thinking-icon" aria-hidden="true">🧠</span>
+                    <span class="thinking-title">Thinking</span>
+                  </summary>
+                  <p class="thinking-text">{{ entry.text }}</p>
+                </details>
+
+                <details v-else-if="entry.kind === 'tool_call' && toolEventsVisible()" class="tool" data-test="tool-call">
+                  <summary>
+                    <span class="tool-icon" aria-hidden="true">🔧</span>
+                    <span class="tool-name">{{ toolName(entry) }}</span>
+                    <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
+                    <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
+                  </summary>
+                  <div class="tool-body">
+                    <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
+                    <pre
+                      v-if="resultForCall(entry)"
+                      class="tool-output"
+                      :class="{ 'is-error': resultForCall(entry)?.isError }"
+                    >{{ resultForCall(entry)?.text }}</pre>
+                    <p v-else class="tool-running" role="status">运行中…</p>
+                    <button
+                      v-if="isSubagentCall(entry)"
+                      type="button"
+                      class="subagent-open"
+                      data-test="subagent-open"
+                      @click="openSubagent(entry)"
+                    >
+                      查看子 Agent
+                    </button>
+                  </div>
+                </details>
+
+                <details
+                  v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
+                  class="tool"
+                  data-test="tool-result"
+                >
+                  <summary>
+                    <span class="tool-icon" aria-hidden="true">🔧</span>
+                    <span class="tool-name">工具结果</span>
+                  </summary>
+                  <div class="tool-body">
+                    <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
+                  </div>
+                </details>
               </template>
             </div>
-            <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
-          </div>
-        </template>
-
-        <template v-else-if="entry.kind === 'thinking'">
-          <details class="thinking" data-test="thinking">
-            <summary>
-              <span class="thinking-icon" aria-hidden="true">🧠</span>
-              <span class="thinking-title">Thinking</span>
-            </summary>
-            <p class="thinking-text">{{ entry.text }}</p>
           </details>
-        </template>
-
-        <template v-else-if="entry.kind === 'tool_call'">
-          <details v-if="toolEventsVisible()" class="tool" data-test="tool-call">
-            <summary>
-              <span class="tool-icon" aria-hidden="true">🔧</span>
-              <span class="tool-name">{{ toolName(entry) }}</span>
-              <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
-            </summary>
-            <div class="tool-body">
-              <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-              <pre
-                v-if="resultForCall(entry)"
-                class="tool-output"
-                :class="{ 'is-error': resultForCall(entry)?.isError }"
-              >{{ resultForCall(entry)?.text }}</pre>
-              <p v-else class="tool-running" role="status">运行中…</p>
-            </div>
-          </details>
-        </template>
-
-        <template v-else-if="entry.kind === 'tool_result'">
-          <details
-            v-if="toolEventsVisible()"
-            class="tool"
-            data-test="tool-result"
-          >
-            <summary>
-              <span class="tool-icon" aria-hidden="true">🔧</span>
-              <span class="tool-name">工具结果</span>
-            </summary>
-            <div class="tool-body">
-              <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
-            </div>
-          </details>
-        </template>
-
-        <template v-else-if="entry.kind === 'error'">
-          <p class="agent-error" data-test="agent-error">{{ entry.text }}</p>
-        </template>
-
-        <template v-else-if="entry.kind === 'separator'">
-          <hr class="separator-rule" />
-          <span class="separator-text" data-test="history-separator">{{ entry.text }}</span>
         </template>
       </li>
     </ol>
 
     <p v-if="props.messages.length === 0" class="empty">尚无消息。</p>
+
+    <div
+      v-if="subagentModal"
+      class="subagent-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="子 Agent 详情"
+      data-test="subagent-dialog"
+      @click.self="closeSubagent"
+    >
+      <div class="subagent-panel">
+        <div class="subagent-head">
+          <p class="subagent-title">子 Agent · {{ toolName(subagentModal) }}</p>
+          <button type="button" class="subagent-close" data-test="subagent-close" @click="closeSubagent">关闭</button>
+        </div>
+        <p v-if="subagentSessionId(subagentModal)" class="subagent-session">会话 {{ subagentSessionId(subagentModal) }}</p>
+        <p v-if="toolArgument(subagentModal)" class="subagent-arg">{{ toolArgument(subagentModal) }}</p>
+        <pre v-if="prettyInput(subagentModal)" class="subagent-input">{{ prettyInput(subagentModal) }}</pre>
+        <pre
+          v-if="resultForCall(subagentModal)"
+          class="subagent-output"
+          :class="{ 'is-error': resultForCall(subagentModal)?.isError }"
+        >{{ resultForCall(subagentModal)?.text }}</pre>
+        <p v-else class="tool-running">运行中…</p>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -342,6 +487,56 @@ function toolArgument(entry: ChatEntry): string {
   color: var(--color-text);
 }
 
+.step-group {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 0.4rem 0.6rem;
+}
+
+.step-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  list-style: none;
+}
+
+.step-summary::-webkit-details-marker {
+  display: none;
+}
+
+.step-icon {
+  font-size: 0.9rem;
+}
+
+.step-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.step-count {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--color-border);
+}
+
 .thinking,
 .tool {
   width: 100%;
@@ -398,6 +593,15 @@ function toolArgument(entry: ChatEntry): string {
   font-family: var(--font-family);
 }
 
+.subagent-badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--color-primary-hover);
+  background: var(--color-info-soft);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+
 .tool-args,
 .tool-output,
 .tool-running {
@@ -419,6 +623,88 @@ function toolArgument(entry: ChatEntry): string {
 
 .tool-running {
   color: var(--color-text-muted);
+}
+
+.subagent-open {
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.subagent-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  padding: 1rem;
+}
+
+.subagent-panel {
+  width: min(40rem, 92vw);
+  max-height: 84vh;
+  overflow: auto;
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.subagent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.subagent-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.subagent-close {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  font: inherit;
+}
+
+.subagent-session,
+.subagent-arg {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  word-break: break-word;
+}
+
+.subagent-input,
+.subagent-output {
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-family);
+  font-size: 0.8rem;
+  max-height: 40vh;
+  overflow: auto;
+}
+
+.subagent-output.is-error {
+  color: var(--color-danger);
 }
 
 .stream-status {

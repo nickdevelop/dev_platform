@@ -205,6 +205,7 @@ describe('TaskChatPanel opencode approvals', () => {
 
     // A tool_call with no result is NOT a permission: replying with its id
     // can never succeed (server 404/400, surfaced as 502), so no control.
+    // With no pending approval the confirmation section hides entirely.
     useSessionsStore().pushEntry('sess-1', {
       id: 't1',
       kind: 'tool_call',
@@ -216,20 +217,19 @@ describe('TaskChatPanel opencode approvals', () => {
     } as ChatEntry)
     await flushPromises()
 
-    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
-    // The section renders (capability declared) but offers no buttons: there
-    // is no real pending approval to answer.
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
     expect(wrapper.find('button.confirm-tool').exists()).toBe(false)
     expect(wrapper.find('button.deny-tool').exists()).toBe(false)
-    expect(wrapper.text()).toContain('没有待确认')
+    expect(wrapper.text()).not.toContain('没有待确认')
   })
 
   it('shows confirmation only for real pending approvals', async () => {
     stubSessionList([opencodeSession('sess-1')])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
-    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('没有待确认')
+    // No pending approval: no confirmation UI and no tip.
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('没有待确认')
 
     useOpencodeRawStore().permissions['sess-1'] = [
       { id: 'per_1', sessionId: 'sess-1', action: 'write', resources: ['/tmp/x'] },
@@ -435,7 +435,7 @@ describe('TaskChatPanel opencode approvals', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('发生未知错误。')
   })
 
-  it('closes the previous stream and hides its messages when the task switches', async () => {
+  it('keeps the previous stream open and shows the new messages when the task switches', async () => {
     stubSessionList([session('sess-1'), session('sess-2')])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
@@ -447,7 +447,8 @@ describe('TaskChatPanel opencode approvals', () => {
     await wrapper.setProps({ sessionId: 'sess-2' })
     await flushPromises()
 
-    expect(FakeEventSource.instances[0].readyState).toBe(FakeEventSource.CLOSED)
+    // Tabs keep both tasks live: the previous stream stays open for its tab.
+    expect(FakeEventSource.instances).toHaveLength(2)
     expect(FakeEventSource.instances[1].url).toContain('/sessions/sess-2/')
     expect(wrapper.text()).not.toContain('OLD MESSAGE')
   })

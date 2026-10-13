@@ -404,7 +404,7 @@ describe('session store streaming and isolation', () => {
     expect(sessions.statusFor('sess-1')).toBe('error')
   })
 
-  it('closes the previous stream when switching sessions', async () => {
+  it('keeps both streams open when switching sessions', async () => {
     stubRoutes([
       [
         'GET',
@@ -429,9 +429,9 @@ describe('session store streaming and isolation', () => {
     first.open()
 
     sessions.activateSession(1, 'sess-2')
-    // The old stream was closed and only the new one is live.
-    expect(first.readyState).toBe(FakeEventSource.CLOSED)
-    expect(sessions.statusFor('sess-1')).toBe('idle')
+    // Tabs keep both tasks live: the old stream stays open for its tab.
+    expect(first.readyState).not.toBe(FakeEventSource.CLOSED)
+    expect(sessions.statusFor('sess-1')).toBe('open')
     expect(FakeEventSource.instances).toHaveLength(2)
     expect(sessions.activeSessionId).toBe('sess-2')
 

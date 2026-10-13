@@ -18,21 +18,18 @@ const emit = defineEmits<{
 
 <template>
   <section
-    v-if="props.capabilities.toolConfirmation"
+    v-if="props.capabilities.toolConfirmation && props.pendingToolCall"
     class="tool-confirmation"
     data-test="tool-confirmation"
     aria-label="工具确认"
   >
-    <template v-if="props.pendingToolCall">
-      <p>工具 {{ props.pendingToolCall.name }} 请求执行，需要确认。</p>
-      <button type="button" class="confirm-tool" @click="emit('confirm-tool', props.pendingToolCall.callId)">
-        允许
-      </button>
-      <button type="button" class="deny-tool" @click="emit('deny-tool', props.pendingToolCall.callId)">
-        拒绝
-      </button>
-    </template>
-    <p v-else class="no-pending">当前没有待确认的工具调用。</p>
+    <p>工具 {{ props.pendingToolCall.name }} 请求执行，需要确认。</p>
+    <button type="button" class="confirm-tool" @click="emit('confirm-tool', props.pendingToolCall.callId)">
+      允许
+    </button>
+    <button type="button" class="deny-tool" @click="emit('deny-tool', props.pendingToolCall.callId)">
+      拒绝
+    </button>
   </section>
 </template>
 
@@ -56,9 +53,5 @@ const emit = defineEmits<{
   background: var(--color-surface);
   cursor: pointer;
   margin-right: 0.4rem;
-}
-
-.no-pending {
-  color: var(--color-text-muted);
 }
 </style>

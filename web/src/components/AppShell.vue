@@ -1,19 +1,23 @@
 <script setup lang="ts">
 // Three-pane shell: category rail, project/task tree, and the right pane chosen
 // by the child route. The shell owns the single project-manage dialog and turns
-// tree and panel events into navigation. A project id that is not in the loaded
-// list shows a not-found notice instead of any panel, so a stale or foreign URL
-// never renders another project's content. The settings center hides the
-// project sidebar so it occupies the full pane.
-import { computed, onMounted, ref } from 'vue'
+// tree and panel events into navigation, and keeps the open-task tab bar above
+// the right pane so several tasks stay open at once. A project id that is not
+// in the loaded list shows a not-found notice instead of any panel, so a stale
+// or foreign URL never renders another project's content. The settings center
+// hides the project sidebar so it occupies the full pane.
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { Project } from '../api/projects'
 import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
+import { useSessionsStore } from '../stores/sessions'
+import { useOpenTabsStore, type OpenTab } from '../stores/openTabs'
 import { useSettingsStore } from '../stores/settings'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from './ProjectManageDialog.vue'
 import ProjectTree from './ProjectTree.vue'
+import TaskTabs from './TaskTabs.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
 
@@ -21,6 +25,8 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const projects = useProjectsStore()
+const sessions = useSessionsStore()
+const openTabs = useOpenTabsStore()
 const settings = useSettingsStore()
 
 const search = ref('')
@@ -49,7 +55,57 @@ onMounted(async () => {
   // The appearance is shared platform config: fetch it after auth and apply
   // it over the cached value painted before mount.
   void settings.loadAppearance()
+  syncTabWithRoute()
 })
+
+// The tab bar mirrors the current task route: opening a task URL registers
+// (or refreshes) its tab, and a tab title follows the session list once it
+// loads. Tabs are never removed implicitly except when their project is gone.
+function syncTabWithRoute() {
+  if (projectId.value === null || sessionId.value === null) return
+  const known = sessions.sessionById(sessionId.value)
+  openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
+}
+
+watch([projectId, sessionId], syncTabWithRoute)
+
+// Session titles arrive after the list loads; keep the matching tab label
+// fresh without touching other tabs.
+watch(
+  () => sessions.sessions.map((entry) => `${entry.id}:${entry.title ?? ''}`).join(','),
+  () => {
+    for (const entry of sessions.sessions) {
+      if (entry.title) openTabs.updateTitle(entry.id, entry.title)
+    }
+    syncTabWithRoute()
+  },
+)
+
+const projectNames = computed<Record<number, string>>(() =>
+  Object.fromEntries(projects.projects.map((project) => [project.id, project.name])),
+)
+
+function selectTab(tab: OpenTab) {
+  void router.push({ name: 'task', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
+}
+
+function closeTab(tab: OpenTab) {
+  const wasActive = tab.sessionId === sessionId.value
+  // Releasing the tab's streams keeps background tasks from lingering: only
+  // the closed session is unsubscribed, other tabs stay live.
+  sessions.unsubscribe(tab.sessionId)
+  openTabs.closeTab(tab.sessionId)
+  if (!wasActive) return
+  const remaining = openTabs.tabs
+  if (remaining.length > 0) {
+    const next = remaining[remaining.length - 1]
+    selectTab(next)
+  } else if (projectId.value !== null) {
+    void router.push({ name: 'project', params: { projectId: String(projectId.value) } })
+  } else {
+    void router.push({ name: 'home' })
+  }
+}
 
 function openProject(id: number) {
   void router.push({ name: 'project', params: { projectId: String(id) } })
@@ -72,12 +128,19 @@ function openManage(kind: DialogKind, project: Project | null = null) {
 }
 
 // A removed project's open pages must not outlive it, so the shell returns home
-// after unregister or delete. Rename and move keep the id and stay where they are.
+// after unregister or delete and drops that project's tabs. Rename and move
+// keep the id and stay where they are.
 async function onSubmitted(kind: DialogKind) {
   const removed = dialog.value?.project ?? null
   await projects.load()
-  if ((kind === 'unregister' || kind === 'delete') && removed && projectId.value === removed.id) {
-    void router.push({ name: 'home' })
+  if ((kind === 'unregister' || kind === 'delete') && removed) {
+    for (const tab of openTabs.tabs.filter((entry) => entry.projectId === removed.id)) {
+      sessions.unsubscribe(tab.sessionId)
+      openTabs.closeTab(tab.sessionId)
+    }
+    if (projectId.value === removed.id) {
+      void router.push({ name: 'home' })
+    }
   }
 }
 
@@ -123,6 +186,14 @@ async function logout() {
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
+      <TaskTabs
+        v-if="!settingsMode && openTabs.tabs.length > 0"
+        :tabs="openTabs.tabs"
+        :active-session-id="sessionId"
+        :project-names="projectNames"
+        @select="selectTab"
+        @close="closeTab"
+      />
       <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
       <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
       <div v-else-if="missingProject" class="missing">

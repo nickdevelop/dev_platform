@@ -215,7 +215,7 @@ describe('ProjectTree', () => {
     expect(wrapper.emitted('new-task')).toEqual([[1]])
   })
 
-  it('switches expansion and loads tasks when the active project changes', async () => {
+  it('keeps both projects expanded when the active project changes', async () => {
     const requested = stubSessions({
       1: [session({ id: 's1', title: 'Task A' })],
       2: [session({ id: 's2', projectId: 2, title: 'Task B' })],
@@ -225,8 +225,10 @@ describe('ProjectTree', () => {
     await wrapper.setProps({ activeProjectId: 2 })
     await flushPromises()
 
+    // Multiple projects stay expanded at once: the previous project's tasks
+    // remain visible instead of collapsing.
     expect(wrapper.text()).toContain('Task B')
-    expect(wrapper.text()).not.toContain('Task A')
+    expect(wrapper.text()).toContain('Task A')
     expect(requested).toContain('/api/projects/2/sessions')
   })
 
@@ -276,7 +278,7 @@ describe('ProjectTree', () => {
     expect(wrapper.find('.load-more').exists()).toBe(false)
   })
 
-  it('resets the visible page when another project is opened', async () => {
+  it('paginates each expanded project independently', async () => {
     const many = (projectId: number) =>
       Array.from({ length: 20 }, (_, index) =>
         session({
@@ -292,10 +294,14 @@ describe('ProjectTree', () => {
     await wrapper.find('.load-more').trigger('click')
     expect(wrapper.findAll('.task').length).toBe(20)
 
+    // Opening another project expands it alongside the first: both lists stay
+    // visible, each with its own page (project 1 expanded to 20, project 2 at
+    // the first 15).
     await wrapper.setProps({ activeProjectId: 2 })
     await flushPromises()
-    expect(wrapper.findAll('.task').length).toBe(15)
+    expect(wrapper.findAll('.task').length).toBe(35)
     expect(wrapper.text()).toContain('Task 2-19')
+    expect(wrapper.text()).toContain('Task 1-19')
   })
 
   it('toggles a project on row click without opening its settings', async () => {

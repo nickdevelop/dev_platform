@@ -312,14 +312,13 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    // Marks a session active and opens its stream. Switching sessions closes
-    // the previously active session's stream so only one subscription is live
-    // at a time; re-activating the same session is a no-op.
+    // Marks a session active and opens its stream. Multiple tasks can stay
+    // open at once (tab bar), so activating one session never closes another
+    // session's stream; each subscription lives until its task is closed or
+    // deleted. Re-activating the same session is a no-op.
     // activateSession is the low-level subscription switch; callers opening a
     // task use openSession so the replay always lands before the stream.
     activateSession(projectId: number, sessionId: string) {
-      const previous = this.activeSessionId
-      if (previous && previous !== sessionId) this.unsubscribe(previous)
       this.activeSessionId = sessionId
       this.subscribe(projectId, sessionId)
     },
