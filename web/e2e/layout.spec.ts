@@ -144,3 +144,39 @@ test('a long task tree scrolls the sidebar and keeps the composer in view', asyn
   expect(metrics.treeOverflow).toBe('auto')
   expect(metrics.composerInViewport).toBe(true)
 })
+
+// Regression: the step group that wraps reasoning/tool activity was sized
+// width:100% plus its padding under the default content-box, so it stuck out
+// past the log's content box and the conversation grew a horizontal
+// scrollbar. A folded group must still sit inside the log.
+test('a step group never adds a horizontal scroller to the conversation', async ({ page, request }) => {
+  test.slow()
+
+  const csrf = await operatorLogin(request)
+  const projectId = await registerProject(request, csrf, 'layout-steps')
+  await uiLogin(page)
+  await page.goto(`/projects/${projectId}/settings`)
+
+  await createTask(page, 'opencode-v2', 'oc-steps')
+  await taskRow(page, 'oc-steps').click()
+  const conversation = page.locator('[data-test="conversation"]')
+  await expect(conversation).toHaveAttribute('data-stream-status', 'open')
+
+  await page.locator('#message-text').fill('step group please')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(conversation).toContainText('opencode reply: step group please', { timeout: 20_000 })
+  // The reply's reasoning forms a step group, which is the box under test.
+  await expect(conversation.locator('[data-test="step-group"]')).toBeVisible()
+
+  const metrics = await page.evaluate(() => {
+    const log = document.querySelector('[data-test="conversation-scroll"]') as HTMLElement
+    const group = document.querySelector('[data-test="step-group"]') as HTMLElement
+    return {
+      logScrollOverflow: log.scrollWidth - log.clientWidth,
+      groupWidth: group.getBoundingClientRect().width,
+      logWidth: log.getBoundingClientRect().width,
+    }
+  })
+  expect(metrics.logScrollOverflow).toBeLessThanOrEqual(0)
+  expect(metrics.groupWidth).toBeLessThanOrEqual(Math.ceil(metrics.logWidth) + 1)
+})

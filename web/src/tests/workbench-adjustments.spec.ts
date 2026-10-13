@@ -41,6 +41,9 @@ describe('step groups and subagent popup', () => {
     // The tool block still renders inside the group.
     expect(wrapper.find('[data-test="tool-call"]').exists()).toBe(true)
     expect(wrapper.find('.step-title').text()).toContain('read')
+    // The group starts folded: activity stays out of the way until the user
+    // opens it by hand.
+    expect(wrapper.find('[data-test="step-group"]').attributes('open')).toBeUndefined()
   })
 
   it('opens a dialog for subagent tool calls', async () => {

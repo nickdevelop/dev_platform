@@ -258,7 +258,7 @@ function prettyInput(entry: ChatEntry): string {
         </template>
 
         <template v-else>
-          <details class="step-group" data-test="step-group" open>
+          <details class="step-group" data-test="step-group">
             <summary class="step-summary">
               <span class="step-icon" aria-hidden="true">⚙️</span>
               <span class="step-title">{{ stepSummary(block.entries) }}</span>
@@ -489,6 +489,10 @@ function prettyInput(entry: ChatEntry): string {
 
 .step-group {
   width: 100%;
+  /* The box carries padding and a border on top of its width; without
+     border-box that padding pushes the group past the log's content box and
+     the conversation grows a horizontal scrollbar. */
+  box-sizing: border-box;
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-surface);
@@ -580,6 +584,10 @@ function prettyInput(entry: ChatEntry): string {
 }
 
 .tool-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--color-text);
   font-weight: 600;
 }
