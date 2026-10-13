@@ -64,6 +64,11 @@ var (
 	// ErrAgentDisabled reports an attempt to create a session on a backend the
 	// platform has disabled. Existing sessions and instances stay usable.
 	ErrAgentDisabled = errors.New("sessions: agent is disabled platform-wide")
+	// ErrServiceNotRunning reports a backend whose machine-level service is not
+	// running, so no work can be done on it. It is the same condition the
+	// backend layer reports — the session layer adds no new meaning, only the
+	// decision to refuse rather than start something.
+	ErrServiceNotRunning = agents.ErrServiceNotRunning
 )
 
 // errSlowClient reports an SSE client that could not keep up with the event
@@ -123,6 +128,12 @@ type InstanceService interface {
 	// session layer's auto-start path for creating a session on a backend with
 	// no running instance.
 	Start(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error)
+	// ServiceAvailable reports whether the backend can start an instance at all:
+	// a backend that runs a machine-level service refuses when that service is
+	// down, and the session layer must pass the refusal on instead of trying to
+	// bring the service up itself. A backend with no service is always
+	// available.
+	ServiceAvailable(backend agents.BackendID) error
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 	// Stop terminates the instance (idempotently).
@@ -337,7 +348,9 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 // instanceForBackend returns the project's most recently created running
 // instance of the backend, starting one when none is running. The project's
 // backend enable/disable configuration is enforced by Start, whose refusals and
-// failures the caller surfaces unchanged.
+// failures the caller surfaces unchanged. When no instance runs and the backend's
+// machine-level service is down, the call is refused with ErrServiceNotRunning:
+// starting the service is an operator's decision, not this request's to make.
 func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error) {
 	list, err := s.instances.List(projectID)
 	if err != nil {
@@ -354,6 +367,12 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 	}
 	if found {
 		return chosen, nil
+	}
+	// Starting an instance of a service-backed backend would need that service.
+	// The platform never starts one itself, so the request is refused with the
+	// reason instead of quietly launching a process or failing opaquely.
+	if err := s.instances.ServiceAvailable(backend); err != nil {
+		return instances.Instance{}, fmt.Errorf("%w: %q (%w)", ErrServiceNotRunning, backend, err)
 	}
 	return s.instances.Start(ctx, projectID, backend)
 }

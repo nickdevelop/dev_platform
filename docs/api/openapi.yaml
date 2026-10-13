@@ -931,7 +931,10 @@ paths:
         '409':
           description: >-
             The backend is disabled for the project, or the request requires a
-            capability the backend does not support.
+            capability the backend does not support, or the backend runs a
+            machine-level service that is not running (`service_not_running`) —
+            starting that service is an operator action on the platform
+            settings page, never a side effect of a request.
           content:
             application/json:
               schema:

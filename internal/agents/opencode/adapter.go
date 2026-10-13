@@ -392,7 +392,7 @@ func (a *Adapter) checkAPI(ctx context.Context, supported agents.SupportedVersio
 		return agents.Diagnostic{
 			Kind:    agents.DiagnosticAPI,
 			Status:  agents.DiagnosticError,
-			Message: fmt.Sprintf("opencode server API unreachable: %s; stop and restart the affected instance(s)", strings.Join(unreachable, "; ")),
+			Message: fmt.Sprintf("opencode service 不可达（%s）；请到平台设置 → Agent 检测并启动", strings.Join(unreachable, "; ")),
 		}
 	}
 	if len(mismatched) > 0 {

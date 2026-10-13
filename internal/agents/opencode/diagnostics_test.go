@@ -245,8 +245,13 @@ func TestAdapterDiagnosticsAPIProbesRunningInstances(t *testing.T) {
 		if api.Kind != agents.DiagnosticAPI || api.Status != agents.DiagnosticError {
 			t.Fatalf("api check = %+v, want an error", api)
 		}
-		if !strings.Contains(api.Message, "inst-1") || !strings.Contains(api.Message, "restart") {
-			t.Errorf("message %q must name the instance and the remedy", api.Message)
+		if !strings.Contains(api.Message, "inst-1") {
+			t.Errorf("message %q must name the instance", api.Message)
+		}
+		// The platform never restarts the service itself, so the only remedy the
+		// message may suggest is the one place an operator can act.
+		if !strings.Contains(api.Message, "平台设置") || !strings.Contains(api.Message, "检测并启动") {
+			t.Errorf("message %q must point at platform settings → Agent", api.Message)
 		}
 	})
 

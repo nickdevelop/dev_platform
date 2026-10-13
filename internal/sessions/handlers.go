@@ -68,6 +68,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "backend_disabled")
 	case errors.Is(err, ErrAgentDisabled):
 		respondError(c, http.StatusConflict, "agent_disabled")
+	case errors.Is(err, ErrServiceNotRunning):
+		// The machine-level service is down. The workbench turns this into a
+		// message naming the one place the service can be started.
+		respondError(c, http.StatusConflict, "service_not_running")
 	case errors.Is(err, instances.ErrStartFailed):
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, ErrUnsupportedCapability):

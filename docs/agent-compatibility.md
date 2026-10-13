@@ -42,11 +42,36 @@ must never expose a control for a capability a backend did not declare.
 | `streaming` | ✅ — `session.text.delta` normalized into incremental message events. Verified against the mock v2 server. | ✅ — `--mode json` `text_delta` provider events. Verified against the fake CLI. |
 | `sessionDiscovery` | ✅ — `GET /api/session?directory=…`. Verified. | ✅ — bounded scan of pi's on-disk JSONL session files for the instance directory. Verified. |
 | `sessionContinue` | ✅ — `GET /api/session/{id}` re-attach. Verified. | ✅ — the next prompt re-uses `--session-id`. Verified at the adapter level; end-to-end transcript continuity is **provisional** (see below). |
-| `stop` | ✅ — terminates the per-instance `opencode serve` process group. Verified. | ✅ — terminates the per-prompt process group. Verified. |
+| `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — terminates the per-prompt process group. Verified. |
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through (verified argv plumbing); real model resolution is **provisional**. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
 | `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ❌ — print/JSON mode cannot pause a tool call for confirmation. |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
+
+## Machine-level service (`opencode-v2`)
+
+`opencode serve --service` is a **third-party process**, not a resource the
+platform owns. One service serves the whole machine, and clients other than the
+platform (the desktop `opencode` app, a CLI session) share it. The rules the
+adapter enforces:
+
+| Situation | Behaviour |
+| --- | --- |
+| Work on a backend whose service is down | Refused with `service_not_running` (HTTP 409). No session, instance, or other request starts the service as a side effect. |
+| A registered, live service exists | Adopted, whatever started it — including one started before the platform booted, or by another client. |
+| A registration names a dead process | Reported `stopped`; never relaunched from a business path. |
+| Platform shutdown / restart | The service keeps running. Only the platform's own child processes (pi CLIs, per-instance servers) are reclaimed. |
+| Operator starts or stops the service | Only through `GET/POST /api/agent-services/opencode-v2{,/start,/stop}`, driven by Platform Settings → Agent, and only after the operator confirms the consequence for other clients. |
+| `service.json` | Owned by opencode. The platform reads it and never writes or deletes it. |
+
+Two different checks back this: the business path uses the cheap one (read the
+registration file, `kill(pid, 0)`), so a task request never waits on an HTTP
+round trip; the settings page and diagnostics use the full probe (one
+`/api/info` call with a bounded timeout) and report `running` or `unreachable`
+with a reason.
+
+`pi` has no machine-level service: `/api/agent-services/pi` answers
+`supported: false`, and no start/stop control is shown for it.
 
 ## Diagnostics
 
