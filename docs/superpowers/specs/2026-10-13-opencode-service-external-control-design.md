@@ -67,6 +67,8 @@ opencode 后端在平台上跑的是**一台机器一个**的 `opencode serve --
 | 11 | 诊断里 `stop and restart the affected instance(s)` 改为「到平台设置 → Agent 检测并启动」，与新提示口径统一 | 判断 |
 | 12 | 一个项目的设置 tab 同时最多一个；重复点齿轮激活已有 tab；不同项目各开各的 | 判断 |
 | 13 | 旧链接 `/projects/:id`（原项目设置面板路由）重定向到 `/`（home），不再渲染设置面板 | 判断 |
+| 14 | service 停了，所有 opencode 任务显示「服务无法连接」，并提供**用户点击的重新连接**操作（不自动重连） | ★ |
+| 15 | 「停止」按钮需二次确认 | ★ |
 
 ## 5. 后端设计
 
@@ -151,7 +153,7 @@ HTTP 映射：`409 Conflict`，`{"code":"service_not_running","message":"opencod
 
 - 状态徽标：`运行中` / `未启动` / `不可达`（不可达为 danger 色，附 `Detail`）
 - 只读明细：监听地址、pid、service 版本、可执行文件、**最后检测于 hh:mm**
-- 按钮：`检测`（转圈时禁用其他按钮）、`启动`（running 时禁用）、`停止`（stopped 时禁用；确认弹窗文案点明"这会停止本机所有正在使用该 service 的客户端，包括桌面端"，因为需求方明确"操作人负责"）
+- 按钮：`检测`（转圈时禁用其他按钮）、`启动`（running 时禁用）、`停止`（stopped 时禁用）。停止需**二次确认**（决策 15）：确认框正文写明「这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的任务会被中断。」，确认按钮文字为「确认停止」而非「确定」。
 - 失败信息就地显示，不做 toast
 - **进入页面自动调用一次 GET**；之后只有点"检测"才再调
 
@@ -189,16 +191,31 @@ type OpenTab =
 
 统一口径（前后端都从这里措辞）：
 
-> opencode service 未启动。请到 平台设置 → Agent 检测并启动。
+- 未启动（无注册文件 / pid 已死）：**「opencode service 未启动。请到 平台设置 → Agent 检测并启动。」**
+- 有注册但连不通 / 实例已广播失败：**「无法连接 opencode service。请到 平台设置 → Agent 检测并启动。」**
 
-出现位置：新建任务面板提交后、任务面板打开旧任务失败时（`data-test="session-unavailable"` 附近）、扫描会话失败时、项目设置 service 提示行。文案中带一个可点击的「平台设置 → Agent」链接（`RouterLink` 到 `settings-agents`）。
+两条都带一个可点击的「平台设置 → Agent」链接（`RouterLink` 到 `settings-agents`）。出现位置：新建任务面板提交后、任务面板打开旧任务失败时、扫描会话失败时、项目设置的 service 提示行、任务列表状态点。
+
+### 8.1 会话的「服务无法连接」与重新连接（决策 14）
+
+service 不可用期间，**所有 opencode 类型的任务**统一表现为不可用（实例已被 `failAllInstances` 广播为 failed，reconcile 自然产出 disconnected，pi 任务不受影响）：
+
+- **任务面板**（`TaskChatPanel.vue`，现有 `data-test="session-unavailable"` 区块）：显示上述不可用文案 + 一个「重新连接」按钮（`data-test="reconnect-service"`），输入框禁用。文案**不出现“实例”**（决策 8）。
+- **任务列表 / 项目树**：该会话的状态点沿用现有 disconnected 样式，hover/副标题文案改为「服务无法连接」（避免两个名字）。
+
+**重新连接 = 用户触发的显式重绑，就是现有的 `POST /sessions/:id/continue`**（它已经做“探到可用 service → 后台注册新实例 → 重绑会话”），无需新端点；service 仍未启动时它返回 `service_not_running`，前端就地换成带链接的提示。重连成功后恢复 active，不补发被中断那一轮的残缺内容（历史以后端的原生消息为准）。后端无需区分“未启动”与“不可达”也可以：continue 失败一律回 `service_not_running` 同构结构，`message` 根据 `DetectService` 的快速探测结果措辞。
+
+自动重连仍属反目标：`watchShared` 只广播失败，service 回来时不会自己把会话接上（见 §7.1）。
+
+**与现有“重连”按钮的区分**：`TaskChatPanel.vue:306` 已有一个 `reconnect()`，它只重订平台的 SSE 流（会话本身仍可用，仅网络掉流）。新按钮是“服务不可用”时的 `continue` 重绑，两者在不同条件下各自渲染（`streamStatus === 'error'` vs 会话不可用），`data-test` 必须不同名，测试不能混。
 
 ## 9. 测试与夹具
 
 **Go**：
 - `sidecar_test.go` / `discovery_test.go` / `adapter_test.go`：现有"接管优先于启动""启动失败可诊断"等断言中，凡是经 `StartInstance` 触发的启动路径要改成经 `StartService` 触发；新增断言：注册文件缺失/进程死亡时 `StartInstance` 返回 `ErrServiceNotRunning` 且 `launch` 调用次数为 0；`StopInstance`（含最后一个实例）不调用 kill；`Close` 不杀进程。
 - 新增 `ServiceController` 测试：Detect 三态、Start 已运行 → `ErrServiceAlreadyRunning`、Stop 幂等、Stop 杀外部 pid。
-- `internal/sessions/service_test.go`：service 未运行时 Create/DiscoverProject/Continue 返回 `ErrServiceNotRunning` 且**未写入实例行**。
+- `internal/sessions/service_test.go`：service 未运行时 Create/DiscoverProject/Continue 返回 `ErrServiceNotRunning` 且**未写入实例行**；service 恢复后 Continue 能重绑并使会话回 active（重连语义）。
+- 前端组件测试：`task-chat-panel.spec.ts` 新增“服务无法连接 + 重新连接”（点击后发 continue）；`agent-settings.spec.ts` 新增停止二次确认（未确认不发请求）。
 - `internal/agents/instances` handler 测试 + `internal/http/router_test.go` 路由与权限（CSRF）。
 
 **e2e**：`web/e2e/fixtures/bin/opencode` 目前只支持 `serve --hostname --port`，靠平台自己拉起。改为：mock 支持 `--service`，**自己写** `service.json`（id/version/url/pid/password，与真实 opencode 契约一致），`web/scripts/run-e2e.mjs` 在起平台之前先起 mock 并设置 `XDG_STATE_HOME` 指向测试隔离目录；mock 增加 `--stop`（或读一个控制文件）以便测试"未启动"分支。新增 spec：Agent 页显示运行中/未启动并可启停；service 未启动时新建任务显示提示并可跳转到 Agent 页。
