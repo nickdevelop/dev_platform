@@ -64,46 +64,17 @@ func TestEnsureSharedAdoptsExistingService(t *testing.T) {
 		t.Fatalf("endpoint = %q, want existing %q", instance.Endpoint, existing.URL)
 	}
 
-	// Stopping the last instance must not kill the adopted service: teardown
-	// only drops the reference.
+	// Stopping the last instance leaves the adopted service alone: the platform
+	// keeps its client, and never stops a process it did not start from the
+	// settings page.
 	if err := adapter.StopInstance(context.Background(), instance.ID); err != nil {
 		t.Fatalf("StopInstance: %v", err)
 	}
 	if launches.Load() != 0 {
 		t.Fatalf("launches after stop = %d, want 0", launches.Load())
 	}
-	if got := adapter.sharedEndpoint(); got != "" {
-		t.Fatalf("shared endpoint after last stop = %q, want empty", got)
-	}
-}
-
-// TestEnsureSharedIgnoresStaleRegistration proves a dead registration
-// (unreachable server) falls back to launching a new server.
-func TestEnsureSharedIgnoresStaleRegistration(t *testing.T) {
-	reg := serviceRegistration{
-		ID:       "svc-stale",
-		Version:  "2.0.24",
-		URL:      "http://127.0.0.1:1",
-		PID:      1,
-		Password: "pw",
-	}
-	serviceFile := writeServiceFile(t, reg)
-
-	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
-		"GET /api/info": func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("content-type", "application/json")
-			_, _ = w.Write([]byte(`{"version":"2.0.24","pid":1,"urls":[],"paths":{"tmp":"/tmp"}}`))
-		},
-	}))
-	adapter.serviceFilePath = serviceFile
-	adapter.newID = func() (string, error) { return "inst-1", nil }
-
-	instance, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()})
-	if err != nil {
-		t.Fatalf("StartInstance: %v", err)
-	}
-	if instance.Endpoint == reg.URL {
-		t.Fatalf("endpoint = stale %q, want freshly launched", reg.URL)
+	if got := adapter.sharedEndpoint(); got != existing.URL {
+		t.Fatalf("shared endpoint after last stop = %q, want the reference kept for %q", got, existing.URL)
 	}
 }
 

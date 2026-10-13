@@ -69,7 +69,7 @@ func queueHandler(routes map[string]http.HandlerFunc) http.HandlerFunc {
 // launcher seam, so no real opencode process is ever started.
 func newAdapterWithServer(t *testing.T, handler http.HandlerFunc) (*Adapter, *recordingLauncher, *httptest.Server) {
 	t.Helper()
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(withDefaultInfo(handler))
 	t.Cleanup(server.Close)
 	client, err := NewClient(ClientOptions{BaseURL: server.URL, Username: "opencode", Password: "pw", Timeout: 5 * time.Second})
 	if err != nil {
@@ -88,7 +88,52 @@ func newAdapterWithServer(t *testing.T, handler http.HandlerFunc) (*Adapter, *re
 		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
 	})
 	adapter.launch = launcher.launch
+	// The service is a third party: the platform only ever binds one it found
+	// already running, so the test states that directly instead of asking the
+	// platform to boot the server (which it no longer does).
+	adapter.shared = &sharedServer{client: client, endpoint: server.URL}
 	return adapter, launcher, server
+}
+
+// withDefaultInfo answers GET /api/info when the test's own handler does not,
+// so an adapter bound to the test server passes the readiness probe without
+// every test restating the handshake.
+func withDefaultInfo(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/info" {
+			recorded := httptest.NewRecorder()
+			handler(recorded, r)
+			if recorded.Code == http.StatusNotFound {
+				writeInfo(w, "2.0.24")
+				return
+			}
+			for key, values := range recorded.Header() {
+				for _, value := range values {
+					w.Header().Add(key, value)
+				}
+			}
+			w.WriteHeader(recorded.Code)
+			_, _ = w.Write(recorded.Body.Bytes())
+			return
+		}
+		handler(w, r)
+	}
+}
+
+// infoHandler serves a healthy /api/info and nothing else.
+func infoHandler(version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/info" {
+			writeInfo(w, version)
+			return
+		}
+		http.NotFound(w, r)
+	}
+}
+
+func writeInfo(w http.ResponseWriter, version string) {
+	w.Header().Set("content-type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"version":%q,"pid":%d,"urls":[],"paths":{"tmp":"/tmp"}}`, version, os.Getpid())
 }
 
 func startTestInstance(t *testing.T, adapter *Adapter) *agents.Instance {
@@ -195,8 +240,10 @@ func TestAdapterStartAndStop(t *testing.T) {
 	if err := adapter.StopInstance(context.Background(), instance.ID); err != nil {
 		t.Fatalf("StopInstance: %v", err)
 	}
-	if got := launcher.stopCount(); got != 1 {
-		t.Fatalf("stop called %d times, want 1", got)
+	// Stopping the platform's own instance never reaches the service: it is a
+	// third party that may be serving other clients.
+	if got := launcher.stopCount(); got != 0 {
+		t.Fatalf("stop called %d times, want 0", got)
 	}
 	// Idempotent: a second stop and an unknown id both succeed without
 	// touching the backend again.
@@ -206,8 +253,8 @@ func TestAdapterStartAndStop(t *testing.T) {
 	if err := adapter.StopInstance(context.Background(), "missing"); err != nil {
 		t.Fatalf("unknown StopInstance: %v", err)
 	}
-	if got := launcher.stopCount(); got != 1 {
-		t.Fatalf("stop called %d times after idempotent stops, want 1", got)
+	if got := launcher.stopCount(); got != 0 {
+		t.Fatalf("stop called %d times after idempotent stops, want 0", got)
 	}
 }
 
@@ -228,15 +275,6 @@ func TestAdapterStartValidations(t *testing.T) {
 	}
 	if got := launcher.stopCount(); got != 0 {
 		t.Fatalf("launcher stopped %d times during validation failures", got)
-	}
-}
-
-func TestAdapterStartPropagatesLaunchFailure(t *testing.T) {
-	adapter, launcher, _ := newAdapterWithServer(t, func(w http.ResponseWriter, r *http.Request) {})
-	launcher.launchErr = &APIError{StatusCode: http.StatusUnauthorized, Code: "UnauthorizedError", Message: "Authentication required"}
-
-	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()}); err == nil {
-		t.Fatal("expected launch failure to propagate")
 	}
 }
 
@@ -618,6 +656,10 @@ func TestAdapterProcessExitMarksInstanceFailed(t *testing.T) {
 		},
 	}))
 	launcher.done = make(chan struct{})
+	// The service is a third party: what the platform can observe is that the
+	// process behind the service it adopted went away.
+	adapter.shared.done = launcher.done
+	go adapter.watchShared(adapter.shared)
 	instance := startTestInstance(t, adapter)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -798,12 +840,14 @@ func TestAdapterLaunchDiagnosticRedactsPassword(t *testing.T) {
 	}
 
 	adapter := New(Options{
-		Executable: script,
+		Executable:     script,
 		StartupTimeout: 3 * time.Second,
 		// Isolate from the machine-wide service registration.
 		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
 	})
-	_, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()})
+	// Only the settings page launches the service, so that is the code path
+	// whose diagnostics must not leak the password.
+	_, err := adapter.launchSharedServer(context.Background(), t.TempDir())
 	if err == nil {
 		t.Fatal("expected the launch to fail")
 	}
@@ -952,109 +996,34 @@ func TestListHistoryWithoutRunningInstance(t *testing.T) {
 	}
 }
 
-// twoServerAdapter wires an adapter whose successive instances talk to
-// different servers, so a test can prove which instance history was read
-// through. Instance ids are deterministic and increasing, which means the
-// arbitrary "smallest id" pick would choose the first server.
-func twoServerAdapter(t *testing.T, first, second http.HandlerFunc) (*Adapter, []string) {
-	t.Helper()
-
-	servers := []*httptest.Server{httptest.NewServer(first), httptest.NewServer(second)}
-	for _, server := range servers {
-		t.Cleanup(server.Close)
-	}
-	clients := make([]*Client, 0, len(servers))
-	for _, server := range servers {
-		client, err := NewClient(ClientOptions{BaseURL: server.URL, Username: "opencode", Password: "pw", Timeout: 5 * time.Second})
-		if err != nil {
-			t.Fatalf("NewClient: %v", err)
-		}
-		clients = append(clients, client)
-	}
-
-	executable := filepath.Join(t.TempDir(), "fake-opencode")
-	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatalf("write fake executable: %v", err)
-	}
-	calls := 0
-	launches := 0
-	adapter := New(Options{
-		Executable: executable,
-		// Isolate from the machine-wide service registration so the
-		// scripted launches are the only servers in play.
-		ServiceFile: filepath.Join(t.TempDir(), "service.json"),
-		NewID: func() (string, error) {
-			calls++
-			return fmt.Sprintf("inst-%d", calls), nil
-		},
-	})
-	adapter.launch = func(context.Context, string) (*launchResult, error) {
-		client := clients[min(len(clients)-1, launches)]
-		launches++
-		return &launchResult{
-			client:   client,
-			endpoint: client.baseURL,
-			stop:     func(context.Context) error { return nil },
-		}, nil
-	}
-	return adapter, []string{servers[0].URL, servers[1].URL}
-}
-
-// TestListHistoryPrefersTheInstanceForTheDirectory pins that history is read
-// through the server bound to the requested directory when one exists. Reading
-// through an unrelated server happens to work against a machine-wide store, but
-// it is not something the platform should depend on.
-func TestListHistoryPrefersTheInstanceForTheDirectory(t *testing.T) {
+// TestListHistoryReadsThroughTheSharedServiceForAnyDirectory pins the
+// instance-free contract that survives the machine-wide service: history is
+// scoped by directory and session id, so it reads through the adopted service
+// both for a directory the platform started an instance in and for one it never
+// did. There is no per-instance server left to choose between — the platform
+// never starts one.
+func TestListHistoryReadsThroughTheSharedServiceForAnyDirectory(t *testing.T) {
 	fixture := readMessagesFixture(t)
-	// The first server serves nothing: if it is chosen, the read fails.
-	adapter, _ := twoServerAdapter(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	}, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write(fixture)
-	})
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/session/ses_1/message": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write(fixture)
+		},
+	}))
 
 	dirA := t.TempDir()
-	dirB := t.TempDir()
 	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: dirA}); err != nil {
-		t.Fatalf("StartInstance dirA: %v", err)
-	}
-	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: dirB}); err != nil {
-		t.Fatalf("StartInstance dirB: %v", err)
-	}
-
-	result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: dirB, SessionID: "ses_1"})
-	if err != nil {
-		t.Fatalf("ListHistory for the second instance's directory: %v", err)
-	}
-	if len(result.Events) == 0 {
-		t.Fatal("ListHistory returned nothing; it did not read through the instance for the directory")
-	}
-}
-
-// TestListHistoryFallsBackToAnyRunningInstance pins the instance-free contract:
-// a session whose own instance is gone can still be replayed, because the read
-// is scoped by directory and session id rather than by an instance.
-func TestListHistoryFallsBackToAnyRunningInstance(t *testing.T) {
-	fixture := readMessagesFixture(t)
-	adapter, _ := twoServerAdapter(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		_, _ = w.Write(fixture)
-	}, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	})
-
-	if _, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: t.TempDir()}); err != nil {
 		t.Fatalf("StartInstance: %v", err)
 	}
 
-	// A directory no instance was started for: the read still works.
-	result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: t.TempDir(), SessionID: "ses_1"})
-	if err != nil {
-		t.Fatalf("ListHistory without a same-directory instance: %v", err)
-	}
-	if len(result.Events) == 0 {
-		t.Fatal("ListHistory returned nothing through the fallback instance")
+	for _, directory := range []string{dirA, t.TempDir()} {
+		result, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: directory, SessionID: "ses_1"})
+		if err != nil {
+			t.Fatalf("ListHistory for %s: %v", directory, err)
+		}
+		if len(result.Events) == 0 {
+			t.Fatalf("ListHistory for %s returned nothing through the shared service", directory)
+		}
 	}
 }
 

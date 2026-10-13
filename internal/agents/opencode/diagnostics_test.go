@@ -5,12 +5,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"devplatform/internal/agents"
 )
@@ -234,24 +232,9 @@ func TestAdapterDiagnosticsAPIProbesRunningInstances(t *testing.T) {
 	})
 
 	t.Run("disconnected api", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-		endpoint := server.URL
-		client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: "opencode", Password: "pw", Timeout: 2 * time.Second})
-		if err != nil {
-			t.Fatalf("NewClient: %v", err)
-		}
-		server.Close() // the endpoint now refuses connections
-
-		adapter := New(Options{
-			Executable:   writeVersionScript(t, "unused"),
-			VersionProbe: versionStub("opencode v2.0.24", nil),
-			NewID:        func() (string, error) { return "inst-1", nil },
-			// Isolate from the machine-wide service registration so the
-			// dead fake endpoint is really probed.
-			ServiceFile: filepath.Join(t.TempDir(), "service.json"),
-		})
-		adapter.launch = (&recordingLauncher{client: client, endpoint: endpoint}).launch
+		adapter, _, server := newAdapterWithServer(t, infoHandler("2.0.24"))
 		startTestInstance(t, adapter)
+		server.Close() // the service the instance adopted is now unreachable
 
 		report := adapter.Diagnostics(context.Background())
 

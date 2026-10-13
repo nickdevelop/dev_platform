@@ -88,6 +88,9 @@ type Adapter struct {
 	launch            launcher
 	versionProbe      func(ctx context.Context) (string, error)
 	serviceFilePath   string
+	// watchInterval bounds how often watchShared re-probes the service. Tests
+	// shorten it; production keeps the default.
+	watchInterval time.Duration
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -156,6 +159,7 @@ func New(options Options) *Adapter {
 	if adapter.versionProbe == nil {
 		adapter.versionProbe = adapter.runVersionCommand
 	}
+	adapter.watchInterval = 5 * time.Second
 	adapter.launch = adapter.launchSharedServer
 	return adapter
 }
@@ -422,7 +426,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		return nil, err
 	}
 
-	shared, err := a.ensureShared(ctx, request.Directory)
+	shared, err := a.ensureShared(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -488,9 +492,10 @@ func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
 	inst.fail("opencode server process exited unexpectedly")
 }
 
-// StopInstance detaches the instance and closes its event stream. The shared
-// server is torn down only when the last instance goes away, so stopping one
-// instance never affects another. An instance that is already gone is a
+// StopInstance detaches the instance and closes its event stream. The
+// machine-wide opencode service is never touched: it also serves the desktop
+// client and manually started servers, so stopping the platform's own instance
+// stops nothing but that instance. An instance that is already gone is a
 // successful stop.
 func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	if err := ctx.Err(); err != nil {
@@ -501,16 +506,11 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	if ok {
 		delete(a.instances, instanceID)
 	}
-	remaining := len(a.instances)
 	a.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	stopErr := inst.stop(ctx)
-	if remaining == 0 {
-		a.teardownShared()
-	}
-	return stopErr
+	return inst.stop(ctx)
 }
 
 // Subscribe returns the instance's normalized event stream. It opens the

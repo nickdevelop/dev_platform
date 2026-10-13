@@ -2,18 +2,20 @@ package opencode
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
 	"strconv"
 	"time"
+
+	"devplatform/internal/agents"
 )
 
 // sharedServer is the single machine-wide opencode server all adapter
 // instances reuse. It mirrors the desktop background-service model: one
-// `serve --service` process, adopted when healthy and started once otherwise.
+// `serve --service` process, adopted when healthy and never started by a
+// business path.
 //
 // The password never leaves this package except inside the bound Client.
 type sharedServer struct {
@@ -22,11 +24,18 @@ type sharedServer struct {
 	done     <-chan struct{}
 }
 
-// ensureShared returns the shared server, adopting a healthy already-running
-// service first (desktop Service.discover semantics: read the registration
-// file, probe /api/info, reuse when ready) and starting one only when none
-// exists. Safe for concurrent use.
-func (a *Adapter) ensureShared(ctx context.Context, directory string) (*sharedServer, error) {
+// ensureShared returns the machine-wide opencode service the platform talks
+// to, adopting the one that is already registered when it is healthy.
+//
+// It never starts a service. The service is a third party — the desktop
+// client and manually started `opencode serve --service` processes use the
+// same registration — so starting, stopping or replacing it is an operator's
+// decision, taken on the platform settings page and nowhere else. When no
+// usable service is registered, ensureShared reports
+// agents.ErrServiceNotRunning and the caller refuses the work.
+//
+// Safe for concurrent use.
+func (a *Adapter) ensureShared(ctx context.Context) (*sharedServer, error) {
 	a.sharedMu.Lock()
 	shared := a.shared
 	a.sharedMu.Unlock()
@@ -34,13 +43,16 @@ func (a *Adapter) ensureShared(ctx context.Context, directory string) (*sharedSe
 		if err := a.probeShared(ctx, shared); err == nil {
 			return shared, nil
 		}
-		a.teardownShared()
+		// The reference we hold is stale. Dropping it is not an operation on
+		// somebody else's process: it only stops the platform from using it.
+		a.detachShared()
 	}
 
 	// Prefer the machine-wide service that is already there — a desktop
 	// sidecar, another platform instance, or a manually started
-	// `opencode serve --service` — over booting a second one.
-	if discovered, err := a.discoverExistingService(ctx); err == nil && discovered != nil {
+	// `opencode serve --service` — over refusing the work.
+	discovered, err := a.discoverExistingService(ctx)
+	if err == nil && discovered != nil {
 		a.sharedMu.Lock()
 		if a.shared != nil {
 			existing := a.shared
@@ -48,13 +60,7 @@ func (a *Adapter) ensureShared(ctx context.Context, directory string) (*sharedSe
 			if err := a.probeShared(ctx, existing); err == nil {
 				return existing, nil
 			}
-			a.teardownShared()
-			a.sharedMu.Lock()
-			a.shared = discovered
-			a.sharedStop = nil
-			a.sharedMu.Unlock()
-			go a.watchShared(discovered)
-			return discovered, nil
+			a.detachShared()
 		}
 		a.shared = discovered
 		a.sharedStop = nil
@@ -63,43 +69,9 @@ func (a *Adapter) ensureShared(ctx context.Context, directory string) (*sharedSe
 		return discovered, nil
 	}
 
-	result, err := a.launch(ctx, directory)
-	if err != nil {
-		return nil, fmt.Errorf("opencode: start shared server in %q: %w", directory, err)
-	}
-	if result == nil || result.client == nil || result.endpoint == "" {
-		return nil, errors.New("opencode: launcher returned no usable server")
-	}
-	next := &sharedServer{
-		client:   result.client,
-		endpoint: result.endpoint,
-		done:     result.done,
-	}
-	nextStop := result.stop
-
-	a.sharedMu.Lock()
-	if a.shared != nil {
-		existing := a.shared
-		a.sharedMu.Unlock()
-		if nextStop != nil {
-			_ = nextStop(ctx)
-		}
-		if err := a.probeShared(ctx, existing); err == nil {
-			return existing, nil
-		}
-		a.teardownShared()
-		a.sharedMu.Lock()
-		a.shared = next
-		a.sharedStop = nextStop
-		a.sharedMu.Unlock()
-		go a.watchShared(next)
-		return next, nil
-	}
-	a.shared = next
-	a.sharedStop = nextStop
-	a.sharedMu.Unlock()
-	go a.watchShared(next)
-	return next, nil
+	return nil, fmt.Errorf(
+		"%w: no healthy `opencode serve --service` is registered in %s; start it from the platform settings (Agent page)",
+		agents.ErrServiceNotRunning, a.serviceFile())
 }
 
 // probeShared reports whether the shared server answers /api/info.
@@ -110,7 +82,19 @@ func (a *Adapter) probeShared(ctx context.Context, shared *sharedServer) error {
 	return err
 }
 
-// teardownShared stops the current shared server, if any.
+// detachShared drops the platform's reference to the current service. It never
+// touches the process: the service may be serving other clients, and only the
+// settings page (StopService) may stop it.
+func (a *Adapter) detachShared() {
+	a.sharedMu.Lock()
+	a.shared = nil
+	a.sharedStop = nil
+	a.sharedMu.Unlock()
+}
+
+// teardownShared stops the current service and drops the reference. It is the
+// operator's action (platform settings), not a business path: the platform
+// kills only the process the settings page started or was told to stop.
 func (a *Adapter) teardownShared() {
 	a.sharedMu.Lock()
 	shared := a.shared
@@ -130,7 +114,7 @@ func (a *Adapter) teardownShared() {
 // launcher's done channel, used by tests and the real launcher) fails all
 // instances at once; otherwise periodic probing catches a silent death.
 func (a *Adapter) watchShared(shared *sharedServer) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(a.watchInterval)
 	defer ticker.Stop()
 	var done <-chan struct{}
 	if shared.done != nil {
@@ -149,7 +133,7 @@ func (a *Adapter) watchShared(shared *sharedServer) {
 				return
 			}
 			a.failAllInstances("opencode shared server process exited unexpectedly")
-			a.teardownShared()
+			a.detachShared()
 			return
 		case <-ticker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -171,7 +155,7 @@ func (a *Adapter) watchShared(shared *sharedServer) {
 				continue
 			}
 			a.failAllInstances("opencode shared server became unreachable")
-			a.teardownShared()
+			a.detachShared()
 			return
 		}
 	}
