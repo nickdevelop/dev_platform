@@ -578,4 +578,19 @@
 
 ## 验收记录
 
-（Task 6.2 完成后填写）
+无 Windows/WSL 实机，本表为待跑状态：每项注明已有的自动化覆盖，实机结果待填。失败项届时开 issue 并链接此处。
+
+| # | 验收项 | 自动化覆盖 | 实机结果 |
+| --- | --- | --- | --- |
+| 1 | `npm install -g @opencode/cli` 后 `opencode --version` 可用 | —（环境前提） | 待跑 |
+| 2 | 平台识别已运行的 `opencode serve --service`（注册文件 + pid 存活 + HTTP 探活） | e2e mock 服务验收（Linux 已过）；`TestProcessAliveExcludesZombie` 系单测 | 待跑 |
+| 3 | 无 service 时设置页“未启动”，新建任务既定提示 | 单测覆盖 DetectService 状态机 | 待跑 |
+| 4 | 新建任务、发送消息、中断、会话列表正常 | pi/opencode 单测 + e2e（Linux 10 过；7 个前置失败见 5.2） | 待跑 |
+| 5 | `Ctrl+C` 与直接关窗：pi 子进程被回收，opencode service 存活 | `TestWindowsProcessTerminateTree`（CI 首跑）；关窗投递待确认（见已知限制 4） | 待跑 |
+| 6 | 第二个平台进程单实例锁报错 | `TestWindowsInstancePortIsWired`（CI 首跑）；Linux 同义单测已过 | 待跑 |
+| 7 | 删除项目提示回收站不可用二次确认，确认后删除 | `TestWindowsTrashUnavailable`（CI 首跑）；Linux freedesktop 路径单测已过 | 待跑 |
+| 8 | `set-password` 在交互终端与管道输入下工作 | Linux 交互路径已手工验证（PTY）；Windows `ReadSecret` 管道回退单测（CI 首跑），控制台读取待跑 | 待跑 |
+| 9 | 启动日志输出权限降级告警 | `TestWindowsEnvironmentDescribeWarns`（CI 首跑）；文案在 `operations.md` 双语记录 | 待跑 |
+| 10 | WSL2 同一构建可启动，WSL1 启动报错退出 | `TestEnvironmentCheckRejectsWSL1` 四输入单测已过；真机 WSL1/WSL2 待跑 | 待跑 |
+
+残留实机核实（来自 Task 4.0）：`bin/opencode.exe` 是否原生 PE；prefix 下 `pi.cmd`/`pi.ps1` 形态；`node` 是否总在 PATH；`package.json` 的 `bin` 在 pi 1.1.0/1.2.0 是否一致；`CTRL_CLOSE_EVENT` 是否确以 SIGTERM 到达（Task 4.6 关停假设）。
