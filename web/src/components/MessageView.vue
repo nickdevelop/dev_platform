@@ -10,6 +10,11 @@
 // (see ../markdown), so backend content cannot inject live markup. An agent
 // reply is cut around its ```plantuml fences first (see ../markdown-segments).
 // Subagent tool calls offer a popup dialog with the full input/output.
+//
+// The log can render split across the chat panel's two columns: display="messages"
+// shows only user/agent message and error entries for the left column, while
+// display="activity" shows only the step groups for the right activity pane.
+// display="all" (the default) keeps the legacy interleaved log.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
@@ -27,8 +32,15 @@ const props = defineProps<{
   messages: ChatEntry[]
   capabilities?: Capabilities | null
   streamStatus?: StreamStatus
+  // Which slice of the log to render. The chat panel renders the log split:
+  // display="messages" shows only user/agent message and error entries for
+  // the left column, display="activity" shows only the thinking/tool step
+  // groups for the right activity pane. display="all" keeps the legacy
+  // interleaved log.
+  display?: 'all' | 'messages' | 'activity'
 }>()
 
+const displayMode = computed(() => props.display ?? 'all')
 // Manually opened blocks stay open while the turn streams. A native <details>
 // loses its `open` state whenever Vue re-creates the element, and a step group
 // is re-created whenever an activity entry is appended to it, so the view owns
@@ -176,6 +188,23 @@ const renderBlocks = computed<RenderBlock[]>(() => {
   return blocks
 })
 
+// The split log reuses the same grouping: display="messages" keeps only
+// message/error entries for the left column, display="activity" keeps only
+// the thinking/tool step groups for the right pane. display="all" keeps the
+// legacy interleaved log.
+const displayedBlocks = computed<RenderBlock[]>(() => {
+  if (displayMode.value === 'messages') {
+    return renderBlocks.value.filter(
+      (block) =>
+        block.kind === 'entry' && (block.entry.kind === 'message' || block.entry.kind === 'error'),
+    )
+  }
+  if (displayMode.value === 'activity') {
+    return renderBlocks.value.filter((block) => block.kind === 'step')
+  }
+  return renderBlocks.value
+})
+
 function toolEventsVisibleFor(entry: ChatEntry): boolean {
   if (entry.kind === 'message' || entry.kind === 'error') return true
   return toolEventsVisible()
@@ -238,7 +267,7 @@ function prettyInput(entry: ChatEntry): string {
 <template>
   <div class="message-view">
     <p
-      v-if="props.streamStatus === 'reconnecting' || props.streamStatus === 'error'"
+      v-if="displayMode !== 'activity' && (props.streamStatus === 'reconnecting' || props.streamStatus === 'error')"
       class="stream-status"
       role="status"
       aria-live="polite"
@@ -247,8 +276,13 @@ function prettyInput(entry: ChatEntry): string {
       <template v-else>事件流已断开，无法接收新消息。</template>
     </p>
 
-    <ol class="entries" role="log" aria-live="polite" aria-label="会话消息">
-      <li v-for="block in renderBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
+    <ol
+      class="entries"
+      role="log"
+      aria-live="polite"
+      :aria-label="displayMode === 'activity' ? '思考与工具活动' : '会话消息'"
+    >
+      <li v-for="block in displayedBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
         <template v-if="block.kind === 'entry'">
           <template v-if="block.entry.kind === 'message'">
             <div class="bubble" :class="block.entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
@@ -370,7 +404,7 @@ function prettyInput(entry: ChatEntry): string {
       </li>
     </ol>
 
-    <p v-if="props.messages.length === 0" class="empty">尚无消息。</p>
+    <p v-if="displayMode === 'activity' ? displayedBlocks.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无思考与工具活动。' : '尚无消息。' }}</p>
 
     <div
       v-if="subagentModal"

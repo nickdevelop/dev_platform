@@ -147,9 +147,9 @@ test('a long session tree scrolls the sidebar and keeps the composer in view', a
 
 // Regression: the step group that wraps reasoning/tool activity was sized
 // width:100% plus its padding under the default content-box, so it stuck out
-// past the log's content box and the conversation grew a horizontal
-// scrollbar. A folded group must still sit inside the log.
-test('a step group never adds a horizontal scroller to the conversation', async ({ page, request }) => {
+// past its scroller's content box and the pane grew a horizontal scrollbar. A
+// folded group must still sit inside the activity pane.
+test('a step group never adds a horizontal scroller to the activity pane', async ({ page, request }) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
@@ -169,7 +169,7 @@ test('a step group never adds a horizontal scroller to the conversation', async 
   await expect(conversation.locator('[data-test="step-group"]')).toBeVisible()
 
   const metrics = await page.evaluate(() => {
-    const log = document.querySelector('[data-test="conversation-scroll"]') as HTMLElement
+    const log = document.querySelector('[data-test="activity-scroll"]') as HTMLElement
     const group = document.querySelector('[data-test="step-group"]') as HTMLElement
     return {
       logScrollOverflow: log.scrollWidth - log.clientWidth,

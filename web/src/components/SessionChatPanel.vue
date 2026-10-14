@@ -4,6 +4,11 @@
 // each session keeps its own cached transcript and live streams, so switching
 // tabs never loses state. The composer is the only place a turn is sent or
 // stopped; the send action becomes 停止 while the session's turn is running.
+// The pane is split in two: the left column shows only user/agent messages,
+// confirmations and the composer, while the right pane shows only
+// thinking/tool activity with its own independent scroller. The right pane
+// collapses to a rail and remembers the choice in localStorage; below 900px it
+// overlays the messages instead of squeezing them.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
@@ -57,6 +62,35 @@ function onModelPicked(id: string) {
 const logScroll = ref<HTMLElement | null>(null)
 const pinnedToBottom = ref(true)
 const showJumpToLatest = ref(false)
+// The right activity pane scrolls independently of the left message column,
+// so tool output can never yank the message view. It follows the same
+// follow-while-at-bottom rule with its own scroller state.
+const activityScroll = ref<HTMLElement | null>(null)
+const activityPinned = ref(true)
+const showJumpActivity = ref(false)
+// Whether the right activity pane is collapsed. Persisted in localStorage so
+// a refresh keeps the user's choice; defaults to expanded.
+const ACTIVITY_STORAGE_KEY = 'dev-platform-activity-pane-v1'
+const activityCollapsed = ref(false)
+try {
+  activityCollapsed.value = localStorage.getItem(ACTIVITY_STORAGE_KEY) === 'collapsed'
+} catch {
+  activityCollapsed.value = false
+}
+function setActivityCollapsed(collapsed: boolean) {
+  activityCollapsed.value = collapsed
+  try {
+    localStorage.setItem(ACTIVITY_STORAGE_KEY, collapsed ? 'collapsed' : 'expanded')
+  } catch {
+    // Persistence is best-effort only.
+  }
+  // Expanding returns to the newest activity when the pane was following it.
+  if (!collapsed) {
+    activityPinned.value = true
+    showJumpActivity.value = false
+    void nextTick(() => scrollActivityToBottom(false))
+  }
+}
 // "At the bottom" tolerates a small rounding gap so subpixel layouts, and a
 // wheel that stops a hair short, still count as following the conversation.
 const FOLLOW_THRESHOLD_PX = 24
@@ -90,6 +124,27 @@ const logSignature = computed(() => {
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 const historyError = computed(() => sessions.historyError[props.sessionId] ?? '')
 const historyTruncated = computed(() => sessions.historyTruncated[props.sessionId] === true)
+// The activity pane's change signal mirrors the message log but counts only
+// thinking/tool entries, so a new user/agent message never scrolls the right
+// pane, and new activity never touches the left column's jump button.
+const activitySignature = computed(() => {
+  let count = 0
+  let open = 0
+  for (const entry of activeMessages.value) {
+    if (entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result') {
+      count += 1
+      if (entry.streaming) open += entry.text.length
+    }
+  }
+  return `${props.sessionId}:${count}:${open}`
+})
+const activityCount = computed(() => {
+  let count = 0
+  for (const entry of activeMessages.value) {
+    if (entry.kind === 'thinking' || entry.kind === 'tool_call') count += 1
+  }
+  return count
+})
 
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
@@ -228,6 +283,30 @@ function scrollToBottom(smooth: boolean) {
   showJumpToLatest.value = false
 }
 
+// onActivityScroll mirrors onLogScroll for the right pane: it tracks only the
+// activity scroller, so parking the activity history never affects the message
+// column's follow state, and vice versa.
+function onActivityScroll() {
+  const el = activityScroll.value
+  if (!el) return
+  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+  const atBottom = distance <= FOLLOW_THRESHOLD_PX
+  activityPinned.value = atBottom
+  if (atBottom) showJumpActivity.value = false
+}
+
+function scrollActivityToBottom(smooth: boolean) {
+  const el = activityScroll.value
+  if (!el) return
+  if (smooth && typeof el.scrollTo === 'function') {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  } else {
+    el.scrollTop = el.scrollHeight
+  }
+  activityPinned.value = true
+  showJumpActivity.value = false
+}
+
 watch(logSignature, () => {
   // Wait for the entry to be in the DOM before measuring it.
   void nextTick(() => {
@@ -238,6 +317,19 @@ watch(logSignature, () => {
       showJumpToLatest.value = false
     } else {
       showJumpToLatest.value = true
+    }
+  })
+})
+
+watch(activitySignature, () => {
+  void nextTick(() => {
+    const el = activityScroll.value
+    if (!el) return
+    if (activityPinned.value) {
+      el.scrollTop = el.scrollHeight
+      showJumpActivity.value = false
+    } else {
+      showJumpActivity.value = true
     }
   })
 })
@@ -256,6 +348,8 @@ async function open() {
   modelOk.value = true
   pinnedToBottom.value = true
   showJumpToLatest.value = false
+  activityPinned.value = true
+  showJumpActivity.value = false
   // The instance list is loaded only to label the conversation's working
   // directory — the user never sees or operates an instance itself.
   await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
@@ -294,6 +388,7 @@ async function open() {
     // history.
     await nextTick()
     scrollToBottom(false)
+    scrollActivityToBottom(false)
   } finally {
     preparing.value = false
   }
@@ -471,95 +566,156 @@ async function removeSession() {
         <button v-else type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
-      <div class="conversation-area">
-        <div
-          class="conversation-scroll"
-          data-test="conversation-scroll"
-          ref="logScroll"
-          @scroll.passive="onLogScroll"
-        >
-          <MessageView
-            :messages="activeMessages"
-            :capabilities="activeSession.capabilities"
-            :stream-status="streamStatus"
-          />
-
-          <button
-            v-if="streamStatus === 'error' || streamStatus === 'reconnecting'"
-            type="button"
-            class="reconnect"
-            data-test="stream-reconnect"
-            @click="reconnect"
-          >
-            重新连接事件流
-          </button>
-        </div>
-
-        <button
-          v-if="showJumpToLatest"
-          type="button"
-          class="jump-latest"
-          data-test="jump-latest"
-          @click="scrollToBottom(true)"
-        >
-          ↓ 滚动到最新消息
-        </button>
-      </div>
-
-      <CapabilityControls
-        :capabilities="activeSession.capabilities"
-        :pending-tool-call="pendingToolCall"
-        @confirm-tool="onConfirmTool"
-        @deny-tool="onDenyTool"
-      />
-
-      <QuestionQueue
-        v-if="pendingForms.length > 0"
-        :forms="pendingForms"
-        :busy="answeringForm"
-        @submit="(formId, answer) => onAnswerForm(formId, answer)"
-      />
-
-      <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
-
-      <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
-
-      <form class="send composer" @submit.prevent="onSubmit">
-        <div class="composer-box">
-          <label class="composer-label" for="message-text">发送消息</label>
-          <textarea
-            id="message-text"
-            v-model="messageText"
-            rows="3"
-            placeholder="向 Agent 发送消息…"
-            @keydown.enter.exact.prevent="onSubmit"
-          ></textarea>
-          <div class="composer-bar">
-            <div class="composer-tools">
-              <ModelSelect
-                ref="modelPicker"
-                v-model="selectedModel"
-                :project-id="props.projectId"
-                :backend="activeSession.backend"
-                :model-selection="activeSession.capabilities.modelSelection"
-                @status="modelOk = $event"
-                @picked="onModelPicked"
-              />
-              <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
-            </div>
-            <button
-              type="button"
-              class="composer-action"
-              :class="isRunning ? 'stop-button' : 'send-button'"
-              :disabled="composerDisabled"
-              :title="isRunning ? '停止' : '发送'"
-              @click="onSubmit"
+      <div class="conversation-split" :class="{ 'activity-collapsed': activityCollapsed }">
+        <div class="message-column">
+          <div class="conversation-area">
+            <div
+              class="conversation-scroll"
+              data-test="conversation-scroll"
+              ref="logScroll"
+              @scroll.passive="onLogScroll"
             >
-              {{ composerLabel }}
+              <MessageView
+                :messages="activeMessages"
+                :capabilities="activeSession.capabilities"
+                :stream-status="streamStatus"
+                display="messages"
+              />
+
+              <button
+                v-if="streamStatus === 'error' || streamStatus === 'reconnecting'"
+                type="button"
+                class="reconnect"
+                data-test="stream-reconnect"
+                @click="reconnect"
+              >
+                重新连接事件流
+              </button>
+            </div>
+
+            <button
+              v-if="showJumpToLatest"
+              type="button"
+              class="jump-latest"
+              data-test="jump-latest"
+              @click="scrollToBottom(true)"
+            >
+              ↓ 滚动到最新消息
             </button>
           </div>
+
+          <CapabilityControls
+            :capabilities="activeSession.capabilities"
+            :pending-tool-call="pendingToolCall"
+            @confirm-tool="onConfirmTool"
+            @deny-tool="onDenyTool"
+          />
+
+          <QuestionQueue
+            v-if="pendingForms.length > 0"
+            :forms="pendingForms"
+            :busy="answeringForm"
+            @submit="(formId, answer) => onAnswerForm(formId, answer)"
+          />
+
+          <p v-if="toolNotice" class="tool-notice" role="alert">{{ toolNotice }}</p>
+
+          <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
+
+          <form class="send composer" @submit.prevent="onSubmit">
+            <div class="composer-box">
+              <label class="composer-label" for="message-text">发送消息</label>
+              <textarea
+                id="message-text"
+                v-model="messageText"
+                rows="3"
+                placeholder="向 Agent 发送消息…"
+                @keydown.enter.exact.prevent="onSubmit"
+              ></textarea>
+              <div class="composer-bar">
+                <div class="composer-tools">
+                  <ModelSelect
+                    ref="modelPicker"
+                    v-model="selectedModel"
+                    :project-id="props.projectId"
+                    :backend="activeSession.backend"
+                    :model-selection="activeSession.capabilities.modelSelection"
+                    @status="modelOk = $event"
+                    @picked="onModelPicked"
+                  />
+                  <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+                </div>
+                <button
+                  type="button"
+                  class="composer-action"
+                  :class="isRunning ? 'stop-button' : 'send-button'"
+                  :disabled="composerDisabled"
+                  :title="isRunning ? '停止' : '发送'"
+                  @click="onSubmit"
+                >
+                  {{ composerLabel }}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
-      </form>
+
+        <aside
+          v-if="!activityCollapsed"
+          class="activity-pane"
+          aria-label="思考与工具"
+          data-test="activity-pane"
+        >
+          <header class="activity-head">
+            <h3 class="activity-title">思考与工具<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span></h3>
+            <button
+              type="button"
+              class="activity-toggle"
+              data-test="activity-collapse"
+              title="收起活动栏"
+              aria-label="收起思考与工具栏"
+              @click="setActivityCollapsed(true)"
+            >
+              收起 »
+            </button>
+          </header>
+          <div
+            class="activity-scroll"
+            data-test="activity-scroll"
+            ref="activityScroll"
+            @scroll.passive="onActivityScroll"
+          >
+            <MessageView
+              :messages="activeMessages"
+              :capabilities="activeSession.capabilities"
+              :stream-status="streamStatus"
+              display="activity"
+            />
+          </div>
+          <button
+            v-if="showJumpActivity"
+            type="button"
+            class="jump-latest"
+            data-test="jump-activity"
+            @click="scrollActivityToBottom(true)"
+          >
+            ↓ 最新活动
+          </button>
+        </aside>
+
+        <div v-else class="activity-rail" data-test="activity-rail">
+          <button
+            type="button"
+            class="activity-toggle"
+            data-test="activity-expand"
+            title="展开活动栏"
+            aria-label="展开思考与工具栏"
+            @click="setActivityCollapsed(false)"
+          >
+            « 活动<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
+          </button>
+        </div>
+      </div>
 
       <div
         v-if="confirmingDelete"
@@ -611,6 +767,26 @@ async function removeSession() {
   min-height: 0;
 }
 
+.conversation-split {
+  /* Left messages + right activity share the pane height; each column scrolls
+     inside itself so tool output can never push the composer out of view. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.message-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 0;
+}
+
 .conversation-area {
   /* The anchor for the floating jump button, which sits over the bottom of
      the log and above the composer. */
@@ -625,6 +801,94 @@ async function removeSession() {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.activity-pane {
+  flex: 0 0 min(22rem, 32%);
+  min-width: 16rem;
+  max-width: 26rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.activity-title {
+  margin: 0;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.activity-count {
+  display: inline-block;
+  min-width: 1.4rem;
+  text-align: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text);
+}
+
+.activity-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.5rem 0.6rem;
+}
+
+.activity-toggle {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.activity-rail {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.2rem;
+}
+
+/* Narrow screens: the activity pane becomes an overlay drawer so it never
+   squeezes the message column. */
+@media (max-width: 900px) {
+  .activity-pane {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(22rem, 86vw);
+    flex: none;
+    z-index: 8;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  }
+
+  .conversation-split.activity-collapsed .activity-rail {
+    position: absolute;
+    top: 0.2rem;
+    right: 0;
+    z-index: 8;
+  }
 }
 
 .jump-latest {
