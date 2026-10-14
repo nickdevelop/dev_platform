@@ -334,8 +334,8 @@
 **Files:**
 - Modify: `docs/architecture/os-abstraction.md`（补充 pi 的可执行解析结论）
 
-- [ ] **Step 1: 确认** — 在 Windows 实机确认 pi 的安装方式与 PATH 中的文件形态（是否同样是 npm shim，是否存在 `.exe`）。
-- [ ] **Step 2: 结论写入设计文档**。若 pi 的形态与 opencode 相同，则 Task 4.3 的解析方案同时适用于 pi；否则为 pi 单独设计。
+- [x] **Step 1: 确认** — 在 Windows 实机确认 pi 的安装方式与 PATH 中的文件形态（是否同样是 npm shim，是否存在 `.exe`）。（无实机，改用 npm registry 元数据 + 仓库内诊断文案确认：pi 的 bin 是纯 JS，无 `.exe`；残留实机核实项并入 6.2。）
+- [x] **Step 2: 结论写入设计文档**。若 pi 的形态与 opencode 相同，则 Task 4.3 的解析方案同时适用于 pi；否则为 pi 单独设计。
 - [ ] **Step 3: 提交** — `git commit -am "docs: record pi windows installation layout"`
 
 ### Task 4.1: Windows 单实例锁

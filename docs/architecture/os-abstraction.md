@@ -185,6 +185,14 @@ npm 全局安装的 prefix 目录（如 `C:\Users\chenli\AppData\Roaming\npm`）
 - 包信息依据 npm registry 元数据（`@opencode/cli` 最新版 2.0.28）：`bin.opencode` 指向 `bin/opencode.exe`，`os` 包含 `win32`，可选依赖包含 `@opencode/cli-windows-x64` 与 `@opencode/cli-windows-arm64`。
 - 该包的 `postinstall.mjs` 可能改变 `bin/opencode.exe` 的内容，因此第 3 步的文件头校验不可省略。
 
+### 5.3.1 pi 的安装形态（Task 4.0 结论：与 opencode 不同，为 pi 单独设计）
+
+- pi 通过 npm 全局安装（`npm install -g @earendil-works/pi-coding-agent`，见 `internal/agents/pi/adapter.go` 的诊断文案）。
+- npm registry 元数据（`@earendil-works/pi-coding-agent` 1.2.0）：`bin.pi` 指向 `dist/bundle/cli.js`——纯 JS 入口，没有原生 `.exe`，也没有平台可选依赖（opencode 有 `bin/opencode.exe` 与 `@opencode/cli-windows-*`）。
+- 结论：Task 4.3 的 `.exe` 直解方案不适用于 pi。pi 在 Windows 上走自己的解析：从 npm prefix 定位包内 JS 入口（以包内 `package.json` 的 `bin` 字段为准，不硬编码 `dist/bundle` 路径），用 `node` 直接运行；`node` 经端口 `Executables.Resolve("node")` 查找（npm 可用则 `node` 必在 PATH）。
+- 兜底顺序与 opencode 同形（`npm root -g`，最后才退回 `pi.cmd`），退回时的参数同样只允许平台内部固定列表。
+- 仍待 Windows 实机核实（记入 Task 6.2 验收）：prefix 下 shim 文件的实际形态（`pi.cmd`／`pi.ps1` 是否存在）、`node` 是否总在 PATH、`package.json` 的 `bin` 字段在 1.1.0（仓库实测版本）与 1.2.0（registry 最新）是否一致。若实机形态与假设不符，只改 pi 包内的配置（包名、入口相对路径），不改机制。
+
 ### 5.4 路径与文件系统
 
 - 用户输入的路径保留盘符（`C:\work`）与 UNC（`\\server\share`），内部统一用 `filepath` 处理。
@@ -238,6 +246,7 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 3. ~~opencode 的安装形态~~ 已确认：npm 全局安装，prefix 下同时有无扩展名的 sh shim 与 `opencode.cmd`，见第 5.3 节。
 4. **`bin/opencode.exe` 的实际内容。** 需要在实机安装后确认它是原生 PE 程序，还是 JS 启动器或占位文件，以决定第 3 步之后是否会走到平台可选依赖。
 5. ~~Windows 上平台自身的部署方式~~ 已确认：直接在命令行前台启动，不注册系统服务。停止方式为 Ctrl+C 或关闭终端窗口。
+6. **pi 的安装形态** 已确认（无需实机，依据 npm registry 元数据与仓库内诊断文案）：`bin.pi` 是纯 JS 入口（`dist/bundle/cli.js`，1.2.0），无原生 `.exe`、无平台可选依赖，见第 5.3.1 节。残留的实机核实项（shim 文件形态、`node` 在 PATH、`package.json` 的 `bin` 在 1.1.0/1.2.0 是否一致）记入 Task 6.2 验收。
 
 ## 8. 测试策略
 
