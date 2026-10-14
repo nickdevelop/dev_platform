@@ -319,8 +319,8 @@
 
 ### Task 3.6: 清空守卫清单（阶段 3 出口）
 
-- [ ] **Step 1: 删除允许清单中已迁移的条目**，仅保留阶段 4 的 Windows 实现任务相关条目（如 `internal/projects/service.go:506` 的路径前缀比较，改由 `Dirs.SamePath` 承担）。
-- [ ] **Step 2: 全量验证** — `go test ./... && go vet ./...`、前端测试。
+- [x] **Step 1: 删除允许清单中已迁移的条目**，仅保留阶段 4 的 Windows 实现任务相关条目（如 `internal/projects/service.go:506` 的路径前缀比较，改由 `Dirs.SamePath` 承担）。（清单已为空：阶段 2 出口后无新增违规；`service.go:506` 是功能项而非守卫项，留给 Task 4.4。）
+- [x] **Step 2: 全量验证** — `go test ./... && go vet ./...`、前端测试。（23 包全绿、vet 干净、Windows build/vet 干净、前端 30 文件/338 用例全绿。）
 - [ ] **Step 3: 提交** — `git commit -am "test(platform): phase 3 complete, guard allowlist reduced"`
 
 ---
