@@ -241,6 +241,7 @@ async function logout() {
       :sidebar-collapsible="!settingsMode"
       @logout="logout"
       @toggle-sidebar="toggleSidebar"
+      @expand-sidebar="setSidebarCollapsed(false)"
     />
 
     <aside v-if="!settingsMode && !sidebarCollapsed" class="sidebar" aria-label="项目导航">

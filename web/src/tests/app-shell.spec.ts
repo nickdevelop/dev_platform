@@ -264,6 +264,20 @@ describe('three-pane app shell', () => {
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
   })
 
+  it('brings the project column back when the project category is clicked', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+
+    // Clicking the already-active project entry changes no route, so the click
+    // itself has to restore the column it depends on.
+    await wrapper.findAll('a').find((link) => link.text() === '项目')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+    expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
+  })
+
   it('starts with the project column collapsed when the stored choice says so', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true }, () => {
       localStorage.setItem('dev-platform-sidebar-v1', 'collapsed')

@@ -7,7 +7,8 @@
 // logs out, and — at the very bottom — collapses the project/task column so a
 // conversation can take the full width; the shell owns that column's visibility
 // and its persisted choice, so the rail only reports the click and reflects the
-// current state.
+// current state. The project category depends on that column, so activating it
+// asks the shell to show the column again.
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -21,6 +22,10 @@ defineProps<{
 const emit = defineEmits<{
   logout: []
   toggleSidebar: []
+  // A rail entry that needs the project/task column asks the shell to show it,
+  // so a collapsed column comes back in one click even when the entry is the
+  // one already active (no route change to react to).
+  expandSidebar: []
 }>()
 
 const route = useRoute()
@@ -38,6 +43,7 @@ const settingsActive = computed(() => route.meta.settings === true)
       title="项目"
       :aria-current="projectActive ? 'page' : undefined"
       :to="{ name: 'home' }"
+      @click="emit('expandSidebar')"
     >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
