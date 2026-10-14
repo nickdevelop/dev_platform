@@ -29,8 +29,8 @@ func (p unixPlatform) Instance() Instance { return unixInstance{} }
 // Process returns the unix child-process management.
 func (p unixPlatform) Process() Process { return unixProcess{} }
 
-// Dirs returns the unix directory resolution.
-func (p unixPlatform) Dirs() Dirs { return unixDirs{} }
+// Dirs returns the unix directory resolution and path policy.
+func (p unixPlatform) Dirs() Dirs { return unix.Dirs{} }
 
 // Trash returns the unix trash mover.
 func (p unixPlatform) Trash() Trash { return unixTrash{} }
@@ -64,21 +64,6 @@ func (unixProcess) IsZombie(pid int) bool { return unix.Process{}.IsZombie(pid) 
 func (unixProcess) Terminate(pid int) error {
 	return unix.Process{}.Terminate(pid)
 }
-
-// unixDirs adapts the unix implementation to the Dirs port. Path
-// canonicalization moves to unix/pathpolicy.go in Task 2.6; until then the
-// stub fails loudly so no caller can accidentally depend on it.
-type unixDirs struct {
-	unix.Dirs
-}
-
-func (d unixDirs) CanonicalizeUserPath(p string) (string, error) {
-	return "", errors.New("platform: Dirs.CanonicalizeUserPath is wired in Task 2.6")
-}
-
-// SamePath is case sensitive on unix; Task 2.6 confirms the final form
-// alongside the path policy.
-func (d unixDirs) SamePath(a, b string) bool { return a == b }
 
 // unixTrash adapts the unix implementation to the Trash port.
 type unixTrash struct{}

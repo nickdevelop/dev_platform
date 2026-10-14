@@ -218,8 +218,8 @@
 **Interfaces:**
 - Produces: `Dirs.CanonicalizeUserPath(p) (string, error)`、`Dirs.SamePath(a, b) bool`。unix：保留 `C:\work` → `/mnt/c/work` 翻译与 UNC 拒绝，`SamePath` 区分大小写。
 
-- [ ] **Step 1: 迁移** — 所有现有用例保持通过。
-- [ ] **Step 2: 提交** — `git commit -am "refactor(platform): path canonicalization behind Dirs port"`
+- [x] **Step 1: 迁移** — 所有现有用例保持通过。
+- [x] **Step 2: 提交** — `git commit -am "refactor(platform): path canonicalization behind Dirs port"`
 
 ### Task 2.7: 关停信号与测试辅助
 

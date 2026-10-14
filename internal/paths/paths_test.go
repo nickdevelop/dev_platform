@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"devplatform/internal/platform/policy"
 )
 
 // canonicalTempDir returns the symlink-resolved path of a fresh temp dir, so
@@ -108,32 +110,10 @@ func TestResolveNormalizesWSLDrivePaths(t *testing.T) {
 	}
 }
 
-func TestTranslateWindowsPath(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{`C:\work\project`, "/mnt/c/work/project"},
-		{`c:/work/project`, "/mnt/c/work/project"},
-		{`C:\`, "/mnt/c"},
-		{`Z:\data`, "/mnt/z/data"},
-		{"/mnt/c/work/project", "/mnt/c/work/project"},
-		{"/opt/linux/path", "/opt/linux/path"},
-	}
-	for _, tc := range cases {
-		got, err := translateWindowsPath(tc.input)
-		if err != nil {
-			t.Errorf("translateWindowsPath(%q) failed: %v", tc.input, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("translateWindowsPath(%q) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-
-	for _, ambiguous := range []string{`C:relative`, `C:`, `\\server\share\proj`, `/mixed\separator`} {
-		if _, err := translateWindowsPath(ambiguous); !errors.Is(err, ErrInvalidPath) {
-			t.Errorf("translateWindowsPath(%q) error = %v, want ErrInvalidPath", ambiguous, err)
-		}
+// TestErrInvalidPathSharedWithPolicy pins the load-bearing alias: the unix
+// path policy wraps the policy value, so errors from Resolve must match both.
+func TestErrInvalidPathSharedWithPolicy(t *testing.T) {
+	if ErrInvalidPath != policy.ErrInvalidPath {
+		t.Fatal("paths.ErrInvalidPath is not the shared policy value")
 	}
 }

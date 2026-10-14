@@ -50,5 +50,3 @@ func (Dirs) StateDir() (string, error) {
 func (Dirs) TempDir() string {
 	return os.TempDir()
 }
-
-// CanonicalizeUserPath and SamePath move here in Task 2.6.
