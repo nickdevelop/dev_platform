@@ -407,8 +407,8 @@
   - `CanonicalizeUserPath`：保留盘符与 UNC，`filepath` 规范化，不做 WSL 翻译。
   - `SamePath`：不区分大小写。
 
-- [ ] **Step 1: 写测试** — `C:\Users\chenli\.local\state\opencode\service.json` 的推导；大小写不同的同一路径判定为相同；UNC 路径保留。
-- [ ] **Step 2: 实现。**
+- [x] **Step 1: 写测试** — `C:\Users\chenli\.local\state\opencode\service.json` 的推导；大小写不同的同一路径判定为相同；UNC 路径保留。
+- [x] **Step 2: 实现。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): windows directories and path policy"`
 
 ### Task 4.5: Windows 权限降级

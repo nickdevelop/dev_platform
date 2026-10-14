@@ -499,9 +499,23 @@ func confirmNameMatches(row database.Project, confirmName string) error {
 	return nil
 }
 
-// pathWithin reports whether child lies strictly inside parent.
+// pathWithin reports whether child lies strictly inside parent. Segments
+// compare through the platform path policy, so Windows case-insensitivity
+// applies without a GOOS branch; both sides arrive canonical and absolute
+// from paths.Resolve.
 func pathWithin(parent, child string) bool {
-	return strings.HasPrefix(child, parent+string(filepath.Separator))
+	dirs := platform.New().Dirs()
+	parentSegs := strings.Split(filepath.Clean(parent), string(filepath.Separator))
+	childSegs := strings.Split(filepath.Clean(child), string(filepath.Separator))
+	if len(childSegs) <= len(parentSegs) {
+		return false
+	}
+	for i, seg := range parentSegs {
+		if !dirs.SamePath(seg, childSegs[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // projectFromModel maps the persistence model to the JSON-stable DTO.

@@ -31,6 +31,9 @@ func (p windowsPlatform) Process() Process { return windowsProcess{} }
 // Executables returns the Windows command lookup.
 func (p windowsPlatform) Executables() Executables { return windows.Executables{} }
 
+// Dirs returns the Windows directory resolution and path policy.
+func (p windowsPlatform) Dirs() Dirs { return windows.Dirs{} }
+
 // windowsInstance adapts the windows implementation to the Instance port.
 type windowsInstance struct{}
 
