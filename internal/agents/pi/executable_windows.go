@@ -169,9 +169,11 @@ func packageBinEntry(pkgDir, name string) (string, error) {
 	return entry, nil
 }
 
-// npmRootGlobal runs `npm root -g` as a fallback prefix source.
+// npmRootGlobal runs `npm root -g` as a fallback prefix source. npm is a
+// .cmd shim itself, so it goes through cmd.exe: Go cannot start .cmd files
+// directly with CreateProcess.
 func npmRootGlobal() (string, error) {
-	out, err := exec.Command("npm", "root", "-g").Output()
+	out, err := exec.Command("cmd", "/C", "npm", "root", "-g").Output()
 	if err != nil {
 		return "", fmt.Errorf("pi: npm root -g: %w", err)
 	}
