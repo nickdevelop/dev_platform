@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 
+	"devplatform/internal/platform/policy"
 	"devplatform/internal/platform/windows"
 )
 
@@ -39,6 +40,15 @@ func (p windowsPlatform) Perms() Perms { return windows.Perms{} }
 
 // Environment returns the Windows startup checks.
 func (p windowsPlatform) Environment() Environment { return windows.Environment{} }
+
+// Shutdown returns the Windows termination signals.
+func (p windowsPlatform) Shutdown() Shutdown { return windows.Shutdown{} }
+
+// Trash returns the Windows unavailable trash.
+func (p windowsPlatform) Trash() Trash { return windowsTrash{} }
+
+// Terminal returns the Windows console reader.
+func (p windowsPlatform) Terminal() Terminal { return windows.Terminal{} }
 
 // windowsInstance adapts the windows implementation to the Instance port.
 type windowsInstance struct{}
@@ -72,4 +82,17 @@ func (windowsProcess) IsZombie(pid int) bool { return windows.Process{}.IsZombie
 
 func (windowsProcess) Terminate(pid int) error {
 	return windows.Process{}.Terminate(pid)
+}
+
+// windowsTrash adapts the windows implementation to the Trash port.
+type windowsTrash struct{}
+
+func (windowsTrash) Move(path string) error {
+	err := windows.Trash{}.Move(path)
+	if err != nil && errors.Is(err, policy.ErrTrashUnavailable) {
+		// Map the implementation's copy to the canonical port value;
+		// callers match with errors.Is against platform.ErrTrashUnavailable.
+		return ErrTrashUnavailable
+	}
+	return err
 }

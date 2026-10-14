@@ -428,8 +428,8 @@
 - Create: `internal/platform/windows/trash.go`（`Move` 返回 `ErrTrashUnavailable`）
 - Create: `internal/platform/windows/terminal.go`（`IsInteractive` 与 `ReadSecret` 使用 `golang.org/x/term`，它支持 Windows 控制台）
 
-- [ ] **Step 1: 写测试** — 回收站返回不可用错误；`ReadSecret` 在非交互输入下退回 stdin 读取。
-- [ ] **Step 2: 实现。**
+- [x] **Step 1: 写测试** — 回收站返回不可用错误；`ReadSecret` 在非交互输入下退回 stdin 读取。
+- [x] **Step 2: 实现。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): windows shutdown, trash and terminal"`
 
 ### Task 4.7: 测试平台覆盖
