@@ -439,9 +439,9 @@
 - Modify: `internal/projects/trash_linux_test.go` 迁移后的测试，确认 Windows 上不被编译。
 - Modify: `web/e2e/fixtures/bin/opencode` 相关测试：Windows 上 fixture 需要 `opencode.cmd` 形式（见阶段 5）。
 
-- [ ] **Step 1: `GOOS=windows go vet ./...`** — 必须通过。
-- [ ] **Step 2: 在 Windows 实机运行 `go test ./...`** — 允许 e2e 之外的测试失败，但每个失败必须记录在本计划的“已知限制”中。
-- [ ] **Step 3: 清空守卫清单**，并确认 `internal/projects/service.go:506` 等条目已移除。
+- [x] **Step 1: `GOOS=windows go vet ./...`** — 必须通过。
+- [x] **Step 2: 在 Windows 实机运行 `go test ./...`** — 允许 e2e 之外的测试失败，但每个失败必须记录在本计划的“已知限制”中。（无实机：静态审计 + 修好两处硬失败，记入“已知限制”，以 CI 首跑为准。）
+- [x] **Step 3: 清空守卫清单**，并确认 `internal/projects/service.go:506` 等条目已移除。（清单为空；`service.go:506` 的 `pathWithin` 已在 Task 4.4 改为端口比较。）
 - [ ] **Step 4: 提交** — `git commit -am "test(platform): windows test suite passes"`
 
 ---
@@ -565,6 +565,16 @@
   - `cmd/platform/main.go:388`（`syscall.SIGINT/SIGTERM`）
 - `runtime.GOOS/GOARCH` 引用清单：`internal/database/database_test.go:330`、`internal/runtime/single_instance_test.go:77`、`internal/agents/pi/adapter_test.go:47,318,502`、`internal/agents/pi/interrupt_test.go:107`、`internal/secrets/store_test.go:101,131`、`cmd/platform/config_test.go:71`。
 - `golang.org/x/sys`：无直接或间接 import（`go.mod` 未声明，为间接依赖也不存在）；`x/sys/windows` 为待新增直接依赖（Task 4.1）。
+
+## 已知限制（Task 4.7 实机待确认）
+
+无 Windows 环境，`go test ./...` 未在实机运行过。以下为静态审计结论，以 CI 矩阵（Task 6.1）首跑结果为准，差异记入验收记录：
+
+1. 已修好的可移植性缺口（本任务内修复，不再是失败项）：`service_test.go` 的 `sleep 30` 与 `service_gate_test.go` 的 `deadPID` 改为端口探测缺失即跳过；此前在 Windows 上是硬失败。
+2. 预期跳过（按设计通过）：`unix` tag 单测、shell 桩门控（`writeFakePi`、`TestAdapterStopRacingSendReapsProcess`）、能力门控（权限 `Enforced`、XDG、DrvFs 均只在 unix 跑）。
+3. 从未在本机运行、首跑在 CI 的 Windows 单测：`windows/` 下的 instance/process/dirs/executables/trash/terminal/shutdown/perms/environment、两后端的 `executable_windows_test.go`、`projects/path_windows_test.go`。
+4. 风险项：`TestServerShutsDownGracefullyOnSigterm` 在无控制台环境下 `Interrupt` 投递失败，15s 后走 Kill 回退会导致断言失败；runner 通常有控制台，预期通过，若 CI 失败则重审 `Shutdown.Interrupt` 策略。
+5. e2e 的 Windows 夹具（`opencode.cmd`）属 Task 5.2 范围，不在本次审计内。
 
 ## 验收记录
 

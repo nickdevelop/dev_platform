@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // TestStartInstanceDoesNotLaunchServiceWhenNoRegistration pins the boundary
@@ -116,6 +117,11 @@ func TestStartInstanceRefusesStaleRegistration(t *testing.T) {
 // OS has now reaped.
 func deadPID(t *testing.T) int {
 	t.Helper()
+	// The helper needs a real sleeper binary; skip where the platform has
+	// none (Windows CI) instead of failing the gate tests.
+	if _, err := platform.New().Executables().Resolve("sleep"); err != nil {
+		t.Skipf("sleep not on PATH: %v", err)
+	}
 	cmd := exec.Command("sleep", "0.01")
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sleep: %v", err)

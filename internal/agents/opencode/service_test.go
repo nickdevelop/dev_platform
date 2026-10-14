@@ -190,6 +190,10 @@ func TestStartServicePropagatesLaunchFailure(t *testing.T) {
 // operator owns that decision.
 func TestStopServiceKillsRegisteredPid(t *testing.T) {
 	exited := make(chan struct{})
+	// Needs a real sleeper binary; skip where the platform has none.
+	if _, err := platform.New().Executables().Resolve("sleep"); err != nil {
+		t.Skipf("sleep not on PATH: %v", err)
+	}
 	cmd := exec.Command("sleep", "30")
 	if err := platform.New().Process().Configure(cmd); err != nil {
 		t.Fatalf("configure process group: %v", err)
