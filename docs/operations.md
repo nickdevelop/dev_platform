@@ -25,6 +25,16 @@ make build         # produces bin/platform
 `make verify` runs the full check suite (go vet, Go tests, frontend unit
 tests, frontend build).
 
+To produce distributable packages instead, run `./release.sh` (or
+`make release`, Linux/WSL only): it builds the frontend once, then
+cross-compiles the server for Linux (amd64, arm64) and Windows (amd64) and
+writes self-contained archives to `release/`, each holding the binary, a
+copied `web/dist`, and this guide, plus a `SHA256SUMS` file. Unpack a
+package and run `./platform` (Windows: `platform.exe`) from its root — the
+binary serves the bundled UI on `:8080` with no further configuration.
+Pass `--version <label>` to name the artifacts, or `--targets "linux/amd64
+windows/amd64"` to build a subset.
+
 ## First run: set the platform password
 
 The platform has a single shared operator password. Configure it once per

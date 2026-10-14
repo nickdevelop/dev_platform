@@ -3,7 +3,7 @@
 # stays Unix-specific.
 BINARY := bin/platform
 
-.PHONY: help build run test vet web-install web-build web-test e2e verify clean
+.PHONY: help build run test vet web-install web-build web-test e2e verify release clean
 
 help: ## Show the available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -33,6 +33,9 @@ e2e: ## Run the Playwright E2E suite against the real stack
 	cd web && npm run test:e2e
 
 verify: vet test web-test web-build ## Run everything: vet, Go tests, frontend tests, frontend build
+
+release: ## Build Linux/Windows packages into release/ (see ./release.sh help)
+	./release.sh
 
 clean: ## Remove build artifacts
 	rm -rf bin

@@ -19,6 +19,9 @@ playwright-report/
 *.test
 *.out
 
+# release.sh output (packages + SHA256SUMS)
+/release/
+
 # Environment / local secrets
 .env
 .env.*
