@@ -3,6 +3,12 @@
 // a project's settings page — because to the user they are the same thing: pages
 // they have open. Identity, activation and closing all go through the tab's key,
 // so the strip never branches on kind except to label and decorate.
+//
+// A tab can be closed with a middle click, or the strip's context menu: pin the
+// tab, close it, close the other unpinned tabs, or close them all. Pinned tabs
+// render no close control and ignore a middle click — they are the anchors the
+// user pinned on purpose — and the store keeps them at the front.
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../stores/openTabs'
 
 const props = defineProps<{
@@ -14,6 +20,9 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [tab: OpenTab]
   close: [tab: OpenTab]
+  togglePin: [tab: OpenTab]
+  closeOthers: [tab: OpenTab]
+  closeAll: []
 }>()
 
 function label(tab: OpenTab): string {
@@ -34,28 +43,99 @@ function titleOf(tab: OpenTab): string {
 function isSettings(tab: OpenTab): boolean {
   return tab.kind === 'project-settings'
 }
+
+function isPinned(tab: OpenTab): boolean {
+  return tab.pinned === true
+}
+
+// A middle click on a tab closes it, the way every browser-like tab strip works.
+// Pinned tabs are exempt; the click must not scroll the page either.
+function onAuxClick(tab: OpenTab, event: MouseEvent) {
+  if (event.button !== 1) return
+  if (isPinned(tab)) return
+  emit('close', tab)
+}
+
+// --- Context menu ---
+
+const menu = ref<{ key: string; x: number; y: number } | null>(null)
+
+const menuTab = computed(() => props.tabs.find((tab) => tabKey(tab) === menu.value?.key) ?? null)
+
+function openMenu(tab: OpenTab, event: MouseEvent) {
+  event.preventDefault()
+  menu.value = { key: tabKey(tab), x: event.clientX, y: event.clientY }
+}
+
+function closeMenu() {
+  menu.value = null
+}
+
+function onMenuPin() {
+  const tab = menuTab.value
+  if (tab) emit('togglePin', tab)
+  closeMenu()
+}
+
+function onMenuClose() {
+  const tab = menuTab.value
+  if (tab && !isPinned(tab)) emit('close', tab)
+  closeMenu()
+}
+
+function onMenuCloseOthers() {
+  const tab = menuTab.value
+  if (tab) emit('closeOthers', tab)
+  closeMenu()
+}
+
+function onMenuCloseAll() {
+  emit('closeAll')
+  closeMenu()
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') closeMenu()
+}
+
+// A menu left open while the window scrolls or resizes would point at the wrong
+// tab, so both events dismiss it.
+onMounted(() => {
+  window.addEventListener('resize', closeMenu)
+  window.addEventListener('scroll', closeMenu, true)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', closeMenu)
+  window.removeEventListener('scroll', closeMenu, true)
+})
 </script>
 
 <template>
-  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的会话">
+  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的会话" @keydown="onKeydown">
     <div
       v-for="tab in props.tabs"
       :key="tabKey(tab)"
       class="tab"
-      :class="{ active: tabKey(tab) === props.activeKey }"
+      :class="{ active: tabKey(tab) === props.activeKey, pinned: isPinned(tab) }"
       role="tab"
       :aria-selected="tabKey(tab) === props.activeKey"
       :title="titleOf(tab)"
       data-test="open-tab"
       :data-tab-key="tabKey(tab)"
+      :data-pinned="isPinned(tab) ? 'true' : undefined"
       :data-session-id="tab.kind === 'session' ? tab.sessionId : undefined"
+      @contextmenu.prevent="openMenu(tab, $event)"
+      @auxclick="onAuxClick(tab, $event)"
+      @mousedown.middle.prevent
     >
       <button type="button" class="tab-select" @click="emit('select', tab)">
-        <span v-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
+        <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">📌</span>
+        <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
         <span v-else class="tab-dot" aria-hidden="true"></span>
         <span class="tab-label">{{ label(tab) }}</span>
       </button>
       <button
+        v-if="!isPinned(tab)"
         type="button"
         class="tab-close"
         :aria-label="isSettings(tab) ? '关闭项目设置' : `关闭会话：${label(tab)}`"
@@ -64,6 +144,40 @@ function isSettings(tab: OpenTab): boolean {
         @click.stop="emit('close', tab)"
       >
         ×
+      </button>
+    </div>
+
+    <div
+      v-if="menu"
+      class="tab-menu-backdrop"
+      data-test="tab-menu-backdrop"
+      @click="closeMenu"
+      @contextmenu.prevent="closeMenu"
+    ></div>
+    <div
+      v-if="menu"
+      class="tab-menu"
+      data-test="tab-menu"
+      role="menu"
+      :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
+    >
+      <button type="button" role="menuitem" data-test="menu-toggle-pin" @click="onMenuPin">
+        {{ menuTab && isPinned(menuTab) ? '取消固定' : '固定标签页' }}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-test="menu-close"
+        :disabled="!menuTab || isPinned(menuTab)"
+        @click="onMenuClose"
+      >
+        关闭标签页
+      </button>
+      <button type="button" role="menuitem" data-test="menu-close-others" @click="onMenuCloseOthers">
+        关闭其他标签页
+      </button>
+      <button type="button" role="menuitem" data-test="menu-close-all" @click="onMenuCloseAll">
+        关闭全部标签页
       </button>
     </div>
   </div>
@@ -133,6 +247,11 @@ function isSettings(tab: OpenTab): boolean {
   color: var(--color-text-muted);
 }
 
+.tab-pin {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+}
+
 .tab.active .tab-dot {
   background: var(--color-primary);
 }
@@ -158,5 +277,46 @@ function isSettings(tab: OpenTab): boolean {
 .tab-close:hover {
   background: var(--color-surface-muted);
   color: var(--color-text);
+}
+
+.tab-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.tab-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 10rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+}
+
+.tab-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.tab-menu button:hover:not(:disabled) {
+  background: var(--color-surface-muted);
+}
+
+.tab-menu button:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
 }
 </style>

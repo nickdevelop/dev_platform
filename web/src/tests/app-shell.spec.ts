@@ -202,6 +202,76 @@ describe('three-pane app shell', () => {
     expect(wrapper.find('.pane').classes()).not.toContain('pane-full')
   })
 
+  it('pins a tab and keeps it when the other tabs are closed', async () => {
+    const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
+      ProjectSettingsPanel: true,
+    })
+    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(2)
+
+    // Pin the session tab from its context menu; it moves to the front.
+    const first = wrapper.findAll('[data-test="open-tab"]')[0]
+    await first.trigger('contextmenu', { clientX: 5, clientY: 5 })
+    await wrapper.find('[data-test="menu-toggle-pin"]').trigger('click')
+    await flushPromises()
+
+    const tabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(tabs[0].attributes('data-tab-key')).toBe('sess-1')
+    expect(tabs[0].attributes('data-pinned')).toBe('true')
+
+    // Close all: the pinned tab survives, so the strip is not empty and the
+    // view falls back to it.
+    await tabs[0].trigger('contextmenu', { clientX: 5, clientY: 5 })
+    await wrapper.find('[data-test="menu-close-all"]').trigger('click')
+    await flushPromises()
+
+    const remaining = wrapper.findAll('[data-test="open-tab"]')
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].attributes('data-tab-key')).toBe('sess-1')
+    expect(router.currentRoute.value.name).toBe('session')
+  })
+
+  it('shows an inline icon on every first-level rail entry', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+
+    // 项目 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
+    const rail = wrapper.find('nav.category-rail')
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(5)
+    // The icons are decorative: the labels stay as the entries' readable text.
+    expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
+      '项目',
+      'Chat',
+      '设置',
+      '退出',
+      '收起',
+    ])
+  })
+
+  it('collapses the project column from the rail and persists the choice', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+
+    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(wrapper.find('.app-shell').classes()).toContain('sidebar-collapsed')
+    expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('collapsed')
+
+    // The same toggle brings the column back and reverses the stored choice.
+    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+    expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
+  })
+
+  it('starts with the project column collapsed when the stored choice says so', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true }, () => {
+      localStorage.setItem('dev-platform-sidebar-v1', 'collapsed')
+    })
+
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+  })
+
   it('navigates to the settings center from the category rail', async () => {
     const { wrapper, router } = await setup('/', { ProjectSettingsPanel: true })
 

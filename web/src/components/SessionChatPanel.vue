@@ -6,8 +6,9 @@
 // stopped; the send action becomes 停止 while the session's turn is running.
 // The pane is split in two: the left column shows only user/agent messages,
 // confirmations and the composer, while the right pane shows only
-// thinking/tool activity as a flat expanded list with its own independent
-// scroller. A divider between the columns carries the collapse toggle in its
+// thinking/tool activity as a flat list with its own independent scroller
+// (thinking/edit/shell/question fold and start expanded; other tools are a summary line).
+// A divider between the columns carries the collapse toggle in its
 // middle and drags to resize the activity pane (width persisted); collapsing
 // hides the pane entirely so the messages take the full width. Below 900px the
 // pane overlays the messages instead of squeezing them.

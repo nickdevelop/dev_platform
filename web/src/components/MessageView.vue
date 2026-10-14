@@ -14,14 +14,16 @@
 // The log can render split across the chat panel's two columns: display="messages"
 // shows only user/agent message and error entries for the left column, while
 // display="activity" shows only the thinking/tool entries for the right activity
-// pane. The activity pane renders a flat list — no step grouping — where each
-// card folds on its own header: tool cards default collapsed, thinking cards
-// default expanded. display="all" (the default) keeps the legacy interleaved log with
-// collapsible step groups.
+// pane. The activity pane renders a flat list — no step grouping — where
+// thinking, edit, shell and question cards fold (and start expanded) while every
+// other tool call is a single summary line, and a subagent call is a named row
+// with a button that opens its detail. display="all" (the default) keeps the
+// legacy interleaved log with collapsible step groups.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
+import EditToolBlock from './EditToolBlock.vue'
 import type { Capabilities, MessageModel } from '../api/sessions'
 import type { ChatEntry, StreamStatus } from '../stores/sessions'
 
@@ -38,8 +40,8 @@ const props = defineProps<{
   // Which slice of the log to render. The chat panel renders the log split:
   // display="messages" shows only user/agent message and error entries for
   // the left column, display="activity" shows only the thinking/tool entries
-  // for the right activity pane (a flat list; tools fold collapsed, thinking
-  // folds expanded). display="all"
+  // for the right activity pane (a flat list; thinking/edit/shell/question fold
+  // and start expanded, other tools are a summary line). display="all"
   // keeps the legacy interleaved log.
   display?: 'all' | 'messages' | 'activity'
 }>()
@@ -217,16 +219,19 @@ const flatActivityEntries = computed<ChatEntry[]>(() =>
   visibleEntries.value.filter((entry) => isActivity(entry) && toolEventsVisibleFor(entry)),
 )
 
-// Per-card folding for the flat activity list: tool cards default collapsed,
-// thinking cards default expanded. The set records only the user's toggles
-// away from those defaults, keyed by entry id, so newly streamed entries
-// always open in their default state.
+// Per-card folding for the flat activity list. Only three kinds fold — thinking,
+// edit and shell — and they all start expanded, because the user wants to read
+// the reasoning, the diff and the command as they happen. The set records only a
+// toggle away from that default, keyed by entry id, so a newly streamed entry
+// always opens expanded. Every other tool call is a one-line summary with no
+// fold (see flatExpandable).
 const flatToggles = reactive(new Set<string>())
 function flatExpanded(entry: ChatEntry): boolean {
   const toggled = flatToggles.has(entry.id)
-  return entry.kind === 'thinking' ? !toggled : toggled
+  return flatExpandable(entry) ? !toggled : false
 }
 function toggleFlat(entry: ChatEntry) {
+  if (!flatExpandable(entry)) return
   if (flatToggles.has(entry.id)) flatToggles.delete(entry.id)
   else flatToggles.add(entry.id)
 }
@@ -288,6 +293,153 @@ function prettyInput(entry: ChatEntry): string {
     return String(entry.input)
   }
 }
+
+// --- Desktop-style edit rendering (opencode + pi) ---
+
+function isEditCall(entry: ChatEntry): boolean {
+  return entry.kind === 'tool_call' && (entry.name ?? entry.text ?? '').toLowerCase() === 'edit'
+}
+
+// The tool calls whose detail is worth the space: an edit's diff and a shell
+// command's output. flatExpandable drives both the activity pane's fold and the
+// default-expanded set; every other tool call is a summary line only.
+const SHELL_TOOL_NAMES = new Set([
+  'shell',
+  'bash',
+  'sh',
+  'zsh',
+  'pwsh',
+  'powershell',
+  'cmd',
+  'command',
+])
+
+function isShellCall(entry: ChatEntry): boolean {
+  return (
+    entry.kind === 'tool_call' && SHELL_TOOL_NAMES.has((entry.name ?? entry.text ?? '').toLowerCase())
+  )
+}
+
+// The question tool asks the user to choose among options. Its row folds like
+// the other detail-worthy tools, and its body renders the questions readably
+// instead of a raw payload.
+const QUESTION_TOOL_NAMES = new Set(['question', 'ask', 'askuserquestion', 'ask_user'])
+
+function isQuestionCall(entry: ChatEntry): boolean {
+  return (
+    entry.kind === 'tool_call' &&
+    QUESTION_TOOL_NAMES.has((entry.name ?? entry.text ?? '').toLowerCase())
+  )
+}
+
+interface QuestionOption {
+  label: string
+  description: string
+}
+
+interface QuestionItem {
+  header: string
+  question: string
+  options: QuestionOption[]
+  multiple: boolean
+}
+
+// A question option is tolerated in either the opencode {label,description} shape
+// or a bare value/label string, so a schema drift degrades to a readable list.
+function questionOption(raw: unknown): QuestionOption | null {
+  if (typeof raw === 'string') return { label: raw, description: '' }
+  if (!raw || typeof raw !== 'object') return null
+  const option = raw as Record<string, unknown>
+  const label =
+    typeof option.label === 'string'
+      ? option.label
+      : typeof option.value === 'string'
+        ? option.value
+        : ''
+  if (label === '') return null
+  return { label, description: typeof option.description === 'string' ? option.description : '' }
+}
+
+// questionItems reads the questions out of a question tool call's input. The
+// opencode tool carries a `questions` array; a single question object (or a bare
+// prompt) is tolerated as well. Unknown shapes yield no items and the caller
+// falls back to the plain argument line.
+function questionItems(entry: ChatEntry): QuestionItem[] {
+  const input = entry.input
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return []
+  const record = input as Record<string, unknown>
+  const list = Array.isArray(record.questions)
+    ? record.questions
+    : record.question !== undefined || record.prompt !== undefined
+      ? [record]
+      : []
+  const items: QuestionItem[] = []
+  for (const raw of list) {
+    if (typeof raw === 'string') {
+      items.push({ header: '', question: raw, options: [], multiple: false })
+      continue
+    }
+    if (!raw || typeof raw !== 'object') continue
+    const question = raw as Record<string, unknown>
+    const text =
+      typeof question.question === 'string'
+        ? question.question
+        : typeof question.prompt === 'string'
+          ? question.prompt
+          : typeof question.text === 'string'
+            ? question.text
+            : ''
+    const options = Array.isArray(question.options)
+      ? question.options
+          .map(questionOption)
+          .filter((option): option is QuestionOption => option !== null)
+      : []
+    items.push({
+      header: typeof question.header === 'string' ? question.header : '',
+      question: text,
+      options,
+      multiple: question.multiple === true,
+    })
+  }
+  return items
+}
+
+// The icon a tool row shows: a question mark for the question tool, a wrench for
+// everything else.
+function toolIcon(entry: ChatEntry): string {
+  return isQuestionCall(entry) ? '❓' : '🔧'
+}
+
+function flatExpandable(entry: ChatEntry): boolean {
+  if (entry.kind === 'thinking') return true
+  if (entry.kind !== 'tool_call') return false
+  return isEditCall(entry) || isShellCall(entry) || isQuestionCall(entry)
+}
+
+// The name a subagent row shows: the task's description names the job better
+// than the generic tool name does, so it wins when present.
+function subagentName(entry: ChatEntry): string {
+  return toolArgument(entry) || toolName(entry)
+}
+
+// The file an edit acted on. pi uses {path|file_path|file} with
+// edits[{oldText,newText}]; opencode uses {path,oldString,newString}.
+// Preference order matches the backend normalizers.
+function editPathFor(entry: ChatEntry): string {
+  const input = entry.input
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const record = input as Record<string, unknown>
+    for (const key of ['path', 'file_path', 'filePath', 'file']) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim() !== '') return value
+    }
+  }
+  return toolArgument(entry)
+}
+
+function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
+  return resultForCall(entry)?.diff
+}
 </script>
 
 <template>
@@ -327,8 +479,33 @@ function prettyInput(entry: ChatEntry): string {
           <p v-if="flatExpanded(entry)" class="thinking-text">{{ entry.text }}</p>
         </div>
 
+        <!-- A subagent/task call is a named row plus a button that opens its
+             full detail; the subagent's body is never rendered inline. -->
         <div
-          v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
+          v-else-if="isSubagentCall(entry)"
+          class="flat-tool flat-subagent"
+          data-test="tool-call"
+        >
+          <div class="flat-head" data-test="flat-head">
+            <span class="tool-icon" aria-hidden="true">🤖</span>
+            <span class="tool-name">子任务</span>
+            <span v-if="subagentName(entry)" class="tool-arg">{{ subagentName(entry) }}</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+          </div>
+          <button
+            type="button"
+            class="subagent-open"
+            data-test="subagent-open"
+            @click="openSubagent(entry)"
+          >
+            查看子任务详情
+          </button>
+        </div>
+
+        <!-- Edit and shell calls fold, and start expanded: their diff/output is
+             the point of watching the turn. -->
+        <div
+          v-else-if="entry.kind === 'tool_call' && flatExpandable(entry) && toolEventsVisible()"
           class="flat-tool"
           data-test="tool-call"
         >
@@ -341,50 +518,88 @@ function prettyInput(entry: ChatEntry): string {
             @click="toggleFlat(entry)"
           >
             <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
-            <span class="tool-icon" aria-hidden="true">🔧</span>
+            <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
             <span class="tool-name">{{ toolName(entry) }}</span>
             <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
-            <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
           </button>
           <div v-if="flatExpanded(entry)" class="tool-body">
-            <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-            <pre
-              v-if="resultForCall(entry)"
-              class="tool-output"
-              :class="{ 'is-error': resultForCall(entry)?.isError }"
-            >{{ resultForCall(entry)?.text }}</pre>
-            <button
-              v-if="isSubagentCall(entry)"
-              type="button"
-              class="subagent-open"
-              data-test="subagent-open"
-              @click="openSubagent(entry)"
-            >
-              查看子 Agent
-            </button>
+            <template v-if="isQuestionCall(entry)">
+              <div
+                v-for="(item, index) in questionItems(entry)"
+                :key="index"
+                class="question-item"
+                data-test="question-item"
+              >
+                <p v-if="item.header" class="question-header">{{ item.header }}</p>
+                <p v-if="item.question" class="question-text" data-test="question-text">{{ item.question }}</p>
+                <ul v-if="item.options.length > 0" class="question-options">
+                  <li
+                    v-for="(option, optionIndex) in item.options"
+                    :key="optionIndex"
+                    class="question-option"
+                  >
+                    <span class="question-option-label">{{ option.label }}</span>
+                    <span v-if="option.description" class="question-option-description">{{ option.description }}</span>
+                  </li>
+                </ul>
+                <span v-if="item.multiple" class="question-multiple">可多选</span>
+              </div>
+              <pre
+                v-if="questionItems(entry).length === 0 && toolArgument(entry)"
+                class="tool-args"
+              >{{ toolArgument(entry) }}</pre>
+              <pre
+                v-if="resultForCall(entry)"
+                class="tool-output"
+                :class="{ 'is-error': resultForCall(entry)?.isError }"
+              >{{ resultForCall(entry)?.text }}</pre>
+            </template>
+            <EditToolBlock
+              v-else-if="isEditCall(entry) && editDiffFor(entry)"
+              :file-path="editPathFor(entry)"
+              :additions="editDiffFor(entry)?.additions"
+              :deletions="editDiffFor(entry)?.deletions"
+              :patch="editDiffFor(entry)?.patch"
+              :output="resultForCall(entry)?.text"
+              :is-error="resultForCall(entry)?.isError"
+            />
+            <template v-else>
+              <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
+              <pre
+                v-if="resultForCall(entry)"
+                class="tool-output"
+                :class="{ 'is-error': resultForCall(entry)?.isError }"
+              >{{ resultForCall(entry)?.text }}</pre>
+            </template>
           </div>
         </div>
 
+        <!-- Every other tool call is a single summary line: icon, name and the
+             argument that names what it acted on. No fold, no body. -->
+        <div
+          v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
+          class="flat-tool flat-summary"
+          data-test="tool-call"
+        >
+          <div class="flat-head" data-test="flat-head">
+            <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
+            <span class="tool-name">{{ toolName(entry) }}</span>
+            <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+          </div>
+        </div>
+
+        <!-- A result whose call is missing (a truncated history) shows as a
+             summary line as well, never as an expandable body. -->
         <div
           v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
-          class="flat-tool"
+          class="flat-tool flat-summary"
           data-test="tool-result"
         >
-          <button
-            type="button"
-            class="flat-toggle"
-            data-test="flat-toggle"
-            :aria-expanded="flatExpanded(entry).toString()"
-            aria-label="折叠或展开工具结果"
-            @click="toggleFlat(entry)"
-          >
-            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
+          <div class="flat-head" data-test="flat-head">
             <span class="tool-icon" aria-hidden="true">🔧</span>
             <span class="tool-name">工具结果</span>
-          </button>
-          <div v-if="flatExpanded(entry)" class="tool-body">
-            <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
           </div>
         </div>
       </li>
@@ -478,13 +693,24 @@ function prettyInput(entry: ChatEntry): string {
                     <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
                   </summary>
                   <div class="tool-body">
-                    <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-                    <pre
-                      v-if="resultForCall(entry)"
-                      class="tool-output"
-                      :class="{ 'is-error': resultForCall(entry)?.isError }"
-                    >{{ resultForCall(entry)?.text }}</pre>
-                    <p v-else class="tool-running" role="status">运行中…</p>
+                    <EditToolBlock
+                      v-if="isEditCall(entry) && editDiffFor(entry)"
+                      :file-path="editPathFor(entry)"
+                      :additions="editDiffFor(entry)?.additions"
+                      :deletions="editDiffFor(entry)?.deletions"
+                      :patch="editDiffFor(entry)?.patch"
+                      :output="resultForCall(entry)?.text"
+                      :is-error="resultForCall(entry)?.isError"
+                    />
+                    <template v-else>
+                      <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
+                      <pre
+                        v-if="resultForCall(entry)"
+                        class="tool-output"
+                        :class="{ 'is-error': resultForCall(entry)?.isError }"
+                      >{{ resultForCall(entry)?.text }}</pre>
+                      <p v-else class="tool-running" role="status">运行中…</p>
+                    </template>
                     <button
                       v-if="isSubagentCall(entry)"
                       type="button"
@@ -776,7 +1002,7 @@ function prettyInput(entry: ChatEntry): string {
 }
 
 /* The flat card's toggle: the whole header is one button, with a chevron
-   showing the fold state. Tools start collapsed, thinking starts expanded. */
+   showing the fold state. Thinking, edit, shell and question start expanded. */
 .flat-toggle {
   display: flex;
   align-items: baseline;
@@ -812,6 +1038,52 @@ function prettyInput(entry: ChatEntry): string {
 .flat-thinking .thinking-text,
 .flat-tool .tool-body {
   margin-top: 0.4rem;
+}
+
+/* A question tool's body: one block per question, the options listed under it. */
+.question-item {
+  margin: 0 0 0.5rem;
+}
+
+.question-item:last-child {
+  margin-bottom: 0;
+}
+
+.question-header {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.question-text {
+  margin: 0.15rem 0 0.3rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.question-options {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.question-option-label {
+  font-weight: 600;
+}
+
+.question-option-description {
+  margin-left: 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.question-multiple {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
 }
 
 .step-body {

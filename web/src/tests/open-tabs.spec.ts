@@ -95,4 +95,39 @@ describe('open tabs store', () => {
     expect(store.tabs[0]).toEqual({ kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'now titled' })
     expect(store.tabs[1]).toEqual({ kind: 'project-settings', projectId: 3 })
   })
+
+  it('pins a tab to the front and spares it from bulk closes', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-1', 'first')
+    store.openTab(3, 'ses-2', 'second')
+    store.openProjectSettings(3)
+
+    store.pinTab('ses-2')
+    expect(store.tabs.map(tabKey)).toEqual(['ses-2', 'ses-1', 'settings:3'])
+    expect(store.tabs[0].pinned).toBe(true)
+
+    // Closing the others keeps the named tab and the pinned one.
+    const closed = store.closeOtherTabsByKey('ses-1')
+    expect(closed.map(tabKey)).toEqual(['settings:3'])
+    expect(store.tabs.map(tabKey)).toEqual(['ses-2', 'ses-1'])
+
+    // Closing all keeps only the pinned tab.
+    const closedAll = store.closeAllTabs()
+    expect(closedAll.map(tabKey)).toEqual(['ses-1'])
+    expect(store.tabs.map(tabKey)).toEqual(['ses-2'])
+
+    store.unpinTab('ses-2')
+    expect(store.tabs[0].pinned).toBeUndefined()
+  })
+
+  it('restores a pinned tab with its flag', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-1', 'first')
+    store.pinTab('ses-1')
+
+    const reloaded = freshStore()
+    expect(reloaded.tabs).toEqual([
+      { kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'first', pinned: true },
+    ])
+  })
 })

@@ -146,4 +146,55 @@ describe('session tabs and open-tabs store', () => {
     await tabs[0].find('[data-test="close-tab"]').trigger('click')
     expect(wrapper.emitted('close')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
   })
+
+  it('closes a tab on a middle click and offers the context menu', async () => {
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs: [
+          { kind: 'session', projectId: 1, sessionId: 's1', title: 'One' },
+          { kind: 'session', projectId: 1, sessionId: 's2', title: 'Two' },
+        ],
+        activeKey: 's1',
+      },
+    })
+    const first = wrapper.findAll('[data-test="open-tab"]')[0]
+    await first.trigger('auxclick', { button: 1 })
+    expect(wrapper.emitted('close')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
+
+    // The menu opens on the tab and closes after a choice.
+    await first.trigger('contextmenu', { clientX: 10, clientY: 20 })
+    expect(wrapper.find('[data-test="tab-menu"]').exists()).toBe(true)
+    await wrapper.find('[data-test="menu-close-others"]').trigger('click')
+    expect(wrapper.emitted('closeOthers')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
+    expect(wrapper.find('[data-test="tab-menu"]').exists()).toBe(false)
+
+    await first.trigger('contextmenu', { clientX: 10, clientY: 20 })
+    await wrapper.find('[data-test="menu-close-all"]').trigger('click')
+    expect(wrapper.emitted('closeAll')).toHaveLength(1)
+  })
+
+  it('marks a pinned tab, hides its close control and refuses a middle click', async () => {
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs: [
+          { kind: 'session', projectId: 1, sessionId: 's1', title: 'One', pinned: true },
+          { kind: 'session', projectId: 1, sessionId: 's2', title: 'Two' },
+        ],
+        activeKey: 's1',
+      },
+    })
+    const tabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(tabs[0].attributes('data-pinned')).toBe('true')
+    expect(tabs[0].find('[data-test="close-tab"]').exists()).toBe(false)
+
+    await tabs[0].trigger('auxclick', { button: 1 })
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    // The menu offers to unpin the tab and disables a plain close.
+    await tabs[0].trigger('contextmenu', { clientX: 10, clientY: 20 })
+    expect(wrapper.find('[data-test="menu-toggle-pin"]').text()).toContain('取消固定')
+    expect(wrapper.find('[data-test="menu-close"]').attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-test="menu-toggle-pin"]').trigger('click')
+    expect(wrapper.emitted('togglePin')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
+  })
 })

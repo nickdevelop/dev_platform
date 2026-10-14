@@ -3,12 +3,14 @@
 // subscription) and a project's settings page. Switching a tab is navigation;
 // the tab strip renders both kinds from one `tabKey`, so nothing downstream has
 // to know which is which. Tabs persist in localStorage so a refresh restores the
-// working set.
+// working set. A tab can be pinned: pinned tabs sort to the front, carry no
+// close control, and survive "close others"/"close all", so the pages a user
+// anchored never disappear by accident.
 import { defineStore } from 'pinia'
 
 export type OpenTab =
-  | { kind: 'session'; projectId: number; sessionId: string; title: string }
-  | { kind: 'project-settings'; projectId: number }
+  | { kind: 'session'; projectId: number; sessionId: string; title: string; pinned?: boolean }
+  | { kind: 'project-settings'; projectId: number; pinned?: boolean }
 
 // tabKey identifies a tab. A session is identified by its session (machine-unique),
 // a settings page by its project; the prefixes keep the two namespaces apart.
@@ -24,6 +26,10 @@ const LEGACY_STORAGE_KEY = 'dev-platform-open-tabs'
 
 const MAX_TABS = 20
 
+// Only set the flag when it is true, so an unpinned tab carries no `pinned`
+// field and a round-tripped tab compares equal to one that was just opened.
+const PINNED = { pinned: true } as const
+
 function isSession(entry: unknown): entry is Extract<OpenTab, { kind: 'session' }> {
   const tab = entry as Record<string, unknown>
   return (
@@ -37,13 +43,14 @@ function isSession(entry: unknown): entry is Extract<OpenTab, { kind: 'session' 
 function normalize(entry: unknown): OpenTab | null {
   const tab = entry as Record<string, unknown>
   if (typeof tab !== 'object' || tab === null || typeof tab.projectId !== 'number') return null
-  if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId }
+  const pinned = tab.pinned === true ? PINNED : {}
+  if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId, ...pinned }
   if (tab.kind === 'session' || tab.kind === undefined) {
     if (!isSession(entry)) return null
     // A stored session tab may predate any title being set; only a string title is
     // carried over, so a hand-edited store cannot inject one.
     const title = typeof tab.title === 'string' ? tab.title : ''
-    return { kind: 'session', projectId: entry.projectId, sessionId: entry.sessionId, title }
+    return { kind: 'session', projectId: entry.projectId, sessionId: entry.sessionId, title, ...pinned }
   }
   return null
 }
@@ -83,6 +90,23 @@ function persist(tabs: OpenTab[]) {
   }
 }
 
+// Pinned tabs sit at the front of the strip, in the order they were pinned;
+// unpinned tabs follow in opening order. A stable partition keeps both groups'
+// relative order intact, which is what re-opening a tab relies on.
+function pinnedFirst(tabs: OpenTab[]): OpenTab[] {
+  return [...tabs.filter((tab) => tab.pinned === true), ...tabs.filter((tab) => tab.pinned !== true)]
+}
+
+// trim drops the oldest unpinned tabs until the set fits MAX_TABS. Pinned tabs
+// are the user's anchors, so they are never the one dropped.
+function trim(tabs: OpenTab[]) {
+  while (tabs.length > MAX_TABS) {
+    const index = tabs.findIndex((tab) => tab.pinned !== true)
+    if (index === -1) break
+    tabs.splice(index, 1)
+  }
+}
+
 export const useOpenTabsStore = defineStore('openTabs', {
   state: () => ({
     tabs: loadPersisted() as OpenTab[],
@@ -101,7 +125,7 @@ export const useOpenTabsStore = defineStore('openTabs', {
         if (title !== '') existing.title = title
       } else {
         this.tabs.push({ kind: 'session', projectId, sessionId, title })
-        if (this.tabs.length > MAX_TABS) this.tabs.shift()
+        trim(this.tabs)
       }
       persist(this.tabs)
     },
@@ -112,10 +136,11 @@ export const useOpenTabsStore = defineStore('openTabs', {
         (tab) => tab.kind === 'project-settings' && tab.projectId === projectId,
       )
       if (existing) {
-        this.tabs = [...this.tabs.filter((tab) => tab !== existing), existing]
+        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
       } else {
         this.tabs.push({ kind: 'project-settings', projectId })
-        if (this.tabs.length > MAX_TABS) this.tabs.shift()
+        trim(this.tabs)
+        this.tabs = pinnedFirst(this.tabs)
       }
       persist(this.tabs)
     },
@@ -138,22 +163,57 @@ export const useOpenTabsStore = defineStore('openTabs', {
       persist(this.tabs)
     },
 
-    // closeTabByKey closes either kind of tab, which is what a tab strip needs.
+    // closeTabByKey closes either kind of tab. It forces the close: cleanup
+    // paths (a deleted project, a deleted session) must be able to drop a pinned
+    // tab, so the pinned guard lives in the strip, not here.
     closeTabByKey(key: string) {
       this.tabs = this.tabs.filter((tab) => tabKey(tab) !== key)
       persist(this.tabs)
     },
 
-    closeOtherTabs(sessionId: string) {
-      this.tabs = this.tabs.filter(
-        (tab) => tab.kind === 'project-settings' || tab.sessionId === sessionId,
-      )
+    // pinTab moves the tab to the front of the strip and marks it pinned.
+    pinTab(key: string) {
+      const tab = this.tabs.find((entry) => tabKey(entry) === key)
+      if (!tab || tab.pinned === true) return
+      tab.pinned = true
+      this.tabs = pinnedFirst(this.tabs)
       persist(this.tabs)
     },
 
-    closeAllTabs() {
-      this.tabs = []
+    // unpinTab returns the tab to the front of the unpinned group; the property
+    // is removed so an unpinned tab carries no leftover flag.
+    unpinTab(key: string) {
+      const tab = this.tabs.find((entry) => tabKey(entry) === key)
+      if (!tab || tab.pinned !== true) return
+      delete tab.pinned
+      this.tabs = pinnedFirst(this.tabs)
       persist(this.tabs)
+    },
+
+    togglePin(key: string) {
+      const tab = this.tabs.find((entry) => tabKey(entry) === key)
+      if (!tab) return
+      if (tab.pinned === true) this.unpinTab(key)
+      else this.pinTab(key)
+    },
+
+    // closeOtherTabsByKey closes every unpinned tab except the one named; pinned
+    // tabs are kept. Returns the tabs it closed, so callers can release their
+    // streams.
+    closeOtherTabsByKey(key: string): OpenTab[] {
+      const closing = this.tabs.filter((tab) => tabKey(tab) !== key && tab.pinned !== true)
+      this.tabs = this.tabs.filter((tab) => tabKey(tab) === key || tab.pinned === true)
+      persist(this.tabs)
+      return closing
+    },
+
+    // closeAllTabs closes every unpinned tab; pinned tabs stay. Returns what it
+    // closed so the caller can release their streams.
+    closeAllTabs(): OpenTab[] {
+      const closing = this.tabs.filter((tab) => tab.pinned !== true)
+      this.tabs = this.tabs.filter((tab) => tab.pinned === true)
+      persist(this.tabs)
+      return closing
     },
   },
 })

@@ -103,7 +103,7 @@ describe('split message/activity log', () => {
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(false)
   })
 
-  it('folds tool cards collapsed and thinking expanded in the activity pane', async () => {
+  it('starts thinking, edit and shell expanded and folds only those', async () => {
     const entries: ChatEntry[] = [
       { id: 'u1', kind: 'message', role: 'user', text: 'hi', streaming: false },
       { id: 't1', kind: 'thinking', role: 'assistant', text: 'plan', streaming: false },
@@ -112,6 +112,11 @@ describe('split message/activity log', () => {
         callId: 'call-1', input: { path: '/a.md' }, streaming: false,
       },
       { id: 'r1', kind: 'tool_result', role: 'tool', text: '文件内容', callId: 'call-1', streaming: false },
+      {
+        id: 'c2', kind: 'tool_call', role: 'assistant', text: 'bash', name: 'bash',
+        callId: 'call-2', input: { command: 'ls -la' }, streaming: false,
+      },
+      { id: 'r2', kind: 'tool_result', role: 'tool', text: '总用量 0', callId: 'call-2', streaming: false },
       { id: 'a1', kind: 'message', role: 'assistant', text: 'done', streaming: false },
     ]
     const wrapper = mount(MessageView, {
@@ -121,19 +126,107 @@ describe('split message/activity log', () => {
     expect(wrapper.find('[data-test="step-group"]').exists()).toBe(false)
     expect(wrapper.findAll('details').length).toBe(0)
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="tool-call"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="bubble"]').exists()).toBe(false)
-    // Thinking starts expanded, tools start collapsed.
-    expect(wrapper.find('[data-test="thinking"] .thinking-text').exists()).toBe(true)
-    expect(wrapper.find('[data-test="tool-call"] .tool-output').exists()).toBe(false)
 
-    // A hand click opens the tool card and shows its output.
-    await wrapper.find('[data-test="tool-call"] [data-test="flat-toggle"]').trigger('click')
-    expect(wrapper.find('[data-test="tool-call"] .tool-output').text()).toContain('文件内容')
+    // Thinking and shell start expanded.
+    expect(wrapper.find('[data-test="thinking"] .thinking-text').exists()).toBe(true)
+    const calls = wrapper.findAll('[data-test="tool-call"]')
+    expect(calls).toHaveLength(2)
+    const read = calls[0]
+    const shell = calls[1]
+
+    // A non-priority tool (read) is a one-line summary: no fold, no body.
+    expect(read.find('[data-test="flat-toggle"]').exists()).toBe(false)
+    expect(read.find('.tool-arg').text()).toBe('/a.md')
+    expect(read.find('.tool-output').exists()).toBe(false)
+
+    // Shell folds and is already expanded with its output.
+    expect(shell.find('[data-test="flat-toggle"]').exists()).toBe(true)
+    expect(shell.find('.tool-output').text()).toContain('总用量 0')
 
     // A hand click folds the thinking card away.
     await wrapper.find('[data-test="thinking"] [data-test="flat-toggle"]').trigger('click')
     expect(wrapper.find('[data-test="thinking"] .thinking-text').exists()).toBe(false)
+
+    // A hand click folds the shell card away too.
+    await shell.find('[data-test="flat-toggle"]').trigger('click')
+    expect(shell.find('.tool-output').exists()).toBe(false)
+  })
+
+  it('starts an edit call expanded and shows its diff', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c1', kind: 'tool_call', role: 'assistant', text: 'edit', name: 'edit', callId: 'c1',
+        input: { path: 'foo.ts', oldString: 'a', newString: 'b' }, streaming: false,
+      },
+      {
+        id: 'r1', kind: 'tool_result', role: 'tool', text: 'Edited foo.ts', callId: 'c1', streaming: false,
+        diff: { file: 'foo.ts', patch: 'x', additions: 1, deletions: 1 },
+      },
+    ]
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    const call = wrapper.find('[data-test="tool-call"]')
+    expect(call.find('[data-test="flat-toggle"]').exists()).toBe(true)
+    expect(call.find('[data-test="edit-tool"]').exists()).toBe(true)
+  })
+
+  it('reduces a subagent call to a named row and a detail button', async () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c1', kind: 'tool_call', role: 'assistant', text: 'task', name: 'task', callId: 'call-9',
+        input: { description: 'sub job', prompt: 'do it' }, streaming: false,
+      },
+      { id: 'r1', kind: 'tool_result', role: 'tool', text: 'SECRET-DETAILS', callId: 'call-9', streaming: false },
+    ]
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    const row = wrapper.find('[data-test="tool-call"]')
+    expect(row.find('[data-test="subagent-open"]').exists()).toBe(true)
+    expect(row.text()).toContain('sub job')
+    // The subagent's detail is behind the button, never inline.
+    expect(row.text()).not.toContain('SECRET-DETAILS')
+
+    await row.find('[data-test="subagent-open"]').trigger('click')
+    expect(wrapper.find('[data-test="subagent-dialog"]').text()).toContain('SECRET-DETAILS')
+  })
+
+  it('starts a question call expanded and renders its questions and options', async () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c1', kind: 'tool_call', role: 'assistant', text: 'question', name: 'question', callId: 'c1',
+        input: {
+          questions: [
+            {
+              header: '数据库',
+              question: '用哪个数据库?',
+              options: [
+                { label: 'SQLite', description: '内嵌' },
+                { label: 'Postgres', description: '服务端' },
+              ],
+            },
+          ],
+        },
+        streaming: false,
+      },
+      { id: 'r1', kind: 'tool_result', role: 'tool', text: 'SQLite', callId: 'c1', streaming: false },
+    ]
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    const call = wrapper.find('[data-test="tool-call"]')
+    expect(call.find('[data-test="flat-toggle"]').exists()).toBe(true)
+    expect(call.find('[data-test="question-text"]').text()).toContain('用哪个数据库?')
+    expect(call.text()).toContain('SQLite')
+    expect(call.text()).toContain('Postgres')
+    // The answer comes through as the tool result.
+    expect(call.find('.tool-output').text()).toContain('SQLite')
+
+    // Collapsing hides the detail.
+    await call.find('[data-test="flat-toggle"]').trigger('click')
+    expect(call.find('[data-test="question-text"]').exists()).toBe(false)
   })
 
   it('shows an activity-specific empty note instead of the message one', () => {
