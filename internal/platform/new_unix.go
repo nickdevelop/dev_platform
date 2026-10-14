@@ -35,6 +35,9 @@ func (p unixPlatform) Dirs() Dirs { return unix.Dirs{} }
 // Trash returns the unix trash mover.
 func (p unixPlatform) Trash() Trash { return unixTrash{} }
 
+// Shutdown returns the unix termination signals.
+func (p unixPlatform) Shutdown() Shutdown { return unix.Shutdown{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

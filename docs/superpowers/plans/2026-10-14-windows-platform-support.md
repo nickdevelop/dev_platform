@@ -232,8 +232,8 @@
 **Interfaces:**
 - Produces: `Shutdown.Signals() []os.Signal`、`Shutdown.Interrupt(p *os.Process) error`。
 
-- [ ] **Step 1: 迁移** — `TestServerShutsDownGracefullyOnSigterm` 名称保留，语义不变。
-- [ ] **Step 2: 测试** — `go test ./cmd/platform/... -v` 全绿。
+- [x] **Step 1: 迁移** — `TestServerShutsDownGracefullyOnSigterm` 名称保留，语义不变。
+- [x] **Step 2: 测试** — `go test ./cmd/platform/... -v` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): shutdown signals behind Shutdown port"`
 
 ### Task 2.8: 清空守卫清单（阶段 2 出口）

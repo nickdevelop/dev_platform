@@ -26,12 +26,12 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"devplatform/internal/auth"
 	"devplatform/internal/database"
+	"devplatform/internal/platform"
 )
 
 // listenLogPattern matches the "platform listening on <addr>" startup line.
@@ -111,16 +111,17 @@ type serverProcess struct {
 	waitErr  error
 }
 
-// stop terminates the server with SIGTERM (the graceful shutdown signal),
-// waits for it to exit, and returns the resulting wait error. It is safe to
-// call more than once and is also registered as the test cleanup.
+// stop terminates the server through the Shutdown port (SIGTERM on unix,
+// the graceful shutdown signal), waits for it to exit, and returns the
+// resulting wait error. It is safe to call more than once and is also
+// registered as the test cleanup.
 func (p *serverProcess) stop() error {
 	p.stopOnce.Do(func() {
 		p.mu.Lock()
 		exited := p.exited
 		p.mu.Unlock()
 		if !exited {
-			_ = p.cmd.Process.Signal(syscall.SIGTERM)
+			_ = platform.New().Shutdown().Interrupt(p.cmd.Process)
 		}
 		select {
 		case p.waitErr = <-p.waitCh:

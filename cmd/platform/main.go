@@ -13,7 +13,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -386,7 +385,7 @@ func runServer(args []string) error {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), platform.New().Shutdown().Signals()...)
 	defer stop()
 
 	errCh := make(chan error, 1)

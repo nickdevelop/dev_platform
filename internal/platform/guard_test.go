@@ -16,9 +16,7 @@ import (
 // allowlist 将已知的 OS 耦合文件映射到负责消除它的任务编号。
 // 清单只能缩短：任务完成后必须删除对应条目；新增违规会直接失败。
 // 测试文件（_test.go）不在扫描范围内。
-var osGuardAllowlist = map[string]string{
-	"cmd/platform/main.go": "Task 2.7: signal.NotifyContext 的 SIGINT/SIGTERM 移入 Shutdown.Signals 端口",
-}
+var osGuardAllowlist = map[string]string{}
 
 // TestBusinessPackagesStayOSNeutral 断言业务包保持 OS 中立：
 // 不得 import syscall 或 golang.org/x/sys/*，不得出现 runtime.GOOS/GOARCH 判断。
