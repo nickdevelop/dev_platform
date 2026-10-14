@@ -92,6 +92,40 @@ func TestProjectPromptsRender(t *testing.T) {
 	}
 }
 
+func TestProjectPromptsRenderNormalizesCRLF(t *testing.T) {
+	lf, err := ProjectPrompts{}.Render(context.Background(),
+		definition(resources.ResourcePrompt, "house-rules", "Always run tests.\nSecond line.\n"),
+		resourcesync.RenderContext{ProjectID: 7})
+	if err != nil {
+		t.Fatalf("Render LF: %v", err)
+	}
+	crlf, err := ProjectPrompts{}.Render(context.Background(),
+		definition(resources.ResourcePrompt, "house-rules", "Always run tests.\r\nSecond line.\r\n"),
+		resourcesync.RenderContext{ProjectID: 7})
+	if err != nil {
+		t.Fatalf("Render CRLF: %v", err)
+	}
+	// The CRLF definition must render byte-identical to the LF twin, or
+	// every sync would report the file dirty.
+	if string(crlf.Content) != string(lf.Content) {
+		t.Fatalf("CRLF render = %q, want identical to LF render %q", crlf.Content, lf.Content)
+	}
+	if strings.Contains(string(crlf.Content), "\r") {
+		t.Fatalf("CRLF render = %q, want no carriage returns", crlf.Content)
+	}
+
+	// Content without a trailing newline still gets exactly one LF.
+	bare, err := ProjectPrompts{}.Render(context.Background(),
+		definition(resources.ResourcePrompt, "house-rules", "Always run tests.\r\nSecond line."),
+		resourcesync.RenderContext{ProjectID: 7})
+	if err != nil {
+		t.Fatalf("Render bare CRLF: %v", err)
+	}
+	if !strings.HasSuffix(string(bare.Content), "Second line.\n") || strings.Contains(string(bare.Content), "\r") {
+		t.Fatalf("bare CRLF render = %q, want LF-ending without carriage returns", bare.Content)
+	}
+}
+
 func TestOpenCodeRenderFormats(t *testing.T) {
 	ctx := context.Background()
 

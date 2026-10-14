@@ -50,7 +50,9 @@ func (a ProjectPrompts) Render(_ context.Context, resource resources.ResourceDef
 }
 
 // renderMarkdown renders a prompt or skill body with a stable, deterministic
-// header so the file is readable on its own.
+// header so the file is readable on its own. Line endings are normalized to
+// LF first: a definition carrying CRLF (a Windows checkout) must render the
+// same bytes as its LF twin, or every sync would report the file dirty.
 func renderMarkdown(resource resources.ResourceDefinition) []byte {
 	var builder strings.Builder
 	builder.WriteString("# ")
@@ -60,8 +62,10 @@ func renderMarkdown(resource resources.ResourceDefinition) []byte {
 		builder.WriteString(resource.Description)
 		builder.WriteString("\n\n")
 	}
-	builder.WriteString(resource.Content)
-	if !strings.HasSuffix(resource.Content, "\n") {
+	content := strings.ReplaceAll(resource.Content, "\r\n", "\n")
+	content = strings.ReplaceAll(content, "\r", "\n")
+	builder.WriteString(content)
+	if !strings.HasSuffix(content, "\n") {
 		builder.WriteString("\n")
 	}
 	return []byte(builder.String())

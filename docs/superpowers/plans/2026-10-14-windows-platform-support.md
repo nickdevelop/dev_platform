@@ -285,8 +285,8 @@
 - Modify: `internal/agents/pi/models.go:15`（`strings.Split(output, "\n")` 之后对每行 `TrimSuffix("\r")`，与 `event_parser.go:146`、`opencode/client.go:676` 的处理一致）
 - Modify: `internal/resourcesync/adapters/project_prompts.go:64`（`HasSuffix(content, "\n")` 的判断先统一换行符，避免 CRLF 检出的仓库每次判脏）
 
-- [ ] **Step 1: 写测试** — 为 CRLF 输入补充用例（`models_test.go`、`project_prompts` 的测试文件）。
-- [ ] **Step 2: 修改并确认 LF 输入的行为不变。**
+- [x] **Step 1: 写测试** — 为 CRLF 输入补充用例（`models_test.go`、`project_prompts` 的测试文件）。
+- [x] **Step 2: 修改并确认 LF 输入的行为不变。**
 - [ ] **Step 3: 提交** — `git commit -am "fix: tolerate CRLF output from agent CLIs and prompt files"`
 
 ### Task 3.4: 环境检查（Environment）

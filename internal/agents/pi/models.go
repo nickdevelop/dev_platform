@@ -13,7 +13,10 @@ import (
 func parseModelList(output string) []agents.ModelInfo {
 	models := make([]agents.ModelInfo, 0)
 	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
+		// Agent CLIs on Windows emit CRLF; strip the carriage return so
+		// parsing matches the LF path exactly (as the JSONL event parser
+		// and the opencode stream reader already do).
+		fields := strings.Fields(strings.TrimSuffix(line, "\r"))
 		if len(fields) < 2 || fields[0] == "provider" {
 			continue
 		}
