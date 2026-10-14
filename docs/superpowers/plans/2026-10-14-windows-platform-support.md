@@ -344,8 +344,8 @@
 - Create: `internal/platform/windows/instance.go`（`//go:build windows`，`golang.org/x/sys/windows` 的 `LockFileEx`）
 - Create: `internal/platform/windows/instance_test.go`
 
-- [ ] **Step 1: 写测试** — 同一数据目录第二次加锁失败；进程退出后锁释放。
-- [ ] **Step 2: 实现** — 锁文件路径与 unix 一致。
+- [x] **Step 1: 写测试** — 同一数据目录第二次加锁失败；进程退出后锁释放。（进程退出释放是 OS 句柄语义，单测覆盖加锁互斥与释放后重入；实机/CI 再跑。）
+- [x] **Step 2: 实现** — 锁文件路径与 unix 一致。
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): windows single-instance lock"`
 
 ### Task 4.2: Windows 进程管理

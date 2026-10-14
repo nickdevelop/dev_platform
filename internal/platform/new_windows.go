@@ -2,11 +2,39 @@
 
 package platform
 
-import "runtime"
+import (
+	"errors"
+	"runtime"
 
-// New returns the windows Platform placeholder. Phase 4 wires each real
-// implementation here. It exists now only so the package compiles on
-// windows and the port surface stays identical across platforms.
+	"devplatform/internal/platform/windows"
+)
+
+// New returns the windows Platform. Implemented ports are wired below; the
+// rest still come from the embedded stub until their phase 4 tasks land.
 func New() Platform {
-	return stubPlatform{name: runtime.GOOS}
+	return windowsPlatform{stubPlatform: stubPlatform{name: runtime.GOOS}}
+}
+
+// windowsPlatform wires the implemented windows ports.
+type windowsPlatform struct {
+	stubPlatform
+}
+
+// Instance returns the Windows single-instance lock.
+func (p windowsPlatform) Instance() Instance { return windowsInstance{} }
+
+// windowsInstance adapts the windows implementation to the Instance port.
+type windowsInstance struct{}
+
+func (windowsInstance) Acquire(dataDir string) (Lock, error) {
+	l, err := windows.Instance{}.Acquire(dataDir)
+	if err != nil {
+		// Map the implementation's copy to the canonical port value;
+		// callers match with errors.Is against platform.ErrLockHeld.
+		if errors.Is(err, windows.ErrLockHeld) {
+			return nil, ErrLockHeld
+		}
+		return nil, err
+	}
+	return l, nil
 }
