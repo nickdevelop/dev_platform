@@ -43,6 +43,9 @@ func processState(raw []byte) string {
 // gets wrong without it: a service the platform stopped whose parent never
 // reaped it leaves a zombie pid that still answers a signal, while its listener
 // is long closed. The platform must call that service gone.
+//
+// Task 2.3 moves the /proc probe behind the Process port; this test moves to
+// internal/platform/unix/process_test.go with it.
 func TestProcessAliveIgnoresZombie(t *testing.T) {
 	if _, err := os.Stat("/proc/self/stat"); err != nil {
 		t.Skip("/proc is not available")
@@ -68,49 +71,4 @@ func TestProcessAliveIgnoresZombie(t *testing.T) {
 		return
 	}
 	t.Skip("the child never entered the zombie state in time")
-}
-
-// TestKillRegisteredProcessSparesItsProcessGroup is the harness case: a service
-// started by somebody else can share a process group with unrelated work — the
-// runner that started it, say. Signalling that group stops work the operator
-// never chose to stop, so only the named process may die.
-func TestKillRegisteredProcessSparesItsProcessGroup(t *testing.T) {
-	child := startDetached(t, "sh", "-c", "sleep 30")
-	if err := killRegisteredProcess(child.Process.Pid); err != nil {
-		t.Fatalf("kill registered process: %v", err)
-	}
-	// This process is still here to assert it: a group signal would have been
-	// delivered to its own group and taken it down with the child.
-	done := make(chan error, 1)
-	go func() { done <- child.Wait() }()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("the child exited cleanly; it should have been killed")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the child survived killRegisteredProcess")
-	}
-}
-
-// TestKillRegisteredProcessStopsGroupLeader covers the service that leads its own
-// group — how opencode starts its sidecar — whose helper processes must go with
-// it.
-func TestKillRegisteredProcessStopsGroupLeader(t *testing.T) {
-	cmd := exec.Command("sh", "-c", "sleep 30")
-	setProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start: %v", err)
-	}
-	t.Cleanup(func() { _, _ = cmd.Process.Wait() })
-	if err := killRegisteredProcess(cmd.Process.Pid); err != nil {
-		t.Fatalf("kill registered process: %v", err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the group leader survived killRegisteredProcess")
-	}
 }

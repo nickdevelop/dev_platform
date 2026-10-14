@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // sharedServer is the single machine-wide opencode server all adapter
@@ -196,7 +197,9 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 	output := &limitedWriter{limit: maxStartupOutputBytes}
 	command.Stdout = output
 	command.Stderr = output
-	setProcessGroup(command)
+	if err := platform.New().Process().Configure(command); err != nil {
+		return nil, fmt.Errorf("opencode: configure shared server process: %w", err)
+	}
 	command.WaitDelay = 2 * time.Second
 
 	if err := command.Start(); err != nil {
@@ -208,12 +211,12 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 	endpoint := "http://" + net.JoinHostPort(a.hostname, strconv.Itoa(port))
 	client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: defaultUsername, Password: password})
 	if err != nil {
-		_ = killProcessGroup(command.Process)
+		_ = platform.New().Process().Terminate(command.Process.Pid)
 		_ = process.wait()
 		return nil, err
 	}
 	if err := a.waitReady(ctx, process, client); err != nil {
-		_ = killProcessGroup(command.Process)
+		_ = platform.New().Process().Terminate(command.Process.Pid)
 		_ = process.wait()
 		return nil, fmt.Errorf("%w: %s", err, client.redact(output.String()))
 	}
@@ -224,7 +227,7 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 		pid:      command.Process.Pid,
 		done:     process.done,
 		stop: func(stopCtx context.Context) error {
-			_ = killProcessGroup(command.Process)
+			_ = platform.New().Process().Terminate(command.Process.Pid)
 			waited := make(chan error, 1)
 			go func() { waited <- process.wait() }()
 			select {

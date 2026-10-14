@@ -4,6 +4,7 @@ package platform
 
 import (
 	"errors"
+	"os/exec"
 	"runtime"
 
 	"devplatform/internal/platform/unix"
@@ -24,6 +25,9 @@ type unixPlatform struct {
 // Instance returns the unix single-instance lock.
 func (p unixPlatform) Instance() Instance { return unixInstance{} }
 
+// Process returns the unix child-process management.
+func (p unixPlatform) Process() Process { return unixProcess{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 
@@ -38,4 +42,21 @@ func (unixInstance) Acquire(dataDir string) (Lock, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+// unixProcess adapts the unix implementation to the Process port.
+type unixProcess struct{}
+
+func (unixProcess) Configure(cmd *exec.Cmd) error {
+	return unix.Process{}.Configure(cmd)
+}
+
+// Alive and IsZombie are wired in Task 2.3; until then the stub reports
+// absence. No caller uses them yet (discovery and the pi tests still use
+// their local implementations).
+func (unixProcess) Alive(pid int) bool    { return false }
+func (unixProcess) IsZombie(pid int) bool { return false }
+
+func (unixProcess) Terminate(pid int) error {
+	return unix.Process{}.Terminate(pid)
 }

@@ -9,11 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // TestDetectServiceStates pins what the settings page shows. Every unusable
@@ -191,7 +191,9 @@ func TestStartServicePropagatesLaunchFailure(t *testing.T) {
 func TestStopServiceKillsRegisteredPid(t *testing.T) {
 	exited := make(chan struct{})
 	cmd := exec.Command("sleep", "30")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := platform.New().Process().Configure(cmd); err != nil {
+		t.Fatalf("configure process group: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start sleep: %v", err)
 	}

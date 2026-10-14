@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // The operator-facing half of the adapter: the platform settings page is the
@@ -130,7 +131,7 @@ func (a *Adapter) StopService(ctx context.Context) (agents.ServiceStatus, error)
 		return status, nil
 	}
 
-	stopErr := killRegisteredProcess(reg.PID)
+	stopErr := platform.New().Process().Terminate(reg.PID)
 	// The platform may have started this very process; reap it through the hook
 	// it holds so nothing is left behind as a zombie.
 	a.releaseShared(ctx, "opencode service stopped from platform settings")

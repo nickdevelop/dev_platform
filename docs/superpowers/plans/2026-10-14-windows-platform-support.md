@@ -155,8 +155,8 @@
 - Produces: `Process.Configure(cmd) error`（unix：`Setpgid: true`）、`Process.Terminate(pid) error`（unix：`kill(-pid, SIGKILL)`，ESRCH 视为成功）。
 - Consumes: 无。
 
-- [ ] **Step 1: 迁移 pi 与 opencode 的 kill 逻辑** — 语义与现有 `killProcessGroup` 完全一致，包括 ESRCH 处理。
-- [ ] **Step 2: 测试** — `go test ./internal/agents/... -v` 全绿。
+- [x] **Step 1: 迁移 pi 与 opencode 的 kill 逻辑** — 语义与现有 `killProcessGroup` 完全一致，包括 ESRCH 处理。
+- [x] **Step 2: 测试** — `go test ./internal/agents/... -v` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): process group configuration and termination behind Process port"`
 
 ### Task 2.3: 进程存活与僵尸判断

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // Compile-time proof that the opencode adapter satisfies the platform contract.
@@ -1590,7 +1591,9 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	output := &limitedWriter{limit: maxStartupOutputBytes}
 	command.Stdout = output
 	command.Stderr = output
-	setProcessGroup(command)
+	if err := platform.New().Process().Configure(command); err != nil {
+		return nil, fmt.Errorf("opencode: configure server process: %w", err)
+	}
 	command.WaitDelay = 2 * time.Second
 
 	if err := command.Start(); err != nil {
@@ -1602,12 +1605,12 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	endpoint := "http://" + net.JoinHostPort(a.hostname, strconv.Itoa(port))
 	client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: defaultUsername, Password: password})
 	if err != nil {
-		_ = killProcessGroup(command.Process)
+		_ = platform.New().Process().Terminate(command.Process.Pid)
 		_ = process.wait()
 		return nil, err
 	}
 	if err := a.waitReady(ctx, process, client); err != nil {
-		_ = killProcessGroup(command.Process)
+		_ = platform.New().Process().Terminate(command.Process.Pid)
 		_ = process.wait()
 		// Redact the exact generated password (which may appear in a
 		// non-key=value shape) as well as generic credential shapes.
@@ -1619,7 +1622,7 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 		endpoint: endpoint,
 		done:     process.done,
 		stop: func(stopCtx context.Context) error {
-			_ = killProcessGroup(command.Process)
+			_ = platform.New().Process().Terminate(command.Process.Pid)
 			waited := make(chan error, 1)
 			go func() { waited <- process.wait() }()
 			select {

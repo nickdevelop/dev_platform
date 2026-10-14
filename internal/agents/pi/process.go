@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync/atomic"
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // processSpec is a fully-resolved, shell-free command description. Arguments
@@ -61,7 +63,9 @@ func startProcess(ctx context.Context, spec processSpec) (*process, error) {
 	if len(spec.env) > 0 {
 		cmd.Env = spec.env
 	}
-	setProcessGroup(cmd)
+	if err := platform.New().Process().Configure(cmd); err != nil {
+		return nil, fmt.Errorf("pi: configure child process: %w", err)
+	}
 
 	var stdin io.WriteCloser
 	var err error
@@ -97,6 +101,17 @@ func (p *process) wait() error {
 	err := p.cmd.Wait()
 	close(p.done)
 	return err
+}
+
+// killProcessGroup ends the child's process group through the Process port.
+// A group that is already gone is not an error: stopping an exited instance
+// is a successful stop. A missing process handle (start never ran) is a
+// successful no-op.
+func killProcessGroup(proc *os.Process) error {
+	if proc == nil {
+		return nil
+	}
+	return platform.New().Process().Terminate(proc.Pid)
 }
 
 // kill force-terminates the process group. It is safe to call more than once.
