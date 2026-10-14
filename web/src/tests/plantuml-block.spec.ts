@@ -179,4 +179,93 @@ describe('PlantumlBlock', () => {
 
     expect(seen).toEqual([false, true])
   })
+
+  it('opens the drawing in a popup viewer and closes it again', async () => {
+    configureEngineLoader(fakeEngine(() => '<svg><text>seq</text></svg>'))
+    const wrapper = mount(PlantumlBlock, {
+      props: { source: SOURCE, ready: true, finished: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="plantuml-expand"]').exists()).toBe(true)
+    expect(document.body.querySelector('[data-test="plantuml-viewer"]')).toBeNull()
+
+    await wrapper.find('[data-test="plantuml-expand"]').trigger('click')
+    await flushPromises()
+    const viewer = document.body.querySelector('[data-test="plantuml-viewer"]')
+    expect(viewer).not.toBeNull()
+    expect(viewer?.innerHTML).toContain('<svg')
+    expect(viewer?.querySelector('[data-test="plantuml-zoom-reset"]')?.textContent).toContain('100%')
+
+    const close = document.body.querySelector(
+      '[data-test="plantuml-viewer-close"]',
+    ) as HTMLElement
+    close.click()
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="plantuml-viewer"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('zooms the viewer and drags it to pan', async () => {
+    configureEngineLoader(fakeEngine(() => '<svg/>'))
+    const wrapper = mount(PlantumlBlock, {
+      props: { source: SOURCE, ready: true, finished: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    await wrapper.find('[data-test="plantuml-expand"]').trigger('click')
+    await flushPromises()
+
+    const zoomIn = document.body.querySelector('[data-test="plantuml-zoom-in"]') as HTMLElement
+    zoomIn.click()
+    await flushPromises()
+    expect(
+      document.body.querySelector('[data-test="plantuml-zoom-reset"]')?.textContent,
+    ).toContain('125%')
+
+    const canvas = document.body.querySelector(
+      '[data-test="plantuml-viewer-canvas"]',
+    ) as HTMLElement
+    const content = document.body.querySelector(
+      '[data-test="plantuml-viewer-content"]',
+    ) as HTMLElement
+    const before = content.style.transform
+    canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: 100, clientY: 100, bubbles: true }))
+    canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: 130, clientY: 140, bubbles: true }))
+    canvas.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    await flushPromises()
+    expect(content.style.transform).not.toBe(before)
+    expect(content.style.transform).toContain('translate(30px, 40px')
+
+    const zoomOut = document.body.querySelector('[data-test="plantuml-zoom-out"]') as HTMLElement
+    zoomOut.click()
+    await flushPromises()
+    expect(
+      document.body.querySelector('[data-test="plantuml-zoom-reset"]')?.textContent,
+    ).toContain('100%')
+    wrapper.unmount()
+  })
+
+  it('hides the popup button until there is a drawing to enlarge', async () => {
+    configureEngineLoader(fakeEngine(() => '<svg/>'))
+    const waiting = mount(PlantumlBlock, {
+      props: { source: '@startuml\nA->B', ready: false, finished: false },
+    })
+    await flushPromises()
+    expect(waiting.find('[data-test="plantuml-expand"]').exists()).toBe(false)
+    waiting.unmount()
+
+    configureEngineLoader(
+      fakeEngine(() => {
+        throw new Error('boom')
+      }),
+    )
+    const failed = mount(PlantumlBlock, {
+      props: { source: SOURCE, ready: true, finished: true },
+    })
+    await flushPromises()
+    expect(failed.find('[data-test="plantuml-expand"]').exists()).toBe(false)
+    failed.unmount()
+  })
 })
