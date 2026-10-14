@@ -282,5 +282,5 @@ type Environment struct {
 	CheckErr error
 }
 
-func (e *Environment) Describe() []string { return e.DescribeLines }
-func (e *Environment) Check() error       { return e.CheckErr }
+func (e *Environment) Describe(dataDir string) []string { return e.DescribeLines }
+func (e *Environment) Check() error                     { return e.CheckErr }

@@ -237,6 +237,16 @@ func runServer(args []string) error {
 
 	dataDir := resolveDataDir(*dataDirFlag)
 
+	// Refuse unsupported environments (WSL1) before touching anything, and
+	// report environment diagnostics to the startup log.
+	environment := platform.New().Environment()
+	if err := environment.Check(); err != nil {
+		return err
+	}
+	for _, line := range environment.Describe(dataDir) {
+		log.Print(line)
+	}
+
 	// One platform service per data directory: take the single-instance lock
 	// before opening the database, so a second process fails fast with a
 	// clear error instead of racing on the same SQLite database.

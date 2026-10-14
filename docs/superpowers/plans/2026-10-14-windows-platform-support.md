@@ -300,8 +300,8 @@
 - Produces: `Environment.Check() error`、`Environment.Describe() []string`。
 - unix 实现：读取 `/proc/version`（可注入读取函数以便测试），含 `Microsoft` 且不含 `WSL2` 时返回错误，提示升级到 WSL2。数据目录位于 `/mnt/<drive>` 下时，`Describe()` 给出告警，但不阻止启动。
 
-- [ ] **Step 1: 写测试** — 覆盖原生 Linux、WSL2（`WSL2` 标记）、WSL1、DrvFs 数据目录四种输入。
-- [ ] **Step 2: 实现并接入启动流程。**
+- [x] **Step 1: 写测试** — 覆盖原生 Linux、WSL2（`WSL2` 标记）、WSL1、DrvFs 数据目录四种输入。
+- [x] **Step 2: 实现并接入启动流程。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): startup environment checks, reject WSL1"`
 
 ### Task 3.5: 密码输入

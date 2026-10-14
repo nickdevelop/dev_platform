@@ -44,6 +44,9 @@ func (p unixPlatform) Executables() Executables { return unix.Executables{} }
 // Perms returns the unix private permissions.
 func (p unixPlatform) Perms() Perms { return unix.Perms{} }
 
+// Environment returns the unix startup checks.
+func (p unixPlatform) Environment() Environment { return unix.Environment{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

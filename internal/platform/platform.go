@@ -132,8 +132,10 @@ type Terminal interface {
 // Environment runs startup environment checks.
 type Environment interface {
 	// Describe returns diagnostic lines for the startup log, including
-	// warnings that do not block startup.
-	Describe() []string
+	// warnings that do not block startup. It takes the resolved data
+	// directory so implementations can warn about hostile locations
+	// (a DrvFs mount on unix, a shared directory on windows).
+	Describe(dataDir string) []string
 	// Check rejects unsupported environments, e.g. WSL1 on unix.
 	Check() error
 }
