@@ -14,9 +14,9 @@
 // The log can render split across the chat panel's two columns: display="messages"
 // shows only user/agent message and error entries for the left column, while
 // display="activity" shows only the thinking/tool entries for the right activity
-// pane. The activity pane renders a flat, fully expanded list — no step grouping
-// and no collapsing — so reasoning and tool I/O stay visible without extra
-// clicks. display="all" (the default) keeps the legacy interleaved log with
+// pane. The activity pane renders a flat list — no step grouping — where each
+// card folds on its own header: tool cards default collapsed, thinking cards
+// default expanded. display="all" (the default) keeps the legacy interleaved log with
 // collapsible step groups.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
@@ -38,7 +38,8 @@ const props = defineProps<{
   // Which slice of the log to render. The chat panel renders the log split:
   // display="messages" shows only user/agent message and error entries for
   // the left column, display="activity" shows only the thinking/tool entries
-  // for the right activity pane (flat and expanded, never grouped). display="all"
+  // for the right activity pane (a flat list; tools fold collapsed, thinking
+  // folds expanded). display="all"
   // keeps the legacy interleaved log.
   display?: 'all' | 'messages' | 'activity'
 }>()
@@ -216,6 +217,20 @@ const flatActivityEntries = computed<ChatEntry[]>(() =>
   visibleEntries.value.filter((entry) => isActivity(entry) && toolEventsVisibleFor(entry)),
 )
 
+// Per-card folding for the flat activity list: tool cards default collapsed,
+// thinking cards default expanded. The set records only the user's toggles
+// away from those defaults, keyed by entry id, so newly streamed entries
+// always open in their default state.
+const flatToggles = reactive(new Set<string>())
+function flatExpanded(entry: ChatEntry): boolean {
+  const toggled = flatToggles.has(entry.id)
+  return entry.kind === 'thinking' ? !toggled : toggled
+}
+function toggleFlat(entry: ChatEntry) {
+  if (flatToggles.has(entry.id)) flatToggles.delete(entry.id)
+  else flatToggles.add(entry.id)
+}
+
 function toolEventsVisibleFor(entry: ChatEntry): boolean {
   if (entry.kind === 'message' || entry.kind === 'error') return true
   return toolEventsVisible()
@@ -296,12 +311,20 @@ function prettyInput(entry: ChatEntry): string {
     >
       <li v-for="entry in flatActivityEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
         <div v-if="entry.kind === 'thinking'" class="flat-thinking" data-test="thinking">
-          <p class="flat-head">
+          <button
+            type="button"
+            class="flat-toggle"
+            data-test="flat-toggle"
+            :aria-expanded="flatExpanded(entry).toString()"
+            aria-label="折叠或展开思考内容"
+            @click="toggleFlat(entry)"
+          >
+            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
             <span class="thinking-icon" aria-hidden="true">🧠</span>
             <span class="thinking-title">Thinking</span>
             <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
-          </p>
-          <p class="thinking-text">{{ entry.text }}</p>
+          </button>
+          <p v-if="flatExpanded(entry)" class="thinking-text">{{ entry.text }}</p>
         </div>
 
         <div
@@ -309,14 +332,22 @@ function prettyInput(entry: ChatEntry): string {
           class="flat-tool"
           data-test="tool-call"
         >
-          <p class="flat-head">
+          <button
+            type="button"
+            class="flat-toggle"
+            data-test="flat-toggle"
+            :aria-expanded="flatExpanded(entry).toString()"
+            :aria-label="`折叠或展开工具 ${toolName(entry)}`"
+            @click="toggleFlat(entry)"
+          >
+            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
             <span class="tool-icon" aria-hidden="true">🔧</span>
             <span class="tool-name">{{ toolName(entry) }}</span>
             <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
             <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
-          </p>
-          <div class="tool-body">
+          </button>
+          <div v-if="flatExpanded(entry)" class="tool-body">
             <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
             <pre
               v-if="resultForCall(entry)"
@@ -340,11 +371,19 @@ function prettyInput(entry: ChatEntry): string {
           class="flat-tool"
           data-test="tool-result"
         >
-          <p class="flat-head">
+          <button
+            type="button"
+            class="flat-toggle"
+            data-test="flat-toggle"
+            :aria-expanded="flatExpanded(entry).toString()"
+            aria-label="折叠或展开工具结果"
+            @click="toggleFlat(entry)"
+          >
+            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
             <span class="tool-icon" aria-hidden="true">🔧</span>
             <span class="tool-name">工具结果</span>
-          </p>
-          <div class="tool-body">
+          </button>
+          <div v-if="flatExpanded(entry)" class="tool-body">
             <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
           </div>
         </div>
@@ -733,6 +772,40 @@ function prettyInput(entry: ChatEntry): string {
 }
 
 .flat-head .tool-arg {
+  flex: 1;
+}
+
+/* The flat card's toggle: the whole header is one button, with a chevron
+   showing the fold state. Tools start collapsed, thinking starts expanded. */
+.flat-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  text-align: left;
+  min-width: 0;
+}
+
+.flat-chevron {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  width: 1em;
+}
+
+.flat-toggle .tool-name,
+.flat-toggle .thinking-title {
+  flex-shrink: 0;
+}
+
+.flat-toggle .tool-arg {
   flex: 1;
 }
 

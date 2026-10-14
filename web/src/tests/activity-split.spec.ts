@@ -103,7 +103,7 @@ describe('split message/activity log', () => {
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(false)
   })
 
-  it('shows flat expanded entries in the activity pane, never grouped', () => {
+  it('folds tool cards collapsed and thinking expanded in the activity pane', async () => {
     const entries: ChatEntry[] = [
       { id: 'u1', kind: 'message', role: 'user', text: 'hi', streaming: false },
       { id: 't1', kind: 'thinking', role: 'assistant', text: 'plan', streaming: false },
@@ -117,15 +117,23 @@ describe('split message/activity log', () => {
     const wrapper = mount(MessageView, {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
-    // No step-group wrapper, no <details> folding: every entry is its own card.
+    // No step-group wrapper, no <details>: every entry is its own card.
     expect(wrapper.find('[data-test="step-group"]').exists()).toBe(false)
     expect(wrapper.findAll('details').length).toBe(0)
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="tool-call"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="bubble"]').exists()).toBe(false)
-    // Tool output is visible without any click to expand.
-    expect(wrapper.find('.tool-output').text()).toContain('文件内容')
-    expect(wrapper.find('.thinking-text').text()).toContain('plan')
+    // Thinking starts expanded, tools start collapsed.
+    expect(wrapper.find('[data-test="thinking"] .thinking-text').exists()).toBe(true)
+    expect(wrapper.find('[data-test="tool-call"] .tool-output').exists()).toBe(false)
+
+    // A hand click opens the tool card and shows its output.
+    await wrapper.find('[data-test="tool-call"] [data-test="flat-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="tool-call"] .tool-output').text()).toContain('文件内容')
+
+    // A hand click folds the thinking card away.
+    await wrapper.find('[data-test="thinking"] [data-test="flat-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="thinking"] .thinking-text').exists()).toBe(false)
   })
 
   it('shows an activity-specific empty note instead of the message one', () => {
