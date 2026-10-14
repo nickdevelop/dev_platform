@@ -68,8 +68,8 @@
 - Produces: 一个测试 `TestBusinessPackagesStayOSNeutral`。扫描 `internal/` 下除 `internal/platform/**`、`cmd/**`、`_test.go` 之外的非测试文件，断言不 import `syscall`、`golang.org/x/sys/*`，且不出现 `runtime.GOOS` 或 `runtime.GOARCH`。
 - 允许清单 `allowlist` 为文件路径到 `reason` 的映射，初始内容为当前全部违规文件，逐条标注任务编号（例如 `internal/agents/opencode/discovery.go // Task 2.3`）。
 
-- [ ] **Step 1: 写测试与初始清单** — 测试失败时列出不在清单中的违规文件。
-- [ ] **Step 2: 确认当前通过** — `go test ./internal/platform/ -run TestBusinessPackagesStayOSNeutral -v` → PASS（清单覆盖全部现有违规）。
+- [x] **Step 1: 写测试与初始清单** — 测试失败时列出不在清单中的违规文件。
+- [x] **Step 2: 确认当前通过** — `go test ./internal/platform/ -run TestBusinessPackagesStayOSNeutral -v` → PASS（清单覆盖全部现有违规）。
 - [ ] **Step 3: 提交** — `git commit -am "test(platform): guard business packages against OS-specific imports"`
 
 ### Task 0.3: CI 增加 Windows 编译检查
@@ -80,8 +80,8 @@
 **Interfaces:**
 - Produces: `windows-latest` 任务，执行 `go build ./...`。阶段 0 结束前允许失败，但必须在 PR 中标注为“已知失败，阶段 4 修复”。
 
-- [ ] **Step 1: 增加工作流** — 只做 `go build ./...` 与 `go vet ./...`，不跑测试。
-- [ ] **Step 2: 确认失败项与 Task 0.1 清单一致**。
+- [x] **Step 1: 增加工作流** — 只做 `go build ./...` 与 `go vet ./...`，不跑测试。
+- [x] **Step 2: 确认失败项与 Task 0.1 清单一致**。
 - [ ] **Step 3: 提交** — `git commit -am "ci: add windows build job (expected to fail until phase 4)"`
 
 ---
