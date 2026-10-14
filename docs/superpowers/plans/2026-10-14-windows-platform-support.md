@@ -238,8 +238,8 @@
 
 ### Task 2.8: 清空守卫清单（阶段 2 出口）
 
-- [ ] **Step 1: 删除允许清单中已迁移的条目**，剩余条目只允许是阶段 3 与阶段 4 任务。
-- [ ] **Step 2: 全量验证** — `go test ./... && go vet ./...`、`cd web && npm run typecheck && npm test -- --run`。
+- [x] **Step 1: 删除允许清单中已迁移的条目**，剩余条目只允许是阶段 3 与阶段 4 任务。（清单已为空：7 条初始条目在 2.1–2.7 中逐条消除，无剩余。）
+- [x] **Step 2: 全量验证** — `go test ./... && go vet ./...`、`cd web && npm run typecheck && npm test -- --run`。（23 包全绿、vet 干净、前端 30 文件/338 用例全绿、Windows build/vet 干净，均与基线一致。）
 - [ ] **Step 3: 提交** — `git commit -am "test(platform): shrink OS guard allowlist after phase 2"`
 
 ---
