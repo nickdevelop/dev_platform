@@ -417,8 +417,8 @@
 - Create: `internal/platform/windows/perms.go`（`PrivateDir`、`PrivateFile` 仅创建，`Enforced()` 返回 false）
 - Modify: `internal/platform/windows/environment.go`（新建）：`Check()` 在数据目录不位于 `%APPDATA%` 或 `%LOCALAPPDATA%` 下时输出告警，不阻止启动
 
-- [ ] **Step 1: 测试** — `Enforced()` 为 false；数据目录位于共享目录时 `Describe()` 包含告警文案。
-- [ ] **Step 2: 实现。**
+- [x] **Step 1: 测试** — `Enforced()` 为 false；数据目录位于共享目录时 `Describe()` 包含告警文案。
+- [x] **Step 2: 实现。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): windows permission degradation with startup warnings"`
 
 ### Task 4.6: Windows 关停、回收站、终端
