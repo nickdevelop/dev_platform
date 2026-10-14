@@ -363,8 +363,8 @@
   - `IsZombie(pid)`：恒 false。
   - `Terminate(pid)`：对平台外的进程（服务进程）执行 `taskkill /T /F /PID <pid>`；对平台拉起的进程直接结束 Job。
 
-- [ ] **Step 1: 写测试** — 启动一个子进程后 `Alive` 为 true；`Terminate` 后为 false；子进程的子进程也被结束。
-- [ ] **Step 2: 实现。** 注意 Job Object 在 `Start` 之后分配，存在极短的竞争窗口，需要在文档中说明，或使用 `CREATE_SUSPENDED` 后分配再恢复。
+- [x] **Step 1: 写测试** — 启动一个子进程后 `Alive` 为 true；`Terminate` 后为 false；子进程的子进程也被结束。
+- [x] **Step 2: 实现。** 注意 Job Object 在 `Start` 之后分配，存在极短的竞争窗口，需要在文档中说明，或使用 `CREATE_SUSPENDED` 后分配再恢复。
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): windows process management with job objects"`
 
 ### Task 4.3: 可执行解析（通用原语 + opencode 专用布局）

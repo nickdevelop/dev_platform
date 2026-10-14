@@ -28,6 +28,9 @@ func TestZeroValueIsNoOp(t *testing.T) {
 	if p.Process().IsZombie(1234) {
 		t.Fatal("IsZombie() = true, want false")
 	}
+	if err := p.Process().Attach(nil); err != nil {
+		t.Fatalf("Attach() error = %v, want nil", err)
+	}
 	if _, err := p.Executables().Resolve("opencode"); err == nil {
 		t.Fatal("Resolve() on a missing name = nil error, want a lookup miss")
 	}

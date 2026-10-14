@@ -92,6 +92,13 @@ func startProcess(ctx context.Context, spec processSpec) (*process, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("pi: start process: %w", err)
 	}
+	// Enroll the child in platform supervision (the Windows Job Object);
+	// a child the platform cannot supervise must not be left behind.
+	if err := platform.New().Process().Attach(cmd.Process); err != nil {
+		_ = platform.New().Process().Terminate(cmd.Process.Pid)
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("pi: supervise child process: %w", err)
+	}
 	return &process{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderr, done: make(chan struct{})}, nil
 }
 

@@ -70,6 +70,11 @@ type Process interface {
 	// Configure prepares a child command before Start.
 	// unix: Setpgid; windows: CREATE_NEW_PROCESS_GROUP plus Job Object.
 	Configure(cmd *exec.Cmd) error
+	// Attach enrolls an already-started platform child into supervision so
+	// nothing is left behind when the platform exits. Call it right after
+	// cmd.Start; a failed attach must fail the launch. unix is a no-op;
+	// windows assigns the child to the platform Job Object.
+	Attach(proc *os.Process) error
 	// Alive reports whether pid answers a signal, zombies included. Pair
 	// with IsZombie to tell a live process from an unreaped one.
 	Alive(pid int) bool

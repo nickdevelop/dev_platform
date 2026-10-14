@@ -91,6 +91,9 @@ type Instance interface {
 type Process interface {
     // 配置子进程属性。unix: Setpgid；windows: CREATE_NEW_PROCESS_GROUP 并挂入 Job Object
     Configure(cmd *exec.Cmd) error
+    // 将已启动的平台子进程纳入监管。Start 之后立即调用；unix 为空实现，
+    // windows 挂入平台 Job Object（KILL_ON_JOB_CLOSE）
+    Attach(proc *os.Process) error
     Alive(pid int) bool
     IsZombie(pid int) bool   // windows 恒 false
     // 结束进程及其子进程。unix: kill(-pgid)；windows: TerminateProcess + Job Object
@@ -161,6 +164,7 @@ type Environment interface {
 ### 5.2 子进程与服务进程
 
 - 平台拉起的 `pi`、`opencode serve` 等子进程，都挂入同一个 Job Object，并设置 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`。这样平台异常退出时子进程不会残留。
+- 挂接发生在 `Start` 之后（`Process.Attach`，句柄此时才存在），存在极短的竞争窗口：文档在此说明，不采用 `CREATE_SUSPENDED`（平台子进程均为长驻服务，窗口内退出无实际意义）。
 - 停止机器级 opencode service 的路径：读取服务注册文件中的 `pid`，调用 `Terminate`（`TerminateProcess` 结合子进程树）。注意：注册文件中的 `pid` 是 opencode 服务进程本身（Node 进程），而不是 `opencode.cmd` 或 `cmd.exe` 的 pid。服务进程不是平台拉起的，不在平台的 Job Object 中，因此 `Terminate` 需要按 pid 结束进程树（`taskkill /T /F /PID`，或枚举子进程后逐个结束）。Windows 没有 `SIGTERM`，无法做与 unix 等价的优雅关停，因此需要先确认 opencode 是否提供 HTTP 关停接口（查看其 `/openapi.json`），有则优先使用，超时后再强制终止。
 - 业务路径仍然只读注册文件并做便宜的存活探测，不发 HTTP 请求，与 `docs/superpowers/specs/2026-10-13-opencode-service-external-control-design.md` 保持一致。
 

@@ -167,10 +167,14 @@ type Process struct {
 	ZombieTable map[int]bool
 	// ConfigureErr makes Configure fail.
 	ConfigureErr error
+	// AttachErr makes Attach fail.
+	AttachErr error
 	// TerminateErr makes Terminate fail.
 	TerminateErr error
 	// Configured records commands passed to Configure.
 	Configured []*exec.Cmd
+	// Attached records processes passed to Attach.
+	Attached []*os.Process
 	// Terminated records pids passed to Terminate.
 	Terminated []int
 }
@@ -178,6 +182,11 @@ type Process struct {
 func (pr *Process) Configure(cmd *exec.Cmd) error {
 	pr.Configured = append(pr.Configured, cmd)
 	return pr.ConfigureErr
+}
+
+func (pr *Process) Attach(proc *os.Process) error {
+	pr.Attached = append(pr.Attached, proc)
+	return pr.AttachErr
 }
 
 func (pr *Process) Alive(pid int) bool { return pr.AliveTable[pid] }

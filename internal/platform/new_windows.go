@@ -4,6 +4,8 @@ package platform
 
 import (
 	"errors"
+	"os"
+	"os/exec"
 	"runtime"
 
 	"devplatform/internal/platform/windows"
@@ -23,6 +25,9 @@ type windowsPlatform struct {
 // Instance returns the Windows single-instance lock.
 func (p windowsPlatform) Instance() Instance { return windowsInstance{} }
 
+// Process returns the Windows child-process management.
+func (p windowsPlatform) Process() Process { return windowsProcess{} }
+
 // windowsInstance adapts the windows implementation to the Instance port.
 type windowsInstance struct{}
 
@@ -37,4 +42,22 @@ func (windowsInstance) Acquire(dataDir string) (Lock, error) {
 		return nil, err
 	}
 	return l, nil
+}
+
+// windowsProcess adapts the windows implementation to the Process port.
+type windowsProcess struct{}
+
+func (windowsProcess) Configure(cmd *exec.Cmd) error {
+	return windows.Process{}.Configure(cmd)
+}
+
+func (windowsProcess) Attach(proc *os.Process) error {
+	return windows.Process{}.Attach(proc)
+}
+
+func (windowsProcess) Alive(pid int) bool    { return windows.Process{}.Alive(pid) }
+func (windowsProcess) IsZombie(pid int) bool { return windows.Process{}.IsZombie(pid) }
+
+func (windowsProcess) Terminate(pid int) error {
+	return windows.Process{}.Terminate(pid)
 }

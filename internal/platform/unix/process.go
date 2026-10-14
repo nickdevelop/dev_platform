@@ -22,6 +22,13 @@ func (Process) Configure(cmd *exec.Cmd) error {
 	return nil
 }
 
+// Attach enrolls an already-started platform child into supervision. Unix
+// needs nothing beyond the process group from Configure: a child outlives
+// nothing because the platform kills the group on stop.
+func (Process) Attach(proc *os.Process) error {
+	return nil
+}
+
 // Alive reports whether pid answers a signal. A zombie answers too: use
 // IsZombie to tell a live process from an unreaped one.
 func (Process) Alive(pid int) bool {

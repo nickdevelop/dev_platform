@@ -4,6 +4,7 @@ package platform
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"runtime"
 
@@ -71,6 +72,10 @@ type unixProcess struct{}
 
 func (unixProcess) Configure(cmd *exec.Cmd) error {
 	return unix.Process{}.Configure(cmd)
+}
+
+func (unixProcess) Attach(proc *os.Process) error {
+	return unix.Process{}.Attach(proc)
 }
 
 func (unixProcess) Alive(pid int) bool    { return unix.Process{}.Alive(pid) }

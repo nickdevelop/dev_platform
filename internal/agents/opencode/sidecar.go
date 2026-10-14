@@ -205,6 +205,13 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 	if err := command.Start(); err != nil {
 		return nil, fmt.Errorf("opencode: start shared server process: %w", err)
 	}
+	// Enroll the server in platform supervision (the Windows Job Object);
+	// a server the platform cannot supervise must not be left behind.
+	if err := platform.New().Process().Attach(command.Process); err != nil {
+		_ = platform.New().Process().Terminate(command.Process.Pid)
+		_ = command.Wait()
+		return nil, fmt.Errorf("opencode: supervise shared server process: %w", err)
+	}
 	process := &launchedProcess{cmd: command, done: make(chan struct{})}
 	go process.wait()
 
