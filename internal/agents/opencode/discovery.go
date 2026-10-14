@@ -34,13 +34,9 @@ func (a *Adapter) serviceFile() string {
 }
 
 func defaultServiceFile() string {
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return ""
-		}
-		state = filepath.Join(home, ".local", "state")
+	state, err := platform.New().Dirs().StateDir()
+	if err != nil || state == "" {
+		return ""
 	}
 	return filepath.Join(state, "opencode", "service.json")
 }

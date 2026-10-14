@@ -187,8 +187,8 @@
 **Interfaces:**
 - Produces: `Dirs.HomeDir()`、`Dirs.ConfigDir()`、`Dirs.DataDir()`、`Dirs.StateDir()`、`Dirs.TempDir()`。unix：`$XDG_CONFIG_HOME` 或 `~/.config`，`$XDG_DATA_HOME` 或 `~/.local/share`，`$XDG_STATE_HOME` 或 `~/.local/state`。
 
-- [ ] **Step 1: 迁移** — 默认值与 Linux 行为逐字相同。
-- [ ] **Step 2: 测试** — `go test ./cmd/... ./internal/agents/... -v` 全绿。
+- [x] **Step 1: 迁移** — 默认值与 Linux 行为逐字相同。
+- [x] **Step 2: 测试** — `go test ./cmd/... ./internal/agents/... -v` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): directory resolution behind Dirs port"`
 
 ### Task 2.5: 回收站

@@ -28,6 +28,7 @@ import (
 	"devplatform/internal/database"
 	platformhttp "devplatform/internal/http"
 	"devplatform/internal/modelconfig"
+	"devplatform/internal/platform"
 	"devplatform/internal/projects"
 	"devplatform/internal/resources"
 	"devplatform/internal/resourcesync"
@@ -65,7 +66,7 @@ func resolveDataDir(flagValue string) string {
 	if dir := os.Getenv("PLATFORM_DATA_DIR"); dir != "" {
 		return dir
 	}
-	if base, err := os.UserConfigDir(); err == nil {
+	if base, err := platform.New().Dirs().ConfigDir(); err == nil {
 		return filepath.Join(base, "devplatform")
 	}
 	return filepath.Join(".", "devplatform-data")

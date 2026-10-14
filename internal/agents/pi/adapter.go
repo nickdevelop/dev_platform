@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // Compile-time proof that the pi adapter satisfies the platform contract.
@@ -1386,7 +1387,7 @@ func defaultSessionDir() string {
 	if dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
 		return dir
 	}
-	home, err := os.UserHomeDir()
+	home, err := platform.New().Dirs().HomeDir()
 	if err != nil {
 		return ""
 	}

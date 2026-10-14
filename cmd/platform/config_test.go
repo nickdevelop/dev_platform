@@ -8,8 +8,9 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
+
+	"devplatform/internal/platform"
 )
 
 // writeIndex creates an index.html at path, marking a built web UI.
@@ -68,12 +69,14 @@ func TestResolveDataDir(t *testing.T) {
 	})
 
 	t.Run("user config dir by default", func(t *testing.T) {
-		if runtime.GOOS != "linux" {
-			t.Skip("XDG_CONFIG_HOME semantics are Linux-specific")
-		}
 		t.Setenv("PLATFORM_DATA_DIR", "")
 		configHome := t.TempDir()
 		t.Setenv("XDG_CONFIG_HOME", configHome)
+		// Skip by capability, not by GOOS: the XDG assertion only runs
+		// where the platform config dir follows XDG_CONFIG_HOME.
+		if base, err := platform.New().Dirs().ConfigDir(); err != nil || base != configHome {
+			t.Skip("platform config dir does not follow XDG_CONFIG_HOME here")
+		}
 		if got := resolveDataDir(""); got != filepath.Join(configHome, "devplatform") {
 			t.Errorf("resolveDataDir(\"\") = %q, want <config dir>/devplatform", got)
 		}
