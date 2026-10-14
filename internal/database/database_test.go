@@ -5,13 +5,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"devplatform/internal/platform"
 )
 
 // captureLog redirects the database logger output into a buffer until the
@@ -327,8 +328,10 @@ func TestProjectPathIsUnique(t *testing.T) {
 }
 
 func TestOpenRestrictsDataDirAndDatabasePermissions(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix file permissions are not meaningful on Windows")
+	// Skip by capability, not by GOOS: the assertions only run where the
+	// platform enforces private permissions.
+	if !platform.New().Perms().Enforced() {
+		t.Skip("private permissions are not enforced on this platform")
 	}
 
 	base := t.TempDir()

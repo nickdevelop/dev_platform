@@ -275,8 +275,8 @@
 **Interfaces:**
 - Produces: `Perms.PrivateDir(path) error`、`Perms.PrivateFile(path) error`、`Perms.Enforced() bool`。unix：行为与原调用逐字相同，`Enforced()` 为 true。
 
-- [ ] **Step 1: 迁移** — 业务代码不再直接写模式位。
-- [ ] **Step 2: 测试** — 现有权限断言在 Linux 上仍执行。
+- [x] **Step 1: 迁移** — 业务代码不再直接写模式位。
+- [x] **Step 2: 测试** — 现有权限断言在 Linux 上仍执行。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): private permissions behind Perms port"`
 
 ### Task 3.3: 换行符处理

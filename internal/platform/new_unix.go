@@ -41,6 +41,9 @@ func (p unixPlatform) Shutdown() Shutdown { return unix.Shutdown{} }
 // Executables returns the unix command lookup.
 func (p unixPlatform) Executables() Executables { return unix.Executables{} }
 
+// Perms returns the unix private permissions.
+func (p unixPlatform) Perms() Perms { return unix.Perms{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

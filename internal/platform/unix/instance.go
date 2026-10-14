@@ -33,7 +33,7 @@ func (Instance) Acquire(dataDir string) (*Lock, error) {
 	if dataDir == "" {
 		return nil, errors.New("platform: data directory is required")
 	}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+	if err := (Perms{}).PrivateDir(dataDir); err != nil {
 		return nil, fmt.Errorf("platform: create data directory: %w", err)
 	}
 
@@ -43,7 +43,7 @@ func (Instance) Acquire(dataDir string) (*Lock, error) {
 		return nil, fmt.Errorf("platform: open single-instance lock %s: %w", path, err)
 	}
 	// Tighten a lock file left with wider permissions by an earlier version.
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := (Perms{}).PrivateFile(path); err != nil {
 		file.Close()
 		return nil, fmt.Errorf("platform: restrict single-instance lock %s: %w", path, err)
 	}

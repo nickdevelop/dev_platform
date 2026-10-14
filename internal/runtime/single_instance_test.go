@@ -74,10 +74,9 @@ func TestAcquireLockIsReacquirableAfterRelease(t *testing.T) {
 // and its data directory are owner-only on Unix, so a local user cannot read
 // platform state (the directory also holds the session database).
 func TestAcquireLockRestrictsDataDirAndLockPermissions(t *testing.T) {
-	// Skip by capability, not by GOOS. The nil check is transitional:
-	// Perms is wired in Task 3.2, until then a nil port means the unix
-	// default under test, which enforces permissions.
-	if perms := platform.New().Perms(); perms != nil && !perms.Enforced() {
+	// Skip by capability, not by GOOS. Perms is wired, so the port is the
+	// source of truth on every platform.
+	if !platform.New().Perms().Enforced() {
 		t.Skip("private permissions are not enforced on this platform")
 	}
 

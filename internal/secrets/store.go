@@ -21,16 +21,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"sync"
+
+	"devplatform/internal/platform"
 )
 
 const (
 	// FileName is the name of the secret file inside the platform data
 	// directory.
 	FileName = "secrets.json"
-	// FileMode is the owner-only permission the secret file carries.
+	// FileMode is the owner-only permission the secret file carries. The
+	// enforcement lives behind the platform Perms port; this constant
+	// documents the unix value.
 	FileMode os.FileMode = 0o600
 	// dirMode is the owner-only permission the secret file's directory
-	// carries.
+	// carries. See FileMode.
 	dirMode os.FileMode = 0o700
 )
 
@@ -178,7 +182,7 @@ func (s *Store) load() (map[string]string, error) {
 // the directory entry rather than following a symlink.
 func (s *Store) save(values map[string]string) error {
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, dirMode); err != nil {
+	if err := platform.New().Perms().PrivateDir(dir); err != nil {
 		return fmt.Errorf("secrets: create data directory: %w", err)
 	}
 
@@ -194,7 +198,7 @@ func (s *Store) save(values map[string]string) error {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName) // no-op once the rename succeeds
 
-	if err := tmp.Chmod(FileMode); err != nil {
+	if err := platform.New().Perms().PrivateFile(tmpName); err != nil {
 		_ = tmp.Close()
 		return fmt.Errorf("secrets: set permissions: %w", err)
 	}

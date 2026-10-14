@@ -18,6 +18,8 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"devplatform/internal/platform"
 )
 
 // dbFileName is the name of the SQLite database file inside the data
@@ -78,7 +80,7 @@ func Open(dataDir string) (*gorm.DB, error) {
 	// the password hash and plaintext session identifiers; keep it
 	// owner-only so another local user cannot read the database and hijack a
 	// session.
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+	if err := platform.New().Perms().PrivateDir(dataDir); err != nil {
 		return nil, fmt.Errorf("database: create data directory: %w", err)
 	}
 
@@ -100,9 +102,10 @@ func Open(dataDir string) (*gorm.DB, error) {
 	}
 	// The WAL and shared-memory sidecars carry the same data as the database;
 	// restrict them too when SQLite has already created them. They are
-	// re-restricted on the next write if SQLite recreates them.
+	// re-restricted on the next write if SQLite recreates them. A missing
+	// sidecar (SQLite has not created it yet) is not an error.
 	for _, sidecar := range []string{dbPath + "-wal", dbPath + "-shm"} {
-		bestEffortChmod(sidecar, 0o600)
+		_ = platform.New().Perms().PrivateFile(sidecar)
 	}
 	return db, nil
 }
@@ -117,14 +120,8 @@ func createRestrictedFile(path string) error {
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("database: close database file %s: %w", path, err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := platform.New().Perms().PrivateFile(path); err != nil {
 		return fmt.Errorf("database: restrict database file %s: %w", path, err)
 	}
 	return nil
-}
-
-// bestEffortChmod tightens the permissions of a file when it exists; a missing
-// sidecar (SQLite has not created it yet) is not an error.
-func bestEffortChmod(path string, mode os.FileMode) {
-	_ = os.Chmod(path, mode)
 }

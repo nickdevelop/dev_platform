@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/platform"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -98,8 +100,10 @@ func TestStoreRejectsInvalidID(t *testing.T) {
 }
 
 func TestStoreFilePermissions(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX file permissions are not enforced on Windows")
+	// Skip by capability, not by GOOS: the assertions only run where the
+	// platform enforces private permissions.
+	if !platform.New().Perms().Enforced() {
+		t.Skip("private permissions are not enforced on this platform")
 	}
 	store := newTestStore(t)
 	if err := store.Set(context.Background(), "sec_1", "value"); err != nil {

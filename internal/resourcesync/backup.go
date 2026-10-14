@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"devplatform/internal/platform"
 )
 
 // backupFile copies the current target content into the manager's backup
@@ -18,7 +20,7 @@ func (m *Manager) backupFile(source string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resourcesync: read target for backup: %w", err)
 	}
-	if err := os.MkdirAll(m.backupDir, 0o700); err != nil {
+	if err := platform.New().Perms().PrivateDir(m.backupDir); err != nil {
 		return "", fmt.Errorf("resourcesync: create backup directory: %w", err)
 	}
 
@@ -27,6 +29,11 @@ func (m *Manager) backupFile(source string) (string, error) {
 	dest := filepath.Join(m.backupDir, name)
 	if err := atomicWriteFile(dest, data, 0o600); err != nil {
 		return "", fmt.Errorf("resourcesync: write backup: %w", err)
+	}
+	// Backups are as sensitive as the database: enforce owner-only
+	// permissions through the port even where the platform degrades them.
+	if err := platform.New().Perms().PrivateFile(dest); err != nil {
+		return "", fmt.Errorf("resourcesync: restrict backup: %w", err)
 	}
 	return dest, nil
 }
