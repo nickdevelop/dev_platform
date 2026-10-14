@@ -197,10 +197,11 @@ type ContentBlock struct {
 // carries the failure in Error. There is no `output` field on the wire —
 // reading one yields empty results after reopen.
 type ToolState struct {
-	Status  string           `json:"status"`
-	Input   json.RawMessage  `json:"input,omitempty"`
-	Content json.RawMessage  `json:"content,omitempty"`
-	Error   *structuredError `json:"error,omitempty"`
+	Status   string           `json:"status"`
+	Input    json.RawMessage  `json:"input,omitempty"`
+	Content  json.RawMessage  `json:"content,omitempty"`
+	Metadata json.RawMessage  `json:"metadata,omitempty"`
+	Error    *structuredError `json:"error,omitempty"`
 }
 
 // APIError reports a non-2xx response from the opencode API. Message is

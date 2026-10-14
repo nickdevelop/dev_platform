@@ -102,10 +102,19 @@ export interface ToolCallPayload {
   input?: unknown
 }
 
+export interface FileDiffInfo {
+  file: string
+  patch?: string
+  additions: number
+  deletions: number
+  status?: 'added' | 'deleted' | 'modified'
+}
+
 export interface ToolResultPayload {
   callId: string
   output?: string
   isError: boolean
+  metadata?: { files?: FileDiffInfo[] }
 }
 
 export interface ErrorPayload {

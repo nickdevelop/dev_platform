@@ -112,10 +112,13 @@ type ToolCallPayload struct {
 }
 
 // ToolResultPayload reports the outcome of the tool call named by CallID.
+// Metadata optionally carries typed edit summaries (FileDiff list) alongside
+// the human-readable Output; it never exceeds MaxRawEventBytes.
 type ToolResultPayload struct {
-	CallID  string `json:"callId"`
-	Output  string `json:"output,omitempty"`
-	IsError bool   `json:"isError"`
+	CallID   string          `json:"callId"`
+	Output   string          `json:"output,omitempty"`
+	IsError  bool            `json:"isError"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
 }
 
 // ErrorPayload reports a backend or adapter failure. Code is a stable,
@@ -231,6 +234,9 @@ func (e NormalizedEvent) Validate() error {
 		}
 		if e.Type == EventToolCall && len(e.ToolCall.Input) > MaxRawEventBytes {
 			return fmt.Errorf("%w: tool call input is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.ToolCall.Input), MaxRawEventBytes)
+		}
+		if e.Type == EventToolResult && len(e.ToolResult.Metadata) > MaxRawEventBytes {
+			return fmt.Errorf("%w: tool result metadata is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.ToolResult.Metadata), MaxRawEventBytes)
 		}
 		return nil
 	}

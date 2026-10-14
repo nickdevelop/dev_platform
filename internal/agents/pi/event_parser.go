@@ -323,7 +323,7 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 	case "tool_execution_end":
 		out := p.event()
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.Result), IsError: event.IsError}
+		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.Result), IsError: event.IsError, Metadata: editFileDiff(event.Result, event.Args)}
 		return []agents.NormalizedEvent{out}
 
 	case "error":

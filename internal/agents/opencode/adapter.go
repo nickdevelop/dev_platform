@@ -1226,14 +1226,14 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenContent(data.Content), IsError: false}
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenContent(data.Content), IsError: false, Metadata: boundedMetadata(data.Metadata)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.failed":
 		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: structuredErrorMessage(data, data.Content), IsError: true}
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: structuredErrorMessage(data, data.Content), IsError: true, Metadata: boundedMetadata(data.Metadata)}
 		return []agents.NormalizedEvent{out}
 
 	case "session.execution.failed", "session.step.failed", "session.error":
@@ -1379,6 +1379,7 @@ type eventData struct {
 	Name               string           `json:"name"`
 	Input              json.RawMessage  `json:"input"`
 	Content            json.RawMessage  `json:"content"`
+	Metadata           json.RawMessage  `json:"metadata"`
 	Error              *structuredError `json:"error"`
 	Title              string           `json:"title"`
 	Reason             string           `json:"reason"`
@@ -1452,6 +1453,19 @@ func retryMessage(data eventData) string {
 // lifecycleState converts a native event type into a lifecycle state name.
 func lifecycleState(eventType string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(eventType, "session."), ".", "_")
+}
+
+// boundedMetadata keeps only a size-bounded metadata body carrying edit file
+// diffs; anything larger or without files is dropped so the event stays small.
+func boundedMetadata(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || len(raw) > agents.MaxRawEventBytes {
+		return nil
+	}
+	meta := agents.ParseToolResultMetadata(raw)
+	if meta == nil || len(meta.Files) == 0 {
+		return nil
+	}
+	return append(json.RawMessage(nil), raw...)
 }
 
 // flattenContent renders a tool result content value (string, text blocks or a

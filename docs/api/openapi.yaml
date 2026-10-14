@@ -1462,7 +1462,7 @@ paths:
       description: >-
         Returns the session's agent-native prior turns, oldest first, as the
         same normalized event envelope the SSE stream carries, each with
-        replayed=true. History stays in the agent's own storage: the platform
+        replayed=true. A tool_result event may carry metadata.files (file, patch, additions, deletions, status) for file edits; the workbench renders the desktop-style +N/-N badge and diff body from it and falls back to plain output text when absent. History stays in the agent's own storage: the platform
         reads it on demand and keeps no copy, so a session whose instance has
         stopped can still be replayed. Requires the backend to declare
         sessionHistory support. At most 5000 of the most recent events are

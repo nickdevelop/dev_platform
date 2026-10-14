@@ -52,6 +52,10 @@ export interface ChatEntry {
   // (name + representative argument) without the store knowing tool schemas.
   input?: unknown
   isError?: boolean
+  // Normalized edit summary for file tools (edit): the desktop-style
+  // badge/body render from this rather than parsing output text. Absent on
+  // non-edit tools, failed results without diffs, and old transcripts.
+  diff?: { file: string; patch?: string; additions: number; deletions: number }
 }
 
 export type StreamStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'error' | 'ended'
@@ -126,6 +130,27 @@ function keepSettledTurn(current: AgentSession, incoming: AgentSession): AgentSe
   return incoming
 }
 
+function firstChangedFile(metadata: unknown): ChatEntry['diff'] {
+  if (!metadata || typeof metadata !== 'object') return undefined
+  const files = (metadata as { files?: unknown }).files
+  if (!Array.isArray(files)) return undefined
+  for (const item of files) {
+    if (!item || typeof item !== 'object') continue
+    const file = item as Record<string, unknown>
+    if (typeof file.file !== 'string' || file.file === '') continue
+    if (typeof file.additions !== 'number' || typeof file.deletions !== 'number') continue
+    if (file.additions <= 0 && file.deletions <= 0) continue
+    if (typeof file.patch !== 'string' && file.patch !== undefined) continue
+    return {
+      file: file.file,
+      patch: typeof file.patch === 'string' ? file.patch : undefined,
+      additions: file.additions,
+      deletions: file.deletions,
+    }
+  }
+  return undefined
+}
+
 function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | null {
   switch (event.type) {
     case 'tool_call':
@@ -150,6 +175,7 @@ function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | 
         streaming: false,
         callId: event.toolResult.callId,
         isError: event.toolResult.isError,
+        diff: firstChangedFile(event.toolResult.metadata),
       }
     case 'error':
       if (!event.error) return null

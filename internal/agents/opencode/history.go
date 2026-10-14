@@ -171,6 +171,7 @@ func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []ag
 		call.ToolCall.Input = block.State.Input
 		result.ToolResult.Output = flattenContent(block.State.Content)
 		result.ToolResult.IsError = block.State.Status != "completed"
+		result.ToolResult.Metadata = boundedMetadata(block.State.Metadata)
 		if result.ToolResult.IsError && result.ToolResult.Output == "" {
 			result.ToolResult.Output = historyErrorMessage(block.State)
 		}
