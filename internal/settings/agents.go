@@ -207,7 +207,14 @@ func (s *Service) ResolvePath(backend agents.BackendID) (string, string) {
 	if !known {
 		return "", "none"
 	}
-	if path, lookErr := s.platform.Executables().Resolve(descriptor.Binary); lookErr == nil {
+	// Backends with a platform-specific layout (Windows npm shims) resolve
+	// through the descriptor; the port default covers everyone else.
+	resolve := descriptor.ResolveExecutable
+	if resolve == nil {
+		executables := s.platform.Executables()
+		resolve = executables.Resolve
+	}
+	if path, lookErr := resolve(descriptor.Binary); lookErr == nil {
 		return path, "auto"
 	}
 	return "", "none"

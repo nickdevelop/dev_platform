@@ -115,6 +115,10 @@ func (a *Adapter) startRPCChild(inst *instance, sessionID, model, name string) (
 		env:   a.env,
 		stdin: true,
 	}
+	spec, err := a.resolveSpec(spec)
+	if err != nil {
+		return nil, err
+	}
 	proc, err := startProcess(inst.ctx, spec)
 	if err != nil {
 		return nil, fmt.Errorf("pi: start rpc child: %w", err)

@@ -213,7 +213,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 		return err
 	}
 	executable := a.execPath()
-	path, err := platform.New().Executables().Resolve(executable)
+	path, err := a.probePath()
 	if err != nil {
 		return fmt.Errorf("pi: executable %q not found: %w", executable, err)
 	}
@@ -231,7 +231,11 @@ func (a *Adapter) Probe(ctx context.Context) error {
 func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.execPath(), "--version").Output()
+	command, err := a.backendCommand(ctx, "--version")
+	if err != nil {
+		return "", err
+	}
+	out, err := command.Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
@@ -546,7 +550,11 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		dir: inst.directory,
 		env: a.env,
 	}
-	proc, err := startProcess(inst.ctx, spec)
+	resolved, err := a.resolveSpec(spec)
+	if err != nil {
+		return err
+	}
+	proc, err := startProcess(inst.ctx, resolved)
 	if err != nil {
 		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
 	}
@@ -639,7 +647,11 @@ func (a *Adapter) ListModels(ctx context.Context, _ string) ([]agents.ModelInfo,
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.execPath(), "--list-models").Output()
+	command, err := a.backendCommand(ctx, "--list-models")
+	if err != nil {
+		return nil, fmt.Errorf("pi: list models: %s", redactSecrets(err.Error()))
+	}
+	out, err := command.Output()
 	if err != nil {
 		return nil, fmt.Errorf("pi: list models: %s", redactSecrets(err.Error()))
 	}

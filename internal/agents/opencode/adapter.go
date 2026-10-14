@@ -214,7 +214,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 		return err
 	}
 	executable := a.execPath()
-	path, err := platform.New().Executables().Resolve(executable)
+	path, err := a.probePath()
 	if err != nil {
 		return fmt.Errorf("opencode: executable %q not found: %w", executable, err)
 	}
@@ -233,7 +233,11 @@ func (a *Adapter) Probe(ctx context.Context) error {
 func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, a.execPath(), "--version").Output()
+	command, err := a.backendCommand(ctx, "--version")
+	if err != nil {
+		return "", err
+	}
+	out, err := command.Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
 		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
@@ -1585,7 +1589,10 @@ func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchRe
 	// exec.Command, not CommandContext: the server must outlive the start
 	// request. Teardown is owned by the returned stop hook; a canceled start
 	// context is honored by waitReady.
-	command := exec.Command(a.execPath(), "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	command, err := a.backendCommand(context.Background(), "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	if err != nil {
+		return nil, err
+	}
 	command.Dir = directory
 	command.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
 	output := &limitedWriter{limit: maxStartupOutputBytes}

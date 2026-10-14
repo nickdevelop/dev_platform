@@ -28,6 +28,9 @@ func (p windowsPlatform) Instance() Instance { return windowsInstance{} }
 // Process returns the Windows child-process management.
 func (p windowsPlatform) Process() Process { return windowsProcess{} }
 
+// Executables returns the Windows command lookup.
+func (p windowsPlatform) Executables() Executables { return windows.Executables{} }
+
 // windowsInstance adapts the windows implementation to the Instance port.
 type windowsInstance struct{}
 

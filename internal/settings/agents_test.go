@@ -97,7 +97,17 @@ func TestResolvePathPrefersManualThenLookPath(t *testing.T) {
 }
 
 func TestResolvePathUsesInjectedExecutables(t *testing.T) {
-	svc := NewService(openTestDB(t), testCatalog(t))
+	// A local catalog without platform resolvers, so the injected port is
+	// authoritative on every platform (backend packages register their
+	// Windows npm resolvers on the shared descriptors via init).
+	catalog, err := agents.NewCatalog(
+		agents.BackendDescriptor{ID: agents.BackendPi, Label: "Pi", Binary: "pi"},
+		agents.BackendDescriptor{ID: agents.BackendOpenCodeV2, Label: "OpenCode", Binary: "opencode"},
+	)
+	if err != nil {
+		t.Fatalf("NewCatalog: %v", err)
+	}
+	svc := NewService(openTestDB(t), catalog)
 	svc.platform = fake.New(
 		fake.WithExecutables(map[string]string{"pi": "/fake/bin/pi"}),
 	)

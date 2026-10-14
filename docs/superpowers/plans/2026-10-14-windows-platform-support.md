@@ -386,8 +386,8 @@
   4. 失败时才运行 `npm root -g` 作为兜底。
   5. 仍失败时才退回运行 `opencode.cmd`，参数只允许固定列表 `serve --service ...`。
 
-- [ ] **Step 1: 测试夹具** — 在临时目录构造 `prefix\opencode.cmd`、`prefix\node_modules\@opencode\cli\bin\opencode.exe`（内容复制当前测试二进制，满足 `MZ` 头）、占位文件、平台包目录。路径包含空格（如 `C:\Users\Some User\...`）。
-- [ ] **Step 2: 实现并覆盖每一步的分支。**
+- [x] **Step 1: 测试夹具** — 在临时目录构造 `prefix\opencode.cmd`、`prefix\node_modules\@opencode\cli\bin\opencode.exe`（内容复制当前测试二进制，满足 `MZ` 头）、占位文件、平台包目录。路径包含空格（如 `C:\Users\Some User\...`）。
+- [x] **Step 2: 实现并覆盖每一步的分支。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(agents/opencode): resolve opencode.exe from npm global layout on windows"`
 
 ### Task 4.4: Windows 目录与路径

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"strconv"
 	"time"
 
@@ -189,7 +188,10 @@ func (a *Adapter) launchSharedServer(ctx context.Context, directory string) (*la
 		return nil, err
 	}
 
-	command := exec.Command(a.execPath(), "serve", "--service", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	command, err := a.backendCommand(context.Background(), "serve", "--service", "--hostname", a.hostname, "--port", strconv.Itoa(port))
+	if err != nil {
+		return nil, err
+	}
 	if directory != "" {
 		command.Dir = directory
 	}

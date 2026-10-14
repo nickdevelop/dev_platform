@@ -22,6 +22,10 @@ type BackendDescriptor struct {
 	Label string
 	// Binary is the default executable name resolved from PATH.
 	Binary string
+	// ResolveExecutable resolves name to a runnable path on platforms where
+	// plain PATH lookup is not enough (Windows npm shims). Nil means the
+	// platform Executables port default.
+	ResolveExecutable func(name string) (string, error)
 	// DefaultEnabled is the platform-wide enablement before an operator saves
 	// a choice.
 	DefaultEnabled bool
