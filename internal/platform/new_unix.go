@@ -47,6 +47,9 @@ func (p unixPlatform) Perms() Perms { return unix.Perms{} }
 // Environment returns the unix startup checks.
 func (p unixPlatform) Environment() Environment { return unix.Environment{} }
 
+// Terminal returns the unix console reader.
+func (p unixPlatform) Terminal() Terminal { return unix.Terminal{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/term"
 	"gorm.io/gorm"
 
 	"devplatform/internal/agents"
@@ -171,32 +170,26 @@ func runSetPassword(args []string) error {
 		return errors.New("refusing to read a password from arguments; run interactively")
 	}
 
-	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	terminal := platform.New().Terminal()
+	if !terminal.IsInteractive() {
 		return errors.New("requires an interactive terminal")
 	}
 
-	fmt.Fprint(os.Stderr, "New platform password: ")
-	first, err := term.ReadPassword(fd)
-	fmt.Fprintln(os.Stderr)
+	first, err := terminal.ReadSecret("New platform password: ")
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
-	defer clear(first)
 
 	if len(first) == 0 {
 		return errors.New("password must not be empty")
 	}
 
-	fmt.Fprint(os.Stderr, "Confirm platform password: ")
-	second, err := term.ReadPassword(fd)
-	fmt.Fprintln(os.Stderr)
+	second, err := terminal.ReadSecret("Confirm platform password: ")
 	if err != nil {
 		return fmt.Errorf("read password confirmation: %w", err)
 	}
-	defer clear(second)
 
-	if string(first) != string(second) {
+	if first != second {
 		return errors.New("passwords do not match")
 	}
 
@@ -206,18 +199,11 @@ func runSetPassword(args []string) error {
 	}
 	defer closeDatabase(db)
 
-	if err := auth.SetPassword(db, string(first)); err != nil {
+	if err := auth.SetPassword(db, first); err != nil {
 		return err
 	}
 	log.Print("platform password configured")
 	return nil
-}
-
-// clear zeroes a secret buffer once it is no longer needed.
-func clear(buf []byte) {
-	for i := range buf {
-		buf[i] = 0
-	}
 }
 
 // runServer starts the HTTP service, wiring the auth service over the

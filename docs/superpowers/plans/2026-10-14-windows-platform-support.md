@@ -313,8 +313,8 @@
 **Interfaces:**
 - Produces: `Terminal.IsInteractive() bool`、`Terminal.ReadSecret(prompt) (string, error)`。
 
-- [ ] **Step 1: 迁移** — 错误文案与现有 `requires an interactive terminal` 保持一致。
-- [ ] **Step 2: 测试** — `go test ./cmd/platform/... -v` 全绿。
+- [x] **Step 1: 迁移** — 错误文案与现有 `requires an interactive terminal` 保持一致。
+- [x] **Step 2: 测试** — `go test ./cmd/platform/... -v` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): secret prompt behind Terminal port"`
 
 ### Task 3.6: 清空守卫清单（阶段 3 出口）
