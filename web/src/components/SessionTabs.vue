@@ -75,7 +75,8 @@ function isSettings(tab: OpenTab): boolean {
   align-items: stretch;
   gap: 0.35rem;
   overflow-x: auto;
-  padding: 0.35rem 0.35rem 0;
+  /* Pinned to the very top of the pane and full width: no top inset. */
+  padding: 0 0.35rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;

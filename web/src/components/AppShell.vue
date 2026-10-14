@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Three-pane shell: category rail, project/session tree, and the right pane chosen
 // by the child route. The shell owns the single project-manage dialog and turns
-// tree and panel events into navigation, and keeps the open-session tab bar above
-// the right pane so several sessions stay open at once. A project id that is not
+// tree and panel events into navigation, and pins the open-session tab bar to the
+// very top of the right pane at full width so several sessions stay open at once
+// while only the body below it scrolls. A project id that is not
 // in the loaded list shows a not-found notice instead of any panel, so a stale
 // or foreign URL never renders another project's content. The settings center
 // hides the project sidebar so it occupies the full pane.
@@ -216,20 +217,22 @@ async function logout() {
         @select="selectTab"
         @close="closeTab"
       />
-      <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
-      <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
-      <div v-else-if="missingProject" class="missing">
-        <p>项目不存在或已移除。</p>
-        <RouterLink :to="{ name: 'home' }">返回</RouterLink>
+      <div class="pane-body">
+        <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
+        <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
+        <div v-else-if="missingProject" class="missing">
+          <p>项目不存在或已移除。</p>
+          <RouterLink :to="{ name: 'home' }">返回</RouterLink>
+        </div>
+        <RouterView v-else v-slot="{ Component }">
+          <component
+            :is="Component"
+            v-if="Component"
+            @manage="openManage"
+            @created="onCreated"
+          />
+        </RouterView>
       </div>
-      <RouterView v-else v-slot="{ Component }">
-        <component
-          :is="Component"
-          v-if="Component"
-          @manage="openManage"
-          @created="onCreated"
-        />
-      </RouterView>
     </section>
 
     <ProjectManageDialog
@@ -315,16 +318,27 @@ async function logout() {
 
 .pane {
   min-width: 0;
+  min-height: 0;
+  /* The pane never scrolls and carries no padding: the tab bar sits flush at the
+     top and stretches the full width, while the body below is the scroller. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Ordinary pages scroll inside the padded body; the tab bar stays pinned above. */
+.pane-body {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: calc(var(--space-unit) * 3.000) calc(var(--space-unit) * 3.333);
 }
 
 /* The conversation pane fills the viewport and never scrolls itself: its message
-   area scrolls instead. A flex column lets the panel resolve height: 100%. */
-.pane-full {
+   area scrolls instead. The body keeps the same inset, and the panel's
+   height: 100% resolves against this definite box. */
+.pane-full .pane-body {
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
 .page-error {
