@@ -145,11 +145,11 @@ test('a long session tree scrolls the sidebar and keeps the composer in view', a
   expect(metrics.composerInViewport).toBe(true)
 })
 
-// Regression: the step group that wraps reasoning/tool activity was sized
+// Regression: the activity card that wraps reasoning/tool output was sized
 // width:100% plus its padding under the default content-box, so it stuck out
 // past its scroller's content box and the pane grew a horizontal scrollbar. A
-// folded group must still sit inside the activity pane.
-test('a step group never adds a horizontal scroller to the activity pane', async ({ page, request }) => {
+// flat activity card must still sit inside the activity pane.
+test('an activity card never adds a horizontal scroller to the activity pane', async ({ page, request }) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
@@ -165,12 +165,13 @@ test('a step group never adds a horizontal scroller to the activity pane', async
   await page.locator('#message-text').fill('step group please')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(conversation).toContainText('opencode reply: step group please', { timeout: 20_000 })
-  // The reply's reasoning forms a step group, which is the box under test.
-  await expect(conversation.locator('[data-test="step-group"]')).toBeVisible()
+  // The reply's reasoning lands in the flat activity list, which is the box
+  // under test.
+  await expect(conversation.locator('[data-test="activity-scroll"] [data-test="thinking"]')).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const log = document.querySelector('[data-test="activity-scroll"]') as HTMLElement
-    const group = document.querySelector('[data-test="step-group"]') as HTMLElement
+    const group = document.querySelector('[data-test="activity-scroll"] [data-test="thinking"]') as HTMLElement
     return {
       logScrollOverflow: log.scrollWidth - log.clientWidth,
       groupWidth: group.getBoundingClientRect().width,

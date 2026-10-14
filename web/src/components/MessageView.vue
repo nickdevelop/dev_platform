@@ -13,8 +13,11 @@
 //
 // The log can render split across the chat panel's two columns: display="messages"
 // shows only user/agent message and error entries for the left column, while
-// display="activity" shows only the step groups for the right activity pane.
-// display="all" (the default) keeps the legacy interleaved log.
+// display="activity" shows only the thinking/tool entries for the right activity
+// pane. The activity pane renders a flat, fully expanded list — no step grouping
+// and no collapsing — so reasoning and tool I/O stay visible without extra
+// clicks. display="all" (the default) keeps the legacy interleaved log with
+// collapsible step groups.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
@@ -34,9 +37,9 @@ const props = defineProps<{
   streamStatus?: StreamStatus
   // Which slice of the log to render. The chat panel renders the log split:
   // display="messages" shows only user/agent message and error entries for
-  // the left column, display="activity" shows only the thinking/tool step
-  // groups for the right activity pane. display="all" keeps the legacy
-  // interleaved log.
+  // the left column, display="activity" shows only the thinking/tool entries
+  // for the right activity pane (flat and expanded, never grouped). display="all"
+  // keeps the legacy interleaved log.
   display?: 'all' | 'messages' | 'activity'
 }>()
 
@@ -205,6 +208,14 @@ const displayedBlocks = computed<RenderBlock[]>(() => {
   return renderBlocks.value
 })
 
+// The activity pane's flat list: the same visible thinking/tool entries in
+// transcript order, with no step grouping and no collapsing. A tool result
+// whose call is present is already merged into that call's card (see
+// visibleEntries), so it is not listed twice.
+const flatActivityEntries = computed<ChatEntry[]>(() =>
+  visibleEntries.value.filter((entry) => isActivity(entry) && toolEventsVisibleFor(entry)),
+)
+
 function toolEventsVisibleFor(entry: ChatEntry): boolean {
   if (entry.kind === 'message' || entry.kind === 'error') return true
   return toolEventsVisible()
@@ -277,10 +288,75 @@ function prettyInput(entry: ChatEntry): string {
     </p>
 
     <ol
+      v-if="displayMode === 'activity'"
+      class="entries flat-activity"
+      role="log"
+      aria-live="polite"
+      aria-label="思考与工具活动"
+    >
+      <li v-for="entry in flatActivityEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
+        <div v-if="entry.kind === 'thinking'" class="flat-thinking" data-test="thinking">
+          <p class="flat-head">
+            <span class="thinking-icon" aria-hidden="true">🧠</span>
+            <span class="thinking-title">Thinking</span>
+            <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
+          </p>
+          <p class="thinking-text">{{ entry.text }}</p>
+        </div>
+
+        <div
+          v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
+          class="flat-tool"
+          data-test="tool-call"
+        >
+          <p class="flat-head">
+            <span class="tool-icon" aria-hidden="true">🔧</span>
+            <span class="tool-name">{{ toolName(entry) }}</span>
+            <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
+            <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+          </p>
+          <div class="tool-body">
+            <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
+            <pre
+              v-if="resultForCall(entry)"
+              class="tool-output"
+              :class="{ 'is-error': resultForCall(entry)?.isError }"
+            >{{ resultForCall(entry)?.text }}</pre>
+            <button
+              v-if="isSubagentCall(entry)"
+              type="button"
+              class="subagent-open"
+              data-test="subagent-open"
+              @click="openSubagent(entry)"
+            >
+              查看子 Agent
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
+          class="flat-tool"
+          data-test="tool-result"
+        >
+          <p class="flat-head">
+            <span class="tool-icon" aria-hidden="true">🔧</span>
+            <span class="tool-name">工具结果</span>
+          </p>
+          <div class="tool-body">
+            <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
+          </div>
+        </div>
+      </li>
+    </ol>
+
+    <ol
+      v-else
       class="entries"
       role="log"
       aria-live="polite"
-      :aria-label="displayMode === 'activity' ? '思考与工具活动' : '会话消息'"
+      aria-label="会话消息"
     >
       <li v-for="block in displayedBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
         <template v-if="block.kind === 'entry'">
@@ -404,7 +480,7 @@ function prettyInput(entry: ChatEntry): string {
       </li>
     </ol>
 
-    <p v-if="displayMode === 'activity' ? displayedBlocks.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无思考与工具活动。' : '尚无消息。' }}</p>
+    <p v-if="displayMode === 'activity' ? flatActivityEntries.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无思考与工具活动。' : '尚无消息。' }}</p>
 
     <div
       v-if="subagentModal"
@@ -622,6 +698,47 @@ function prettyInput(entry: ChatEntry): string {
 .step-count {
   flex-shrink: 0;
   font-size: 0.75rem;
+}
+
+/* The activity pane's flat list: every thinking/tool entry renders as its own
+   expanded card — no grouping, no <details> — so the right column reads
+   top-to-bottom in transcript order. */
+.flat-activity {
+  gap: 0.5rem;
+}
+
+.flat-thinking,
+.flat-tool {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 0.45rem 0.6rem;
+}
+
+.flat-head {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  min-width: 0;
+}
+
+.flat-head .tool-name,
+.flat-head .thinking-title {
+  flex-shrink: 0;
+}
+
+.flat-head .tool-arg {
+  flex: 1;
+}
+
+.flat-thinking .thinking-text,
+.flat-tool .tool-body {
+  margin-top: 0.4rem;
 }
 
 .step-body {

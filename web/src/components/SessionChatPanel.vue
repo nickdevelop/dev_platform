@@ -6,9 +6,11 @@
 // stopped; the send action becomes 停止 while the session's turn is running.
 // The pane is split in two: the left column shows only user/agent messages,
 // confirmations and the composer, while the right pane shows only
-// thinking/tool activity with its own independent scroller. The right pane
-// collapses to a rail and remembers the choice in localStorage; below 900px it
-// overlays the messages instead of squeezing them.
+// thinking/tool activity as a flat expanded list with its own independent
+// scroller. A divider between the columns carries the collapse toggle in its
+// middle and drags to resize the activity pane (width persisted); collapsing
+// hides the pane entirely so the messages take the full width. Below 900px the
+// pane overlays the messages instead of squeezing them.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
@@ -89,6 +91,84 @@ function setActivityCollapsed(collapsed: boolean) {
     activityPinned.value = true
     showJumpActivity.value = false
     void nextTick(() => scrollActivityToBottom(false))
+  }
+}
+// The activity pane width, adjustable by dragging the middle divider.
+// Persisted in localStorage alongside the collapsed state.
+const ACTIVITY_WIDTH_KEY = 'dev-platform-activity-width-v1'
+const DEFAULT_ACTIVITY_WIDTH = 340
+const MIN_ACTIVITY_WIDTH = 240
+const MAX_ACTIVITY_WIDTH = 640
+function clampActivityWidth(px: number): number {
+  if (!Number.isFinite(px)) return DEFAULT_ACTIVITY_WIDTH
+  return Math.min(MAX_ACTIVITY_WIDTH, Math.max(MIN_ACTIVITY_WIDTH, Math.round(px)))
+}
+const activityWidth = ref(DEFAULT_ACTIVITY_WIDTH)
+try {
+  const stored = localStorage.getItem(ACTIVITY_WIDTH_KEY)
+  if (stored !== null) activityWidth.value = clampActivityWidth(Number(stored))
+} catch {
+  activityWidth.value = DEFAULT_ACTIVITY_WIDTH
+}
+function persistActivityWidth() {
+  try {
+    localStorage.setItem(ACTIVITY_WIDTH_KEY, String(activityWidth.value))
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
+function resetActivityWidth() {
+  activityWidth.value = DEFAULT_ACTIVITY_WIDTH
+  persistActivityWidth()
+}
+// Dragging the divider resizes the activity pane. The drag starts only from
+// the divider surface itself (never from its toggle button), tracks the
+// pointer on the window so fast moves don't lose it, and clamps to leave at
+// least a usable message column.
+const splitRef = ref<HTMLElement | null>(null)
+const draggingDivider = ref(false)
+const activityPaneStyle = computed(() =>
+  activityCollapsed.value ? {} : { width: `${activityWidth.value}px`, flex: '0 0 auto' },
+)
+function onDividerMouseDown(event: MouseEvent) {
+  if (event.button !== 0) return
+  if ((event.target as HTMLElement).closest('button')) return
+  const container = splitRef.value
+  if (!container) return
+  event.preventDefault()
+  draggingDivider.value = true
+  const startX = event.clientX
+  const startWidth = activityWidth.value
+  const containerWidth = container.clientWidth
+  const maxWidth = Math.max(
+    MIN_ACTIVITY_WIDTH,
+    Math.min(MAX_ACTIVITY_WIDTH, containerWidth > 0 ? containerWidth - 320 : MAX_ACTIVITY_WIDTH),
+  )
+  const onMove = (move: MouseEvent) => {
+    const delta = startX - move.clientX
+    activityWidth.value = Math.min(maxWidth, Math.max(MIN_ACTIVITY_WIDTH, startWidth + delta))
+  }
+  const onUp = () => {
+    draggingDivider.value = false
+    persistActivityWidth()
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+function onDividerKeydown(event: KeyboardEvent) {
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    activityWidth.value = clampActivityWidth(activityWidth.value + 16)
+    persistActivityWidth()
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    activityWidth.value = clampActivityWidth(activityWidth.value - 16)
+    persistActivityWidth()
+  } else if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    setActivityCollapsed(!activityCollapsed.value)
   }
 }
 // "At the bottom" tolerates a small rounding gap so subpixel layouts, and a
@@ -566,7 +646,11 @@ async function removeSession() {
         <button v-else type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
       </p>
 
-      <div class="conversation-split" :class="{ 'activity-collapsed': activityCollapsed }">
+      <div
+        ref="splitRef"
+        class="conversation-split"
+        :class="{ 'activity-collapsed': activityCollapsed, dragging: draggingDivider }"
+      >
         <div class="message-column">
           <div class="conversation-area">
             <div
@@ -660,23 +744,48 @@ async function removeSession() {
           </form>
         </div>
 
+        <div
+          class="split-divider"
+          data-test="split-divider"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="活动栏分隔条，拖拽调整宽度，双击恢复默认"
+          tabindex="0"
+          @mousedown="onDividerMouseDown"
+          @dblclick="resetActivityWidth"
+          @keydown="onDividerKeydown"
+        >
+          <button
+            type="button"
+            class="divider-toggle"
+            :data-test="activityCollapsed ? 'activity-expand' : 'activity-collapse'"
+            :title="activityCollapsed ? '展开活动栏' : '收起活动栏'"
+            :aria-label="activityCollapsed ? '展开思考与工具栏' : '收起思考与工具栏'"
+            :aria-expanded="(!activityCollapsed).toString()"
+            @click="setActivityCollapsed(!activityCollapsed)"
+          >
+            {{ activityCollapsed ? '«' : '»' }}
+          </button>
+        </div>
+
         <aside
           v-if="!activityCollapsed"
           class="activity-pane"
           aria-label="思考与工具"
           data-test="activity-pane"
+          :style="activityPaneStyle"
         >
           <header class="activity-head">
             <h3 class="activity-title">思考与工具<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span></h3>
             <button
               type="button"
-              class="activity-toggle"
-              data-test="activity-collapse"
+              class="activity-toggle narrow-only"
+              data-test="activity-hide"
               title="收起活动栏"
               aria-label="收起思考与工具栏"
               @click="setActivityCollapsed(true)"
             >
-              收起 »
+              收起
             </button>
           </header>
           <div
@@ -703,18 +812,15 @@ async function removeSession() {
           </button>
         </aside>
 
-        <div v-else class="activity-rail" data-test="activity-rail">
-          <button
-            type="button"
-            class="activity-toggle"
-            data-test="activity-expand"
-            title="展开活动栏"
-            aria-label="展开思考与工具栏"
-            @click="setActivityCollapsed(false)"
-          >
-            « 活动<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
-          </button>
-        </div>
+        <button
+          v-if="activityCollapsed"
+          type="button"
+          class="activity-fab narrow-only"
+          data-test="activity-expand-narrow"
+          @click="setActivityCollapsed(false)"
+        >
+          活动<span v-if="activityCount > 0" class="activity-count">{{ activityCount }}</span>
+        </button>
       </div>
 
       <div
@@ -804,16 +910,119 @@ async function removeSession() {
 }
 
 .activity-pane {
-  flex: 0 0 min(22rem, 32%);
-  min-width: 16rem;
-  max-width: 26rem;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   position: relative;
   border: 1px solid var(--color-border);
   border-radius: 10px;
   background: var(--color-surface-muted);
+}
+
+/* The middle divider: a slim drag handle with the collapse toggle riding in
+   its vertical center. Collapsing hides the pane entirely, so the divider is
+   the only width the right side keeps. */
+.split-divider {
+  flex: 0 0 14px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  border-radius: 7px;
+  outline-offset: 1px;
+}
+
+.split-divider::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--color-border);
+}
+
+.split-divider:hover::before,
+.conversation-split.dragging .split-divider::before {
+  background: var(--color-primary);
+}
+
+.conversation-split.dragging,
+.conversation-split.dragging .split-divider {
+  user-select: none;
+}
+
+.divider-toggle {
+  position: relative;
+  z-index: 1;
+  width: 1.15rem;
+  height: 2.6rem;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+}
+
+.divider-toggle:hover {
+  color: var(--color-primary-hover);
+  border-color: var(--color-primary);
+}
+
+.narrow-only {
+  display: none;
+}
+
+.activity-fab {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 5.5rem;
+  z-index: 9;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/* Narrow screens: the activity pane becomes an overlay drawer so it never
+   squeezes the message column; the divider steps aside for a floating button
+   and the pane's own header close. */
+@media (max-width: 900px) {
+  .split-divider {
+    display: none;
+  }
+
+  .narrow-only {
+    display: inline-block;
+  }
+
+  .activity-fab.narrow-only {
+    display: inline-block;
+  }
+
+  .activity-pane {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(22rem, 86vw) !important;
+    flex: none;
+    z-index: 8;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  }
 }
 
 .activity-head {
@@ -860,35 +1069,6 @@ async function removeSession() {
   font: inherit;
   font-size: 0.8rem;
   white-space: nowrap;
-}
-
-.activity-rail {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  padding-top: 0.2rem;
-}
-
-/* Narrow screens: the activity pane becomes an overlay drawer so it never
-   squeezes the message column. */
-@media (max-width: 900px) {
-  .activity-pane {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(22rem, 86vw);
-    flex: none;
-    z-index: 8;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
-  }
-
-  .conversation-split.activity-collapsed .activity-rail {
-    position: absolute;
-    top: 0.2rem;
-    right: 0;
-    z-index: 8;
-  }
 }
 
 .jump-latest {

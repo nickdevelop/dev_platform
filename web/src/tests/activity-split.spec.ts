@@ -1,6 +1,6 @@
 // Split-log tests: the left column shows only messages/errors, the right
-// activity pane shows only thinking/tool step groups, and the pane collapses
-// with the choice persisted in localStorage.
+// activity pane shows thinking/tool entries as a flat expanded list, and the
+// middle divider collapses the pane (persisted) and drags to resize it.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -103,7 +103,7 @@ describe('split message/activity log', () => {
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(false)
   })
 
-  it('shows only step groups in the activity pane', () => {
+  it('shows flat expanded entries in the activity pane, never grouped', () => {
     const entries: ChatEntry[] = [
       { id: 'u1', kind: 'message', role: 'user', text: 'hi', streaming: false },
       { id: 't1', kind: 'thinking', role: 'assistant', text: 'plan', streaming: false },
@@ -111,14 +111,21 @@ describe('split message/activity log', () => {
         id: 'c1', kind: 'tool_call', role: 'assistant', text: 'read', name: 'read',
         callId: 'call-1', input: { path: '/a.md' }, streaming: false,
       },
+      { id: 'r1', kind: 'tool_result', role: 'tool', text: '文件内容', callId: 'call-1', streaming: false },
       { id: 'a1', kind: 'message', role: 'assistant', text: 'done', streaming: false },
     ]
     const wrapper = mount(MessageView, {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
-    expect(wrapper.find('[data-test="step-group"]').exists()).toBe(true)
+    // No step-group wrapper, no <details> folding: every entry is its own card.
+    expect(wrapper.find('[data-test="step-group"]').exists()).toBe(false)
+    expect(wrapper.findAll('details').length).toBe(0)
+    expect(wrapper.find('[data-test="thinking"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="tool-call"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="bubble"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="streaming"]').exists()).toBe(false)
+    // Tool output is visible without any click to expand.
+    expect(wrapper.find('.tool-output').text()).toContain('文件内容')
+    expect(wrapper.find('.thinking-text').text()).toContain('plan')
   })
 
   it('shows an activity-specific empty note instead of the message one', () => {
@@ -166,11 +173,15 @@ describe('activity pane collapse', () => {
     expect(wrapper.find('.message-column form.send').exists()).toBe(true)
   })
 
-  it('collapses to a rail and persists the choice', async () => {
+  it('collapses from the middle divider and persists the choice', async () => {
     const wrapper = await mountPanel()
+    // The toggle rides in the middle divider, not in the pane header.
+    expect(wrapper.find('[data-test="split-divider"] [data-test="activity-collapse"]').exists()).toBe(true)
     await wrapper.find('[data-test="activity-collapse"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="activity-rail"]').exists()).toBe(true)
+    // Collapsing hides the pane entirely: no rail keeps occupying message width.
+    expect(wrapper.find('[data-test="activity-rail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="split-divider"]').exists()).toBe(true)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
 
     await wrapper.find('[data-test="activity-expand"]').trigger('click')
@@ -182,6 +193,22 @@ describe('activity pane collapse', () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'collapsed')
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="activity-rail"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+  })
+
+  it('applies the stored divider width to the activity pane', async () => {
+    localStorage.setItem('dev-platform-activity-width-v1', '420')
+    const wrapper = await mountPanel()
+    const pane = wrapper.find('[data-test="activity-pane"]')
+    expect(pane.exists()).toBe(true)
+    expect((pane.element as HTMLElement).style.width).toBe('420px')
+  })
+
+  it('restores the default width on divider double-click', async () => {
+    localStorage.setItem('dev-platform-activity-width-v1', '500')
+    const wrapper = await mountPanel()
+    await wrapper.find('[data-test="split-divider"]').trigger('dblclick')
+    expect((wrapper.find('[data-test="activity-pane"]').element as HTMLElement).style.width).toBe('340px')
+    expect(localStorage.getItem('dev-platform-activity-width-v1')).toBe('340')
   })
 })
