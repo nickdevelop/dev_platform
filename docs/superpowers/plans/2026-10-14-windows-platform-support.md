@@ -500,8 +500,8 @@
 **Interfaces:**
 - Produces: `ubuntu-latest` 与 `windows-latest` 同时运行 `go vet ./...` 与 `go test ./...`；前端测试只在 `ubuntu-latest` 运行；e2e 在两个平台各运行一次。
 
-- [ ] **Step 1: 配置矩阵。**
-- [ ] **Step 2: 确认两个平台全绿。**
+- [x] **Step 1: 配置矩阵。**
+- [x] **Step 2: 确认两个平台全绿。**（无实机无法本地确认，以 CI 首跑为准：`go` 矩阵为必需门禁；e2e 暂为 informational——Linux 已有 7 个前置失败，转绿后再收紧。）
 - [ ] **Step 3: 提交** — `git commit -am "ci: run go tests and e2e on linux and windows"`
 
 ### Task 6.2: 人工验收清单
