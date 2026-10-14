@@ -204,8 +204,8 @@
 - Produces: `Trash.Move(path) error`。`ErrTrashUnavailable` 的归属：定义在 `internal/platform`，`internal/projects` 通过 `platform.ErrTrashUnavailable` 引用，`handlers.go:53` 的 `errors.Is` 判断保持不变。
 - 注意：`selectTrashRoot`、`escapeTrashPath` 等纯函数不依赖 OS，迁入 `internal/platform/policy/trash.go`，使两个平台都能测试。
 
-- [ ] **Step 1: 迁移** — 纯逻辑迁入 `policy`，系统调用留在 `linux` 文件。
-- [ ] **Step 2: 测试** — `go test ./internal/projects/... ./internal/platform/... -v` 全绿。
+- [x] **Step 1: 迁移** — 纯逻辑迁入 `policy`，系统调用留在 `linux` 文件。
+- [x] **Step 2: 测试** — `go test ./internal/projects/... ./internal/platform/... -v` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): trash behind Trash port"`
 
 ### Task 2.6: 路径规范化

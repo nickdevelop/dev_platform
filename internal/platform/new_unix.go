@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"runtime"
 
+	"devplatform/internal/platform/policy"
 	"devplatform/internal/platform/unix"
 )
 
@@ -30,6 +31,9 @@ func (p unixPlatform) Process() Process { return unixProcess{} }
 
 // Dirs returns the unix directory resolution.
 func (p unixPlatform) Dirs() Dirs { return unixDirs{} }
+
+// Trash returns the unix trash mover.
+func (p unixPlatform) Trash() Trash { return unixTrash{} }
 
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
@@ -75,3 +79,16 @@ func (d unixDirs) CanonicalizeUserPath(p string) (string, error) {
 // SamePath is case sensitive on unix; Task 2.6 confirms the final form
 // alongside the path policy.
 func (d unixDirs) SamePath(a, b string) bool { return a == b }
+
+// unixTrash adapts the unix implementation to the Trash port.
+type unixTrash struct{}
+
+func (unixTrash) Move(path string) error {
+	err := unix.Trash{}.Move(path)
+	if err != nil && errors.Is(err, policy.ErrTrashUnavailable) {
+		// Map the implementation's copy to the canonical port value;
+		// callers match with errors.Is against platform.ErrTrashUnavailable.
+		return ErrTrashUnavailable
+	}
+	return err
+}

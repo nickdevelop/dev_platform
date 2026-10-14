@@ -14,6 +14,7 @@ import (
 
 	"devplatform/internal/database"
 	"devplatform/internal/paths"
+	"devplatform/internal/platform"
 )
 
 // openTestDB opens and migrates a throwaway platform database. The GORM
@@ -406,11 +407,11 @@ func TestDeleteRequiresPermanentConfirmationWhenTrashUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	trash.setErr(ErrTrashUnavailable)
+	trash.setErr(platform.ErrTrashUnavailable)
 
 	// Without an explicit permanent flag the platform must refuse rather than
 	// silently permanently delete.
-	if err := svc.Delete(project.ID, "keepme", false); !errors.Is(err, ErrTrashUnavailable) {
+	if err := svc.Delete(project.ID, "keepme", false); !errors.Is(err, platform.ErrTrashUnavailable) {
 		t.Fatalf("Delete with unavailable trash error = %v, want ErrTrashUnavailable", err)
 	}
 	if info, err := os.Stat(filepath.Join(root, "keepme")); err != nil || !info.IsDir() {
@@ -558,9 +559,9 @@ func TestDeleteRestoresRecordWhenFilesystemOperationFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	trash.setErr(ErrTrashUnavailable)
+	trash.setErr(platform.ErrTrashUnavailable)
 
-	if err := svc.Delete(project.ID, "retained", false); !errors.Is(err, ErrTrashUnavailable) {
+	if err := svc.Delete(project.ID, "retained", false); !errors.Is(err, platform.ErrTrashUnavailable) {
 		t.Fatalf("Delete error = %v, want ErrTrashUnavailable", err)
 	}
 
@@ -588,7 +589,7 @@ func TestDeleteSurfacesRestoreFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	trash.setErr(ErrTrashUnavailable)
+	trash.setErr(platform.ErrTrashUnavailable)
 	trash.setOnMove(func() {
 		// Simulate another writer claiming the now-record-free path before the
 		// failed delete can restore its own record.

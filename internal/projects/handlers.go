@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/paths"
+	"devplatform/internal/platform"
 )
 
 // RegisterRoutes registers the project management routes under r. The caller
@@ -50,7 +51,7 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_name")
 	case errors.Is(err, ErrConfirmationMismatch):
 		respondError(c, http.StatusBadRequest, "confirmation_mismatch")
-	case errors.Is(err, ErrTrashUnavailable):
+	case errors.Is(err, platform.ErrTrashUnavailable):
 		respondError(c, http.StatusConflict, "trash_unavailable")
 	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, ErrPathChanged):
 		respondError(c, http.StatusBadRequest, "invalid_target")

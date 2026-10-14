@@ -27,6 +27,7 @@ import (
 
 	"devplatform/internal/database"
 	"devplatform/internal/paths"
+	"devplatform/internal/platform"
 )
 
 var (
@@ -52,9 +53,6 @@ var (
 	// ErrConfirmationMismatch reports that the caller's typed confirmation did
 	// not match the project's current name.
 	ErrConfirmationMismatch = errors.New("projects: confirmation does not match project name")
-	// ErrTrashUnavailable reports that the OS trash could not be used, so
-	// deletion requires an explicit permanent-delete confirmation.
-	ErrTrashUnavailable = errors.New("projects: os trash is unavailable")
 	// ErrPathChanged reports that a stored project path no longer resolves to
 	// itself inside an authorized root — for example because a path component
 	// was replaced by a symlink, or the authorizing root was removed. The path
@@ -85,7 +83,7 @@ type Trash interface {
 type Option func(*Service)
 
 // WithTrash overrides the OS trash implementation. It is primarily a test
-// seam; production uses the platform's systemTrash.
+// seam; production uses the platform Trash port.
 func WithTrash(t Trash) Option {
 	return func(s *Service) {
 		if t != nil {
@@ -108,7 +106,7 @@ type Service struct {
 
 // NewService builds the project service over the platform database.
 func NewService(db *gorm.DB, opts ...Option) *Service {
-	s := &Service{db: db, trash: systemTrash{}, renamePath: os.Rename}
+	s := &Service{db: db, trash: platform.New().Trash(), renamePath: os.Rename}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -345,7 +343,7 @@ func (s *Service) removeDirectory(path string, permanent bool) error {
 		return nil
 	}
 	if err := s.trash.Move(path); err != nil {
-		return fmt.Errorf("%w: %v", ErrTrashUnavailable, err)
+		return fmt.Errorf("%w: %v", platform.ErrTrashUnavailable, err)
 	}
 	return nil
 }

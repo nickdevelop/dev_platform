@@ -92,8 +92,8 @@ type Executables interface {
 }
 
 // Trash moves a path to the OS trash. The windows implementation always
-// returns ErrTrashUnavailable (defined in internal/projects until Task 2.5
-// moves it here); callers fall back to permanent deletion with confirmation.
+// returns ErrTrashUnavailable; callers fall back to permanent deletion with
+// confirmation.
 type Trash interface {
 	Move(path string) error
 }
@@ -143,6 +143,12 @@ type Environment interface {
 // only depend on the port (the implementations cannot import this package
 // without creating an import cycle).
 var ErrLockHeld = errors.New("single-instance lock is held by another process")
+
+// ErrTrashUnavailable reports that the OS trash could not be used, so
+// deletion requires an explicit permanent-delete confirmation. The message
+// text is frozen: it used to live in internal/projects and logs and API
+// details carry it verbatim.
+var ErrTrashUnavailable = errors.New("projects: os trash is unavailable")
 
 // stubPlatform is the placeholder returned by New until each port has a
 // real implementation. Ports are wired up task by task in phase 2 (unix)
