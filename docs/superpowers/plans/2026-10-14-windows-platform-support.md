@@ -115,8 +115,8 @@
 **Interfaces:**
 - Produces: `fake.New(opts...) *Platform`，可注入：目录映射、`Alive` 结果表、`Resolve` 结果表、`Trash` 错误、`Perms.Enforced` 值、`Terminal` 输入。所有端口都有确定性行为。
 
-- [ ] **Step 1: 实现 fake** — 每个端口一个 struct，零值即“不做任何事、返回 nil”。
-- [ ] **Step 2: 写 fake 的最小测试** — 验证注入值被原样返回。
+- [x] **Step 1: 实现 fake** — 每个端口一个 struct，零值即“不做任何事、返回 nil”。
+- [x] **Step 2: 写 fake 的最小测试** — 验证注入值被原样返回。
 - [ ] **Step 3: 提交** — `git commit -am "test(platform): add fake platform for unit tests"`
 
 ---
