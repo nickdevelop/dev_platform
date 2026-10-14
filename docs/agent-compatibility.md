@@ -102,6 +102,24 @@ round trip; the settings page and diagnostics use the full probe (one
 `/api/info` call with a bounded timeout) and report `running` or `unreachable`
 with a reason.
 
+### Windows: service discovery and executable resolution
+
+The registration rule is platform-independent: `$XDG_STATE_HOME` wins, else
+`%USERPROFILE%\.local\state\opencode\service.json` (e.g.
+`C:\Users\<you>\.local\state\opencode\service.json`).
+
+Neither backend runs its PATH shim on Windows (npm's extensionless `sh`
+entries and `opencode.cmd` / `pi.cmd` never execute directly):
+
+| Backend | Windows resolution |
+| --- | --- |
+| `opencode-v2` | From the `opencode.cmd` directory as npm prefix: `<prefix>\node_modules\@opencode\cli\bin\opencode.exe` verified by its `MZ` header, else any present `@opencode/cli-windows-*` pack, else `npm root -g`, else the shim via `cmd.exe` (fixed args only). A native `opencode.exe` on PATH works without npm. |
+| `pi` | The package manifest decides: `<prefix>\node_modules\@earendil-works\pi-coding-agent\package.json` `bin.pi` (a JS bundle, no native binary exists), run with `node` from PATH; same `npm root -g` and shim fallbacks. |
+
+A manual executable override in settings always runs as given on every
+platform. Only `2.x` (`@opencode/cli`) is supported; `1.x` (`opencode-ai`)
+is not.
+
 `pi` has no machine-level service: `/api/agent-services/pi` answers
 `supported: false`, and no start/stop control is shown for it.
 

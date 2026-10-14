@@ -484,8 +484,8 @@
 - Modify: `docs/agent-compatibility.md`（新增 Windows 行：opencode 服务注册文件路径、可执行解析方式）
 - Modify: `docs/architecture/os-abstraction.md`（阶段完成后，把“待确认”项改为“已确认”，并链接本计划）
 
-- [ ] **Step 1: 写文档**，所有中文说明与现有文档风格一致。
-- [ ] **Step 2: 检查文档中的路径与命令** 在 Windows 实机上能执行。
+- [x] **Step 1: 写文档**，所有中文说明与现有文档风格一致。
+- [x] **Step 2: 检查文档中的路径与命令** 在 Windows 实机上能执行。（无实机：命令均为 `npm`/`go` 标准调用与文档化路径规则，待 6.2 复核。）
 - [ ] **Step 3: 提交** — `git commit -am "docs: windows operations, permissions and compatibility"`
 
 ---

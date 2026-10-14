@@ -248,9 +248,11 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 1. ~~权限模型~~ 已确认：Windows 接受降级，见第 5.7 节。
 2. ~~opencode 服务注册文件在 Windows 上的位置~~ 已确认：`%USERPROFILE%\.local\state\opencode\service.json`，与 Linux 规则一致，见第 1 节。
 3. ~~opencode 的安装形态~~ 已确认：npm 全局安装，prefix 下同时有无扩展名的 sh shim 与 `opencode.cmd`，见第 5.3 节。
-4. **`bin/opencode.exe` 的实际内容。** 需要在实机安装后确认它是原生 PE 程序，还是 JS 启动器或占位文件，以决定第 3 步之后是否会走到平台可选依赖。
+4. **`bin/opencode.exe` 的实际内容（实机待确认，记入 Task 6.2）。** 需要在实机安装后确认它是原生 PE 程序，还是 JS 启动器或占位文件，以决定第 3 步之后是否会走到平台可选依赖。实现侧已按“非 MZ 则回退平台包”防御（Task 4.3）。
 5. ~~Windows 上平台自身的部署方式~~ 已确认：直接在命令行前台启动，不注册系统服务。停止方式为 Ctrl+C 或关闭终端窗口。
 6. **pi 的安装形态** 已确认（无需实机，依据 npm registry 元数据与仓库内诊断文案）：`bin.pi` 是纯 JS 入口（`dist/bundle/cli.js`，1.2.0），无原生 `.exe`、无平台可选依赖，见第 5.3.1 节。残留的实机核实项（shim 文件形态、`node` 在 PATH、`package.json` 的 `bin` 在 1.1.0/1.2.0 是否一致）记入 Task 6.2 验收。
+
+实现计划：`docs/superpowers/plans/2026-10-14-windows-platform-support.md`（阶段 0–5 已执行，阶段 6 与实机验收待 Windows 环境）。
 
 ## 8. 测试策略
 
@@ -270,4 +272,4 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 | 5 | 跨平台工具链：用 Go 实现 `cmd/devctl`，替代 `Makefile` 与 `dev.sh` 的 Unix 特有部分；补充 Windows 运维文档 | Windows 上可完成构建、启动、停止 |
 | 6 | CI 矩阵与 e2e | Linux 与 Windows 上 e2e 通过 |
 
-第 1 至 3 阶段不改变行为，可以独立合并。第 4 阶段开始前，需要先完成第 7 节的第 4 项确认（`opencode.cmd` 的 shim 内容格式）。第 4 阶段同时要更新 `internal/secrets/store.go` 的威胁模型注释，并补充 `docs/operations.md` 的 Windows 权限章节。
+第 1 至 3 阶段不改变行为，可以独立合并。第 4 阶段的前置确认（第 7 节第 4、6 项）已转为“元数据确认 + 实机复核记入 Task 6.2”；`internal/secrets/store.go` 的威胁模型注释与 `docs/operations.md` 的 Windows 章节随第 5 阶段补齐（见上文实现计划链接）。

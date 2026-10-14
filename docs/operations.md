@@ -105,6 +105,62 @@ graceful shutdown; a crashed process cannot pin it (the OS drops it when
 the process dies). The zero-byte `platform.lock` file remains on disk; that
 is normal.
 
+## Windows (native)
+
+Windows runs the same server binary from a console window: there is no
+system-service registration, no NSSM and no Task Scheduler involved.
+Start it in the foreground and stop it with `Ctrl+C` or by closing the
+terminal window.
+
+```powershell
+# One-time setup: Node.js (LTS), then the agent CLIs
+npm install -g @opencode/cli
+npm install -g @earendil-works/pi-coding-agent
+
+# Build once, then run in the foreground
+go run ./cmd/devctl build
+go run ./cmd/devctl run --listen 127.0.0.1:18080
+```
+
+WSL1 is not supported: the platform refuses to start there — upgrade to
+WSL2 and run the Linux build. WSL1 不受支持：平台在 WSL1 下启动直接报错
+退出，请升级到 WSL2 并运行 Linux 构建。A data directory under a DrvFs
+mount (`/mnt/c` and friends) gets a startup warning: `flock` and mode bits
+are unreliable there, so prefer a directory in the native WSL filesystem.
+数据目录放在 `/mnt/c` 等 DrvFs 挂载点上时启动日志会告警，请把数据目录
+放在 WSL 原生文件系统中。
+
+### 数据目录
+
+| 目录 | 位置 |
+| --- | --- |
+| 配置 | `%APPDATA%`（漫游） |
+| 数据 | `%LOCALAPPDATA%`（本地） |
+| 状态（含 `opencode/service.json` 的推导） | `$XDG_STATE_HOME`（若设置），否则 `%USERPROFILE%\.local\state` |
+
+例如 `service.json` 默认位于
+`C:\Users\<你>\.local\state\opencode\service.json`，与 Linux 的
+`~/.local/state/opencode/service.json` 为同一规则。
+
+### 权限降级
+
+Windows 不做 ACL 收紧：`secrets.json`（明文）、数据库、锁文件与备份文件
+对同机其他本地用户的隔离，依赖用户配置文件目录（`%APPDATA%` /
+`%LOCALAPPDATA%`）的默认 ACL，而非平台自身。启动日志在每次启动时说明
+该降级。请勿通过 `--data-dir` 把数据目录指向共享或同步目录——此时启动
+日志会额外告警，但不会阻止启动。不对 `secrets.json` 加密（密钥管理超出
+本次范围）。
+
+### 关停与回收站
+
+- `Ctrl+C` 走正常优雅关停；直接关闭终端窗口时，平台拉起的子进程（pi、
+  per-instance 服务）由 Job Object 随平台退出而回收（Windows 没有
+  `SIGTERM`，优雅程度低于 Unix）。
+- 平台退出（任何方式）都不影响机器级 `opencode serve --service`：它不是
+  平台拉起的进程，启停只能在设置页由操作员决定。
+- Windows 没有回收站：删除项目时提示“回收站不可用，是否永久删除”，确认
+  后目录被直接删除。
+
 ## The settings center
 
 Open **设置** (Settings) from the left rail. It has three sections:

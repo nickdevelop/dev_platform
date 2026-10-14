@@ -8,6 +8,12 @@
 // privileges, nor against a backup that includes the file. It does protect
 // against other local users and against accidental disclosure through the
 // API, logs or diagnostics.
+//
+// On Windows the owner-only permissions are not enforced (Perms.Enforced
+// is false and the platform logs it at startup): protection against other
+// local users then relies on the user profile directory's default ACL
+// (%APPDATA% / %LOCALAPPDATA%), so the data directory must stay inside the
+// profile and never in a shared or synced folder.
 package secrets
 
 import (

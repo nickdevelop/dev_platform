@@ -112,7 +112,10 @@ from a process running as the same user (or with higher privileges), nor from
 a backup that includes the file. A resolved value is also written into the
 managed target file the agent reads; that file is project content and carries
 the same same-user caveat. Treat the platform data directory and any synced
-configuration as sensitive.
+configuration as sensitive. On Windows the owner-only permissions are not
+enforced at all (see the Windows chapter of the operations guide): backups
+under the data directory are as exposed as `secrets.json` itself, so the data
+directory must stay inside the user profile.
 
 ## Session prompts
 
