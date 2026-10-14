@@ -171,8 +171,8 @@
 **Interfaces:**
 - Produces: `Process.Alive(pid int) bool`、`Process.IsZombie(pid int) bool`。
 
-- [ ] **Step 1: 迁移** — `discovery.go` 不再 import `syscall`，它的“注册文件读取 + 校验”逻辑保持不变。
-- [ ] **Step 2: 测试** — `discovery_test.go`、`service_gate_test.go` 全绿。
+- [x] **Step 1: 迁移** — `discovery.go` 不再 import `syscall`，它的“注册文件读取 + 校验”逻辑保持不变。
+- [x] **Step 2: 测试** — `discovery_test.go`、`service_gate_test.go` 全绿。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): liveness and zombie checks behind Process port"`
 
 ### Task 2.4: 目录解析

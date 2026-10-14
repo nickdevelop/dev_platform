@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // TestEnsureSharedAdoptsExistingService proves task creation reuses the
@@ -76,6 +79,32 @@ func TestEnsureSharedAdoptsExistingService(t *testing.T) {
 	if got := adapter.sharedEndpoint(); got != existing.URL {
 		t.Fatalf("shared endpoint after last stop = %q, want the reference kept for %q", got, existing.URL)
 	}
+}
+
+// TestProcessAliveExcludesZombie keeps the effective-liveness composition
+// honest: a zombie pid answers a signal but serves nothing, so processAlive
+// must report it gone. It skips where /proc or a shell is unavailable.
+func TestProcessAliveExcludesZombie(t *testing.T) {
+	if _, err := os.Stat("/proc/self/stat"); err != nil {
+		t.Skip("/proc is not available")
+	}
+	cmd := exec.Command("sh", "-c", "exit 0")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("shell unavailable: %v", err)
+	}
+	t.Cleanup(func() { _, _ = cmd.Process.Wait() })
+	proc := platform.New().Process()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if proc.IsZombie(cmd.Process.Pid) {
+			if processAlive(cmd.Process.Pid) {
+				t.Fatalf("zombie pid %d reported alive", cmd.Process.Pid)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Skip("the child never entered the zombie state in time")
 }
 
 func writeServiceFile(t *testing.T, reg serviceRegistration) string {

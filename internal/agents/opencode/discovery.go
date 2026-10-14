@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
+
+	"devplatform/internal/platform"
 )
 
 // serviceRegistration mirrors the desktop discovery contract
@@ -108,16 +109,19 @@ func (a *Adapter) discoverExistingService(ctx context.Context) (*sharedServer, e
 	return &sharedServer{client: client, endpoint: reg.URL, done: nil}, nil
 }
 
-// processAlive reports whether pid refers to a live process.
+// processAlive reports whether pid refers to a live process: it answers a
+// signal and is not a zombie. A zombie pid takes a signal but serves
+// nothing — a stopped service whose parent never reaped it looks registered
+// while its listener is long closed.
 func processAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	if err := syscall.Kill(pid, 0); err != nil {
+	proc := platform.New().Process()
+	if !proc.Alive(pid) {
 		return false
 	}
-	// A zombie pid takes a signal but serves nothing.
-	return !processIsZombie(pid)
+	return !proc.IsZombie(pid)
 }
 
 var _ = fmt.Sprint

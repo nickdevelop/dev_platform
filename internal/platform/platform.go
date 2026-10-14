@@ -70,7 +70,8 @@ type Process interface {
 	// Configure prepares a child command before Start.
 	// unix: Setpgid; windows: CREATE_NEW_PROCESS_GROUP plus Job Object.
 	Configure(cmd *exec.Cmd) error
-	// Alive reports whether pid currently exists.
+	// Alive reports whether pid answers a signal, zombies included. Pair
+	// with IsZombie to tell a live process from an unreaped one.
 	Alive(pid int) bool
 	// IsZombie reports whether pid is a zombie awaiting reaping.
 	// windows always returns false.

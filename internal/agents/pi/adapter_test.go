@@ -9,11 +9,11 @@ import (
 	"sync"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 // streamingFakePi is a stand-in for the pi CLI: it records its arguments and
@@ -315,10 +315,8 @@ func TestAdapterStopKillsProcessAndClosesStream(t *testing.T) {
 		t.Fatal("subscription channel did not close after stop")
 	}
 
-	if runtime.GOOS != "windows" {
-		if err := syscall.Kill(pid, 0); err == nil {
-			t.Errorf("process %d still alive after stop", pid)
-		}
+	if platform.New().Process().Alive(pid) {
+		t.Errorf("process %d still alive after stop", pid)
 	}
 
 	// Sending to a stopped instance must fail, and stopping again is a no-op.
@@ -592,12 +590,13 @@ func sessionCount(adapter *Adapter) int {
 }
 
 // waitReaped polls until the pid is no longer signalable, i.e. the child has
-// been reaped rather than left as a zombie (a zombie still answers signal 0).
+// been reaped rather than left as a zombie (a zombie still answers signal 0,
+// and the port's Alive probe covers zombies for exactly this reason).
 func waitReaped(t *testing.T, pid int) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := syscall.Kill(pid, 0); err != nil {
+		if !platform.New().Process().Alive(pid) {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

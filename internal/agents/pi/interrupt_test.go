@@ -4,14 +4,13 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform"
 )
 
 func TestParseModelList(t *testing.T) {
@@ -104,10 +103,8 @@ func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
 		}
 	}
 
-	if runtime.GOOS != "windows" {
-		if err := syscall.Kill(pid, 0); err == nil {
-			t.Errorf("process %d still alive after interrupt", pid)
-		}
+	if platform.New().Process().Alive(pid) {
+		t.Errorf("process %d still alive after interrupt", pid)
 	}
 
 	// The instance keeps running, so the session accepts the next turn.

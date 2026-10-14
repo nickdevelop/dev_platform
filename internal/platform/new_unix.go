@@ -51,11 +51,8 @@ func (unixProcess) Configure(cmd *exec.Cmd) error {
 	return unix.Process{}.Configure(cmd)
 }
 
-// Alive and IsZombie are wired in Task 2.3; until then the stub reports
-// absence. No caller uses them yet (discovery and the pi tests still use
-// their local implementations).
-func (unixProcess) Alive(pid int) bool    { return false }
-func (unixProcess) IsZombie(pid int) bool { return false }
+func (unixProcess) Alive(pid int) bool    { return unix.Process{}.Alive(pid) }
+func (unixProcess) IsZombie(pid int) bool { return unix.Process{}.IsZombie(pid) }
 
 func (unixProcess) Terminate(pid int) error {
 	return unix.Process{}.Terminate(pid)
