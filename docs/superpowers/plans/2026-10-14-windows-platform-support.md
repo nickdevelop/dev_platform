@@ -103,8 +103,8 @@
   - `func New() Platform`（按 build tag 选择实现）
   - `var ErrTrashUnavailable`：保留在 `internal/projects` 不动，由 `platform.Trash` 的实现引用同一错误值的副本时注意避免循环依赖，见 Task 2.5。
 
-- [ ] **Step 1: 写接口与 `New()`** — `unix` 版本暂返回 nil 实现占位，`windows` 版本返回占位。`Name()` 返回 `runtime.GOOS`，仅用于诊断。
-- [ ] **Step 2: 编译检查** — `go build ./...` 与 `GOOS=windows go build ./internal/platform/...` 通过。
+- [x] **Step 1: 写接口与 `New()`** — `unix` 版本暂返回 nil 实现占位，`windows` 版本返回占位。`Name()` 返回 `runtime.GOOS`，仅用于诊断。
+- [x] **Step 2: 编译检查** — `go build ./...` 与 `GOOS=windows go build ./internal/platform/...` 通过。
 - [ ] **Step 3: 提交** — `git commit -am "feat(platform): define OS port interfaces"`
 
 ### Task 1.2: 测试替身
