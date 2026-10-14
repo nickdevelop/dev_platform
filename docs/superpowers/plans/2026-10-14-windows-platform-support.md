@@ -459,8 +459,8 @@
 - Produces: Windows 上 `devctl run` 在前台运行，Ctrl+C 或关闭终端窗口触发平台的正常关停。Windows 上没有 SIGTERM，关闭窗口后回收子进程依赖 Job Object（平台退出时结束子进程），需要在运维文档中说明。
 - `devctl` 不得停止 opencode service。它只停止平台自己的进程。
 
-- [ ] **Step 1: 写测试** — `build` 与 `run` 的参数拼装；`run` 在 Windows 上为前台进程。
-- [ ] **Step 2: 实现。**
+- [x] **Step 1: 写测试** — `build` 与 `run` 的参数拼装；`run` 在 Windows 上为前台进程。
+- [x] **Step 2: 实现。**
 - [ ] **Step 3: 提交** — `git commit -am "feat(devctl): cross-platform dev tooling"`
 
 ### Task 5.2: e2e 脚本

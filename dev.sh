@@ -6,8 +6,13 @@
 # server binds 0.0.0.0:18080 by default so the UI is reachable from the LAN
 # (matching the platform's plain-HTTP LAN deployment model).
 #
+# build and run delegate to the cross-platform cmd/devctl tool (usable on
+# Windows as `go run ./cmd/devctl build|run`); the background start/stop/
+# restart/status/logs commands below stay bash-only for Linux/WSL.
+#
 # Usage:
 #   ./dev.sh build             Build the frontend (web/dist) and server (bin/platform)
+#   ./dev.sh run               Run the server in the foreground (Ctrl+C stops it)
 #   ./dev.sh start [--build]   Start the server; builds first when the binary is
 #                              missing or --build is given
 #   ./dev.sh restart [--build] Stop, then start (rebuild first with --build)
@@ -64,22 +69,15 @@ is_running() {
   kill -0 "$pid" 2>/dev/null
 }
 
-# build compiles the frontend then the Go server.
+# build compiles the frontend then the Go server via the cross-platform
+# devctl tool (no make or npm knowledge needed here).
 build() {
-  require_cmd go
-  require_cmd make
+  go run ./cmd/devctl build
+}
 
-  if [ ! -d web/node_modules ]; then
-    require_cmd npm
-    log "installing frontend dependencies (web/node_modules missing)"
-    make web-install
-  fi
-
-  log "building frontend -> $WEB_DIR"
-  make web-build
-  log "building server -> $BINARY"
-  make build
-  log "build complete"
+# run executes the server in the foreground via devctl; Ctrl+C stops it.
+run() {
+  go run ./cmd/devctl run "$@"
 }
 
 # probe_host extracts a loopback-reachable host:port pair from the configured
@@ -208,6 +206,9 @@ shift || true
 case "$cmd" in
   build)
     build
+    ;;
+  run)
+    run "$@"
     ;;
   start)
     force=0

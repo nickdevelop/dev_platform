@@ -1,4 +1,6 @@
 # Development targets for the AI development platform (Linux / WSL).
+# build and run delegate to the cross-platform cmd/devctl tool; the rest
+# stays Unix-specific.
 BINARY := bin/platform
 
 .PHONY: help build run test vet web-install web-build web-test e2e verify clean
@@ -7,10 +9,10 @@ help: ## Show the available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
 
 build: ## Build the platform server binary into bin/platform
-	go build -o $(BINARY) ./cmd/platform
+	go run ./cmd/devctl build
 
 run: ## Run the platform server from source (same-origin UI from web/dist)
-	go run ./cmd/platform -web-dir web/dist
+	go run ./cmd/devctl run
 
 test: ## Run the Go test suite
 	go test ./...
