@@ -11,8 +11,12 @@
 // Usage: npm run test:e2e [-- <playwright args...>]
 import { spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const isWindows = os.platform() === 'win32'
+const exeSuffix = isWindows ? '.exe' : ''
 
 const webDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const repoDir = path.dirname(webDir)
@@ -22,7 +26,7 @@ const repoDir = path.dirname(webDir)
 const fixtureBin = path.join(webDir, 'e2e', 'fixtures', 'bin')
 // The environment pre-creates /tmp/opencode for scratch data; fall back to
 // the platform temp dir elsewhere.
-const scratchRoot = process.env.TMPDIR ?? '/tmp/opencode'
+const scratchRoot = process.env.TMPDIR ?? os.tmpdir()
 
 // A throwaway credential for a database that is deleted after the run. It is
 // handed to the server process and Playwright through the environment and is
@@ -54,8 +58,8 @@ const opencodeStoreDir = path.join(scratch, 'opencode-store')
 // or writing the developer's own opencode service.
 const xdgStateHome = path.join(scratch, 'xdg-state')
 const serviceRegistration = path.join(xdgStateHome, 'opencode', 'service.json')
-const serverBin = path.join(scratch, 'platform-server')
-const setupBin = path.join(scratch, 'platform-setup')
+const serverBin = path.join(scratch, 'platform-server' + exeSuffix)
+const setupBin = path.join(scratch, 'platform-setup' + exeSuffix)
 mkdirSync(workspaceRoot, { recursive: true })
 mkdirSync(xdgDataHome, { recursive: true })
 mkdirSync(piSessionDir, { recursive: true })
@@ -84,21 +88,38 @@ function shutdown(exitCode) {
   if (shuttingDown) return
   shuttingDown = true
   for (const { child } of children) {
-    try {
-      child.kill('SIGTERM')
-    } catch {
-      // Already exited.
-    }
+    killTree(child)
   }
-  // The Go server may not finish reaping an agent it was stopping when it is
-  // signaled, so any fixture agent that outlived it is cleaned up directly.
-  try {
-    spawnSync('pkill', ['-f', fixtureBin])
-  } catch {
-    // pkill is best-effort; its absence is not a harness failure.
+  if (!isWindows) {
+    // The Go server may not finish reaping an agent it was stopping when it
+    // is signaled, so any fixture agent that outlived it is cleaned up
+    // directly. On Windows the taskkill trees above already cover this.
+    try {
+      spawnSync('pkill', ['-f', fixtureBin])
+    } catch {
+      // pkill is best-effort; its absence is not a harness failure.
+    }
   }
   rmSync(scratch, { recursive: true, force: true })
   process.exit(exitCode)
+}
+
+// killTree stops a harness child and everything below it. Unix signals the
+// child (the Go server then reaps its own process groups gracefully); on
+// Windows child.kill cannot deliver Ctrl+C, so taskkill /T /F ends the whole
+// tree the way the platform's own Terminate does.
+function killTree(child) {
+  try {
+    if (!isWindows) {
+      child.kill('SIGTERM')
+      return
+    }
+    if (child.pid !== undefined) {
+      spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' })
+    }
+  } catch {
+    // Already exited.
+  }
 }
 
 process.on('SIGINT', () => shutdown(130))

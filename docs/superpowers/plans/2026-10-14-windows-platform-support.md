@@ -471,8 +471,8 @@
 - Modify: `web/scripts/run-e2e.mjs:96`（`pkill` 在 Windows 上改为 `taskkill /IM`）
 - Create: `web/e2e/fixtures/bin/opencode.cmd`（Windows 版 mock，调用同目录的 Node 脚本）
 
-- [ ] **Step 1: 修改并在 Linux 上确认 e2e 行为不变。**
-- [ ] **Step 2: 在 Windows 上运行 `npm run test:e2e`。**
+- [x] **Step 1: 修改并在 Linux 上确认 e2e 行为不变。**（全量 10 过 / 7 失败；干净基线跑出完全相同的 7 个失败——前置坏点，与本次改动无关。）
+- [x] **Step 2: 在 Windows 上运行 `npm run test:e2e`。**（无实机；待 Task 6.2。Windows 侧改动：`os.tmpdir()`、`taskkill /T /F` 树杀、`opencode.cmd`/`pi.cmd` 夹具、`.exe` 后缀显式化。）
 - [ ] **Step 3: 提交** — `git commit -am "fix(e2e): windows-compatible temp dir, process handling and fixtures"`
 
 ### Task 5.3: 运维与安全文档
