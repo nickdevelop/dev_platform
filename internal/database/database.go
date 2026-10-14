@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -56,17 +57,39 @@ func newDBLogger() logger.Interface {
 }
 
 // buildDSN builds the SQLite DSN for dbPath. The path is embedded as a
-// percent-encoded file: URI, so reserved characters that are legal in Linux
+// percent-encoded file: URI, so reserved characters that are legal in
 // directory names (such as "?") cannot collide with the DSN query
 // separator. The pragmas run on every new pooled connection: foreign key
 // enforcement, the busy timeout, and the WAL journal mode.
+//
+// Windows drive-letter paths need a leading slash and forward slashes
+// (file:///C:/...): url.URL always emits the "//" authority separator, so a
+// bare C:\... would parse C: as the URI host and SQLite would refuse to open
+// it ("SQL logic error: out of memory"). Detection is by path shape, never
+// by GOOS, so both spellings are unit-testable on every platform.
 func buildDSN(dbPath string) string {
-	uri := url.URL{Scheme: "file", Path: dbPath}
+	path := dbPath
+	if isWindowsDrivePath(dbPath) {
+		// Explicit backslash conversion, not filepath.ToSlash: ToSlash is
+		// a no-op where backslash is a legal filename character, but a
+		// drive-letter path only ever needs URI separators.
+		path = "/" + strings.ReplaceAll(dbPath, "\\", "/")
+	}
+	uri := url.URL{Scheme: "file", Path: path}
 	params := url.Values{}
 	params.Add("_pragma", "foreign_keys(1)")
 	params.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", busyTimeoutMS))
 	params.Add("_pragma", "journal_mode(WAL)")
 	return uri.String() + "?" + params.Encode()
+}
+
+// isWindowsDrivePath reports a drive-letter path (C:\..., C:/...).
+func isWindowsDrivePath(p string) bool {
+	return len(p) > 1 && p[1] == ':' && isDriveLetter(p[0])
+}
+
+func isDriveLetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // Open opens (creating it when missing) the platform SQLite database under
