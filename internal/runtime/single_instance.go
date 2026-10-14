@@ -2,37 +2,28 @@
 // service. It currently hosts the single-instance lock that enforces the
 // "one platform process per data directory" rule.
 //
-// The lock is advisory (flock(2) on Unix platforms, which covers the
-// supported Linux and Windows WSL deployment targets) and is scoped to one
-// data directory: two processes may run against different data directories
-// concurrently, but the second process targeting the same data directory
-// fails to start with a clear error instead of racing on the SQLite
-// database and lock file.
+// The lock is advisory and scoped to one data directory: two processes may
+// run against different data directories concurrently, but the second
+// process targeting the same data directory fails to start with a clear
+// error instead of racing on the SQLite database and lock file. The OS
+// mechanics (flock on unix, LockFileEx on windows) live behind the
+// internal/platform Instance port; this package keeps the stable AcquireLock
+// API and the user-facing error text.
 package runtime
 
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-)
 
-// lockFileName is the lock file placed inside the data directory. It stays
-// behind after release so concurrent acquirers always contend on the same
-// inode; ownership is decided by the advisory lock, not by file existence.
-const lockFileName = "platform.lock"
+	"devplatform/internal/platform"
+)
 
 // Lock is a held single-instance lock on a platform data directory. It must
 // be released before the process exits; Release is safe to call more than
 // once and on a nil Lock.
 type Lock struct {
-	file *os.File
+	inner platform.Lock
 }
-
-// errLockHeld reports that another process holds the single-instance lock.
-// Platform-specific lockFile implementations return it when the data
-// directory is contended.
-var errLockHeld = errors.New("single-instance lock is held by another process")
 
 // AcquireLock takes the exclusive single-instance lock for dataDir,
 // creating the directory when missing. A second acquisition while another
@@ -42,43 +33,23 @@ func AcquireLock(dataDir string) (*Lock, error) {
 	if dataDir == "" {
 		return nil, errors.New("runtime: data directory is required")
 	}
-	if err := os.MkdirAll(dataDir, 0o700); err != nil {
-		return nil, fmt.Errorf("runtime: create data directory: %w", err)
-	}
-
-	path := filepath.Join(dataDir, lockFileName)
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	inner, err := platform.New().Instance().Acquire(dataDir)
 	if err != nil {
-		return nil, fmt.Errorf("runtime: open single-instance lock %s: %w", path, err)
-	}
-	// Tighten a lock file left with wider permissions by an earlier version.
-	if err := os.Chmod(path, 0o600); err != nil {
-		file.Close()
-		return nil, fmt.Errorf("runtime: restrict single-instance lock %s: %w", path, err)
-	}
-	if err := lockFile(file); err != nil {
-		file.Close()
-		if errors.Is(err, errLockHeld) {
+		if errors.Is(err, platform.ErrLockHeld) {
 			return nil, fmt.Errorf("runtime: data directory %s is already in use by another platform process", dataDir)
 		}
-		return nil, fmt.Errorf("runtime: lock data directory %s: %w", dataDir, err)
+		return nil, err
 	}
-	return &Lock{file: file}, nil
+	return &Lock{inner: inner}, nil
 }
 
 // Release drops the lock so another process may acquire it. Releasing an
 // already released (or nil) lock is a no-op.
 func (l *Lock) Release() error {
-	if l == nil || l.file == nil {
+	if l == nil || l.inner == nil {
 		return nil
 	}
-	err := unlockFile(l.file)
-	if closeErr := l.file.Close(); err == nil {
-		err = closeErr
-	}
-	l.file = nil
-	if err != nil {
-		return fmt.Errorf("runtime: release single-instance lock: %w", err)
-	}
-	return nil
+	err := l.inner.Release()
+	l.inner = nil
+	return err
 }

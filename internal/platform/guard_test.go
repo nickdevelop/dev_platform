@@ -18,7 +18,6 @@ import (
 // 测试文件（_test.go）不在扫描范围内。
 var osGuardAllowlist = map[string]string{
 	"internal/projects/trash_linux.go":         "Task 2.5: trash 移入 platform/unix，业务包只引用 platform.ErrTrashUnavailable",
-	"internal/runtime/single_instance_unix.go": "Task 2.1: flock 单实例锁移入 platform/unix 的 Instance 端口",
 	"internal/agents/opencode/discovery.go":    "Task 2.3: syscall.Kill 存活探测移入 Process.Alive 端口",
 	"internal/agents/opencode/process_unix.go": "Task 2.2/2.3: 进程组配置、kill 与僵尸判断移入 Process 端口",
 	"internal/agents/pi/process_unix.go":       "Task 2.2: 进程组配置与 kill 移入 Process 端口",

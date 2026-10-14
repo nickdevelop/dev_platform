@@ -137,8 +137,8 @@
 - Consumes: `platform.Instance`
 - Produces: `unix.Instance.Acquire(dataDir) (Lock, error)`，内部为 `flock(LOCK_EX|LOCK_NB)`。`errLockUnsupported` 随 `single_instance_other.go` 删除。
 
-- [ ] **Step 1: 迁移** — 保持文件名、锁文件路径、权限模式（0700 目录、0600 锁文件）不变。
-- [ ] **Step 2: 测试** — 现有 `single_instance_test.go` 全绿；`goruntime.GOOS == "windows"` 分支改为按 `Perms.Enforced()` 跳过权限断言（为阶段 3 做准备）。
+- [x] **Step 1: 迁移** — 保持文件名、锁文件路径、权限模式（0700 目录、0600 锁文件）不变。
+- [x] **Step 2: 测试** — 现有 `single_instance_test.go` 全绿；`goruntime.GOOS == "windows"` 分支改为按 `Perms.Enforced()` 跳过权限断言（为阶段 3 做准备）。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): move single-instance lock behind Instance port"`
 
 ### Task 2.2: 子进程组与终止

@@ -6,6 +6,7 @@
 package platform
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 )
@@ -134,6 +135,13 @@ type Environment interface {
 	// Check rejects unsupported environments, e.g. WSL1 on unix.
 	Check() error
 }
+
+// ErrLockHeld reports that another process holds the single-instance lock.
+// It is the canonical port value; each platform implementation holds its
+// own copy and the New adapters below map it here, so business packages
+// only depend on the port (the implementations cannot import this package
+// without creating an import cycle).
+var ErrLockHeld = errors.New("single-instance lock is held by another process")
 
 // stubPlatform is the placeholder returned by New until each port has a
 // real implementation. Ports are wired up task by task in phase 2 (unix)

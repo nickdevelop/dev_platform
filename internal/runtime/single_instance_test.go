@@ -3,10 +3,10 @@ package runtime_test
 import (
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"strings"
 	"testing"
 
+	"devplatform/internal/platform"
 	"devplatform/internal/runtime"
 )
 
@@ -74,8 +74,11 @@ func TestAcquireLockIsReacquirableAfterRelease(t *testing.T) {
 // and its data directory are owner-only on Unix, so a local user cannot read
 // platform state (the directory also holds the session database).
 func TestAcquireLockRestrictsDataDirAndLockPermissions(t *testing.T) {
-	if goruntime.GOOS == "windows" {
-		t.Skip("Unix file permissions are not meaningful on Windows")
+	// Skip by capability, not by GOOS. The nil check is transitional:
+	// Perms is wired in Task 3.2, until then a nil port means the unix
+	// default under test, which enforces permissions.
+	if perms := platform.New().Perms(); perms != nil && !perms.Enforced() {
+		t.Skip("private permissions are not enforced on this platform")
 	}
 
 	dataDir := filepath.Join(t.TempDir(), "runtime-data")
