@@ -86,7 +86,10 @@ type Dependencies struct {
 // NewRouter builds the Gin engine with all API routes registered.
 func NewRouter(deps Dependencies) *gin.Engine {
 	router := gin.New()
-	router.Use(gin.Recovery())
+	// AccessLog runs before Recovery so even a panicking handler still
+	// produces one access line (with its 500 status) carrying the response
+	// time needed to spot stuck operations.
+	router.Use(AccessLog(), gin.Recovery())
 
 	// The platform is exposed directly on the LAN with no reverse proxy in
 	// front of it, so no proxy headers (X-Forwarded-*) are trusted when the

@@ -75,6 +75,20 @@ WantedBy=multi-user.target
 Logs go to stdout/stderr; journald captures them under systemd
 (`journalctl -u platform`).
 
+### Access logs and response times
+
+Every HTTP request (API, static assets, SPA fallback, 404s) emits one
+access line carrying its response time:
+
+```
+http access method=GET path=/api/projects status=200 latency=3.2ms ip=127.0.0.1
+```
+
+Filter slow or stuck operations by their `latency=` value, e.g.
+`journalctl -u platform | grep "http access"`. Only the URL path is
+logged — never the query string, request body, or headers — so tokens and
+secrets cannot leak into logs (see Secret redaction below).
+
 ### One instance per data directory
 
 A single-instance lock (an advisory `flock` on `<data-dir>/platform.lock`)
@@ -265,8 +279,9 @@ database; a restored backup invalidates sessions issued after it.
   in the database.
 - Session identifiers live in an HttpOnly cookie and are never echoed in
   API response bodies (only session metadata and the CSRF token are).
-- There is no request-logging middleware, so query strings and bodies are
-  not logged either.
+- The access log records only `method`, URL `path` (without the query
+  string), response `status`, response `latency`, and client `ip`. Query
+  strings, request bodies, and headers are never logged.
 
 Protect server logs like credentials anyway: keep journald access
 restricted, and avoid redirecting logs to world-readable files.
