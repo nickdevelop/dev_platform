@@ -664,7 +664,7 @@ func TestStaleSessionReflectsInstanceLifecycle(t *testing.T) {
 		t.Errorf("Send on stale session error = %v, want ErrInstanceNotRunning", err)
 	}
 	// Continue is the repair path: a stale session is re-attached by starting a
-	// fresh instance rather than refused, which is what makes opening a task
+	// fresh instance rather than refused, which is what makes opening a session
 	// after a platform restart work without manual instance management.
 	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
 	if err != nil {
@@ -675,10 +675,10 @@ func TestStaleSessionReflectsInstanceLifecycle(t *testing.T) {
 	}
 }
 
-// TestContinueLeavesTheActivityTimestampAlone verifies opening a task is not
+// TestContinueLeavesTheActivityTimestampAlone verifies opening a session is not
 // an interaction: continue persists the re-attach (status, title, a rebound
 // instance) without refreshing updated_at — the column the workbench sorts its
-// task list by — while a real send does refresh it.
+// session list by — while a real send does refresh it.
 func TestContinueLeavesTheActivityTimestampAlone(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-1")
@@ -699,14 +699,14 @@ func TestContinueLeavesTheActivityTimestampAlone(t *testing.T) {
 		t.Fatalf("load session row: %v", err)
 	}
 	if !row.UpdatedAt.Equal(past) {
-		t.Errorf("persisted updated_at = %v after Continue, want the aged %v: opening a task is not activity", row.UpdatedAt, past)
+		t.Errorf("persisted updated_at = %v after Continue, want the aged %v: opening a session is not activity", row.UpdatedAt, past)
 	}
 	if continued.Status != SessionActive {
 		t.Errorf("continued status = %s, want active", continued.Status)
 	}
 
 	// A real interaction still moves the timestamp: sending a message must
-	// raise the task to the top of the list.
+	// raise the session to the top of the list.
 	sent, err := env.svc.Send(context.Background(), env.projectID, session.ID, "hello", "")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
@@ -954,7 +954,7 @@ func TestUnknownSessionOperationsAreNotFound(t *testing.T) {
 	}
 }
 
-// TestDeleteRemovesOnlyThePlatformIndex verifies deleting a task drops its
+// TestDeleteRemovesOnlyThePlatformIndex verifies deleting a session drops its
 // platform index row and leaves the agent-native session alone, so a later
 // discovery of the same native session re-indexes it.
 func TestDeleteRemovesOnlyThePlatformIndex(t *testing.T) {
@@ -1528,7 +1528,7 @@ func TestContinueIsIdempotentWhenInstanceRuns(t *testing.T) {
 // TestContinueRebindMergesDuplicateRowOnNewInstance pins the merge: because the
 // unique key includes the instance, discovery can index the same native session
 // a second time under a new instance, and rebinding must not leave the user
-// with two tasks for one conversation.
+// with two sessions for one conversation.
 func TestContinueRebindMergesDuplicateRowOnNewInstance(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-dup")

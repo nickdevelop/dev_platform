@@ -12,7 +12,7 @@ import (
 const agentsKey = "agents.config"
 
 // AgentSetting is the platform-level configuration for one agent backend. A
-// backend with Enabled true may be used to create new tasks; ManualPath is
+// backend with Enabled true may be used to create new sessions; ManualPath is
 // empty when the executable is resolved from PATH, and Version/CheckedAt record
 // the last successful detection.
 type AgentSetting struct {
@@ -51,7 +51,7 @@ func (s *Service) loadAgents() (map[agents.BackendID]AgentSetting, error) {
 
 	var row database.Setting
 	// Find (not First) so a missing row is not logged as an error; agent
-	// enablement is consulted on every task start.
+	// enablement is consulted on every new session.
 	result := s.db.Where("key = ?", agentsKey).Limit(1).Find(&row)
 	if result.Error != nil {
 		return nil, fmt.Errorf("settings: load agents: %w", result.Error)

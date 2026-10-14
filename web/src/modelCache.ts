@@ -1,5 +1,5 @@
 // The last model list seen per project and backend, kept in memory for the
-// browser session so opening a session or the new-task panel shows its models
+// browser session so opening a session or the new-session panel shows its models
 // immediately while a fresh list loads. It is a cache, not state: a page reload
 // starts empty and the platform's own per-(backend, directory) cache stays the
 // source of truth. Keyed by project because a backend's model list is scoped to

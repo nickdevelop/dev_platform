@@ -59,11 +59,11 @@ async function openAgentSettings(page: Page) {
   await expect(page).toHaveURL(/\/settings\/agents$/)
 }
 
-// createOpencodeTask submits the new-session form for a project whose row is
+// createOpencodeSession submits the new-session form for a project whose row is
 // selected, and waits for the session's conversation to mount. It asserts on the
 // conversation rather than the tree row, because the tree's refresh cycle is
 // covered by its own specs.
-async function createOpencodeTask(page: Page, title: string) {
+async function createOpencodeSession(page: Page, title: string) {
   await page.locator('.project-row.selected .project-new-session').click()
   await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
   await page.locator('.backend-switch [data-backend="opencode-v2"]').click()
@@ -108,7 +108,7 @@ test('the service is observed, stopped, refused, and started again by an operato
 
   await test.step('a session works while the service runs', async () => {
     await openProject(page, projectId)
-    await createOpencodeTask(page, 'oc-running')
+    await createOpencodeSession(page, 'oc-running')
     await expect(page.locator('[data-test="conversation"]')).toBeVisible({ timeout: 20_000 })
   })
 
@@ -134,7 +134,7 @@ test('the service is observed, stopped, refused, and started again by an operato
 
   await test.step('a session is refused with the sentence that names the fix', async () => {
     await openProject(page, projectId)
-    await createOpencodeTask(page, 'oc-refused')
+    await createOpencodeSession(page, 'oc-refused')
 
     const error = page.locator('[data-test="new-session-error"]')
     await expect(error).toContainText('opencode service 未启动，请到平台设置 → Agent 检测并启动。')
@@ -154,7 +154,7 @@ test('the service is observed, stopped, refused, and started again by an operato
     })
 
     await openProject(page, projectId)
-    await createOpencodeTask(page, 'oc-restored')
+    await createOpencodeSession(page, 'oc-restored')
     await expect(page.locator('[data-test="conversation"]')).toBeVisible({ timeout: 20_000 })
   })
 

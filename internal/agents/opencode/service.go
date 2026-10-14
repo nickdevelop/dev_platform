@@ -62,7 +62,7 @@ func (a *Adapter) DetectService(ctx context.Context) (agents.ServiceStatus, erro
 
 // ServiceAvailable is the cheap gate the workbench asks before it does any
 // work: a registered service whose process is alive. It deliberately makes no
-// network request — a task must not wait on an HTTP round trip to learn
+// network request — a session must not wait on an HTTP round trip to learn
 // something the registration file already answers, and a slow service is not an
 // absent one.
 func (a *Adapter) ServiceAvailable() error {

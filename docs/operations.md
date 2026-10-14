@@ -184,8 +184,8 @@ Open **设置** (Settings) from the left rail. It has three sections:
   file (`0600`) and are never returned by the API; an empty key on save clears
   the stored one.
 - **Agent** — enable/disable OpenCode and Pi Agent and detect their executable
-  paths and versions. Only enabled agents can be chosen for new tasks;
-  disabling never stops existing instances or invalidates existing tasks.
+  paths and versions. Only enabled agents can be chosen for new sessions;
+  disabling never stops existing instances or invalidates existing sessions.
 
 ## Register or create a project
 

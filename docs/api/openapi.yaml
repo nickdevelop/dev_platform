@@ -850,7 +850,7 @@ paths:
         Stops the machine-wide service at an operator's explicit request,
         whoever started it. The confirmation and its consequences belong to the
         operator: any other client of the same service — including the desktop
-        `opencode` app — loses its server, and running tasks are interrupted and
+        `opencode` app — loses its server, and running sessions are interrupted and
         reported `failed`.
       operationId: stopAgentService
       security:
@@ -2473,7 +2473,7 @@ paths:
   /agents/{backend}:
     put:
       summary: Enable or disable an agent backend
-      description: Toggles platform-level enablement. Disabling only blocks new tasks.
+      description: Toggles platform-level enablement. Disabling only blocks new sessions.
       operationId: setAgentEnabled
       security:
         - cookieAuth: []
@@ -3271,7 +3271,7 @@ components:
           type: boolean
           description: >-
             Platform-level enablement. A disabled backend cannot be selected for
-            new tasks; existing instances and sessions stay usable.
+            new sessions; existing instances and sessions stay usable.
         label:
           type: string
           description: Display name from the catalog; falls back to the backend id.

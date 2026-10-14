@@ -17,7 +17,7 @@ import (
 	"devplatform/internal/platform"
 )
 
-// TestEnsureSharedAdoptsExistingService proves task creation reuses the
+// TestEnsureSharedAdoptsExistingService proves session creation reuses the
 // machine-wide service that is already there instead of booting a second
 // one: with a healthy registration file, StartInstance never calls launch
 // and binds the registered endpoint.

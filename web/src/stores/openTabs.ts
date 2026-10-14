@@ -38,7 +38,7 @@ function normalize(entry: unknown): OpenTab | null {
   const tab = entry as Record<string, unknown>
   if (typeof tab !== 'object' || tab === null || typeof tab.projectId !== 'number') return null
   if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId }
-  if (tab.kind === 'session' || tab.kind === 'task' || tab.kind === undefined) {
+  if (tab.kind === 'session' || tab.kind === undefined) {
     if (!isSession(entry)) return null
     // A stored session tab may predate any title being set; only a string title is
     // carried over, so a hand-edited store cannot inject one.

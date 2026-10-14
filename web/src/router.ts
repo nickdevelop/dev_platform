@@ -73,22 +73,6 @@ export function createAppRouter() {
               sessionId: String(route.params.sessionId),
             }),
           },
-          // Back-compat: the same pages used to live under /tasks. Keep old
-          // bookmarks working by redirecting to the renamed session URLs.
-          {
-            path: 'projects/:projectId/tasks/new',
-            redirect: (to) => ({ name: 'session-new', params: { projectId: String(to.params.projectId) } }),
-          },
-          {
-            path: 'projects/:projectId/tasks/:sessionId',
-            redirect: (to) => ({
-              name: 'session',
-              params: {
-                projectId: String(to.params.projectId),
-                sessionId: String(to.params.sessionId),
-              },
-            }),
-          },
         ],
       },
       {

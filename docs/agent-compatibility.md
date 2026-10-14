@@ -97,7 +97,7 @@ adapter enforces:
 | `service.json` | Owned by opencode. The platform reads it and never writes or deletes it. |
 
 Two different checks back this: the business path uses the cheap one (read the
-registration file, `kill(pid, 0)`), so a task request never waits on an HTTP
+registration file, `kill(pid, 0)`), so a session request never waits on an HTTP
 round trip; the settings page and diagnostics use the full probe (one
 `/api/info` call with a bounded timeout) and report `running` or `unreachable`
 with a reason.
@@ -146,9 +146,9 @@ backends' reports, and the registry walk always completes.
 ## Session history
 
 History stays the agent's property: the platform never copies a transcript into
-its own storage and never builds an index over one. What changed is that a task
-can now **replay** it. When a task is opened the platform re-attaches the
-session and asks the adapter for the prior turns through the optional
+its own storage and never builds an index over one. What changed is that a session
+can now **replay** it. When a session is opened the platform re-attaches it
+and asks the adapter for the prior turns through the optional
 `agents.HistoryReader` operation (declared by `sessionHistory`); the adapter
 reads the agent's own record and normalizes it into the same event envelope the
 live stream uses, marked `replayed`. Reasoning, replies and tool activity all
@@ -166,7 +166,7 @@ on every switch. Backends that do not report a per-message model (pi) simply
 omit the field.
 
 Because the read is scoped by working directory and agent-native session id
-rather than by an instance, a task whose instance has stopped — or whose
+rather than by an instance, a session whose instance has stopped — or whose
 platform was restarted — still replays.
 
 | | `opencode-v2` | `pi` |

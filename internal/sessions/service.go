@@ -118,7 +118,7 @@ type BackendCapabilities struct {
 	Backend      agents.BackendID    `json:"backend"`
 	Capabilities agents.Capabilities `json:"capabilities"`
 	// Enabled reports the platform-level enablement: a disabled backend cannot
-	// be selected for new tasks. It is independent of per-project settings.
+	// be selected for new sessions. It is independent of per-project settings.
 	Enabled bool `json:"enabled"`
 	// Label is the backend's display name from the catalog; it falls back to
 	// the raw id when the catalog does not describe the backend.
@@ -356,7 +356,7 @@ type CreateOutcome struct {
 // first message is supplied, the model is chosen at creation (backends create
 // the session on that model directly, so no switch call is needed) and the
 // message is admitted right after: the turn runs while the workbench opens
-// the task. The message failing to be admitted does not fail the create — the
+// the session. The message failing to be admitted does not fail the create — the
 // session is already live and the caller surfaces MessageError instead.
 func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string) (CreateOutcome, error) {
 	if !backend.Valid() {
@@ -562,8 +562,8 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 		row.Title = updated.Title
 	}
 	row.Status = string(SessionActive)
-	// Opening a task is not an interaction: the re-attach must not refresh the
-	// row's updated_at, the last-interaction time the task list sorts by.
+	// Opening a session is not an interaction: the re-attach must not refresh the
+	// row's updated_at, the last-interaction time the session list sorts by.
 	if err := s.repo.updateOnContinue(row); err != nil {
 		return Session{}, err
 	}
@@ -578,7 +578,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 // create a second row for one native session after a restart. The row the user
 // has open wins: keeping it preserves the platform session id in the URL they
 // are looking at, and the other row is deleted rather than left to appear as a
-// duplicate task.
+// duplicate session.
 func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instances.Instance) error {
 	existing, err := s.repo.getByNative(inst.ID, row.NativeSessionID)
 	switch {

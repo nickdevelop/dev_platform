@@ -91,7 +91,7 @@ func TestDetectServiceStates(t *testing.T) {
 
 // TestServiceAvailableSkipsNetworkProbe pins that the business-path gate is the
 // cheap one: a registered, live process passes the gate even when its API would
-// not answer, so creating a task never waits on an HTTP round trip.
+// not answer, so creating a session never waits on an HTTP round trip.
 func TestServiceAvailableSkipsNetworkProbe(t *testing.T) {
 	adapter, _, _ := newAdapterWithServer(t, infoHandler("2.0.24"))
 	adapter.serviceFilePath = writeServiceFile(t, serviceRegistration{

@@ -90,14 +90,14 @@ func instanceRowCount(t *testing.T, env *testEnv) int64 {
 }
 
 // TestCreateRefusedWhenServiceNotRunning pins the whole point of the gate: a
-// task on a backend whose machine service is down is refused with the reason,
+// session on a backend whose machine service is down is refused with the reason,
 // and nothing is left behind — not a failed instance row the user would have to
 // clean up.
 func TestCreateRefusedWhenServiceNotRunning(t *testing.T) {
 	env, gate := newGatedEnv(t)
 	gate.availableErr = serviceNotRunning()
 
-	_, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "first task", "", "")
+	_, err := env.svc.Create(context.Background(), env.projectID, agents.BackendOpenCodeV2, "first session", "", "")
 	if !errors.Is(err, ErrServiceNotRunning) {
 		t.Fatalf("Create error = %v, want it to wrap %v", err, ErrServiceNotRunning)
 	}
@@ -105,7 +105,7 @@ func TestCreateRefusedWhenServiceNotRunning(t *testing.T) {
 		t.Fatalf("Create error = %v, want it to wrap the backend-agnostic %v", err, agents.ErrServiceNotRunning)
 	}
 	if count := instanceRowCount(t, env); count != 0 {
-		t.Fatalf("agent_instances rows = %d, want 0: a refused task must not leave a failed instance behind", count)
+		t.Fatalf("agent_instances rows = %d, want 0: a refused session must not leave a failed instance behind", count)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestSessionCreateServiceNotRunning(t *testing.T) {
 	env.svc.RegisterRoutes(router)
 
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions", env.projectID),
-		strings.NewReader(`{"backend":"opencode-v2","title":"first task"}`))
+		strings.NewReader(`{"backend":"opencode-v2","title":"first session"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
