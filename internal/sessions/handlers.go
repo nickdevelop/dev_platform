@@ -386,7 +386,26 @@ func (s *Service) handleEvents(c *gin.Context) {
 	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
 	c.Writer.Flush()
 
-	_ = s.StreamSession(c.Request.Context(), id, sessionID, c.Writer, func() { c.Writer.Flush() })
+	// A browser-native EventSource reconnect carries the last applied frame
+	// id in the Last-Event-ID header; the workbench's manual re-dial opens a
+	// fresh EventSource, which cannot carry that header, so it passes the
+	// same value as a query parameter. Zero means the client is joining.
+	_ = s.StreamSession(c.Request.Context(), id, sessionID, resumeSequence(c), c.Writer, func() { c.Writer.Flush() })
+}
+
+// resumeSequence extracts the replay position of a resuming SSE client from
+// the Last-Event-ID header first and the lastEventId query otherwise. A
+// missing or malformed value means the client is joining, not resuming.
+func resumeSequence(c *gin.Context) uint64 {
+	raw := c.GetHeader("Last-Event-ID")
+	if raw == "" {
+		raw = c.Query("lastEventId")
+	}
+	v, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

@@ -1394,7 +1394,13 @@ paths:
         (text/event-stream). Each data payload is the normalized event envelope;
         the sessionId is the platform session id. A slow or stale client is
         disconnected rather than allowed to stall the instance's stream. The
-        stream ends when the instance's event stream ends.
+        stream ends when the instance's event stream ends. Resuming clients
+        carry the id of the last applied frame (the Last-Event-ID header on a
+        browser reconnect, or the lastEventId query parameter for a manually
+        re-opened stream): events the client missed while away are replayed
+        from the instance's bounded buffer before the live events; when the
+        buffer can no longer vouch for the requested position the stream
+        emits a `resync` frame (no id) and the client rebuilds from history.
       operationId: subscribeProjectSessionEvents
       security:
         - cookieAuth: []
@@ -1412,6 +1418,17 @@ paths:
           description: Platform identifier of the session.
           schema:
             type: string
+        - name: lastEventId
+          in: query
+          required: false
+          description: >-
+            Sequence of the last frame the client applied, for a manually
+            re-opened stream. The Last-Event-ID header serves the same purpose
+            and wins when both are present; a malformed or absent value means
+            the client is joining, not resuming.
+          schema:
+            type: integer
+            format: int64
       responses:
         '200':
           description: A Server-Sent Event stream of normalized events.
@@ -1421,7 +1438,8 @@ paths:
                 type: string
                 description: >-
                   SSE frames with id (sequence), event (normalized type) and
-                  data (the JSON event envelope).
+                  data (the JSON event envelope), plus a header-less `resync`
+                  frame when a resume position cannot be covered.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

@@ -141,7 +141,7 @@ func TestStreamSessionFramesOrderedEvents(t *testing.T) {
 	w := &recordingWriter{}
 	done := make(chan error, 1)
 	go func() {
-		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, w, nil)
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 0, w, nil)
 	}()
 
 	waitForSubscriber(t, env)
@@ -210,7 +210,7 @@ func TestStreamSessionSkipsMalformedAndPreservesUnknown(t *testing.T) {
 	w := &recordingWriter{}
 	done := make(chan error, 1)
 	go func() {
-		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, w, nil)
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 0, w, nil)
 	}()
 
 	waitForSubscriber(t, env)
@@ -282,7 +282,7 @@ func TestStreamSessionSlowClientDisconnectsWithoutStalling(t *testing.T) {
 	gate := make(chan struct{})
 	done := make(chan error, 1)
 	go func() {
-		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, &blockingWriter{gate: gate}, nil)
+		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, 0, &blockingWriter{gate: gate}, nil)
 	}()
 
 	ch := waitForSubscriber(t, env)
@@ -331,7 +331,7 @@ func TestStreamSessionEndMarksSessionDisconnected(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, &recordingWriter{}, nil)
+		done <- env.svc.StreamSession(context.Background(), env.projectID, session.ID, 0, &recordingWriter{}, nil)
 	}()
 
 	waitForSubscriber(t, env)
@@ -366,7 +366,7 @@ func TestStreamSessionClientDisconnectLeavesInstanceRunning(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, &recordingWriter{}, nil)
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 0, &recordingWriter{}, nil)
 	}()
 
 	waitForSubscriber(t, env)
@@ -406,7 +406,7 @@ func TestStreamSessionRejectsCrossProjectSession(t *testing.T) {
 	otherProject := env.registerProject(t, "beta")
 	session := createNativeSession(t, env, "native-1")
 
-	err := env.svc.StreamSession(context.Background(), otherProject, session.ID, &recordingWriter{}, nil)
+	err := env.svc.StreamSession(context.Background(), otherProject, session.ID, 0, &recordingWriter{}, nil)
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("StreamSession cross-project error = %v, want ErrSessionNotFound", err)
 	}
@@ -474,5 +474,92 @@ func TestSSEStreamOutlivesServerWriteTimeout(t *testing.T) {
 	case <-frames:
 	case <-time.After(3 * time.Second):
 		t.Fatal("no SSE frame arrived after the server WriteTimeout; the write deadline was not cleared")
+	}
+}
+
+// TestStreamSessionResumeReplaysMissedEvents verifies a resuming client is
+// caught up: events it missed while away are replayed from the instance's
+// buffer before the live events, and a live event that was also buffered
+// (published while the resume was in flight) is delivered exactly once.
+func TestStreamSessionResumeReplaysMissedEvents(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	// The first view sees events 1 and 2, then drops.
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	w1 := &recordingWriter{}
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- env.svc.StreamSession(ctx1, env.projectID, session.ID, 0, w1, nil)
+	}()
+	waitForSubscriber(t, env)
+	env.fake.emit(t, env.instanceID, streamMessageEvent(1, "native-1", "first"))
+	env.fake.emit(t, env.instanceID, streamMessageEvent(2, "native-1", "second"))
+	waitForFrames(t, w1, 2)
+	cancel1()
+	if err := <-done1; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first stream error = %v, want context.Canceled", err)
+	}
+
+	// The reconnect resumes from 1: event 2 was missed while away and must
+	// be replayed, then live events flow behind it without re-delivering
+	// anything the replay already carried.
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	w2 := &recordingWriter{}
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- env.svc.StreamSession(ctx2, env.projectID, session.ID, 1, w2, nil)
+	}()
+	env.fake.emit(t, env.instanceID, streamMessageEvent(3, "native-1", "third"))
+	waitForFrames(t, w2, 2)
+	cancel2()
+	<-done2
+
+	frames := parseFrames(t, w2.Bytes())
+	var ids []string
+	for _, frame := range frames {
+		if frame.event == string(agents.EventMessage) {
+			ids = append(ids, frame.id)
+		}
+	}
+	if fmt.Sprint(ids) != "[2 3]" {
+		t.Fatalf("resumed stream ids = %v, want [2 3] (missed event replayed, live event delivered once)", ids)
+	}
+}
+
+// TestStreamSessionResumeWithoutCoverageResyncs verifies a resume position
+// the replay buffer cannot vouch for (it is ahead of the newest buffered
+// event, e.g. it comes from a stream that was recreated since) is answered
+// with a resync frame instead of a misleading partial tail, and live events
+// keep flowing after it.
+func TestStreamSessionResumeWithoutCoverageResyncs(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &recordingWriter{}
+	done := make(chan error, 1)
+	go func() {
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 10, w, nil)
+	}()
+	waitForSubscriber(t, env)
+	// The instance's buffer holds nothing (or at most older events), so
+	// position 10 cannot be trusted: the client must rebuild from history.
+	env.fake.emit(t, env.instanceID, streamMessageEvent(11, "native-1", "eleventh"))
+	waitForFrames(t, w, 2)
+	cancel()
+	<-done
+
+	frames := parseFrames(t, w.Bytes())
+	if len(frames) != 2 {
+		t.Fatalf("got %d frames, want resync + one live event: %+v", len(frames), frames)
+	}
+	if frames[0].event != "resync" {
+		t.Errorf("first frame event = %q, want resync", frames[0].event)
+	}
+	if frames[1].id != "11" || frames[1].event != string(agents.EventMessage) {
+		t.Errorf("second frame = %+v, want the live message at id 11", frames[1])
 	}
 }

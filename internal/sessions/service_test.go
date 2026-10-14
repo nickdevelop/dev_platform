@@ -904,7 +904,7 @@ func TestStreamSessionRequiresStreamingCapability(t *testing.T) {
 
 	session := createNativeSession(t, env, "native-1")
 
-	err := env.svc.StreamSession(context.Background(), env.projectID, session.ID, &recordingWriter{}, nil)
+	err := env.svc.StreamSession(context.Background(), env.projectID, session.ID, 0, &recordingWriter{}, nil)
 	if !errors.Is(err, ErrUnsupportedCapability) {
 		t.Fatalf("StreamSession error = %v, want ErrUnsupportedCapability", err)
 	}
@@ -936,7 +936,7 @@ func TestStreamSessionRevalidatesInstanceProject(t *testing.T) {
 		t.Fatalf("insert cross-project session: %v", err)
 	}
 
-	err = env.svc.StreamSession(context.Background(), env.projectID, row.ID, &recordingWriter{}, nil)
+	err = env.svc.StreamSession(context.Background(), env.projectID, row.ID, 0, &recordingWriter{}, nil)
 	if !errors.Is(err, instances.ErrInstanceNotFound) {
 		t.Fatalf("StreamSession error = %v, want ErrInstanceNotFound", err)
 	}

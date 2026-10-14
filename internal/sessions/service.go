@@ -89,6 +89,12 @@ const defaultStreamBuffer = 64
 // silent for a long time (no data frame would otherwise be sent).
 const heartbeatInterval = 15 * time.Second
 
+// resyncFrame is the SSE frame a resumed stream writes when the replay
+// buffer cannot cover the client's gap: the client clears its log, reloads
+// history and continues with the live events that follow. It carries no id
+// because it belongs to no position in the sequence.
+const resyncFrame = "event: resync\ndata: {}\n\n"
+
 // Session is the JSON-stable API representation of a session index entry. The
 // embedded capabilities tell the workbench which controls the backend actually
 // supports, so unsupported controls can be hidden.
@@ -144,6 +150,11 @@ type InstanceService interface {
 	ServiceAvailable(backend agents.BackendID) error
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
+	// ReplaySince returns the instance's buffered events with Sequence past
+	// the given one, oldest first, and whether the buffer covers the whole
+	// gap. A false coverage answer means the requester must resynchronize
+	// from history rather than trust a partial tail.
+	ReplaySince(instanceID string, after uint64) ([]agents.NormalizedEvent, bool)
 	// Stop terminates the instance (idempotently).
 	Stop(ctx context.Context, instanceID string) (instances.Instance, error)
 }
@@ -793,7 +804,13 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 // falls too far behind. It bounds per-client buffering: a client that cannot
 // keep up is disconnected and its subscription released, so a slow or stale
 // subscriber can never stall the instance's shared event stream.
-func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID string, w io.Writer, flush func()) error {
+//
+// resumeFrom is the sequence the client saw last (the SSE Last-Event-ID):
+// when the instance's replay buffer covers the gap, the events the client
+// missed are replayed before the live ones; when it does not, the stream
+// first emits a resync frame so the client can rebuild its log from history.
+// A zero resumeFrom means the client is joining, not resuming.
+func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID string, resumeFrom uint64, w io.Writer, flush func()) error {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return err
@@ -819,6 +836,54 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 		return err
 	}
 
+	// Replaying from the buffer after the live subscription is established is
+	// what makes the resume gapless: an event published concurrently with this
+	// stream is either already buffered (and written below) or arrives on the
+	// channel, and the watermark drops the ones that land in both.
+	watermark := uint64(0)
+	if resumeFrom > 0 {
+		replay, covered := s.instances.ReplaySince(row.InstanceID, resumeFrom)
+		if !covered {
+			// The client's position was evicted or predates the current
+			// stream: a partial tail would render as a silently truncated
+			// transcript, so the client rebuilds from history instead, and
+			// live events flow unfiltered from here on.
+			if _, err := io.WriteString(w, resyncFrame); err != nil {
+				cancel()
+				return err
+			}
+			if flush != nil {
+				flush()
+			}
+		} else {
+			watermark = resumeFrom
+			for _, ev := range replay {
+				if !matchesSession(row, ev) {
+					continue
+				}
+				if ev.SessionID != "" {
+					ev.SessionID = row.ID
+				}
+				if err := ev.Validate(); err != nil {
+					// A buffered event cannot be newer than its live
+					// original, but it went through the same gate then, so
+					// a malformed one never belonged on the wire either.
+					continue
+				}
+				if err := writeEvent(w, ev); err != nil {
+					if errors.Is(err, errEventEncode) {
+						continue
+					}
+					cancel()
+					return err
+				}
+				if flush != nil {
+					flush()
+				}
+			}
+		}
+	}
+
 	queue := make(chan agents.NormalizedEvent, s.streamBuffer)
 	var slow atomic.Bool
 	go func() {
@@ -832,6 +897,10 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 					return
 				}
 				if !matchesSession(row, ev) {
+					continue
+				}
+				if watermark > 0 && ev.Sequence <= watermark {
+					// Already written from the replay buffer.
 					continue
 				}
 				if ev.SessionID != "" {

@@ -1323,3 +1323,106 @@ describe('sessions store dangling entry repair', () => {
     expect(entries[0].streaming).toBe(true)
   })
 })
+
+// A listener-driven EventSource stand-in: tests can deliver frames shaped
+// like the browser's MessageEvents, including the SSE id the browser exposes
+// as lastEventId and the server turns back into a resume position.
+class StreamingEventSource {
+  static instances: StreamingEventSource[] = []
+  static CONNECTING = 0
+  static OPEN = 1
+  static CLOSED = 2
+
+  readyState = StreamingEventSource.OPEN
+  onopen: (() => void) | null = null
+  onerror: (() => void) | null = null
+  private listeners = new Map<string, ((event: MessageEvent) => void)[]>()
+
+  constructor(readonly url: string) {
+    StreamingEventSource.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    const list = this.listeners.get(type) ?? []
+    list.push(listener)
+    this.listeners.set(type, list)
+  }
+
+  close() {
+    this.readyState = StreamingEventSource.CLOSED
+  }
+
+  emit(type: string, data: string, lastEventId = '') {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data, lastEventId } as MessageEvent)
+    }
+  }
+}
+
+function liveMessage(text: string, sequence: number) {
+  return JSON.stringify({
+    instanceId: 'inst-1',
+    sessionId: 's1',
+    backend: 'pi',
+    sequence,
+    timestamp: '2026-10-14T12:00:00Z',
+    type: 'message',
+    message: { role: 'assistant', text, final: true },
+  })
+}
+
+describe('sessions store stream resume', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    StreamingEventSource.instances = []
+    vi.stubGlobal('EventSource', StreamingEventSource)
+    useSessionsStore().unsubscribeAll()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('re-dials with the last applied frame id so the server replays the gap', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+
+    sessions.subscribe(1, 's1')
+    StreamingEventSource.instances[0].emit('message', liveMessage('七', 7), '7')
+    sessions.unsubscribe('s1')
+    sessions.subscribe(1, 's1')
+
+    expect(StreamingEventSource.instances[1].url).toBe(
+      '/api/projects/1/sessions/s1/events?lastEventId=7',
+    )
+    // The replayed entry still renders into the same log.
+    expect(sessions.messagesFor('s1').map((entry) => entry.text)).toContain('七')
+  })
+
+  it('rebuilds the log from history when the server reports an unreplayable gap', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1)]
+    const calls = stubRoutes({
+      '/continue': session('s1', 1),
+      '/history': { events: [messageEvent('assistant', '完整的历史', 9)], truncated: false },
+    })
+
+    sessions.subscribe(1, 's1')
+    const first = StreamingEventSource.instances[0]
+    first.emit('message', liveMessage('断流前的半句', 10), '10')
+    expect(sessions.messagesFor('s1').map((entry) => entry.text)).toContain('断流前的半句')
+
+    first.emit('resync', '{}')
+    await vi.waitFor(() => {
+      expect(sessions.messagesFor('s1').map((entry) => entry.text)).toEqual(['完整的历史'])
+    })
+
+    // The broken log and its stale resume position are gone: the reopened
+    // stream dials fresh and history was re-fetched.
+    expect(first.readyState).toBe(StreamingEventSource.CLOSED)
+    expect(calls).toContain('/api/projects/1/sessions/s1/history')
+    expect(StreamingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
+  })
+})

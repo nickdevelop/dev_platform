@@ -60,6 +60,12 @@ export type StreamStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'er
 // are browser resources, not view data, and must not be proxied by Vue.
 const sources = new Map<string, EventSource>()
 
+// The id of the last SSE frame applied per session. The store re-dials with
+// it (as a query parameter the server turns into a resume position) so a
+// manually re-opened EventSource replays exactly what it missed; the
+// browser's own reconnects carry the id as the Last-Event-ID header.
+const lastEventIds = new Map<string, string>()
+
 // A dropped EventSource is not always re-established by the browser: when the
 // process behind a session dies, it fires one error and then sits in CONNECTING
 // without dialling again — measured over 24s with nothing reaching the server.
@@ -261,6 +267,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.echoPending = {}
         this.selectedModels = {}
         this.autoModels = {}
+        lastEventIds.clear()
       }
       this.loading = true
       this.projectId = projectId
@@ -388,6 +395,7 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.historyTailGuard[sessionId]
       delete this.selectedModels[sessionId]
       delete this.autoModels[sessionId]
+      lastEventIds.delete(sessionId)
       this.error = ''
       return true
     },
@@ -406,7 +414,9 @@ export const useSessionsStore = defineStore('sessions', {
         sources.delete(sessionId)
       }
       this.streamStatus[sessionId] = 'connecting'
-      const source = new EventSource(sessionEventsPath(projectId, sessionId))
+      const source = new EventSource(
+        sessionEventsPath(projectId, sessionId, lastEventIds.get(sessionId)),
+      )
       sources.set(sessionId, source)
 
       source.onopen = () => {
@@ -440,9 +450,36 @@ export const useSessionsStore = defineStore('sessions', {
       }
       for (const type of ['lifecycle', 'message', 'thinking', 'tool_call', 'tool_result', 'error', 'unknown']) {
         source.addEventListener(type, (event) => {
-          this.handleEvent(sessionId, (event as MessageEvent).data)
+          const frame = event as MessageEvent
+          // Remember the frame's position so a later manual re-dial resumes
+          // from it; the browser's own reconnects carry it automatically.
+          if (frame.lastEventId) lastEventIds.set(sessionId, frame.lastEventId)
+          this.handleEvent(sessionId, frame.data)
         })
       }
+      // The server sends this when a resumed stream could not cover the
+      // client's gap (its replay buffer evicted the events or the stream was
+      // recreated since): the log on screen may be missing its middle, so it
+      // is rebuilt from history while the live stream keeps flowing.
+      source.addEventListener('resync', () => {
+        void this.rebuildFromHistory(projectId, sessionId)
+      })
+    },
+
+    // rebuildFromHistory replays a session's transcript after a resync. It
+    // closes the live stream first and re-opens the session through the
+    // ordered path (continue, replay history, subscribe), which both keeps
+    // replay before live events — events after the resync frame would
+    // otherwise land in a log history is still fetching — and re-reads the
+    // turn state, so a session that settled during the gap settles here.
+    async rebuildFromHistory(projectId: number, sessionId: string) {
+      if (!sources.has(sessionId)) return
+      this.unsubscribe(sessionId)
+      this.messages[sessionId] = []
+      this.historyLoaded[sessionId] = false
+      this.historyTailGuard[sessionId] = false
+      lastEventIds.delete(sessionId)
+      await this.openSession(projectId, sessionId)
     },
 
     // Marks a session active and opens its stream. Multiple sessions can stay

@@ -585,6 +585,24 @@ func (s *Service) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 	return sub.out, nil
 }
 
+// ReplaySince returns the instance's buffered events with Sequence greater
+// than after, oldest first, alongside whether the buffer covers the whole
+// gap: false means events were lost to eviction or the sequence belongs to a
+// stream that no longer exists, so the caller must resynchronize from
+// history instead of trusting a partial tail. A caller that needs no events
+// lost between the live subscription and this snapshot must Subscribe first:
+// events published after the subscription are delivered on the channel, and
+// events published before it are in the buffer.
+func (s *Service) ReplaySince(instanceID string, after uint64) ([]agents.NormalizedEvent, bool) {
+	s.mu.Lock()
+	st, ok := s.streams[instanceID]
+	s.mu.Unlock()
+	if !ok {
+		return nil, false
+	}
+	return st.ring.since(after)
+}
+
 // resolveProject maps a project id to its authorized directory, translating
 // the project repository's not-found sentinel.
 func (s *Service) resolveProject(projectID uint) (string, error) {
@@ -627,10 +645,13 @@ func instanceFromModel(row database.AgentInstance) Instance {
 
 // stream is the service's single upstream subscription for one instance. Its
 // subscribers each own an output channel; the upstream goroutine is the only
-// writer and the only closer of those channels.
+// writer and the only closer of those channels. The replay ring records every
+// event the stream has published so a reconnecting SSE client can be caught
+// up on the events it missed while it was away.
 type stream struct {
 	cancel      context.CancelFunc
 	subscribers map[*subscriber]struct{}
+	ring        *replayRing
 }
 
 // subscriber is one consumer of an instance's event stream. stash is written by
@@ -662,7 +683,7 @@ func (s *Service) streamFor(instanceID string, backend agents.BackendID, adapter
 		return nil, fmt.Errorf("instances: subscribe %s: %w", instanceID, err)
 	}
 
-	st := &stream{cancel: cancel, subscribers: make(map[*subscriber]struct{})}
+	st := &stream{cancel: cancel, subscribers: make(map[*subscriber]struct{}), ring: newReplayRing()}
 	s.mu.Lock()
 	if existing, ok := s.streams[instanceID]; ok {
 		s.mu.Unlock()
@@ -685,6 +706,11 @@ func (s *Service) runStream(instanceID string, backend agents.BackendID, st *str
 		ev.InstanceID = instanceID
 		ev.Backend = backend
 		s.applyLifecycle(ev)
+		// Retain the event for replay before handing it to current
+		// subscribers: a client subscribing (and then snapshotting the ring)
+		// concurrently with this loop must never find the event in neither
+		// place, while seeing it in both is resolved by the replay watermark.
+		st.ring.add(ev)
 		s.broadcast(st, ev)
 	}
 	s.finishStream(instanceID, st)
