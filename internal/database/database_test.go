@@ -199,6 +199,35 @@ func TestOpenLoggerNeverLogsParameterValues(t *testing.T) {
 	}
 }
 
+func TestOpenLoggerSilencesRecordNotFoundButKeepsErrors(t *testing.T) {
+	logBuf := captureLog(t)
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	// A miss must still be reported to the caller: every repository turns it
+	// into a not-found sentinel.
+	err := db.First(&Project{}, "id = ?", 4242).Error
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("missing row error = %v, want %v", err, gorm.ErrRecordNotFound)
+	}
+	if out := logBuf.String(); strings.Contains(out, "record not found") {
+		t.Errorf("logger reported a missing row; output: %q", out)
+	}
+
+	// Real database errors stay visible: a duplicate path fails and GORM logs
+	// the failing statement.
+	const path = "/workspace/demo"
+	if err := db.Create(&Project{Name: "demo", Path: path}).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if err := db.Create(&Project{Name: "another", Path: path}).Error; err == nil {
+		t.Fatal("duplicate project path insert succeeded, want error")
+	}
+	if out := logBuf.String(); !strings.Contains(out, "INSERT") {
+		t.Errorf("logger stayed silent about a failing statement; output: %q", out)
+	}
+}
+
 func TestOpenCreatesDatabaseInPathWithSpecialCharacters(t *testing.T) {
 	// "?" and "#" are legal in Linux directory names but collide with the
 	// DSN query separator unless the path is percent-encoded.
