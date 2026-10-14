@@ -203,7 +203,12 @@ func (e *Executables) Resolve(name string) (string, error) {
 	if e.ResolveErr != nil {
 		return "", e.ResolveErr
 	}
-	return e.Paths[name], nil
+	// A name missing from the table is a lookup miss, like
+	// exec.LookPath: callers only proceed on a nil error.
+	if path, ok := e.Paths[name]; ok {
+		return path, nil
+	}
+	return "", exec.ErrNotFound
 }
 
 func (e *Executables) IsExecutable(path string) bool {

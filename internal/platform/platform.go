@@ -83,7 +83,8 @@ type Process interface {
 
 // Executables locates commands and tests executability.
 type Executables interface {
-	// Resolve finds name on PATH. windows is PATHEXT-aware and ignores
+	// Resolve finds name on PATH and reports a lookup miss as an error,
+	// like exec.LookPath. windows is PATHEXT-aware and ignores
 	// extensionless sh shims.
 	Resolve(name string) (string, error)
 	// IsExecutable reports whether path is runnable. unix checks the 0o111

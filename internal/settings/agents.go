@@ -2,7 +2,6 @@ package settings
 
 import (
 	"fmt"
-	"os/exec"
 	"time"
 
 	"devplatform/internal/agents"
@@ -208,7 +207,7 @@ func (s *Service) ResolvePath(backend agents.BackendID) (string, string) {
 	if !known {
 		return "", "none"
 	}
-	if path, lookErr := exec.LookPath(descriptor.Binary); lookErr == nil {
+	if path, lookErr := s.platform.Executables().Resolve(descriptor.Binary); lookErr == nil {
 		return path, "auto"
 	}
 	return "", "none"

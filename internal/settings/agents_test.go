@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"devplatform/internal/agents"
+	"devplatform/internal/platform/fake"
 )
 
 func TestAgentDefaultsAreEnabled(t *testing.T) {
@@ -89,6 +90,34 @@ func TestResolvePathPrefersManualThenLookPath(t *testing.T) {
 	}
 
 	// Nothing on PATH and no manual path.
+	path, source = svc.ResolvePath(agents.BackendOpenCodeV2)
+	if path != "" || source != "none" {
+		t.Errorf("ResolvePath(opencode) = %q, %q; want empty, none", path, source)
+	}
+}
+
+func TestResolvePathUsesInjectedExecutables(t *testing.T) {
+	svc := NewService(openTestDB(t), testCatalog(t))
+	svc.platform = fake.New(
+		fake.WithExecutables(map[string]string{"pi": "/fake/bin/pi"}),
+	)
+
+	// Without a manual path the injected lookup result wins.
+	path, source := svc.ResolvePath(agents.BackendPi)
+	if path != "/fake/bin/pi" || source != "auto" {
+		t.Errorf("ResolvePath = %q, %q; want /fake/bin/pi, auto", path, source)
+	}
+
+	// A manual path still takes precedence over lookup.
+	if _, err := svc.SetAgentPath(agents.BackendPi, "/custom/pi"); err != nil {
+		t.Fatalf("SetAgentPath: %v", err)
+	}
+	path, source = svc.ResolvePath(agents.BackendPi)
+	if path != "/custom/pi" || source != "manual" {
+		t.Errorf("ResolvePath with manual = %q, %q; want /custom/pi, manual", path, source)
+	}
+
+	// A backend missing from the lookup table resolves to none.
 	path, source = svc.ResolvePath(agents.BackendOpenCodeV2)
 	if path != "" || source != "none" {
 		t.Errorf("ResolvePath(opencode) = %q, %q; want empty, none", path, source)

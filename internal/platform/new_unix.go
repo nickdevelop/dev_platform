@@ -38,6 +38,9 @@ func (p unixPlatform) Trash() Trash { return unixTrash{} }
 // Shutdown returns the unix termination signals.
 func (p unixPlatform) Shutdown() Shutdown { return unix.Shutdown{} }
 
+// Executables returns the unix command lookup.
+func (p unixPlatform) Executables() Executables { return unix.Executables{} }
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

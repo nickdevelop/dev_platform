@@ -213,7 +213,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 		return err
 	}
 	executable := a.execPath()
-	path, err := exec.LookPath(executable)
+	path, err := platform.New().Executables().Resolve(executable)
 	if err != nil {
 		return fmt.Errorf("pi: executable %q not found: %w", executable, err)
 	}

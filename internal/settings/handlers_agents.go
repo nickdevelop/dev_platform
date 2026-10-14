@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -96,7 +95,7 @@ func (s *Service) handleSetAgentPath(c *gin.Context) {
 		return
 	}
 	path := strings.TrimSpace(request.Path)
-	if path != "" && !isExecutable(path) {
+	if path != "" && !s.platform.Executables().IsExecutable(path) {
 		respondError(c, http.StatusBadRequest, "invalid_path")
 		return
 	}
@@ -184,7 +183,7 @@ func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agent
 		Enabled:    setting.Enabled,
 		Path:       path,
 		PathSource: source,
-		Available:  source != "none" && isExecutable(path),
+		Available:  source != "none" && s.platform.Executables().IsExecutable(path),
 		Mode:       setting.Mode,
 		Modes:      descriptor.Modes,
 		Version:    setting.Version,
@@ -212,18 +211,6 @@ func probeVersion(ctx context.Context, path string) (string, error) {
 		text = text[:100]
 	}
 	return text, nil
-}
-
-// isExecutable reports whether path is an existing, executable regular file.
-func isExecutable(path string) bool {
-	if path == "" {
-		return false
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return false
-	}
-	return info.Mode()&0o111 != 0
 }
 
 // backendParam parses and validates the :backend path parameter against the

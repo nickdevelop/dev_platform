@@ -14,6 +14,7 @@ import (
 
 	"devplatform/internal/agents"
 	"devplatform/internal/database"
+	"devplatform/internal/platform"
 )
 
 // appearanceKey is the settings-table key holding the appearance JSON.
@@ -65,12 +66,14 @@ type Service struct {
 	// catalog describes every backend the platform knows: its default
 	// enablement, executable name and presentation order.
 	catalog *agents.Catalog
+	// platform carries the OS port layer; tests inject the fake.
+	platform platform.Platform
 }
 
 // NewService builds the settings service over the platform database and the
 // backend catalog.
 func NewService(db *gorm.DB, catalog *agents.Catalog) *Service {
-	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }, catalog: catalog}
+	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }, catalog: catalog, platform: platform.New()}
 }
 
 // Appearance returns the saved appearance, or the default when none is saved.

@@ -258,8 +258,8 @@
 **Interfaces:**
 - Produces: `Executables.Resolve(name) (string, error)`、`Executables.IsExecutable(path) bool`。
 
-- [ ] **Step 1: 迁移** — Linux 行为不变。
-- [ ] **Step 2: 测试** — 使用 `fake.Platform` 覆盖“手动路径优先，其次 PATH”的分支。
+- [x] **Step 1: 迁移** — Linux 行为不变。
+- [x] **Step 2: 测试** — 使用 `fake.Platform` 覆盖“手动路径优先，其次 PATH”的分支。
 - [ ] **Step 3: 提交** — `git commit -am "refactor(platform): executable lookup and checks behind Executables port"`
 
 ### Task 3.2: 私有权限（Perms）
