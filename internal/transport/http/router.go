@@ -124,7 +124,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Sessions != nil {
 			deps.Sessions.RegisterRoutes(protected)
-			deps.Sessions.RegisterOpencodeRoutes(protected)
+			deps.Sessions.RegisterInteractionRoutes(protected)
 		}
 		if deps.Resources != nil {
 			deps.Resources.RegisterRoutes(protected)

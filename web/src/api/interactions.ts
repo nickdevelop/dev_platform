@@ -2,14 +2,14 @@
 // Generic management (list/create/delete/discover/history, legacy
 // messages/interrupt/events) stays in ./sessions; agent-specific dialogue
 // operations live here so /pi can diverge independently. DTOs mirror
-// docs/api/openapi.yaml (OpencodePermission/OpencodeForm) and stay JSON-stable.
+// docs/api/openapi.yaml (PermissionRequest/FormInfo) and stay JSON-stable.
 
 import { apiRequest } from './client'
 
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 // Mirrors sessions.PermissionRequest: a pending tool approval.
-export interface OpencodePermission {
+export interface PermissionRequest {
   id: string
   sessionId: string
   action: string
@@ -19,7 +19,7 @@ export interface OpencodePermission {
 
 // Mirrors sessions.FormInfo: a pending form. Fields stays opaque here; the
 // workbench renders the Form.Field union generically.
-export interface OpencodeForm {
+export interface FormInfo {
   id: string
   sessionId: string
   title: string
@@ -27,15 +27,15 @@ export interface OpencodeForm {
 }
 
 interface PermissionListResponse {
-  permissions: OpencodePermission[]
+  permissions: PermissionRequest[]
 }
 
 interface FormListResponse {
-  forms: OpencodeForm[]
+  forms: FormInfo[]
 }
 
 // GET /api/projects/{id}/opencode/sessions/{sessionId}/permission
-export function listOpencodePermissions(
+export function listPermissionRequests(
   projectId: number,
   sessionId: string,
 ): Promise<PermissionListResponse> {
@@ -46,7 +46,7 @@ export function listOpencodePermissions(
 }
 
 // POST /api/projects/{id}/opencode/sessions/{sessionId}/permission/{requestId}/reply
-export function replyOpencodePermission(
+export function replyPermissionRequest(
   projectId: number,
   sessionId: string,
   requestId: string,
@@ -61,7 +61,7 @@ export function replyOpencodePermission(
 }
 
 // GET /api/projects/{id}/opencode/sessions/{sessionId}/form
-export function listOpencodeForms(projectId: number, sessionId: string): Promise<FormListResponse> {
+export function listFormInfos(projectId: number, sessionId: string): Promise<FormListResponse> {
   return apiRequest<FormListResponse>(
     'GET',
     `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/form`,
@@ -69,7 +69,7 @@ export function listOpencodeForms(projectId: number, sessionId: string): Promise
 }
 
 // POST /api/projects/{id}/opencode/sessions/{sessionId}/form/{formId}/reply
-export function replyOpencodeForm(
+export function replyFormInfo(
   projectId: number,
   sessionId: string,
   formId: string,
@@ -86,6 +86,6 @@ export function replyOpencodeForm(
 // The raw (un-normalized) SSE endpoint for a session. Served as a same-origin
 // path for fetch+ReadableStream (EventSource cannot carry headers and the
 // platform relies on cookies). Bytes are the sidecar's OpenCodeEvent JSON.
-export function opencodeRawEventsPath(projectId: number, sessionId: string): string {
+export function rawEventsPath(projectId: number, sessionId: string): string {
   return `/api/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/raw-events`
 }

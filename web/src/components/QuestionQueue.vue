@@ -6,11 +6,11 @@
 // current question, move to the next, submit when the form's questions are
 // done, then continue with the next pending form.
 import { computed, reactive, ref, watch } from 'vue'
-import type { OpencodeForm } from '../api/opencode'
+import type { FormInfo } from '../api/interactions'
 import type { FormField } from './QuestionForm.vue'
 
 const props = defineProps<{
-  forms: OpencodeForm[]
+  forms: FormInfo[]
   busy?: boolean
 }>()
 
@@ -22,7 +22,7 @@ const activeIndex = ref(0)
 const stepIndex = ref(0)
 const values = reactive<Record<string, Record<string, unknown>>>({})
 
-function fieldsOf(form: OpencodeForm): FormField[] {
+function fieldsOf(form: FormInfo): FormField[] {
   if (!Array.isArray(form.fields)) return []
   return (form.fields as FormField[]).filter((field) => field && field.key && !field.hidden)
 }
@@ -39,7 +39,7 @@ function defaultFor(field: FormField): unknown {
   }
 }
 
-const activeForm = computed<OpencodeForm | null>(() => {
+const activeForm = computed<FormInfo | null>(() => {
   if (props.forms.length === 0) return null
   return props.forms[Math.min(activeIndex.value, props.forms.length - 1)] ?? null
 })

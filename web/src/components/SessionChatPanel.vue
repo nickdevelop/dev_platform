@@ -16,7 +16,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
-import { useOpencodeRawStore } from '../stores/opencodeRaw'
+import { useInteractionsStore } from '../stores/interactions'
 import { useOpenTabsStore } from '../stores/openTabs'
 import { getInstanceGitInfo, type GitInfo } from '../api/git'
 import { cachedModels } from '../modelCache'
@@ -32,7 +32,7 @@ const props = defineProps<{ projectId: number; sessionId: string }>()
 
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
-const opencodeRaw = useOpencodeRawStore()
+const interactions = useInteractionsStore()
 const router = useRouter()
 
 const ready = ref(false)
@@ -394,7 +394,7 @@ const composerDisabled = computed(() => {
 const pendingToolCall = computed<{ callId: string; name: string } | null>(() => {
   const session = activeSession.value
   if (session?.capabilities.toolConfirmation) {
-    const approval = opencodeRaw.pendingApprovalFor(props.sessionId)
+    const approval = interactions.pendingApprovalFor(props.sessionId)
     return approval ? { callId: approval.requestId, name: approval.action } : null
   }
   const resolved = new Set<string>()
@@ -415,7 +415,7 @@ const pendingToolCall = computed<{ callId: string; name: string } | null>(() => 
 const pendingForms = computed(() => {
   const session = activeSession.value
   if (!session?.capabilities.toolConfirmation) return []
-  return opencodeRaw.formsFor(props.sessionId)
+  return interactions.formsFor(props.sessionId)
 })
 
 onMounted(open)
@@ -446,7 +446,7 @@ function startApprovalPoll() {
   approvalPoll = setInterval(() => {
     if (approvalPollBusy) return
     approvalPollBusy = true
-    void opencodeRaw.loadApprovals(props.projectId, props.sessionId).finally(() => {
+    void interactions.loadApprovals(props.projectId, props.sessionId).finally(() => {
       approvalPollBusy = false
     })
   }, 1500)
@@ -583,13 +583,13 @@ async function open() {
     await sessions.openSession(props.projectId, props.sessionId)
     const session = sessions.sessionById(props.sessionId)
     if (session?.capabilities.toolConfirmation) {
-      await opencodeRaw.loadApprovals(props.projectId, props.sessionId)
-      if (opencodeRaw.error) toolNotice.value = opencodeRaw.error
+      await interactions.loadApprovals(props.projectId, props.sessionId)
+      if (interactions.error) toolNotice.value = interactions.error
     }
     // Approvals arrive on the raw event stream, so it is opened exactly when the
     // backend declares it.
     if (session?.capabilities.rawEvents) {
-      opencodeRaw.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
+      interactions.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
     }
     // A turn may already be running when the session is opened; start polling so
     // its permission cards appear even without a push channel.
@@ -616,14 +616,14 @@ function retryOpen() {
 }
 
 // Tool decisions for a backend that declares tool confirmation go through its
-// reply API (stores/opencodeRaw.ts); other backends still expose no
+// reply API (stores/interactions.ts); other backends still expose no
 // confirmation method, so the limitation is surfaced instead.
 async function onToolDecision(callId: string, decision: 'once' | 'reject') {
   const session = activeSession.value
   if (session?.capabilities.toolConfirmation) {
     toolNotice.value = ''
-    const ok = await opencodeRaw.replyPermission(props.projectId, props.sessionId, callId, decision)
-    if (!ok) toolNotice.value = opencodeRaw.error || '确认失败，请重试。'
+    const ok = await interactions.replyPermission(props.projectId, props.sessionId, callId, decision)
+    if (!ok) toolNotice.value = interactions.error || '确认失败，请重试。'
     return
   }
   toolNotice.value = '此后端未提供工具确认接口，工作台无法批准或拒绝工具调用。'
@@ -646,8 +646,8 @@ async function onAnswerForm(formId: string, answer: Record<string, unknown>) {
   answeringForm.value = true
   toolNotice.value = ''
   try {
-    const ok = await opencodeRaw.replyForm(props.projectId, props.sessionId, formId, answer)
-    if (!ok) toolNotice.value = opencodeRaw.error || '提交失败，请重试。'
+    const ok = await interactions.replyForm(props.projectId, props.sessionId, formId, answer)
+    if (!ok) toolNotice.value = interactions.error || '提交失败，请重试。'
     else {
       await nextTick()
       scrollToBottom(false)
@@ -719,7 +719,7 @@ async function removeSession() {
   confirmingDelete.value = false
   try {
     useOpenTabsStore().closeTab(session.id)
-    useOpencodeRawStore().unsubscribeRaw(props.projectId, session.id)
+    useInteractionsStore().unsubscribeRaw(props.projectId, session.id)
   } catch {
     // Tab cleanup is best-effort; navigation still happens.
   }

@@ -45,8 +45,7 @@
 
 | 位置 | 说明 | 处理 |
 | --- | --- | --- |
-| `internal/app/sessions/handlers_opencode.go` 的文件名与 `StreamOpencodeRaw`、`ListOpencodePermissions` 等方法名 | 仍带 opencode 前缀，但内部已不依赖 opencode 包 | 重命名会扩大改动面，待后续单独处理 |
-| `web/src/stores/opencodeRaw.ts` | 仅服务于原始事件与工具确认，只在声明了对应能力时才调用 | 保留，它是 opencode 事件的专属视图 |
+| `/opencode/` 交互子路由的 URL 前缀（权限/表单/raw-events） | 处理方式为能力门控，但 URL 历史上按 opencode 命名 | 保持对外 URL 不变；如需更名须同步 openapi.yaml、e2e 与外部脚本，安排在 API 版本变更时 |
 | `internal/app/resourcesync` 的 `OpenCode{}`、`Pi{}` 适配器 | 资源同步仍在组合根手工装配 | 待 catalog 稳定后评估合并进描述符 |
 | `internal/app/instances` 的项目级后端开关 `AgentBackendConfig` | 留在实例包，与启动耦合紧密 | 有意保留，见实施计划的"不在本计划内"一节 |
 | 机器级服务的界面文案 | 文案中的"opencode service"由 `label` 小写生成，保持了原有字符串 | 新增带服务的后端时文案自动生成 |

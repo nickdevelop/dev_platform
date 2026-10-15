@@ -69,7 +69,7 @@ func (f *fakeAdapter) OpenRawEvents(ctx context.Context) (io.ReadCloser, error) 
 	return io.NopCloser(strings.NewReader("data: {\"type\":\"server.connected\"}\n\n")), nil
 }
 
-func newOpencodeTestEnv(t *testing.T) *testEnv {
+func newInteractionTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	db := openTestDB(t)
 	root := t.TempDir()
@@ -112,8 +112,8 @@ func mustMkdir(t *testing.T, dir string) {
 	}
 }
 
-func TestOpencodePermissionReplyHappyPath(t *testing.T) {
-	env := newOpencodeTestEnv(t)
+func TestInteractionPermissionReplyHappyPath(t *testing.T) {
+	env := newInteractionTestEnv(t)
 	ctx := context.Background()
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
@@ -123,34 +123,34 @@ func TestOpencodePermissionReplyHappyPath(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	list, err := env.svc.ListOpencodePermissions(ctx, env.projectID, outcome.Session.ID)
+	list, err := env.svc.ListPermissionRequests(ctx, env.projectID, outcome.Session.ID)
 	if err != nil {
 		t.Fatalf("ListPermissions: %v", err)
 	}
 	if len(list) != 1 || list[0].ID != "per_1" {
 		t.Fatalf("permissions = %+v, want one per_1", list)
 	}
-	if err := env.svc.ReplyOpencodePermission(ctx, env.projectID, outcome.Session.ID, "per_1", "once", ""); err != nil {
+	if err := env.svc.ReplyPermissionRequest(ctx, env.projectID, outcome.Session.ID, "per_1", "once", ""); err != nil {
 		t.Fatalf("ReplyPermission: %v", err)
 	}
-	if err := env.svc.ReplyOpencodePermission(ctx, env.projectID, outcome.Session.ID, "per_1", "sometimes", ""); err == nil {
+	if err := env.svc.ReplyPermissionRequest(ctx, env.projectID, outcome.Session.ID, "per_1", "sometimes", ""); err == nil {
 		t.Fatal("ReplyPermission(bad decision) = nil, want error")
 	}
 
-	forms, err := env.svc.ListOpencodeForms(ctx, env.projectID, outcome.Session.ID)
+	forms, err := env.svc.ListForms(ctx, env.projectID, outcome.Session.ID)
 	if err != nil {
 		t.Fatalf("ListForms: %v", err)
 	}
 	if len(forms) != 1 || forms[0].ID != "frm_1" {
 		t.Fatalf("forms = %+v, want one frm_1", forms)
 	}
-	if err := env.svc.ReplyOpencodeForm(ctx, env.projectID, outcome.Session.ID, "frm_1", map[string]any{"confirm": true}); err != nil {
+	if err := env.svc.ReplyForm(ctx, env.projectID, outcome.Session.ID, "frm_1", map[string]any{"confirm": true}); err != nil {
 		t.Fatalf("ReplyForm: %v", err)
 	}
 }
 
-func TestOpencodeReplyExpiredMapsTo409(t *testing.T) {
-	env := newOpencodeTestEnv(t)
+func TestInteractionReplyExpiredMapsTo409(t *testing.T) {
+	env := newInteractionTestEnv(t)
 	ctx := context.Background()
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
@@ -162,20 +162,20 @@ func TestOpencodeReplyExpiredMapsTo409(t *testing.T) {
 	}
 	// A reply for a request the server no longer holds is an expired reply,
 	// never a generic backend failure (which the API maps to 502).
-	err = env.svc.ReplyOpencodePermission(ctx, env.projectID, outcome.Session.ID, "per_gone", "once", "")
+	err = env.svc.ReplyPermissionRequest(ctx, env.projectID, outcome.Session.ID, "per_gone", "once", "")
 	if !errors.Is(err, ErrPermissionExpired) {
-		t.Fatalf("ReplyOpencodePermission = %v, want ErrPermissionExpired", err)
+		t.Fatalf("ReplyPermissionRequest = %v, want ErrPermissionExpired", err)
 	}
 	if errors.Is(err, ErrBackendFailed) {
-		t.Fatalf("ReplyOpencodePermission = %v, must not be ErrBackendFailed", err)
+		t.Fatalf("ReplyPermissionRequest = %v, must not be ErrBackendFailed", err)
 	}
 
 	env.fake.mu.Lock()
 	env.fake.replyErr = fmt.Errorf("%w: settled", agents.ErrReplyExpired)
 	env.fake.mu.Unlock()
-	err = env.svc.ReplyOpencodeForm(ctx, env.projectID, outcome.Session.ID, "frm_gone", map[string]any{"a": "b"})
+	err = env.svc.ReplyForm(ctx, env.projectID, outcome.Session.ID, "frm_gone", map[string]any{"a": "b"})
 	if !errors.Is(err, ErrFormExpired) {
-		t.Fatalf("ReplyOpencodeForm = %v, want ErrFormExpired", err)
+		t.Fatalf("ReplyForm = %v, want ErrFormExpired", err)
 	}
 }
 
@@ -193,8 +193,8 @@ func TestRealOpencodeAdapterSatisfiesService(t *testing.T) {
 	}
 }
 
-func TestOpencodeRawStreamCopiesBytes(t *testing.T) {
-	env := newOpencodeTestEnv(t)
+func TestRawEventsStreamCopiesBytes(t *testing.T) {
+	env := newInteractionTestEnv(t)
 	ctx := context.Background()
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
@@ -208,8 +208,8 @@ func TestOpencodeRawStreamCopiesBytes(t *testing.T) {
 	// Cancel after the first copy so the test terminates: the stub body is
 	// finite, so copyRawSSE returns on EOF without needing the cancel.
 	defer cancel()
-	if err := env.svc.StreamOpencodeRaw(streamCtx, env.projectID, outcome.Session.ID, &out, nil); err != nil {
-		t.Fatalf("StreamOpencodeRaw: %v", err)
+	if err := env.svc.StreamRawEvents(streamCtx, env.projectID, outcome.Session.ID, &out, nil); err != nil {
+		t.Fatalf("StreamRawEvents: %v", err)
 	}
 	if !strings.Contains(out.String(), "server.connected") {
 		t.Fatalf("raw output = %q, want server.connected", out.String())
@@ -220,7 +220,7 @@ func TestOpencodeRawStreamCopiesBytes(t *testing.T) {
 // declared RawEvents capability, not by the backend id: a backend that streams
 // but does not declare raw events is refused before any byte is read.
 func TestRawEventsRefusedWithoutCapability(t *testing.T) {
-	env := newOpencodeTestEnv(t)
+	env := newInteractionTestEnv(t)
 	ctx := context.Background()
 	env.fake.mu.Lock()
 	env.fake.createRef = &agents.SessionRef{Backend: agents.BackendOpenCodeV2, SessionID: "ses-native-1", Title: "t"}
@@ -231,9 +231,9 @@ func TestRawEventsRefusedWithoutCapability(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	var out strings.Builder
-	err = env.svc.StreamOpencodeRaw(ctx, env.projectID, outcome.Session.ID, &out, nil)
+	err = env.svc.StreamRawEvents(ctx, env.projectID, outcome.Session.ID, &out, nil)
 	if !errors.Is(err, ErrUnsupportedCapability) {
-		t.Fatalf("StreamOpencodeRaw = %v, want ErrUnsupportedCapability", err)
+		t.Fatalf("StreamRawEvents = %v, want ErrUnsupportedCapability", err)
 	}
 	if out.Len() != 0 {
 		t.Fatalf("raw output = %q, want nothing written", out.String())

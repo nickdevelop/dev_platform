@@ -18,7 +18,7 @@ func TestSendAndInterruptAreGenericRoutes(t *testing.T) {
 	env := newTestEnv(t)
 	router := gin.New()
 	env.svc.RegisterRoutes(router)
-	env.svc.RegisterOpencodeRoutes(router)
+	env.svc.RegisterInteractionRoutes(router)
 
 	generic := fmt.Sprintf("/projects/%d/sessions/missing/", env.projectID)
 	for _, suffix := range []string{"messages", "interrupt"} {

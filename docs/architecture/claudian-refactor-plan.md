@@ -104,10 +104,27 @@ web/src/
 ## 5. 任务勾销表（执行时维护）
 
 - [x] P0 基线（分支 `refactor/claudian-architecture`；`make verify` 全绿；e2e 基线：10 通过 / 7 存量失败——layout×2、plantuml、session-history×2、sessions、agent-service，均为 selector 歧义等存量缺陷，重构期间只许减不许增）
-- [ ] P1 后端五层重组（R1、R2）
+- [x] P1 后端五层重组（R1、R2）
+- [x] P2 命名耦合清理（R3）— 实际落地名：后端 `handlers_interactions.go` / `service_interactions.go`、`RegisterInteractionRoutes`、`ListPermissionRequests` / `ReplyPermissionRequest` / `ListForms` / `ReplyForm` / `StreamRawEvents`；前端 `api/interactions.ts` / `stores/interactions.ts` / `useInteractionsStore`、DTO `PermissionRequest` / `FormInfo`；openapi.yaml 同步。对外 URL `/opencode/…` 前缀保留，已记入 backend-boundaries.md 剩余耦合表
 - [ ] P2 命名耦合清理（R3）
 - [ ] P3 前端归位（R4）
 - [ ] P3 拆分 SessionChatPanel（R5）
 - [ ] P3 拆分 MessageView（R6）
 - [ ] P3 拆分 stores/sessions（R7）
 - [ ] P4 收尾与文档（R8）
+
+## 6. 实际落地记录（执行中同步维护）
+
+### P2 命名耦合清理（2026-10-15）
+
+- 命名从"raw-events 单点"扩展为"交互路由整体中性化"（权限/表单/raw-events 本就同属能力门控的 interaction routes）：
+  - 后端：`handlers_opencode.go → handlers_interactions.go`、`service_opencode.go → service_interactions.go`；
+    `RegisterOpencodeRoutes → RegisterInteractionRoutes`、`ListOpencodePermissions → ListPermissionRequests`、
+    `ReplyOpencodePermission → ReplyPermissionRequest`、`ListOpencodeForms → ListForms`、
+    `ReplyOpencodeForm → ReplyForm`、`StreamOpencodeRaw → StreamRawEvents`。
+  - 前端：`api/opencode.ts → api/interactions.ts`、`stores/opencodeRaw.ts → stores/interactions.ts`（store id
+    `interactions`）、`useOpencodeRawStore → useInteractionsStore`；DTO `OpencodePermission/OpencodeForm →
+    PermissionRequest/FormInfo`（镜像中性契约）；`tests/opencode-raw.spec.ts → tests/interactions.spec.ts`。
+  - 文档：`docs/api/openapi.yaml` 的 operationId/DTO 名/summary 同步；协议事实描述保留 opencode 字样。
+- 对外 URL `/projects/{id}/opencode/sessions/{sid}/...` 前缀**未改**（对外契约），记入 backend-boundaries.md 剩余耦合表，安排至 API 版本变更时处理。
+- 后端白名单守卫 `TestRealOpencodeAdapterSatisfiesService` 保留原名（针对真实 opencode 适配器，属于异构事实）。

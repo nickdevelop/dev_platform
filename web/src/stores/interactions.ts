@@ -11,15 +11,15 @@
 
 import { defineStore } from 'pinia'
 import {
-  listOpencodeForms,
-  listOpencodePermissions,
-  replyOpencodeForm,
-  replyOpencodePermission,
-  opencodeRawEventsPath,
-  type OpencodeForm,
-  type OpencodePermission,
+  listFormInfos,
+  listPermissionRequests,
+  replyFormInfo,
+  replyPermissionRequest,
+  rawEventsPath,
+  type FormInfo,
+  type PermissionRequest,
   type PermissionDecision,
-} from '../api/opencode'
+} from '../api/interactions'
 import { describeApiError, UnauthorizedError, ApiError } from '../api/client'
 import { useAuthStore } from './auth'
 
@@ -52,10 +52,10 @@ function sessionIdOf(event: RawEvent): string {
   return event.data?.sessionID ?? ''
 }
 
-export const useOpencodeRawStore = defineStore('opencodeRaw', {
+export const useInteractionsStore = defineStore('interactions', {
   state: () => ({
-    permissions: {} as Record<string, OpencodePermission[]>,
-    forms: {} as Record<string, OpencodeForm[]>,
+    permissions: {} as Record<string, PermissionRequest[]>,
+    forms: {} as Record<string, FormInfo[]>,
     status: {} as Record<string, 'idle' | 'connecting' | 'open' | 'error'>,
     error: '',
   }),
@@ -75,8 +75,8 @@ export const useOpencodeRawStore = defineStore('opencodeRaw', {
     async loadApprovals(projectId: number, sessionId: string) {
       try {
         const [permissions, forms] = await Promise.all([
-          listOpencodePermissions(projectId, sessionId),
-          listOpencodeForms(projectId, sessionId),
+          listPermissionRequests(projectId, sessionId),
+          listFormInfos(projectId, sessionId),
         ])
         this.permissions[sessionId] = permissions.permissions ?? []
         this.forms[sessionId] = forms.forms ?? []
@@ -95,7 +95,7 @@ export const useOpencodeRawStore = defineStore('opencodeRaw', {
     ): Promise<boolean> {
       const auth = useAuthStore()
       try {
-        await replyOpencodePermission(projectId, sessionId, requestId, { decision }, auth.csrfToken)
+        await replyPermissionRequest(projectId, sessionId, requestId, { decision }, auth.csrfToken)
         this.permissions[sessionId] = (this.permissions[sessionId] ?? []).filter(
           (entry) => entry.id !== requestId,
         )
@@ -124,7 +124,7 @@ export const useOpencodeRawStore = defineStore('opencodeRaw', {
     ): Promise<boolean> {
       const auth = useAuthStore()
       try {
-        await replyOpencodeForm(projectId, sessionId, formId, { answer }, auth.csrfToken)
+        await replyFormInfo(projectId, sessionId, formId, { answer }, auth.csrfToken)
         this.forms[sessionId] = (this.forms[sessionId] ?? []).filter((entry) => entry.id !== formId)
         this.error = ''
         return true
@@ -245,7 +245,7 @@ export const useOpencodeRawStore = defineStore('opencodeRaw', {
         const entry = readers.get(key)
         if (!entry || entry.closed || signal.aborted) return
         try {
-          const response = await fetch(opencodeRawEventsPath(projectId, sessionId), { signal })
+          const response = await fetch(rawEventsPath(projectId, sessionId), { signal })
           if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`)
           this.status[sessionId] = 'open'
           backoff = 200

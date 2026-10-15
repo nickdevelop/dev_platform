@@ -1555,8 +1555,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/opencode/sessions/{sessionId}/permission:
     get:
-      summary: List pending opencode permission requests
-      operationId: listOpencodePermissions
+      summary: List pending permission requests for the session (capability-gated)
+      operationId: listPermissionRequests
       security:
         - cookieAuth: []
       parameters:
@@ -1577,7 +1577,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpencodePermissionList'
+                $ref: '#/components/schemas/PermissionRequestList'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1587,16 +1587,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Not an opencode session or tool confirmation unsupported.
+          description: Session backend does not declare the tool-confirmation capability.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/opencode/sessions/{sessionId}/permission/{requestId}/reply:
     post:
-      summary: Reply to a pending opencode permission request
+      summary: Reply to a pending permission request
       description: Decision is once, always or reject (Permission.Reply).
-      operationId: replyOpencodePermission
+      operationId: replyPermissionRequest
       security:
         - cookieAuth: []
       parameters:
@@ -1622,7 +1622,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OpencodePermissionReply'
+              $ref: '#/components/schemas/PermissionRequestReply'
       responses:
         '204':
           description: Reply accepted.
@@ -1640,7 +1640,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: >-
-            Not an opencode session, tool confirmation unsupported, or the
+            Session backend does not declare the tool-confirmation capability, or the
             request already expired (error permission_expired) after being
             answered, cancelled or timed out server-side.
           content:
@@ -1655,8 +1655,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/opencode/sessions/{sessionId}/form:
     get:
-      summary: List pending opencode forms
-      operationId: listOpencodeForms
+      summary: List pending forms for the session (capability-gated)
+      operationId: listForms
       security:
         - cookieAuth: []
       parameters:
@@ -1677,7 +1677,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OpencodeFormList'
+                $ref: '#/components/schemas/FormInfoList'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -1688,8 +1688,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/opencode/sessions/{sessionId}/form/{formId}/reply:
     post:
-      summary: Reply to a pending opencode form
-      operationId: replyOpencodeForm
+      summary: Reply to a pending form
+      operationId: replyForm
       security:
         - cookieAuth: []
       parameters:
@@ -1715,7 +1715,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OpencodeFormReply'
+              $ref: '#/components/schemas/FormInfoReply'
       responses:
         '204':
           description: Reply accepted.
@@ -1749,12 +1749,12 @@ paths:
     get:
       summary: Proxy the shared sidecar's raw SSE bytes
       description: >-
-        Proxies the opencode sidecar GET /api/event bytes untouched
+        Proxies this session backend's raw event-stream bytes untouched (opencode v2's GET /api/event frames today)
         (OpenCodeEvent JSON per data frame) with cookie auth injected
         server-side. The frontend projects events itself; no normalization or
         session filtering happens here. Authorization reuses the
         project-scoped session check.
-      operationId: subscribeOpencodeRawEvents
+      operationId: subscribeRawEvents
       security:
         - cookieAuth: []
       parameters:
@@ -1785,7 +1785,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: The session's instance is not running or not opencode.
+          description: The session's instance is not running or the backend does not declare raw events.
           content:
             application/json:
               schema:
@@ -3709,7 +3709,7 @@ components:
             Per-message model override; only honored when the backend declares
             modelSelection.
       additionalProperties: false
-    OpencodePermission:
+    PermissionRequest:
       type: object
       required:
         - id
@@ -3729,7 +3729,7 @@ components:
         message:
           type: string
       additionalProperties: false
-    OpencodePermissionList:
+    PermissionRequestList:
       type: object
       required:
         - permissions
@@ -3737,9 +3737,9 @@ components:
         permissions:
           type: array
           items:
-            $ref: '#/components/schemas/OpencodePermission'
+            $ref: '#/components/schemas/PermissionRequest'
       additionalProperties: false
-    OpencodePermissionReply:
+    PermissionRequestReply:
       type: object
       required:
         - decision
@@ -3753,7 +3753,7 @@ components:
         message:
           type: string
       additionalProperties: false
-    OpencodeForm:
+    FormInfo:
       type: object
       required:
         - id
@@ -3774,7 +3774,7 @@ components:
           items:
             type: object
       additionalProperties: false
-    OpencodeFormList:
+    FormInfoList:
       type: object
       required:
         - forms
@@ -3782,9 +3782,9 @@ components:
         forms:
           type: array
           items:
-            $ref: '#/components/schemas/OpencodeForm'
+            $ref: '#/components/schemas/FormInfo'
       additionalProperties: false
-    OpencodeFormReply:
+    FormInfoReply:
       type: object
       required:
         - answer

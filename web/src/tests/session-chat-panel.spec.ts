@@ -11,7 +11,7 @@ import SessionChatPanel from '../components/SessionChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
-import { useOpencodeRawStore } from '../stores/opencodeRaw'
+import { useInteractionsStore } from '../stores/interactions'
 import { clearModelCache, rememberModels } from '../modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
@@ -194,12 +194,12 @@ describe('SessionChatPanel opencode approvals', () => {
     vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
     // Keep the raw fetch stream out of these tests: approval state is driven
     // directly on the store.
-    vi.spyOn(useOpencodeRawStore(), 'subscribeRaw').mockImplementation(() => {})
+    vi.spyOn(useInteractionsStore(), 'subscribeRaw').mockImplementation(() => {})
   })
 
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
-    useOpencodeRawStore().unsubscribeAllRaw()
+    useInteractionsStore().unsubscribeAllRaw()
     clearModelCache()
     vi.unstubAllGlobals()
   })
@@ -209,7 +209,7 @@ describe('SessionChatPanel opencode approvals', () => {
   }
 
   it('opens the raw event stream only when the backend declares it', async () => {
-    const subscribe = vi.spyOn(useOpencodeRawStore(), 'subscribeRaw')
+    const subscribe = vi.spyOn(useInteractionsStore(), 'subscribeRaw')
     stubSessionList([session('sess-1', { capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) })])
     mountPanel('sess-1')
     await flushPromises()
@@ -222,7 +222,7 @@ describe('SessionChatPanel opencode approvals', () => {
       stubSessionList([
         session('sess-1', { turn: 'running', capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) }),
       ])
-      const load = vi.spyOn(useOpencodeRawStore(), 'loadApprovals')
+      const load = vi.spyOn(useInteractionsStore(), 'loadApprovals')
       mountPanel('sess-1')
       await vi.advanceTimersByTimeAsync(0)
       const initial = load.mock.calls.length
@@ -234,7 +234,7 @@ describe('SessionChatPanel opencode approvals', () => {
   })
 
   it('subscribes to the raw event stream when the backend declares raw events', async () => {
-    const subscribe = vi.spyOn(useOpencodeRawStore(), 'subscribeRaw')
+    const subscribe = vi.spyOn(useInteractionsStore(), 'subscribeRaw')
     stubSessionList([opencodeSession('sess-1')])
     mountPanel('sess-1')
     await flushPromises()
@@ -274,7 +274,7 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('没有待确认')
 
-    useOpencodeRawStore().permissions['sess-1'] = [
+    useInteractionsStore().permissions['sess-1'] = [
       { id: 'per_1', sessionId: 'sess-1', action: 'write', resources: ['/tmp/x'] },
     ]
     await flushPromises()
@@ -289,7 +289,7 @@ describe('SessionChatPanel opencode approvals', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="question-form"]').exists()).toBe(false)
 
-    useOpencodeRawStore().forms['sess-1'] = [
+    useInteractionsStore().forms['sess-1'] = [
       {
         id: 'frm_1',
         sessionId: 'sess-1',
@@ -305,7 +305,7 @@ describe('SessionChatPanel opencode approvals', () => {
     await card.find('[data-test="submit-answer"]').trigger('click')
     await flushPromises()
 
-    expect(useOpencodeRawStore().formsFor('sess-1')).toHaveLength(0)
+    expect(useInteractionsStore().formsFor('sess-1')).toHaveLength(0)
   })
 })
 

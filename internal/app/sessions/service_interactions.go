@@ -72,8 +72,8 @@ func (s *Service) replierFor(backend agents.BackendID, operation string) (agents
 	return replier, nil
 }
 
-// ListOpencodePermissions returns the session's pending permission requests.
-func (s *Service) ListOpencodePermissions(ctx context.Context, projectID uint, sessionID string) ([]PermissionRequest, error) {
+// ListPermissionRequests returns the session's pending permission requests.
+func (s *Service) ListPermissionRequests(ctx context.Context, projectID uint, sessionID string) ([]PermissionRequest, error) {
 	ref, _, err := s.nativeRef(projectID, sessionID)
 	if err != nil {
 		return nil, err
@@ -95,8 +95,8 @@ func (s *Service) ListOpencodePermissions(ctx context.Context, projectID uint, s
 	return requests, nil
 }
 
-// ReplyOpencodePermission answers a pending permission request.
-func (s *Service) ReplyOpencodePermission(ctx context.Context, projectID uint, sessionID, requestID, decision, message string) error {
+// ReplyPermissionRequest answers a pending permission request.
+func (s *Service) ReplyPermissionRequest(ctx context.Context, projectID uint, sessionID, requestID, decision, message string) error {
 	ref, _, err := s.nativeRef(projectID, sessionID)
 	if err != nil {
 		return err
@@ -125,8 +125,8 @@ func (s *Service) ReplyOpencodePermission(ctx context.Context, projectID uint, s
 	return nil
 }
 
-// ListOpencodeForms returns the session's pending forms.
-func (s *Service) ListOpencodeForms(ctx context.Context, projectID uint, sessionID string) ([]FormInfo, error) {
+// ListForms returns the session's pending forms.
+func (s *Service) ListForms(ctx context.Context, projectID uint, sessionID string) ([]FormInfo, error) {
 	ref, _, err := s.nativeRef(projectID, sessionID)
 	if err != nil {
 		return nil, err
@@ -145,8 +145,8 @@ func (s *Service) ListOpencodeForms(ctx context.Context, projectID uint, session
 	return forms, nil
 }
 
-// ReplyOpencodeForm submits an answer to a pending form.
-func (s *Service) ReplyOpencodeForm(ctx context.Context, projectID uint, sessionID, formID string, answer map[string]any) error {
+// ReplyForm submits an answer to a pending form.
+func (s *Service) ReplyForm(ctx context.Context, projectID uint, sessionID, formID string, answer map[string]any) error {
 	ref, _, err := s.nativeRef(projectID, sessionID)
 	if err != nil {
 		return err
@@ -167,10 +167,10 @@ func (s *Service) ReplyOpencodeForm(ctx context.Context, projectID uint, session
 	return nil
 }
 
-// StreamOpencodeRaw proxies the backend's untouched event bytes for one
+// StreamRawEvents proxies the backend's untouched event bytes for one
 // session (authorized by project-scoped session id). No normalization or
 // filtering happens here: the frontend projects the backend's own events.
-func (s *Service) StreamOpencodeRaw(ctx context.Context, projectID uint, sessionID string, w io.Writer, flush func()) error {
+func (s *Service) StreamRawEvents(ctx context.Context, projectID uint, sessionID string, w io.Writer, flush func()) error {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return err
