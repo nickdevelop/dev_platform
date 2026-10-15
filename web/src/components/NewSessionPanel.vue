@@ -82,8 +82,10 @@ async function createSession() {
   if (!firstMessageReady.value) return
   creating.value = true
   const text = messageText.value.trim()
+  // The model is part of the session's identity, not only of its first turn, so
+  // it rides the create request even when no message is sent: the session is
+  // created on the model the user saw, and the conversation opens on it.
   const withModel =
-    text !== '' &&
     selectedCapabilities.value?.modelSelection === true &&
     modelOk.value &&
     selectedModel.value !== ''

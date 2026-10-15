@@ -353,11 +353,12 @@ type CreateOutcome struct {
 // Create starts a new agent-native session for the project's backend. It
 // reuses the project's most recently created running instance of that backend
 // and starts one when none is running, then indexes the new session. When a
-// first message is supplied, the model is chosen at creation (backends create
-// the session on that model directly, so no switch call is needed) and the
-// message is admitted right after: the turn runs while the workbench opens
-// the session. The message failing to be admitted does not fail the create — the
-// session is already live and the caller surfaces MessageError instead.
+// model is supplied it is chosen at creation — backends create the session on
+// that model directly, so no switch call is needed — independent of whether a
+// first message rides along; a supplied message is admitted right after: the
+// turn runs while the workbench opens the session. The message failing to be
+// admitted does not fail the create — the session is already live and the caller
+// surfaces MessageError instead.
 func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string) (CreateOutcome, error) {
 	if !backend.Valid() {
 		return CreateOutcome{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)

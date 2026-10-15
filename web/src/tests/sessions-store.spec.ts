@@ -1165,6 +1165,38 @@ describe('sessions store composer model', () => {
 
     expect(sessions.modelFor('s1')).toBe('')
   })
+
+  // The new-session form chooses the model before the session exists, so no
+  // assistant message carries one yet. The choice must still be what the
+  // composer shows, rather than the picker's own first-model fallback.
+  it('shows the model chosen at creation before the agent replies', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({ '/sessions': { session: session('s1', 1) } })
+    // Opening the created conversation makes the picker fall back to the
+    // backend's first model; that must not outrank the created model.
+    sessions.setAutoModel('s1', 'pi/first')
+
+    const created = await sessions.createSession(1, { backend: 'pi', model: 'pi/chosen' })
+
+    expect(created?.id).toBe('s1')
+    expect(sessions.modelFor('s1')).toBe('pi/chosen')
+  })
+
+  // Opening the session loads its project, which resets the composer's
+  // per-session choices. The created session's model belongs to that project
+  // and must survive the switch to it.
+  it('keeps the creation model when the session project is loaded', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({ '/sessions': { session: session('s1', 1) } })
+    await sessions.createSession(1, { backend: 'pi', model: 'pi/chosen' })
+
+    const pending = deferredLists()
+    const opened = sessions.loadSessions(1)
+    pending.get(1)!([session('s1', 1)])
+    await opened
+
+    expect(sessions.modelFor('s1')).toBe('pi/chosen')
+  })
 })
 
 // A first message admitted at create time rides the create request, so its

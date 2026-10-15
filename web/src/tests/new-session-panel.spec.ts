@@ -170,6 +170,37 @@ describe('NewSessionPanel', () => {
     expect(wrapper.emitted('created')).toEqual([['sess-new']])
   })
 
+  it('sends the chosen model even when no first message is sent', async () => {
+    // The model is the session's starting model, not only the first turn's: the
+    // created conversation opens on it, so it rides the create request too.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        ({
+          status: 200,
+          json: async () => ({
+            models: [{ id: 'p/m', provider: 'p', name: 'Model M' }],
+            updatedAt: '2026-10-13T12:00:00Z',
+            stale: false,
+          }),
+        }) as Response,
+      ),
+    )
+    const { wrapper, createSpy } = setup({ modelSelection: true })
+    await flushPromises()
+
+    await backendButton(wrapper, 'opencode-v2').trigger('click')
+    await flushPromises()
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const body = createSpy.mock.calls[0][1]
+    expect(body.backend).toBe('opencode-v2')
+    expect(body).not.toHaveProperty('message')
+    expect(body.model).toBe('p/m')
+  })
+
   it('holds a first message until the model list arrives', async () => {
     // Sending on a model the user never saw would be worse than waiting a
     // moment, so the create is held while the list is still loading and the
