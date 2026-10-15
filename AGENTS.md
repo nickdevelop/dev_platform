@@ -1,0 +1,29 @@
+# dev_platform 开发约定
+
+## 参照源码（重要）
+
+开发本项目时经常需要参照 opencode 与 pi 的实现。两个源码仓库位于本机，路径如下：
+
+| 项目 | 源码路径 | 说明 |
+|---|---|---|
+| **opencode** | `/data/projects/opencode` | 一个 AI coding agent（终端/桌面/Web 多端）。当前为 **V2 重构版**（版本 `2.0.27`），代码拆成多个 `@opencode/*` 包（`schema / protocol / core / server / client / sdk / cli / tui / app` …），核心逻辑在 `packages/core`。 |
+| **pi** | `/data/projects/pi` | 一个**极简、可扩展的 agent harness**，核心产品是终端 AI coding agent（作者团队 Earendil Works）。子包 `@earendil-works/*`（`coding-agent / agent / ai / tui / durable / chord / codemode / mcp / env / telemetry / evals`）。core 保持极简，功能尽量放到 extensions/skills/prompt templates/theme 中。 |
+
+## 分析结果（优先使用，避免重复读源码）
+
+为便于后续直接复用已有分析、减少重复读取源码，已把两个项目的源码结构分析整理成独立文档：
+
+| 文档 | 内容 |
+|---|---|
+| [`opencode_source.md`](./opencode_source.md) | opencode 源码架构概览：顶层目录、包结构、核心运行时（session/tool/agent/provider）、关键入口、配置 schema、快速定位速查表。 |
+| [`pi_source.md`](./pi_source.md) | pi 源码架构概览：项目定位、包结构、核心运行时（agent loop、session、provider、tools、扩展系统）、关键入口、构建测试、快速定位速查表。 |
+
+**使用顺序：**
+1. 需要参照 opencode 或 pi 的实现时，**先读对应的 `*_source.md`**（含路径与速查表，通常足够直接定位）。
+2. 只有当文档信息不足或需要确认实现细节时，才进入 `/data/projects/opencode` 或 `/data/projects/pi` 源码继续读取分析。
+3. 若从源码获得了新的重要结论（路径变更、新增模块、设计澄清等），**请同步更新对应的 `*_source.md`**，保持分析结果长期可用。
+
+## 通用偏好
+
+- 与用户交互始终使用简体中文：回复、计划、总结、审查说明等一律用中文。
+- 代码、命令、路径、标识符、报错原文保持原样，不翻译。
