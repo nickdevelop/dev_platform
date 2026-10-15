@@ -119,7 +119,11 @@ web/src/
   `chat/execution/SessionEventStream.ts`（SSE 订阅/补修/事件路由，借 StreamStore 结构体解循环依赖），
   store 保留薄委托，公开 API 不变。
 - [x] P4 收尾与文档（R8）— **偏差**：不新建 `web/src/composition/`：Vue 的组合根职责由 App.vue/router.ts +
-  pinia（app 级 stores）承担，空目录是不必要的双边 false；组合根对照表固定写入 AGENTS.md 首节。
+  pinia（app 级 stores）承担，空目录是不必要的 ceremony（claudian 需要 FeatureHost/ChatFeatureHost 窄接口
+  是因为 Obsidian 插件没有框架级 store；dev_platform 的 pinia stores 即 app 层的中性状态 seam）。
+  组合根对照表固定写入 AGENTS.md 首节。
+- [x] P4 e2e 回归 — 重构后全量 e2e：10 通过 / 7 失败，失败清单与 P0 基线**逐条一致**（存量 selector
+  缺陷），零新增回归。对外 HTTP 契约与行为均未变更。
 
 ## 6. 实际落地记录（执行中同步维护）
 
