@@ -147,6 +147,28 @@ describe('session tabs and open-tabs store', () => {
     expect(wrapper.emitted('close')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
   })
 
+  it('marks a running session tab with an animated icon before its label', () => {
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs: [
+          { kind: 'session', projectId: 1, sessionId: 's1', title: 'One' },
+          { kind: 'session', projectId: 1, sessionId: 's2', title: 'Two' },
+        ],
+        activeKey: 's1',
+        runningSessionIds: ['s1'],
+      },
+    })
+    const tabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(tabs[0].find('[data-test="running-indicator"]').exists()).toBe(true)
+    expect(tabs[0].find('.tab-dot').exists()).toBe(false)
+    // The running marker carries the state as its accessible name rather than
+    // as visible text.
+    expect(tabs[0].text()).toContain('One')
+    expect(tabs[0].text()).not.toContain('运行中')
+    expect(tabs[1].find('[data-test="running-indicator"]').exists()).toBe(false)
+    expect(tabs[1].find('.tab-dot').exists()).toBe(true)
+  })
+
   it('closes a tab on a middle click and offers the context menu', async () => {
     const wrapper = mount(SessionTabs, {
       props: {

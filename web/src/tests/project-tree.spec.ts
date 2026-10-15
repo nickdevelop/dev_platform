@@ -111,7 +111,7 @@ describe('ProjectTree', () => {
     expect(requested).toEqual(['/api/projects/1/sessions'])
   })
 
-  it('shows a running turn as 运行中 and hides idle status', async () => {
+  it('marks a running turn with an animated icon and hides idle status', async () => {
     stubSessions({
       1: [
         session({ id: 's1', title: 'Session A', backend: 'opencode-v2', turn: 'running' }),
@@ -127,21 +127,23 @@ describe('ProjectTree', () => {
     expect(tag.exists()).toBe(true)
     expect(tag.props('backend')).toBe('opencode-v2')
     expect(tag.text()).toBe('OpenCode')
-    expect(running!.find('.status').text()).toBe('运行中')
+    expect(running!.find('[data-test="running-indicator"]').exists()).toBe(true)
+    // The marker replaces the plain 运行中 text; the row announces it instead.
+    expect(running!.text()).not.toContain('运行中')
 
     const idle = wrapper.findAll('.session').find((item) => item.text().includes('Session B'))
     expect(idle).toBeDefined()
-    expect(idle!.find('.status').exists()).toBe(false)
+    expect(idle!.find('[data-test="running-indicator"]').exists()).toBe(false)
   })
 
-  it('shows no status label for a disconnected session', async () => {
+  it('shows no status marker for a disconnected session', async () => {
     // Only a running turn carries a marker: a disconnected session needs no
     // badge once opening a session repairs it.
     stubSessions({ 1: [session({ id: 's1', title: 'Session A', status: 'disconnected' })] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
 
-    expect(wrapper.find('.status').exists()).toBe(false)
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('断开')
   })
 

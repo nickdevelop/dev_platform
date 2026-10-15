@@ -128,6 +128,12 @@ const projectNames = computed<Record<number, string>>(() =>
   Object.fromEntries(projects.projects.map((project) => [project.id, project.name])),
 )
 
+// Ids of the open sessions whose turn is running. The tab strip reads it to mark
+// a running session with an animated icon before its label, matching the tree.
+const runningSessionIds = computed<string[]>(() =>
+  sessions.sessions.filter((entry) => entry.turn === 'running').map((entry) => entry.id),
+)
+
 function selectTab(tab: OpenTab) {
   if (tab.kind === 'project-settings') {
     void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
@@ -277,6 +283,7 @@ async function logout() {
         :tabs="openTabs.tabs"
         :active-key="activeKey"
         :project-names="projectNames"
+        :running-session-ids="runningSessionIds"
         @select="selectTab"
         @close="closeTab"
         @toggle-pin="togglePinTab"

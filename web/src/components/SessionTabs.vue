@@ -10,11 +10,15 @@
 // user pinned on purpose — and the store keeps them at the front.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../stores/openTabs'
+import RunningIndicator from './RunningIndicator.vue'
 
 const props = defineProps<{
   tabs: OpenTab[]
   activeKey: string | null
   projectNames?: Record<number, string>
+  // Session ids whose turn is running. The strip marks each with an animated
+  // icon before its label, the same marker the session tree uses.
+  runningSessionIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -46,6 +50,12 @@ function isSettings(tab: OpenTab): boolean {
 
 function isPinned(tab: OpenTab): boolean {
   return tab.pinned === true
+}
+
+// A session tab whose turn is running: the strip shows the animated marker in
+// place of the plain dot, so running sessions are visible without opening them.
+function isRunning(tab: OpenTab): boolean {
+  return tab.kind === 'session' && (props.runningSessionIds ?? []).includes(tab.sessionId)
 }
 
 // A middle click on a tab closes it, the way every browser-like tab strip works.
@@ -131,7 +141,8 @@ onBeforeUnmount(() => {
       <button type="button" class="tab-select" @click="emit('select', tab)">
         <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">📌</span>
         <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
-        <span v-else class="tab-dot" aria-hidden="true"></span>
+        <span v-else-if="!isRunning(tab)" class="tab-dot" aria-hidden="true"></span>
+        <RunningIndicator v-if="isRunning(tab)" />
         <span class="tab-label">{{ label(tab) }}</span>
       </button>
       <button

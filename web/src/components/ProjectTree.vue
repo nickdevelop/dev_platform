@@ -12,6 +12,7 @@ import { listProjectSessions, type AgentSession } from '../api/sessions'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import BackendTag from './BackendTag.vue'
+import RunningIndicator from './RunningIndicator.vue'
 
 const props = defineProps<{
   activeProjectId: number | null
@@ -58,17 +59,13 @@ function sessionsFor(projectId: number): AgentSession[] {
   return sessionsByProject.value[projectId] ?? []
 }
 
-const statusLabels: Record<string, string> = {
-  running: '运行中',
-}
-
-// The session label is driven by the turn alone: a running turn shows 「运行中」
-// and every other state is silent. A disconnected session carries no badge,
-// because opening a session re-attaches it — a marker there would only ask the
-// user to fix something the platform already repairs.
-function statusText(entry: AgentSession): string {
-  if (entry.turn === 'running') return statusLabels.running
-  return ''
+// The session label is driven by the turn alone: a running turn shows an
+// animated marker before the name and every other state is silent. A
+// disconnected session carries no badge, because opening a session re-attaches
+// it — a marker there would only ask the user to fix something the platform
+// already repairs.
+function isRunning(entry: AgentSession): boolean {
+  return entry.turn === 'running'
 }
 
 // Sessions are ordered by last interaction (the session's updated-at, which the
@@ -263,9 +260,9 @@ function retryProject(projectId: number) {
             class="session-open"
             @click="emit('select-session', project.id, entry.id)"
           >
+            <RunningIndicator v-if="isRunning(entry)" />
             <span class="title">{{ entry.title || untitledLabel }}</span>
             <BackendTag :backend="entry.backend" />
-            <span v-if="statusText(entry)" class="status">{{ statusText(entry) }}</span>
           </button>
         </li>
         <li v-if="loadFailed[project.id]" class="empty">会话加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
@@ -381,12 +378,6 @@ function retryProject(projectId: number) {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.status {
-  color: var(--color-text-muted);
-  font-size: 0.786rem;
   white-space: nowrap;
 }
 

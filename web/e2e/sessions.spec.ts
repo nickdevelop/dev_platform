@@ -117,14 +117,18 @@ test('isolates streamed events and interrupts one turn across agent instances', 
   await expect(page.locator('[data-test="conversation"]')).not.toContainText('opencode reply: ping-oc')
 
   // A held turn keeps the session running; the composer offers 停止. Stopping
-  // interrupts only this turn, so the tree stops showing 运行中 and the
-  // composer returns to 发送.
+  // interrupts only this turn, so the tree stops showing the running marker and
+  // the composer returns to 发送.
   await openSession(page, 'oc-hold')
   await page.locator('#message-text').fill('__e2e_hold__ keep this turn open')
   await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(sessionRow(page, 'oc-hold')).toContainText('运行中', { timeout: 20_000 })
+  await expect(sessionRow(page, 'oc-hold').locator('[data-test="running-indicator"]')).toBeVisible({
+    timeout: 20_000,
+  })
   await page.getByRole('button', { name: '停止', exact: true }).click()
-  await expect(sessionRow(page, 'oc-hold')).not.toContainText('运行中', { timeout: 20_000 })
+  await expect(sessionRow(page, 'oc-hold').locator('[data-test="running-indicator"]')).toHaveCount(0, {
+    timeout: 20_000,
+  })
   await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
 
   // The other sessions' turns are untouched.
