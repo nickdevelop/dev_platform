@@ -1093,6 +1093,10 @@ async function removeSession() {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  /* A rule under the title separates the session heading from the
+     conversation below it. */
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .delete-session {
