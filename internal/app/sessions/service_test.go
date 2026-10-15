@@ -810,10 +810,11 @@ func TestUnsupportedCapabilitiesAreRejected(t *testing.T) {
 	}
 }
 
-// TestStopIsIdempotentAndRaceSafe verifies concurrent session stops are
-// single-flight at the adapter, the target ends stopped, its siblings end
-// disconnected, and a second stop is a no-op.
-func TestStopIsIdempotentAndRaceSafe(t *testing.T) {
+// TestStopIsSessionScopedAndIdempotent verifies stopping a session marks only
+// that session stopped: its siblings stay active, the instance keeps running and
+// the adapter's instance stop is never called. Concurrent and repeated stops are
+// safe.
+func TestStopIsSessionScopedAndIdempotent(t *testing.T) {
 	env := newTestEnv(t)
 	target := createNativeSession(t, env, "native-a")
 	sibling := createNativeSession(t, env, "native-b")
@@ -835,8 +836,11 @@ func TestStopIsIdempotentAndRaceSafe(t *testing.T) {
 			t.Errorf("concurrent Stop[%d] error = %v", i, err)
 		}
 	}
-	if got := env.fake.stopCallCount(); got != 1 {
-		t.Errorf("adapter StopInstance calls = %d, want 1", got)
+	if got := env.fake.stopCallCount(); got != 0 {
+		t.Errorf("adapter StopInstance calls = %d, want 0: a session stop must not stop the instance", got)
+	}
+	if got := env.fake.interruptCallCount(); got != 0 {
+		t.Errorf("adapter Interrupt calls = %d, want 0 for an idle session", got)
 	}
 
 	gotTarget, err := env.svc.Get(env.projectID, target.ID)
@@ -850,11 +854,17 @@ func TestStopIsIdempotentAndRaceSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get sibling: %v", err)
 	}
-	if gotSibling.Status != SessionDisconnected {
-		t.Errorf("sibling status = %q, want %q", gotSibling.Status, SessionDisconnected)
+	if gotSibling.Status != SessionActive {
+		t.Errorf("sibling status = %q, want %q", gotSibling.Status, SessionActive)
+	}
+	inst, err := env.instances.Get(env.instanceID)
+	if err != nil {
+		t.Fatalf("Get instance: %v", err)
+	}
+	if inst.Status != agents.InstanceRunning {
+		t.Errorf("instance status = %q, want %q", inst.Status, agents.InstanceRunning)
 	}
 
-	// A second stop is idempotent and does not call the adapter again.
 	again, err := env.svc.Stop(context.Background(), env.projectID, target.ID)
 	if err != nil {
 		t.Fatalf("second Stop: %v", err)
@@ -862,35 +872,62 @@ func TestStopIsIdempotentAndRaceSafe(t *testing.T) {
 	if again.Status != SessionStopped {
 		t.Errorf("second stop status = %q, want %q", again.Status, SessionStopped)
 	}
-	if got := env.fake.stopCallCount(); got != 1 {
-		t.Errorf("adapter StopInstance calls after second stop = %d, want 1", got)
+}
+
+// TestStopInterruptsOnlyItsOwnRunningTurn verifies stopping a session with a
+// turn in flight interrupts that turn through the adapter, and leaves the
+// sibling session and the instance alone.
+func TestStopInterruptsOnlyItsOwnRunningTurn(t *testing.T) {
+	env := newTestEnv(t)
+	target := createNativeSession(t, env, "native-a")
+	sibling := createNativeSession(t, env, "native-b")
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, target.NativeSessionID, "t1", agents.TurnStarted, ""))
+	waitForTurn(t, env.svc, env.projectID, target.ID, TurnRunning)
+
+	got, err := env.svc.Stop(context.Background(), env.projectID, target.ID)
+	if err != nil {
+		t.Fatalf("Stop running session: %v", err)
+	}
+	if got.Status != SessionStopped {
+		t.Errorf("status = %q, want %q", got.Status, SessionStopped)
+	}
+	if calls := env.fake.interruptCallCount(); calls != 1 {
+		t.Errorf("adapter Interrupt calls = %d, want 1", calls)
+	}
+	if calls := env.fake.stopCallCount(); calls != 0 {
+		t.Errorf("adapter StopInstance calls = %d, want 0", calls)
+	}
+	gotSibling, err := env.svc.Get(env.projectID, sibling.ID)
+	if err != nil {
+		t.Fatalf("Get sibling: %v", err)
+	}
+	if gotSibling.Status != SessionActive {
+		t.Errorf("sibling status = %q, want %q", gotSibling.Status, SessionActive)
 	}
 }
 
-// TestStopFailureIsReportedAsBackendFailure verifies an adapter stop failure is
-// labelled as a backend operation failure (502) and the session is left
-// disconnected rather than reported as stopped.
-func TestStopFailureIsReportedAsBackendFailure(t *testing.T) {
+// TestStopFailureKeepsSessionActive verifies a failed interrupt is reported as a
+// backend operation failure and leaves the session as it was, so the user can
+// try again instead of believing the run ended.
+func TestStopFailureKeepsSessionActive(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-1")
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnStarted, ""))
+	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
 
 	env.fake.mu.Lock()
-	env.fake.stopErr = errors.New("adapter boom")
+	env.fake.interruptErr = errors.New("adapter boom")
 	env.fake.mu.Unlock()
 
-	got, err := env.svc.Stop(context.Background(), env.projectID, session.ID)
-	if !errors.Is(err, ErrBackendFailed) {
+	if _, err := env.svc.Stop(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrBackendFailed) {
 		t.Fatalf("Stop error = %v, want ErrBackendFailed", err)
 	}
-	if got.Status != SessionDisconnected {
-		t.Errorf("session status after failed stop = %q, want %q", got.Status, SessionDisconnected)
+	got, err := env.svc.Get(env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
 	}
-	inst, getErr := env.instances.Get(env.instanceID)
-	if getErr != nil {
-		t.Fatalf("Get instance: %v", getErr)
-	}
-	if inst.Status != agents.InstanceFailed {
-		t.Errorf("instance status = %q, want %q", inst.Status, agents.InstanceFailed)
+	if got.Status != SessionActive {
+		t.Errorf("session status after failed stop = %q, want %q", got.Status, SessionActive)
 	}
 }
 
@@ -1117,15 +1154,12 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 		t.Errorf("SSE Content-Type = %q, want text/event-stream", got)
 	}
 
-	// An adapter stop failure maps to the documented 502 agent_operation_failed.
-	env.fake.mu.Lock()
-	env.fake.stopErr = errors.New("adapter boom")
-	env.fake.mu.Unlock()
+	// Stopping an idle session is a session-level change and succeeds.
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/sessions/%s/stop", env.projectID, created.Session.ID), nil)
 	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("POST stop with adapter failure = %d, want 502", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("POST stop = %d, want 200", rec.Code)
 	}
 }
 
@@ -1190,7 +1224,7 @@ func TestInterruptIdleSessionIsNoop(t *testing.T) {
 func TestInterruptRunningSessionCallsAdapterOnce(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-busy")
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "execution_started"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
 
 	if _, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID); err != nil {
@@ -1226,7 +1260,7 @@ func TestInterruptRejectsUnsupportedCapability(t *testing.T) {
 func TestInterruptReportsBackendFailure(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-busy")
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "agent_start"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
 	env.fake.mu.Lock()
 	env.fake.interruptErr = errors.New("adapter boom")

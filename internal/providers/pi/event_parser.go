@@ -14,6 +14,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -67,6 +68,16 @@ type parser struct {
 	// text in the end record, and that text must reach the workbench instead
 	// of an empty terminator.
 	thinkingStreamed bool
+
+	// turnMu guards the open agent run. normalize runs on the read goroutine
+	// while an interrupt or a process exit closes the run from another.
+	turnMu      sync.Mutex
+	turnID      string
+	turnAborted bool
+	turnSeq     uint64
+	// newTurnID mints turn ids unique within the instance; a parser without
+	// one numbers its own turns.
+	newTurnID func() string
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -335,15 +346,32 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 	case "error":
 		return []agents.NormalizedEvent{p.errorEvent("backend", redactSecrets(firstNonEmpty(event.Error, event.ErrorMessage)))}
 
+	// An agent run is a turn. agent_end and agent_settled both close it; the
+	// second finds no open run and is dropped, so a turn never ends twice.
+	case "agent_start":
+		return []agents.NormalizedEvent{p.beginTurn()}
+
+	case "agent_end":
+		if turn, open := p.endTurn(agents.TurnCompleted); open {
+			return []agents.NormalizedEvent{turn}
+		}
+		return nil
+
+	case "agent_settled":
+		outcome := agents.TurnCompleted
+		if event.Aborted {
+			outcome = agents.TurnCancelled
+		}
+		if turn, open := p.endTurn(outcome); open {
+			return []agents.NormalizedEvent{turn}
+		}
+		return nil
+
 	default:
 		if isLifecycleType(event.Type) {
 			out := p.event()
 			out.Type = agents.EventLifecycle
-			detail := ""
-			if event.Type == "agent_settled" && event.Aborted {
-				detail = "aborted"
-			}
-			out.Lifecycle = &agents.LifecycleEvent{State: event.Type, Detail: detail}
+			out.Lifecycle = &agents.LifecycleEvent{State: event.Type}
 			out.Raw = append(json.RawMessage(nil), raw...)
 			return []agents.NormalizedEvent{out}
 		}
@@ -351,13 +379,67 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 	}
 }
 
-// lifecycleTypes are the pi records that describe agent/turn state directly.
+// lifecycleTypes are the pi records that describe inner steps of a run. The
+// agent run itself (agent_start, agent_end, agent_settled) is a turn, so it is
+// not listed here.
 var lifecycleTypes = map[string]bool{
-	"agent_start":   true,
-	"agent_end":     true,
-	"agent_settled": true,
-	"turn_start":    true,
-	"turn_end":      true,
+	"turn_start": true,
+	"turn_end":   true,
+}
+
+// beginTurn opens an agent run and returns its started event.
+func (p *parser) beginTurn() agents.NormalizedEvent {
+	p.turnMu.Lock()
+	defer p.turnMu.Unlock()
+	p.turnID = p.nextTurnID()
+	p.turnAborted = false
+	return p.turnEvent(agents.TurnPayload{ID: p.turnID, Phase: agents.TurnStarted})
+}
+
+// endTurn closes the open agent run with the given outcome. It reports false
+// when no run is open. A run the platform asked pi to abort ends cancelled even
+// when pi reports it as completed, because the cancellation is what the user did.
+func (p *parser) endTurn(outcome agents.TurnOutcome) (agents.NormalizedEvent, bool) {
+	p.turnMu.Lock()
+	defer p.turnMu.Unlock()
+	if p.turnID == "" {
+		return agents.NormalizedEvent{}, false
+	}
+	if p.turnAborted && outcome == agents.TurnCompleted {
+		outcome = agents.TurnCancelled
+	}
+	id := p.turnID
+	p.turnID = ""
+	p.turnAborted = false
+	return p.turnEvent(agents.TurnPayload{ID: id, Phase: agents.TurnEnded, Outcome: outcome}), true
+}
+
+// markAbort records that the platform asked pi to abort the open run. It does
+// nothing when no run is open, so an abort sent while idle cannot cancel the
+// next run.
+func (p *parser) markAbort() {
+	p.turnMu.Lock()
+	defer p.turnMu.Unlock()
+	if p.turnID != "" {
+		p.turnAborted = true
+	}
+}
+
+// nextTurnID mints the next turn id. The caller holds turnMu.
+func (p *parser) nextTurnID() string {
+	if p.newTurnID != nil {
+		return p.newTurnID()
+	}
+	p.turnSeq++
+	return fmt.Sprintf("%s-turn-%d", p.sessionID, p.turnSeq)
+}
+
+// turnEvent builds a turn boundary of the parser's session.
+func (p *parser) turnEvent(payload agents.TurnPayload) agents.NormalizedEvent {
+	out := p.event()
+	out.Type = agents.EventTurn
+	out.Turn = &payload
+	return out
 }
 
 func isLifecycleType(name string) bool { return lifecycleTypes[name] }

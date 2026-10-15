@@ -42,6 +42,15 @@ const (
 	// EventError carries a backend or adapter failure that is not attached
 	// to a specific tool call.
 	EventError EventType = "error"
+	// EventTurn carries a turn boundary of one session: a turn starts when
+	// the agent begins working on a user message and ends with an outcome.
+	// Consumers derive whether a session is busy from these events only;
+	// lifecycle names are informational and never change the turn state.
+	EventTurn EventType = "turn"
+	// EventInteraction carries a tool confirmation or question form the
+	// agent is waiting on, and its resolution. It replaces any side channel:
+	// the workbench learns about pending interactions from the session stream.
+	EventInteraction EventType = "interaction"
 	// EventUnknown carries a backend event the adapter could not normalize.
 	// Its original bytes travel in Raw so nothing the backend reports is
 	// silently dropped.
@@ -51,7 +60,7 @@ const (
 // Valid reports whether the event type is one of the defined kinds.
 func (t EventType) Valid() bool {
 	switch t {
-	case EventLifecycle, EventMessage, EventToolCall, EventToolResult, EventThinking, EventError, EventUnknown:
+	case EventLifecycle, EventMessage, EventToolCall, EventToolResult, EventThinking, EventError, EventTurn, EventInteraction, EventUnknown:
 		return true
 	default:
 		return false
@@ -60,13 +69,145 @@ func (t EventType) Valid() bool {
 
 // LifecycleEvent describes an instance or session state change. State uses
 // the InstanceStatus values for instance-level events and backend-defined
-// names for session-level ones; Detail carries human-readable context.
-// Usage, when set, reports the turn's token usage (opencode's step finish);
-// the workbench uses it as the freshest context anchor.
+// names for informational session-level ones (for example "created" or
+// "text_started"); turn boundaries are EventTurn, never lifecycle. Detail
+// carries human-readable context. Usage, when set, reports the turn's token
+// usage (opencode's step finish); the workbench uses it as the freshest
+// context anchor.
 type LifecycleEvent struct {
 	State  string        `json:"state"`
 	Detail string        `json:"detail,omitempty"`
 	Usage  *MessageUsage `json:"usage,omitempty"`
+}
+
+// TurnPhase names the two boundaries of a turn.
+type TurnPhase string
+
+const (
+	// TurnStarted opens a turn.
+	TurnStarted TurnPhase = "started"
+	// TurnEnded closes a turn and carries its Outcome.
+	TurnEnded TurnPhase = "ended"
+)
+
+// TurnOutcome says how a turn ended. A turn cancelled by the user (interrupt
+// or stop) is cancelled, never failed; a failed turn is followed by an
+// EventError that explains it.
+type TurnOutcome string
+
+const (
+	// TurnCompleted means the agent finished the turn normally.
+	TurnCompleted TurnOutcome = "completed"
+	// TurnCancelled means the turn was interrupted before it finished.
+	TurnCancelled TurnOutcome = "cancelled"
+	// TurnFailed means the turn ended because of an error.
+	TurnFailed TurnOutcome = "failed"
+)
+
+// TurnPayload is one turn boundary. ID identifies the turn within its
+// instance: the started and ended events of one turn share it, so consumers
+// can pair them even when turns of different sessions interleave.
+type TurnPayload struct {
+	ID      string      `json:"id"`
+	Phase   TurnPhase   `json:"phase"`
+	Outcome TurnOutcome `json:"outcome,omitempty"`
+}
+
+// Validate reports whether the turn payload is well formed: a non-empty id, a
+// known phase, and an outcome exactly when the turn ended.
+func (p TurnPayload) Validate() error {
+	if p.ID == "" {
+		return fmt.Errorf("%w: turn id is empty", ErrInvalidEvent)
+	}
+	switch p.Phase {
+	case TurnStarted:
+		if p.Outcome != "" {
+			return fmt.Errorf("%w: started turn carries outcome %q", ErrInvalidEvent, p.Outcome)
+		}
+	case TurnEnded:
+		switch p.Outcome {
+		case TurnCompleted, TurnCancelled, TurnFailed:
+		default:
+			return fmt.Errorf("%w: ended turn has unknown outcome %q", ErrInvalidEvent, p.Outcome)
+		}
+	default:
+		return fmt.Errorf("%w: unknown turn phase %q", ErrInvalidEvent, p.Phase)
+	}
+	return nil
+}
+
+// InteractionKind names what the agent is waiting on.
+type InteractionKind string
+
+const (
+	// InteractionPermission is a tool confirmation: the agent waits for an
+	// approve or reject decision.
+	InteractionPermission InteractionKind = "permission"
+	// InteractionForm is a question form: the agent waits for an answer.
+	InteractionForm InteractionKind = "form"
+)
+
+// InteractionPhase says whether an interaction is pending or has been settled.
+type InteractionPhase string
+
+const (
+	// InteractionRequested means the agent is waiting on the interaction.
+	InteractionRequested InteractionPhase = "requested"
+	// InteractionResolved means the interaction was answered, cancelled or
+	// expired; the consumer removes it from its pending set.
+	InteractionResolved InteractionPhase = "resolved"
+)
+
+// InteractionPayload is one interaction boundary. ID is the backend's request
+// or form id, which the reply endpoints take back. A requested interaction
+// carries the matching PermissionRequest or FormInfo; a resolved one carries
+// only the id.
+type InteractionPayload struct {
+	ID         string             `json:"id"`
+	Kind       InteractionKind    `json:"kind"`
+	Phase      InteractionPhase   `json:"phase"`
+	Permission *PermissionRequest `json:"permission,omitempty"`
+	Form       *FormInfo          `json:"form,omitempty"`
+}
+
+// Validate reports whether the interaction payload is well formed: a known kind
+// and phase, and for a requested interaction exactly the payload its kind
+// names, carrying the same id.
+func (p InteractionPayload) Validate() error {
+	if p.ID == "" {
+		return fmt.Errorf("%w: interaction id is empty", ErrInvalidEvent)
+	}
+	switch p.Kind {
+	case InteractionPermission, InteractionForm:
+	default:
+		return fmt.Errorf("%w: unknown interaction kind %q", ErrInvalidEvent, p.Kind)
+	}
+	switch p.Phase {
+	case InteractionResolved:
+		if p.Permission != nil || p.Form != nil {
+			return fmt.Errorf("%w: resolved interaction carries a payload", ErrInvalidEvent)
+		}
+		return nil
+	case InteractionRequested:
+	default:
+		return fmt.Errorf("%w: unknown interaction phase %q", ErrInvalidEvent, p.Phase)
+	}
+	if p.Kind == InteractionPermission {
+		if p.Permission == nil || p.Form != nil {
+			return fmt.Errorf("%w: permission interaction must carry exactly a permission payload", ErrInvalidEvent)
+		}
+		if p.Permission.ID != p.ID {
+			return fmt.Errorf("%w: permission payload id %q does not match interaction id %q", ErrInvalidEvent, p.Permission.ID, p.ID)
+		}
+		return nil
+	}
+	if p.Form == nil || p.Permission != nil {
+		return fmt.Errorf("%w: form interaction must carry exactly a form payload", ErrInvalidEvent)
+	}
+	if p.Form.ID != p.ID {
+		return fmt.Errorf("%w: form payload id %q does not match interaction id %q", ErrInvalidEvent, p.Form.ID, p.ID)
+	}
+	return nil
 }
 
 // MessageUsage is one message's (or turn's) token usage as the backend
@@ -182,12 +323,14 @@ type NormalizedEvent struct {
 	// Type discriminates the union and names the non-nil payload field.
 	Type EventType `json:"type"`
 
-	Lifecycle  *LifecycleEvent    `json:"lifecycle,omitempty"`
-	Message    *MessagePayload    `json:"message,omitempty"`
-	Thinking   *ThinkingPayload   `json:"thinking,omitempty"`
-	ToolCall   *ToolCallPayload   `json:"toolCall,omitempty"`
-	ToolResult *ToolResultPayload `json:"toolResult,omitempty"`
-	Error      *ErrorPayload      `json:"error,omitempty"`
+	Lifecycle   *LifecycleEvent     `json:"lifecycle,omitempty"`
+	Message     *MessagePayload     `json:"message,omitempty"`
+	Thinking    *ThinkingPayload    `json:"thinking,omitempty"`
+	ToolCall    *ToolCallPayload    `json:"toolCall,omitempty"`
+	ToolResult  *ToolResultPayload  `json:"toolResult,omitempty"`
+	Error       *ErrorPayload       `json:"error,omitempty"`
+	Turn        *TurnPayload        `json:"turn,omitempty"`
+	Interaction *InteractionPayload `json:"interaction,omitempty"`
 
 	// Raw preserves bounded backend JSON: extra metadata alongside a
 	// normalized event, or the untouched original event body for
@@ -229,6 +372,8 @@ func (e NormalizedEvent) Validate() error {
 		{"toolCall", e.ToolCall != nil},
 		{"toolResult", e.ToolResult != nil},
 		{"error", e.Error != nil},
+		{"turn", e.Turn != nil},
+		{"interaction", e.Interaction != nil},
 	}
 	got := ""
 	setCount := 0
@@ -242,12 +387,14 @@ func (e NormalizedEvent) Validate() error {
 	// Type is known at this point, so an absent map entry means
 	// EventUnknown.
 	want, typed := map[EventType]string{
-		EventLifecycle:  "lifecycle",
-		EventMessage:    "message",
-		EventThinking:   "thinking",
-		EventToolCall:   "toolCall",
-		EventToolResult: "toolResult",
-		EventError:      "error",
+		EventLifecycle:   "lifecycle",
+		EventMessage:     "message",
+		EventThinking:    "thinking",
+		EventToolCall:    "toolCall",
+		EventToolResult:  "toolResult",
+		EventError:       "error",
+		EventTurn:        "turn",
+		EventInteraction: "interaction",
 	}[e.Type]
 
 	if typed {
@@ -264,6 +411,12 @@ func (e NormalizedEvent) Validate() error {
 		}
 		if e.Type == EventToolResult && len(e.ToolResult.Metadata) > MaxRawEventBytes {
 			return fmt.Errorf("%w: tool result metadata is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.ToolResult.Metadata), MaxRawEventBytes)
+		}
+		if e.Type == EventTurn {
+			return e.Turn.Validate()
+		}
+		if e.Type == EventInteraction {
+			return e.Interaction.Validate()
 		}
 		return nil
 	}

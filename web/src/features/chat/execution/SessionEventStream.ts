@@ -7,9 +7,12 @@
 import {
   sessionEventsPath,
   type AgentSession,
+  type InteractionPayload,
+  type InteractionSnapshot,
   type MessageModel,
   type MessageUsage,
   type NormalizedEvent,
+  type TurnPayload,
 } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../state/sessionLog'
 import { entryFromEvent } from '../state/sessionLog'
@@ -27,6 +30,9 @@ export interface StreamStore {
   pushEntry: (sessionId: string, entry: ChatEntry) => void
   setTurn: (sessionId: string, turn: AgentSession['turn']) => void
   settleStreaming: (sessionId: string) => void
+  applyTurn: (sessionId: string, turn: TurnPayload) => void
+  applyInteraction: (sessionId: string, payload: InteractionPayload) => void
+  applyInteractionSnapshot: (sessionId: string, snapshot: InteractionSnapshot) => void
   subscribe: (projectId: number, sessionId: string) => void
   appendMessage: (
     sessionId: string,
@@ -133,7 +139,17 @@ export function subscribeSession(store: StreamStore, projectId: number, sessionI
       )
     }
   }
-  for (const type of ['lifecycle', 'message', 'thinking', 'tool_call', 'tool_result', 'error', 'unknown']) {
+  for (const type of [
+    'lifecycle',
+    'message',
+    'thinking',
+    'tool_call',
+    'tool_result',
+    'error',
+    'turn',
+    'interaction',
+    'unknown',
+  ]) {
     source.addEventListener(type, (event) => {
       const frame = event as MessageEvent
       // Remember the frame's position so a later manual re-dial resumes
@@ -142,6 +158,17 @@ export function subscribeSession(store: StreamStore, projectId: number, sessionI
       consumeEventFrame(store, sessionId, frame.data)
     })
   }
+  // A stream opens with the session's pending interactions. It is the
+  // authoritative set at the join point, so it replaces what the client holds
+  // and carries no position in the sequence.
+  source.addEventListener('interactions', (event) => {
+    const frame = event as MessageEvent
+    try {
+      store.applyInteractionSnapshot(sessionId, JSON.parse(frame.data) as InteractionSnapshot)
+    } catch {
+      // A malformed snapshot leaves the current set; live events keep it fresh.
+    }
+  })
   // The server sends this when a resumed stream could not cover the
   // client's gap (its replay buffer evicted the events or the stream was
   // recreated since): the log on screen may be missing its middle, so it
@@ -213,17 +240,17 @@ export function consumeEventFrame(store: StreamStore, sessionId: string, data: s
     store.applyLifecycle(sessionId, event)
     return
   }
+  if (event.type === 'turn') {
+    if (event.turn) store.applyTurn(sessionId, event.turn)
+    return
+  }
+  if (event.type === 'interaction') {
+    if (event.interaction) store.applyInteraction(sessionId, event.interaction)
+    return
+  }
   const entry = entryFromEvent(sessionId, event)
   if (!entry) return
   store.pushEntry(sessionId, entry)
-  // These are the backend's turn-ending error codes; any other error is
-  // reported without concluding the turn.
-  if (event.type === 'error' && event.error) {
-    if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
-      store.setTurn(sessionId, 'idle')
-      store.settleStreaming(sessionId)
-    }
-  }
 }
 
 // consumeHistoryGuard reports whether a live message is a re-delivery of

@@ -22,15 +22,19 @@ import {
   type AgentSession,
   type BackendId,
   type CreateSessionBody,
+  type InteractionPayload,
+  type InteractionSnapshot,
   type MessageModel,
   type MessagePayload,
   type MessageUsage,
   type NormalizedEvent,
   type SessionHistory,
   type ThinkingPayload,
+  type TurnPayload,
 } from '../api/sessions'
 import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
+import { useInteractionsStore } from './interactions'
 import {
   clearResumePositions,
   closeAllSessionStreams,
@@ -501,23 +505,6 @@ export const useSessionsStore = defineStore('sessions', {
       if (event.lifecycle?.usage) {
         this.lifecycleUsage[sessionId] = event.lifecycle.usage
       }
-      // The turn is derived from the same lifecycle states the backend uses, so
-      // the open panel's send/stop action tracks a live turn. An interrupted
-      // turn settles as agent_settled (detail aborted) with no error entry.
-      if (state === 'execution_started' || state === 'agent_start') {
-        this.setTurn(sessionId, 'running')
-        return
-      }
-      if (
-        state === 'execution_succeeded' ||
-        state === 'execution_interrupted' ||
-        state === 'agent_settled' ||
-        state === 'agent_end'
-      ) {
-        this.setTurn(sessionId, 'idle')
-        this.settleStreaming(sessionId)
-        return
-      }
       if (state === 'stopped') {
         this.setStatus(sessionId, 'stopped')
         return
@@ -527,6 +514,27 @@ export const useSessionsStore = defineStore('sessions', {
       if (state === 'failed' || state === 'error' || state === 'disconnected') {
         this.setStatus(sessionId, 'disconnected')
       }
+    },
+
+    // applyTurn follows a turn boundary: a started turn makes the open panel's
+    // send action a stop action, and an ended one settles whatever is still
+    // streaming. The outcome changes no log entry: an error that explains a
+    // failure arrives as its own error event.
+    applyTurn(sessionId: string, turn: TurnPayload) {
+      if (turn.phase === 'started') {
+        this.setTurn(sessionId, 'running')
+        return
+      }
+      this.setTurn(sessionId, 'idle')
+      this.settleStreaming(sessionId)
+    },
+
+    applyInteraction(sessionId: string, payload: InteractionPayload) {
+      useInteractionsStore().applyInteraction(sessionId, payload)
+    },
+
+    applyInteractionSnapshot(sessionId: string, snapshot: InteractionSnapshot) {
+      useInteractionsStore().applySnapshot(sessionId, snapshot)
     },
 
     setTurn(sessionId: string, turn: AgentSession['turn']) {
@@ -709,21 +717,14 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    // Stops the session's run. The adapter stops at instance level, so the
-    // target is marked stopped and its same-instance siblings become
-    // disconnected; sessions on other instances are left untouched.
+    // Stops the session's own run: an in-flight turn is interrupted and the
+    // session is marked stopped. The instance and the session's siblings are
+    // untouched, because each session has its own run.
     async stopSession(projectId: number, sessionId: string) {
       const auth = useAuthStore()
-      const target = this.sessionById(sessionId)
       try {
         const stopped = await stopProjectSession(projectId, sessionId, auth.csrfToken)
-        this.sessions = this.sessions.map((entry) => {
-          if (entry.id === sessionId) return stopped
-          if (target && entry.instanceId === target.instanceId) {
-            return { ...entry, status: 'disconnected' }
-          }
-          return entry
-        })
+        this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? stopped : entry))
         this.error = ''
         return stopped
       } catch (error) {

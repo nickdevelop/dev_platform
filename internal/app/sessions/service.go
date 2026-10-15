@@ -753,13 +753,12 @@ func (s *Service) Interrupt(ctx context.Context, projectID uint, sessionID strin
 	return s.sessionFromModel(row), nil
 }
 
-// Stop stops the instance running the session. The instance stop is
-// single-flight and idempotent, so concurrent stops call the adapter once and
-// a second stop is a no-op. The target session is marked stopped and the
-// instance's other sessions are marked disconnected.
-//
-// The adapter contract exposes only an instance-level stop, so stopping a
-// session stops the instance's run; the workbench surfaces that semantics.
+// Stop ends the session's own run and marks the session stopped. It is
+// session-scoped: the instance keeps running and its other sessions are not
+// touched, because each session has its own native run and cancellation. A
+// session with a run in flight is interrupted through the adapter first; if
+// that fails the session is left as it was. Stopping an instance is a separate
+// operation on the instance lifecycle.
 func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (Session, error) {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
@@ -769,34 +768,30 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 	if err != nil {
 		return Session{}, err
 	}
-	if !s.capabilities(inst.Backend).Stop {
+	if !s.capabilities(inst.Backend).Interrupt {
 		return Session{}, fmt.Errorf("%w: stop", ErrUnsupportedCapability)
 	}
-
-	stopped, stopErr := s.instances.Stop(ctx, row.InstanceID)
-
-	now := s.now()
-	target := SessionStopped
-	if stopErr != nil || stopped.Status == agents.InstanceFailed {
-		target = SessionDisconnected
+	if s.turnOf(row.InstanceID, row.NativeSessionID) == TurnRunning && instanceRunnable(inst) {
+		adapter, err := s.adapter(inst.Backend)
+		if err != nil {
+			return Session{}, err
+		}
+		ref := agents.SessionRef{
+			InstanceID: row.InstanceID,
+			Backend:    agents.BackendID(row.Backend),
+			SessionID:  row.NativeSessionID,
+			Title:      row.Title,
+		}
+		if err := adapter.Interrupt(ctx, ref); err != nil {
+			return Session{}, fmt.Errorf("%w: stop session: %w", ErrBackendFailed, err)
+		}
 	}
-	// Persist the target first, then its siblings, so a reader never observes
-	// a half-updated instance.
-	if err := s.repo.updateStatus(row.ID, string(target), now); err != nil {
+	now := s.now()
+	if err := s.repo.updateStatus(row.ID, string(SessionStopped), now); err != nil {
 		return Session{}, err
 	}
-	row.Status = string(target)
+	row.Status = string(SessionStopped)
 	row.UpdatedAt = now
-	s.markSiblingsDisconnected(row.InstanceID, row.ID, now)
-
-	if stopErr != nil {
-		// An unknown backend is a platform misconfiguration and stays a 400;
-		// every other stop failure is a backend operation failure (502).
-		if errors.Is(stopErr, instances.ErrUnknownBackend) {
-			return s.sessionFromModel(row), stopErr
-		}
-		return s.sessionFromModel(row), fmt.Errorf("%w: stop instance: %w", ErrBackendFailed, stopErr)
-	}
 	return s.sessionFromModel(row), nil
 }
 
@@ -883,6 +878,20 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 				}
 			}
 		}
+	}
+
+	// The snapshot is written after the replay and before the live queue
+	// drains, so it is the authoritative pending set at the join point: a
+	// request that settled inside the replayed gap is already gone from it.
+	ref := agents.SessionRef{
+		InstanceID: row.InstanceID,
+		Backend:    agents.BackendID(row.Backend),
+		SessionID:  row.NativeSessionID,
+		Title:      row.Title,
+	}
+	if err := s.writeInteractionSnapshot(subCtx, ref, w, flush); err != nil {
+		cancel()
+		return err
 	}
 
 	queue := make(chan agents.NormalizedEvent, s.streamBuffer)
@@ -997,21 +1006,6 @@ func (s *Service) markDisconnected(row database.AgentSession) {
 	}
 	if err := s.repo.updateStatus(row.ID, string(SessionDisconnected), s.now()); err != nil {
 		return
-	}
-}
-
-// markSiblingsDisconnected marks every other active session of an instance
-// disconnected, without touching sessions that were already stopped.
-func (s *Service) markSiblingsDisconnected(instanceID, exceptID string, at time.Time) {
-	rows, err := s.repo.listByInstance(instanceID)
-	if err != nil {
-		return
-	}
-	for _, row := range rows {
-		if row.ID == exceptID || row.Status != string(SessionActive) {
-			continue
-		}
-		_ = s.repo.updateStatus(row.ID, string(SessionDisconnected), at)
 	}
 }
 

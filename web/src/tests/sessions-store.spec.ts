@@ -590,25 +590,39 @@ describe('sessions store interleaved stream merging', () => {
     sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答到一半', false, 1)))
     sessions.handleEvent(
       's1',
-      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'lifecycle', sequence: 2, replayed: false, lifecycle: { state: 'agent_settled' } })),
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'turn', sequence: 2, replayed: false, turn: { id: 'turn-1', phase: 'ended', outcome: 'completed' } })),
     )
 
     const entries = sessions.messagesFor('s1')
     expect(entries[0].streaming).toBe(false)
   })
 
-  it('settles an open streaming entry when the turn ends in a process error', () => {
+  it('settles an open streaming entry when the turn ends in a failure', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
-    sessions.sessions = [session('s1', 1)]
+    sessions.sessions = [session('s1', 1, { turn: 'running' })]
 
     sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '答到一半', false, 1)))
     sessions.handleEvent(
       's1',
-      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'error', sequence: 2, replayed: false, error: { code: 'process_exit', message: 'boom' } })),
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'turn', sequence: 2, replayed: false, turn: { id: 'turn-1', phase: 'ended', outcome: 'failed' } })),
     )
 
     expect(sessions.messagesFor('s1')[0].streaming).toBe(false)
+    expect(sessions.sessionById('s1')?.turn).toBe('idle')
+  })
+
+  it('leaves the turn running on an error event alone', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    sessions.sessions = [session('s1', 1, { turn: 'running' })]
+
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(historyEvent({ instanceId: 'inst-1', type: 'error', sequence: 2, replayed: false, error: { code: 'execution_failed', message: 'boom' } })),
+    )
+
+    expect(sessions.sessionById('s1')?.turn).toBe('running')
   })
 
   // History replay must keep its old semantics: two complete thinking blocks
@@ -869,10 +883,10 @@ describe('sessions store interrupt', () => {
   function interruptedEvent() {
     return historyEvent({
       instanceId: 'inst-1',
-      type: 'lifecycle',
+      type: 'turn',
       sequence: 3,
       replayed: false,
-      lifecycle: { state: 'execution_interrupted' },
+      turn: { id: 'turn-1', phase: 'ended', outcome: 'cancelled' },
     })
   }
 

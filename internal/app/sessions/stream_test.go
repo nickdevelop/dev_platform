@@ -563,3 +563,82 @@ func TestStreamSessionResumeWithoutCoverageResyncs(t *testing.T) {
 		t.Errorf("second frame = %+v, want the live message at id 11", frames[1])
 	}
 }
+
+// TestStreamSessionOpensWithInteractionSnapshot verifies a stream of a session
+// whose backend declares tool confirmation starts with the pending set (the
+// authoritative state at the join point), then carries live interaction events.
+func TestStreamSessionOpensWithInteractionSnapshot(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+	env.fake.mu.Lock()
+	env.fake.caps.ToolConfirmation = true
+	env.fake.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &recordingWriter{}
+	done := make(chan error, 1)
+	go func() {
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 0, w, nil)
+	}()
+
+	waitForSubscriber(t, env)
+	waitForBytes(t, w, `event: interactions`)
+	snapshot := string(w.Bytes())
+	if !strings.Contains(snapshot, `"permissions":[{"id":"per_1"`) || !strings.Contains(snapshot, `"forms":[{"id":"frm_1"`) {
+		t.Fatalf("snapshot frame = %s, want the pending permission and form", snapshot)
+	}
+	if strings.Index(snapshot, "event: interactions") > strings.Index(snapshot, `"permissions"`) {
+		t.Fatalf("snapshot payload precedes its frame: %s", snapshot)
+	}
+
+	env.fake.emit(t, env.instanceID, agents.NormalizedEvent{
+		InstanceID:  env.instanceID,
+		Backend:     agents.BackendPi,
+		SessionID:   "native-1",
+		Sequence:    1,
+		Timestamp:   time.Now().UTC(),
+		Type:        agents.EventInteraction,
+		Interaction: &agents.InteractionPayload{ID: "per_1", Kind: agents.InteractionPermission, Phase: agents.InteractionResolved},
+	})
+	waitForBytes(t, w, `event: interaction`)
+
+	cancel()
+	<-done
+}
+
+// TestStreamSessionWithoutToolConfirmationSendsNoSnapshot verifies a backend that
+// cannot confirm tools writes no interaction snapshot.
+func TestStreamSessionWithoutToolConfirmationSendsNoSnapshot(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &recordingWriter{}
+	done := make(chan error, 1)
+	go func() {
+		done <- env.svc.StreamSession(ctx, env.projectID, session.ID, 0, w, nil)
+	}()
+
+	waitForSubscriber(t, env)
+	env.fake.emit(t, env.instanceID, streamMessageEvent(1, "native-1", "hello"))
+	waitForFrames(t, w, 1)
+	cancel()
+	<-done
+	if strings.Contains(string(w.Bytes()), "event: interactions") {
+		t.Fatalf("stream wrote an interaction snapshot without tool confirmation: %s", w.Bytes())
+	}
+}
+
+// waitForBytes polls the recorded stream until it contains want.
+func waitForBytes(t *testing.T, w *recordingWriter, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(string(w.Bytes()), want) {
+		if time.Now().After(deadline) {
+			t.Fatalf("stream never contained %q; got %s", want, w.Bytes())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

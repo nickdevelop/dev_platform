@@ -111,9 +111,15 @@ func (p *piPermissions) take(id string) (*piPermission, bool) {
 	return entry, true
 }
 
-// clear drops every pending confirmation.
-func (p *piPermissions) clear() {
+// drain removes every pending confirmation and returns their ids, so each can
+// be reported as settled.
+func (p *piPermissions) drain() []string {
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	ids := make([]string, 0, len(p.pending))
+	for id := range p.pending {
+		ids = append(ids, id)
+	}
 	p.pending = make(map[string]*piPermission)
-	p.mu.Unlock()
+	return ids
 }

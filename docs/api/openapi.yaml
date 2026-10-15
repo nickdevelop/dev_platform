@@ -1261,13 +1261,15 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/sessions/{sessionId}/stop:
     post:
-      summary: Stop a session's run
+      summary: Stop a session
       description: >-
-        Stops the instance running the session. Because the adapter contract
-        exposes only an instance-level stop, this stops the instance's run; the
-        target session is marked stopped and the instance's other sessions are
-        marked disconnected. The operation is idempotent: a second stop is a
-        no-op and concurrent stops call the adapter once.
+        Session-scoped stop. If the session's turn is running, it is interrupted
+        through the adapter first; the session is then marked stopped. The
+        instance keeps running and its other sessions are not touched: stopping
+        an instance is a separate operation (POST /projects/{id}/instances/{instanceId}/stop).
+        Requires the backend to declare interrupt support (the interrupt
+        capability gates this operation, not the stop capability). Idempotent:
+        stopping an already stopped session returns it unchanged.
       operationId: stopProjectSession
       security:
         - cookieAuth: []
@@ -1310,13 +1312,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: The backend does not declare stop support.
+          description: The backend does not declare interrupt support (error unsupported_capability).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
-          description: The backend adapter failed to stop the instance.
+          description: The backend adapter failed to interrupt the session's running turn; the session is left as it was.
           content:
             application/json:
               schema:
@@ -1443,6 +1445,21 @@ paths:
         from the instance's bounded buffer before the live events; when the
         buffer can no longer vouch for the requested position the stream
         emits a `resync` frame (no id) and the client rebuilds from history.
+
+        Two kinds of event carry session state beyond the transcript. A `turn`
+        event (payload phase started or ended; ended carries outcome completed,
+        cancelled or failed) is the only source of whether the session is busy.
+        A cancelled turn (interrupt or stop) ends as cancelled, never failed; a
+        failed turn is followed by an `error` event. An `interaction` event
+        (payload kind permission or form; phase requested carries the matching
+        permission or form, resolved carries only the id) is the only channel
+        for pending confirmations and question forms; the workbench has no
+        separate poll or raw-event subscription for them.
+
+        Before the live events, after any replayed frames, the stream emits one
+        `interactions` frame (no id, see the 200 response) that replaces the
+        client's pending interaction set. It is written only when the backend
+        declares tool confirmation.
       operationId: subscribeProjectSessionEvents
       security:
         - cookieAuth: []
@@ -1480,8 +1497,13 @@ paths:
                 type: string
                 description: >-
                   SSE frames with id (sequence), event (normalized type) and
-                  data (the JSON event envelope), plus a header-less `resync`
-                  frame when a resume position cannot be covered.
+                  data (the JSON event envelope), plus two header-less frames:
+                  `resync` when a resume position cannot be covered (data `{}`),
+                  and `interactions` (data `{"permissions": [...], "forms": [...]}`,
+                  the session's pending PermissionRequest and FormInfo lists,
+                  possibly empty) as the replacement pending set. Frames of
+                  type `interactions` are not part of the sequence and are never
+                  replayed; they describe the state at the join point.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -3297,8 +3319,14 @@ components:
           type: boolean
         stop:
           type: boolean
+          description: >-
+            The backend can stop an instance (POST /projects/{id}/instances/{instanceId}/stop).
+            Does not gate the session stop endpoint.
         interrupt:
           type: boolean
+          description: >-
+            The backend can end a session's running turn. Gates both the session
+            interrupt and the session stop endpoints.
         modelSelection:
           type: boolean
         toolCallEvents:
@@ -3550,9 +3578,10 @@ components:
             - idle
             - running
           description: >-
-            Whether the session is processing one user turn. Derived from the
-            instance's lifecycle events and never persisted, so it is idle
-            after a platform restart.
+            Whether the session is processing one user turn. Derived only from
+            the session's `turn` events on the live stream (lifecycle names never
+            change it) and never persisted, so it is idle after a platform
+            restart.
         capabilities:
           $ref: '#/components/schemas/AgentCapabilities'
         createdAt:
@@ -3585,7 +3614,9 @@ components:
             normalized event envelope the SSE stream delivers (instanceId,
             sessionId, backend, sequence, timestamp, type and exactly one
             typed payload), with replayed=true to mark it as history rather
-            than a live event.
+            than a live event. History carries the transcript only (message,
+            tool_call, tool_result, thinking and the like); `turn` and
+            `interaction` events are live-only and never appear in it.
           items:
             type: object
         truncated:

@@ -18,30 +18,16 @@ const (
 	TurnRunning TurnState = "running"
 )
 
-// turnFromEvent maps one normalized event to the turn state it implies. Events
-// that do not change the turn report false.
+// turnFromEvent maps one normalized event to the turn state it implies. Only
+// the typed turn boundaries change the state; every other event reports false.
 func turnFromEvent(ev agents.NormalizedEvent) (TurnState, bool) {
-	switch ev.Type {
-	case agents.EventLifecycle:
-		if ev.Lifecycle == nil {
-			return "", false
-		}
-		switch ev.Lifecycle.State {
-		case "execution_started", "agent_start":
-			return TurnRunning, true
-		case "execution_succeeded", "execution_interrupted", "agent_settled", "agent_end":
-			return TurnIdle, true
-		}
-	case agents.EventError:
-		if ev.Error == nil {
-			return "", false
-		}
-		switch ev.Error.Code {
-		case "execution_failed", "process_exit":
-			return TurnIdle, true
-		}
+	if ev.Type != agents.EventTurn || ev.Turn == nil {
+		return "", false
 	}
-	return "", false
+	if ev.Turn.Phase == agents.TurnStarted {
+		return TurnRunning, true
+	}
+	return TurnIdle, true
 }
 
 // ensureTracker starts the instance's turn tracker unless one is running. The

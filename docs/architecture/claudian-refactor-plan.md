@@ -140,3 +140,13 @@ web/src/
   - 文档：`docs/api/openapi.yaml` 的 operationId/DTO 名/summary 同步；协议事实描述保留 opencode 字样。
 - 对外 URL `/projects/{id}/opencode/sessions/{sid}/...` 前缀**未改**（对外契约），记入 backend-boundaries.md 剩余耦合表，安排至 API 版本变更时处理。
 - 后端白名单守卫 `TestRealOpencodeAdapterSatisfiesService` 保留原名（针对真实 opencode 适配器，属于异构事实）。
+
+### 类型化轮次 / 交互推送 / 会话级 Stop（2026-10-16）
+
+与 claudian 的轮次与交互模型对齐，分支 `refactor/typed-turn-interaction`。
+
+- 契约新增 `EventTurn`（`started` / `ended`，结果 `completed` / `cancelled` / `failed`）与 `EventInteraction`（`requested` 携带载荷，`resolved` 仅带 id）。会话层只消费这两类事件，守卫 `TestSessionsDoesNotNameNativeTurnEvents` 禁止原生轮次名。
+- 交互不再走侧信道：会话事件流在回放后、实时事件前写入 `interactions` 快照帧，前端取消了轮询与原始事件订阅。
+- 会话 Stop 改为会话级：门控 `Interrupt`，只中断并标记本会话，不再连带实例与兄弟会话。实例停止仍走 `instances.Stop`（门控 `Stop`）。
+- **偏差**：`rawEvents` 原始事件端点与 `rawEvents` 能力标志保留，作为后端专属调试通道；通用交互路径不依赖它。
+- **不做**：恢复槽位（providerState）与分叉/回退，本次明确排除。

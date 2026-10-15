@@ -17,6 +17,15 @@ func lifecycleFor(instanceID, nativeID, state string) agents.NormalizedEvent {
 	}
 }
 
+func turnFor(instanceID, nativeID, id string, phase agents.TurnPhase, outcome agents.TurnOutcome) agents.NormalizedEvent {
+	return agents.NormalizedEvent{
+		Type:       agents.EventTurn,
+		InstanceID: instanceID,
+		SessionID:  nativeID,
+		Turn:       &agents.TurnPayload{ID: id, Phase: phase, Outcome: outcome},
+	}
+}
+
 func waitForTurn(t *testing.T, svc *Service, projectID uint, sessionID string, want TurnState) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -54,15 +63,15 @@ func TestTurnTracksOnlyTheSessionWhoseTurnChanged(t *testing.T) {
 		t.Fatalf("new session turn = %q, want idle", busy.Turn)
 	}
 
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, busy.NativeSessionID, "execution_started"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, busy.NativeSessionID, "t1", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, busy.ID, TurnRunning)
 	waitForTurn(t, env.svc, env.projectID, other.ID, TurnIdle)
 
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, busy.NativeSessionID, "execution_succeeded"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, busy.NativeSessionID, "t1", agents.TurnEnded, agents.TurnCompleted))
 	waitForTurn(t, env.svc, env.projectID, busy.ID, TurnIdle)
 }
 
-func TestTurnEndsOnFailureAndProcessExit(t *testing.T) {
+func TestTurnEndsOnlyOnATypedTurnBoundary(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-failing"}
@@ -72,9 +81,11 @@ func TestTurnEndsOnFailureAndProcessExit(t *testing.T) {
 	}
 	session := sessionOutcome.Session
 
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "agent_start"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
 
+	// An error alone describes the failure but does not end the turn: the
+	// adapter reports the turn boundary, and the session layer follows it.
 	failed := agents.NormalizedEvent{
 		Type:       agents.EventError,
 		InstanceID: env.instanceID,
@@ -82,17 +93,9 @@ func TestTurnEndsOnFailureAndProcessExit(t *testing.T) {
 		Error:      &agents.ErrorPayload{Code: "execution_failed", Message: "boom"},
 	}
 	env.fake.emit(t, env.instanceID, failed)
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnEnded, agents.TurnFailed))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnIdle)
 
-	env.fake.emit(t, env.instanceID, lifecycleFor(env.instanceID, session.NativeSessionID, "agent_start"))
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t2", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
-
-	exited := agents.NormalizedEvent{
-		Type:       agents.EventError,
-		InstanceID: env.instanceID,
-		SessionID:  session.NativeSessionID,
-		Error:      &agents.ErrorPayload{Code: "process_exit", Message: "exit status 1"},
-	}
-	env.fake.emit(t, env.instanceID, exited)
-	waitForTurn(t, env.svc, env.projectID, session.ID, TurnIdle)
 }

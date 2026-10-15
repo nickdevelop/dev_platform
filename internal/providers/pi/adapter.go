@@ -840,6 +840,8 @@ type instance struct {
 	procs    map[*process]struct{}
 	children map[string]*rpcChild
 	starts   map[string]*childStart
+	// turnSeq mints turn ids unique within the instance.
+	turnSeq uint64
 }
 
 // childStart is an in-flight lazy start of one session's RPC child. Concurrent
@@ -1164,6 +1166,7 @@ func (inst *instance) publish(event agents.NormalizedEvent) {
 // instance is stopping, in which case the kill is expected).
 func (inst *instance) runProcess(proc *process, sessionID string) {
 	stdoutParser := newParser(inst.id, sessionID, inst.now)
+	stdoutParser.newTurnID = func() string { return inst.nextTurnID(sessionID) }
 	stderrParser := newParser(inst.id, sessionID, inst.now)
 
 	var wg sync.WaitGroup
@@ -1181,15 +1184,13 @@ func (inst *instance) runProcess(proc *process, sessionID string) {
 	waitErr := proc.wait()
 	inst.removeProcess(proc)
 	if proc.interrupted.Load() {
-		if !inst.isClosed() {
-			inst.publish(agents.NormalizedEvent{
-				Type:      agents.EventLifecycle,
-				Lifecycle: &agents.LifecycleEvent{State: "agent_settled", Detail: "aborted"},
-				SessionID: sessionID,
-				Timestamp: inst.now(),
-			})
+		if turn, open := stdoutParser.endTurn(agents.TurnCancelled); open && !inst.isClosed() {
+			inst.publish(turn)
 		}
 		return
+	}
+	if turn, open := stdoutParser.endTurn(agents.TurnFailed); open && !inst.isClosed() {
+		inst.publish(turn)
 	}
 	if waitErr != nil && !inst.isClosed() {
 		inst.publish(agents.NormalizedEvent{
@@ -1199,6 +1200,14 @@ func (inst *instance) runProcess(proc *process, sessionID string) {
 			Timestamp: inst.now(),
 		})
 	}
+}
+
+// nextTurnID mints a turn id unique within the instance.
+func (inst *instance) nextTurnID(sessionID string) string {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	inst.turnSeq++
+	return fmt.Sprintf("%s-turn-%d", inst.id, inst.turnSeq)
 }
 
 // subscriber is one consumer of an instance's stream. stash is written by

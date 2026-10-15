@@ -48,9 +48,13 @@ must never expose a control for a capability a backend did not declare.
 | `sessionDiscovery` | ✅ — `GET /api/session?directory=…`. Verified. | ✅ — bounded scan of pi's on-disk JSONL session files for the instance directory. Verified. |
 | `sessionContinue` | ✅ — `GET /api/session/{id}` re-attach. Verified. | ✅ — the next prompt re-uses `--session-id`. Verified at the adapter level; end-to-end transcript continuity is **provisional** (see below). |
 | `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — RPC closes the session child's stdin for an orderly shutdown, bounded then backed by a process-group kill; CLI terminates the per-prompt process group. Verified. |
+
+`stop` gates instance stop only (`POST /api/projects/{id}/instances/{instanceId}/stop`).
+The session stop route (`POST …/sessions/{sessionId}/stop`) is gated by `interrupt`
+instead; see *Turns, stop and interaction events* below.
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through (verified argv plumbing); real model resolution is **provisional**. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake CLI. |
-| `toolConfirmation` | ❌ — the v2 API emits `permission.asked`, but the frozen `AgentAdapter` contract exposes no method to answer it, so no confirmation control is advertised. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. ❌ in CLI mode, which has no dialog channel. |
+| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. ❌ in CLI mode, which has no dialog channel. |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript. Verified against the fake CLI. |
 | `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. |
 
@@ -79,6 +83,37 @@ and restart — no deployment rollback. Both transports share the same session
 files, so a transcript opened under one can be continued under the other.
 Operator-supplied pi extensions can be added with the `PI_EXTENSIONS`
 environment variable (comma-separated paths).
+
+## Turns, stop and interaction events
+
+Every backend reports turn boundaries and pending interactions through the
+contract's typed events, never through its native names. The session layer
+reads only those events; the adapter owns the translation.
+
+| Contract event | `opencode-v2` source | `pi` source |
+| --- | --- | --- |
+| `turn` started | `session.execution.started` | `agent_start` (both transports) |
+| `turn` ended `completed` | `session.execution.succeeded` | `agent_end`, or `agent_settled` when not aborted; whichever arrives first closes the turn, the other is a no-op |
+| `turn` ended `cancelled` | `session.execution.interrupted` | `agent_settled` with `aborted` set (RPC `abort` only marks a run that is open), or the CLI process killed by interrupt |
+| `turn` ended `failed` | `session.execution.failed`, then an `error` event | CLI process exiting while its turn is still open, then the error event; RPC child exiting with an open run |
+| `interaction` requested / resolved | `permission.asked` / `permission.replied`; `form.created` / `form.replied` / `form.cancelled` | RPC `extension_ui_request` `confirm` / the reply, or a drain when the child is killed |
+
+Rules the session layer enforces:
+
+- The workbench's busy state is derived from `turn` events only. A `lifecycle`
+  state name never changes it, and an `error` event alone does not end a turn.
+- An orphan `ended` (no open turn) is ignored. For pi, `agent_end` and
+  `agent_settled` close one turn exactly once.
+- Turn ids are unique within an instance, so the started and ended events of one
+  turn pair up even when sessions of the same instance interleave.
+- Session stop (`POST …/sessions/{sessionId}/stop`) requires `interrupt`. A running
+  turn is interrupted through the adapter first; if that fails, the session keeps
+  its state and the request returns `502`. The instance and its other sessions are
+  never touched.
+- Live streams open with an `interactions` frame (no id) listing the session's
+  pending permissions and forms, written after any replayed frames and before live
+  events. It is written only when `toolConfirmation` is declared. History replay
+  carries transcript events only; turn and interaction events are never replayed.
 
 ## Machine-level service (`opencode-v2`)
 

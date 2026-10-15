@@ -83,7 +83,7 @@ func TestRPCSendMessageStreamsEvents(t *testing.T) {
 	}
 
 	got := drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 	var sawDelta, sawToolCall, sawToolResult bool
 	for i, ev := range got {
@@ -158,15 +158,15 @@ func TestRPCInterruptUsesAbort(t *testing.T) {
 	}
 	// Wait for the run to start so abort has something to cancel.
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_start"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnStarted
 	})
 
 	if err := adapter.Interrupt(ctx, *ref); err != nil {
 		t.Fatalf("Interrupt() error = %v", err)
 	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil &&
-			ev.Lifecycle.State == "agent_settled" && ev.Lifecycle.Detail == "aborted"
+		return ev.Type == agents.EventTurn && ev.Turn != nil &&
+			ev.Turn.Phase == agents.TurnEnded && ev.Turn.Outcome == agents.TurnCancelled
 	})
 
 	// The child and instance survive: a later prompt is accepted.
@@ -234,7 +234,7 @@ func TestRPCIdleReaperReclaimsChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 	instRef, err := adapter.getInstance(inst.ID)
 	if err != nil {
@@ -346,11 +346,29 @@ func TestRPCPermissions(t *testing.T) {
 	}
 	requestID := pending[0].ID
 
+	// The confirmation reaches the stream as a requested interaction carrying
+	// the same id the reply endpoint takes back.
+	requestedEvents := drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventInteraction && ev.Interaction != nil && ev.Interaction.Phase == agents.InteractionRequested
+	})
+	requested := requestedEvents[len(requestedEvents)-1]
+	if requested.Interaction.ID != requestID || requested.Interaction.Kind != agents.InteractionPermission ||
+		requested.Interaction.Permission == nil || requested.Interaction.Permission.Action != "Allow tool call?" {
+		t.Fatalf("requested interaction = %+v, want the pending confirmation", requested.Interaction)
+	}
+
 	if err := adapter.ReplyPermission(ctx, *ref, requestID, "once", ""); err != nil {
 		t.Fatalf("ReplyPermission() error = %v", err)
 	}
+	resolvedEvents := drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventInteraction && ev.Interaction != nil && ev.Interaction.Phase == agents.InteractionResolved
+	})
+	resolved := resolvedEvents[len(resolvedEvents)-1]
+	if resolved.Interaction.ID != requestID || resolved.Interaction.Kind != agents.InteractionPermission {
+		t.Fatalf("resolved interaction = %+v, want the answered confirmation", resolved.Interaction)
+	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 	if err := adapter.ReplyPermission(ctx, *ref, requestID, "once", ""); !errors.Is(err, agents.ErrReplyExpired) {
 		t.Errorf("second ReplyPermission() = %v, want ErrReplyExpired", err)
@@ -395,7 +413,7 @@ func TestRPCAlwaysApprovalIsRemembered(t *testing.T) {
 		t.Fatalf("ReplyPermission(always) error = %v", err)
 	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 
 	if !adapter.sessionApproved(inst.ID, ref.SessionID, confirmKey("Allow tool call?", "bash: rm -rf /tmp/x")) {
@@ -406,7 +424,7 @@ func TestRPCAlwaysApprovalIsRemembered(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 	pending, err := adapter.ListPermissions(ctx, *ref)
 	if err != nil {
@@ -446,7 +464,7 @@ func TestRPCFollowUpQueuesSecondPrompt(t *testing.T) {
 			if !ok {
 				t.Fatal("subscription closed before both turns settled")
 			}
-			if ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled" {
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded {
 				settled++
 			}
 		case <-deadline:
@@ -473,7 +491,7 @@ func TestRPCListModelsUsesLiveChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 
 	// The child is live, so it answers even though the directory means nothing
@@ -497,12 +515,13 @@ func TestRPCConnMalformedRecordsContinue(t *testing.T) {
 		events = append(events, event)
 	})
 	input := "not json\n" +
+		"{\"type\":\"agent_start\"}\n" +
 		"{\"type\":\"agent_settled\",\"aborted\":false}\n"
 	if err := conn.readLoop(strings.NewReader(input)); err != nil {
 		t.Fatalf("readLoop() error = %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("events = %d (%+v), want a parse_error then agent_settled", len(events), events)
+	if len(events) != 3 {
+		t.Fatalf("events = %d (%+v), want a parse_error then the turn's start and end", len(events), events)
 	}
 	if events[0].Type != agents.EventError || events[0].Error == nil || events[0].Error.Code != "parse_error" {
 		t.Errorf("first event = %+v, want parse_error", events[0])
@@ -510,8 +529,11 @@ func TestRPCConnMalformedRecordsContinue(t *testing.T) {
 	if len(events[0].Raw) == 0 {
 		t.Error("parse_error did not preserve the offending bytes")
 	}
-	if events[1].Type != agents.EventLifecycle || events[1].Lifecycle.State != "agent_settled" {
-		t.Errorf("second event = %+v, want agent_settled after the bad record", events[1])
+	if events[1].Type != agents.EventTurn || events[1].Turn.Phase != agents.TurnStarted {
+		t.Errorf("second event = %+v, want the turn to start after the bad record", events[1])
+	}
+	if events[2].Type != agents.EventTurn || events[2].Turn.Phase != agents.TurnEnded || events[2].Turn.Outcome != agents.TurnCompleted {
+		t.Errorf("third event = %+v, want the turn to end completed", events[2])
 	}
 }
 
@@ -524,19 +546,20 @@ func TestRPCConnSplitsOnlyOnLF(t *testing.T) {
 
 	// A user message whose text contains a Unicode line separator inside the
 	// JSON string, followed by an agent_settled record.
-	input := "{\"type\":\"message_start\",\"message\":{\"role\":\"user\",\"content\":\"a\u2028b\"}}\n" +
+	input := "{\"type\":\"agent_start\"}\n" +
+		"{\"type\":\"message_start\",\"message\":{\"role\":\"user\",\"content\":\"a\u2028b\"}}\n" +
 		"{\"type\":\"agent_settled\",\"aborted\":false}\n"
 	if err := conn.readLoop(strings.NewReader(input)); err != nil {
 		t.Fatalf("readLoop() error = %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("events = %d (%+v), want 2 (U+2028 must stay inside the record)", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("events = %d (%+v), want 3 (U+2028 must stay inside the record)", len(got), got)
 	}
-	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != "a\u2028b" {
-		t.Errorf("first event = %+v, want the message with U+2028 intact", got[0])
+	if got[1].Type != agents.EventMessage || got[1].Message == nil || got[1].Message.Text != "a\u2028b" {
+		t.Errorf("second event = %+v, want the message with U+2028 intact", got[1])
 	}
-	if got[1].Type != agents.EventLifecycle || got[1].Lifecycle.State != "agent_settled" {
-		t.Errorf("second event = %+v, want agent_settled", got[1])
+	if got[2].Type != agents.EventTurn || got[2].Turn.Phase != agents.TurnEnded {
+		t.Errorf("third event = %+v, want the turn to end", got[2])
 	}
 }
 
@@ -715,7 +738,7 @@ func TestRPCFixtureHandshake(t *testing.T) {
 		if event.Type == agents.EventToolResult && event.ToolResult != nil {
 			sawToolResult = true
 		}
-		if event.Type == agents.EventLifecycle && event.Lifecycle != nil && event.Lifecycle.State == "agent_settled" {
+		if event.Type == agents.EventTurn && event.Turn != nil && event.Turn.Phase == agents.TurnEnded {
 			sawSettled = true
 		}
 	}
@@ -727,5 +750,49 @@ func TestRPCFixtureHandshake(t *testing.T) {
 		if event.Type == agents.EventUnknown && strings.Contains(string(event.Raw), "extension_ui_request") {
 			t.Errorf("extension UI record leaked into the event stream: %s", event.Raw)
 		}
+	}
+}
+
+// TestRPCChildExitEndsOpenTurnAsFailed verifies a child that dies while a run is
+// open reports the run as failed before the process error explains it, so no
+// consumer is left believing the turn is still running.
+func TestRPCChildExitEndsOpenTurnAsFailed(t *testing.T) {
+	adapter := newRPCAdapter(t, t.TempDir(), "sleep")
+	ctx := context.Background()
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "block"}); err != nil {
+		t.Fatal(err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnStarted
+	})
+
+	owner, err := adapter.getInstance(inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := owner.child(ref.SessionID)
+	if child == nil {
+		t.Fatal("no live child for the running session")
+	}
+	child.proc.kill()
+
+	got := drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventError && ev.Error != nil && ev.Error.Code == "process_exit"
+	})
+	if len(got) < 2 {
+		t.Fatalf("events before the exit error = %+v, want the turn end first", got)
+	}
+	end := got[len(got)-2]
+	if end.Type != agents.EventTurn || end.Turn.Phase != agents.TurnEnded || end.Turn.Outcome != agents.TurnFailed {
+		t.Errorf("event before the exit error = %+v, want the turn ended failed", end)
 	}
 }

@@ -218,7 +218,6 @@ const {
   toolNotice,
   pendingToolCall,
   pendingForms,
-  startApprovalPoll,
   confirmTool: onConfirmTool,
   denyTool: onDenyTool,
   answerForm: onAnswerForm,
@@ -227,7 +226,6 @@ const {
   sessionId: toRef(props, 'sessionId'),
   activeSession,
   activeMessages,
-  isRunning,
   afterFormAnswer: () => {
     void nextTick(() => scrollToBottom(false))
   },
@@ -284,20 +282,9 @@ async function open() {
     sendError.value = '首条消息未能随会话一起发送，已保留文本，请重新发送。'
   }
   try {
+    // Opening subscribes the session's stream, whose first frame carries the
+    // pending confirmations and forms; no separate approval load is needed.
     await sessions.openSession(props.projectId, props.sessionId)
-    const session = sessions.sessionById(props.sessionId)
-    if (session?.capabilities.toolConfirmation) {
-      await interactions.loadApprovals(props.projectId, props.sessionId)
-      if (interactions.error) toolNotice.value = interactions.error
-    }
-    // Approvals arrive on the raw event stream, so it is opened exactly when the
-    // backend declares it.
-    if (session?.capabilities.rawEvents) {
-      interactions.subscribeRaw(props.projectId, props.sessionId, session.nativeSessionId)
-    }
-    // A turn may already be running when the session is opened; start polling so
-    // its permission cards appear even without a push channel.
-    startApprovalPoll()
     // The workdir row is per-session metadata: it loads with the session and
     // never blocks the conversation. The context limit refreshes from the
     // picker's cache once its catalog lands (via onModelStatus).
@@ -381,7 +368,6 @@ async function removeSession() {
   confirmingDelete.value = false
   try {
     useOpenTabsStore().closeTab(session.id)
-    useInteractionsStore().unsubscribeRaw(props.projectId, session.id)
   } catch {
     // Tab cleanup is best-effort; navigation still happens.
   }

@@ -531,6 +531,8 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "ok" || got[6].ToolResult.IsError {
 		t.Fatalf("event 6 = %+v", got[6])
 	}
+	// 8: this execution never started in the stream, so its failure has no
+	// open turn to end and is reported as the error alone.
 	if got[7].Type != agents.EventError || got[7].Error.Code != "execution_failed" || !strings.Contains(got[7].Error.Message, "boom") {
 		t.Fatalf("event 7 = %+v", got[7])
 	}
@@ -1286,5 +1288,79 @@ func TestExecPathPrefersResolveExecutable(t *testing.T) {
 	defaulted := New(Options{Executable: "fallback"})
 	if got := defaulted.execPath(); got != "fallback" {
 		t.Errorf("execPath() without resolver = %q, want fallback", got)
+	}
+}
+
+func TestAdapterSubscribeMapsTurnsAndInteractions(t *testing.T) {
+	events := strings.Join([]string{
+		sseEvent("evt_1", "session.execution.started", `{"sessionID":"ses_1"}`, "/x"),
+		sseEvent("evt_2", "permission.asked", `{"sessionID":"ses_1","requestID":"per_1","action":"bash","resources":["ls"],"message":"run ls?"}`, "/x"),
+		sseEvent("evt_3", "permission.replied", `{"sessionID":"ses_1","requestID":"per_1"}`, "/x"),
+		sseEvent("evt_4", "form.created", `{"sessionID":"ses_1","form":{"id":"frm_1","title":"Pick","fields":[{"name":"x"}]}}`, "/x"),
+		sseEvent("evt_5", "form.cancelled", `{"sessionID":"ses_1","id":"frm_1"}`, "/x"),
+		sseEvent("evt_6", "session.execution.succeeded", `{"sessionID":"ses_1"}`, "/x"),
+		sseEvent("evt_7", "session.execution.started", `{"sessionID":"ses_1"}`, "/x"),
+		sseEvent("evt_8", "session.execution.interrupted", `{"sessionID":"ses_1"}`, "/x"),
+	}, "")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"Live","time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	got := collectEvents(t, ch, 7)
+
+	if got[0].Type != agents.EventTurn || got[0].Turn.Phase != agents.TurnStarted {
+		t.Fatalf("event 0 = %+v", got[0])
+	}
+	perm := got[1]
+	if perm.Type != agents.EventInteraction || perm.Interaction.Kind != agents.InteractionPermission ||
+		perm.Interaction.Phase != agents.InteractionRequested || perm.Interaction.ID != "per_1" ||
+		perm.Interaction.Permission.Action != "bash" || perm.Interaction.Permission.Message != "run ls?" ||
+		len(perm.Interaction.Permission.Resources) != 1 {
+		t.Fatalf("event 1 = %+v", perm)
+	}
+	if got[2].Type != agents.EventInteraction || got[2].Interaction.Phase != agents.InteractionResolved || got[2].Interaction.ID != "per_1" {
+		t.Fatalf("event 2 = %+v", got[2])
+	}
+	form := got[3]
+	if form.Type != agents.EventInteraction || form.Interaction.Kind != agents.InteractionForm ||
+		form.Interaction.Phase != agents.InteractionRequested || form.Interaction.Form.Title != "Pick" || len(form.Interaction.Form.Fields) == 0 {
+		t.Fatalf("event 3 = %+v", form)
+	}
+	if got[4].Type != agents.EventInteraction || got[4].Interaction.Phase != agents.InteractionResolved || got[4].Interaction.ID != "frm_1" {
+		t.Fatalf("event 4 = %+v", got[4])
+	}
+	if got[5].Type != agents.EventTurn || got[5].Turn.Phase != agents.TurnEnded || got[5].Turn.Outcome != agents.TurnCompleted {
+		t.Fatalf("event 5 = %+v", got[5])
+	}
+	if got[6].Type != agents.EventTurn || got[6].Turn.Phase != agents.TurnStarted || got[6].Turn.ID == got[0].Turn.ID {
+		t.Fatalf("event 6 = %+v: a second turn must get a fresh id", got[6])
+	}
+	for i, ev := range got {
+		if err := ev.Validate(); err != nil {
+			t.Fatalf("event %d violates the contract: %v", i, err)
+		}
 	}
 }

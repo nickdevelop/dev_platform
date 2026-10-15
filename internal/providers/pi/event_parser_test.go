@@ -420,3 +420,46 @@ func TestParserEmptyAssistantMessageEndIsSilent(t *testing.T) {
 		}
 	}
 }
+
+// TestParserTurnBoundaries pins the agent-run contract: a run opens on
+// agent_start and closes once, whichever of agent_end or agent_settled arrives
+// first; an end with no open run is dropped; and an abort requested mid-run
+// makes the run cancelled even when pi reports it completed, while an abort
+// sent while idle cannot cancel the next run.
+func TestParserTurnBoundaries(t *testing.T) {
+	p := newParser("inst", "sess", nil)
+	var got []agents.NormalizedEvent
+	feed := func(line string) {
+		p.parseLine([]byte(line), func(ev agents.NormalizedEvent) { got = append(got, ev) })
+	}
+
+	p.markAbort()
+	feed(`{"type":"agent_start"}`)
+	feed(`{"type":"agent_end"}`)
+	feed(`{"type":"agent_settled","aborted":false}`)
+	feed(`{"type":"agent_start"}`)
+	p.markAbort()
+	feed(`{"type":"agent_end"}`)
+	feed(`{"type":"agent_settled","aborted":false}`)
+	feed(`{"type":"agent_end"}`)
+
+	var turns []agents.TurnPayload
+	for _, ev := range got {
+		if ev.Type != agents.EventTurn {
+			t.Fatalf("unexpected event %+v", ev)
+		}
+		turns = append(turns, *ev.Turn)
+	}
+	if len(turns) != 4 {
+		t.Fatalf("turn boundaries = %+v, want start, end, start, end", turns)
+	}
+	if turns[0].Phase != agents.TurnStarted || turns[1].Phase != agents.TurnEnded || turns[1].Outcome != agents.TurnCompleted {
+		t.Errorf("first run = %+v, %+v, want started then completed", turns[0], turns[1])
+	}
+	if turns[2].Phase != agents.TurnStarted || turns[3].Phase != agents.TurnEnded || turns[3].Outcome != agents.TurnCancelled {
+		t.Errorf("second run = %+v, %+v, want started then cancelled", turns[2], turns[3])
+	}
+	if turns[0].ID == turns[2].ID {
+		t.Errorf("two runs share turn id %q", turns[0].ID)
+	}
+}

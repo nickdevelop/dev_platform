@@ -72,6 +72,7 @@ func (a *Adapter) ReplyPermission(ctx context.Context, ref agents.SessionRef, re
 	if err := child.respond(response); err != nil {
 		return fmt.Errorf("pi: reply permission %q: %w", requestID, err)
 	}
+	child.publishInteraction(agents.InteractionPayload{ID: requestID, Kind: agents.InteractionPermission, Phase: agents.InteractionResolved})
 	if decision == "always" {
 		a.rememberApproval(ref.InstanceID, ref.SessionID, confirmKey(entry.request.Action, entry.request.Message))
 	}

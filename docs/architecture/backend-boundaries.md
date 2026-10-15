@@ -20,6 +20,9 @@
 ## 契约层提供的通用机制
 
 - **能力声明 `Capabilities`**：`AgentAdapter` 的一部分，每个布尔值都必须显式声明。通用层用能力门控控件，不用后端 ID 分支。
+- **类型化轮次 `EventTurn`**：轮次边界（`started` / `ended`，结果为 `completed` / `cancelled` / `failed`）是会话忙碌状态的唯一来源。`lifecycle` 的状态名只用于展示，不改变轮次。被用户中断或停止的轮次结束为 `cancelled`，不是 `failed`；失败轮次之后必有一个 `error` 事件说明原因。
+- **交互事件 `EventInteraction`**：工具确认（`permission`）与问题表单（`form`）的请求与解决（`requested` 携带对应载荷，`resolved` 只带 id）。它是待处理交互的唯一通道，前端不再轮询，也不订阅原始事件。
+- **会话交互快照**：会话事件流在回放之后、实时事件之前写入一帧 `interactions`（无 id），内容为该会话当前待处理的权限与表单，客户端据此整体替换待处理集合。仅当后端声明 `toolConfirmation` 时写入。
 - **可选扩展接口**：`agents.PermissionReplier`（工具确认与表单）、`agents.RawEventOpener`（原始事件流）、`agents.HistoryReader`（历史）、`agents.ServiceController`（机器级服务）。适配器实现才可用，未实现时通用层返回 `ErrUnsupportedCapability`。
 - **后端描述符 `BackendDescriptor` 与 `Catalog`**：每个适配器包导出 `Descriptor`，包含显示名、可执行文件名、默认启用、展示顺序、测试版本范围、是否有机器级服务，以及可选的传输模式列表（如 pi 的 `cli`/`rpc`）。组合根用它们构建 catalog。
 - **注册表 `Registry`**：适配器的显式注册点。组合根在启动时调用 `checkBackendWiring`，确认注册表与 catalog 描述的后端集合完全一致，否则启动失败。
@@ -40,6 +43,8 @@
 - 不得在通用代码里补默认值。未知后端必须显式报错或返回 `none`，不得回退到某个已知后端。
 - 组件不得写死后端名称或服务名称。需要展示的事实从 `agents` store（`backendLabel`、`orderedBackends`、`serviceBackends`、`backendFor`）读取。
 - 只有组合根与适配器包能决定某个后端"存在"。业务路径不得启动、停止或替换 agent 的机器级服务（见 `docs/agent-compatibility.md`）。
+- 会话层（`internal/app/sessions`）不得出现后端原生轮次事件名。守卫测试 `TestSessionsDoesNotNameNativeTurnEvents` 禁止这 9 个名字（`execution_started/succeeded/interrupted/failed`、`agent_start/agent_end/agent_settled`、`turn_start/turn_end`），轮次状态只能消费契约的 `EventTurn`。原生名到契约事件的翻译属于适配器职责。
+- 会话级 Stop 只停止本会话：门控 `Interrupt` 能力，运行中的轮次先经适配器 `Interrupt`，成功后才把本会话标记为 `stopped`。它不得调用 `instances.Stop`，也不得改动实例或兄弟会话。停止实例是另一条路径（`POST /projects/{id}/instances/{instanceId}/stop`），门控 `Stop` 能力。
 
 ## 已知的剩余耦合（有意保留）
 
@@ -48,4 +53,5 @@
 | `/opencode/` 交互子路由的 URL 前缀（权限/表单/raw-events） | 处理方式为能力门控，但 URL 历史上按 opencode 命名 | 保持对外 URL 不变；如需更名须同步 openapi.yaml、e2e 与外部脚本，安排在 API 版本变更时 |
 | `internal/app/resourcesync` 的 `OpenCode{}`、`Pi{}` 适配器 | 资源同步仍在组合根手工装配 | 待 catalog 稳定后评估合并进描述符 |
 | `internal/app/instances` 的项目级后端开关 `AgentBackendConfig` | 留在实例包，与启动耦合紧密 | 有意保留，见实施计划的"不在本计划内"一节 |
+| `/opencode/` 原始事件端点（`/raw-events`）与前端 `api/interactions.ts` 的 `rawEventsPath` | 与 claudian 对齐时的偏差：原始流保留为调试通道，待处理交互已改走归一化流，前端交互不再订阅原始流 | 保留端点与 `rawEvents` 能力标志；仅供后端专属调试视图使用，通用交互路径不依赖它 |
 | 机器级服务的界面文案 | 文案中的"opencode service"由 `label` 小写生成，保持了原有字符串 | 新增带服务的后端时文案自动生成 |

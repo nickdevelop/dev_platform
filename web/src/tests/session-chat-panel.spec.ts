@@ -67,17 +67,51 @@ class FakeEventSource {
   readyState = FakeEventSource.CONNECTING
   onopen: (() => void) | null = null
   onerror: (() => void) | null = null
+  private readonly listeners = new Map<string, Array<(event: MessageEvent) => void>>()
 
   constructor(url: string) {
     this.url = url
     FakeEventSource.instances.push(this)
   }
 
-  addEventListener() {}
+  addEventListener(type: string, listener: (event: MessageEvent) => void) {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+
+  // dispatch delivers one SSE frame of the named event to its listeners, the
+  // way the browser would after the server wrote it.
+  dispatch(type: string, data: unknown) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: JSON.stringify(data), lastEventId: '' } as MessageEvent)
+    }
+  }
 
   close() {
     this.readyState = FakeEventSource.CLOSED
   }
+}
+
+// interactionFrame wraps one interaction boundary in the normalized envelope the
+// session stream sends, addressed to the platform session id.
+function interactionFrame(sequence: number, interaction: Record<string, unknown>) {
+  return {
+    type: 'interaction',
+    instanceId: 'inst-1',
+    sessionId: 'sess-1',
+    backend: 'opencode-v2',
+    sequence,
+    timestamp: '2026-10-09T00:00:00Z',
+    interaction,
+  }
+}
+
+// sessionStream returns the session's live stream: the most recently opened
+// one, since a reconnect replaces the earlier handle.
+function sessionStream(sessionId: string): FakeEventSource {
+  const matches = FakeEventSource.instances.filter((entry) => entry.url.includes(`/sessions/${sessionId}/`))
+  const source = matches[matches.length - 1]
+  if (!source) throw new Error(`no event stream opened for ${sessionId}`)
+  return source
 }
 
 // stubSessionList serves every request opening a session makes: the project's
@@ -192,14 +226,10 @@ describe('SessionChatPanel opencode approvals', () => {
     const agents = useAgentsStore()
     vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
-    // Keep the raw fetch stream out of these tests: approval state is driven
-    // directly on the store.
-    vi.spyOn(useInteractionsStore(), 'subscribeRaw').mockImplementation(() => {})
   })
 
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
-    useInteractionsStore().unsubscribeAllRaw()
     clearModelCache()
     vi.unstubAllGlobals()
   })
@@ -208,37 +238,47 @@ describe('SessionChatPanel opencode approvals', () => {
     return session(id, { capabilities: capabilities({ toolConfirmation: true, rawEvents: true }) })
   }
 
-  it('opens the raw event stream only when the backend declares it', async () => {
-    const subscribe = vi.spyOn(useInteractionsStore(), 'subscribeRaw')
-    stubSessionList([session('sess-1', { capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) })])
-    mountPanel('sess-1')
+  it('shows pending approvals from the stream snapshot the session opens with', async () => {
+    stubSessionList([opencodeSession('sess-1')])
+    const wrapper = mountPanel('sess-1')
     await flushPromises()
-    expect(subscribe).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
+
+    sessionStream('sess-1').dispatch('interactions', {
+      permissions: [{ id: 'per_1', sessionId: 'native-sess-1', action: 'bash', resources: ['ls'] }],
+      forms: [],
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('bash')
   })
 
-  it('polls approvals while a turn runs for a backend without raw events', async () => {
-    vi.useFakeTimers()
-    try {
-      stubSessionList([
-        session('sess-1', { turn: 'running', capabilities: capabilities({ toolConfirmation: true, rawEvents: false }) }),
-      ])
-      const load = vi.spyOn(useInteractionsStore(), 'loadApprovals')
-      mountPanel('sess-1')
-      await vi.advanceTimersByTimeAsync(0)
-      const initial = load.mock.calls.length
-      await vi.advanceTimersByTimeAsync(1600)
-      expect(load.mock.calls.length).toBeGreaterThan(initial)
-    } finally {
-      vi.useRealTimers()
-    }
+  it('clears an approval when the stream reports it resolved', async () => {
+    stubSessionList([opencodeSession('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    const stream = sessionStream('sess-1')
+    stream.dispatch('interaction', interactionFrame(1, {
+      id: 'per_1',
+      kind: 'permission',
+      phase: 'requested',
+      permission: { id: 'per_1', sessionId: 'native-sess-1', action: 'bash', resources: [] },
+    }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(true)
+
+    stream.dispatch('interaction', interactionFrame(2, { id: 'per_1', kind: 'permission', phase: 'resolved' }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="tool-confirmation"]').exists()).toBe(false)
   })
 
-  it('subscribes to the raw event stream when the backend declares raw events', async () => {
-    const subscribe = vi.spyOn(useInteractionsStore(), 'subscribeRaw')
+  it('never opens a second raw channel for approvals', async () => {
     stubSessionList([opencodeSession('sess-1')])
     mountPanel('sess-1')
     await flushPromises()
-    expect(subscribe).toHaveBeenCalledWith(expect.any(Number), 'sess-1', expect.any(String))
+    const urls = vi.mocked(fetch).mock.calls.map((call) => String(call[0]))
+    expect(urls.some((url) => url.includes('/raw-events'))).toBe(false)
   })
 
   it('shows no confirmation for a dangling tool_call on opencode sessions', async () => {
@@ -835,7 +875,7 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
   })
 
-  it('keeps an aborted pi turn idle without a process_exit error entry', () => {
+  it('keeps a cancelled turn idle without an error entry', () => {
     const store = useSessionsStore()
     store.sessions = [session('sess-1', { turn: 'running' })]
     store.handleEvent(
@@ -846,8 +886,8 @@ describe('SessionChatPanel opencode approvals', () => {
         backend: 'pi',
         sequence: 2,
         timestamp: '2026-10-09T00:00:00Z',
-        type: 'lifecycle',
-        lifecycle: { state: 'agent_settled', detail: 'aborted' },
+        type: 'turn',
+        turn: { id: 'turn-1', phase: 'ended', outcome: 'cancelled' },
       }),
     )
 

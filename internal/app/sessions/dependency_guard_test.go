@@ -68,3 +68,33 @@ func TestGenericPackagesNameNoBackend(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionsDoesNotNameNativeTurnEvents keeps turn tracking on the typed
+// contract. Backend-native lifecycle names (opencode's execution_* records, pi's
+// agent_* records) are the adapters' business: they map them to EventTurn, and
+// the generic session layer must never match on them again.
+func TestSessionsDoesNotNameNativeTurnEvents(t *testing.T) {
+	forbidden := []string{
+		"execution_started", "execution_succeeded", "execution_interrupted", "execution_failed",
+		"agent_start", "agent_end", "agent_settled", "turn_start", "turn_end",
+	}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, literal := range forbidden {
+			if strings.Contains(string(data), literal) {
+				t.Errorf("%s names native turn event %q; map it to agents.EventTurn in the adapter", name, literal)
+			}
+		}
+	}
+}

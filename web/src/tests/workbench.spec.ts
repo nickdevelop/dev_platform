@@ -451,7 +451,7 @@ describe('session store streaming and isolation', () => {
 })
 
 describe('stop semantics', () => {
-  it('marks the target session stopped and its siblings disconnected, leaving other instances active', async () => {
+  it('marks only the target session stopped, leaving its siblings and the instance active', async () => {
     const stopped = session({ id: 'sess-1', status: 'stopped' })
     stubRoutes([
       [
@@ -477,9 +477,9 @@ describe('stop semantics', () => {
     await sessions.stopSession(1, 'sess-1')
 
     expect(sessions.sessionById('sess-1')?.status).toBe('stopped')
-    // The adapter stops at instance level: same-instance siblings are
-    // reported disconnected, but a different instance is untouched.
-    expect(sessions.sessionById('sess-2')?.status).toBe('disconnected')
+    // A session stop is session-scoped: same-instance siblings keep their own
+    // runs, and so does a session on another instance.
+    expect(sessions.sessionById('sess-2')?.status).toBe('active')
     expect(sessions.sessionById('sess-3')?.status).toBe('active')
   })
 })

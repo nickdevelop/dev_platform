@@ -7,6 +7,7 @@
 
 import { apiRequest } from './client'
 import type { BackendId, Capabilities } from './agents'
+import type { FormInfo, PermissionRequest } from './interactions'
 
 export type { BackendId, Capabilities } from './agents'
 
@@ -71,6 +72,8 @@ export type NormalizedEventType =
   | 'tool_call'
   | 'tool_result'
   | 'error'
+  | 'turn'
+  | 'interaction'
   | 'unknown'
 
 // Mirrors agents.MessageModel: the model that produced one assistant message.
@@ -142,6 +145,32 @@ export interface LifecyclePayload {
   usage?: MessageUsage
 }
 
+// Mirrors agents.TurnPayload: a turn boundary. The started and ended events of
+// one turn share id. Only these events change whether a session is busy.
+export interface TurnPayload {
+  id: string
+  phase: 'started' | 'ended'
+  outcome?: 'completed' | 'cancelled' | 'failed'
+}
+
+// Mirrors agents.InteractionPayload: a tool confirmation or question form the
+// agent waits on. A requested interaction carries its permission or form; a
+// resolved one carries only the id.
+export interface InteractionPayload {
+  id: string
+  kind: 'permission' | 'form'
+  phase: 'requested' | 'resolved'
+  permission?: PermissionRequest
+  form?: FormInfo
+}
+
+// Payload of the "interactions" SSE frame a stream opens with: the session's
+// pending set at the join point, which replaces the client's set.
+export interface InteractionSnapshot {
+  permissions: PermissionRequest[]
+  forms: FormInfo[]
+}
+
 export interface NormalizedEvent {
   instanceId: string
   sessionId?: string
@@ -158,6 +187,8 @@ export interface NormalizedEvent {
   toolCall?: ToolCallPayload
   toolResult?: ToolResultPayload
   error?: ErrorPayload
+  turn?: TurnPayload
+  interaction?: InteractionPayload
   raw?: unknown
 }
 

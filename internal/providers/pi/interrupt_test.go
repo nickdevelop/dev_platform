@@ -97,8 +97,8 @@ func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
 			if ev.Type == agents.EventError {
 				t.Fatalf("interrupt published an error event: %+v", ev.Error)
 			}
-			settled = ev.Type == agents.EventLifecycle && ev.Lifecycle != nil &&
-				ev.Lifecycle.State == "agent_settled" && ev.Lifecycle.Detail == "aborted"
+			settled = ev.Type == agents.EventTurn && ev.Turn != nil &&
+				ev.Turn.Phase == agents.TurnEnded && ev.Turn.Outcome == agents.TurnCancelled
 		case <-deadline:
 			t.Fatal("aborted turn never settled")
 		}

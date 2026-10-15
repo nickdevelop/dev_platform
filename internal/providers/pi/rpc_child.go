@@ -125,6 +125,7 @@ func (a *Adapter) startRPCChild(inst *instance, sessionID, model, name string) (
 	}
 
 	parser := newParser(inst.id, sessionID, a.now)
+	parser.newTurnID = func() string { return inst.nextTurnID(sessionID) }
 	child := &rpcChild{
 		adapter:   a,
 		inst:      inst,
@@ -211,6 +212,11 @@ func (c *rpcChild) run() {
 	c.inst.removeChild(c)
 	close(c.done)
 
+	// A run still open when the child dies ends failed before the process
+	// error explains why.
+	if turn, open := c.parser.endTurn(agents.TurnFailed); open && !c.inst.isClosed() {
+		c.inst.publish(turn)
+	}
 	if !c.orderly.Load() && !c.inst.isClosed() {
 		message := "pi rpc child exited"
 		if waitErr != nil {
@@ -240,13 +246,29 @@ func (c *rpcChild) handleExtensionUI(request *rpcExtensionUIRequest) bool {
 		_ = c.conn.respondExtensionUI(rpcExtensionUIResponse{Type: "extension_ui_response", ID: request.ID, Confirmed: &confirmed})
 		return true
 	}
-	c.pending.add(agents.PermissionRequest{
+	permission := agents.PermissionRequest{
 		ID:        request.ID,
 		SessionID: c.sessionID,
 		Action:    request.Title,
 		Message:   request.Message,
+	}
+	c.pending.add(permission)
+	c.publishInteraction(agents.InteractionPayload{
+		ID:         request.ID,
+		Kind:       agents.InteractionPermission,
+		Phase:      agents.InteractionRequested,
+		Permission: &permission,
 	})
 	return true
+}
+
+// publishInteraction emits one interaction boundary of the child's session.
+func (c *rpcChild) publishInteraction(payload agents.InteractionPayload) {
+	c.inst.publish(agents.NormalizedEvent{
+		Type:        agents.EventInteraction,
+		SessionID:   c.sessionID,
+		Interaction: &payload,
+	})
 }
 
 // confirmKey derives a stable rule key for an approval so "always" can be
@@ -282,19 +304,18 @@ func (c *rpcChild) setStreaming(streaming bool) {
 // isStreaming reports whether a run is in flight.
 func (c *rpcChild) isStreaming() bool { return c.streaming.Load() }
 
-// observe tracks run state from lifecycle events so followUp queuing and idle
+// observe tracks run state from turn boundaries so followUp queuing and idle
 // reclamation see a run start and settle without an extra get_state round trip.
 func (c *rpcChild) observe(event agents.NormalizedEvent) {
-	if event.Type != agents.EventLifecycle || event.Lifecycle == nil {
+	if event.Type != agents.EventTurn || event.Turn == nil {
 		return
 	}
-	switch event.Lifecycle.State {
-	case "agent_start", "turn_start":
+	if event.Turn.Phase == agents.TurnStarted {
 		c.setStreaming(true)
-	case "agent_settled":
-		c.setStreaming(false)
-		c.touch()
+		return
 	}
+	c.setStreaming(false)
+	c.touch()
 }
 
 // beginRetire claims a child for reclamation, reporting false when it is
@@ -374,6 +395,7 @@ func (c *rpcChild) setName(ctx context.Context, name string) error {
 // abort asks pi to cancel the running turn. The response arrives once the
 // session is idle. A child without a run answers immediately.
 func (c *rpcChild) abort(ctx context.Context) error {
+	c.parser.markAbort()
 	response, err := c.conn.request(ctx, newAbortCommand(""), rpcCommandTimeout)
 	if err != nil {
 		return err
@@ -405,7 +427,9 @@ func (c *rpcChild) shutdown(ctx context.Context) {
 
 // kill force-terminates the child's process group.
 func (c *rpcChild) kill() {
-	c.pending.clear()
+	for _, id := range c.pending.drain() {
+		c.publishInteraction(agents.InteractionPayload{ID: id, Kind: agents.InteractionPermission, Phase: agents.InteractionResolved})
+	}
 	c.proc.kill()
 }
 

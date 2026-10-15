@@ -24,6 +24,7 @@ printf '%s\n' "$@" > "$FAKE_PI_ARGS"
 pwd > "$FAKE_PI_CWD"
 cat <<'EVENTS'
 {"type":"session","version":3,"id":"sess-fake","cwd":"/ignored"}
+{"type":"agent_start"}
 {"type":"message_start","message":{"role":"user","content":"hello"}}
 {"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hi "}}
 {"type":"message_update","usage":{},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"there"}}
@@ -38,6 +39,7 @@ EVENTS
 // can prove process-group cleanup.
 const sleepingFakePi = `
 printf '%s\n' "$$" > "$FAKE_PI_PID"
+printf '%s\n' '{"type":"agent_start"}'
 exec sleep 30
 `
 
@@ -240,7 +242,7 @@ func TestAdapterStreamsNormalizedEvents(t *testing.T) {
 	}
 
 	got := drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
-		return ev.Type == agents.EventLifecycle && ev.Lifecycle != nil && ev.Lifecycle.State == "agent_settled"
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 
 	var sawDelta, sawToolCall, sawToolResult bool

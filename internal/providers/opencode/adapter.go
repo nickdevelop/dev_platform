@@ -469,6 +469,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		sessions:      make(map[string]string),
 		sessionModels: make(map[string]agents.MessageModel),
 		toolNames:     make(map[string]string),
+		turns:         make(map[string]string),
 	}
 
 	a.mu.Lock()
@@ -744,6 +745,10 @@ type instance struct {
 	// them with this; replayed history uses each message's own model instead.
 	sessionModels map[string]agents.MessageModel
 	toolNames     map[string]string
+	// turns maps each native session to the id of its open turn, and turnSeq
+	// mints turn ids unique within the instance.
+	turns   map[string]string
+	turnSeq uint64
 }
 
 // ensureRunning reports whether the instance can accept work.
@@ -1113,6 +1118,70 @@ func (inst *instance) event(sessionID string) agents.NormalizedEvent {
 	}
 }
 
+// turnEvent builds a turn boundary of the session.
+func (inst *instance) turnEvent(sessionID string, payload agents.TurnPayload) agents.NormalizedEvent {
+	event := inst.event(sessionID)
+	event.Type = agents.EventTurn
+	event.Turn = &payload
+	return event
+}
+
+// turnStarted opens a new turn of the session and remembers its id so the
+// matching end event carries it.
+func (inst *instance) turnStarted(sessionID string) agents.NormalizedEvent {
+	inst.mu.Lock()
+	inst.turnSeq++
+	id := fmt.Sprintf("%s-turn-%d", inst.id, inst.turnSeq)
+	inst.turns[sessionID] = id
+	inst.mu.Unlock()
+	return inst.turnEvent(sessionID, agents.TurnPayload{ID: id, Phase: agents.TurnStarted})
+}
+
+// turnEnded closes the session's open turn. It reports false when no turn is
+// open: the stream joined mid-turn, so there is no running state to settle.
+func (inst *instance) turnEnded(sessionID string, outcome agents.TurnOutcome) ([]agents.NormalizedEvent, bool) {
+	inst.mu.Lock()
+	id, open := inst.turns[sessionID]
+	if open {
+		delete(inst.turns, sessionID)
+	}
+	inst.mu.Unlock()
+	if !open {
+		return nil, false
+	}
+	return []agents.NormalizedEvent{inst.turnEvent(sessionID, agents.TurnPayload{ID: id, Phase: agents.TurnEnded, Outcome: outcome})}, true
+}
+
+// interactionEvent builds an interaction boundary of the session.
+func (inst *instance) interactionEvent(sessionID string, payload agents.InteractionPayload) agents.NormalizedEvent {
+	event := inst.event(sessionID)
+	event.Type = agents.EventInteraction
+	event.Interaction = &payload
+	return event
+}
+
+// resolvedInteraction settles one pending interaction. An event without an id
+// cannot name what it settles, so it is preserved as unknown instead.
+func (inst *instance) resolvedInteraction(sessionID string, kind agents.InteractionKind, id string, event *Event) []agents.NormalizedEvent {
+	if id == "" {
+		return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
+	}
+	return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
+		ID:    id,
+		Kind:  kind,
+		Phase: agents.InteractionResolved,
+	})}
+}
+
+// requestID returns the native id of a permission or form event: requestID when
+// present, otherwise the generic id field.
+func (data eventData) requestID() string {
+	if data.RequestID != "" {
+		return data.RequestID
+	}
+	return data.ID
+}
+
 // errorEvent builds a typed error event.
 func (inst *instance) errorEvent(sessionID, code, message string) agents.NormalizedEvent {
 	event := inst.event(sessionID)
@@ -1236,8 +1305,74 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: structuredErrorMessage(data, data.Content), IsError: true, Metadata: boundedMetadata(data.Metadata)}
 		return []agents.NormalizedEvent{out}
 
-	case "session.execution.failed", "session.step.failed", "session.error":
+	case "session.execution.started":
+		return []agents.NormalizedEvent{inst.turnStarted(sessionID)}
+
+	case "session.execution.succeeded":
+		turn, _ := inst.turnEnded(sessionID, agents.TurnCompleted)
+		return turn
+
+	case "session.execution.interrupted":
+		turn, _ := inst.turnEnded(sessionID, agents.TurnCancelled)
+		return turn
+
+	case "session.execution.failed":
+		// The turn ends before its error is reported, so consumers never see a
+		// failure while the turn still looks open.
+		turn, _ := inst.turnEnded(sessionID, agents.TurnFailed)
+		return append(turn, inst.errorEvent(sessionID, errorCode(event.Type), structuredErrorMessage(data, nil)))
+
+	case "session.step.failed", "session.error":
 		return []agents.NormalizedEvent{inst.errorEvent(sessionID, errorCode(event.Type), structuredErrorMessage(data, nil))}
+
+	case "permission.asked":
+		id := data.requestID()
+		if id == "" {
+			return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
+		}
+		var resources []string
+		_ = json.Unmarshal(data.Resources, &resources)
+		if resources == nil {
+			resources = []string{}
+		}
+		return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
+			ID:    id,
+			Kind:  agents.InteractionPermission,
+			Phase: agents.InteractionRequested,
+			Permission: &agents.PermissionRequest{
+				ID:        id,
+				SessionID: sessionID,
+				Action:    data.Action,
+				Resources: resources,
+				Message:   data.Message,
+			},
+		})}
+
+	case "permission.replied":
+		return inst.resolvedInteraction(sessionID, agents.InteractionPermission, data.requestID(), event)
+
+	case "form.created":
+		if data.Form == nil || data.Form.ID == "" {
+			return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
+		}
+		return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
+			ID:    data.Form.ID,
+			Kind:  agents.InteractionForm,
+			Phase: agents.InteractionRequested,
+			Form: &agents.FormInfo{
+				ID:        data.Form.ID,
+				SessionID: sessionID,
+				Title:     data.Form.Title,
+				Fields:    data.Form.Fields,
+			},
+		})}
+
+	case "form.replied", "form.cancelled":
+		id := data.requestID()
+		if id == "" && data.Form != nil {
+			id = data.Form.ID
+		}
+		return inst.resolvedInteraction(sessionID, agents.InteractionForm, id, event)
 
 	case "session.retry.scheduled":
 		return []agents.NormalizedEvent{inst.errorEvent(sessionID, "retry_scheduled", retryMessage(data))}
@@ -1248,7 +1383,6 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 
 	case "session.updated", "session.renamed", "session.moved", "session.deleted",
 		"session.forked", "session.instructions.updated", "session.skill.activated",
-		"session.execution.started", "session.execution.succeeded", "session.execution.interrupted",
 		"session.step.started", "session.step.streamed",
 		"session.compaction.started", "session.compaction.ended",
 		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
@@ -1395,6 +1529,20 @@ type eventData struct {
 	// Tokens carries a finished step's token usage (session.step.ended).
 	// Absent on every other event; a zero total is treated as unknown.
 	Tokens *WireTokens `json:"tokens"`
+	// RequestID, Action, Resources and Message describe a permission request
+	// (permission.asked); Form describes a question form (form.created).
+	RequestID string          `json:"requestID"`
+	Action    string          `json:"action"`
+	Resources json.RawMessage `json:"resources"`
+	Message   string          `json:"message"`
+	Form      *nativeFormInfo `json:"form"`
+}
+
+// nativeFormInfo mirrors the form object of form.created.
+type nativeFormInfo struct {
+	ID     string          `json:"id"`
+	Title  string          `json:"title"`
+	Fields json.RawMessage `json:"fields"`
 }
 
 // structuredError mirrors Session.StructuredError.

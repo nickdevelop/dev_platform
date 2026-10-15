@@ -1,10 +1,10 @@
 // The chat feature's interaction layer for one open session: which tool call
 // awaits confirmation, which question forms are pending, and how a decision
-// travels back to the backend. Approval push arrives through the raw event
-// stream (capability-gated); a backend with tool confirmation but no push
-// channel (pi over RPC) is polled while a turn runs and stops when it settles.
+// travels back to the backend. Pending interactions arrive on the session's own
+// stream (requested and resolved events, plus the snapshot a stream opens with),
+// so the layer never polls and never opens a second channel.
 
-import { computed, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import type { AgentSession } from '../../../api/sessions'
 import type { ChatEntry } from '../state/sessionLog'
 import { useInteractionsStore } from '../../../stores/interactions'
@@ -14,7 +14,6 @@ export interface SessionInteractionOptions {
   sessionId: Ref<string>
   activeSession: ComputedRef<AgentSession | null>
   activeMessages: ComputedRef<ChatEntry[]>
-  isRunning: ComputedRef<boolean>
   // Fired after a form answer is accepted: the composer's column re-pins to
   // the newest entry, mirroring a normal turn's end.
   afterFormAnswer: () => void
@@ -26,8 +25,7 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
   const toolNotice = ref('')
 
   // The tool call awaiting confirmation. A backend that declares tool
-  // confirmation gets it exclusively from its approval stream (REST list + raw
-  // permission events): a tool_call entry without a result is NOT a permission —
+  // confirmation gets it exclusively from its interaction events: a tool_call entry without a result is NOT a permission —
   // replying with a tool call id can never succeed (the server answers 404/400,
   // surfaced as 502), so the dangling-tool fallback must not render a control
   // for such a backend. Other backends keep the fallback for display only;
@@ -58,36 +56,6 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
     if (!session?.capabilities.toolConfirmation) return []
     return interactions.formsFor(options.sessionId.value)
   })
-
-  // Approval polling. opencode pushes permission cards on its raw event stream;
-  // a backend that declares tool confirmation without raw events (pi over RPC)
-  // has no push channel, so the workbench polls while a turn runs and stops when
-  // it settles. Replying already refreshes the list through the store.
-  let poll: ReturnType<typeof setInterval> | null = null
-  let pollBusy = false
-  function stopApprovalPoll() {
-    if (poll !== null) {
-      clearInterval(poll)
-      poll = null
-    }
-  }
-  function startApprovalPoll() {
-    stopApprovalPoll()
-    const session = options.activeSession.value
-    if (!session?.capabilities.toolConfirmation || session.capabilities.rawEvents) return
-    poll = setInterval(() => {
-      if (pollBusy) return
-      pollBusy = true
-      void interactions.loadApprovals(options.projectId.value, options.sessionId.value).finally(() => {
-        pollBusy = false
-      })
-    }, 1500)
-  }
-  watch(options.isRunning, (running) => {
-    if (running) startApprovalPoll()
-    else stopApprovalPoll()
-  })
-  onBeforeUnmount(stopApprovalPoll)
 
   // Tool decisions for a backend that declares tool confirmation go through
   // its reply API (stores/interactions.ts); other backends still expose no
@@ -132,7 +100,6 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
     toolNotice,
     pendingToolCall,
     pendingForms,
-    startApprovalPoll,
     confirmTool,
     denyTool,
     answerForm,

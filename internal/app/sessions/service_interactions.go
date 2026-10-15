@@ -3,6 +3,7 @@ package sessions
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -163,6 +164,54 @@ func (s *Service) ReplyForm(ctx context.Context, projectID uint, sessionID, form
 			return fmt.Errorf("%w: form %q is gone: %w", ErrFormExpired, formID, err)
 		}
 		return fmt.Errorf("%w: reply form: %w", ErrBackendFailed, err)
+	}
+	return nil
+}
+
+// interactionSnapshot is the payload of the "interactions" SSE frame: the
+// session's pending confirmations and forms at the moment a stream starts. The
+// client replaces its pending set with it, so an interaction that settled while
+// the client was away cannot linger as a stale card.
+type interactionSnapshot struct {
+	Permissions []PermissionRequest `json:"permissions"`
+	Forms       []FormInfo          `json:"forms"`
+}
+
+// writeInteractionSnapshot writes the snapshot frame for a session whose backend
+// declares tool confirmation. A backend without it, or a failed listing, writes
+// nothing: live interaction events keep the client current either way.
+func (s *Service) writeInteractionSnapshot(ctx context.Context, ref agents.SessionRef, w io.Writer, flush func()) error {
+	if !s.capabilities(ref.Backend).ToolConfirmation {
+		return nil
+	}
+	replier, err := s.replierFor(ref.Backend, "tool confirmation")
+	if err != nil {
+		return nil
+	}
+	permissions, err := replier.ListPermissions(ctx, ref)
+	if err != nil {
+		return nil
+	}
+	forms, err := replier.ListForms(ctx, ref)
+	if err != nil {
+		return nil
+	}
+	snapshot := interactionSnapshot{Permissions: permissions, Forms: forms}
+	if snapshot.Permissions == nil {
+		snapshot.Permissions = []PermissionRequest{}
+	}
+	if snapshot.Forms == nil {
+		snapshot.Forms = []FormInfo{}
+	}
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("sessions: encode interaction snapshot: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "event: interactions\ndata: %s\n\n", payload); err != nil {
+		return fmt.Errorf("sessions: write interaction snapshot: %w", err)
+	}
+	if flush != nil {
+		flush()
 	}
 	return nil
 }
