@@ -15,8 +15,8 @@ import (
 	"os"
 	"strings"
 
-	"devplatform/internal/auth"
-	"devplatform/internal/database"
+	"devplatform/internal/app/auth"
+	"devplatform/internal/app/database"
 )
 
 func main() {

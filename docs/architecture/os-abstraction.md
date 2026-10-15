@@ -24,12 +24,12 @@
 │        resourcesync · auth · modelconfig                      │
 │        禁止：import syscall / x/sys / 直接 os/exec / GOOS 判断 │
 ├──────────────────────────────────────────────────────────────┤
-│ OS 端口：internal/platform（接口 + 平台无关策略）               │
+│ OS 端口：internal/core/platform（接口 + 平台无关策略）               │
 │   Dirs · Instance · Process · Executables · Trash · Perms ·  │
 │   Shutdown · Terminal · Environment                           │
 ├─────────────────────────────┬────────────────────────────────┤
 │ unix 实现（Linux / WSL2）     │ windows 实现（原生 Windows）      │
-│ internal/platform/unix      │ internal/platform/windows       │
+│ internal/core/platform/unix      │ internal/core/platform/windows       │
 │ flock · 进程组 · XDG 目录      │ LockFileEx · Job Object · 已知   │
 │ POSIX 权限位 · /proc 探测      │ 文件夹 · PATHEXT · ACL           │
 └─────────────────────────────┴────────────────────────────────┘
@@ -38,7 +38,7 @@
 ### 包结构
 
 ```
-internal/platform/
+internal/core/platform/
   platform.go          # 端口接口、Platform 聚合、New()（按 build tag 选择实现）
   policy/              # 平台无关纯逻辑，两个平台都要测
   unix/                # //go:build unix：Linux 与 WSL2 共用
@@ -46,9 +46,9 @@ internal/platform/
   fake/                # 测试替身：可控的目录、进程、锁、可执行探测
 ```
 
-- `internal/platform/unix` 与 `internal/platform/windows` 之外不得出现 `syscall`、`golang.org/x/sys/*`。
-- 现有 `internal/runtime/single_instance_*.go`、`internal/agents/*/process_*.go`、`internal/projects/trash_*.go` 的平台文件迁入上述实现，不再散落在业务包中。
-- 守卫测试：仿照 `internal/sessions/dependency_guard_test.go`，扫描业务包，禁止 import `syscall`、`golang.org/x/sys/*`，禁止在业务包中出现 `runtime.GOOS` 或 `runtime.GOARCH` 判断。
+- `internal/core/platform/unix` 与 `internal/core/platform/windows` 之外不得出现 `syscall`、`golang.org/x/sys/*`。
+- 现有 `internal/app/runtime/single_instance_*.go`、`internal/core/agents/*/process_*.go`、`internal/app/projects/trash_*.go` 的平台文件迁入上述实现，不再散落在业务包中。
+- 守卫测试：仿照 `internal/app/sessions/dependency_guard_test.go`，扫描业务包，禁止 import `syscall`、`golang.org/x/sys/*`，禁止在业务包中出现 `runtime.GOOS` 或 `runtime.GOARCH` 判断。
 
 ## 3. 端口定义
 
@@ -140,15 +140,15 @@ type Environment interface {
 
 | 能力 | 当前位置 | Linux / WSL2 实现 | Windows 实现 |
 | --- | --- | --- | --- |
-| 单实例锁 | `internal/runtime/single_instance_*.go` | `flock(LOCK_EX\|LOCK_NB)` | `LockFileEx`，独占模式 |
-| 子进程组 | `internal/agents/{pi,opencode}/process_*.go` | `Setpgid` + `kill(-pid)` | `CREATE_NEW_PROCESS_GROUP` + Job Object（`KILL_ON_JOB_CLOSE`） |
-| 进程存活 | `internal/agents/opencode/discovery.go:116` | `kill(pid, 0)` | `OpenProcess` + `GetExitCodeProcess` |
-| 僵尸进程 | `internal/agents/opencode/process_unix.go` 读 `/proc` | `/proc/<pid>/stat` | 恒 false |
-| 服务注册文件位置 | `internal/agents/opencode/discovery.go:35-44` | `$XDG_STATE_HOME` 或 `~/.local/state` | 同一规则：`$XDG_STATE_HOME` 或 `%USERPROFILE%\.local\state`（`os.UserHomeDir` 在 Windows 返回 `USERPROFILE`） |
+| 单实例锁 | `internal/app/runtime/single_instance_*.go` | `flock(LOCK_EX\|LOCK_NB)` | `LockFileEx`，独占模式 |
+| 子进程组 | `internal/core/agents/{pi,opencode}/process_*.go` | `Setpgid` + `kill(-pid)` | `CREATE_NEW_PROCESS_GROUP` + Job Object（`KILL_ON_JOB_CLOSE`） |
+| 进程存活 | `internal/providers/opencode/discovery.go:116` | `kill(pid, 0)` | `OpenProcess` + `GetExitCodeProcess` |
+| 僵尸进程 | `internal/providers/opencode/process_unix.go` 读 `/proc` | `/proc/<pid>/stat` | 恒 false |
+| 服务注册文件位置 | `internal/providers/opencode/discovery.go:35-44` | `$XDG_STATE_HOME` 或 `~/.local/state` | 同一规则：`$XDG_STATE_HOME` 或 `%USERPROFILE%\.local\state`（`os.UserHomeDir` 在 Windows 返回 `USERPROFILE`） |
 | 可执行查找 | `pi/adapter.go:215`、`opencode/adapter.go:216`、`settings/agents.go:211` | `LookPath` | `LookPath` + PATHEXT，忽略无扩展名的 sh shim，解析 `.cmd` 入口（见第 5.3 节） |
 | 可执行判断 | `settings/handlers_agents.go:217-227` | 权限位 `0o111` | 扩展名与文件类型 |
-| 路径规范化 | `internal/paths/paths.go` | 保留 `/mnt/<drive>` 翻译与拒绝规则 | 保留盘符与 UNC，大小写不敏感比较 |
-| 回收站 | `internal/projects/trash_linux.go` | freedesktop | `ErrTrashUnavailable` |
+| 路径规范化 | `internal/app/paths/paths.go` | 保留 `/mnt/<drive>` 翻译与拒绝规则 | 保留盘符与 UNC，大小写不敏感比较 |
+| 回收站 | `internal/app/projects/trash_linux.go` | freedesktop | `ErrTrashUnavailable` |
 | 文件权限 | `database.go`、`secrets/store.go`、`runtime`、`resourcesync/backup.go` | POSIX 模式位，真正生效 | 模式位调用保留但不生效；通过 `Perms.Enforced()` 告警（见第 5.7 节） |
 | 关停信号 | `cmd/platform/main.go:388` | `SIGINT`、`SIGTERM` | `os.Interrupt`、控制台关闭 |
 | 密码输入 | `cmd/platform/main.go:174-192` | `term.ReadPassword` | 控制台读取，管道输入时退回 stdin |
@@ -191,7 +191,7 @@ npm 全局安装的 prefix 目录（如 `C:\Users\chenli\AppData\Roaming\npm`）
 
 ### 5.3.1 pi 的安装形态（Task 4.0 结论：与 opencode 不同，为 pi 单独设计）
 
-- pi 通过 npm 全局安装（`npm install -g @earendil-works/pi-coding-agent`，见 `internal/agents/pi/adapter.go` 的诊断文案）。
+- pi 通过 npm 全局安装（`npm install -g @earendil-works/pi-coding-agent`，见 `internal/providers/pi/adapter.go` 的诊断文案）。
 - npm registry 元数据（`@earendil-works/pi-coding-agent` 1.2.0）：`bin.pi` 指向 `dist/bundle/cli.js`——纯 JS 入口，没有原生 `.exe`，也没有平台可选依赖（opencode 有 `bin/opencode.exe` 与 `@opencode/cli-windows-*`）。
 - 结论：Task 4.3 的 `.exe` 直解方案不适用于 pi。pi 在 Windows 上走自己的解析：从 npm prefix 定位包内 JS 入口（以包内 `package.json` 的 `bin` 字段为准，不硬编码 `dist/bundle` 路径），用 `node` 直接运行；`node` 经端口 `Executables.Resolve("node")` 查找（npm 可用则 `node` 必在 PATH）。
 - 兜底顺序与 opencode 同形（`npm root -g`，最后才退回 `pi.cmd`），退回时的参数同样只允许平台内部固定列表。
@@ -206,7 +206,7 @@ npm 全局安装的 prefix 目录（如 `C:\Users\chenli\AppData\Roaming\npm`）
 ### 5.5 回收站
 
 - Windows 实现返回 `ErrTrashUnavailable`。
-- `internal/projects/service.go` 已有的"回收站不可用时要求永久删除二次确认"逻辑直接生效，不需要额外改动业务代码。
+- `internal/app/projects/service.go` 已有的"回收站不可用时要求永久删除二次确认"逻辑直接生效，不需要额外改动业务代码。
 
 ### 5.6 终端与密码输入
 
@@ -219,7 +219,7 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 
 **实际影响：**
 
-- `secrets.json` 是明文存储，威胁模型中“防止同机其他本地用户”的保护在 Windows 上不再由平台本身提供。`internal/secrets/store.go` 的包注释需要增加平台说明。
+- `secrets.json` 是明文存储，威胁模型中“防止同机其他本地用户”的保护在 Windows 上不再由平台本身提供。`internal/app/secrets/store.go` 的包注释需要增加平台说明。
 - `database.go`、`runtime` 的锁文件、`resourcesync/backup.go` 的备份文件，同样不再对其他本地用户隐藏。
 - 进程级隔离（同一用户下的其他进程）本来就不受 0600 保护，这一点两平台一致。
 
@@ -256,20 +256,20 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 
 ## 8. 测试策略
 
-- `internal/platform/fake` 提供可控的目录、进程、锁和可执行探测，业务包的单元测试全部使用它，不依赖真实 OS 行为。
+- `internal/core/platform/fake` 提供可控的目录、进程、锁和可执行探测，业务包的单元测试全部使用它，不依赖真实 OS 行为。
 - 平台实现的测试按**能力**而非 `GOOS` 跳过，例如 `t.Skip` 的条件是"平台不支持回收站"，而不是"当前是 Windows"。
 - CI 矩阵：`ubuntu-latest` 与 `windows-latest` 同时运行 `go test ./...` 与 `go vet ./...`。前端测试只在一个平台运行。
-- 现有测试中的 `syscall.Kill` 调用（`internal/agents/pi/interrupt_test.go:108`、`adapter_test.go:319,600`、`opencode/process_unix_test.go`）迁移为调用 `platform.Process().Alive()`，以便 Windows 上编译通过。
+- 现有测试中的 `syscall.Kill` 调用（`internal/providers/pi/interrupt_test.go:108`、`adapter_test.go:319,600`、`opencode/process_unix_test.go`）迁移为调用 `platform.Process().Alive()`，以便 Windows 上编译通过。
 
 ## 9. 迁移顺序
 
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
-| 1 | 建立 `internal/platform` 与 `fake`，定义端口；加入依赖守卫测试 | 守卫测试对现有违规项失败并列出清单 |
+| 1 | 建立 `internal/core/platform` 与 `fake`，定义端口；加入依赖守卫测试 | 守卫测试对现有违规项失败并列出清单 |
 | 2 | 把现有 unix 代码迁入 `platform/unix`，业务包改为注入 `Platform` | Linux 行为不变，`go test ./...` 全绿 |
 | 3 | 修正平台无关的错误假设：`isExecutable`、`LookPath`、`\r\n` 处理、硬编码的 XDG 与 `~/.local` | Linux 行为不变，新增用 fake 的单元测试 |
 | 4 | 实现 `platform/windows`：锁、进程、可执行解析、路径、权限、关停、密码输入、回收站占位 | Windows 上 `go build` 与 `go test ./...` 通过 |
 | 5 | 跨平台工具链：用 Go 实现 `cmd/devctl`，替代 `Makefile` 与 `dev.sh` 的 Unix 特有部分；补充 Windows 运维文档 | Windows 上可完成构建、启动、停止 |
 | 6 | CI 矩阵与 e2e | Linux 与 Windows 上 e2e 通过 |
 
-第 1 至 3 阶段不改变行为，可以独立合并。第 4 阶段的前置确认（第 7 节第 4、6 项）已转为“元数据确认 + 实机复核记入 Task 6.2”；`internal/secrets/store.go` 的威胁模型注释与 `docs/operations.md` 的 Windows 章节随第 5 阶段补齐（见上文实现计划链接）。
+第 1 至 3 阶段不改变行为，可以独立合并。第 4 阶段的前置确认（第 7 节第 4、6 项）已转为“元数据确认 + 实机复核记入 Task 6.2”；`internal/app/secrets/store.go` 的威胁模型注释与 `docs/operations.md` 的 Windows 章节随第 5 阶段补齐（见上文实现计划链接）。

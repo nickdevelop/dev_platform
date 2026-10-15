@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"devplatform/internal/agents"
+	"devplatform/internal/core/agents"
 )
 
 type wiringStubAdapter struct{ agents.AgentAdapter }

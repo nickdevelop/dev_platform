@@ -1,0 +1,150 @@
+// Package database manages the platform's own persistence: opening the
+// SQLite database and applying versioned schema migrations.
+//
+// The database lives under the platform data directory, never inside a
+// managed project directory.
+package database
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
+	"devplatform/internal/core/platform"
+)
+
+// dbFileName is the name of the SQLite database file inside the data
+// directory.
+const dbFileName = "platform.db"
+
+// busyTimeoutMS is the SQLite busy timeout in milliseconds applied to every
+// connection, so short write contention waits instead of failing.
+const busyTimeoutMS = 5000
+
+// logOutput is where database log messages are written. Tests redirect it
+// to capture what the logger emits.
+var logOutput io.Writer = os.Stdout
+
+// newDBLogger builds the GORM logger for the platform database. It mirrors
+// the default logger except that parameterized query logging is enabled:
+// bound SQL values — which include session tokens, password hashes and
+// other sensitive configuration — are never emitted, only statements with
+// "?" placeholders.
+//
+// Missing rows are never logged: every lookup that can legitimately miss uses
+// the miss as control flow (not-found sentinels behind 404-style API answers,
+// session discovery and the rebind duplicate check), so GORM's record-not-found
+// warning would bury real warnings in noise on routine paths such as opening a
+// session. The error itself is still returned to callers.
+func newDBLogger() logger.Interface {
+	return logger.New(log.New(logOutput, "\r\n", log.LstdFlags), logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Warn,
+		ParameterizedQueries:      true,
+		IgnoreRecordNotFoundError: true,
+		Colorful:                  true,
+	})
+}
+
+// buildDSN builds the SQLite DSN for dbPath. The path is embedded as a
+// percent-encoded file: URI, so reserved characters that are legal in
+// directory names (such as "?") cannot collide with the DSN query
+// separator. The pragmas run on every new pooled connection: foreign key
+// enforcement, the busy timeout, and the WAL journal mode.
+//
+// Windows drive-letter paths need a leading slash and forward slashes
+// (file:///C:/...): url.URL always emits the "//" authority separator, so a
+// bare C:\... would parse C: as the URI host and SQLite would refuse to open
+// it ("SQL logic error: out of memory"). Detection is by path shape, never
+// by GOOS, so both spellings are unit-testable on every platform.
+func buildDSN(dbPath string) string {
+	path := dbPath
+	if isWindowsDrivePath(dbPath) {
+		// Explicit backslash conversion, not filepath.ToSlash: ToSlash is
+		// a no-op where backslash is a legal filename character, but a
+		// drive-letter path only ever needs URI separators.
+		path = "/" + strings.ReplaceAll(dbPath, "\\", "/")
+	}
+	uri := url.URL{Scheme: "file", Path: path}
+	params := url.Values{}
+	params.Add("_pragma", "foreign_keys(1)")
+	params.Add("_pragma", fmt.Sprintf("busy_timeout(%d)", busyTimeoutMS))
+	params.Add("_pragma", "journal_mode(WAL)")
+	return uri.String() + "?" + params.Encode()
+}
+
+// isWindowsDrivePath reports a drive-letter path (C:\..., C:/...).
+func isWindowsDrivePath(p string) bool {
+	return len(p) > 1 && p[1] == ':' && isDriveLetter(p[0])
+}
+
+func isDriveLetter(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+// Open opens (creating it when missing) the platform SQLite database under
+// dataDir and returns the GORM handle. The database file is placed directly
+// under dataDir, which must be outside every managed project directory.
+func Open(dataDir string) (*gorm.DB, error) {
+	if dataDir == "" {
+		return nil, errors.New("database: data directory is required")
+	}
+	// The platform data directory holds the SQLite database, which stores
+	// the password hash and plaintext session identifiers; keep it
+	// owner-only so another local user cannot read the database and hijack a
+	// session.
+	if err := platform.New().Perms().PrivateDir(dataDir); err != nil {
+		return nil, fmt.Errorf("database: create data directory: %w", err)
+	}
+
+	dbPath := filepath.Join(dataDir, dbFileName)
+	// Pre-create the database file with owner-only permissions so SQLite
+	// never creates it with the process umask (typically 0644, group/world
+	// readable). Chmod also tightens a file left by an earlier version.
+	if err := createRestrictedFile(dbPath); err != nil {
+		return nil, err
+	}
+
+	db, err := gorm.Open(sqlite.Open(buildDSN(dbPath)), &gorm.Config{
+		Logger: newDBLogger(),
+		// Surface driver constraint violations as gorm.ErrDuplicatedKey.
+		TranslateError: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("database: open sqlite database at %s: %w", dbPath, err)
+	}
+	// The WAL and shared-memory sidecars carry the same data as the database;
+	// restrict them too when SQLite has already created them. They are
+	// re-restricted on the next write if SQLite recreates them. A missing
+	// sidecar (SQLite has not created it yet) is not an error.
+	for _, sidecar := range []string{dbPath + "-wal", dbPath + "-shm"} {
+		_ = platform.New().Perms().PrivateFile(sidecar)
+	}
+	return db, nil
+}
+
+// createRestrictedFile creates path when missing and forces its mode to 0600
+// on every open, tightening a pre-existing file with wider permissions.
+func createRestrictedFile(path string) error {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return fmt.Errorf("database: create database file %s: %w", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("database: close database file %s: %w", path, err)
+	}
+	if err := platform.New().Perms().PrivateFile(path); err != nil {
+		return fmt.Errorf("database: restrict database file %s: %w", path, err)
+	}
+	return nil
+}

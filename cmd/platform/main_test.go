@@ -29,9 +29,9 @@ import (
 	"testing"
 	"time"
 
-	"devplatform/internal/auth"
-	"devplatform/internal/database"
-	"devplatform/internal/platform"
+	"devplatform/internal/app/auth"
+	"devplatform/internal/app/database"
+	"devplatform/internal/core/platform"
 )
 
 // listenLogPattern matches the "platform listening on <addr>" startup line.

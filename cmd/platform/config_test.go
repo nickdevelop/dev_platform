@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"devplatform/internal/platform"
+	"devplatform/internal/core/platform"
 )
 
 // writeIndex creates an index.html at path, marking a built web UI.

@@ -4,7 +4,7 @@
 
 ## 实施状态
 
-RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `internal/agents/pi/` 下的 `rpc_*.go`、`permissions.go`、`extension/approval.ts`，以及 `rpc_test.go`、`rpc_stub_test.go` 与 `testdata/rpc/session.jsonl` 回放用例）。当前 `Mode` 默认仍为 `"cli"`，等待 dev 环境 RPC 浸泡达标后再翻转默认值（Phase 3 的最后一步），因此本文其余部分仍按“计划”措辞保留，作为尚未完成事项的清单。已完成部分：
+RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `internal/providers/pi/` 下的 `rpc_*.go`、`permissions.go`、`extension/approval.ts`，以及 `rpc_test.go`、`rpc_stub_test.go` 与 `testdata/rpc/session.jsonl` 回放用例）。当前 `Mode` 默认仍为 `"cli"`，等待 dev 环境 RPC 浸泡达标后再翻转默认值（Phase 3 的最后一步），因此本文其余部分仍按“计划”措辞保留，作为尚未完成事项的清单。已完成部分：
 
 - Phase 0：`Mode` 选项（默认 `cli`）、Platform Settings 的 per-backend `mode`（`PUT /api/settings/agents/:backend/mode`，重启生效）、test-only RPC stub、RPC 记录回放 fixture（`testdata/rpc/session.jsonl`：握手部分取自真实 pi 1.1.0 录制，单轮事件按协议形状补全）。未包含“用真实 provider 录制的完整流式 fixture”（当前环境该 provider 无法完成回合）。
 - Phase 1：`rpc_child.go` / `rpc_conn.go` / `rpc_commands.go` 传输内核、惰性启动、同 session 串行 + `followUp` 入队、有序停机、崩溃后同 session id 重启、空闲回收、`abort` 中断；`SendMessage`/`Interrupt`/`StopInstance` 按模式分派；CLI 路径与既有测试保持不变。
@@ -16,8 +16,8 @@ RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `in
 参考资料：
 
 - pi 协议文档：`rpc.md`、`rpc-commands.md`、`json.md`、`rpc-extension-ui.md`（随 pi 安装的 `docs/`）
-- 现有适配器：`internal/agents/pi/`（CLI 模式实现）
-- 平台契约：`internal/agents/contracts.go`、`internal/agents/extensions.go`
+- 现有适配器：`internal/providers/pi/`（CLI 模式实现）
+- 平台契约：`internal/core/agents/contracts.go`、`internal/core/agents/extensions.go`
 - 分层规则：`docs/architecture/backend-boundaries.md`
 
 ## 一、目标与非目标
@@ -27,7 +27,7 @@ RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `in
 1. pi 后端从"每条 prompt 启动一次性 `pi --mode json` 进程"切换为"**每个活跃会话一个长驻 `pi --mode rpc` 子进程**（惰性启动、空闲回收）"。
 2. 实现 `agents.PermissionReplier`（工具确认），补齐与 opencode 后端的能力差距（`Capabilities.ToolConfirmation` 从 `false` 翻转为 `true`）。
 3. 中断改为 `abort` 命令（优雅取消），实例停止改为关闭 stdin（有序停机），进程组强杀仅作兜底。
-4. 对上层完全透明：`AgentAdapter` / `HistoryReader` 契约不变，改动收敛在 `internal/agents/pi/` 包内。
+4. 对上层完全透明：`AgentAdapter` / `HistoryReader` 契约不变，改动收敛在 `internal/providers/pi/` 包内。
 
 ### 非目标（留待后续迭代）
 
@@ -101,7 +101,7 @@ Instance（逻辑句柄，结构不变）
 
 ### Phase 0 — 协议资产与回滚开关（约 0.5 天）
 
-1. 用真实 pi 1.1.x 录制 RPC 会话 fixture（golden stdin/stdout 流），存入 `internal/agents/pi/testdata/rpc/`。
+1. 用真实 pi 1.1.x 录制 RPC 会话 fixture（golden stdin/stdout 流），存入 `internal/providers/pi/testdata/rpc/`。
 2. `pi.Options` 增加 `Mode` 字段（`"cli"` | `"rpc"`，默认 `"cli"`），settings 页可按后端切换——**保底回滚手段**，出问题一键切回 CLI，无需回滚部署。
 3. 新增 test-only RPC stub 可执行文件（模拟 pi：脚本化响应/事件序列），供全部单测注入（沿用现有测试用 stub executable 的模式）。
 

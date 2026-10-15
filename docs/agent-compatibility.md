@@ -5,16 +5,16 @@ workbench: what each backend adapter declares, which versions were tested, and
 which behaviors are **provisional** because they cannot be verified without a
 configured model provider.
 
-The tested version ranges live in each adapter's `Descriptor` (`internal/agents/opencode/descriptor.go`,
-`internal/agents/pi/descriptor.go`) and are pinned by their `descriptor_test.go`, so the code and this document
+The tested version ranges live in each adapter's `Descriptor` (`internal/providers/opencode/descriptor.go`,
+`internal/providers/pi/descriptor.go`) and are pinned by their `descriptor_test.go`, so the code and this document
 cannot drift apart. Each backend's capability declaration lives in its
 adapter's `Capabilities()`. The method is part of the `AgentAdapter` contract,
 so a backend cannot be registered without one, and it is pinned by that
 adapter's own tests (for example `TestAdapterCapabilitiesDeclared` in
-`internal/agents/opencode`), not by the diagnostics tests. Each adapter also
+`internal/providers/opencode`), not by the diagnostics tests. Each adapter also
 exports a `Descriptor` (display label, executable name, default enablement,
 tested version range, machine-service support) that the platform reads for
-settings, diagnostics and the UI; `internal/agents/*/descriptor_test.go` pins
+settings, diagnostics and the UI; `internal/core/agents/*/descriptor_test.go` pins
 those values to the tables below. See `docs/architecture/backend-boundaries.md`.
 
 Tested environment: Go 1.27.1, Node 22, `opencode` 2.0.24, `pi` 1.1.0. No live
@@ -71,7 +71,7 @@ Settings (`PUT /api/settings/agents/pi/mode`) and applied on restart:
 | Events | one-shot stdout JSONL | long-lived stdout JSONL: response records correlated by id, session events normalized the same way |
 | Interrupt | kills the prompt's process group | `abort` command (process-group kill as backstop) |
 | Stop | cancels and kills the process group | closes child stdin for an orderly shutdown, bounded then killed |
-| Tool confirmation | unsupported | supported through the extension UI subprotocol and the bundled approval extension (`internal/agents/pi/extension/approval.ts`) |
+| Tool confirmation | unsupported | supported through the extension UI subprotocol and the bundled approval extension (`internal/providers/pi/extension/approval.ts`) |
 | Same-session concurrency | parallel one-shot prompts | serialized per session; a prompt during a run is queued with `followUp` |
 
 The CLI default is the rollback lever: if RPC misbehaves, switch the mode back
@@ -215,7 +215,7 @@ idempotent upserts.
 
 - **Instance isolation** — every instance owns its stream, lifecycle and
   subscription; stopping or failing one instance never touches another
-  (`internal/agents/instances`, workbench e2e).
+  (`internal/app/instances`, workbench e2e).
 - **Backend isolation** — diagnostics and lifecycle go through the registry
   per backend; a broken adapter is reported, never fatal
   (`agents.CollectDiagnostics`).
