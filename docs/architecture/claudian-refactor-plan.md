@@ -103,7 +103,7 @@ web/src/
 
 ## 5. 任务勾销表（执行时维护）
 
-- [ ] P0 基线
+- [x] P0 基线（分支 `refactor/claudian-architecture`；`make verify` 全绿；e2e 基线：10 通过 / 7 存量失败——layout×2、plantuml、session-history×2、sessions、agent-service，均为 selector 歧义等存量缺陷，重构期间只许减不许增）
 - [ ] P1 后端五层重组（R1、R2）
 - [ ] P2 命名耦合清理（R3）
 - [ ] P3 前端归位（R4）
