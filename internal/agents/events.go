@@ -61,9 +61,32 @@ func (t EventType) Valid() bool {
 // LifecycleEvent describes an instance or session state change. State uses
 // the InstanceStatus values for instance-level events and backend-defined
 // names for session-level ones; Detail carries human-readable context.
+// Usage, when set, reports the turn's token usage (opencode's step finish);
+// the workbench uses it as the freshest context anchor.
 type LifecycleEvent struct {
-	State  string `json:"state"`
-	Detail string `json:"detail,omitempty"`
+	State  string        `json:"state"`
+	Detail string        `json:"detail,omitempty"`
+	Usage  *MessageUsage `json:"usage,omitempty"`
+}
+
+// MessageUsage is one message's (or turn's) token usage as the backend
+// reports it. All fields are prompt-visible tokens; Total is their sum.
+// It is always exact backend data, never an estimate: estimates are computed
+// in the workbench and never travel in this struct.
+type MessageUsage struct {
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	Reasoning  int `json:"reasoning,omitempty"`
+	CacheRead  int `json:"cacheRead,omitempty"`
+	CacheWrite int `json:"cacheWrite,omitempty"`
+}
+
+// Total reports the prompt-visible token sum.
+func (u *MessageUsage) Total() int {
+	if u == nil {
+		return 0
+	}
+	return u.Input + u.Output + u.Reasoning + u.CacheRead + u.CacheWrite
 }
 
 // MessagePayload carries one chat message or, on streaming backends, one
@@ -81,6 +104,10 @@ type MessagePayload struct {
 	// backend reports it. It is absent on user messages and on backends that
 	// do not record a per-message model.
 	Model *MessageModel `json:"model,omitempty"`
+	// Usage carries the message's token usage, when the backend reports it.
+	// It is set on final assistant messages only; streaming chunks never
+	// carry it.
+	Usage *MessageUsage `json:"usage,omitempty"`
 }
 
 // MessageModel identifies the model that produced one assistant message. ID is

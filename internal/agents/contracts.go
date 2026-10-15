@@ -112,11 +112,14 @@ type Capabilities struct {
 // ModelInfo is one model an agent can run, as the backend reports it. ID is
 // the value SendMessageRequest.Model and CreateSessionOptions.Model accept:
 // "provider/model", or "provider/model#variant" for a model variant.
+// ContextLimit is the model's context window in tokens, when the backend
+// reports one; nil means unknown and callers must not render a percentage.
 type ModelInfo struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Provider string   `json:"provider"`
-	Variants []string `json:"variants,omitempty"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Provider     string   `json:"provider"`
+	Variants     []string `json:"variants,omitempty"`
+	ContextLimit *int     `json:"contextLimit,omitempty"`
 }
 
 // InstanceStatus is the lifecycle state of an adapter-managed instance.

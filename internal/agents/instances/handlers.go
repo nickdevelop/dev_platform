@@ -21,6 +21,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/instances", s.handleList)
 	r.POST("/projects/:id/instances", s.handleStart)
 	r.POST("/projects/:id/instances/:instanceId/stop", s.handleStop)
+	r.GET("/projects/:id/instances/:instanceId/git-info", s.handleGitInfo)
 
 	// Per-project backend enable/disable (spec §5.3): an operator turns a
 	// backend on or off for one project; starting a disabled backend is
@@ -191,6 +192,28 @@ func (s *Service) handleStart(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, instance)
+}
+
+// handleGitInfo returns the git state of the named instance's working
+// directory. A directory that is not a git work tree (or a git binary that is
+// missing) reports isGit false rather than an error, so branch display never
+// blocks opening a session.
+func (s *Service) handleGitInfo(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	instanceID := c.Param("instanceId")
+	if instanceID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	info, err := s.GitInfo(c.Request.Context(), id, instanceID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, info)
 }
 
 // handleStop stops the named instance. The operation is idempotent.

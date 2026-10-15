@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
 import { listBackendModels } from '../api/agents'
+import { getInstanceGitInfo } from '../api/git'
 import { createService, fetchModels, testModel } from '../api/models'
 import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
 
@@ -80,6 +81,17 @@ describe('agents API contracts', () => {
     await listBackendModels(7, 'pi', true)
 
     expect(calls[0].url).toBe('/api/projects/7/agent-backends/pi/models?refresh=1')
+  })
+
+  it('reads instance git state from the instance git-info route', async () => {
+    const calls = stubJson({ isGit: true, branch: 'main', dirty: false })
+
+    const info = await getInstanceGitInfo(7, 'inst/1')
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe('/api/projects/7/instances/inst%2F1/git-info')
+    expect(calls[0].init?.method).toBe('GET')
+    expect(info.branch).toBe('main')
   })
 })
 

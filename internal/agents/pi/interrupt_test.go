@@ -13,13 +13,14 @@ import (
 	"devplatform/internal/platform"
 )
 
-func TestParseModelList(t *testing.T) {
-	out := "provider           model                            context  max-out  thinking  images\n" +
+func intPtr(v int) *int { return &v }
+
+func TestParseModelList(t *testing.T) {	out := "provider           model                            context  max-out  thinking  images\n" +
 		"occ-command-code   deepseek/deepseek-v4.1-flash     1M       32K      no        yes\n" +
 		"occ-commandcode-a  claude-haiku-5-5                 1M       128K     no        yes\n"
 	want := []agents.ModelInfo{
-		{ID: "occ-command-code/deepseek/deepseek-v4.1-flash", Name: "deepseek/deepseek-v4.1-flash", Provider: "occ-command-code"},
-		{ID: "occ-commandcode-a/claude-haiku-5-5", Name: "claude-haiku-5-5", Provider: "occ-commandcode-a"},
+		{ID: "occ-command-code/deepseek/deepseek-v4.1-flash", Name: "deepseek/deepseek-v4.1-flash", Provider: "occ-command-code", ContextLimit: intPtr(1000000)},
+		{ID: "occ-commandcode-a/claude-haiku-5-5", Name: "claude-haiku-5-5", Provider: "occ-commandcode-a", ContextLimit: intPtr(1000000)},
 	}
 	if got := parseModelList(out); !reflect.DeepEqual(got, want) {
 		t.Errorf("parseModelList() = %+v, want %+v", got, want)

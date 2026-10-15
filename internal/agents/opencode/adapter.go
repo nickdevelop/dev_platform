@@ -1249,10 +1249,18 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 	case "session.updated", "session.renamed", "session.moved", "session.deleted",
 		"session.forked", "session.instructions.updated", "session.skill.activated",
 		"session.execution.started", "session.execution.succeeded", "session.execution.interrupted",
-		"session.step.started", "session.step.streamed", "session.step.ended",
+		"session.step.started", "session.step.streamed",
 		"session.compaction.started", "session.compaction.ended",
 		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
 		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, lifecycleState(event.Type), lifecycleDetail(data))}
+
+	case "session.step.ended":
+		// A finished step reports the turn's token usage; it becomes the
+		// workbench's freshest context anchor. The usage rides the lifecycle
+		// event because no message renders for a step boundary.
+		lifecycle := inst.lifecycleEvent(sessionID, lifecycleState(event.Type), lifecycleDetail(data))
+		lifecycle.Lifecycle.Usage = data.Tokens.Usage()
+		return []agents.NormalizedEvent{lifecycle}
 
 	default:
 		return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
@@ -1384,6 +1392,9 @@ type eventData struct {
 	Title              string           `json:"title"`
 	Reason             string           `json:"reason"`
 	Attempt            int              `json:"attempt"`
+	// Tokens carries a finished step's token usage (session.step.ended).
+	// Absent on every other event; a zero total is treated as unknown.
+	Tokens *WireTokens `json:"tokens"`
 }
 
 // structuredError mirrors Session.StructuredError.
@@ -1791,6 +1802,12 @@ func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.Mo
 		}
 		for _, variant := range record.Variants {
 			model.Variants = append(model.Variants, variant.ID)
+		}
+		// The server reports the context window per model (Model.Info.limit);
+		// a non-positive value is treated as unknown rather than a limit.
+		if record.Limit != nil && record.Limit.Context > 0 {
+			limit := record.Limit.Context
+			model.ContextLimit = &limit
 		}
 		models = append(models, model)
 	}

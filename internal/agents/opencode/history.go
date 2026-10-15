@@ -115,6 +115,7 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 
 	case "assistant":
 		events := make([]agents.NormalizedEvent, 0, len(message.Content))
+		usage := message.Tokens.Usage()
 		for _, block := range message.Content {
 			switch block.Type {
 			case "text":
@@ -123,7 +124,7 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 				}
 				event := envelope
 				event.Type = agents.EventMessage
-				payload := &agents.MessagePayload{Role: "assistant", Text: block.Text, Final: true}
+				payload := &agents.MessagePayload{Role: "assistant", Text: block.Text, Final: true, Usage: usage}
 				if message.Model != nil {
 					// Each assistant message records the model that produced
 					// it, so a replay is accurate per message even after a
@@ -131,6 +132,9 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 					payload.Model = messageModel(*message.Model)
 				}
 				event.Message = payload
+				// The turn's usage belongs to the message once: a multi-block
+				// reply must not anchor it several times.
+				usage = nil
 				events = append(events, event)
 			case "tool":
 				events = append(events, toolHistoryEvents(envelope, block)...)

@@ -91,7 +91,9 @@ func (a *Adapter) historyFile(request agents.ListHistoryRequest) (string, error)
 
 // historyRecord is one JSONL line, reduced to the fields history translation
 // needs. Content is kept raw because pi writes it either as a JSON string or
-// as a block array.
+// as a block array. Usage rides assistant messages (pi persists the
+// provider-reported usage on them); standalone usage records are cost
+// bookkeeping, not context, and are skipped.
 type historyRecord struct {
 	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
@@ -100,7 +102,38 @@ type historyRecord struct {
 		Content    json.RawMessage `json:"content"`
 		ToolCallID string          `json:"toolCallId"`
 		IsError    bool            `json:"isError"`
+		Usage      *wireUsage      `json:"usage"`
 	} `json:"message"`
+}
+
+// wireUsage mirrors pi's Usage: per-message provider-reported tokens with the
+// prompt-cache split. Total is informational only; the platform sums the
+// parts so a missing total never hides usage.
+type wireUsage struct {
+	Input      int `json:"input"`
+	Output     int `json:"output"`
+	Reasoning  int `json:"reasoning"`
+	CacheRead  int `json:"cacheRead"`
+	CacheWrite int `json:"cacheWrite"`
+}
+
+// usage converts wire usage to the platform shape. A zero total yields nil
+// so placeholder records never become a misleading anchor.
+func (u *wireUsage) usage() *agents.MessageUsage {
+	if u == nil {
+		return nil
+	}
+	usage := &agents.MessageUsage{
+		Input:      u.Input,
+		Output:     u.Output,
+		Reasoning:  u.Reasoning,
+		CacheRead:  u.CacheRead,
+		CacheWrite: u.CacheWrite,
+	}
+	if usage.Total() == 0 {
+		return nil
+	}
+	return usage
 }
 
 // historyBlock is one content block of a message. Reasoning blocks carry their
@@ -172,6 +205,7 @@ func normalizeHistoryRecord(record historyRecord) []agents.NormalizedEvent {
 	switch record.Message.Role {
 	case "user", "assistant":
 		events := make([]agents.NormalizedEvent, 0, 2)
+		usage := record.Message.Usage.usage()
 		for _, block := range decodeHistoryContent(record.Message.Content) {
 			switch block.Type {
 			case "text":
@@ -181,6 +215,13 @@ func normalizeHistoryRecord(record historyRecord) []agents.NormalizedEvent {
 				event := envelope
 				event.Type = agents.EventMessage
 				event.Message = &agents.MessagePayload{Role: record.Message.Role, Text: block.Text, Final: true}
+				// The turn's usage belongs to the assistant message once: a
+				// multi-block reply must not anchor it several times, and
+				// user turns carry no usage of their own.
+				if record.Message.Role == "assistant" {
+					event.Message.Usage = usage
+					usage = nil
+				}
 				events = append(events, event)
 			case "toolCall":
 				if record.Message.Role != "assistant" {

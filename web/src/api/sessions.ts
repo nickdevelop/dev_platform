@@ -87,6 +87,18 @@ export interface MessagePayload {
   text: string
   final: boolean
   model?: MessageModel
+  // Exact per-message token usage from the backend, present on final
+  // assistant messages when the backend reports it. Never estimated.
+  usage?: MessageUsage
+}
+
+// Mirrors agents.MessageUsage: exact backend-reported token usage.
+export interface MessageUsage {
+  input: number
+  output: number
+  reasoning?: number
+  cacheRead?: number
+  cacheWrite?: number
 }
 
 // Mirrors agents.ThinkingPayload: the agent's reasoning, or one streaming chunk
@@ -125,6 +137,9 @@ export interface ErrorPayload {
 export interface LifecyclePayload {
   state: string
   detail?: string
+  // Exact turn token usage from the backend (opencode step finish), used as
+  // the freshest context anchor. Absent on every other lifecycle event.
+  usage?: MessageUsage
 }
 
 export interface NormalizedEvent {

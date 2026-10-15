@@ -559,6 +559,48 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/instances/{instanceId}/git-info:
+    get:
+      summary: Git state of an instance working directory
+      description: >-
+        Returns the git state (branch and dirty flag) of the named instance's
+        working directory. A directory that is not a git work tree reports
+        isGit false rather than an error, so branch display never blocks
+        opening a session. The instance must belong to the project in the path.
+      operationId: getInstanceGitInfo
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: instanceId
+          in: path
+          required: true
+          description: Durable identifier of the instance.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The instance's git state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/agent-backends/{backend}/models:
     get:
       summary: List the models a backend offers to a project
@@ -3164,6 +3206,27 @@ components:
           items:
             $ref: '#/components/schemas/AgentInstance'
       additionalProperties: false
+    GitInfo:
+      type: object
+      description: >-
+        Git state of an instance's working directory. isGit false means the
+        directory is not a git work tree (or git is unavailable); every other
+        field is empty then.
+      required:
+        - isGit
+      properties:
+        isGit:
+          type: boolean
+        branch:
+          type: string
+          description: Short branch name, or short commit when HEAD is detached.
+        dirty:
+          type: boolean
+          description: True when tracked files have uncommitted changes.
+        root:
+          type: string
+          description: Work-tree top level.
+      additionalProperties: false
     StartAgentInstanceRequest:
       type: object
       required:
@@ -3537,6 +3600,8 @@ components:
       description: >-
         One model a backend offers. The id uses the provider/model form sent in
         SendAgentSessionMessageRequest.model, with an optional #variant suffix.
+        contextLimit is the model's context window in tokens when the backend
+        reports one; absent means unknown and no percentage may be rendered.
       required:
         - id
         - name
@@ -3556,6 +3621,10 @@ components:
           items:
             type: string
           description: Optional variants accepted in the id's #variant suffix.
+        contextLimit:
+          type: integer
+          minimum: 1
+          description: Context window in tokens, when the backend reports one.
       additionalProperties: false
     BackendModelList:
       type: object
@@ -3606,9 +3675,11 @@ components:
         model:
           type: string
           description: >-
-            Model the session is created with, only honored when the backend
-            declares modelSelection. Meaningful together with message; later
-            messages can still switch models per message.
+            Model the session is created with (its starting model), only
+            honored when the backend declares modelSelection. Independent of
+            message: an empty session is still created on this model, and it is
+            what the workbench opens the conversation on before the agent's
+            first reply. Later messages can still switch models per message.
       additionalProperties: false
     CreateAgentSessionResult:
       type: object

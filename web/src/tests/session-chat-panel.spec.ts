@@ -12,7 +12,7 @@ import { useAgentsStore } from '../stores/agents'
 import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useOpencodeRawStore } from '../stores/opencodeRaw'
-import { clearModelCache } from '../modelCache'
+import { clearModelCache, rememberModels } from '../modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
 
@@ -881,7 +881,11 @@ describe('SessionChatPanel conversation layout', () => {
     const tag = wrapper.findComponent(BackendTag)
     expect(header.exists()).toBe(true)
     expect(tag.exists()).toBe(true)
-    expect(header.element.firstElementChild).toBe(tag.element)
+    // The title row keeps tag-then-title order; the workdir row below it
+    // carries the directory and branch instead.
+    const titleRow = wrapper.find('.title-row')
+    expect(titleRow.exists()).toBe(true)
+    expect(titleRow.element.firstElementChild).toBe(tag.element)
     // And the title follows it, rather than preceding it.
     expect(header.find('.session-heading').exists()).toBe(true)
   })
@@ -905,6 +909,81 @@ describe('SessionChatPanel conversation layout', () => {
     await flushPromises()
 
     expect(wrapper.find('.turn-status').exists()).toBe(false)
+  })
+
+  it('shows the workdir on its own row with a copy button', async () => {
+    stubSessionList([session('sess-1')])
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const row = wrapper.find('[data-test="workdir-row"]')
+    expect(row.exists()).toBe(true)
+    expect(wrapper.find('[data-test="workdir-path"]').text()).toBe('/workspace/alpha')
+    expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(true)
+    // The title row keeps tag-then-title on the first line.
+    expect(wrapper.find('.title-row .session-heading').text()).toBe('Title sess-1')
+  })
+
+  it('shows the git branch with a dirty marker, and hides it outside git', async () => {
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/git-info')) {
+        return { status: 200, json: async () => ({ isGit: true, branch: 'feature-x', dirty: true }) } as Response
+      }
+      if (url.endsWith('/history')) {
+        return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+      }
+      if (url.endsWith('/continue')) {
+        return { status: 200, json: async () => session('sess-1') } as Response
+      }
+      return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="git-branch"]').text()).toBe('⎇ feature-x*')
+  })
+
+  it('shows exact context usage with a limit, estimated without one', async () => {
+    const history = {
+      events: [
+        {
+          sequence: 1,
+          type: 'message',
+          message: { role: 'assistant', text: 'hi', final: true, usage: { input: 8000, output: 2000 } },
+        },
+      ],
+      truncated: false,
+    }
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/git-info')) return { status: 200, json: async () => ({ isGit: false }) } as Response
+      if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+      if (url.endsWith('/continue')) {
+        return { status: 200, json: async () => session('sess-1') } as Response
+      }
+      return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    useAgentsStore().instances = [instance('running')]
+    // The composer's model resolves from the picker's cached catalog. Both
+    // are set after open: loading the session list resets per-session model
+    // choices, like a real project switch.
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    rememberModels(1, 'opencode-v2', [{ id: 'mock/model-a', name: 'Model A', provider: 'mock', contextLimit: 128000 }])
+    useSessionsStore().setAutoModel('sess-1', 'mock/model-a')
+    await flushPromises()
+
+    const line = wrapper.find('[data-test="context-usage"]')
+    expect(line.exists()).toBe(true)
+    expect(line.text()).toContain('上下文 10k/128k（8%）')
+    expect(line.text()).toContain('↑8.0k')
+    expect(line.text()).toContain('↓2.0k')
+    expect(wrapper.find('[data-test="context-estimated"]').exists()).toBe(false)
   })
 
   it('deletes the session after a confirmation and returns to the project', async () => {

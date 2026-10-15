@@ -290,13 +290,14 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'GET' && url.pathname === '/api/model') {
     sendJSON(response, 200, {
       data: [
-        { id: 'model-a', modelID: 'model-a', providerID: 'mock', name: 'Mock Model A' },
+        { id: 'model-a', modelID: 'model-a', providerID: 'mock', name: 'Mock Model A', limit: { context: 200000, output: 32000 } },
         {
           id: 'model-b',
           modelID: 'model-b',
           providerID: 'mock',
           name: 'Mock Model B',
           variants: [{ id: 'fast' }],
+          limit: { context: 200000, output: 32000 },
         },
       ],
     })

@@ -18,6 +18,10 @@ import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useOpencodeRawStore } from '../stores/opencodeRaw'
 import { useOpenTabsStore } from '../stores/openTabs'
+import { getInstanceGitInfo, type GitInfo } from '../api/git'
+import { cachedModels } from '../modelCache'
+import { computeContextUsage } from '../contextUsage'
+import { ellipsisMiddle, formatTokens } from '../format'
 import BackendTag from './BackendTag.vue'
 import MessageView from './MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
@@ -189,6 +193,121 @@ const instance = computed(() => {
   return agents.instances.find((entry) => entry.id === session.instanceId) ?? null
 })
 
+// The workdir row shows the session's real working directory on its own line:
+// middle-ellipsized with the full path on hover and a copy button, plus the
+// git branch (with a dirty marker) when the directory is a git work tree.
+const shortDirectory = computed(() => ellipsisMiddle(instance.value?.directory ?? ''))
+const gitInfo = ref<GitInfo | null>(null)
+const gitCache = new Map<string, GitInfo>()
+const copiedPath = ref(false)
+async function loadGit(force = false) {
+  const session = activeSession.value
+  if (!session) {
+    gitInfo.value = null
+    return
+  }
+  const key = session.instanceId
+  if (!force && gitCache.has(key)) {
+    gitInfo.value = gitCache.get(key) ?? null
+    return
+  }
+  try {
+    const info = await getInstanceGitInfo(props.projectId, session.instanceId)
+    gitCache.set(key, info)
+    if (activeSession.value?.instanceId === key) gitInfo.value = info
+  } catch {
+    // Branch display is best-effort: a failed probe leaves the row without
+    // the branch chip rather than breaking the session.
+    if (activeSession.value?.instanceId === key) gitInfo.value = null
+  }
+}
+const branchLabel = computed(() => {
+  const info = gitInfo.value
+  if (!info?.isGit || !info.branch) return ''
+  return `⎇ ${info.branch}${info.dirty ? '*' : ''}`
+})
+const branchTitle = computed(() => {
+  const info = gitInfo.value
+  if (!info?.isGit) return ''
+  const state = info.dirty ? '有未提交改动' : '干净'
+  return `分支 ${info.branch ?? ''} · ${state}${info.root ? ` · ${info.root}` : ''}`
+})
+async function copyDirectory() {
+  const directory = instance.value?.directory
+  if (!directory) return
+  try {
+    await navigator.clipboard.writeText(directory)
+  } catch {
+    // Non-secure contexts have no async clipboard: fall back to execCommand.
+    const area = document.createElement('textarea')
+    area.value = directory
+    document.body.appendChild(area)
+    area.select()
+    try {
+      document.execCommand('copy')
+    } catch {
+      // Copy is convenience only; failure stays silent.
+    }
+    area.remove()
+  }
+  copiedPath.value = true
+  setTimeout(() => {
+    copiedPath.value = false
+  }, 1500)
+}
+
+// The composer context line anchors on exact backend usage and estimates the
+// turn in flight. The limit is read from the model picker's cached catalog
+// for the composer's current model — the picker owns fetching, so this panel
+// never issues its own catalog request; without a known limit no percentage
+// is derived.
+const modelLimit = ref<number | undefined>(undefined)
+function refreshModelLimit() {
+  const session = activeSession.value
+  const model = selectedModel.value
+  if (!session || !model) {
+    modelLimit.value = undefined
+    return
+  }
+  const cached = cachedModels(props.projectId, session.backend)
+  const base = model.split('#')[0]
+  const found = cached?.find((entry) => entry.id === model || entry.id === base)
+  const limit = found?.contextLimit
+  modelLimit.value = typeof limit === 'number' && limit > 0 ? limit : undefined
+}
+function onModelStatus(ok: boolean) {
+  modelOk.value = ok
+  // The picker just (re)loaded its catalog: the cached limit may have
+  // appeared or changed.
+  refreshModelLimit()
+}
+const contextUsage = computed(() =>
+  computeContextUsage(activeMessages.value, sessions.lifecycleUsage[props.sessionId], modelLimit.value),
+)
+const showContextLine = computed(() => contextUsage.value.used > 0 || contextUsage.value.limit !== undefined)
+const contextMain = computed(() => {
+  const usage = contextUsage.value
+  const used = `${usage.estimated ? '~' : ''}${formatTokens(usage.used)}`
+  if (usage.limit === undefined || usage.percent === undefined) return `上下文 ${used}`
+  return `上下文 ${used}/${formatTokens(usage.limit)}（${usage.percent}%）`
+})
+const contextDetail = computed(() => {
+  const parts = contextUsage.value.parts
+  const segments = [`↑${formatTokens(parts.input)}`, `↓${formatTokens(parts.output)}`]
+  if (parts.cacheRead > 0 || parts.cacheWrite > 0) {
+    segments.push(`缓存读${formatTokens(parts.cacheRead)}/写${formatTokens(parts.cacheWrite)}`)
+  }
+  if (parts.reasoning > 0) segments.push(`推理${formatTokens(parts.reasoning)}`)
+  return segments.join(' ')
+})
+const contextBarClass = computed(() => {
+  const percent = contextUsage.value.percent ?? 0
+  if (percent >= 95) return 'context-bar-fill danger'
+  if (percent >= 80) return 'context-bar-fill warn'
+  return 'context-bar-fill'
+})
+const contextBarWidth = computed(() => `${Math.min(contextUsage.value.percent ?? 0, 100)}%`)
+
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
 // A cheap change signal for the log: a new entry changes the length, and a
 // streaming delta changes the text of an entry still open. Settled entries are
@@ -336,6 +455,16 @@ watch(isRunning, (running) => {
   if (running) startApprovalPoll()
   else stopApprovalPoll()
 })
+// A finished turn may have switched branches (the agent commits) or consumed
+// context, so the workdir row refreshes exactly then instead of polling.
+watch(isRunning, (running, was) => {
+  if (was === true && running === false) void loadGit(true)
+})
+// The limit follows the composer's current model: switching models re-reads
+// the picker's cached catalog entry the new model reports.
+watch([() => activeSession.value?.backend, selectedModel], () => {
+  refreshModelLimit()
+})
 onBeforeUnmount(stopApprovalPoll)
 
 // onLogScroll tracks where the user is: reaching the bottom resumes following
@@ -465,6 +594,11 @@ async function open() {
     // A turn may already be running when the session is opened; start polling so
     // its permission cards appear even without a push channel.
     startApprovalPoll()
+    // The workdir row is per-session metadata: it loads with the session and
+    // never blocks the conversation. The context limit refreshes from the
+    // picker's cache once its catalog lands (via onModelStatus).
+    void loadGit()
+    refreshModelLimit()
     // Opening a session lands on its newest entry, not on the top of a replayed
     // history.
     await nextTick()
@@ -603,20 +737,43 @@ async function removeSession() {
   >
     <template v-if="activeSession">
       <header class="chat-header">
-        <BackendTag :backend="activeSession.backend" />
-        <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
-        <button
-          type="button"
-          class="delete-session"
-          data-test="delete-session"
-          title="删除会话"
-          @click="confirmingDelete = true"
-        >
-          删除
-        </button>
-        <div class="session-meta">
-          <span v-if="instance" class="chip">工作目录：{{ instance.directory }}</span>
+        <div class="title-row">
+          <BackendTag :backend="activeSession.backend" />
+          <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
+          <button
+            type="button"
+            class="delete-session"
+            data-test="delete-session"
+            title="删除会话"
+            @click="confirmingDelete = true"
+          >
+            删除
+          </button>
+        </div>
+        <div v-if="instance" class="workdir-row" data-test="workdir-row">
+          <span class="workdir-path" data-test="workdir-path" :title="instance.directory">{{
+            shortDirectory
+          }}</span>
+          <button
+            type="button"
+            class="workdir-copy"
+            data-test="workdir-copy"
+            :title="copiedPath ? '已复制' : '复制完整路径'"
+            @click="copyDirectory"
+          >
+            {{ copiedPath ? '已复制' : '复制' }}
+          </button>
+          <span
+            v-if="branchLabel"
+            class="chip branch"
+            data-test="git-branch"
+            :title="branchTitle"
+            >{{ branchLabel }}</span
+          >
           <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
+        </div>
+        <div v-else-if="isRunning" class="workdir-row">
+          <span class="turn-status" role="status" aria-live="polite">运行中</span>
         </div>
       </header>
 
@@ -725,7 +882,7 @@ async function removeSession() {
                     :project-id="props.projectId"
                     :backend="activeSession.backend"
                     :model-selection="activeSession.capabilities.modelSelection"
-                    @status="modelOk = $event"
+                    @status="onModelStatus"
                     @picked="onModelPicked"
                   />
                   <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
@@ -740,6 +897,28 @@ async function removeSession() {
                 >
                   {{ composerLabel }}
                 </button>
+              </div>
+              <div
+                v-if="showContextLine"
+                class="context-line"
+                data-test="context-usage"
+                :title="contextDetail"
+              >
+                <span class="context-main">{{ contextMain }}</span>
+                <span
+                  v-if="contextUsage.percent !== undefined"
+                  class="context-bar"
+                  role="progressbar"
+                  :aria-valuenow="contextUsage.percent"
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                >
+                  <span :class="contextBarClass" :style="{ width: contextBarWidth }"></span>
+                </span>
+                <span class="context-detail">{{ contextDetail }}</span>
+                <span v-if="contextUsage.estimated" class="context-est" data-test="context-estimated"
+                  >估算</span
+                >
               </div>
             </div>
           </form>
@@ -1090,13 +1269,65 @@ async function removeSession() {
 
 .chat-header {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.3rem;
   /* A rule under the title separates the session heading from the
      conversation below it. */
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.title-row .session-heading {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The workdir row owns the second header line so a long path never pushes
+   the title: the path ellipsizes in the middle (see ellipsisMiddle) with
+   the full directory on hover, beside the copy control and branch chip. */
+.workdir-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.workdir-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.workdir-copy {
+  flex: none;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.workdir-copy:hover {
+  color: var(--color-primary-hover);
+  border-color: var(--color-primary);
 }
 
 .delete-session {
@@ -1180,19 +1411,18 @@ async function removeSession() {
   font-size: 1.05rem;
 }
 
-.session-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .chip {
+  flex: none;
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
   border-radius: 999px;
   padding: 0.1rem 0.5rem;
   font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.chip.branch {
+  font-family: var(--font-mono, monospace);
 }
 
 .turn-status {
@@ -1322,6 +1552,69 @@ async function removeSession() {
 .composer-action.stop-button {
   color: var(--color-danger);
   border-color: var(--color-danger-border);
+}
+
+/* The composer context line: exact usage anchored on backend reports with
+   the in-flight turn estimated (marked 估算). The bar warns at 80% and
+   alarms at 95%; without a model limit only the used figure shows. */
+.context-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  min-width: 0;
+}
+
+.context-main {
+  flex: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-bar {
+  flex: 1 1 4rem;
+  min-width: 3rem;
+  max-width: 12rem;
+  height: 0.35rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.context-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+}
+
+.context-bar-fill.warn {
+  background: var(--color-warning);
+}
+
+.context-bar-fill.danger {
+  background: var(--color-danger);
+}
+
+.context-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.context-est {
+  flex: none;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
 }
 
 .tool-notice {

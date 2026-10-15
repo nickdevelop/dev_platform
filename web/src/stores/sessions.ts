@@ -25,6 +25,7 @@ import {
   type CreateSessionBody,
   type MessageModel,
   type MessagePayload,
+  type MessageUsage,
   type NormalizedEvent,
   type SessionHistory,
   type ThinkingPayload,
@@ -46,6 +47,10 @@ export interface ChatEntry {
   // The model that produced an assistant message, when the backend reports
   // one. Absent on user messages and on backends without per-message models.
   model?: MessageModel
+  // Exact token usage of a final assistant message, when the backend reports
+  // it. The context line anchors on the newest such entry; streaming chunks
+  // never carry it.
+  usage?: MessageUsage
   callId?: string
   name?: string
   // Tool calls carry the raw argument payload so the view can summarise it
@@ -238,7 +243,18 @@ export const useSessionsStore = defineStore('sessions', {
     // session. Kept apart from selectedModels so the session's actually-used
     // model can take precedence without being mistaken for a deliberate pick.
     autoModels: {} as Record<string, string>,
+    // The model the user chose on the new-session form, kept per session so the
+    // composer shows it before the agent's first reply. Until that reply there is
+    // no per-message model to fall back on, and the picker's own first-model
+    // fallback would otherwise win. It is kept apart from selectedModels because
+    // a project switch resets the composer's per-session choices, while a freshly
+    // created session's model must survive the switch to its own project.
+    creationModels: {} as Record<string, string>,
     activeSessionId: null as string | null,
+    // The freshest turn-level usage per session, reported on lifecycle events
+    // (opencode step finish). It overrides message anchors because it arrives
+    // after the turn's messages. Cleared with the session.
+    lifecycleUsage: {} as Record<string, MessageUsage>,
     loading: false,
     error: '',
     // The code of the last API failure, so a view can act on a specific
@@ -261,13 +277,17 @@ export const useSessionsStore = defineStore('sessions', {
     sessionById: (state) => (sessionId: string) =>
       state.sessions.find((entry) => entry.id === sessionId) ?? null,
     // modelFor is the model the composer shows and sends for a session. The
-    // user's explicit choice wins; otherwise the session's own model — the model
-    // of its most recent assistant message — so switching to a session restores the
+    // user's explicit choice wins; otherwise the model the session was created on
+    // — the one chosen on the new-session form — so the composer shows it before
+    // the agent's first reply; otherwise the session's own model — the model of
+    // its most recent assistant message — so switching to a session restores the
     // model it actually used; otherwise the picker's own first-model fallback;
     // '' when none applies yet and the picker has not loaded any model.
     modelFor: (state) => (sessionId: string): string => {
       const explicit = state.selectedModels[sessionId]
       if (explicit !== undefined && explicit !== '') return explicit
+      const created = state.creationModels[sessionId]
+      if (created !== undefined && created !== '') return created
       const used = sessionUsedModel(state.messages[sessionId] ?? [])
       if (used !== '') return used
       return state.autoModels[sessionId] ?? ''
@@ -293,6 +313,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.echoPending = {}
         this.selectedModels = {}
         this.autoModels = {}
+        this.lifecycleUsage = {}
         lastEventIds.clear()
       }
       this.loading = true
@@ -373,6 +394,12 @@ export const useSessionsStore = defineStore('sessions', {
         this.revision++
         this.error = ''
         this.errorCode = ''
+        // The model chosen on the new-session form is the session's starting
+        // model: remember it so the composer shows it before the agent's first
+        // reply supplies a per-message model.
+        if (created && body.model !== undefined && body.model !== '') {
+          this.creationModels[created.id] = body.model
+        }
         // A first message admitted at create time is echoed once on the
         // stream; the optimistic user entry the history replay shows must not
         // double it, so the echo dedupe holds the text like a composer send.
@@ -421,6 +448,8 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.historyTailGuard[sessionId]
       delete this.selectedModels[sessionId]
       delete this.autoModels[sessionId]
+      delete this.creationModels[sessionId]
+      delete this.lifecycleUsage[sessionId]
       lastEventIds.delete(sessionId)
       this.error = ''
       return true
@@ -577,6 +606,7 @@ export const useSessionsStore = defineStore('sessions', {
           event.message.final,
           event.sequence,
           event.message.model,
+          event.message.usage,
         )
         return
       }
@@ -638,6 +668,7 @@ export const useSessionsStore = defineStore('sessions', {
               event.message.final,
               event.sequence,
               event.message.model,
+              event.message.usage,
             )
             continue
           }
@@ -682,6 +713,7 @@ export const useSessionsStore = defineStore('sessions', {
       final: boolean,
       sequence: number,
       model?: MessageModel,
+      usage?: MessageUsage,
     ) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
@@ -697,6 +729,9 @@ export const useSessionsStore = defineStore('sessions', {
           open.text += text
         }
         if (model) open.model = model
+        // Usage rides final events only; a late terminator still anchors the
+        // block even when its text was already complete.
+        if (final && usage) open.usage = usage
         return
       }
       // An empty event with no open block: a terminator whose block already
@@ -710,6 +745,7 @@ export const useSessionsStore = defineStore('sessions', {
         text,
         streaming: !final,
         model,
+        usage: final ? usage : undefined,
       })
     },
 
@@ -745,6 +781,11 @@ export const useSessionsStore = defineStore('sessions', {
 
     applyLifecycle(sessionId: string, event: NormalizedEvent) {
       const state = event.lifecycle?.state
+      // A turn-level usage report is the freshest context anchor: it arrives
+      // after the turn's messages, so it overrides any message anchor.
+      if (event.lifecycle?.usage) {
+        this.lifecycleUsage[sessionId] = event.lifecycle.usage
+      }
       // The turn is derived from the same lifecycle states the backend uses, so
       // the open panel's send/stop action tracks a live turn. An interrupted
       // turn settles as agent_settled (detail aborted) with no error entry.

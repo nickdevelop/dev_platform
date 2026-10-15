@@ -123,11 +123,14 @@ export interface StartAgentInstanceBody {
 
 // Mirrors #/components/schemas/ModelInfo. The id uses the provider/model form
 // accepted by SendMessageBody.model, with an optional #variant suffix.
+// contextLimit is the model's context window in tokens when the backend
+// reports one; absent means unknown and no percentage may be rendered.
 export interface ModelInfo {
   id: string
   name: string
   provider: string
   variants?: string[]
+  contextLimit?: number
 }
 
 // Mirrors #/components/schemas/BackendModelList: the models one backend offers

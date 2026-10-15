@@ -164,14 +164,47 @@ type CreateSessionRequest struct {
 // conversation entries with turn markers: Type is "user", "assistant",
 // "idle" or "model-switched". A user message carries its body in Text; an
 // assistant message carries blocks in Content and the model that produced it
-// in Model.
+// in Model. An assistant message may also carry the tokens its turn consumed
+// in Tokens; the adapter forwards them as the message's usage anchor.
 type Message struct {
 	ID      string         `json:"id"`
 	Type    string         `json:"type"`
 	Text    string         `json:"text,omitempty"`
 	Content []ContentBlock `json:"content,omitempty"`
 	Model   *ModelRef      `json:"model,omitempty"`
+	Tokens  *WireTokens    `json:"tokens,omitempty"`
 	Time    MessageTime    `json:"time"`
+}
+
+// WireTokens mirrors opencode's TokenUsage.Info: per-turn token usage with
+// the prompt-cache split under Cache.
+type WireTokens struct {
+	Input     int `json:"input"`
+	Output    int `json:"output"`
+	Reasoning int `json:"reasoning"`
+	Cache     struct {
+		Read  int `json:"read"`
+		Write int `json:"write"`
+	} `json:"cache"`
+}
+
+// Usage converts wire tokens to the platform's usage shape. A zero total
+// yields nil so empty token blocks never become a misleading anchor.
+func (t *WireTokens) Usage() *agents.MessageUsage {
+	if t == nil {
+		return nil
+	}
+	usage := &agents.MessageUsage{
+		Input:      t.Input,
+		Output:     t.Output,
+		Reasoning:  t.Reasoning,
+		CacheRead:  t.Cache.Read,
+		CacheWrite: t.Cache.Write,
+	}
+	if usage.Total() == 0 {
+		return nil
+	}
+	return usage
 }
 
 // MessageTime is a message's wall-clock stamp in milliseconds since epoch.
@@ -332,6 +365,12 @@ type ModelVariant struct {
 	ID string `json:"id"`
 }
 
+// ModelLimit mirrors Model.Info.limit: the token windows the server reports
+// for a model. Only context is needed by the workbench today.
+type ModelLimit struct {
+	Context int `json:"context"`
+}
+
 // ModelRecord mirrors Model.Info: one model the server can run. ProviderID and
 // ModelID form the identity that ModelRef and the prompt route accept.
 type ModelRecord struct {
@@ -340,6 +379,7 @@ type ModelRecord struct {
 	ProviderID string         `json:"providerID"`
 	Name       string         `json:"name"`
 	Variants   []ModelVariant `json:"variants,omitempty"`
+	Limit      *ModelLimit    `json:"limit,omitempty"`
 }
 
 // ListModels returns the models the server can run for the directory.

@@ -163,7 +163,9 @@ func (p *parser) parseLine(line []byte, emit func(agents.NormalizedEvent)) {
 }
 
 // piEvent is the union of the pi JSON-mode record shapes the adapter inspects.
-// Unknown fields are ignored by encoding/json.
+// Unknown fields are ignored by encoding/json. Usage rides message_update
+// records (the provider-reported tokens for the turn so far); the parser
+// forwards it on final message events as the context anchor.
 type piEvent struct {
 	Type string `json:"type"`
 
@@ -174,6 +176,7 @@ type piEvent struct {
 	// Message records.
 	Message               json.RawMessage   `json:"message"`
 	AssistantMessageEvent *piAssistantEvent `json:"assistantMessageEvent"`
+	Usage                 *wireUsage        `json:"usage"`
 
 	// Tool execution records.
 	ToolCallID    string          `json:"toolCallId"`
@@ -306,6 +309,9 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			// empty terminator so a concatenating consumer does not double it.
 			out.Message.Text = ""
 		}
+		// The envelope usage is the turn's provider-reported tokens; it rides
+		// the final message as the context anchor. Deltas never carry it.
+		out.Message.Usage = event.Usage.usage()
 		return append(events, out)
 
 	case "tool_execution_start":
