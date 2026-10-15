@@ -3,13 +3,22 @@
 // deletions, muted hunk headers, plain context. Parsing is line-based with
 // no new dependencies; anything that is not a +/-/@@ line renders as
 // context so a malformed patch degrades to readable text instead of failing.
-import { computed } from 'vue'
+//
+// Only the first VISIBLE_LIMIT rows show by default, with a bottom fade and a
+// centered ▼ that expands to the rest (and folds back). `maxLines` stays the
+// hard safety cap: a patch longer than it is cut with an explicit note instead
+// of freezing the browser on a huge diff.
+import { computed, ref } from 'vue'
+import ExpandIndicator from './ExpandIndicator.vue'
 
 const props = defineProps<{ patch?: string; maxLines?: number }>()
 
 type DiffRow = { kind: 'hunk' | 'addition' | 'deletion' | 'context'; text: string }
 
 const LIMIT = 400
+const VISIBLE_LIMIT = 15
+
+const collapsed = ref(true)
 
 const rows = computed<DiffRow[]>(() => {
   if (!props.patch) return []
@@ -26,27 +35,47 @@ const rows = computed<DiffRow[]>(() => {
   return out
 })
 
-const truncated = computed(() => (props.patch ? props.patch.split('\n').length > (props.maxLines ?? LIMIT) : false))
+const foldable = computed(() => rows.value.length > VISIBLE_LIMIT)
+
+const visibleRows = computed(() =>
+  foldable.value && collapsed.value ? rows.value.slice(0, VISIBLE_LIMIT) : rows.value,
+)
+
+// The patch was cut at the hard cap, so even the expanded view omits rows.
+const clipped = computed(() =>
+  props.patch ? props.patch.split('\n').length > (props.maxLines ?? LIMIT) : false,
+)
+
+function toggle() {
+  collapsed.value = !collapsed.value
+}
 </script>
 
 <template>
-  <div class="edit-diff" data-test="edit-diff">
-    <div
-      v-for="(row, index) in rows"
-      :key="index"
-      class="diff-row"
-      :class="`diff-${row.kind}`"
-    >
-      <span class="diff-sign" aria-hidden="true">{{
-        row.kind === 'addition' ? '+' : row.kind === 'deletion' ? '-' : row.kind === 'hunk' ? '●' : ' '
-      }}</span>
-      <code class="diff-text">{{ row.text }}</code>
+  <div class="edit-diff-wrap">
+    <div class="edit-diff" data-test="edit-diff">
+      <div
+        v-for="(row, index) in visibleRows"
+        :key="index"
+        class="diff-row"
+        :class="`diff-${row.kind}`"
+      >
+        <span class="diff-sign" aria-hidden="true">{{
+          row.kind === 'addition' ? '+' : row.kind === 'deletion' ? '-' : row.kind === 'hunk' ? '●' : ' '
+        }}</span>
+        <code class="diff-text">{{ row.text }}</code>
+      </div>
+      <p v-if="clipped && !collapsed" class="diff-truncated">… 后续行已省略</p>
     </div>
-    <p v-if="truncated" class="diff-truncated">… 后续行已省略</p>
+    <ExpandIndicator v-if="foldable" :collapsed="collapsed" @toggle="toggle" />
   </div>
 </template>
 
 <style scoped>
+.edit-diff-wrap {
+  position: relative;
+}
+
 .edit-diff {
   display: flex;
   flex-direction: column;

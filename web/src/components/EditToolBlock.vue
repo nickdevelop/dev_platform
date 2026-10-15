@@ -6,6 +6,7 @@
 import { computed } from 'vue'
 import EditDiffBadge from './EditDiffBadge.vue'
 import EditDiffBody from './EditDiffBody.vue'
+import ToolOutput from './ToolOutput.vue'
 
 const props = defineProps<{
   filePath: string
@@ -31,7 +32,7 @@ const hasCounts = computed(
     </div>
     <div class="edit-body">
       <EditDiffBody v-if="patch" :patch="patch" />
-      <pre v-else-if="output" class="tool-output" :class="{ 'is-error': isError }" data-test="edit-output">{{ output }}</pre>
+      <ToolOutput v-else-if="output" :text="output" :is-error="isError" data-test="edit-output" />
       <p v-else-if="hasCounts" class="edit-counts" data-test="edit-counts">
         <template v-if="(additions ?? 0) > 0">+{{ additions }} 行</template>
         <template v-if="(additions ?? 0) > 0 && (deletions ?? 0) > 0"> / </template>
@@ -59,18 +60,6 @@ const hasCounts = computed(
   padding: 0.5rem 0.6rem;
   border-radius: 8px;
   background: var(--color-surface-muted);
-}
-
-.tool-output {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-family: var(--font-family);
-  font-size: 0.8rem;
-}
-
-.tool-output.is-error {
-  color: var(--color-danger);
 }
 
 .edit-counts {

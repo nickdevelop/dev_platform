@@ -17,13 +17,16 @@
 // pane. The activity pane renders a flat list — no step grouping — where
 // thinking, edit, shell and question cards fold (and start expanded) while every
 // other tool call is a single summary line, and a subagent call is a named row
-// with a button that opens its detail. display="all" (the default) keeps the
-// legacy interleaved log with collapsible step groups.
+// with a button that opens its detail. A card body that carries a tool's output
+// (a shell log, an edit diff) shows its first 15 rows with a centered ▼ that
+// expands the rest, so a long output never dominates the pane. display="all"
+// (the default) keeps the legacy interleaved log with collapsible step groups.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../markdown'
 import { splitDiagramBlocks } from '../markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
 import EditToolBlock from './EditToolBlock.vue'
+import ToolOutput from './ToolOutput.vue'
 import type { Capabilities, MessageModel } from '../api/sessions'
 import type { ChatEntry, StreamStatus } from '../stores/sessions'
 
@@ -549,11 +552,11 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
                 v-if="questionItems(entry).length === 0 && toolArgument(entry)"
                 class="tool-args"
               >{{ toolArgument(entry) }}</pre>
-              <pre
+              <ToolOutput
                 v-if="resultForCall(entry)"
-                class="tool-output"
-                :class="{ 'is-error': resultForCall(entry)?.isError }"
-              >{{ resultForCall(entry)?.text }}</pre>
+                :text="resultForCall(entry)?.text ?? ''"
+                :is-error="resultForCall(entry)?.isError"
+              />
             </template>
             <EditToolBlock
               v-else-if="isEditCall(entry) && editDiffFor(entry)"
@@ -566,11 +569,11 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
             />
             <template v-else>
               <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-              <pre
+              <ToolOutput
                 v-if="resultForCall(entry)"
-                class="tool-output"
-                :class="{ 'is-error': resultForCall(entry)?.isError }"
-              >{{ resultForCall(entry)?.text }}</pre>
+                :text="resultForCall(entry)?.text ?? ''"
+                :is-error="resultForCall(entry)?.isError"
+              />
             </template>
           </div>
         </div>
@@ -704,11 +707,11 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
                     />
                     <template v-else>
                       <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-                      <pre
+                      <ToolOutput
                         v-if="resultForCall(entry)"
-                        class="tool-output"
-                        :class="{ 'is-error': resultForCall(entry)?.isError }"
-                      >{{ resultForCall(entry)?.text }}</pre>
+                        :text="resultForCall(entry)?.text ?? ''"
+                        :is-error="resultForCall(entry)?.isError"
+                      />
                       <p v-else class="tool-running" role="status">运行中…</p>
                     </template>
                     <button
@@ -735,7 +738,7 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
                     <span class="tool-name">工具结果</span>
                   </summary>
                   <div class="tool-body">
-                    <pre class="tool-output" :class="{ 'is-error': entry.isError }">{{ entry.text }}</pre>
+                    <ToolOutput :text="entry.text" :is-error="entry.isError" />
                   </div>
                 </details>
               </template>
@@ -1165,7 +1168,6 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
 }
 
 .tool-args,
-.tool-output,
 .tool-running {
   margin: 0;
   white-space: pre-wrap;
@@ -1175,12 +1177,8 @@ function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
   color: var(--color-text);
 }
 
-.tool-args + .tool-output {
+.tool-args + .tool-output-wrap {
   margin-top: 0.4rem;
-}
-
-.tool-output.is-error {
-  color: var(--color-danger);
 }
 
 .tool-running {
