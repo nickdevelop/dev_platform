@@ -5,8 +5,8 @@
 // does not know shows its raw id in the neutral tone, never another backend's
 // name.
 import { computed } from 'vue'
-import type { BackendId } from '../api/agents'
-import { useAgentsStore } from '../stores/agents'
+import type { BackendId } from '../../api/agents'
+import { useAgentsStore } from '../../stores/agents'
 
 const props = defineProps<{ backend: BackendId }>()
 

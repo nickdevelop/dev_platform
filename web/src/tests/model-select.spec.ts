@@ -7,8 +7,8 @@
 // list loads, and a stale answer is retried once so the refreshed list appears.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import ModelSelect from '../components/ModelSelect.vue'
-import { clearModelCache } from '../modelCache'
+import ModelSelect from '../features/chat/composer/ModelSelect.vue'
+import { clearModelCache } from '../shared/modelCache'
 import type { BackendId } from '../api/agents'
 
 const MODELS_URL = '/api/projects/1/agent-backends/pi/models'

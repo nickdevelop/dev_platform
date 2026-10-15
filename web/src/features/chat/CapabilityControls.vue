@@ -3,7 +3,7 @@
 // live in the composer; this component renders only when the session explicitly
 // declares toolConfirmation, so an unsupported control is never shown as if it
 // worked.
-import type { Capabilities } from '../api/sessions'
+import type { Capabilities } from '../../api/sessions'
 
 const props = defineProps<{
   capabilities: Capabilities

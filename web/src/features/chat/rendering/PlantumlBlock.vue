@@ -20,9 +20,9 @@
 // is final and someone needs to read it, so the source is shown as they would
 // have seen it today.
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
-import { renderDiagram } from '../plantuml/renderer'
-import { isDarkTheme } from '../theme/presets'
-import { useSettingsStore } from '../stores/settings'
+import { renderDiagram } from '../../../plantuml/renderer'
+import { isDarkTheme } from '../../../theme/presets'
+import { useSettingsStore } from '../../../stores/settings'
 
 const props = defineProps<{ source: string; ready: boolean; finished: boolean }>()
 

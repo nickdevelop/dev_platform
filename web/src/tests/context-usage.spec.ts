@@ -2,8 +2,8 @@
 // plus the trailing chars/4 estimate, with percentages only when the model
 // reports a context window.
 import { describe, expect, it } from 'vitest'
-import { computeContextUsage, estimateTokens } from '../contextUsage'
-import { ellipsisMiddle, formatTokens } from '../format'
+import { computeContextUsage, estimateTokens } from '../shared/contextUsage'
+import { ellipsisMiddle, formatTokens } from '../shared/format'
 import type { ChatEntry } from '../stores/sessions'
 
 function message(id: string, role: string, text: string, usage?: ChatEntry['usage']): ChatEntry {

@@ -22,13 +22,13 @@
 // expands the rest, so a long output never dominates the pane. display="all"
 // (the default) keeps the legacy interleaved log with collapsible step groups.
 import { computed, reactive, ref } from 'vue'
-import { renderMarkdown } from '../markdown'
-import { splitDiagramBlocks } from '../markdown-segments'
+import { renderMarkdown } from '../../../shared/markdown'
+import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
-import type { Capabilities, MessageModel } from '../api/sessions'
-import type { ChatEntry, StreamStatus } from '../stores/sessions'
+import type { Capabilities, MessageModel } from '../../../api/sessions'
+import type { ChatEntry, StreamStatus } from '../../../stores/sessions'
 
 // modelLabel is the small tag under an agent reply: the model that produced
 // it, with the named variant appended when one ran.

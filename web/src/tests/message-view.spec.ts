@@ -3,7 +3,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import MessageView from '../components/MessageView.vue'
+import MessageView from '../features/chat/rendering/MessageView.vue'
 import { clearDiagramCache, configureEngineLoader, type Engine } from '../plantuml/renderer'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'

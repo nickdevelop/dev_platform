@@ -5,7 +5,7 @@
 // diagnostics say otherwise. Instances are not shown here — they are an
 // internal detail of how a backend serves the workbench, and the operator who
 // needs to act on a backend acts on its service, in platform settings.
-import type { BackendDiagnostics } from '../api/agents'
+import type { BackendDiagnostics } from '../../api/agents'
 
 const props = defineProps<{
   diagnostics: BackendDiagnostics[]

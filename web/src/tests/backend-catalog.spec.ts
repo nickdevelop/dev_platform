@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import BackendTag from '../components/BackendTag.vue'
+import BackendTag from '../shared/components/BackendTag.vue'
 import { useAgentsStore } from '../stores/agents'
 import { backendFixtures } from './backend-fixtures'
 

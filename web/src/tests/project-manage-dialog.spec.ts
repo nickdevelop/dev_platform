@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ProjectManageDialog from '../components/ProjectManageDialog.vue'
+import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
 import type { Project } from '../api/projects'
 
 const project: Project = { id: 7, name: 'alpha', path: '/workspace/alpha' } as Project

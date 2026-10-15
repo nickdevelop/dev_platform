@@ -9,8 +9,8 @@
 // render no close control and ignore a middle click — they are the anchors the
 // user pinned on purpose — and the store keeps them at the front.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { tabKey, type OpenTab } from '../stores/openTabs'
-import RunningIndicator from './RunningIndicator.vue'
+import { tabKey, type OpenTab } from '../../stores/openTabs'
+import RunningIndicator from '../../shared/components/RunningIndicator.vue'
 
 const props = defineProps<{
   tabs: OpenTab[]

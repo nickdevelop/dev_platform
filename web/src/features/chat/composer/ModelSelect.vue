@@ -12,8 +12,8 @@
 // silent: the user already has models and sending stays enabled. With no cache,
 // a failure is reported and sending is gated so a free-text model is never used.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { listBackendModels, type BackendId, type ModelInfo } from '../api/agents'
-import { cachedModels, rememberModels } from '../modelCache'
+import { listBackendModels, type BackendId, type ModelInfo } from '../../../api/agents'
+import { cachedModels, rememberModels } from '../../../shared/modelCache'
 
 const props = defineProps<{
   projectId: number

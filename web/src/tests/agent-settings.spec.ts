@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import AgentSettings from '../components/settings/AgentSettings.vue'
+import AgentSettings from '../features/settings/AgentSettings.vue'
 import { useAuthStore } from '../stores/auth'
 import { useAgentsStore } from '../stores/agents'
 import type { AgentServiceStatus } from '../api/agents'

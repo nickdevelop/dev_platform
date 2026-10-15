@@ -8,11 +8,11 @@
 // active and expanded projects always stay visible, so the open selection is
 // never hidden by a filter.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { listProjectSessions, type AgentSession } from '../api/sessions'
-import { useProjectsStore } from '../stores/projects'
-import { useSessionsStore } from '../stores/sessions'
-import BackendTag from './BackendTag.vue'
-import RunningIndicator from './RunningIndicator.vue'
+import { listProjectSessions, type AgentSession } from '../../api/sessions'
+import { useProjectsStore } from '../../stores/projects'
+import { useSessionsStore } from '../../stores/sessions'
+import BackendTag from '../../shared/components/BackendTag.vue'
+import RunningIndicator from '../../shared/components/RunningIndicator.vue'
 
 const props = defineProps<{
   activeProjectId: number | null

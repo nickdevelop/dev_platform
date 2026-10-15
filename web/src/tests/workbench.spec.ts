@@ -6,16 +6,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import CapabilityControls from '../components/CapabilityControls.vue'
-import MessageView from '../components/MessageView.vue'
-import SessionList from '../components/SessionList.vue'
+import CapabilityControls from '../features/chat/CapabilityControls.vue'
+import MessageView from '../features/chat/rendering/MessageView.vue'
+import SessionList from '../features/workspace/SessionList.vue'
 import { useAgentsStore } from '../stores/agents'
 import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
-import SessionChatPanel from '../components/SessionChatPanel.vue'
+import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 
 // A fully-false capability declaration: the workbench must expose no controls.
 function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {

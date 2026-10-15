@@ -6,7 +6,7 @@
 // an explicit permanent-delete confirmation when the server reports the OS trash
 // unavailable. The parent owns visibility: it receives `submitted` and `close`.
 import { computed, ref } from 'vue'
-import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
+import { ApiError, describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
   deleteProject,
@@ -15,8 +15,8 @@ import {
   renameProject,
   unregisterProject,
   type Project,
-} from '../api/projects'
-import { useAuthStore } from '../stores/auth'
+} from '../../api/projects'
+import { useAuthStore } from '../../stores/auth'
 import ProjectDialog from './ProjectDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'

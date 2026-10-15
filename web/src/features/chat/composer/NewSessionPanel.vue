@@ -10,9 +10,9 @@
 // navigates to the new session.
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useAgentsStore } from '../stores/agents'
-import { useSessionsStore } from '../stores/sessions'
-import type { BackendId } from '../api/agents'
+import { useAgentsStore } from '../../../stores/agents'
+import { useSessionsStore } from '../../../stores/sessions'
+import type { BackendId } from '../../../api/agents'
 import ModelSelect from './ModelSelect.vue'
 
 const props = defineProps<{ projectId: number }>()

@@ -4,11 +4,11 @@
 // are never held here — the editor sends a write-only value straight through
 // the store, and only the opaque reference is retained.
 import { onMounted, ref, watch } from 'vue'
-import type { ResourceDefinition, ResourceDefinitionBody, SyncConflict } from '../api/resources'
-import { useResourcesStore } from '../stores/resources'
-import ConflictDialog from './resources/ConflictDialog.vue'
-import ResourceEditor from './resources/ResourceEditor.vue'
-import SyncPreview from './resources/SyncPreview.vue'
+import type { ResourceDefinition, ResourceDefinitionBody, SyncConflict } from '../../api/resources'
+import { useResourcesStore } from '../../stores/resources'
+import ConflictDialog from './ConflictDialog.vue'
+import ResourceEditor from './ResourceEditor.vue'
+import SyncPreview from './SyncPreview.vue'
 
 const props = defineProps<{ projectId: number }>()
 

@@ -3,8 +3,8 @@
 // status is reported as the backend derived it (active/stopped/disconnected).
 // Each row is a keyboard-operable control: Enter and Space open the session,
 // matching the pointer behavior.
-import type { AgentSession } from '../api/sessions'
-import { useAgentsStore } from '../stores/agents'
+import type { AgentSession } from '../../api/sessions'
+import { useAgentsStore } from '../../stores/agents'
 
 const props = defineProps<{
   sessions: AgentSession[]

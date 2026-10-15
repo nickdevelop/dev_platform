@@ -6,7 +6,7 @@
 // current question, move to the next, submit when the form's questions are
 // done, then continue with the next pending form.
 import { computed, reactive, ref, watch } from 'vue'
-import type { FormInfo } from '../api/interactions'
+import type { FormInfo } from '../../../api/interactions'
 import type { FormField } from './QuestionForm.vue'
 
 const props = defineProps<{

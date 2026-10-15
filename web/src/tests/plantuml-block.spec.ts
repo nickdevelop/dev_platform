@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import PlantumlBlock from '../components/PlantumlBlock.vue'
+import PlantumlBlock from '../features/chat/rendering/PlantumlBlock.vue'
 import { clearDiagramCache, configureEngineLoader, type Engine } from '../plantuml/renderer'
 import { useSettingsStore } from '../stores/settings'
 

@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import MessageView from '../components/MessageView.vue'
+import MessageView from '../features/chat/rendering/MessageView.vue'
 import { useSessionsStore } from '../stores/sessions'
 import type { AgentSession, Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'

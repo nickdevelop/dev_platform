@@ -3,7 +3,7 @@
 // keys the server expects.
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import QuestionForm from '../components/QuestionForm.vue'
+import QuestionForm from '../features/chat/interactions/QuestionForm.vue'
 
 const fields = [
   {

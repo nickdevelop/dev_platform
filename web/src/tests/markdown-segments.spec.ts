@@ -3,7 +3,7 @@
 // instead of a code block. These tests pin the fence grammar that decision
 // depends on, including the streaming case where the fence never closes.
 import { describe, expect, it } from 'vitest'
-import { splitDiagramBlocks } from '../markdown-segments'
+import { splitDiagramBlocks } from '../shared/markdown-segments'
 
 describe('splitDiagramBlocks', () => {
   it('cuts a closed plantuml fence out of the text', () => {

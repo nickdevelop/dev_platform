@@ -4,7 +4,7 @@
 // starts empty and the platform's own per-(backend, directory) cache stays the
 // source of truth. Keyed by project because a backend's model list is scoped to
 // the project's directory.
-import type { BackendId, ModelInfo } from './api/agents'
+import type { BackendId, ModelInfo } from '../api/agents'
 
 const cache = new Map<string, ModelInfo[]>()
 

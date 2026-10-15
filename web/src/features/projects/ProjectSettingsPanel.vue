@@ -9,13 +9,13 @@
 // panel only points there when the service is down.
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { BackendId } from '../api/agents'
-import type { Project } from '../api/projects'
-import { useAgentsStore } from '../stores/agents'
-import { useProjectsStore } from '../stores/projects'
-import { useSessionsStore } from '../stores/sessions'
-import BackendDiagnostics from './BackendDiagnostics.vue'
-import ResourcesSection from './ResourcesSection.vue'
+import type { BackendId } from '../../api/agents'
+import type { Project } from '../../api/projects'
+import { useAgentsStore } from '../../stores/agents'
+import { useProjectsStore } from '../../stores/projects'
+import { useSessionsStore } from '../../stores/sessions'
+import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
+import ResourcesSection from '../resources/ResourcesSection.vue'
 
 const props = defineProps<{ projectId: number }>()
 

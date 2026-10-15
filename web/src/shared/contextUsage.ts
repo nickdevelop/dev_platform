@@ -5,8 +5,8 @@
 // in flight — is estimated with the same chars/4 heuristic pi uses for its
 // own trailing tokens. estimated is true exactly when any part of used is
 // estimated, and the view prefixes the figure with ~ and an 估算 tag then.
-import type { MessageUsage } from './api/sessions'
-import type { ChatEntry } from './stores/sessions'
+import type { MessageUsage } from '../api/sessions'
+import type { ChatEntry } from '../stores/sessions'
 
 export interface UsageParts {
   input: number

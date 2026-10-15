@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import ModelSettings from '../components/settings/ModelSettings.vue'
+import ModelSettings from '../features/settings/ModelSettings.vue'
 import { useAuthStore } from '../stores/auth'
 
 type Call = { method: string; path: string; body: any }

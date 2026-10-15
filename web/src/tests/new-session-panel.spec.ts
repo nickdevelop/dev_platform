@@ -5,10 +5,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import NewSessionPanel from '../components/NewSessionPanel.vue'
+import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore } from '../stores/sessions'
-import { clearModelCache } from '../modelCache'
+import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { Capabilities } from '../api/sessions'
 

@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
-import BackendDiagnostics from '../components/BackendDiagnostics.vue'
+import BackendDiagnostics from '../shared/components/BackendDiagnostics.vue'
 import { useAgentsStore } from '../stores/agents'
 import type { AgentDiagnostic, BackendDiagnostics as BackendDiagnosticsReport } from '../api/agents'
 
