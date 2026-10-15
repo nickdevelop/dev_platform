@@ -18,6 +18,7 @@ import { useAgentsStore } from '../../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../../stores/sessions'
 import { useInteractionsStore } from '../../stores/interactions'
 import { useActivityPane } from './pane/useActivityPane'
+import { useBottomFollow } from '../../shared/scrollFollow'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { getInstanceGitInfo, type GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
@@ -64,18 +65,12 @@ const selectedModel = computed({
 function onModelPicked(id: string) {
   sessions.setModel(props.sessionId, id)
 }
-// Scrolling follows the newest entry only while the user is at the bottom.
-// The log scrolls by hand in jsdom tests, so every read and write of the
-// scroller geometry goes through the element itself.
+// Scrolling follows the newest entry only while the user is at the bottom;
+// both panes share that rule through shared/scrollFollow. The log scrolls by
+// hand in jsdom tests, so every read and write of the scroller geometry goes
+// through the element itself.
 const logScroll = ref<HTMLElement | null>(null)
-const pinnedToBottom = ref(true)
-const showJumpToLatest = ref(false)
-// The right activity pane scrolls independently of the left message column,
-// so tool output can never yank the message view. It follows the same
-// follow-while-at-bottom rule with its own scroller state.
 const activityScroll = ref<HTMLElement | null>(null)
-const activityPinned = ref(true)
-const showJumpActivity = ref(false)
 // Whether the right activity pane is collapsed. Persisted in localStorage so
 // a refresh keeps the user's choice; defaults to expanded.
 const pane = useActivityPane(() => {
@@ -267,6 +262,20 @@ const activityCount = computed(() => {
   return count
 })
 
+// The message column and the activity pane each follow their own scroller:
+// reaching the bottom resumes following and hides the jump button; scrolling
+// away parks the view. See shared/scrollFollow.
+const logFollow = useBottomFollow(logScroll, logSignature)
+const activityFollow = useBottomFollow(activityScroll, activitySignature)
+const onLogScroll = logFollow.onScroll
+const scrollToBottom = logFollow.scrollToBottom
+const onActivityScroll = activityFollow.onScroll
+const scrollActivityToBottom = activityFollow.scrollToBottom
+const showJumpToLatest = logFollow.showJump
+const pinnedToBottom = logFollow.pinned
+const showJumpActivity = activityFollow.showJump
+const activityPinned = activityFollow.pinned
+
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
 const canInterrupt = computed(() => activeSession.value?.capabilities.interrupt === true)
@@ -387,85 +396,7 @@ watch([() => activeSession.value?.backend, selectedModel], () => {
   refreshModelLimit()
 })
 onBeforeUnmount(stopApprovalPoll)
-
-// onLogScroll tracks where the user is: reaching the bottom resumes following
-// the conversation and retires the jump button; scrolling away stops following
-// so a new entry can never yank the view.
-function onLogScroll() {
-  const el = logScroll.value
-  if (!el) return
-  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-  const atBottom = distance <= FOLLOW_THRESHOLD_PX
-  pinnedToBottom.value = atBottom
-  if (atBottom) showJumpToLatest.value = false
-}
-
-function scrollToBottom(smooth: boolean) {
-  const el = logScroll.value
-  if (!el) return
-  // The click animates; following the stream lands each delta immediately, so
-  // a fast token stream never queues a pile of smooth scrolls.
-  if (smooth && typeof el.scrollTo === 'function') {
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  } else {
-    el.scrollTop = el.scrollHeight
-  }
-  pinnedToBottom.value = true
-  showJumpToLatest.value = false
-}
-
-// onActivityScroll mirrors onLogScroll for the right pane: it tracks only the
-// activity scroller, so parking the activity history never affects the message
-// column's follow state, and vice versa.
-function onActivityScroll() {
-  const el = activityScroll.value
-  if (!el) return
-  const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-  const atBottom = distance <= FOLLOW_THRESHOLD_PX
-  activityPinned.value = atBottom
-  if (atBottom) showJumpActivity.value = false
-}
-
-function scrollActivityToBottom(smooth: boolean) {
-  const el = activityScroll.value
-  if (!el) return
-  if (smooth && typeof el.scrollTo === 'function') {
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  } else {
-    el.scrollTop = el.scrollHeight
-  }
-  activityPinned.value = true
-  showJumpActivity.value = false
-}
-
-watch(logSignature, () => {
-  // Wait for the entry to be in the DOM before measuring it.
-  void nextTick(() => {
-    const el = logScroll.value
-    if (!el) return
-    if (pinnedToBottom.value) {
-      el.scrollTop = el.scrollHeight
-      showJumpToLatest.value = false
-    } else {
-      showJumpToLatest.value = true
-    }
-  })
-})
-
-watch(activitySignature, () => {
-  void nextTick(() => {
-    const el = activityScroll.value
-    if (!el) return
-    if (activityPinned.value) {
-      el.scrollTop = el.scrollHeight
-      showJumpActivity.value = false
-    } else {
-      showJumpActivity.value = true
-    }
-  })
-})
-
-// A directly opened session URL arrives before the project's sessions are loaded,
+// The follow-scroll watches live inside shared/scrollFollow. A directly opened session URL arrives before the project's sessions are loaded,
 // so the list and the instances are fetched first. A failed load is reported as
 // such; an id absent from a successful list is never opened. The model choice
 // survives session switches: it is kept per session in the store, not reset here.
