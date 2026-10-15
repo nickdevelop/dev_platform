@@ -1,5 +1,24 @@
 # dev_platform 开发约定
 
+## 本项目分层（claudian 五层同构）
+
+项目已按 claudian 的分层架构组织（对照 `docs/architecture/backend-boundaries.md` 与 `docs/architecture/claudian-refactor-plan.md`）：
+
+```
+① 组合根   cmd/platform/（Go）+ web/src/{main.ts,App.vue,router.ts}（Vue）
+④ 契约     internal/core/agents（agent 契约/注册表/事件）、internal/core/platform（OS 抽象）
+③ 领域服务 internal/app/{sessions,instances,projects,settings,resources,resourcesync,auth,...}
+⑤ 异构适配 internal/providers/{opencode,pi}（实现 core 契约，导出 Descriptor）
+传输编排   internal/transport/http（路由/静态文件/accesslog）
+② 前端     web/src/features/{chat,workspace,projects,settings,resources}、web/src/shared/
+```
+
+- 禁止：`core → providers`、`app/features → providers`、通用层出现后端 ID 字面量（守卫测试执行）。
+- 前端组件按 feature 归位；provider 中性的可复用控件与工具放 `web/src/shared/`；chat 的执行机制在
+  `features/chat/execution/`、状态模型在 `features/chat/state/`、渲染模型在 `features/chat/rendering/`。
+- 新增 agent 后端步骤：契约包加 `BackendID` → `internal/providers/<name>` 实现 `AgentAdapter` 并导出
+  `Descriptor` → 组合根注册 → 更新 `docs/agent-compatibility.md`。前端零改动。
+
 ## 参照源码（重要）
 
 开发本项目时经常需要参照 opencode、pi 与 claudian 的实现。三个源码仓库位于本机，路径如下：

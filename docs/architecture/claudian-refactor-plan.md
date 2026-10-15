@@ -107,11 +107,19 @@ web/src/
 - [x] P1 后端五层重组（R1、R2）
 - [x] P2 命名耦合清理（R3）— 实际落地名：后端 `handlers_interactions.go` / `service_interactions.go`、`RegisterInteractionRoutes`、`ListPermissionRequests` / `ReplyPermissionRequest` / `ListForms` / `ReplyForm` / `StreamRawEvents`；前端 `api/interactions.ts` / `stores/interactions.ts` / `useInteractionsStore`、DTO `PermissionRequest` / `FormInfo`；openapi.yaml 同步。对外 URL `/opencode/…` 前缀保留，已记入 backend-boundaries.md 剩余耦合表
 - [ ] P2 命名耦合清理（R3）
-- [ ] P3 前端归位（R4）
-- [ ] P3 拆分 SessionChatPanel（R5）
-- [ ] P3 拆分 MessageView（R6）
-- [ ] P3 拆分 stores/sessions（R7）
-- [ ] P4 收尾与文档（R8）
+- [x] P3 前端归位（R4）
+- [x] P3 拆分 SessionChatPanel（R5）— 阶段收口：1642→1304 行，subdir 落位
+  `chat/pane/useActivityPane`（折叠/宽度/拖拽）、`chat/interactions/useSessionInteractions`（审批/表单/轮询）、
+  `chat/composer/useComposerContext`（模型选择/工作目录/context 仪表）；事件消费等 execution 机制在
+  `chat/execution/SessionEventStream`（见 R7）。**偏差**：turn 编排（open/send/stop）与子代理弹窗留在面板——
+  与 attempt 的三者耦合深、独立价值低，继续拆为低边际收益。
+- [x] P3 拆分 MessageView（R6）— 渲染纯逻辑迁入 `chat/rendering/logModel.ts`（约 430 行，provider 中性），
+  组件 1278→981 行，仅留 display 模式/手动展开/扁平折叠与模板。
+- [x] P3 拆分 stores/sessions（R7）— 1021→741 行：`chat/state/sessionLog.ts`（类型+纯推导）+
+  `chat/execution/SessionEventStream.ts`（SSE 订阅/补修/事件路由，借 StreamStore 结构体解循环依赖），
+  store 保留薄委托，公开 API 不变。
+- [x] P4 收尾与文档（R8）— **偏差**：不新建 `web/src/composition/`：Vue 的组合根职责由 App.vue/router.ts +
+  pinia（app 级 stores）承担，空目录是不必要的双边 false；组合根对照表固定写入 AGENTS.md 首节。
 
 ## 6. 实际落地记录（执行中同步维护）
 
