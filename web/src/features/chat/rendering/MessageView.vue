@@ -10,7 +10,7 @@
 // (see ../markdown), so backend content cannot inject live markup. An agent
 // reply is cut around its ```plantuml fences first (see ../markdown-segments).
 // Subagent tool calls offer a popup dialog with the full input/output.
-//
+
 // The log can render split across the chat panel's two columns: display="messages"
 // shows only user/agent message and error entries for the left column, while
 // display="activity" shows only the thinking/tool entries for the right activity
@@ -20,21 +20,16 @@
 // with a button that opens its detail. A card body that carries a tool's output
 // (a shell log, an edit diff) shows its first 15 rows with a centered ▼ that
 // expands the rest, so a long output never dominates the pane. display="all"
-// (the default) keeps the legacy interleaved log with collapsible step groups.
+// (the default) keeps the legacy interleaved log.
 import { computed, reactive, ref } from 'vue'
 import { renderMarkdown } from '../../../shared/markdown'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
-import type { Capabilities, MessageModel } from '../../../api/sessions'
+import type { Capabilities } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../../../stores/sessions'
-
-// modelLabel is the small tag under an agent reply: the model that produced
-// it, with the named variant appended when one ran.
-function modelLabel(model: MessageModel): string {
-  return model.variant ? `${model.id}#${model.variant}` : model.id
-}
+import * as log from './logModel'
 
 const props = defineProps<{
   messages: ChatEntry[]
@@ -48,6 +43,34 @@ const props = defineProps<{
   // keeps the legacy interleaved log.
   display?: 'all' | 'messages' | 'activity'
 }>()
+
+// The whole render model — call/result joins, step groups, subagent facts and
+// question payloads are derived by ./logModel; this component only owns the
+// display mode, the manually-opened state and the flat-activity fold state.
+const model = computed(() => log.buildLogModel(props.messages))
+const resultForCall = (entry: ChatEntry) => model.value.resultForCall(entry)
+
+// Template-facing helpers: same names the template already uses, each backed
+// by the pure model. The lookup-carrying ones (subagent facts, step summary,
+// edit diffs) get the model's result lookup.
+const toolName = (entry: ChatEntry) => log.toolName(entry)
+const toolArgument = (entry: ChatEntry) => log.toolArgument(entry)
+const prettyInput = (entry: ChatEntry) => log.prettyInput(entry)
+function toolEventsVisible(): boolean {
+  return log.toolEventsVisible(props.capabilities)
+}
+const modelLabel = (m: NonNullable<ChatEntry['model']>) => log.modelLabel(m)
+const stepSummary = (entries: ChatEntry[]) => log.stepSummary(entries, resultForCall)
+const isSubagentCall = (entry: ChatEntry) => log.isSubagentCall(entry, resultForCall)
+const subagentSessionId = (entry: ChatEntry) => log.subagentSessionId(entry, resultForCall)
+const subagentName = (entry: ChatEntry) => log.subagentName(entry)
+const editPathFor = (entry: ChatEntry) => log.editPathFor(entry)
+const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
+const toolIcon = (entry: ChatEntry) => log.toolIcon(entry)
+const isEditCall = log.isEditCall
+const isShellCall = log.isShellCall
+const isQuestionCall = log.isQuestionCall
+const questionItems = log.questionItems
 
 const displayMode = computed(() => props.display ?? 'all')
 // Manually opened blocks stay open while the turn streams. A native <details>
@@ -70,156 +93,30 @@ function onItemToggle(id: string, event: Event) {
 }
 
 // Tool entries are gated on the capability, exactly like the live controls: a
-// backend that does not report tool events must not show tool activity.
-function toolEventsVisible(): boolean {
-  return props.capabilities?.toolCallEvents === true
+// backend that does not report tool events must not show tool activity. A
+// message or error entry always renders.
+function toolEventsVisibleFor(entry: ChatEntry): boolean {
+  if (entry.kind === 'message' || entry.kind === 'error') return true
+  return toolEventsVisible()
 }
 
-// Whether a reply is finished with. An event stream that died without a
-// turn-ending event leaves its entry flagged as streaming forever, and a
-// diagram fence in that reply would wait for a closing token that can never
-// arrive — once the stream is gone, what is on screen is all there is.
+const flatExpandable = log.flatExpandable
+
 function settled(entry: ChatEntry): boolean {
-  return entry.streaming !== true || props.streamStatus === 'error'
+  return log.settled(entry, props.streamStatus)
 }
 
-// A tool call and its result are one block, keyed by the call id. An agent can
-// report a result more than once; only the latest is kept so a call never
-// renders several results.
-const resultsByCall = computed(() => {
-  const results = new Map<string, ChatEntry>()
-  for (const entry of props.messages) {
-    if (entry.kind === 'tool_result' && entry.callId) results.set(entry.callId, entry)
-  }
-  return results
-})
-
-// Every call id that has a call block. A result whose call is missing (a
-// truncated history, say) is rendered on its own instead of being dropped.
-const callIds = computed(() => {
-  const ids = new Set<string>()
-  for (const entry of props.messages) {
-    if (entry.kind === 'tool_call' && entry.callId) ids.add(entry.callId)
-  }
-  return ids
-})
-
-function resultForCall(entry: ChatEntry): ChatEntry | undefined {
-  return entry.callId ? resultsByCall.value.get(entry.callId) : undefined
-}
-
-// A result whose call is present renders inside that call's block, so it is
-// dropped from the top-level list. A result with no matching call (a truncated
-// history, say) stays on its own so its output is never lost.
-const visibleEntries = computed(() =>
-  props.messages.filter(
-    (entry) =>
-      !(entry.kind === 'tool_result' && entry.callId !== undefined && callIds.value.has(entry.callId)),
-  ),
+const visibleEntries = computed(() => model.value.visibleEntries)
+const renderBlocks = computed<log.RenderBlock[]>(() => log.groupEntryBlocks(visibleEntries.value))
+const displayedBlocks = computed<log.RenderBlock[]>(() =>
+  log.blocksForDisplay(renderBlocks.value, displayMode.value),
 )
-
-function toolName(entry: ChatEntry): string {
-  return entry.name ?? entry.text
-}
-
-// The argument keys that name what a tool acted on, in preference order, so the
-// collapsed line reads like `read /path` or `bash ls`. Description wins over a
-// full prompt (subagent/question cards read like the TUI), and unknown tools
-// fall back to their first string argument.
-const ARGUMENT_KEYS = [
-  'path',
-  'filePath',
-  'file_path',
-  'file',
-  'command',
-  'pattern',
-  'query',
-  'url',
-  'description',
-  'prompt',
-  'name',
-]
-
-function toolArgument(entry: ChatEntry): string {
-  const input = entry.input
-  if (input === null || input === undefined) return ''
-  if (typeof input === 'string') return input
-  if (typeof input === 'object') {
-    const record = input as Record<string, unknown>
-    for (const key of ARGUMENT_KEYS) {
-      const value = record[key]
-      if (typeof value === 'string' && value.trim() !== '') return value
-    }
-    for (const value of Object.values(record)) {
-      if (typeof value === 'string' && value.trim() !== '') return value
-    }
-  }
-  return ''
-}
-
-// --- Step grouping (opencode desktop style) ---
-
-type RenderBlock =
-  | { kind: 'entry'; entry: ChatEntry }
-  | { kind: 'step'; id: string; entries: ChatEntry[] }
-
-function isActivity(entry: ChatEntry): boolean {
-  return entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result'
-}
-
-// Consecutive thinking/tool entries between messages form one step group, so
-// a long agent turn reads as one collapsible card instead of a flat list of
-// blocks. Single entries stay ungrouped only when isolated by messages.
-//
-// The group id is its first entry's id, not a join of every member: entries are
-// only ever appended to a running group, so the first member is stable while
-// the group grows. A key that changed on every append would make Vue re-create
-// the <details> and drop the state the user opened it in.
-const renderBlocks = computed<RenderBlock[]>(() => {
-  const blocks: RenderBlock[] = []
-  let current: ChatEntry[] | null = null
-  const flush = () => {
-    if (current && current.length > 0) {
-      blocks.push({ kind: 'step', id: `step:${current[0].id}`, entries: current })
-      current = null
-    }
-  }
-  for (const entry of visibleEntries.value) {
-    if (isActivity(entry) && toolEventsVisibleFor(entry)) {
-      if (!current) current = []
-      current.push(entry)
-    } else {
-      flush()
-      blocks.push({ kind: 'entry', entry })
-    }
-  }
-  flush()
-  return blocks
-})
-
-// The split log reuses the same grouping: display="messages" keeps only
-// message/error entries for the left column, display="activity" keeps only
-// the thinking/tool step groups for the right pane. display="all" keeps the
-// legacy interleaved log.
-const displayedBlocks = computed<RenderBlock[]>(() => {
-  if (displayMode.value === 'messages') {
-    return renderBlocks.value.filter(
-      (block) =>
-        block.kind === 'entry' && (block.entry.kind === 'message' || block.entry.kind === 'error'),
-    )
-  }
-  if (displayMode.value === 'activity') {
-    return renderBlocks.value.filter((block) => block.kind === 'step')
-  }
-  return renderBlocks.value
-})
-
 // The activity pane's flat list: the same visible thinking/tool entries in
 // transcript order, with no step grouping and no collapsing. A tool result
 // whose call is present is already merged into that call's card (see
-// visibleEntries), so it is not listed twice.
+// buildLogModel), so it is not listed twice.
 const flatActivityEntries = computed<ChatEntry[]>(() =>
-  visibleEntries.value.filter((entry) => isActivity(entry) && toolEventsVisibleFor(entry)),
+  visibleEntries.value.filter((entry) => log.isActivity(entry) && toolEventsVisibleFor(entry)),
 )
 
 // Per-card folding for the flat activity list. Only three kinds fold — thinking,
@@ -227,56 +124,19 @@ const flatActivityEntries = computed<ChatEntry[]>(() =>
 // the reasoning, the diff and the command as they happen. The set records only a
 // toggle away from that default, keyed by entry id, so a newly streamed entry
 // always opens expanded. Every other tool call is a one-line summary with no
-// fold (see flatExpandable).
+// fold (see log.flatExpandable).
 const flatToggles = reactive(new Set<string>())
 function flatExpanded(entry: ChatEntry): boolean {
   const toggled = flatToggles.has(entry.id)
-  return flatExpandable(entry) ? !toggled : false
+  return log.flatExpandable(entry) ? !toggled : false
 }
 function toggleFlat(entry: ChatEntry) {
-  if (!flatExpandable(entry)) return
   if (flatToggles.has(entry.id)) flatToggles.delete(entry.id)
   else flatToggles.add(entry.id)
 }
 
-function toolEventsVisibleFor(entry: ChatEntry): boolean {
-  if (entry.kind === 'message' || entry.kind === 'error') return true
-  return toolEventsVisible()
-}
-
-function stepSummary(entries: ChatEntry[]): string {
-  const tools = entries.filter((entry) => entry.kind === 'tool_call')
-  const thinkings = entries.filter((entry) => entry.kind === 'thinking')
-  const parts: string[] = []
-  if (tools.length > 0) {
-    const names = [...new Set(tools.map((entry) => toolName(entry)))].slice(0, 3)
-    parts.push(`${tools.length} 个工具 · ${names.join('、')}`)
-  }
-  if (thinkings.length > 0) parts.push('思考')
-  const running = entries.some((entry) => entry.kind === 'tool_call' && !resultForCall(entry))
-  return parts.length > 0 ? parts.join(' · ') + (running ? ' · 运行中' : '') : 'Agent 活动'
-}
-
-// --- Subagent popup ---
-
-const SUBAGENT_NAMES = new Set(['task', 'subagent', 'Task', 'Subagent', 'delegate', 'spawn'])
-
-function isSubagentCall(entry: ChatEntry): boolean {
-  if (entry.kind !== 'tool_call') return false
-  const name = (entry.name ?? entry.text ?? '').toLowerCase()
-  if (SUBAGENT_NAMES.has(entry.name ?? '') || SUBAGENT_NAMES.has(name)) return true
-  const result = resultForCall(entry)
-  const haystack = `${typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input ?? '')} ${result?.text ?? ''}`
-  return haystack.includes('<subagent') || haystack.includes('sessionID=')
-}
-
-function subagentSessionId(entry: ChatEntry): string {
-  const result = resultForCall(entry)
-  const haystack = `${typeof entry.input === 'string' ? entry.input : JSON.stringify(entry.input ?? '')} ${result?.text ?? ''}`
-  const match = haystack.match(/sessionID=["']([^"']+)["']/)
-  return match?.[1] ?? ''
-}
-
+// The subagent popup keeps the whole entry so the dialog can show the call and
+// its result side by side.
 const subagentModal = ref<ChatEntry | null>(null)
 
 function openSubagent(entry: ChatEntry) {
@@ -285,163 +145,6 @@ function openSubagent(entry: ChatEntry) {
 
 function closeSubagent() {
   subagentModal.value = null
-}
-
-function prettyInput(entry: ChatEntry): string {
-  if (entry.input === null || entry.input === undefined) return ''
-  if (typeof entry.input === 'string') return entry.input
-  try {
-    return JSON.stringify(entry.input, null, 2)
-  } catch {
-    return String(entry.input)
-  }
-}
-
-// --- Desktop-style edit rendering (opencode + pi) ---
-
-function isEditCall(entry: ChatEntry): boolean {
-  return entry.kind === 'tool_call' && (entry.name ?? entry.text ?? '').toLowerCase() === 'edit'
-}
-
-// The tool calls whose detail is worth the space: an edit's diff and a shell
-// command's output. flatExpandable drives both the activity pane's fold and the
-// default-expanded set; every other tool call is a summary line only.
-const SHELL_TOOL_NAMES = new Set([
-  'shell',
-  'bash',
-  'sh',
-  'zsh',
-  'pwsh',
-  'powershell',
-  'cmd',
-  'command',
-])
-
-function isShellCall(entry: ChatEntry): boolean {
-  return (
-    entry.kind === 'tool_call' && SHELL_TOOL_NAMES.has((entry.name ?? entry.text ?? '').toLowerCase())
-  )
-}
-
-// The question tool asks the user to choose among options. Its row folds like
-// the other detail-worthy tools, and its body renders the questions readably
-// instead of a raw payload.
-const QUESTION_TOOL_NAMES = new Set(['question', 'ask', 'askuserquestion', 'ask_user'])
-
-function isQuestionCall(entry: ChatEntry): boolean {
-  return (
-    entry.kind === 'tool_call' &&
-    QUESTION_TOOL_NAMES.has((entry.name ?? entry.text ?? '').toLowerCase())
-  )
-}
-
-interface QuestionOption {
-  label: string
-  description: string
-}
-
-interface QuestionItem {
-  header: string
-  question: string
-  options: QuestionOption[]
-  multiple: boolean
-}
-
-// A question option is tolerated in either the opencode {label,description} shape
-// or a bare value/label string, so a schema drift degrades to a readable list.
-function questionOption(raw: unknown): QuestionOption | null {
-  if (typeof raw === 'string') return { label: raw, description: '' }
-  if (!raw || typeof raw !== 'object') return null
-  const option = raw as Record<string, unknown>
-  const label =
-    typeof option.label === 'string'
-      ? option.label
-      : typeof option.value === 'string'
-        ? option.value
-        : ''
-  if (label === '') return null
-  return { label, description: typeof option.description === 'string' ? option.description : '' }
-}
-
-// questionItems reads the questions out of a question tool call's input. The
-// opencode tool carries a `questions` array; a single question object (or a bare
-// prompt) is tolerated as well. Unknown shapes yield no items and the caller
-// falls back to the plain argument line.
-function questionItems(entry: ChatEntry): QuestionItem[] {
-  const input = entry.input
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return []
-  const record = input as Record<string, unknown>
-  const list = Array.isArray(record.questions)
-    ? record.questions
-    : record.question !== undefined || record.prompt !== undefined
-      ? [record]
-      : []
-  const items: QuestionItem[] = []
-  for (const raw of list) {
-    if (typeof raw === 'string') {
-      items.push({ header: '', question: raw, options: [], multiple: false })
-      continue
-    }
-    if (!raw || typeof raw !== 'object') continue
-    const question = raw as Record<string, unknown>
-    const text =
-      typeof question.question === 'string'
-        ? question.question
-        : typeof question.prompt === 'string'
-          ? question.prompt
-          : typeof question.text === 'string'
-            ? question.text
-            : ''
-    const options = Array.isArray(question.options)
-      ? question.options
-          .map(questionOption)
-          .filter((option): option is QuestionOption => option !== null)
-      : []
-    items.push({
-      header: typeof question.header === 'string' ? question.header : '',
-      question: text,
-      options,
-      multiple: question.multiple === true,
-    })
-  }
-  return items
-}
-
-// The icon a tool row shows: a question mark for the question tool, a wrench for
-// everything else.
-function toolIcon(entry: ChatEntry): string {
-  return isQuestionCall(entry) ? '❓' : '🔧'
-}
-
-function flatExpandable(entry: ChatEntry): boolean {
-  if (entry.kind === 'thinking') return true
-  if (entry.kind !== 'tool_call') return false
-  return isEditCall(entry) || isShellCall(entry) || isQuestionCall(entry)
-}
-
-// The name a subagent row shows: the task's description names the job better
-// than the generic tool name does, so it wins when present.
-function subagentName(entry: ChatEntry): string {
-  return toolArgument(entry) || toolName(entry)
-}
-
-// The file an edit acted on. pi uses {path|file_path|file} with
-// edits[{oldText,newText}]; opencode uses {path,oldString,newString}.
-// Preference order matches the backend normalizers.
-function editPathFor(entry: ChatEntry): string {
-  const input = entry.input
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    const record = input as Record<string, unknown>
-    for (const key of ['path', 'file_path', 'filePath', 'file']) {
-      const value = record[key]
-      if (typeof value === 'string' && value.trim() !== '') return value
-    }
-  }
-  return toolArgument(entry)
-}
-
-function editDiffFor(entry: ChatEntry): ChatEntry['diff'] {
-  return resultForCall(entry)?.diff
 }
 </script>
 
