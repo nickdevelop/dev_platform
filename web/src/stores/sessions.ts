@@ -18,7 +18,6 @@ import {
   interruptProjectSession,
   listProjectSessions,
   sendProjectSessionMessage,
-  sessionEventsPath,
   stopProjectSession,
   type AgentSession,
   type BackendId,
@@ -32,183 +31,34 @@ import {
 } from '../api/sessions'
 import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
 import { useAuthStore } from './auth'
+import {
+  clearResumePositions,
+  closeAllSessionStreams,
+  closeSessionStream,
+  clearStreamRepair,
+  consumeEventFrame,
+  forgetResumePosition,
+  hasOpenStream,
+  openStreamIds,
+  subscribeSession,
+} from '../features/chat/execution/SessionEventStream'
+import {
+  findOpenStreaming,
+  keepSettledTurn,
+  entryFromEvent,
+  nextEntryID,
+  sessionUsedModel,
+} from '../features/chat/state/sessionLog'
+import type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 
-// One rendered line in a session's log. Agent replies are rendered as sanitized
-// markdown in the view (see ../markdown); every other kind is plain text. A
-// `thinking` line is the agent's reasoning, which the pane shows collapsed.
-// Replayed history and the live stream share this log directly: there is no
-// separator between them, so a resumed turn appends to the same blocks.
-export interface ChatEntry {
-  id: string
-  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error'
-  role: string
-  text: string
-  streaming: boolean
-  // The model that produced an assistant message, when the backend reports
-  // one. Absent on user messages and on backends without per-message models.
-  model?: MessageModel
-  // Exact token usage of a final assistant message, when the backend reports
-  // it. The context line anchors on the newest such entry; streaming chunks
-  // never carry it.
-  usage?: MessageUsage
-  callId?: string
-  name?: string
-  // Tool calls carry the raw argument payload so the view can summarise it
-  // (name + representative argument) without the store knowing tool schemas.
-  input?: unknown
-  isError?: boolean
-  // Normalized edit summary for file tools (edit): the desktop-style
-  // badge/body render from this rather than parsing output text. Absent on
-  // non-edit tools, failed results without diffs, and old transcripts.
-  diff?: { file: string; patch?: string; additions: number; deletions: number }
-}
+export type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 
-export type StreamStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'error' | 'ended'
+// The store keeps the data (session index, logs, per-session state) in this
+// file and delegates stream machinery to the chat feature's execution layer
+// (see ../features/chat/execution/SessionEventStream.ts) and the log model to
+// ../features/chat/state/sessionLog.ts. The blocks below are the pure derivations
+// and mutations the store owns on top of that vocabulary.
 
-// Live EventSource handles are deliberately kept outside reactive state: they
-// are browser resources, not view data, and must not be proxied by Vue.
-const sources = new Map<string, EventSource>()
-
-// The id of the last SSE frame applied per session. The store re-dials with
-// it (as a query parameter the server turns into a resume position) so a
-// manually re-opened EventSource replays exactly what it missed; the
-// browser's own reconnects carry the id as the Last-Event-ID header.
-const lastEventIds = new Map<string, string>()
-
-// A dropped EventSource is not always re-established by the browser: when the
-// process behind a session dies, it fires one error and then sits in CONNECTING
-// without dialling again — measured over 24s with nothing reaching the server.
-// The store therefore re-dials once. `repairs` holds the pending attempt, and
-// `repaired` marks a session that already used its one attempt, so a service an
-// operator stopped on purpose is not reached for on a loop.
-const stallMs = 3000
-const repairs = new Map<string, ReturnType<typeof setTimeout>>()
-const repaired = new Set<string>()
-
-function clearStreamRepair(sessionId: string) {
-  const timer = repairs.get(sessionId)
-  if (timer) clearTimeout(timer)
-  repairs.delete(sessionId)
-}
-
-let entryCounter = 0
-
-function nextEntryID(sessionId: string, sequence: number, kind: string): string {
-  entryCounter += 1
-  return `${sessionId}:${sequence}:${kind}:${entryCounter}`
-}
-
-// findOpenStreaming returns the most recent still-streaming entry of a kind
-// (and, for messages, of the same role), scanning past anything appended in
-// between. Backends interleave their streams — pi emits a thinking_delta in
-// the middle of a running text delta and closes the thinking block after text
-// resumed — so the open block, not the last list position, is what a delta
-// belongs to. Without this, interleaving fragments a block into several
-// entries and its terminator opens an empty one.
-function findOpenStreaming(
-  list: ChatEntry[],
-  kind: ChatEntry['kind'],
-  role?: string,
-): ChatEntry | undefined {
-  for (let i = list.length - 1; i >= 0; i -= 1) {
-    const entry = list[i]
-    if (entry.kind === kind && entry.streaming && (role === undefined || entry.role === role)) {
-      return entry
-    }
-  }
-  return undefined
-}
-
-// entryFromEvent maps one non-message event to its log line, or null when the
-// event renders nothing (lifecycle events are handled separately because they
-// carry no log line of their own). Both the live path and the history replay
-// go through it, so a replayed tool call looks exactly like a live one.
-// keepSettledTurn merges an interrupt's response into the entry the live stream
-// may have settled first. The backend answers from the session row as it stood
-// when the interrupt was accepted; the stream reports the interruption as soon
-// as the agent stops. When the stream already settled the turn, the entry keeps
-// it settled — an interrupt can only end a turn, never restart one.
-function keepSettledTurn(current: AgentSession, incoming: AgentSession): AgentSession {
-  if (current.turn !== 'running' && incoming.turn === 'running') {
-    return { ...incoming, turn: current.turn }
-  }
-  return incoming
-}
-
-function firstChangedFile(metadata: unknown): ChatEntry['diff'] {
-  if (!metadata || typeof metadata !== 'object') return undefined
-  const files = (metadata as { files?: unknown }).files
-  if (!Array.isArray(files)) return undefined
-  for (const item of files) {
-    if (!item || typeof item !== 'object') continue
-    const file = item as Record<string, unknown>
-    if (typeof file.file !== 'string' || file.file === '') continue
-    if (typeof file.additions !== 'number' || typeof file.deletions !== 'number') continue
-    if (file.additions <= 0 && file.deletions <= 0) continue
-    if (typeof file.patch !== 'string' && file.patch !== undefined) continue
-    return {
-      file: file.file,
-      patch: typeof file.patch === 'string' ? file.patch : undefined,
-      additions: file.additions,
-      deletions: file.deletions,
-    }
-  }
-  return undefined
-}
-
-function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | null {
-  switch (event.type) {
-    case 'tool_call':
-      if (!event.toolCall) return null
-      return {
-        id: nextEntryID(sessionId, event.sequence, 'tool_call'),
-        kind: 'tool_call',
-        role: 'assistant',
-        text: event.toolCall.name,
-        streaming: false,
-        callId: event.toolCall.callId,
-        name: event.toolCall.name,
-        input: event.toolCall.input,
-      }
-    case 'tool_result':
-      if (!event.toolResult) return null
-      return {
-        id: nextEntryID(sessionId, event.sequence, 'tool_result'),
-        kind: 'tool_result',
-        role: 'tool',
-        text: event.toolResult.output ?? '',
-        streaming: false,
-        callId: event.toolResult.callId,
-        isError: event.toolResult.isError,
-        diff: firstChangedFile(event.toolResult.metadata),
-      }
-    case 'error':
-      if (!event.error) return null
-      return {
-        id: nextEntryID(sessionId, event.sequence, 'error'),
-        kind: 'error',
-        role: 'system',
-        text: event.error.message,
-        streaming: false,
-      }
-    default:
-      return null
-  }
-}
-
-// sessionUsedModel returns the model a session actually ran, taken from its most
-// recent assistant message that reported one. '' when the transcript has no such
-// message yet — a brand-new session, or a backend that records no per-message
-// model (pi) — so callers can fall back to another default.
-function sessionUsedModel(list: ChatEntry[]): string {
-  for (let i = list.length - 1; i >= 0; i -= 1) {
-    const entry = list[i]
-    if (entry.kind === 'message' && entry.role === 'assistant' && entry.model?.id) {
-      return entry.model.id
-    }
-  }
-  return ''
-}
 
 export const useSessionsStore = defineStore('sessions', {
   state: () => ({
@@ -314,7 +164,7 @@ export const useSessionsStore = defineStore('sessions', {
         this.selectedModels = {}
         this.autoModels = {}
         this.lifecycleUsage = {}
-        lastEventIds.clear()
+        clearResumePositions()
       }
       this.loading = true
       this.projectId = projectId
@@ -450,75 +300,15 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.autoModels[sessionId]
       delete this.creationModels[sessionId]
       delete this.lifecycleUsage[sessionId]
-      lastEventIds.delete(sessionId)
+      forgetResumePosition(sessionId)
       this.error = ''
       return true
     },
 
-    // Subscribes to a session's normalized event stream. A second call for the
-    // same session is a no-op, so a view re-render never opens a duplicate
-    // stream. A stream that has reported an error is the exception: after a
-    // drop the browser may sit in CONNECTING forever without dialling again —
-    // observed when the process behind a session dies — so the session would stay
-    // at 正在重连 for the rest of the session.
+    // The stream machinery lives in ../features/chat/execution/SessionEventStream.ts;
+    // these actions are thin delegations so the store's public API is unchanged.
     subscribe(projectId: number, sessionId: string) {
-      const existing = sources.get(sessionId)
-      if (existing) {
-        if (this.streamStatus[sessionId] !== 'reconnecting') return
-        existing.close()
-        sources.delete(sessionId)
-      }
-      this.streamStatus[sessionId] = 'connecting'
-      const source = new EventSource(
-        sessionEventsPath(projectId, sessionId, lastEventIds.get(sessionId)),
-      )
-      sources.set(sessionId, source)
-
-      source.onopen = () => {
-        clearStreamRepair(sessionId)
-        repaired.delete(sessionId)
-        this.streamStatus[sessionId] = 'open'
-        void this.repairDanglingEntries(projectId, sessionId)
-      }
-      source.onerror = () => {
-        if (source.readyState === EventSource.CLOSED) {
-          this.streamStatus[sessionId] = 'error'
-          sources.delete(sessionId)
-        } else {
-          this.streamStatus[sessionId] = 'reconnecting'
-          // One repair, no more. The browser may simply stop dialling, and a
-          // conversation that went quiet with the user watching it has no other
-          // way back; but an operator who stopped a service on purpose must not
-          // find the platform reaching for it on a loop, so a second stall is
-          // the user's decision, made with the reconnect button.
-          if (repaired.has(sessionId) || repairs.has(sessionId)) return
-          repairs.set(
-            sessionId,
-            setTimeout(() => {
-              repairs.delete(sessionId)
-              if (this.streamStatus[sessionId] !== 'reconnecting') return
-              repaired.add(sessionId)
-              this.subscribe(projectId, sessionId)
-            }, stallMs),
-          )
-        }
-      }
-      for (const type of ['lifecycle', 'message', 'thinking', 'tool_call', 'tool_result', 'error', 'unknown']) {
-        source.addEventListener(type, (event) => {
-          const frame = event as MessageEvent
-          // Remember the frame's position so a later manual re-dial resumes
-          // from it; the browser's own reconnects carry it automatically.
-          if (frame.lastEventId) lastEventIds.set(sessionId, frame.lastEventId)
-          this.handleEvent(sessionId, frame.data)
-        })
-      }
-      // The server sends this when a resumed stream could not cover the
-      // client's gap (its replay buffer evicted the events or the stream was
-      // recreated since): the log on screen may be missing its middle, so it
-      // is rebuilt from history while the live stream keeps flowing.
-      source.addEventListener('resync', () => {
-        void this.rebuildFromHistory(projectId, sessionId)
-      })
+      subscribeSession(this, projectId, sessionId)
     },
 
     // rebuildFromHistory replays a session's transcript after a resync. It
@@ -528,12 +318,12 @@ export const useSessionsStore = defineStore('sessions', {
     // otherwise land in a log history is still fetching — and re-reads the
     // turn state, so a session that settled during the gap settles here.
     async rebuildFromHistory(projectId: number, sessionId: string) {
-      if (!sources.has(sessionId)) return
+      if (!hasOpenStream(sessionId)) return
       this.unsubscribe(sessionId)
       this.messages[sessionId] = []
       this.historyLoaded[sessionId] = false
       this.historyTailGuard[sessionId] = false
-      lastEventIds.delete(sessionId)
+      forgetResumePosition(sessionId)
       await this.openSession(projectId, sessionId)
     },
 
@@ -550,99 +340,24 @@ export const useSessionsStore = defineStore('sessions', {
 
     // Re-opens a stream after a terminal error, keeping the message log.
     resubscribe(projectId: number, sessionId: string) {
-      this.unsubscribe(sessionId)
+      closeSessionStream(this, sessionId)
       this.subscribe(projectId, sessionId)
     },
 
     unsubscribe(sessionId: string) {
-      const source = sources.get(sessionId)
-      clearStreamRepair(sessionId)
-      repaired.delete(sessionId)
-      if (source) {
-        source.close()
-        sources.delete(sessionId)
-      }
-      this.streamStatus[sessionId] = 'idle'
+      closeSessionStream(this, sessionId)
     },
 
     unsubscribeAll() {
-      for (const sessionId of [...sources.keys()]) this.unsubscribe(sessionId)
+      closeAllSessionStreams(this)
     },
 
     // Applies one normalized event to its owning session. Events addressed to
     // any other instance or session are dropped, which is what keeps instances
-    // isolated in the UI.
+    // isolated in the UI. The routing rules live in the execution layer
+    // (consumeEventFrame); the store exposes the same seam under its own name.
     handleEvent(sessionId: string, data: string) {
-      let event: NormalizedEvent
-      try {
-        event = JSON.parse(data) as NormalizedEvent
-      } catch {
-        return
-      }
-      const session = this.sessionById(sessionId)
-      if (!session) return
-      if (event.instanceId && event.instanceId !== session.instanceId) return
-      if (event.sessionId && event.sessionId !== sessionId) return
-
-      if (event.type === 'message') {
-        if (!event.message) return
-        if (this.consumeHistoryGuard(sessionId, event.message.role, event.message.text)) return
-        if (
-          event.message.role === 'user' &&
-          this.echoPending[sessionId] === event.message.text
-        ) {
-          // The echo of the turn the workbench sent itself: already shown.
-          delete this.echoPending[sessionId]
-          return
-        }
-        if (event.message.role !== 'user') {
-          // The agent answered; no echo can still be pending for this text.
-          delete this.echoPending[sessionId]
-        }
-        this.appendMessage(
-          sessionId,
-          event.message.role,
-          event.message.text,
-          event.message.final,
-          event.sequence,
-          event.message.model,
-          event.message.usage,
-        )
-        return
-      }
-      if (event.type === 'thinking') {
-        if (!event.thinking) return
-        this.appendThinking(sessionId, event.thinking.text, event.thinking.final, event.sequence)
-        return
-      }
-      if (event.type === 'lifecycle') {
-        this.applyLifecycle(sessionId, event)
-        return
-      }
-      const entry = entryFromEvent(sessionId, event)
-      if (!entry) return
-      this.pushEntry(sessionId, entry)
-      // These are the backend's turn-ending error codes; any other error is
-      // reported without concluding the turn.
-      if (event.type === 'error' && event.error) {
-        if (event.error.code === 'execution_failed' || event.error.code === 'process_exit') {
-          this.setTurn(sessionId, 'idle')
-          this.settleStreaming(sessionId)
-        }
-      }
-    },
-
-    // consumeHistoryGuard reports whether a live message is a re-delivery of
-    // the line history ended with, which the backend may send once right after
-    // a replay. The guard is spent on the first live message either way, so a
-    // genuinely repeated sentence later in the conversation is never dropped.
-    consumeHistoryGuard(sessionId: string, role: string, text: string): boolean {
-      if (!this.historyTailGuard[sessionId]) return false
-      this.historyTailGuard[sessionId] = false
-      const last = [...(this.messages[sessionId] ?? [])]
-        .reverse()
-        .find((entry) => entry.kind === 'message')
-      return last !== undefined && last.role === role && last.text === text
+      consumeEventFrame(this, sessionId, data)
     },
 
     // loadHistory replays the session's agent-native prior turns into the log
