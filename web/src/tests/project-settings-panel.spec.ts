@@ -1,7 +1,6 @@
 // Unit tests for the project settings panel: project facts, per-project backend
 // enablement, start gating for disabled backends, the danger-zone actions that
-// hand off to the manage dialog, and the resource placeholder that must not call
-// any resource endpoint.
+// hand off to the manage dialog.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
@@ -9,7 +8,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsPanel from '../features/projects/ProjectSettingsPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
-import { useResourcesStore } from '../stores/resources'
 import { useSessionsStore } from '../stores/sessions'
 import type { Capabilities } from '../api/sessions'
 
@@ -69,10 +67,6 @@ describe('ProjectSettingsPanel', () => {
     vi.spyOn(agents, 'loadDiagnostics').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
     vi.spyOn(agents, 'setBackendEnabled').mockResolvedValue(true as never)
-
-    const resources = useResourcesStore()
-    vi.spyOn(resources, 'loadProject').mockResolvedValue(undefined as never)
-    vi.spyOn(resources, 'loadAll').mockResolvedValue(undefined as never)
   })
 
   afterEach(() => {
@@ -114,15 +108,6 @@ describe('ProjectSettingsPanel', () => {
       'delete',
     ])
     expect((wrapper.emitted('manage')![0][1] as { id: number }).id).toBe(1)
-  })
-
-  it('shows the resource management section and loads project resources', async () => {
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    expect(useResourcesStore().loadProject).toHaveBeenCalledWith(1)
-    expect(wrapper.text()).toContain('资源管理')
-    expect(wrapper.text()).not.toContain('待资源管理功能接入')
   })
 
   // The whole "instance" concept is background plumbing: a user reading this

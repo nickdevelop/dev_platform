@@ -21,7 +21,7 @@
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │ 业务层：sessions · projects · settings · agents 协议 · http   │
-│        resourcesync · auth · modelconfig                      │
+│        auth · modelconfig                                      │
 │        禁止：import syscall / x/sys / 直接 os/exec / GOOS 判断 │
 ├──────────────────────────────────────────────────────────────┤
 │ OS 端口：internal/core/platform（接口 + 平台无关策略）               │
@@ -149,7 +149,7 @@ type Environment interface {
 | 可执行判断 | `settings/handlers_agents.go:217-227` | 权限位 `0o111` | 扩展名与文件类型 |
 | 路径规范化 | `internal/app/paths/paths.go` | 保留 `/mnt/<drive>` 翻译与拒绝规则 | 保留盘符与 UNC，大小写不敏感比较 |
 | 回收站 | `internal/app/projects/trash_linux.go` | freedesktop | `ErrTrashUnavailable` |
-| 文件权限 | `database.go`、`secrets/store.go`、`runtime`、`resourcesync/backup.go` | POSIX 模式位，真正生效 | 模式位调用保留但不生效；通过 `Perms.Enforced()` 告警（见第 5.7 节） |
+| 文件权限 | `database.go`、`secrets/store.go`、`runtime` | POSIX 模式位，真正生效 | 模式位调用保留但不生效；通过 `Perms.Enforced()` 告警（见第 5.7 节） |
 | 关停信号 | `cmd/platform/main.go:388` | `SIGINT`、`SIGTERM` | `os.Interrupt`、控制台关闭 |
 | 密码输入 | `cmd/platform/main.go:174-192` | `term.ReadPassword` | 控制台读取，管道输入时退回 stdin |
 | 数据目录默认值 | `cmd/platform`（`resolveDataDir`） | `ConfigDir()` | `ConfigDir()` 下的平台子目录 |
@@ -220,7 +220,7 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 **实际影响：**
 
 - `secrets.json` 是明文存储，威胁模型中“防止同机其他本地用户”的保护在 Windows 上不再由平台本身提供。`internal/app/secrets/store.go` 的包注释需要增加平台说明。
-- `database.go`、`runtime` 的锁文件、`resourcesync/backup.go` 的备份文件，同样不再对其他本地用户隐藏。
+- `database.go`、`runtime` 的锁文件，同样不再对其他本地用户隐藏。
 - 进程级隔离（同一用户下的其他进程）本来就不受 0600 保护，这一点两平台一致。
 
 **缓解措施：**
@@ -229,7 +229,7 @@ Windows 不实现 ACL 收紧，`PrivateDir` 与 `PrivateFile` 只创建目录或
 - `Environment.Check()` 在数据目录不位于当前用户配置文件目录下时输出告警，例如用户通过 `--data-dir` 指向了共享目录。
 - `Perms.Enforced()` 为 false 时，启动日志与诊断页面都要说明私有权限未生效，不静默处理。
 - `docs/operations.md` 增加 Windows 章节，写明上述限制、默认数据目录，以及不要把数据目录放在共享或同步目录中。
-- 备份与导出：Windows 上的备份文件与 `secrets.json` 同等敏感，`docs/resource-sync.md` 中的备份说明需要同步标注。
+- 备份与导出：Windows 上的备份文件与 `secrets.json` 同等敏感。资源同步的备份功能已随资源功能下线，若后续重新引入备份，需按此标注。
 
 **不做的事：**
 

@@ -28,9 +28,6 @@ import (
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/core/platform"
 	"devplatform/internal/app/projects"
-	"devplatform/internal/app/resources"
-	"devplatform/internal/app/resourcesync"
-	resourcesyncadapters "devplatform/internal/app/resourcesync/adapters"
 	platformruntime "devplatform/internal/app/runtime"
 	"devplatform/internal/app/secrets"
 	"devplatform/internal/app/sessions"
@@ -327,13 +324,6 @@ func runServer(args []string) error {
 		return fmt.Errorf("open secret store: %w", err)
 	}
 	modelConfig := modelconfig.NewService(db, secretStore)
-	resourceService := resources.NewService(db, resources.WithSecretStore(secretStore))
-	managedFiles := resourcesync.NewManager(db, projectService, filepath.Join(dataDir, "managed-file-backups"))
-	resourceSync := resourcesync.NewCoordinator(managedFiles, resourceService, secretStore,
-		resourcesyncadapters.ProjectPrompts{},
-		resourcesyncadapters.OpenCode{},
-		resourcesyncadapters.Pi{},
-	)
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -354,9 +344,6 @@ func runServer(args []string) error {
 		Models:       modelConfig,
 		Instances:    instanceService,
 		Sessions:     sessionService,
-		Resources:    resourceService,
-		Secrets:      secrets.NewHandler(secretStore),
-		ResourceSync: resourceSync,
 		WebDir:       webDir,
 	})
 

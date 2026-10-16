@@ -2,17 +2,12 @@ package secrets
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/core/platform"
 )
@@ -225,73 +220,5 @@ func TestRedact(t *testing.T) {
 	// Empty values must not turn every position into a marker.
 	if got := Redact("plain text", "", "  "); got != "plain text" {
 		t.Fatalf("Redact with empty values = %q, want unchanged", got)
-	}
-}
-
-func TestHandlersNeverReturnSecretValue(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	store := newTestStore(t)
-	engine := gin.New()
-	NewHandler(store).RegisterRoutes(engine.Group("/api"))
-
-	const value = "handler-secret-value"
-
-	// Create a secret; the response carries only the opaque id.
-	createReq := httptest.NewRequest(http.MethodPost, "/api/secrets", strings.NewReader(`{"value":"`+value+`"}`))
-	createReq.Header.Set("Content-Type", "application/json")
-	createRec := httptest.NewRecorder()
-	engine.ServeHTTP(createRec, createReq)
-	if createRec.Code != http.StatusCreated {
-		t.Fatalf("create secret status = %d, body = %s", createRec.Code, createRec.Body.String())
-	}
-	if strings.Contains(createRec.Body.String(), value) {
-		t.Fatalf("create response leaked the value: %s", createRec.Body.String())
-	}
-	var created struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	if created.ID == "" {
-		t.Fatal("create response has an empty id")
-	}
-
-	// Reading metadata never returns the value.
-	getRec := httptest.NewRecorder()
-	engine.ServeHTTP(getRec, httptest.NewRequest(http.MethodGet, "/api/secrets/"+created.ID, nil))
-	if getRec.Code != http.StatusOK {
-		t.Fatalf("get secret status = %d, body = %s", getRec.Code, getRec.Body.String())
-	}
-	if strings.Contains(getRec.Body.String(), value) {
-		t.Fatalf("metadata response leaked the value: %s", getRec.Body.String())
-	}
-
-	// Malformed bodies are rejected.
-	badRec := httptest.NewRecorder()
-	engine.ServeHTTP(badRec, httptest.NewRequest(http.MethodPost, "/api/secrets", strings.NewReader(`{`)))
-	if badRec.Code != http.StatusBadRequest {
-		t.Fatalf("malformed body status = %d, want 400", badRec.Code)
-	}
-
-	// An empty credential value is refused rather than stored.
-	emptyRec := httptest.NewRecorder()
-	emptyReq := httptest.NewRequest(http.MethodPost, "/api/secrets", strings.NewReader(`{"value":""}`))
-	emptyReq.Header.Set("Content-Type", "application/json")
-	engine.ServeHTTP(emptyRec, emptyReq)
-	if emptyRec.Code != http.StatusBadRequest {
-		t.Fatalf("empty value status = %d, want 400, body = %s", emptyRec.Code, emptyRec.Body.String())
-	}
-
-	// Delete then the metadata route reports 404.
-	delRec := httptest.NewRecorder()
-	engine.ServeHTTP(delRec, httptest.NewRequest(http.MethodDelete, "/api/secrets/"+created.ID, nil))
-	if delRec.Code != http.StatusNoContent {
-		t.Fatalf("delete secret status = %d, body = %s", delRec.Code, delRec.Body.String())
-	}
-	missingRec := httptest.NewRecorder()
-	engine.ServeHTTP(missingRec, httptest.NewRequest(http.MethodGet, "/api/secrets/"+created.ID, nil))
-	if missingRec.Code != http.StatusNotFound {
-		t.Fatalf("get deleted secret status = %d, want 404", missingRec.Code)
 	}
 }

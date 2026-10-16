@@ -104,6 +104,8 @@ type AgentSession struct {
 // AgentSession to agent_sessions already; pinning keeps it explicit).
 func (AgentSession) TableName() string { return "agent_sessions" }
 
+// Resource is a legacy resource-library row. Migrations 8 and 12 create its
+// table and migration 17 drops it; no current code reads or writes it.
 // Resource is one canonical, reusable Skill, MCP or prompt definition owned
 // by the platform. Secret material is never stored here: an MCP definition
 // keeps only an opaque SecretRef, while the value itself lives in the
@@ -124,6 +126,8 @@ type Resource struct {
 	UpdatedAt   time.Time
 }
 
+// ProjectResource is a legacy resource-to-project link. Migration 9 creates its
+// table and migration 17 drops it; no current code reads or writes it.
 // ProjectResource links one resource to one project. The pair is the primary
 // key, so associating twice is idempotent rather than a duplicate row.
 // Table: project_resources.
@@ -133,6 +137,8 @@ type ProjectResource struct {
 	CreatedAt  time.Time
 }
 
+// SessionPrompt is a legacy session prompt selection. Migration 10 creates its
+// table and migration 17 drops it; no current code reads or writes it.
 // SessionPrompt links one prompt resource to one platform session, recording
 // the prompts selected for that conversation. Table: session_prompts.
 type SessionPrompt struct {
@@ -141,6 +147,8 @@ type SessionPrompt struct {
 	CreatedAt  time.Time
 }
 
+// ManagedResourceFile is a legacy managed-file ownership row. Migration 11
+// creates its table and migration 17 drops it; no current code reads or writes it.
 // ManagedResourceFile records platform ownership of one managed target file.
 // The tuple (project_id, backend, path) identifies the target; ManagedHash is
 // the digest of the last content the platform wrote, so an external edit is

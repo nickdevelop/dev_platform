@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Project settings, opened as a workbench tab: project facts, the project's
-// Agent backends, session discovery, resources and the danger-zone actions. The
+// Agent backends, session discovery and the danger-zone actions. The
 // manage actions are handed up so the shell owns the single manage dialog.
 //
 // Instances are deliberately absent. They are how a backend serves the
@@ -15,7 +15,6 @@ import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
-import ResourcesSection from '../resources/ResourcesSection.vue'
 
 const props = defineProps<{ projectId: number }>()
 
@@ -180,8 +179,6 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
 
     <p v-if="scanning" class="loading">扫描中…</p>
     <p v-if="discoverNotice" class="discover-notice" role="status">{{ discoverNotice }}</p>
-
-    <ResourcesSection :project-id="projectId" />
   </section>
 </template>
 

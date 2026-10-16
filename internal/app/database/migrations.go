@@ -94,6 +94,20 @@ var migrationSteps = []migrationStep{
 		}
 		return tx.Migrator().CreateIndex(&ModelDef{}, "idx_model_service_wire")
 	}},
+	{version: 17, name: "drop_resource_library", run: func(tx *gorm.DB) error {
+		// The resource library and its managed-file synchronization were
+		// removed. The tables hold data no code reads any more; dropping them
+		// never touches project directories or the secret store. Dependents
+		// are dropped before the definitions they reference.
+		for _, table := range []any{&ManagedResourceFile{}, &SessionPrompt{}, &ProjectResource{}, &Resource{}} {
+			if tx.Migrator().HasTable(table) {
+				if err := tx.Migrator().DropTable(table); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

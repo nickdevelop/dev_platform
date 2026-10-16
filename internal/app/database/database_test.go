@@ -113,6 +113,16 @@ func TestMigrateDropsWorkspaceRoots(t *testing.T) {
 	}
 }
 
+func TestMigrateDropsResourceLibrary(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+	for _, model := range []any{&ManagedResourceFile{}, &SessionPrompt{}, &ProjectResource{}, &Resource{}} {
+		if db.Migrator().HasTable(model) {
+			t.Errorf("table for %T still exists after migration", model)
+		}
+	}
+}
+
 func TestMigrateCreatesModelTables(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)

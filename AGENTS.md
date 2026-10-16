@@ -7,10 +7,10 @@
 ```
 ① 组合根   cmd/platform/（Go）+ web/src/{main.ts,App.vue,router.ts}（Vue）
 ④ 契约     internal/core/agents（agent 契约/注册表/事件）、internal/core/platform（OS 抽象）
-③ 领域服务 internal/app/{sessions,instances,projects,settings,resources,resourcesync,auth,...}
+③ 领域服务 internal/app/{sessions,instances,projects,settings,auth,...}
 ⑤ 异构适配 internal/providers/{opencode,pi}（实现 core 契约，导出 Descriptor）
 传输编排   internal/transport/http（路由/静态文件/accesslog）
-② 前端     web/src/features/{chat,workspace,projects,settings,resources}、web/src/shared/
+② 前端     web/src/features/{chat,workspace,projects,settings}、web/src/shared/
 ```
 
 - 禁止：`core → providers`、`app/features → providers`、通用层出现后端 ID 字面量（守卫测试执行）。

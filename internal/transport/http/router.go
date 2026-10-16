@@ -10,9 +10,6 @@ import (
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
-	"devplatform/internal/app/resources"
-	"devplatform/internal/app/resourcesync"
-	"devplatform/internal/app/secrets"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 )
@@ -62,19 +59,6 @@ type Dependencies struct {
 	// routes are served under /api/projects/{id}/sessions behind
 	// RequireSession.
 	Sessions *sessions.Service
-	// Resources manages canonical Skill, MCP and prompt definitions, their
-	// project associations and their session selection. When set together
-	// with Auth, the resource routes are served under /api/resources and
-	// /api/projects/{id}/resources behind RequireSession.
-	Resources *resources.Service
-	// Secrets manages MCP credential values in the platform-private store.
-	// When set together with Auth, the secret routes are served under
-	// /api/secrets behind RequireSession. Values are write-only.
-	Secrets *secrets.Handler
-	// ResourceSync renders and applies canonical resources to project config
-	// files. When set together with Auth, the sync routes are served under
-	// /api/projects/{id}/resources/sync behind RequireSession.
-	ResourceSync *resourcesync.Coordinator
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -125,15 +109,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		if deps.Sessions != nil {
 			deps.Sessions.RegisterRoutes(protected)
 			deps.Sessions.RegisterInteractionRoutes(protected)
-		}
-		if deps.Resources != nil {
-			deps.Resources.RegisterRoutes(protected)
-		}
-		if deps.Secrets != nil {
-			deps.Secrets.RegisterRoutes(protected)
-		}
-		if deps.ResourceSync != nil {
-			deps.ResourceSync.RegisterRoutes(protected)
 		}
 	}
 
