@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +16,8 @@ import (
 
 	"devplatform/internal/core/agents"
 	"devplatform/internal/app/instances"
+	"devplatform/internal/app/sessions/store"
+	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/app/database"
 )
 
@@ -64,6 +65,9 @@ var (
 	// ErrAgentDisabled reports an attempt to create a session on a backend the
 	// platform has disabled. Existing sessions and instances stay usable.
 	ErrAgentDisabled = errors.New("sessions: agent is disabled platform-wide")
+	// ErrSessionNotFound reports an operation on a session that is not indexed
+	// for the authorized project. It is the store's error, re-exported.
+	ErrSessionNotFound = store.ErrNotFound
 	// ErrServiceNotRunning reports a backend whose machine-level service is not
 	// running, so no work can be done on it. It is the same condition the
 	// backend layer reports — the session layer adds no new meaning, only the
@@ -157,7 +161,7 @@ type InstanceService interface {
 // adapter registry.
 type Service struct {
 	db        *gorm.DB
-	repo      *repository
+	store     *store.Store
 	registry  *agents.Registry
 	instances InstanceService
 	newID     func() (string, error)
@@ -176,12 +180,8 @@ type Service struct {
 	// raw ids and reports no service support.
 	catalog *agents.Catalog
 
-	// turnMu guards trackers and turns. turns maps instance id to native
-	// session id to the session's current turn state; trackers records the
-	// instances that already have a turn tracker.
-	turnMu   sync.Mutex
-	trackers map[string]bool
-	turns    map[string]map[string]TurnState
+	// turnTracker records the turn state of each native session.
+	turnTracker *turns.Tracker
 }
 
 // NewService builds the session service over the platform database, the
@@ -189,14 +189,13 @@ type Service struct {
 func NewService(db *gorm.DB, registry *agents.Registry, instanceService InstanceService, opts ...Option) *Service {
 	s := &Service{
 		db:           db,
-		repo:         newRepository(db),
+		store:        store.New(db),
 		registry:     registry,
 		instances:    instanceService,
 		newID:        randomID,
 		now:          func() time.Time { return time.Now().UTC() },
 		streamBuffer: defaultStreamBuffer,
-		trackers:     make(map[string]bool),
-		turns:        make(map[string]map[string]TurnState),
+		turnTracker:  turns.NewTracker(instanceService),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -284,7 +283,7 @@ func (s *Service) Diagnostics(ctx context.Context) []agents.BackendDiagnostics {
 // instance lifecycle so a stale session is reported disconnected rather than
 // as if it were still usable.
 func (s *Service) List(projectID uint) ([]Session, error) {
-	rows, err := s.repo.list(projectID)
+	rows, err := s.store.List(projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +300,7 @@ func (s *Service) List(projectID uint) ([]Session, error) {
 	}
 	for _, inst := range index {
 		if instanceRunnable(inst) {
-			s.ensureTracker(inst.ID)
+			s.turnTracker.Ensure(inst.ID)
 		}
 	}
 	out := make([]Session, 0, len(rows))
@@ -344,12 +343,12 @@ func (s *Service) Delete(projectID uint, sessionID string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.repo.delete(row.ID); err != nil {
+	if err := s.store.Delete(row.ID); err != nil {
 		return err
 	}
 	// The turn tracker is keyed by native session; drop the entry so a later
 	// re-index of the same native session starts from a clean state.
-	s.forgetTurn(row.InstanceID, row.NativeSessionID)
+	s.turnTracker.Forget(row.InstanceID, row.NativeSessionID)
 	return nil
 }
 
@@ -413,7 +412,7 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	}
 	// The tracker subscribes before the message is admitted so the turn's
 	// first lifecycle events are never ahead of the subscription.
-	s.ensureTracker(inst.ID)
+	s.turnTracker.Ensure(inst.ID)
 	row, err := s.indexRef(projectID, inst, *ref, SessionActive)
 	if err != nil {
 		return CreateOutcome{}, err
@@ -584,10 +583,10 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	row.Status = string(SessionActive)
 	// Opening a session is not an interaction: the re-attach must not refresh the
 	// row's updated_at, the last-interaction time the session list sorts by.
-	if err := s.repo.updateOnContinue(row); err != nil {
+	if err := s.store.UpdateOnContinue(row); err != nil {
 		return Session{}, err
 	}
-	s.ensureTracker(inst.ID)
+	s.turnTracker.Ensure(inst.ID)
 	return s.sessionFromModel(row), nil
 }
 
@@ -600,7 +599,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 // are looking at, and the other row is deleted rather than left to appear as a
 // duplicate session.
 func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instances.Instance) error {
-	existing, err := s.repo.getByNative(inst.ID, row.NativeSessionID)
+	existing, err := s.store.GetByNative(inst.ID, row.NativeSessionID)
 	switch {
 	case err == nil && existing.ID == row.ID:
 		// Already bound to this instance; nothing to merge.
@@ -616,7 +615,7 @@ func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instan
 		if !existing.CreatedAt.IsZero() && (row.CreatedAt.IsZero() || existing.CreatedAt.Before(row.CreatedAt)) {
 			row.CreatedAt = existing.CreatedAt
 		}
-		if err := s.repo.delete(existing.ID); err != nil {
+		if err := s.store.Delete(existing.ID); err != nil {
 			return err
 		}
 	case errors.Is(err, ErrSessionNotFound):
@@ -732,10 +731,10 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	}
 	row.Status = string(SessionActive)
 	row.UpdatedAt = s.now()
-	if err := s.repo.update(row); err != nil {
+	if err := s.store.Update(row); err != nil {
 		return Session{}, err
 	}
-	s.ensureTracker(inst.ID)
+	s.turnTracker.Ensure(inst.ID)
 	return s.sessionFromModel(row), nil
 }
 
@@ -756,7 +755,7 @@ func (s *Service) Interrupt(ctx context.Context, projectID uint, sessionID strin
 	if !s.capabilities(inst.Backend).Interrupt {
 		return Session{}, fmt.Errorf("%w: interrupt", ErrUnsupportedCapability)
 	}
-	if s.turnOf(row.InstanceID, row.NativeSessionID) != TurnRunning {
+	if s.turnTracker.Of(row.InstanceID, row.NativeSessionID) != TurnRunning {
 		return s.sessionFromModel(row), nil
 	}
 	adapter, err := s.adapter(inst.Backend)
@@ -793,7 +792,7 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 	if !s.capabilities(inst.Backend).Interrupt {
 		return Session{}, fmt.Errorf("%w: stop", ErrUnsupportedCapability)
 	}
-	if s.turnOf(row.InstanceID, row.NativeSessionID) == TurnRunning && instanceRunnable(inst) {
+	if s.turnTracker.Of(row.InstanceID, row.NativeSessionID) == TurnRunning && instanceRunnable(inst) {
 		adapter, err := s.adapter(inst.Backend)
 		if err != nil {
 			return Session{}, err
@@ -809,7 +808,7 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 		}
 	}
 	now := s.now()
-	if err := s.repo.updateStatus(row.ID, string(SessionStopped), now); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(SessionStopped), now); err != nil {
 		return Session{}, err
 	}
 	row.Status = string(SessionStopped)
@@ -1026,7 +1025,7 @@ func (s *Service) markDisconnected(row database.AgentSession) {
 	if row.Status != string(SessionActive) {
 		return
 	}
-	if err := s.repo.updateStatus(row.ID, string(SessionDisconnected), s.now()); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(SessionDisconnected), s.now()); err != nil {
 		return
 	}
 }
@@ -1065,7 +1064,7 @@ func (s *Service) setStatus(row database.AgentSession, status SessionStatus) dat
 		return row
 	}
 	now := s.now()
-	if err := s.repo.updateStatus(row.ID, string(status), now); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(status), now); err != nil {
 		// Best effort: the in-memory status is still returned so the caller
 		// sees the reconciled state even if the write failed.
 	}
@@ -1083,8 +1082,8 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 	if err != nil {
 		return Session{}, err
 	}
-	if err := s.repo.create(row); err != nil {
-		if existing, getErr := s.repo.getByNative(inst.ID, ref.SessionID); getErr == nil {
+	if err := s.store.Create(row); err != nil {
+		if existing, getErr := s.store.GetByNative(inst.ID, ref.SessionID); getErr == nil {
 			if existing.ProjectID != projectID {
 				return Session{}, fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
 			}
@@ -1100,7 +1099,7 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 // wins over whatever the platform holds; a preview never overwrites a title,
 // it only fills an empty one.
 func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.SessionRef) (database.AgentSession, error) {
-	existing, err := s.repo.getByNative(inst.ID, ref.SessionID)
+	existing, err := s.store.GetByNative(inst.ID, ref.SessionID)
 	if err == nil {
 		if existing.ProjectID != projectID {
 			// Defensive: never expose a session indexed for another project.
@@ -1109,13 +1108,13 @@ func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.
 		if ref.Title != "" && ref.Title != existing.Title {
 			existing.Title = ref.Title
 			existing.UpdatedAt = s.now()
-			if err := s.repo.update(existing); err != nil {
+			if err := s.store.Update(existing); err != nil {
 				return database.AgentSession{}, err
 			}
 		} else if existing.Title == "" && ref.Preview != "" {
 			existing.Title = ref.Preview
 			existing.UpdatedAt = s.now()
-			if err := s.repo.update(existing); err != nil {
+			if err := s.store.Update(existing); err != nil {
 				return database.AgentSession{}, err
 			}
 		}
@@ -1128,7 +1127,7 @@ func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.
 	if err != nil {
 		return database.AgentSession{}, err
 	}
-	if err := s.repo.create(row); err != nil {
+	if err := s.store.Create(row); err != nil {
 		return database.AgentSession{}, err
 	}
 	return row, nil
@@ -1172,7 +1171,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
 		Status:          SessionStatus(row.Status),
-		Turn:            s.turnOf(row.InstanceID, row.NativeSessionID),
+		Turn:            s.turnTracker.Of(row.InstanceID, row.NativeSessionID),
 		Capabilities:    s.capabilities(backend),
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
@@ -1181,7 +1180,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 
 // loadScoped loads a session and enforces that it belongs to the project.
 func (s *Service) loadScoped(projectID uint, sessionID string) (database.AgentSession, error) {
-	row, err := s.repo.getByID(sessionID)
+	row, err := s.store.GetByID(sessionID)
 	if err != nil {
 		return database.AgentSession{}, err
 	}

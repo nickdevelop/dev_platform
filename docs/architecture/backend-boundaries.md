@@ -8,7 +8,8 @@
 | --- | --- | --- | --- |
 | 同构：平台配置 | `internal/app/settings`、`internal/app/database` | 外观、后端的启用与可执行路径 | 否，只读 `agents.Catalog` |
 | 同构：项目管理 | `internal/app/projects`、`internal/app/paths` | 项目记录、目录的安全生命周期 | 否，不知道 agent 的存在 |
-| 同构：会话与实例编排 | `internal/app/sessions`、`internal/app/instances`、`internal/transport/http` | 会话索引、实例生命周期、SSE、路由 | 否，只依赖 `internal/core/agents` 契约 |
+| 同构：会话与实例编排 | `internal/app/sessions`（子包 `store` 会话索引、`turns` 轮次跟踪）、`internal/app/instances`、`internal/transport/http` | 会话索引、轮次状态、实例生命周期、SSE、路由 | 否，只依赖 `internal/core/agents` 契约 |
+| 同构：机器级 agent 服务 | `internal/app/agentservices` | 服务的探测、运维员触发的启停、启动门控 | 否，只依赖 `internal/core/agents` 契约与适配器注册表 |
 | 契约（core） | `internal/core/agents`（`contracts.go`、`extensions.go`、`descriptor.go`、`registry.go`、`service.go`） | 能力声明、标准事件、扩展接口、后端描述符 | 仅在 `BackendID` 常量定义处 |
 | OS 抽象（core） | `internal/core/platform`（接口 + `unix/windows/fake/policy`） | OS 差异端口与平台无关策略 | 否 |
 | 异构：适配器（providers） | `internal/providers/opencode`、`internal/providers/pi` | 与具体 CLI 或服务协议打交道，导出 `Descriptor` | 是（本包即为该后端） |
@@ -51,6 +52,6 @@
 | 位置 | 说明 | 处理 |
 | --- | --- | --- |
 | `/opencode/` 交互子路由的 URL 前缀（权限/表单/raw-events） | 处理方式为能力门控，但 URL 历史上按 opencode 命名 | 保持对外 URL 不变；如需更名须同步 openapi.yaml、e2e 与外部脚本，安排在 API 版本变更时 |
-| `internal/app/instances` 的项目级后端开关 `AgentBackendConfig` | 留在实例包，与启动耦合紧密 | 有意保留，见实施计划的"不在本计划内"一节 |
+| 项目级后端开关 `AgentBackendConfig` | 已随第 2 项移除（迁移 v18 删表），后端启用只剩平台设置一处 | 已完成 |
 | `/opencode/` 原始事件端点（`/raw-events`）与前端 `api/interactions.ts` 的 `rawEventsPath` | 与 claudian 对齐时的偏差：原始流保留为调试通道，待处理交互已改走归一化流，前端交互不再订阅原始流 | 保留端点与 `rawEvents` 能力标志；仅供后端专属调试视图使用，通用交互路径不依赖它 |
 | 机器级服务的界面文案 | 文案中的"opencode service"由 `label` 小写生成，保持了原有字符串 | 新增带服务的后端时文案自动生成 |
