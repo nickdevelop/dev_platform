@@ -1198,11 +1198,15 @@ func (inst *instance) lifecycleEvent(sessionID, state, detail string) agents.Nor
 	return event
 }
 
-// unknown preserves an event the adapter could not normalize, byte for byte.
+// unknown preserves an event the adapter could not normalize, byte for byte, up
+// to the contract's raw-blob bound. An oversized body is trimmed so the event
+// still validates — an unbounded Raw would be rejected downstream and the event
+// lost entirely, whereas a bounded one still tells the reader an unrecognized
+// event arrived.
 func (inst *instance) unknown(event *Event, sessionID string) agents.NormalizedEvent {
 	out := inst.event(sessionID)
 	out.Type = agents.EventUnknown
-	out.Raw = append(json.RawMessage(nil), event.Raw()...)
+	out.Raw = boundRaw(event.Raw())
 	return out
 }
 
@@ -1625,6 +1629,21 @@ func boundedMetadata(raw json.RawMessage) json.RawMessage {
 		return nil
 	}
 	return append(json.RawMessage(nil), raw...)
+}
+
+// boundRaw copies a backend event body, capped at the contract's raw-blob bound
+// (MaxRawEventBytes). It backs off to a UTF-8 rune boundary so the trim never
+// splits a multi-byte character. The wire read tolerates far larger lines (see
+// maxStreamLineBytes); this keeps the *normalized* event within the contract.
+func boundRaw(raw []byte) json.RawMessage {
+	if len(raw) <= agents.MaxRawEventBytes {
+		return append(json.RawMessage(nil), raw...)
+	}
+	cut := agents.MaxRawEventBytes
+	for cut > 0 && !utf8.RuneStart(raw[cut]) {
+		cut--
+	}
+	return append(json.RawMessage(nil), raw[:cut]...)
 }
 
 // flattenContent renders a tool result content value (string, text blocks or a

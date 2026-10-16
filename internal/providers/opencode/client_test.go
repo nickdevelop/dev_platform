@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"devplatform/internal/core/agents"
 )
 
 const testPassword = "s3cret-password-value"
@@ -349,6 +352,39 @@ func TestEventStreamMalformedPayload(t *testing.T) {
 	defer stream.Close()
 	if _, err := stream.Next(); err == nil {
 		t.Fatal("expected malformed payload error")
+	}
+}
+
+// TestEventStreamParsesEventPastRawBound proves a single SSE event larger than
+// the raw-blob bound (64KiB) is read whole. opencode's durable events carry
+// complete payloads — a tool result's whole output, a text block's full
+// snapshot — so a real turn routinely produces a line past the bound, and the
+// old buffer sizing aborted the read with bufio.ErrTooLong ("token too long").
+func TestEventStreamParsesEventPastRawBound(t *testing.T) {
+	text := strings.Repeat("x", agents.MaxRawEventBytes*2)
+	body := fmt.Sprintf(`{"id":"evt_big","type":"session.text.ended","data":{"sessionID":"ses_1","text":%q}}`, text)
+	if len(body) <= agents.MaxRawEventBytes {
+		t.Fatalf("test body is %d bytes, want more than the raw bound %d", len(body), agents.MaxRawEventBytes)
+	}
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		io.WriteString(w, "data: "+body+"\n\n")
+	})
+	stream, err := client.Events(context.Background())
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	defer stream.Close()
+
+	event, err := stream.Next()
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if event.Type != "session.text.ended" {
+		t.Fatalf("event type = %q", event.Type)
+	}
+	if len(event.Raw()) != len(body) {
+		t.Fatalf("raw length = %d, want %d", len(event.Raw()), len(body))
 	}
 }
 

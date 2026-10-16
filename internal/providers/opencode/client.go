@@ -32,9 +32,23 @@ const (
 	defaultRequestTimeout = 30 * time.Second
 	// maxResponseBytes bounds one non-streaming API response body.
 	maxResponseBytes = 4 * 1024 * 1024
-	// maxEventBytes bounds one SSE event payload, matching the normalized
-	// event contract's raw-blob bound.
+	// maxEventBytes bounds the raw backend JSON carried inside one normalized
+	// event (the Raw blob and tool metadata), matching the event contract.
 	maxEventBytes = agents.MaxRawEventBytes
+	// maxStreamLineBytes bounds one SSE line read off the wire. It is
+	// deliberately far larger than maxEventBytes: opencode's durable events
+	// carry complete payloads — a tool result's whole output, a text or
+	// reasoning block's full snapshot, a tool call's raw input — so a real turn
+	// routinely emits a single event well past 64KiB. A line that exceeds the
+	// scanner buffer surfaces as bufio.ErrTooLong ("token too long"), which
+	// aborts the read; sizing the buffer to the payload class that actually
+	// arrives keeps such an event on the stream instead. The bound mirrors pi's
+	// maxStreamRecordBytes so both backends tolerate the same record size. The
+	// normalized event an adapter derives from a large payload is still
+	// trimmed to maxEventBytes (see unknown/boundedMetadata); only the wire
+	// read is widened. A line beyond this bound is reported and the stream
+	// reconnects rather than buffering without limit.
+	maxStreamLineBytes = 8 * 1024 * 1024
 )
 
 // Client is a typed client for the opencode v2 HTTP API. Every call carries the
@@ -695,7 +709,7 @@ type EventStream struct {
 // newEventStream wraps a response body.
 func newEventStream(body io.ReadCloser) *EventStream {
 	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxEventBytes)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxStreamLineBytes)
 	return &EventStream{body: body, scanner: scanner}
 }
 
@@ -732,8 +746,8 @@ func (s *EventStream) Next() (*Event, error) {
 			data = append(data, '\n')
 		}
 		data = append(data, value...)
-		if len(data) > maxEventBytes {
-			return nil, fmt.Errorf("%w: payload exceeds %d bytes", errMalformedEvent, maxEventBytes)
+		if len(data) > maxStreamLineBytes {
+			return nil, fmt.Errorf("%w: payload exceeds %d bytes", errMalformedEvent, maxStreamLineBytes)
 		}
 	}
 	if err := s.scanner.Err(); err != nil {

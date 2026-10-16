@@ -557,6 +557,99 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	}
 }
 
+// TestAdapterSubscribeCarriesLargeToolResult proves an opencode event past the
+// raw-blob bound survives the stream as a fully normalized tool result instead
+// of aborting the read with "token too long". A tool result's output is display
+// text and is not itself bounded, so a large one arrives whole and validates.
+func TestAdapterSubscribeCarriesLargeToolResult(t *testing.T) {
+	output := strings.Repeat("y", agents.MaxRawEventBytes*2)
+	events := sseEvent("evt_big", "session.tool.success",
+		fmt.Sprintf(`{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","content":[{"type":"text","text":%q}],"executed":true}`, output),
+		"/x")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"Live","time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	// collectEvents runs Validate on every event, so this also pins that the
+	// normalized result stays within the contract.
+	got := collectEvents(t, ch, 1)
+	if got[0].Type != agents.EventToolResult || got[0].ToolResult == nil {
+		t.Fatalf("event = %+v", got[0])
+	}
+	if got[0].ToolResult.Output != output {
+		t.Fatalf("tool output length = %d, want %d", len(got[0].ToolResult.Output), len(output))
+	}
+}
+
+// TestAdapterSubscribeBoundsOversizedUnknownEvent proves an unmapped event whose
+// body exceeds the raw-blob bound is preserved with a trimmed Raw that still
+// validates, rather than carrying a body the contract rejects and the event
+// being dropped downstream.
+func TestAdapterSubscribeBoundsOversizedUnknownEvent(t *testing.T) {
+	filler := strings.Repeat("z", agents.MaxRawEventBytes*2)
+	events := sseEvent("evt_mystery", "session.mystery",
+		fmt.Sprintf(`{"sessionID":"ses_1","foo":%q}`, filler), "/x")
+
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
+			io.WriteString(w, `{"data":{"id":"ses_1","projectID":"prj","title":"Live","time":{"created":1,"updated":1}}}`)
+		},
+		"GET /api/event": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, events)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-r.Context().Done()
+		},
+	}))
+	instance := startTestInstance(t, adapter)
+	if _, err := adapter.CreateSession(context.Background(), instance.ID, agents.CreateSessionOptions{}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, err := adapter.Subscribe(ctx, instance.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	defer adapter.StopInstance(context.Background(), instance.ID)
+
+	got := collectEvents(t, ch, 1)
+	if got[0].Type != agents.EventUnknown {
+		t.Fatalf("event type = %q, want unknown", got[0].Type)
+	}
+	if len(got[0].Raw) != agents.MaxRawEventBytes {
+		t.Fatalf("raw length = %d, want the bound %d", len(got[0].Raw), agents.MaxRawEventBytes)
+	}
+}
+
 // TestAdapterSubscribeStampsSessionModel pins the realtime model stamp: the
 // live stream's assistant events carry no model of their own, so the adapter
 // stamps them with the session's current model — learned from the create
