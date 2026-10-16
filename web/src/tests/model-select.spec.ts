@@ -269,4 +269,37 @@ describe('ModelSelect', () => {
 
     expect(calls[1]).toBe(`${MODELS_URL}?refresh=1`)
   })
+
+  it('supports model variants and renders variant badges', async () => {
+    stubModels({
+      models: [
+        {
+          id: 'pi/a',
+          name: 'Model A',
+          provider: 'pi',
+          variants: ['thinking', 'fast'],
+        },
+      ],
+    })
+
+    const wrapper = mountSelect({ modelValue: 'pi/a#thinking' })
+    await flushPromises()
+
+    // Trigger shows base name and variant badge
+    expect(wrapper.find('.model-trigger-name').text()).toBe('Model A')
+    const badge = wrapper.find('.model-variant-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('thinking')
+
+    // Open menu to select another variant
+    await wrapper.find('.model-trigger').trigger('click')
+    const variantBtns = wrapper.findAll('.variant-btn')
+    expect(variantBtns).toHaveLength(2)
+    expect(variantBtns[0].classes()).toContain('selected')
+
+    // Click 'fast' variant
+    await variantBtns[1].trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['pi/a#fast'])
+    expect(wrapper.emitted('picked')?.at(-1)).toEqual(['pi/a#fast'])
+  })
 })

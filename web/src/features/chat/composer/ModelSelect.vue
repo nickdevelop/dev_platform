@@ -156,18 +156,42 @@ watch(
 
 // activeId is the model the composer would send right now: the parent's value
 // when it is still in the list, otherwise the first model (the same fallback
-// applyModels emits). It keeps the trigger and the selected row showing the
-// real choice even in the instant before the parent echoes the emitted value.
+// applyModels emits).
 const activeId = computed(() => {
-  if (models.value.some((model) => model.id === props.modelValue)) return props.modelValue
+  if (props.modelValue) {
+    const base = props.modelValue.split('#')[0]
+    if (models.value.some((model) => model.id === props.modelValue || model.id === base)) {
+      return props.modelValue
+    }
+  }
   return models.value[0]?.id ?? props.modelValue
 })
-const selected = computed(() => models.value.find((model) => model.id === activeId.value) ?? null)
+
+// Parse base model id and variant from activeId, e.g. "gemini-2.5-flash#thinking"
+const parsedSelection = computed(() => {
+  const raw = activeId.value || ''
+  const hashIndex = raw.indexOf('#')
+  if (hashIndex === -1) {
+    return { baseId: raw, variant: '' }
+  }
+  return {
+    baseId: raw.slice(0, hashIndex),
+    variant: raw.slice(hashIndex + 1),
+  }
+})
+
+const selected = computed(() => {
+  const base = parsedSelection.value.baseId
+  return models.value.find((model) => model.id === base || model.id === activeId.value) ?? null
+})
+
 const selectedLabel = computed(() => {
   if (selected.value) return selected.value.name || selected.value.id
-  if (props.modelValue !== '') return props.modelValue
+  if (props.modelValue !== '') return parsedSelection.value.baseId
   return loading.value ? '加载模型…' : '选择模型'
 })
+
+const activeVariant = computed(() => parsedSelection.value.variant)
 const showSearch = computed(() => models.value.length > SEARCH_THRESHOLD)
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -228,6 +252,9 @@ function onKeydown(event: KeyboardEvent) {
         @click="toggle"
       >
         <span class="model-trigger-name">{{ selectedLabel }}</span>
+        <span v-if="activeVariant" class="model-variant-badge" :title="`当前变种: ${activeVariant}`">
+          {{ activeVariant }}
+        </span>
         <span class="model-trigger-caret" aria-hidden="true">▾</span>
       </button>
 
@@ -242,19 +269,34 @@ function onKeydown(event: KeyboardEvent) {
           aria-label="搜索模型"
         />
         <ul class="model-list">
-          <li v-for="model in filtered" :key="model.id">
+          <li v-for="model in filtered" :key="model.id" class="model-item">
             <button
               type="button"
               class="model-option"
-              :class="{ selected: model.id === activeId }"
+              :class="{ selected: model.id === parsedSelection.baseId && !activeVariant }"
               role="option"
-              :aria-selected="model.id === activeId"
+              :aria-selected="model.id === parsedSelection.baseId && !activeVariant"
               :data-model-id="model.id"
               @click="choose(model.id)"
             >
               <span class="model-option-name">{{ model.name || model.id }}</span>
               <span v-if="model.name" class="model-option-id">{{ model.id }}</span>
             </button>
+            <div v-if="model.variants && model.variants.length > 0" class="model-variants">
+              <span class="variants-title">变种:</span>
+              <button
+                v-for="v in model.variants"
+                :key="v"
+                type="button"
+                class="variant-btn"
+                :class="{ selected: model.id === parsedSelection.baseId && activeVariant === v }"
+                :data-variant="v"
+                :title="`选择 ${model.name || model.id} · ${v}`"
+                @click.stop="choose(`${model.id}#${v}`)"
+              >
+                {{ v }}
+              </button>
+            </div>
           </li>
         </ul>
         <p v-if="filtered.length === 0" class="model-empty">没有匹配的模型</p>
@@ -277,14 +319,28 @@ function onKeydown(event: KeyboardEvent) {
   align-items: center;
   gap: 0.35rem;
   max-width: 16rem;
-  padding: 0.25rem 0.55rem;
+  height: 28px;
+  padding: 0 0.5rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--color-surface-muted);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.model-variant-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.32rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  line-height: 1;
+  font-weight: 500;
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.15));
+  color: var(--color-primary, #2563eb);
 }
 
 .model-trigger:hover:not(:disabled),
@@ -351,6 +407,11 @@ function onKeydown(event: KeyboardEvent) {
   flex-direction: column;
 }
 
+.model-item {
+  display: flex;
+  flex-direction: column;
+}
+
 .model-option {
   display: flex;
   flex-direction: column;
@@ -377,6 +438,45 @@ function onKeydown(event: KeyboardEvent) {
 .model-option.selected {
   background: var(--color-info-soft);
   color: var(--color-info);
+}
+
+.model-variants {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem 0.35rem 1rem;
+}
+
+.variants-title {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.variant-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.variant-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.variant-btn.selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.15));
+  color: var(--color-primary, #2563eb);
+  font-weight: 500;
 }
 
 .model-option-name {

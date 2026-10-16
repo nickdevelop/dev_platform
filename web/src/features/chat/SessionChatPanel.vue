@@ -30,6 +30,7 @@ import BackendTag from '../../shared/components/BackendTag.vue'
 import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
+import ContextUsageMeter from './composer/ContextUsageMeter.vue'
 import QuestionQueue from './interactions/QuestionQueue.vue'
 import ComposerDropdown from './composer/dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './composer/dropdown/useComposerDropdown'
@@ -623,7 +624,7 @@ async function removeSession() {
                 id="message-text"
                 ref="textareaRef"
                 v-model="messageText"
-                rows="3"
+                rows="2"
                 placeholder="向 Agent 发送消息… (输入 / 使用快捷命令，@ 引用文件或会话)"
                 @input="onTextareaInput"
                 @keydown="onTextareaKeydown"
@@ -641,40 +642,24 @@ async function removeSession() {
                     @status="onModelStatus"
                     @picked="onModelPicked"
                   />
-                  <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+                  <ContextUsageMeter
+                    :usage="contextUsage"
+                    :context-detail="contextDetail"
+                  />
                 </div>
-                <button
-                  type="button"
-                  class="composer-action"
-                  :class="isRunning ? 'stop-button' : 'send-button'"
-                  :disabled="composerDisabled"
-                  :title="isRunning ? '停止' : '发送'"
-                  @click="onSubmit"
-                >
-                  {{ composerLabel }}
-                </button>
-              </div>
-              <div
-                v-if="showContextLine"
-                class="context-line"
-                data-test="context-usage"
-                :title="contextDetail"
-              >
-                <span class="context-main">{{ contextMain }}</span>
-                <span
-                  v-if="contextUsage.percent !== undefined"
-                  class="context-bar"
-                  role="progressbar"
-                  :aria-valuenow="contextUsage.percent"
-                  aria-valuemin="0"
-                  aria-valuemax="100"
-                >
-                  <span :class="contextBarClass" :style="{ width: contextBarWidth }"></span>
-                </span>
-                <span class="context-detail">{{ contextDetail }}</span>
-                <span v-if="contextUsage.estimated" class="context-est" data-test="context-estimated"
-                  >估算</span
-                >
+                <div class="composer-actions">
+                  <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+                  <button
+                    type="button"
+                    class="composer-action"
+                    :class="isRunning ? 'stop-button' : 'send-button'"
+                    :disabled="composerDisabled"
+                    :title="isRunning ? '停止' : '发送'"
+                    @click="onSubmit"
+                  >
+                    {{ composerLabel }}
+                  </button>
+                </div>
               </div>
             </div>
           </form>
@@ -1219,13 +1204,13 @@ async function removeSession() {
 .composer-box {
   position: relative;
   border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--color-surface);
-  padding: 0.6rem 0.7rem 0.5rem;
+  padding: 0.45rem 0.65rem 0.4rem;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  gap: 0.35rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
 .composer-box:focus-within {
@@ -1243,15 +1228,16 @@ async function removeSession() {
 }
 
 .send textarea {
-  padding: 0.15rem 0.1rem;
+  padding: 0.1rem 0;
   border: none;
   outline: none;
   resize: none;
   font: inherit;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  line-height: 1.4;
   background: transparent;
   color: var(--color-text);
-  min-height: 3.2rem;
+  min-height: 2.2rem;
   max-height: 12rem;
 }
 
@@ -1264,30 +1250,55 @@ async function removeSession() {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding-top: 0.35rem;
+  padding-top: 0.3rem;
   border-top: 1px solid var(--color-border);
+  min-height: 28px;
 }
 
 .composer-tools {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.45rem;
   min-width: 0;
+  flex-wrap: wrap;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .composer-hint {
   color: var(--color-text-muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
-.composer-action,
+.composer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 3.2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
 .reconnect {
   align-self: center;
   min-width: 3.4rem;
   padding: 0.35rem 0.9rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--color-surface);
   cursor: pointer;
   font: inherit;
@@ -1309,69 +1320,6 @@ async function removeSession() {
 .composer-action.stop-button {
   color: var(--color-danger);
   border-color: var(--color-danger-border);
-}
-
-/* The composer context line: exact usage anchored on backend reports with
-   the in-flight turn estimated (marked 估算). The bar warns at 80% and
-   alarms at 95%; without a model limit only the used figure shows. */
-.context-line {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding-top: 0.35rem;
-  border-top: 1px solid var(--color-border);
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  min-width: 0;
-}
-
-.context-main {
-  flex: none;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.context-bar {
-  flex: 1 1 4rem;
-  min-width: 3rem;
-  max-width: 12rem;
-  height: 0.35rem;
-  border-radius: 999px;
-  background: var(--color-border);
-  overflow: hidden;
-}
-
-.context-bar-fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: var(--color-primary);
-}
-
-.context-bar-fill.warn {
-  background: var(--color-warning);
-}
-
-.context-bar-fill.danger {
-  background: var(--color-danger);
-}
-
-.context-detail {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.context-est {
-  flex: none;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 4px;
-  padding: 0 0.3rem;
-  font-size: 0.7rem;
-  white-space: nowrap;
 }
 
 .tool-notice {

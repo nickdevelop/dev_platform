@@ -1020,10 +1020,10 @@ describe('SessionChatPanel conversation layout', () => {
 
     const line = wrapper.find('[data-test="context-usage"]')
     expect(line.exists()).toBe(true)
-    expect(line.text()).toContain('上下文 10k/128k（8%）')
-    expect(line.text()).toContain('↑8.0k')
-    expect(line.text()).toContain('↓2.0k')
-    expect(wrapper.find('[data-test="context-estimated"]').exists()).toBe(false)
+    expect(line.text()).toContain('8%')
+    expect(line.attributes('title')).toContain('8% · 10k / 128k')
+    expect(line.attributes('title')).toContain('↑8.0k')
+    expect(line.attributes('title')).toContain('↓2.0k')
   })
 
   it('deletes the session after a confirmation and returns to the project', async () => {
