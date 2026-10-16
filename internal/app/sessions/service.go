@@ -1211,3 +1211,35 @@ func validateRef(ref *agents.SessionRef, inst instances.Instance) error {
 	}
 	return nil
 }
+
+// ListCommands returns the commands and skills supported by the session's agent backend.
+// If the backend adapter does not implement agents.CommandDiscoverer, it returns an empty list.
+func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID string) ([]agents.AgentCommand, error) {
+	row, err := s.store.GetByID(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if row.ProjectID != projectID {
+		return nil, ErrSessionNotFound
+	}
+
+	backendID := agents.BackendID(row.Backend)
+	adapter, err := s.adapter(backendID)
+	if err != nil {
+		return nil, err
+	}
+
+	discoverer, ok := adapter.(agents.CommandDiscoverer)
+	if !ok {
+		return []agents.AgentCommand{}, nil
+	}
+
+	ref := agents.SessionRef{
+		InstanceID: row.InstanceID,
+		Backend:    backendID,
+		SessionID:  row.NativeSessionID,
+		Title:      row.Title,
+	}
+
+	return discoverer.ListCommands(ctx, ref)
+}

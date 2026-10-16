@@ -31,6 +31,15 @@ import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
 import QuestionQueue from './interactions/QuestionQueue.vue'
+import ComposerDropdown from './composer/dropdown/ComposerDropdown.vue'
+import { useComposerDropdown } from './composer/dropdown/useComposerDropdown'
+import { BuiltInSlashSource } from './composer/dropdown/sources/BuiltInSlashSource'
+import { ProviderSlashSource } from './composer/dropdown/sources/ProviderSlashSource'
+import { WorkspaceFileSource } from './composer/dropdown/sources/WorkspaceFileSource'
+import { SessionMentionSource } from './composer/dropdown/sources/SessionMentionSource'
+import { resolveSessionMentions } from './composer/sessionMentionResolver'
+import { getSessionHistory } from '../../api/sessions'
+import { detectBuiltInCommand } from './composer/builtInCommands'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
@@ -54,6 +63,51 @@ const deleteError = ref('')
 // like an empty conversation.
 const preparing = ref(false)
 const messageText = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const slashSource = new BuiltInSlashSource()
+const providerSlashSource = new ProviderSlashSource(
+  () => props.projectId,
+  () => props.sessionId,
+)
+const fileSource = new WorkspaceFileSource(() => props.projectId)
+const sessionSource = new SessionMentionSource(
+  () => sessions.sessions,
+  () => props.sessionId,
+)
+
+const dropdown = useComposerDropdown({
+  sources: [slashSource, providerSlashSource, fileSource, sessionSource],
+  text: messageText,
+  onApplyText(newText, newCursor) {
+    messageText.value = newText
+    void nextTick(() => {
+      if (textareaRef.value) {
+        textareaRef.value.focus()
+        textareaRef.value.setSelectionRange(newCursor, newCursor)
+      }
+    })
+  },
+})
+
+function onTextareaInput() {
+  if (textareaRef.value) {
+    void dropdown.onInput(textareaRef.value)
+  }
+}
+
+function onCompositionEnd() {
+  if (textareaRef.value) {
+    dropdown.onCompositionEnd(textareaRef.value)
+  }
+}
+
+function onTextareaKeydown(event: KeyboardEvent) {
+  if (dropdown.onKeydown(event)) return
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void onSubmit()
+  }
+}
 // Scrolling follows the newest entry only while the user is at the bottom;
 // both panes share that rule through shared/scrollFollow. The log scrolls by
 // hand in jsdom tests, so every read and write of the scroller geometry goes
@@ -214,6 +268,12 @@ const composerDisabled = computed(() => {
 
 onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
+watch(
+  () => props.sessionId,
+  (newSessionId) => {
+    providerSlashSource.clearCache(newSessionId)
+  },
+)
 const {
   toolNotice,
   pendingToolCall,
@@ -312,7 +372,10 @@ async function send() {
   sending.value = true
   sendError.value = ''
   const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
-  const updated = await sessions.sendMessage(props.projectId, session.id, messageText.value, model)
+  const textToSend = await resolveSessionMentions(props.projectId, messageText.value, (targetId) =>
+    getSessionHistory(props.projectId, targetId),
+  )
+  const updated = await sessions.sendMessage(props.projectId, session.id, textToSend, model)
   // The text is kept on failure so the user can retry without retyping it.
   if (updated) {
     messageText.value = ''
@@ -339,7 +402,41 @@ async function stop() {
   busy.value = false
 }
 
+async function handleBuiltInCommand(input: string): Promise<boolean> {
+  const builtIn = detectBuiltInCommand(input)
+  if (!builtIn) return false
+
+  switch (builtIn.command.action) {
+    case 'stop':
+      await stop()
+      messageText.value = ''
+      return true
+    case 'new':
+      messageText.value = ''
+      await router.push({ name: 'project-new-session', params: { id: props.projectId } })
+      return true
+    case 'model':
+      if (builtIn.args) {
+        selectedModel.value = builtIn.args
+        toolNotice.value = `已切换模型为: ${builtIn.args}`
+      } else {
+        toolNotice.value = `当前模型: ${selectedModel.value || '默认'}`
+      }
+      messageText.value = ''
+      return true
+    case 'help':
+      toolNotice.value = '可用内置命令: /new (新建会话), /stop (停止任务), /model <名称> (切换模型), /help (帮助)'
+      messageText.value = ''
+      return true
+    default:
+      return false
+  }
+}
+
 async function onSubmit() {
+  if (await handleBuiltInCommand(messageText.value)) {
+    return
+  }
   if (isRunning.value) {
     await stop()
     return
@@ -514,13 +611,24 @@ async function removeSession() {
 
           <form class="send composer" @submit.prevent="onSubmit">
             <div class="composer-box">
+              <ComposerDropdown
+                v-if="dropdown.isOpen.value"
+                :items="dropdown.items.value"
+                :selected-index="dropdown.selectedIndex.value"
+                :loading="dropdown.loading.value"
+                @select="dropdown.selectItem"
+              />
               <label class="composer-label" for="message-text">发送消息</label>
               <textarea
                 id="message-text"
+                ref="textareaRef"
                 v-model="messageText"
                 rows="3"
-                placeholder="向 Agent 发送消息…"
-                @keydown.enter.exact.prevent="onSubmit"
+                placeholder="向 Agent 发送消息… (输入 / 使用快捷命令，@ 引用文件或会话)"
+                @input="onTextareaInput"
+                @keydown="onTextareaKeydown"
+                @compositionstart="dropdown.onCompositionStart"
+                @compositionend="onCompositionEnd"
               ></textarea>
               <div class="composer-bar">
                 <div class="composer-tools">
@@ -1109,6 +1217,7 @@ async function removeSession() {
 /* Desktop-style composer: one rounded box holds the input and its toolbar,
    like the opencode desktop client. */
 .composer-box {
+  position: relative;
   border: 1px solid var(--color-border-strong);
   border-radius: 12px;
   background: var(--color-surface);

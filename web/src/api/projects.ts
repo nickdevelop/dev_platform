@@ -61,3 +61,24 @@ export function renameProject(
 export function unregisterProject(id: number, csrfToken: string): Promise<void> {
   return apiRequest<void>('POST', `/projects/${id}/unregister`, { csrfToken })
 }
+
+export interface FileItem {
+  path: string
+  isDir: boolean
+}
+
+export interface ProjectFilesResponse {
+  files: FileItem[]
+}
+
+export function searchProjectFiles(
+  projectId: number,
+  query = '',
+  limit = 50,
+): Promise<ProjectFilesResponse> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (limit) params.set('limit', String(limit))
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return apiRequest<ProjectFilesResponse>('GET', `/projects/${projectId}/files${qs}`)
+}

@@ -332,3 +332,27 @@ export function sessionEventsPath(
   const base = `/api/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/events`
   return lastEventId ? `${base}?lastEventId=${encodeURIComponent(lastEventId)}` : base
 }
+
+export type CommandKind = 'command' | 'skill' | 'prompt'
+
+export interface AgentCommand {
+  name: string
+  description: string
+  kind: CommandKind
+  argumentHint?: string
+}
+
+export interface SessionCommandsResponse {
+  commands: AgentCommand[]
+}
+
+// GET /api/projects/{id}/sessions/{sessionId}/commands
+export function listSessionCommands(
+  projectId: number,
+  sessionId: string,
+): Promise<SessionCommandsResponse> {
+  return apiRequest<SessionCommandsResponse>(
+    'GET',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/commands`,
+  )
+}

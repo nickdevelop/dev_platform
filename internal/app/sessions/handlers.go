@@ -37,6 +37,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/sessions/:sessionId/interrupt", s.handleInterrupt)
 	r.DELETE("/projects/:id/sessions/:sessionId", s.handleDelete)
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
+	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 }
 
@@ -404,6 +405,30 @@ func resumeSequence(c *gin.Context) uint64 {
 		return 0
 	}
 	return v
+}
+
+// commandsResponse is the JSON body of GET /api/projects/:id/sessions/:sessionId/commands.
+type commandsResponse struct {
+	Commands []agents.AgentCommand `json:"commands"`
+}
+
+// handleCommands lists the slash commands and skills supported by the session's backend.
+func (s *Service) handleCommands(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	commands, err := s.ListCommands(c.Request.Context(), id, sessionID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, commandsResponse{Commands: commands})
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

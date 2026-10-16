@@ -49,3 +49,26 @@ type PermissionReplier interface {
 type RawEventOpener interface {
 	OpenRawEvents(ctx context.Context) (io.ReadCloser, error)
 }
+
+// CommandKind describes the nature of an agent-provided command.
+type CommandKind string
+
+const (
+	CommandKindSlash  CommandKind = "command"
+	CommandKindSkill  CommandKind = "skill"
+	CommandKindPrompt CommandKind = "prompt"
+)
+
+// AgentCommand is a slash command, skill, or prompt template exposed by an agent backend.
+type AgentCommand struct {
+	Name         string      `json:"name"`
+	Description  string      `json:"description"`
+	Kind         CommandKind `json:"kind"`
+	ArgumentHint string      `json:"argumentHint,omitempty"`
+}
+
+// CommandDiscoverer is the optional extension for agent backends that expose
+// slash commands, skills, or prompt templates to the platform.
+type CommandDiscoverer interface {
+	ListCommands(ctx context.Context, ref SessionRef) ([]AgentCommand, error)
+}

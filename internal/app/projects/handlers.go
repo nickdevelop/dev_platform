@@ -21,6 +21,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/rename", s.handleRename)
 	r.POST("/projects/:id/unregister", s.handleUnregister)
 	r.GET("/projects/:id/git-info", s.handleGitInfo)
+	r.GET("/projects/:id/files", s.handleSearchFiles)
 }
 
 // errorResponse is the JSON error envelope for project API failures.
@@ -198,6 +199,33 @@ func (s *Service) handleGitInfo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, info)
+}
+
+// filesResponse is the JSON body of GET /api/projects/:id/files.
+type filesResponse struct {
+	Files []FileItem `json:"files"`
+}
+
+// handleSearchFiles searches files and directories inside the project workspace.
+func (s *Service) handleSearchFiles(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	query := c.Query("q")
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	files, err := s.SearchFiles(c.Request.Context(), id, query, limit)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, filesResponse{Files: files})
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.
