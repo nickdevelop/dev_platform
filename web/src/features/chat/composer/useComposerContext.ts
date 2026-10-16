@@ -9,7 +9,7 @@ import type { AgentSession } from '../../../api/sessions'
 import type { ChatEntry } from '../state/sessionLog'
 import { useAgentsStore } from '../../../stores/agents'
 import { useSessionsStore } from '../../../stores/sessions'
-import { getInstanceGitInfo, type GitInfo } from '../../../api/git'
+import { getProjectGitInfo, type GitInfo } from '../../../api/git'
 import { cachedModels } from '../../../shared/modelCache'
 import { computeContextUsage } from '../../../shared/contextUsage'
 import { ellipsisMiddle, formatTokens } from '../../../shared/format'
@@ -66,19 +66,21 @@ export function useComposerContext(options: ComposerContextOptions) {
       gitInfo.value = null
       return
     }
-    const key = session.instanceId
+    // The git state belongs to the project's directory, so one probe per
+    // project serves every session of it.
+    const key = String(options.projectId.value)
     if (!force && gitCache.has(key)) {
       gitInfo.value = gitCache.get(key) ?? null
       return
     }
     try {
-      const info = await getInstanceGitInfo(options.projectId.value, session.instanceId)
+      const info = await getProjectGitInfo(options.projectId.value)
       gitCache.set(key, info)
-      if (options.activeSession.value?.instanceId === key) gitInfo.value = info
+      if (String(options.projectId.value) === key && options.activeSession.value) gitInfo.value = info
     } catch {
       // Branch display is best-effort: a failed probe leaves the row without
       // the branch chip rather than breaking the session.
-      if (options.activeSession.value?.instanceId === key) gitInfo.value = null
+      if (String(options.projectId.value) === key && options.activeSession.value) gitInfo.value = null
     }
   }
   const branchLabel = computed(() => {

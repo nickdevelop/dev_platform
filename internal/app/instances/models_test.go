@@ -136,7 +136,7 @@ func TestBackendModelsRefreshesAfterServiceChange(t *testing.T) {
 	if _, err := svc.BackendModels(ctx, projectID, agents.BackendPi, false); err != nil {
 		t.Fatalf("BackendModels: %v", err)
 	}
-	svc.invalidateModels(agents.BackendPi)
+	svc.InvalidateModels(agents.BackendPi)
 	if _, err := svc.BackendModels(ctx, projectID, agents.BackendPi, false); err != nil {
 		t.Fatalf("BackendModels after invalidation: %v", err)
 	}

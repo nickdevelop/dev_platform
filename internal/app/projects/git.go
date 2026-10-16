@@ -1,9 +1,8 @@
-package instances
+package projects
 
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -25,18 +24,16 @@ type GitInfo struct {
 	Root   string `json:"root,omitempty"`
 }
 
-// GitInfo returns the git state of the named instance's working directory.
-// The instance must belong to the project in the path; the directory itself
-// always comes from the platform record, never from caller input.
-func (s *Service) GitInfo(ctx context.Context, projectID uint, instanceID string) (GitInfo, error) {
-	row, err := s.load(instanceID)
+// GitInfo returns the git state of a project's directory. The directory always
+// comes from the platform record, never from caller input. A missing project is
+// ErrProjectNotFound; any git-level failure degrades to IsGit false (see
+// probeGitDir), so branch display never blocks the page that shows it.
+func (s *Service) GitInfo(ctx context.Context, projectID uint) (GitInfo, error) {
+	row, err := s.load(projectID)
 	if err != nil {
 		return GitInfo{}, err
 	}
-	if row.ProjectID != projectID {
-		return GitInfo{}, fmt.Errorf("%w: %q", ErrInstanceNotFound, instanceID)
-	}
-	return probeGitDir(ctx, row.Directory), nil
+	return probeGitDir(ctx, row.Path), nil
 }
 
 // probeGitDir inspects directory with the git CLI. Any failure — missing git,

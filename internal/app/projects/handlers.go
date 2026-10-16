@@ -20,6 +20,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/move", s.handleMove)
 	r.POST("/projects/:id/rename", s.handleRename)
 	r.POST("/projects/:id/unregister", s.handleUnregister)
+	r.GET("/projects/:id/git-info", s.handleGitInfo)
 }
 
 // errorResponse is the JSON error envelope for project API failures.
@@ -182,6 +183,21 @@ func (s *Service) handleUnregister(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// handleGitInfo reports the git state of the project's directory. A directory
+// that is not a git work tree reports isGit false rather than an error.
+func (s *Service) handleGitInfo(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	info, err := s.GitInfo(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, info)
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

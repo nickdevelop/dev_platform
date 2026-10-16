@@ -1,19 +1,17 @@
-package instances
+package projects
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"devplatform/internal/app/database"
 )
 
 // gitAvailable reports whether the git CLI can run here. Probe tests that
@@ -91,38 +89,29 @@ func TestProbeGitDirBranchAndDirty(t *testing.T) {
 	}
 }
 
-func TestGitInfoRejectsForeignProject(t *testing.T) {
-	svc, db, _, _, _ := newTestService(t)
-
-	inst, err := svc.Start(context.Background(), 1, "pi")
-	if err != nil {
-		t.Skipf("start instance: %v", err)
-	}
-	// Move the instance row to another project id directly: the service must
-	// still refuse to report it under the original project.
-	if err := db.Model(&database.AgentInstance{}).Where("id = ?", inst.ID).Update("project_id", 9999).Error; err != nil {
-		t.Fatalf("move instance: %v", err)
-	}
-	if _, err := svc.GitInfo(context.Background(), 1, inst.ID); !errors.Is(err, ErrInstanceNotFound) {
-		t.Fatalf("GitInfo = %v, want ErrInstanceNotFound", err)
-	}
-}
-
-// TestGitInfoRoute pins the HTTP surface: a git work tree reports its
-// branch, a foreign project is a 404, and an unknown instance is a 404.
+// TestGitInfoRoute pins the HTTP surface: a git work tree reports its branch,
+// and an unknown project is a 404.
 func TestGitInfoRoute(t *testing.T) {
 	if !gitAvailable() {
 		t.Skip("git CLI unavailable")
 	}
-	svc, _, projectID, projectDir, _ := newTestService(t)
+	db := openTestDB(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	projectDir := filepath.Join(root, "alpha")
+	if err := os.Mkdir(projectDir, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	svc := NewService(db)
+	project, err := svc.Register(projectDir)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	svc.RegisterRoutes(router)
-
-	inst, err := svc.Start(context.Background(), projectID, "pi")
-	if err != nil {
-		t.Fatalf("start instance: %v", err)
-	}
 	git := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", args...)
@@ -135,7 +124,7 @@ func TestGitInfoRoute(t *testing.T) {
 	git("config", "user.email", "test@example.com")
 	git("config", "user.name", "test")
 
-	path := "/projects/1/instances/" + inst.ID + "/git-info"
+	path := "/projects/" + strconv.FormatUint(uint64(project.ID), 10) + "/git-info"
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	if rec.Code != http.StatusOK {
@@ -150,14 +139,8 @@ func TestGitInfoRoute(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/projects/9999/instances/"+inst.ID+"/git-info", nil))
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/projects/9999/git-info", nil))
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("foreign project status = %d, want 404", rec.Code)
-	}
-
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/projects/1/instances/nope/git-info", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("unknown instance status = %d, want 404", rec.Code)
+		t.Fatalf("unknown project status = %d, want 404", rec.Code)
 	}
 }

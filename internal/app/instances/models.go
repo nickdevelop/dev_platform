@@ -49,11 +49,12 @@ func (s *Service) BackendModels(ctx context.Context, projectID uint, backend age
 	})
 }
 
-// invalidateModels drops a backend's cached model lists. The machine-level
-// service starting or stopping really does change what the backend can answer,
-// so a list held across that event is not just old — it is about a state of the
-// backend that no longer exists.
-func (s *Service) invalidateModels(backend agents.BackendID) {
+// InvalidateModels drops a backend's cached model lists. The composition root
+// wires it to the agent service controller: a machine-level service starting or
+// stopping really does change what the backend can answer, so a list held across
+// that event is not just old — it is about a state of the backend that no longer
+// exists.
+func (s *Service) InvalidateModels(backend agents.BackendID) {
 	if s.modelCatalog != nil {
 		s.modelCatalog.Invalidate(backend)
 	}

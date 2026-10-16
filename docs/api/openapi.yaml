@@ -514,34 +514,27 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /projects/{id}/instances/{instanceId}/git-info:
+  /projects/{id}/git-info:
     get:
-      summary: Git state of an instance working directory
+      summary: Git state of a project working directory
       description: >-
-        Returns the git state (branch and dirty flag) of the named instance's
-        working directory. A directory that is not a git work tree reports
-        isGit false rather than an error, so branch display never blocks
-        opening a session. The instance must belong to the project in the path.
-      operationId: getInstanceGitInfo
+        Returns the git state (branch and dirty flag) of the project's working
+        directory. A directory that is not a git work tree reports isGit false
+        rather than an error, so branch display never blocks opening a session.
+      operationId: getProjectGitInfo
       security:
         - cookieAuth: []
       parameters:
         - name: id
           in: path
           required: true
-          description: Identifier of the owning project.
+          description: Identifier of the project.
           schema:
             type: integer
             format: int64
-        - name: instanceId
-          in: path
-          required: true
-          description: Durable identifier of the instance.
-          schema:
-            type: string
       responses:
         '200':
-          description: The instance's git state.
+          description: The project's git state.
           content:
             application/json:
               schema:

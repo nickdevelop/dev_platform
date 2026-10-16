@@ -18,20 +18,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"devplatform/internal/core/agents"
-	"devplatform/internal/app/instances"
-	"devplatform/internal/providers/opencode"
-	"devplatform/internal/providers/pi"
+	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/database"
-	platformhttp "devplatform/internal/transport/http"
+	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
-	"devplatform/internal/core/platform"
 	"devplatform/internal/app/projects"
 	platformruntime "devplatform/internal/app/runtime"
 	"devplatform/internal/app/secrets"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
+	"devplatform/internal/core/agents"
+	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/opencode"
+	"devplatform/internal/providers/pi"
+	platformhttp "devplatform/internal/transport/http"
 )
 
 // setPasswordCommand is the first-run subcommand that configures the platform
@@ -318,7 +319,12 @@ func runServer(args []string) error {
 	// Unregistering a project stops its live instances first; the instance
 	// service is built from the project service, so the link is set here.
 	projectService.SetInstanceStopper(instanceService)
+	// Machine-level agent services are controlled here, not by the instance
+	// service. A start or stop invalidates the backend's cached model lists,
+	// and the session layer refuses new instances while a service is down.
+	agentServices := agentservices.NewService(registry, agentservices.WithChangeHook(instanceService.InvalidateModels))
 	sessionService := sessions.NewService(db, registry, instanceService,
+		sessions.WithServiceGate(agentServices),
 		sessions.WithPlatformEnabled(settingsService.Enabled),
 		sessions.WithCatalog(catalog),
 	)
@@ -341,13 +347,14 @@ func runServer(args []string) error {
 	}()
 
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
-		Auth:         authService,
-		Projects:     projectService,
-		Settings:     settingsService,
-		Models:       modelConfig,
-		Instances:    instanceService,
-		Sessions:     sessionService,
-		WebDir:       webDir,
+		Auth:          authService,
+		Projects:      projectService,
+		Settings:      settingsService,
+		Models:        modelConfig,
+		Instances:     instanceService,
+		AgentServices: agentServices,
+		Sessions:      sessionService,
+		WebDir:        webDir,
 	})
 
 	// Listen explicitly so the log reports the concrete bound address (the

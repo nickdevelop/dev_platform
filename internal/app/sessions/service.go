@@ -142,12 +142,6 @@ type InstanceService interface {
 	// session layer's auto-start path for creating a session on a backend with
 	// no running instance.
 	Start(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error)
-	// ServiceAvailable reports whether the backend can start an instance at all:
-	// a backend that runs a machine-level service refuses when that service is
-	// down, and the session layer must pass the refusal on instead of trying to
-	// bring the service up itself. A backend with no service is always
-	// available.
-	ServiceAvailable(backend agents.BackendID) error
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 	// ReplaySince returns the instance's buffered events with Sequence past
@@ -171,6 +165,9 @@ type Service struct {
 	// platformEnabled reports whether a backend may be used platform-wide. Nil
 	// means every backend is enabled.
 	platformEnabled func(agents.BackendID) bool
+	// serviceGate refuses an instance start while a backend's machine-level
+	// service is down. Nil means no backend needs a service.
+	serviceGate ServiceGate
 
 	// streamBuffer bounds one SSE subscriber's backlog; tests may lower it.
 	streamBuffer int
@@ -215,6 +212,23 @@ type Option func(*Service)
 func WithCatalog(catalog *agents.Catalog) Option {
 	return func(s *Service) {
 		s.catalog = catalog
+	}
+}
+
+// ServiceGate reports whether a backend's machine-level service is available.
+// agentservices.Service implements it.
+type ServiceGate interface {
+	// Available returns nil when the backend can start an instance. A backend
+	// whose service is down is refused, and the session layer passes the
+	// refusal on instead of bringing the service up itself.
+	Available(backend agents.BackendID) error
+}
+
+// WithServiceGate supplies the machine-level service gate consulted before an
+// instance is started.
+func WithServiceGate(gate ServiceGate) Option {
+	return func(s *Service) {
+		s.serviceGate = gate
 	}
 }
 
@@ -441,8 +455,10 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 	// Starting an instance of a service-backed backend would need that service.
 	// The platform never starts one itself, so the request is refused with the
 	// reason instead of quietly launching a process or failing opaquely.
-	if err := s.instances.ServiceAvailable(backend); err != nil {
-		return instances.Instance{}, fmt.Errorf("%w: %q (%w)", ErrServiceNotRunning, backend, err)
+	if s.serviceGate != nil {
+		if err := s.serviceGate.Available(backend); err != nil {
+			return instances.Instance{}, fmt.Errorf("%w: %q (%w)", ErrServiceNotRunning, backend, err)
+		}
 	}
 	return s.instances.Start(ctx, projectID, backend)
 }

@@ -21,7 +21,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/instances", s.handleList)
 	r.POST("/projects/:id/instances", s.handleStart)
 	r.POST("/projects/:id/instances/:instanceId/stop", s.handleStop)
-	r.GET("/projects/:id/instances/:instanceId/git-info", s.handleGitInfo)
 
 	// A backend's model catalog belongs to the backend and the project's
 	// directory, not to an instance: the workbench needs it while creating a
@@ -29,69 +28,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	// instead of accepting the cached snapshot.
 	r.GET("/projects/:id/agent-backends/:backend/models", s.handleBackendModels)
 
-	// Machine-level agent services. The platform never starts or stops one from
-	// a business path; these routes are what the platform settings page drives,
-	// and the operator owns the decision they encode.
-	r.GET("/agent-services/:backend", s.handleServiceStatus)
-	r.POST("/agent-services/:backend/start", s.handleServiceStart)
-	r.POST("/agent-services/:backend/stop", s.handleServiceStop)
-}
-
-// serviceBackend parses the :backend path parameter of the agent-service routes.
-func serviceBackend(c *gin.Context) (agents.BackendID, bool) {
-	backend := agents.BackendID(c.Param("backend"))
-	if !backend.Valid() {
-		respondError(c, http.StatusBadRequest, "unknown_backend")
-		return "", false
-	}
-	return backend, true
-}
-
-// serviceStatusResponse is the JSON body of the agent-service routes.
-type serviceStatusResponse struct {
-	Status agents.ServiceStatus `json:"status"`
-}
-
-// handleServiceStatus probes and reports one backend's machine-level service.
-func (s *Service) handleServiceStatus(c *gin.Context) {
-	backend, ok := serviceBackend(c)
-	if !ok {
-		return
-	}
-	status, err := s.DetectService(c.Request.Context(), backend)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, serviceStatusResponse{Status: status})
-}
-
-// handleServiceStart starts the service on the operator's request.
-func (s *Service) handleServiceStart(c *gin.Context) {
-	backend, ok := serviceBackend(c)
-	if !ok {
-		return
-	}
-	status, err := s.StartService(c.Request.Context(), backend)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, serviceStatusResponse{Status: status})
-}
-
-// handleServiceStop stops the service on the operator's request.
-func (s *Service) handleServiceStop(c *gin.Context) {
-	backend, ok := serviceBackend(c)
-	if !ok {
-		return
-	}
-	status, err := s.StopService(c.Request.Context(), backend)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, serviceStatusResponse{Status: status})
 }
 
 // errorResponse is the JSON error envelope for instance API failures.
@@ -123,12 +59,6 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
-	case errors.Is(err, agents.ErrServiceNotRunning):
-		respondError(c, http.StatusConflict, "service_not_running")
-	case errors.Is(err, agents.ErrServiceAlreadyRunning):
-		respondError(c, http.StatusConflict, "service_already_running")
-	case errors.Is(err, agents.ErrServiceUnsupported):
-		respondError(c, http.StatusBadRequest, "service_unsupported")
 	case errors.Is(err, projects.ErrDirectoryMissing), errors.Is(err, projects.ErrNotDirectory):
 		respondError(c, http.StatusConflict, "project_directory_unavailable")
 	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, projects.ErrPathChanged):
@@ -184,28 +114,6 @@ func (s *Service) handleStart(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, instance)
-}
-
-// handleGitInfo returns the git state of the named instance's working
-// directory. A directory that is not a git work tree (or a git binary that is
-// missing) reports isGit false rather than an error, so branch display never
-// blocks opening a session.
-func (s *Service) handleGitInfo(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	instanceID := c.Param("instanceId")
-	if instanceID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	info, err := s.GitInfo(c.Request.Context(), id, instanceID)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, info)
 }
 
 // handleStop stops the named instance. The operation is idempotent.

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/projects"
@@ -63,7 +64,7 @@ func newGatedEnv(t *testing.T) (*testEnv, *gatedAdapter) {
 	}
 	instanceService := instances.NewService(db, registry, projectService)
 	return &testEnv{
-		svc:        NewService(db, registry, instanceService),
+		svc:        NewService(db, registry, instanceService, WithServiceGate(agentservices.NewService(registry))),
 		db:         db,
 		instances:  instanceService,
 		registry:   registry,

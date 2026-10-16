@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/modelconfig"
@@ -54,6 +55,10 @@ type Dependencies struct {
 	// When set together with Auth, the instance routes are served under
 	// /api/projects/{id}/instances behind RequireSession.
 	Instances *instances.Service
+	// AgentServices controls the machine-level services of agent backends. When
+	// set together with Auth, the service routes are served under
+	// /api/agent-services behind RequireSession.
+	AgentServices *agentservices.Service
 	// Sessions manages the platform session index, native-session discovery
 	// and the normalized SSE stream. When set together with Auth, the session
 	// routes are served under /api/projects/{id}/sessions behind
@@ -105,6 +110,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Instances != nil {
 			deps.Instances.RegisterRoutes(protected)
+		}
+		if deps.AgentServices != nil {
+			deps.AgentServices.RegisterRoutes(protected)
 		}
 		if deps.Sessions != nil {
 			deps.Sessions.RegisterRoutes(protected)

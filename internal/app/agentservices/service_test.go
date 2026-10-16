@@ -1,4 +1,4 @@
-package instances
+package agentservices
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -16,14 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/app/projects"
 )
 
 // fakeServiceAdapter is an adapter that does have a machine-level service, so
 // the platform's service façade can be exercised without a real opencode
 // process.
 type fakeServiceAdapter struct {
-	*fakeAdapter
+	// agents.AgentAdapter is embedded unset: only the service-control surface
+	// is exercised here, and the registry needs a non-nil adapter to hold it.
+	agents.AgentAdapter
 
 	mu           sync.Mutex
 	status       agents.ServiceStatus
@@ -75,30 +74,20 @@ func (f *fakeServiceAdapter) StopService(context.Context) (agents.ServiceStatus,
 	return agents.ServiceStatus{Backend: agents.BackendOpenCodeV2, Supported: true, State: agents.ServiceStopped}, nil
 }
 
+// plainAdapter is an adapter with no machine-level service.
+type plainAdapter struct{ agents.AgentAdapter }
+
 // newServiceControlTest wires a service whose opencode backend has a machine
 // service and whose pi backend does not.
 func newServiceControlTest(t *testing.T) (*Service, *fakeServiceAdapter) {
 	t.Helper()
 
-	db := openTestDB(t)
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatalf("EvalSymlinks: %v", err)
-	}
-	projectDir := filepath.Join(root, "alpha")
-	if err := os.Mkdir(projectDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if _, err := projects.NewService(db).Register(projectDir); err != nil {
-		t.Fatalf("register project: %v", err)
-	}
-
 	registry := agents.NewRegistry()
-	if err := registry.Register(agents.BackendPi, newFakeAdapter()); err != nil {
+	// A CLI backend: an adapter without the service-control capability.
+	if err := registry.Register(agents.BackendPi, plainAdapter{}); err != nil {
 		t.Fatalf("register pi fake: %v", err)
 	}
 	controller := &fakeServiceAdapter{
-		fakeAdapter: newFakeAdapter(),
 		status: agents.ServiceStatus{
 			Backend:   agents.BackendOpenCodeV2,
 			Supported: true,
@@ -111,13 +100,13 @@ func newServiceControlTest(t *testing.T) (*Service, *fakeServiceAdapter) {
 	if err := registry.Register(agents.BackendOpenCodeV2, controller); err != nil {
 		t.Fatalf("register opencode fake: %v", err)
 	}
-	return NewService(db, registry, projects.NewService(db)), controller
+	return NewService(registry), controller
 }
 
 func TestDetectServiceUnsupportedBackend(t *testing.T) {
 	svc, _ := newServiceControlTest(t)
 
-	status, err := svc.DetectService(context.Background(), agents.BackendPi)
+	status, err := svc.Detect(context.Background(), agents.BackendPi)
 	if err != nil {
 		t.Fatalf("DetectService: %v", err)
 	}
@@ -128,7 +117,7 @@ func TestDetectServiceUnsupportedBackend(t *testing.T) {
 		t.Fatalf("backend = %q, want %q", status.Backend, agents.BackendPi)
 	}
 
-	if _, err := svc.DetectService(context.Background(), agents.BackendID("nope")); !errors.Is(err, ErrUnknownBackend) {
+	if _, err := svc.Detect(context.Background(), agents.BackendID("nope")); !errors.Is(err, ErrUnknownBackend) {
 		t.Fatalf("unknown backend error = %v, want %v", err, ErrUnknownBackend)
 	}
 }
@@ -136,10 +125,10 @@ func TestDetectServiceUnsupportedBackend(t *testing.T) {
 func TestStartServiceUnsupported(t *testing.T) {
 	svc, _ := newServiceControlTest(t)
 
-	if _, err := svc.StartService(context.Background(), agents.BackendPi); !errors.Is(err, agents.ErrServiceUnsupported) {
+	if _, err := svc.Start(context.Background(), agents.BackendPi); !errors.Is(err, agents.ErrServiceUnsupported) {
 		t.Fatalf("start error = %v, want %v", err, agents.ErrServiceUnsupported)
 	}
-	if _, err := svc.StopService(context.Background(), agents.BackendPi); !errors.Is(err, agents.ErrServiceUnsupported) {
+	if _, err := svc.Stop(context.Background(), agents.BackendPi); !errors.Is(err, agents.ErrServiceUnsupported) {
 		t.Fatalf("stop error = %v, want %v", err, agents.ErrServiceUnsupported)
 	}
 }
@@ -147,12 +136,12 @@ func TestStartServiceUnsupported(t *testing.T) {
 func TestServiceAvailableGatePassesForNonServiceBackend(t *testing.T) {
 	svc, controller := newServiceControlTest(t)
 
-	if err := svc.ServiceAvailable(agents.BackendPi); err != nil {
+	if err := svc.Available(agents.BackendPi); err != nil {
 		t.Fatalf("ServiceAvailable(pi) = %v, want nil: a CLI backend has no service to wait for", err)
 	}
 
 	controller.availableErr = fmt.Errorf("%w: nothing registered", agents.ErrServiceNotRunning)
-	if err := svc.ServiceAvailable(agents.BackendOpenCodeV2); !errors.Is(err, agents.ErrServiceNotRunning) {
+	if err := svc.Available(agents.BackendOpenCodeV2); !errors.Is(err, agents.ErrServiceNotRunning) {
 		t.Fatalf("ServiceAvailable(opencode) = %v, want it to wrap %v", err, agents.ErrServiceNotRunning)
 	}
 }
