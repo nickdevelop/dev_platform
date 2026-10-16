@@ -84,7 +84,7 @@ type Instance struct {
 // Service manages agent instance records and their event fan-out over the
 // platform database and a backend registry.
 type Service struct {
-	db       *gorm.DB
+	repo     Repository
 	registry *agents.Registry
 	projects ProjectDirectoryResolver
 	newID    func() (string, error)
@@ -124,8 +124,13 @@ type stopGate struct {
 // NewService builds the instance service. registry resolves backend ids to
 // adapters; projects resolves project ids to authorized working directories.
 func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirectoryResolver, opts ...Option) *Service {
+	return NewServiceWithRepository(NewGORMRepository(db), registry, projects, opts...)
+}
+
+// NewServiceWithRepository builds the instance service over a custom repository.
+func NewServiceWithRepository(repo Repository, registry *agents.Registry, projects ProjectDirectoryResolver, opts ...Option) *Service {
 	s := &Service{
-		db:           db,
+		repo:         repo,
 		registry:     registry,
 		projects:     projects,
 		newID:        randomID,
@@ -210,25 +215,23 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 		status = agents.InstanceStarting
 	}
 	now := s.now()
-	row := database.AgentInstance{
+	inst := Instance{
 		ID:        started.ID,
 		ProjectID: projectID,
-		Backend:   string(backend),
-		// The adapter is never trusted to re-derive the working directory:
-		// the platform persists the canonical path it authorized.
+		Backend:   backend,
 		Directory: directory,
-		Status:    string(status),
+		Status:    status,
 		Endpoint:  started.Endpoint,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error }); err != nil {
+	if err := s.repo.Create(inst); err != nil {
 		// The adapter believes an instance is running under started.ID; stop
 		// it so a failed record insert does not leak a live instance.
 		_ = adapter.StopInstance(ctx, started.ID)
 		return Instance{}, fmt.Errorf("instances: record instance %q: %w", started.ID, err)
 	}
-	return instanceFromModel(row), nil
+	return inst, nil
 }
 
 // recordStartFailure persists a failed instance for a start attempt that never
@@ -239,42 +242,30 @@ func (s *Service) recordStartFailure(projectID uint, backend agents.BackendID, d
 		return Instance{}, fmt.Errorf("%w: %v (could not allocate a failure id: %v)", ErrStartFailed, cause, err)
 	}
 	now := s.now()
-	row := database.AgentInstance{
+	inst := Instance{
 		ID:        id,
 		ProjectID: projectID,
-		Backend:   string(backend),
+		Backend:   backend,
 		Directory: directory,
-		Status:    string(agents.InstanceFailed),
+		Status:    agents.InstanceFailed,
 		Error:     cause.Error(),
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	if err := s.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error }); err != nil {
+	if err := s.repo.Create(inst); err != nil {
 		return Instance{}, fmt.Errorf("%w: %w (could not record the failure: %v)", ErrStartFailed, cause, err)
 	}
-	return instanceFromModel(row), fmt.Errorf("%w: %w", ErrStartFailed, cause)
+	return inst, fmt.Errorf("%w: %w", ErrStartFailed, cause)
 }
 
 // List returns the project's instances in creation order.
 func (s *Service) List(projectID uint) ([]Instance, error) {
-	var rows []database.AgentInstance
-	if err := s.db.Where("project_id = ?", projectID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("instances: list project %d: %w", projectID, err)
-	}
-	out := make([]Instance, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, instanceFromModel(row))
-	}
-	return out, nil
+	return s.repo.List(projectID)
 }
 
 // Get returns the instance with the given id.
 func (s *Service) Get(instanceID string) (Instance, error) {
-	row, err := s.load(instanceID)
-	if err != nil {
-		return Instance{}, err
-	}
-	return instanceFromModel(row), nil
+	return s.load(instanceID)
 }
 
 // Stop terminates an instance and tears down its event fan-out. It is
@@ -300,9 +291,8 @@ func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error)
 	if err != nil {
 		return Instance{}, err
 	}
-	current := agents.InstanceStatus(row.Status)
-	if current == agents.InstanceStopped || current == agents.InstanceFailed {
-		return instanceFromModel(row), nil
+	if row.Status == agents.InstanceStopped || row.Status == agents.InstanceFailed {
+		return row, nil
 	}
 
 	// Tear down the local subscription first so a stop never leaves a fan-out
@@ -310,7 +300,7 @@ func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error)
 	// stop call is slow or fails.
 	s.closeStream(instanceID)
 
-	adapter, ok := s.registry.Get(agents.BackendID(row.Backend))
+	adapter, ok := s.registry.Get(row.Backend)
 	var stopErr error
 	if !ok {
 		stopErr = fmt.Errorf("%w: %q", ErrUnknownBackend, row.Backend)
@@ -318,23 +308,20 @@ func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error)
 		stopErr = adapter.StopInstance(ctx, instanceID)
 	}
 
-	row.Status = string(agents.InstanceStopped)
+	row.Status = agents.InstanceStopped
 	row.Error = ""
 	if stopErr != nil {
-		row.Status = string(agents.InstanceFailed)
+		row.Status = agents.InstanceFailed
 		row.Error = stopErr.Error()
 	}
 	row.UpdatedAt = s.now()
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		return tx.Model(&database.AgentInstance{}).Where("id = ?", instanceID).
-			Updates(map[string]any{"status": row.Status, "error": row.Error, "updated_at": row.UpdatedAt}).Error
-	}); err != nil {
+	if err := s.repo.UpdateStatus(instanceID, row.Status, row.Error, row.UpdatedAt); err != nil {
 		return Instance{}, fmt.Errorf("instances: update instance %q: %w", instanceID, err)
 	}
 	if stopErr != nil {
-		return instanceFromModel(row), fmt.Errorf("instances: stop %q: %w", instanceID, stopErr)
+		return row, fmt.Errorf("instances: stop %q: %w", instanceID, stopErr)
 	}
-	return instanceFromModel(row), nil
+	return row, nil
 }
 
 // StopProjectInstances stops every live instance of one project. It is the
@@ -367,14 +354,13 @@ func (s *Service) StopProjectInstances(ctx context.Context, projectID uint) erro
 // explicit Stop, so one instance's failure never prevents the others from being
 // stopped; the failures are joined and returned for the caller to log.
 func (s *Service) Close(ctx context.Context) error {
-	var rows []database.AgentInstance
-	if err := s.db.Where("status IN ?", []string{string(agents.InstanceStarting), string(agents.InstanceRunning)}).
-		Find(&rows).Error; err != nil {
+	live, err := s.repo.ListLive()
+	if err != nil {
 		return fmt.Errorf("instances: close: %w", err)
 	}
 	var errs []error
-	for _, row := range rows {
-		if _, err := s.Stop(ctx, row.ID); err != nil {
+	for _, inst := range live {
+		if _, err := s.Stop(ctx, inst.ID); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -481,15 +467,8 @@ func (s *Service) resolveProject(projectID uint) (string, error) {
 }
 
 // load reads the instance record with the given id.
-func (s *Service) load(instanceID string) (database.AgentInstance, error) {
-	var row database.AgentInstance
-	if err := s.db.First(&row, "id = ?", instanceID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return database.AgentInstance{}, fmt.Errorf("%w: %s", ErrInstanceNotFound, instanceID)
-		}
-		return database.AgentInstance{}, fmt.Errorf("instances: load %s: %w", instanceID, err)
-	}
-	return row, nil
+func (s *Service) load(instanceID string) (Instance, error) {
+	return s.repo.Get(instanceID)
 }
 
 // instanceFromModel maps the persistence model to the JSON-stable DTO.
@@ -744,11 +723,11 @@ func (s *Service) applyLifecycle(ev agents.NormalizedEvent) {
 		return
 	}
 
-	var row database.AgentInstance
-	if err := s.db.First(&row, "id = ?", ev.InstanceID).Error; err != nil {
+	inst, err := s.repo.Get(ev.InstanceID)
+	if err != nil {
 		return
 	}
-	if !agents.InstanceStatus(row.Status).CanTransitionTo(target) {
+	if !inst.Status.CanTransitionTo(target) {
 		return
 	}
 
@@ -758,6 +737,5 @@ func (s *Service) applyLifecycle(ev agents.NormalizedEvent) {
 	}
 	// Best-effort mirror: a failure to persist the status must not break the
 	// event fan-out, and the record stays readable at its previous status.
-	s.db.Model(&database.AgentInstance{}).Where("id = ?", ev.InstanceID).
-		Updates(map[string]any{"status": string(target), "error": detail, "updated_at": s.now()})
+	_ = s.repo.UpdateStatus(ev.InstanceID, target, detail, s.now())
 }

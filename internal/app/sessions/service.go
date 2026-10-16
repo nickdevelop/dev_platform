@@ -157,11 +157,23 @@ type InstanceService interface {
 	Stop(ctx context.Context, instanceID string) (instances.Instance, error)
 }
 
+// StoreRepository defines the persistence contract for the session index.
+// *store.Store satisfies it.
+type StoreRepository interface {
+	Create(row database.AgentSession) error
+	GetByID(id string) (database.AgentSession, error)
+	GetByNative(projectID uint, backend, nativeID string) (database.AgentSession, error)
+	List(projectID uint) ([]database.AgentSession, error)
+	Update(row database.AgentSession) error
+	UpdateOnContinue(row database.AgentSession) error
+	UpdateStatus(id, status string, at time.Time) error
+	Delete(id string) error
+}
+
 // Service manages the platform's session index and the operations built on the
 // adapter registry.
 type Service struct {
-	db        *gorm.DB
-	store     *store.Store
+	store     StoreRepository
 	registry  *agents.Registry
 	instances InstanceService
 	newID     func() (string, error)
@@ -187,9 +199,13 @@ type Service struct {
 // NewService builds the session service over the platform database, the
 // adapter registry and the instance lifecycle service.
 func NewService(db *gorm.DB, registry *agents.Registry, instanceService InstanceService, opts ...Option) *Service {
+	return NewServiceWithStore(store.New(db), registry, instanceService, opts...)
+}
+
+// NewServiceWithStore builds the session service over a custom session index store.
+func NewServiceWithStore(st StoreRepository, registry *agents.Registry, instanceService InstanceService, opts ...Option) *Service {
 	s := &Service{
-		db:           db,
-		store:        store.New(db),
+		store:        st,
 		registry:     registry,
 		instances:    instanceService,
 		newID:        randomID,

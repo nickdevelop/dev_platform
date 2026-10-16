@@ -28,9 +28,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"devplatform/internal/app/database"
 	"devplatform/internal/app/paths"
-	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
 )
 
@@ -92,7 +90,7 @@ type InstanceStopper interface {
 // target and race the filesystem, and so an unregister cannot interleave with
 // a start that is resolving the same project.
 type Service struct {
-	db *gorm.DB
+	repo Repository
 	// renamePath renames a directory. It defaults to os.Rename and is a test
 	// seam for exercising failure/compensation paths.
 	renamePath func(oldpath, newpath string) error
@@ -105,7 +103,12 @@ type Service struct {
 // instance stopper is wired afterwards with SetInstanceStopper, because the
 // instance service itself is built from this Service.
 func NewService(db *gorm.DB) *Service {
-	return &Service{db: db, renamePath: os.Rename}
+	return NewServiceWithRepository(NewGORMRepository(db))
+}
+
+// NewServiceWithRepository builds the project service over a custom repository.
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{repo: repo, renamePath: os.Rename}
 }
 
 // SetInstanceStopper installs the component that stops a project's live
@@ -118,15 +121,7 @@ func (s *Service) SetInstanceStopper(stopper InstanceStopper) {
 
 // List returns the registered projects in creation order.
 func (s *Service) List() ([]Project, error) {
-	var rows []database.Project
-	if err := s.db.Order("id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("projects: list projects: %w", err)
-	}
-	projects := make([]Project, 0, len(rows))
-	for _, row := range rows {
-		projects = append(projects, projectFromModel(row))
-	}
-	return projects, nil
+	return s.repo.List()
 }
 
 // Register records an existing directory under an authorized workspace root.
@@ -145,11 +140,7 @@ func (s *Service) Register(input string) (Project, error) {
 		return Project{}, err
 	}
 
-	row, err := s.insertProject(resolved, filepath.Base(resolved))
-	if err != nil {
-		return Project{}, err
-	}
-	return projectFromModel(row), nil
+	return s.insertProject(resolved, filepath.Base(resolved))
 }
 
 // Create creates a new project directory named name under the authorized
@@ -176,14 +167,14 @@ func (s *Service) Create(parentInput, name string) (Project, error) {
 		return Project{}, fmt.Errorf("projects: create directory %q: %w", target, err)
 	}
 
-	row, err := s.insertProject(target, name)
+	p, err := s.insertProject(target, name)
 	if err != nil {
 		// The directory was created by this call; remove it so a failed
 		// record insert does not leave an unmanaged directory behind.
 		_ = os.Remove(target)
 		return Project{}, err
 	}
-	return projectFromModel(row), nil
+	return p, nil
 }
 
 // Rename renames the project directory within its current parent. The typed
@@ -215,7 +206,7 @@ func (s *Service) Rename(id uint, name, confirmName string) (Project, error) {
 		return Project{}, err
 	}
 	if target == row.Path {
-		return projectFromModel(row), nil
+		return row, nil
 	}
 	return s.relocate(row, target, name)
 }
@@ -246,7 +237,7 @@ func (s *Service) Move(id uint, destinationInput, confirmName string) (Project, 
 		return Project{}, err
 	}
 	if destination == row.Path {
-		return projectFromModel(row), nil
+		return row, nil
 	}
 	if pathWithin(row.Path, destination) {
 		return Project{}, fmt.Errorf("%w: %q is inside the source %q", ErrInvalidTarget, destination, row.Path)
@@ -309,7 +300,7 @@ func (s *Service) Unregister(ctx context.Context, id uint) error {
 // moved back so the record never points at a location that changed silently;
 // if that compensating move also fails the call reports ErrRollbackFailed with
 // both affected paths rather than discarding the error.
-func (s *Service) relocate(row database.Project, target, name string) (Project, error) {
+func (s *Service) relocate(row Project, target, name string) (Project, error) {
 	if _, err := os.Lstat(target); err == nil {
 		return Project{}, fmt.Errorf("%w: %q", ErrTargetExists, target)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -321,80 +312,30 @@ func (s *Service) relocate(row database.Project, target, name string) (Project, 
 	}
 
 	previous := row.Path
-	row.Path, row.Name = target, name
-	if err := s.db.Transaction(func(tx *gorm.DB) error { return tx.Save(&row).Error }); err != nil {
+	updated, err := s.repo.Update(row.ID, name, target)
+	if err != nil {
 		if rollbackErr := s.renamePath(target, previous); rollbackErr != nil {
 			return Project{}, fmt.Errorf("%w: directory now at %q but record %d still points at %q (%v); record update error: %v",
 				ErrRollbackFailed, target, row.ID, previous, rollbackErr, err)
 		}
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return Project{}, fmt.Errorf("%w: %q", ErrProjectExists, target)
-		}
-		return Project{}, fmt.Errorf("projects: update record for %q: %w", target, err)
+		return Project{}, err
 	}
-	return projectFromModel(row), nil
+	return updated, nil
 }
 
 // insertProject records a directory as a project in its own transaction.
-func (s *Service) insertProject(path, name string) (database.Project, error) {
-	row := database.Project{Name: name, Path: path}
-	if err := s.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error }); err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return database.Project{}, fmt.Errorf("%w: %q", ErrProjectExists, path)
-		}
-		return database.Project{}, fmt.Errorf("projects: record %q: %w", path, err)
-	}
-	return row, nil
+func (s *Service) insertProject(path, name string) (Project, error) {
+	return s.repo.Create(name, path)
 }
 
-// removeProject deletes a project and everything the platform owns for it in
-// one transaction: agent sessions, agent instances, backend configs, then the
-// project record. Before deleting, it refuses if any instance of the project is
-// still live, so an instance started concurrently with the stop above can never
-// be orphaned from its project.
+// removeProject deletes a project and everything the platform owns for it.
 func (s *Service) removeProject(id uint) error {
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		var row database.Project
-		if err := tx.First(&row, id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrProjectNotFound
-			}
-			return fmt.Errorf("projects: load project %d: %w", id, err)
-		}
-
-		var live int64
-		if err := tx.Model(&database.AgentInstance{}).
-			Where("project_id = ? AND status NOT IN ?", id,
-				[]string{string(agents.InstanceStopped), string(agents.InstanceFailed)}).
-			Count(&live).Error; err != nil {
-			return fmt.Errorf("projects: count live instances of project %d: %w", id, err)
-		}
-		if live > 0 {
-			return fmt.Errorf("%w: %d instance(s) of project %d are still live", ErrInstanceStop, live, id)
-		}
-
-		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}} {
-			if err := tx.Where("project_id = ?", id).Delete(model).Error; err != nil {
-				return fmt.Errorf("projects: delete project %d rows: %w", id, err)
-			}
-		}
-		if err := tx.Delete(&database.Project{}, id).Error; err != nil {
-			return fmt.Errorf("projects: delete project %d: %w", id, err)
-		}
-		return nil
-	})
+	return s.repo.RemoveProject(id)
 }
 
 // load reads the project record with the given id.
-func (s *Service) load(id uint) (database.Project, error) {
-	var row database.Project
-	if err := s.db.First(&row, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return database.Project{}, ErrProjectNotFound
-		}
-		return database.Project{}, fmt.Errorf("projects: load project %d: %w", id, err)
-	}
-	return row, nil
+func (s *Service) load(id uint) (Project, error) {
+	return s.repo.Get(id)
 }
 
 // resolve canonicalizes input into the absolute path to operate on. The
@@ -466,7 +407,7 @@ func validateName(name string) error {
 
 // confirmNameMatches requires the caller to have typed the project's current
 // name before a destructive or relocating operation.
-func confirmNameMatches(row database.Project, confirmName string) error {
+func confirmNameMatches(row Project, confirmName string) error {
 	if confirmName != row.Name {
 		return fmt.Errorf("%w: want %q", ErrConfirmationMismatch, row.Name)
 	}
@@ -490,9 +431,4 @@ func pathWithin(parent, child string) bool {
 		}
 	}
 	return true
-}
-
-// projectFromModel maps the persistence model to the JSON-stable DTO.
-func projectFromModel(row database.Project) Project {
-	return Project{ID: row.ID, Name: row.Name, Path: row.Path}
 }

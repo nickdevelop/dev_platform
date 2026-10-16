@@ -87,24 +87,29 @@ type ModelInput struct {
 // Service manages model services and their models over the platform database
 // and the platform secret store.
 type Service struct {
-	db    *gorm.DB
+	repo  Repository
 	store SecretStore
 }
 
 // NewService builds the model config service.
 func NewService(db *gorm.DB, store SecretStore) *Service {
-	return &Service{db: db, store: store}
+	return NewServiceWithRepository(NewGORMRepository(db), store)
+}
+
+// NewServiceWithRepository builds the model config service over a custom repository.
+func NewServiceWithRepository(repo Repository, store SecretStore) *Service {
+	return &Service{repo: repo, store: store}
 }
 
 // List returns every service with its models, in creation order.
 func (s *Service) List() ([]ServiceDTO, error) {
-	var services []database.ModelService
-	if err := s.db.Order("id ASC").Find(&services).Error; err != nil {
-		return nil, fmt.Errorf("modelconfig: list services: %w", err)
+	services, err := s.repo.ListServices()
+	if err != nil {
+		return nil, err
 	}
-	var models []database.ModelDef
-	if err := s.db.Order("id ASC").Find(&models).Error; err != nil {
-		return nil, fmt.Errorf("modelconfig: list models: %w", err)
+	models, err := s.repo.ListModels()
+	if err != nil {
+		return nil, err
 	}
 
 	byService := make(map[uint][]database.ModelDef, len(services))
@@ -135,8 +140,8 @@ func (s *Service) Create(input ServiceInput) (ServiceDTO, error) {
 		row.SecretRef = ref
 	}
 
-	if err := s.db.Create(&row).Error; err != nil {
-		return ServiceDTO{}, fmt.Errorf("modelconfig: create service: %w", err)
+	if err := s.repo.CreateService(&row); err != nil {
+		return ServiceDTO{}, err
 	}
 	return serviceDTO(row, nil), nil
 }
@@ -164,8 +169,8 @@ func (s *Service) Update(id uint, input ServiceInput) (ServiceDTO, error) {
 	}
 
 	row.Name, row.BaseURL, row.SecretRef, row.Enabled = name, baseURL, newRef, input.Enabled
-	if err := s.db.Save(&row).Error; err != nil {
-		return ServiceDTO{}, fmt.Errorf("modelconfig: update service: %w", err)
+	if err := s.repo.UpdateService(&row); err != nil {
+		return ServiceDTO{}, err
 	}
 	// Only once the row no longer points at the old key is it safe to delete.
 	if oldRef != "" && oldRef != newRef {
@@ -188,13 +193,8 @@ func (s *Service) Delete(id uint) error {
 		return err
 	}
 
-	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("service_id = ?", id).Delete(&database.ModelDef{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&database.ModelService{}, id).Error
-	}); err != nil {
-		return fmt.Errorf("modelconfig: delete service: %w", err)
+	if err := s.repo.DeleteService(id); err != nil {
+		return err
 	}
 	if row.SecretRef != "" {
 		_ = s.store.Delete(context.Background(), row.SecretRef)
@@ -223,11 +223,8 @@ func (s *Service) AddModel(serviceID uint, input ModelInput) (ModelDTO, error) {
 		OutputTokens:  input.OutputTokens,
 		Enabled:       input.Enabled,
 	}
-	if err := s.db.Create(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return ModelDTO{}, fmt.Errorf("%w: %q", ErrModelConflict, row.ModelID)
-		}
-		return ModelDTO{}, fmt.Errorf("modelconfig: add model: %w", err)
+	if err := s.repo.CreateModel(&row); err != nil {
+		return ModelDTO{}, err
 	}
 	return modelDTO(service, row), nil
 }
@@ -254,25 +251,15 @@ func (s *Service) UpdateModel(id uint, input ModelInput) (ModelDTO, error) {
 	row.ContextTokens = input.ContextTokens
 	row.OutputTokens = input.OutputTokens
 	row.Enabled = input.Enabled
-	if err := s.db.Save(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return ModelDTO{}, fmt.Errorf("%w: %q", ErrModelConflict, row.ModelID)
-		}
-		return ModelDTO{}, fmt.Errorf("modelconfig: update model: %w", err)
+	if err := s.repo.UpdateModel(&row); err != nil {
+		return ModelDTO{}, err
 	}
 	return modelDTO(service, row), nil
 }
 
 // DeleteModel removes one model.
 func (s *Service) DeleteModel(id uint) error {
-	result := s.db.Delete(&database.ModelDef{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("modelconfig: delete model: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrModelNotFound
-	}
-	return nil
+	return s.repo.DeleteModel(id)
 }
 
 // ResolveKey returns the plaintext API key for a service, or "" when the
@@ -305,33 +292,15 @@ func (s *Service) storeKey(value string) (string, error) {
 }
 
 func (s *Service) loadService(id uint) (database.ModelService, error) {
-	var row database.ModelService
-	if err := s.db.First(&row, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return database.ModelService{}, ErrServiceNotFound
-		}
-		return database.ModelService{}, fmt.Errorf("modelconfig: load service %d: %w", id, err)
-	}
-	return row, nil
+	return s.repo.GetService(id)
 }
 
 func (s *Service) loadModel(id uint) (database.ModelDef, error) {
-	var row database.ModelDef
-	if err := s.db.First(&row, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return database.ModelDef{}, ErrModelNotFound
-		}
-		return database.ModelDef{}, fmt.Errorf("modelconfig: load model %d: %w", id, err)
-	}
-	return row, nil
+	return s.repo.GetModel(id)
 }
 
 func (s *Service) modelsFor(serviceID uint) ([]database.ModelDef, error) {
-	var rows []database.ModelDef
-	if err := s.db.Where("service_id = ?", serviceID).Order("id ASC").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("modelconfig: load models for service %d: %w", serviceID, err)
-	}
-	return rows, nil
+	return s.repo.ListModelsByService(serviceID)
 }
 
 // validateServiceInput trims and validates the name and base URL.

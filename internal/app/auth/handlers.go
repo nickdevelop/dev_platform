@@ -42,7 +42,7 @@ func WithLoginThrottle(max int, window time.Duration) Option {
 
 // Service bundles the platform's authentication state and handlers.
 type Service struct {
-	db             *gorm.DB
+	repo           Repository
 	sessions       *SessionStore
 	throttle       *LoginThrottle
 	sessionTTL     time.Duration
@@ -53,15 +53,20 @@ type Service struct {
 
 // NewService builds the auth service over db.
 func NewService(db *gorm.DB, opts ...Option) *Service {
+	return NewServiceWithRepository(NewGORMRepository(db), opts...)
+}
+
+// NewServiceWithRepository builds the auth service over a custom repository.
+func NewServiceWithRepository(repo Repository, opts ...Option) *Service {
 	s := &Service{
-		db:         db,
+		repo:       repo,
 		sessionTTL: DefaultSessionTTL,
 		now:        time.Now,
 	}
 	for _, opt := range opts {
 		opt(s)
 	}
-	s.sessions = NewSessionStore(db, s.sessionTTL, s.now)
+	s.sessions = NewSessionStoreWithRepository(repo, s.sessionTTL, s.now)
 	if s.throttleMax < 1 {
 		s.throttleMax = defaultMaxLoginFailures
 	}
@@ -74,12 +79,12 @@ func NewService(db *gorm.DB, opts ...Option) *Service {
 
 // SetPassword configures the platform password, refusing to overwrite one.
 func (s *Service) SetPassword(password string) error {
-	return SetPassword(s.db, password)
+	return SetPasswordWithRepository(s.repo, password)
 }
 
 // PasswordConfigured reports whether a platform password is set.
 func (s *Service) PasswordConfigured() (bool, error) {
-	return PasswordConfigured(s.db)
+	return PasswordConfiguredWithRepository(s.repo)
 }
 
 // RegisterRoutes registers the auth endpoints under r. Mutating routes rely
@@ -139,7 +144,7 @@ func (s *Service) handleLogin(c *gin.Context) {
 		return
 	}
 
-	hash, configured, err := passwordHash(s.db)
+	hash, configured, err := passwordHashWithRepository(s.repo)
 	if err != nil {
 		abortWithError(c, http.StatusInternalServerError, "server_error")
 		return

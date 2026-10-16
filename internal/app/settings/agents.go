@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/app/database"
 )
 
 // agentsKey is the settings-table key holding the agent configuration JSON.
@@ -49,19 +48,16 @@ func (s *Service) Agents() (map[agents.BackendID]AgentSetting, error) {
 func (s *Service) loadAgents() (map[agents.BackendID]AgentSetting, error) {
 	settings := s.defaultAgentSettings()
 
-	var row database.Setting
-	// Find (not First) so a missing row is not logged as an error; agent
-	// enablement is consulted on every new session.
-	result := s.db.Where("key = ?", agentsKey).Limit(1).Find(&row)
-	if result.Error != nil {
-		return nil, fmt.Errorf("settings: load agents: %w", result.Error)
+	val, found, err := s.repo.Get(agentsKey)
+	if err != nil {
+		return nil, err
 	}
-	if result.RowsAffected == 0 {
+	if !found {
 		return settings, nil
 	}
 
 	var stored map[agents.BackendID]AgentSetting
-	if err := jsonUnmarshal(row.Value, &stored); err != nil {
+	if err := jsonUnmarshal(val, &stored); err != nil {
 		return nil, fmt.Errorf("settings: decode agents: %w", err)
 	}
 	// Only known backends are honored, so a stale key cannot introduce one.
@@ -78,8 +74,8 @@ func (s *Service) saveAgents(settings map[agents.BackendID]AgentSetting) error {
 	if err != nil {
 		return fmt.Errorf("settings: encode agents: %w", err)
 	}
-	if err := s.db.Save(&database.Setting{Key: agentsKey, Value: data}).Error; err != nil {
-		return fmt.Errorf("settings: save agents: %w", err)
+	if err := s.repo.Set(agentsKey, data); err != nil {
+		return err
 	}
 	return nil
 }

@@ -15,7 +15,6 @@ import (
 	"golang.org/x/crypto/argon2"
 	"gorm.io/gorm"
 
-	"devplatform/internal/app/database"
 )
 
 // Argon2id parameters. Memory is expressed in KiB.
@@ -91,24 +90,29 @@ func VerifyPassword(encoded, password string) (bool, error) {
 
 // PasswordConfigured reports whether a platform password has been set.
 func PasswordConfigured(db *gorm.DB) (bool, error) {
-	var count int64
-	if err := db.Model(&database.Setting{}).
-		Where("key = ?", database.SettingKeyPasswordHash).
-		Count(&count).Error; err != nil {
-		return false, fmt.Errorf("auth: read password setting: %w", err)
-	}
-	return count > 0, nil
+	return PasswordConfiguredWithRepository(NewGORMRepository(db))
+}
+
+// PasswordConfiguredWithRepository reports whether a platform password has been set.
+func PasswordConfiguredWithRepository(repo Repository) (bool, error) {
+	_, ok, err := repo.GetPasswordHash()
+	return ok, err
 }
 
 // SetPassword hashes password and stores it as the platform password. It
 // refuses to overwrite an already-configured password so a first-run setup
 // step cannot silently reset access.
 func SetPassword(db *gorm.DB, password string) error {
+	return SetPasswordWithRepository(NewGORMRepository(db), password)
+}
+
+// SetPasswordWithRepository hashes and stores password using the repository.
+func SetPasswordWithRepository(repo Repository, password string) error {
 	if password == "" {
 		return errors.New("auth: password must not be empty")
 	}
 
-	configured, err := PasswordConfigured(db)
+	configured, err := PasswordConfiguredWithRepository(repo)
 	if err != nil {
 		return err
 	}
@@ -121,26 +125,15 @@ func SetPassword(db *gorm.DB, password string) error {
 		return err
 	}
 
-	setting := database.Setting{Key: database.SettingKeyPasswordHash, Value: hash}
-	if err := db.Create(&setting).Error; err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return ErrPasswordAlreadySet
-		}
-		return fmt.Errorf("auth: store password hash: %w", err)
-	}
-	return nil
+	return repo.SetPasswordHash(hash)
 }
 
 // passwordHash loads the stored Argon2id hash. The boolean reports whether a
 // password has been configured at all.
 func passwordHash(db *gorm.DB) (string, bool, error) {
-	var settings []database.Setting
-	if err := db.Where("key = ?", database.SettingKeyPasswordHash).
-		Limit(1).Find(&settings).Error; err != nil {
-		return "", false, fmt.Errorf("auth: load password hash: %w", err)
-	}
-	if len(settings) == 0 {
-		return "", false, nil
-	}
-	return settings[0].Value, true, nil
+	return passwordHashWithRepository(NewGORMRepository(db))
+}
+
+func passwordHashWithRepository(repo Repository) (string, bool, error) {
+	return repo.GetPasswordHash()
 }

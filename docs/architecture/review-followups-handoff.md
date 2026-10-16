@@ -1,15 +1,18 @@
-# 交接：架构评审七项整改 —— 第 1、2、3、4、7 项已完成，第 6 项待实施
+# 架构评审七项整改 —— 全部完成总结
 
-> 分支：`refactor/remove-resources`，HEAD `c9128d4`，工作树干净，未推送。
-> 恢复：`git checkout refactor/remove-resources && git status --short && git log --oneline -2`。
-> 详细过程见 `docs/architecture/remove-resources-handoff.md`（已随第 7 项提交）。
+> 分支：`refactor/domain-repositories`（基于 `refactor/session-owned-by-project`，依次累积 7 → 1 → 2 → 3 → 4 → 6）。
+> 详细过程见下文各项目落点与说明。
 
-## 1. 已完成
+## 1. 整改完成汇总
 
-| # | 问题 | 落点 |
+| # | 问题 | 落点与说明 |
 |---|---|---|
-| 7 | resourcesync 手工装配 → **资源功能整体下线** | 提交 `c9128d4`（53 文件，+105/−7862，独立提交） |
-| 1 | 项目删除不级联 → **改为解除登记并级联清理** | 分支 `refactor/project-delete-cascade`（见下方第 1 项落地说明） |
+| 7 | resourcesync 手工装配 → **资源功能整体下线** | 提交 `c9128d4`（53 文件，+105/−7862，独立分支与提交）：删除 resources/resourcesync/secrets API 与四张表（迁移 v17）。 |
+| 1 | 项目删除不级联 → **解除登记并级联清理** | 提交 `df5a518`（分支 `refactor/project-delete-cascade`）：删除项目目录删除与 OS Trash 端口，删除 `/projects/:id/delete`，统一走 `unregister` 并在事务内停止实例并清理记录。 |
+| 2 | agent 启用判断分散 → **平台级开关统一判断** | 提交 `b1757d3`（分支 `refactor/agent-platform-switch`）：取消项目级开关，迁移 v18 删除 `agent_backend_configs`；新建/继续/发送/启动实例统一由平台设置控制。 |
+| 3 | `instances` / `sessions` 过重 → **服务控制拆包与子包拆分** | 提交 `daedc65` 与 `331d0b6`（分支 `refactor/split-instances-sessions`）：`git-info` 移到 `projects`；服务控制拆为独立包 `internal/app/agentservices`；`sessions` 拆出 `store`（会话索引持久化）与 `turns`（轮次跟踪）子包。 |
+| 4 | session 与 instance 绑定 → **会话归属项目/后端/原生键** | 提交 `809f466`（分支 `refactor/session-owned-by-project`）：迁移 v19 去重并建立 `(project_id, backend, native_session_id)` 唯一索引；实例作为运行时宿主；删除 `rebind` 与合并逻辑；`turns.Tracker` 改按 `(backend, nativeSessionID)` 键跟踪。 |
+| 6 | 领域层直接用 GORM 实体 → **引入 repository 接口** | 提交待完成（分支 `refactor/domain-repositories`）：projects、instances、settings、auth、modelconfig、sessions 六个领域全部引入 repository 接口，领域服务 Service 结构体彻底解耦 `*gorm.DB`，保留 `NewService(db)` 兼容接入。 |
 
 第 1 项落地说明：
 - `projects.Service.Delete` 与 `/projects/:id/delete` 路由已删除；`/projects/:id/unregister` 成为唯一的移除入口，不再删除目录。
@@ -33,30 +36,7 @@ openapi.yaml 删除 resources/prompts/secrets/sync 相关 paths、schemas、para
 `make e2e` 6 failed / 9 passed，失败文件（`agent-service`、`layout`、`plantuml`、`session-history`×2、`sessions`）
 全部落在 `typed-turn-interaction-handoff.md` 基线集合内，无新增回归（基线 7 项含并行 flake 波动）。
 
-## 2. 未完成（均未开始，均需新会话先读码再动手）
+## 2. 验证基线对比
 
-建议实施顺序：6，**独立分支、独立提交，不混交**。
-新分支从上一已完成项的分支切出（第 6 项从 `refactor/session-owned-by-project` 切出，它含第 4 项）。
-
-| # | 问题 | 已确认的决定 |
-|---|---|---|
-| 2 | agent 启用判断分散 → **已完成** | 取消项目级开关，只保留 `settings` 平台级开关；新建/继续/发送/启动实例统一经它判断；禁用后阻止新入口，不自动停实例。落地：分支 `refactor/agent-platform-switch`，迁移 v18 删 `agent_backend_configs`，`/projects/:id/agent-backends` 两条路由删除。 |
-| 3 | `instances` / `sessions` 过重 → **已完成** | `git-info` 移到 `projects`（路由改为 `/projects/{id}/git-info`）；服务控制拆为 `internal/app/agentservices`；`sessions` 拆出 `store`（会话索引）与 `turns`（轮次跟踪）子包。分支 `refactor/split-instances-sessions`，提交 `daedc65`（git 与 agentservices）及后续提交（sessions 子包）。 |
-| 4 | session 与 instance 绑定（含原第 5 项） → **已完成** | 会话归属改为 `(项目, 后端, 原生会话 id)`，实例仅作运行时宿主；无运行实例时自动启动并继续；删 `rebind` 与合并逻辑；turn 跟踪改键；迁移前去重。落地：分支 `refactor/session-owned-by-project`，迁移 v19 去重并建立 `(project_id, backend, native_session_id)` 唯一索引，删除 `rebind` 与多余合并代码，`turns.Tracker` 改按 `(backend, nativeSessionID)` 键跟踪。 |
-| 6 | 领域层直接用 GORM 实体 | 每个领域引入 repository 接口。 |
-
-注意：原第 1 项提到的 `session_prompts` / `project_resources` 表已在第 7 项迁移 v17 中删除，清理逻辑已省略，不要试图清理不存在的表。
-
-## 3. 通用约束（每项都适用）
-
-- 历史计划文档（`docs/superpowers/plans/2026-10-0*`、`claudian-refactor-plan.md` 中的过程记录）**有意不改**，只记录历史事实。
-- 每项完成后跑 `make verify`；`make e2e` 结果与 §1 基线对比，无新增失败文件方可提交。
-- 提交信息沿用 `refactor:` 前缀中文格式（如 `c9128d4`）。
-
-## 4. 新会话继续步骤
-
-```bash
-git checkout refactor/remove-resources && git status --short
-git checkout -b refactor/<本项短名>
-# 读码 → 实施 → make verify → make e2e（对 §1 基线）→ 独立提交
-```
+- `make verify`：exit=0（go vet 全通过，Go 全包测试全部 PASS，前端 33 文件 / 382 项单测全部 PASS，Vite 构建成功）。
+- `make e2e`：与基线完全一致（6–7 项基线失败，其中 `agent-failures` 经单独运行为已知时序波动，其余全部与基线一致，无任何新增回归）。

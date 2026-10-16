@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-
-	"devplatform/internal/app/database"
 )
 
 // DefaultSessionTTL is how long a freshly issued login session stays valid.
@@ -27,21 +25,27 @@ type Session struct {
 // SessionStore persists and validates login sessions in the auth_sessions
 // table. All time comparisons go through now so tests can control expiry.
 type SessionStore struct {
-	db  *gorm.DB
-	ttl time.Duration
-	now func() time.Time
+	repo Repository
+	ttl  time.Duration
+	now  func() time.Time
 }
 
-// NewSessionStore builds a session store. A non-positive ttl falls back to
-// DefaultSessionTTL and a nil clock falls back to time.Now.
+// NewSessionStore builds a session store over a GORM database.
 func NewSessionStore(db *gorm.DB, ttl time.Duration, now func() time.Time) *SessionStore {
+	return NewSessionStoreWithRepository(NewGORMRepository(db), ttl, now)
+}
+
+// NewSessionStoreWithRepository builds a session store over a custom repository.
+// A non-positive ttl falls back to DefaultSessionTTL and a nil clock falls back
+// to time.Now.
+func NewSessionStoreWithRepository(repo Repository, ttl time.Duration, now func() time.Time) *SessionStore {
 	if ttl <= 0 {
 		ttl = DefaultSessionTTL
 	}
 	if now == nil {
 		now = time.Now
 	}
-	return &SessionStore{db: db, ttl: ttl, now: now}
+	return &SessionStore{repo: repo, ttl: ttl, now: now}
 }
 
 // newSessionID returns a cryptographically random, URL-safe session token.
@@ -64,10 +68,10 @@ func (s *SessionStore) Create() (Session, error) {
 	session := Session{ID: id, ExpiresAt: now.Add(s.ttl)}
 
 	// Best-effort cleanup; a failure here must not block issuing a session.
-	_ = s.db.Where("expires_at < ?", now).Delete(&database.AuthSession{}).Error
+	_ = s.repo.DeleteExpiredSessions(now)
 
-	record := database.AuthSession{ID: session.ID, ExpiresAt: session.ExpiresAt, CreatedAt: now}
-	if err := s.db.Create(&record).Error; err != nil {
+	record := SessionRecord{ID: session.ID, ExpiresAt: session.ExpiresAt}
+	if err := s.repo.CreateSession(record); err != nil {
 		return Session{}, fmt.Errorf("auth: store session: %w", err)
 	}
 	return session, nil
@@ -80,19 +84,16 @@ func (s *SessionStore) Validate(id string) (Session, bool, error) {
 		return Session{}, false, nil
 	}
 
-	// Find (rather than First) avoids GORM's "record not found" error log for
-	// a tampered or stale cookie.
-	var records []database.AuthSession
-	if err := s.db.Where("id = ?", id).Limit(1).Find(&records).Error; err != nil {
+	record, ok, err := s.repo.GetSession(id)
+	if err != nil {
 		return Session{}, false, fmt.Errorf("auth: load session: %w", err)
 	}
-	if len(records) == 0 {
+	if !ok {
 		return Session{}, false, nil
 	}
 
-	record := records[0]
 	if !record.ExpiresAt.After(s.now().UTC()) {
-		_ = s.db.Where("id = ?", id).Delete(&database.AuthSession{}).Error
+		_ = s.repo.DeleteSession(id)
 		return Session{}, false, nil
 	}
 	return Session{ID: record.ID, ExpiresAt: record.ExpiresAt}, true, nil
@@ -103,7 +104,7 @@ func (s *SessionStore) Delete(id string) error {
 	if id == "" {
 		return nil
 	}
-	if err := s.db.Where("id = ?", id).Delete(&database.AuthSession{}).Error; err != nil {
+	if err := s.repo.DeleteSession(id); err != nil {
 		return fmt.Errorf("auth: delete session: %w", err)
 	}
 	return nil

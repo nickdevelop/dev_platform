@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/app/database"
 	"devplatform/internal/core/platform"
 )
 
@@ -59,7 +58,7 @@ func (a Appearance) Validate() error {
 
 // Service reads and writes platform settings over the platform database.
 type Service struct {
-	db *gorm.DB
+	repo Repository
 	mu sync.Mutex
 	// now is the clock used for detection timestamps; tests override it.
 	now func() time.Time
@@ -73,7 +72,12 @@ type Service struct {
 // NewService builds the settings service over the platform database and the
 // backend catalog.
 func NewService(db *gorm.DB, catalog *agents.Catalog) *Service {
-	return &Service{db: db, now: func() time.Time { return time.Now().UTC() }, catalog: catalog, platform: platform.New()}
+	return NewServiceWithRepository(NewGORMRepository(db), catalog)
+}
+
+// NewServiceWithRepository builds the settings service over a custom repository.
+func NewServiceWithRepository(repo Repository, catalog *agents.Catalog) *Service {
+	return &Service{repo: repo, now: func() time.Time { return time.Now().UTC() }, catalog: catalog, platform: platform.New()}
 }
 
 // Appearance returns the saved appearance, or the default when none is saved.
@@ -84,21 +88,16 @@ func (s *Service) Appearance() (Appearance, error) {
 }
 
 func (s *Service) loadAppearance() (Appearance, error) {
-	var row database.Setting
-	// Find (not First) so a missing row is not logged as an error by GORM; the
-	// settings table is read on every page load.
-	result := s.db.Where("key = ?", appearanceKey).Limit(1).Find(&row)
-	if result.Error != nil {
-		return Appearance{}, fmt.Errorf("settings: load appearance: %w", result.Error)
+	val, found, err := s.repo.Get(appearanceKey)
+	if err != nil {
+		return Appearance{}, err
 	}
-	if result.RowsAffected == 0 {
+	if !found {
 		return DefaultAppearance(), nil
 	}
 
-	// Decode over the defaults so a stored blob missing a field keeps the
-	// default rather than the zero value.
 	appearance := DefaultAppearance()
-	if err := jsonUnmarshal(row.Value, &appearance); err != nil {
+	if err := jsonUnmarshal(val, &appearance); err != nil {
 		return Appearance{}, fmt.Errorf("settings: decode appearance: %w", err)
 	}
 	return appearance, nil
@@ -118,9 +117,8 @@ func (s *Service) SetAppearance(appearance Appearance) (Appearance, error) {
 	if err != nil {
 		return Appearance{}, fmt.Errorf("settings: encode appearance: %w", err)
 	}
-	row := database.Setting{Key: appearanceKey, Value: data}
-	if err := s.db.Save(&row).Error; err != nil {
-		return Appearance{}, fmt.Errorf("settings: save appearance: %w", err)
+	if err := s.repo.Set(appearanceKey, data); err != nil {
+		return Appearance{}, err
 	}
 	return appearance, nil
 }
