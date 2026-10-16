@@ -5,6 +5,7 @@
 
 import type {
   AgentSession,
+  ImageAttachment,
   MessageModel,
   MessageUsage,
   NormalizedEvent,
@@ -20,6 +21,7 @@ export interface ChatEntry {
   kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error'
   role: string
   text: string
+  images?: ImageAttachment[]
   streaming: boolean
   // The model that produced an assistant message, when the backend reports
   // one. Absent on user messages and on backends without per-message models.

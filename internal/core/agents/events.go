@@ -239,6 +239,8 @@ type MessagePayload struct {
 	Role string `json:"role"`
 	// Text is the message body, or the chunk's text delta.
 	Text string `json:"text"`
+	// Images carries optional image attachments, e.g. for user turns.
+	Images []ImageAttachment `json:"images,omitempty"`
 	// Final reports whether this payload completes the message.
 	Final bool `json:"final"`
 	// Model identifies the model that produced an assistant message, when the

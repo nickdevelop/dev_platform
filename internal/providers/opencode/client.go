@@ -425,12 +425,34 @@ func (c *Client) SwitchModel(ctx context.Context, sessionID string, model ModelR
 	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/model", nil, body, nil)
 }
 
+// FileAttachment represents a file/image payload for opencode session prompt.
+type FileAttachment struct {
+	Name string `json:"name,omitempty"`
+	Mime string `json:"mime"`
+	Data string `json:"data"`
+}
+
 // Prompt admits one user message and schedules the agent loop. The reply and
 // tool activity arrive on the event stream.
-func (c *Client) Prompt(ctx context.Context, sessionID, text string) error {
+func (c *Client) Prompt(ctx context.Context, sessionID, text string, images []agents.ImageAttachment) error {
+	var files []FileAttachment
+	for _, img := range images {
+		if img.Data != "" {
+			name := img.Name
+			if name == "" {
+				name = "image.png"
+			}
+			files = append(files, FileAttachment{
+				Name: name,
+				Mime: img.MediaType,
+				Data: img.Data,
+			})
+		}
+	}
 	body := struct {
-		Text string `json:"text"`
-	}{Text: text}
+		Text  string           `json:"text"`
+		Files []FileAttachment `json:"files,omitempty"`
+	}{Text: text, Files: files}
 	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/prompt", nil, body, nil)
 }
 

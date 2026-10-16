@@ -593,7 +593,7 @@ func (a *Adapter) sendRPC(ctx context.Context, inst *instance, ref agents.Sessio
 	if child.isStreaming() {
 		behavior = "followUp"
 	}
-	response, err := child.conn.request(ctx, newPromptCommand("", message.Text, behavior), rpcCommandTimeout)
+	response, err := child.conn.request(ctx, newPromptCommand("", message.Text, behavior, message.Images), rpcCommandTimeout)
 	if err != nil {
 		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
 	}
@@ -602,7 +602,7 @@ func (a *Adapter) sendRPC(ctx context.Context, inst *instance, ref agents.Sessio
 		// protocol requires an explicit behavior mid-run, so retry once as a
 		// follow-up instead of surfacing a spurious failure.
 		if behavior == "" && isStreamingRejection(response.Error) {
-			response, err = child.conn.request(ctx, newPromptCommand("", message.Text, "followUp"), rpcCommandTimeout)
+			response, err = child.conn.request(ctx, newPromptCommand("", message.Text, "followUp", message.Images), rpcCommandTimeout)
 			if err != nil {
 				return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
 			}

@@ -132,6 +132,7 @@ export interface ModelInfo {
   provider: string
   variants?: string[]
   contextLimit?: number
+  supportsImages?: boolean
 }
 
 // Mirrors #/components/schemas/BackendModelList: the models one backend offers

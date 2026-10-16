@@ -7,6 +7,22 @@ import (
 	"devplatform/internal/core/agents"
 )
 
+// isMultimodalModel reports whether a model is known to accept image inputs.
+func isMultimodalModel(modelID string) bool {
+	id := strings.ToLower(modelID)
+	indicators := []string{
+		"gpt-4o", "gpt-4-turbo", "gpt-4-vision",
+		"claude-3", "claude-3.5", "claude-3-5", "claude-3.7", "claude-3-7",
+		"gemini", "vision", "vl", "pixtral", "llava", "omni",
+	}
+	for _, ind := range indicators {
+		if strings.Contains(id, ind) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseModelList reads the table printed by `pi --list-models`: a header row
 // followed by one row per model, whose first two columns are provider and
 // model, and whose third column is the context window (e.g. 200K, 1M). The
@@ -24,10 +40,12 @@ func parseModelList(output string) []agents.ModelInfo {
 			continue
 		}
 		provider, model := fields[0], fields[1]
+		modelID := provider + "/" + model
 		entry := agents.ModelInfo{
-			ID:       provider + "/" + model,
-			Name:     model,
-			Provider: provider,
+			ID:             modelID,
+			Name:           model,
+			Provider:       provider,
+			SupportsImages: isMultimodalModel(modelID),
 		}
 		if len(fields) >= 3 {
 			if limit, ok := parseTokenCount(fields[2]); ok {

@@ -151,7 +151,8 @@ func TestClientPromptPostsText(t *testing.T) {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
 		var body struct {
-			Text string `json:"text"`
+			Text  string           `json:"text"`
+			Files []FileAttachment `json:"files"`
 		}
 		defer r.Body.Close()
 		json.NewDecoder(r.Body).Decode(&body)
@@ -159,7 +160,7 @@ func TestClientPromptPostsText(t *testing.T) {
 		io.WriteString(w, `{"data":{"id":"msg_1","sessionID":"ses_one"}}`)
 	})
 
-	if err := client.Prompt(context.Background(), "ses_one", "hello world"); err != nil {
+	if err := client.Prompt(context.Background(), "ses_one", "hello world", nil); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	if text != "hello world" {

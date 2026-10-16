@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -125,8 +126,35 @@ type createSessionResponse struct {
 
 // sendMessageRequest is the JSON body of a session message.
 type sendMessageRequest struct {
-	Text  string `json:"text"`
-	Model string `json:"model"`
+	Text   string                  `json:"text"`
+	Model  string                  `json:"model"`
+	Images []agents.ImageAttachment `json:"images,omitempty"`
+}
+
+const (
+	maxImageSizeBytes   = 5 * 1024 * 1024 // 5MB
+	maxImagesPerMessage = 10
+)
+
+func validateImages(images []agents.ImageAttachment) error {
+	if len(images) > maxImagesPerMessage {
+		return errors.New("too many images")
+	}
+	validTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/webp": true,
+		"image/gif":  true,
+	}
+	for _, img := range images {
+		if !validTypes[img.MediaType] {
+			return errors.New("unsupported image media type")
+		}
+		if img.Size > maxImageSizeBytes || len(img.Data) > maxImageSizeBytes*4/3+1024 {
+			return errors.New("image too large")
+		}
+	}
+	return nil
 }
 
 // handleBackends returns the registered backends with their declared
@@ -296,7 +324,15 @@ func (s *Service) handleSend(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	session, err := s.Send(c.Request.Context(), id, sessionID, req.Text, req.Model)
+	if strings.TrimSpace(req.Text) == "" && len(req.Images) == 0 {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := validateImages(req.Images); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_image")
+		return
+	}
+	session, err := s.Send(c.Request.Context(), id, sessionID, req.Text, req.Model, req.Images)
 	if err != nil {
 		respondServiceError(c, err)
 		return

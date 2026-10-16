@@ -27,7 +27,8 @@ import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
-import type { Capabilities } from '../../../api/sessions'
+import ImagePreviewModal from './ImagePreviewModal.vue'
+import type { Capabilities, ImageAttachment } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../../../stores/sessions'
 import * as log from './logModel'
 
@@ -111,6 +112,19 @@ const renderBlocks = computed<log.RenderBlock[]>(() => log.groupEntryBlocks(visi
 const displayedBlocks = computed<log.RenderBlock[]>(() =>
   log.blocksForDisplay(renderBlocks.value, displayMode.value),
 )
+
+const previewImage = ref<ImageAttachment | null>(null)
+const showPreviewModal = ref(false)
+
+function openImagePreview(img: ImageAttachment) {
+  previewImage.value = img
+  showPreviewModal.value = true
+}
+
+function closeImagePreview() {
+  showPreviewModal.value = false
+  previewImage.value = null
+}
 // The activity pane's flat list: the same visible thinking/tool entries in
 // transcript order, with no step grouping and no collapsing. A tool result
 // whose call is present is already merged into that call's card (see
@@ -322,7 +336,20 @@ function closeSubagent() {
         <template v-if="block.kind === 'entry'">
           <template v-if="block.entry.kind === 'message'">
             <div class="bubble" :class="block.entry.role === 'user' ? 'bubble-user' : 'bubble-agent'" data-test="bubble">
-              <span v-if="block.entry.role === 'user'" class="message-text">{{ block.entry.text }}</span>
+              <template v-if="block.entry.role === 'user'">
+                <div v-if="block.entry.images && block.entry.images.length > 0" class="message-images-grid" data-test="message-images">
+                  <div
+                    v-for="img in block.entry.images"
+                    :key="img.id"
+                    class="message-image-item"
+                    :title="img.name"
+                    @click="openImagePreview(img)"
+                  >
+                    <img :src="img.data.startsWith('data:') ? img.data : `data:${img.mediaType};base64,${img.data}`" :alt="img.name" />
+                  </div>
+                </div>
+                <span v-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>
+              </template>
               <div v-else class="message-text markdown-body">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
                   <div
@@ -478,6 +505,12 @@ function closeSubagent() {
         <p v-else class="tool-running">运行中…</p>
       </div>
     </div>
+
+    <ImagePreviewModal
+      :image="previewImage"
+      :visible="showPreviewModal"
+      @close="closeImagePreview"
+    />
   </div>
 </template>
 
@@ -512,6 +545,38 @@ function closeSubagent() {
    whose block elements carry their own spacing. */
 .bubble-user .message-text {
   white-space: pre-wrap;
+}
+
+.message-images-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.message-image-item {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.message-image-item:hover {
+  transform: scale(1.04);
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.message-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .markdown-body :deep(p) {

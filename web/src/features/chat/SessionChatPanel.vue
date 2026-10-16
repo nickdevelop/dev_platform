@@ -31,6 +31,8 @@ import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
 import ContextUsageMeter from './composer/ContextUsageMeter.vue'
+import ComposerImageTray from './composer/ComposerImageTray.vue'
+import ImagePreviewModal from './rendering/ImagePreviewModal.vue'
 import QuestionQueue from './interactions/QuestionQueue.vue'
 import ComposerDropdown from './composer/dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './composer/dropdown/useComposerDropdown'
@@ -39,7 +41,7 @@ import { ProviderSlashSource } from './composer/dropdown/sources/ProviderSlashSo
 import { WorkspaceFileSource } from './composer/dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './composer/dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
-import { getSessionHistory } from '../../api/sessions'
+import { getSessionHistory, type ImageAttachment, type ImageMediaType } from '../../api/sessions'
 import { detectBuiltInCommand } from './composer/builtInCommands'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
@@ -107,6 +109,149 @@ function onTextareaKeydown(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     void onSubmit()
+  }
+}
+
+// Image attachments support
+const attachedImages = ref<ImageAttachment[]>([])
+const previewModalImage = ref<ImageAttachment | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const currentModelSupportsImages = computed<boolean>(() => {
+  const session = activeSession.value
+  if (!session) return false
+  const model = selectedModel.value
+  if (!model) return false
+  const cached = cachedModels(props.projectId, session.backend)
+  const base = model.split('#')[0]
+  const found = cached?.find((entry) => entry.id === model || entry.id === base)
+  if (found && typeof found.supportsImages === 'boolean') {
+    return found.supportsImages
+  }
+  const lower = model.toLowerCase()
+  return (
+    lower.includes('gpt-4o') ||
+    lower.includes('gpt-4-turbo') ||
+    lower.includes('claude-3') ||
+    lower.includes('gemini') ||
+    lower.includes('vision') ||
+    lower.includes('vl') ||
+    lower.includes('llava') ||
+    lower.includes('pixtral')
+  )
+})
+
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+const MAX_IMAGES_COUNT = 10
+const VALID_IMAGE_TYPES: Record<string, ImageMediaType> = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+  'image/gif': 'image/gif',
+}
+
+function removeImage(id: string) {
+  attachedImages.value = attachedImages.value.filter((img) => img.id !== id)
+}
+
+function openImagePreview(img: ImageAttachment) {
+  previewModalImage.value = img
+}
+
+function triggerFileInput() {
+  if (!currentModelSupportsImages.value) {
+    toolNotice.value = '当前选择的模型不支持图片或视觉输入，请切换模型'
+    return
+  }
+  fileInputRef.value?.click()
+}
+
+async function addImageFiles(files: FileList | File[]) {
+  if (!currentModelSupportsImages.value) {
+    toolNotice.value = '当前选择的模型不支持图片或视觉输入'
+    return
+  }
+  const list = Array.from(files)
+  for (const file of list) {
+    if (attachedImages.value.length >= MAX_IMAGES_COUNT) {
+      toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
+      break
+    }
+    const mediaType = VALID_IMAGE_TYPES[file.type]
+    if (!mediaType) {
+      toolNotice.value = `不支持的文件类型: ${file.name} (仅支持 PNG/JPEG/WebP/GIF)`
+      continue
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      toolNotice.value = `图片超过 5MB 限制: ${file.name}`
+      continue
+    }
+
+    try {
+      const base64 = await readFileAsBase64(file)
+      attachedImages.value.push({
+        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: file.name,
+        mediaType,
+        data: base64,
+        size: file.size,
+      })
+    } catch {
+      toolNotice.value = `读取图片失败: ${file.name}`
+    }
+  }
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const commaIndex = result.indexOf(',')
+      resolve(commaIndex !== -1 ? result.slice(commaIndex + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function onFileInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    void addImageFiles(target.files)
+    target.value = ''
+  }
+}
+
+function onPaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  const imageFiles: File[] = []
+  for (const item of Array.from(items)) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) imageFiles.push(file)
+    }
+  }
+  if (imageFiles.length > 0) {
+    event.preventDefault()
+    void addImageFiles(imageFiles)
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  if (event.dataTransfer?.types?.includes('Files')) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function onDrop(event: DragEvent) {
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    if (imageFiles.length > 0) {
+      void addImageFiles(imageFiles)
+    }
   }
 }
 // Scrolling follows the newest entry only while the user is at the bottom;
@@ -369,17 +514,18 @@ function retryOpen() {
 
 async function send() {
   const session = activeSession.value
-  if (!session || composerDisabled.value || messageText.value.trim() === '') return
+  if (!session || composerDisabled.value || (messageText.value.trim() === '' && attachedImages.value.length === 0)) return
   sending.value = true
   sendError.value = ''
   const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
   const textToSend = await resolveSessionMentions(props.projectId, messageText.value, (targetId) =>
     getSessionHistory(props.projectId, targetId),
   )
-  const updated = await sessions.sendMessage(props.projectId, session.id, textToSend, model)
+  const updated = await sessions.sendMessage(props.projectId, session.id, textToSend, model, attachedImages.value)
   // The text is kept on failure so the user can retry without retyping it.
   if (updated) {
     messageText.value = ''
+    attachedImages.value = []
     // Sending means "look here": the view returns to the turn just made even
     // when it had been parked mid-history.
     await nextTick()
@@ -611,7 +757,11 @@ async function removeSession() {
           <p v-if="sendError" class="send-error" role="alert">{{ sendError }}</p>
 
           <form class="send composer" @submit.prevent="onSubmit">
-            <div class="composer-box">
+            <div
+              class="composer-box"
+              @dragover.prevent="onDragOver"
+              @drop.prevent="onDrop"
+            >
               <ComposerDropdown
                 v-if="dropdown.isOpen.value"
                 :items="dropdown.items.value"
@@ -628,9 +778,15 @@ async function removeSession() {
                 placeholder="向 Agent 发送消息… (输入 / 使用快捷命令，@ 引用文件或会话)"
                 @input="onTextareaInput"
                 @keydown="onTextareaKeydown"
+                @paste="onPaste"
                 @compositionstart="dropdown.onCompositionStart"
                 @compositionend="onCompositionEnd"
               ></textarea>
+              <ComposerImageTray
+                :images="attachedImages"
+                @remove="removeImage"
+                @preview="openImagePreview"
+              />
               <div class="composer-bar">
                 <div class="composer-tools">
                   <ModelSelect
@@ -641,6 +797,27 @@ async function removeSession() {
                     :model-selection="activeSession.capabilities.modelSelection"
                     @status="onModelStatus"
                     @picked="onModelPicked"
+                  />
+                  <button
+                    type="button"
+                    class="composer-tool-btn"
+                    :class="{ disabled: !currentModelSupportsImages }"
+                    :disabled="!currentModelSupportsImages"
+                    :title="currentModelSupportsImages ? '添加图片附件 (支持粘贴/拖拽)' : '当前选择的模型不支持图片/视觉输入'"
+                    aria-label="添加图片"
+                    data-test="attach-image-btn"
+                    @click="triggerFileInput"
+                  >
+                    🖼️
+                  </button>
+                  <input
+                    ref="fileInputRef"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    multiple
+                    style="display: none;"
+                    data-test="file-input"
+                    @change="onFileInput"
                   />
                   <ContextUsageMeter
                     :usage="contextUsage"
@@ -780,6 +957,12 @@ async function removeSession() {
       <RouterLink :to="{ name: 'home' }">返回工作台</RouterLink>
     </template>
     <p v-else class="loading">加载中…</p>
+
+    <ImagePreviewModal
+      :image="previewModalImage"
+      :visible="previewModalImage !== null"
+      @close="previewModalImage = null"
+    />
   </section>
 </template>
 
@@ -1261,6 +1444,34 @@ async function removeSession() {
   gap: 0.45rem;
   min-width: 0;
   flex-wrap: wrap;
+}
+
+.composer-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-tool-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.composer-tool-btn:disabled,
+.composer-tool-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .composer-actions {

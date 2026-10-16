@@ -665,7 +665,11 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 	return History{Events: events, Truncated: result.Truncated}, nil
 }
 
-func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, model string) (Session, error) {
+func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (Session, error) {
+	var attachedImages []agents.ImageAttachment
+	if len(images) > 0 {
+		attachedImages = images[0]
+	}
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return Session{}, err
@@ -674,8 +678,8 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	if s.agentDisabled(agents.BackendID(row.Backend)) {
 		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, row.Backend)
 	}
-	if strings.TrimSpace(text) == "" {
-		return Session{}, fmt.Errorf("%w: message text is required", ErrInvalidRequest)
+	if strings.TrimSpace(text) == "" && len(attachedImages) == 0 {
+		return Session{}, fmt.Errorf("%w: message text or images required", ErrInvalidRequest)
 	}
 	inst, err := s.scopedInstance(projectID, row.InstanceID)
 	if err != nil {
@@ -695,7 +699,11 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	// when one is given), so the first message becomes the title while it
 	// travels down: the adapter carries it to the backend for persistence.
 	if row.Title == "" {
-		row.Title = agents.DeriveTitle(text)
+		if strings.TrimSpace(text) != "" {
+			row.Title = agents.DeriveTitle(text)
+		} else if len(attachedImages) > 0 {
+			row.Title = "图片分析"
+		}
 	}
 	ref := agents.SessionRef{
 		InstanceID: row.InstanceID,
@@ -703,7 +711,7 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 		SessionID:  row.NativeSessionID,
 		Title:      row.Title,
 	}
-	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model}); err != nil {
+	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
 	}
 	row.Status = string(SessionActive)

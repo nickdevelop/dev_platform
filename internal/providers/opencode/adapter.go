@@ -667,7 +667,7 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		// model; remember it before the turn's events can arrive.
 		inst.setSessionModel(ref.SessionID, model)
 	}
-	if err := inst.client.Prompt(ctx, ref.SessionID, message.Text); err != nil {
+	if err := inst.client.Prompt(ctx, ref.SessionID, message.Text, message.Images); err != nil {
 		return fmt.Errorf("opencode: send message on instance %q: %w", ref.InstanceID, err)
 	}
 	inst.registerSession(ref.SessionID, ref.Title)
@@ -1943,6 +1943,22 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
 
+// isMultimodalModel reports whether a model is known to accept image inputs.
+func isMultimodalModel(modelID string) bool {
+	id := strings.ToLower(modelID)
+	indicators := []string{
+		"gpt-4o", "gpt-4-turbo", "gpt-4-vision",
+		"claude-3", "claude-3.5", "claude-3-5", "claude-3.7", "claude-3-7",
+		"gemini", "vision", "vl", "pixtral", "llava", "omni",
+	}
+	for _, ind := range indicators {
+		if strings.Contains(id, ind) {
+			return true
+		}
+	}
+	return false
+}
+
 // ListModels returns the models the machine-wide server offers for a working
 // directory, identified as provider/model with each variant listed under its
 // model. The shared service answers, so no instance has to exist: the workbench
@@ -1962,10 +1978,12 @@ func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.Mo
 	}
 	models := make([]agents.ModelInfo, 0, len(records))
 	for _, record := range records {
+		modelID := record.ProviderID + "/" + record.ModelID
 		model := agents.ModelInfo{
-			ID:       record.ProviderID + "/" + record.ModelID,
-			Name:     record.Name,
-			Provider: record.ProviderID,
+			ID:             modelID,
+			Name:           record.Name,
+			Provider:       record.ProviderID,
+			SupportsImages: isMultimodalModel(modelID),
 		}
 		for _, variant := range record.Variants {
 			model.Variants = append(model.Variants, variant.ID)

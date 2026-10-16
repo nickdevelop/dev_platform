@@ -31,8 +31,9 @@ type rpcCommand struct {
 
 	// prompt: the user text and, when a run is already streaming, how pi
 	// should treat the message ("steer" or "followUp").
-	Message           string `json:"message,omitempty"`
-	StreamingBehavior string `json:"streamingBehavior,omitempty"`
+	Message           string            `json:"message,omitempty"`
+	StreamingBehavior string            `json:"streamingBehavior,omitempty"`
+	Images            []rpcImageContent `json:"images,omitempty"`
 
 	// set_session_name: the new display name.
 	Name string `json:"name,omitempty"`
@@ -72,12 +73,34 @@ type rpcModelData struct {
 	Provider string `json:"provider"`
 }
 
+type rpcImageContent struct {
+	Type     string `json:"type"` // "image"
+	Data     string `json:"data"`
+	MimeType string `json:"mimeType"`
+}
+
 // newPromptCommand builds a prompt command. behavior is empty for a normal
 // prompt and "followUp" when the session is already streaming, which queues
 // the message instead of failing (pi requires an explicit streaming behavior
 // mid-run).
-func newPromptCommand(id, message, behavior string) rpcCommand {
-	return rpcCommand{ID: id, Type: rpcCommandPrompt, Message: message, StreamingBehavior: behavior}
+func newPromptCommand(id, message, behavior string, images []agents.ImageAttachment) rpcCommand {
+	var rpcImages []rpcImageContent
+	for _, img := range images {
+		if img.Data != "" {
+			rpcImages = append(rpcImages, rpcImageContent{
+				Type:     "image",
+				Data:     img.Data,
+				MimeType: img.MediaType,
+			})
+		}
+	}
+	return rpcCommand{
+		ID:                id,
+		Type:              rpcCommandPrompt,
+		Message:           message,
+		StreamingBehavior: behavior,
+		Images:            rpcImages,
+	}
 }
 
 // newAbortCommand builds an abort command. abort waits for the session to

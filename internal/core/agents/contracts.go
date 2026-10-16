@@ -115,11 +115,21 @@ type Capabilities struct {
 // ContextLimit is the model's context window in tokens, when the backend
 // reports one; nil means unknown and callers must not render a percentage.
 type ModelInfo struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Provider     string   `json:"provider"`
-	Variants     []string `json:"variants,omitempty"`
-	ContextLimit *int     `json:"contextLimit,omitempty"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Provider       string   `json:"provider"`
+	Variants       []string `json:"variants,omitempty"`
+	ContextLimit   *int     `json:"contextLimit,omitempty"`
+	SupportsImages bool     `json:"supportsImages"`
+}
+
+// ImageAttachment represents a base64 encoded image attachment sent with a turn.
+type ImageAttachment struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	MediaType string `json:"mediaType"`
+	Data      string `json:"data"`
+	Size      int64  `json:"size"`
 }
 
 // InstanceStatus is the lifecycle state of an adapter-managed instance.
@@ -300,6 +310,8 @@ type SendMessageRequest struct {
 	// Model overrides the model for this message, when the backend declared
 	// Capabilities.ModelSelection.
 	Model string `json:"model,omitempty"`
+	// Images carries optional image attachments sent with this turn.
+	Images []ImageAttachment `json:"images,omitempty"`
 }
 
 // AgentAdapter is the contract every agent backend implements so the

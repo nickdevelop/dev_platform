@@ -22,6 +22,7 @@ import {
   type AgentSession,
   type BackendId,
   type CreateSessionBody,
+  type ImageAttachment,
   type InteractionPayload,
   type InteractionSnapshot,
   type MessageModel,
@@ -388,6 +389,7 @@ export const useSessionsStore = defineStore('sessions', {
               event.sequence,
               event.message.model,
               event.message.usage,
+              event.message.images,
             )
             continue
           }
@@ -433,6 +435,7 @@ export const useSessionsStore = defineStore('sessions', {
       sequence: number,
       model?: MessageModel,
       usage?: MessageUsage,
+      images?: ImageAttachment[],
     ) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
@@ -447,6 +450,7 @@ export const useSessionsStore = defineStore('sessions', {
         } else if (text !== '') {
           open.text += text
         }
+        if (images && images.length > 0) open.images = images
         if (model) open.model = model
         // Usage rides final events only; a late terminator still anchors the
         // block even when its text was already complete.
@@ -456,12 +460,13 @@ export const useSessionsStore = defineStore('sessions', {
       // An empty event with no open block: a terminator whose block already
       // settled (or never streamed) renders nothing but a blank bubble, so it
       // is dropped rather than pushed.
-      if (text === '') return
+      if (text === '' && (!images || images.length === 0)) return
       list.push({
         id: nextEntryID(sessionId, sequence, 'message'),
         kind: 'message',
         role,
         text,
+        images,
         streaming: !final,
         model,
         usage: final ? usage : undefined,
@@ -649,19 +654,28 @@ export const useSessionsStore = defineStore('sessions', {
       this.autoModels[sessionId] = model
     },
 
-    async sendMessage(projectId: number, sessionId: string, text: string, model?: string) {
+    async sendMessage(
+      projectId: number,
+      sessionId: string,
+      text: string,
+      model?: string,
+      images?: ImageAttachment[],
+    ) {
       const auth = useAuthStore()
       const trimmed = text.trim()
-      if (trimmed === '') return null
+      if (trimmed === '' && (!images || images.length === 0)) return null
       // Show the user's turn immediately; the stream echo is matched against
       // this pending text and dropped.
-      this.appendMessage(sessionId, 'user', trimmed, true, 0)
+      this.appendMessage(sessionId, 'user', trimmed, true, 0, undefined, undefined, images)
       this.echoPending[sessionId] = trimmed
       try {
+        const body: SendMessageBody = { text: trimmed }
+        if (model) body.model = model
+        if (images && images.length > 0) body.images = images
         const updated = await sendProjectSessionMessage(
           projectId,
           sessionId,
-          model ? { text: trimmed, model } : { text: trimmed },
+          body,
           auth.csrfToken,
         )
         this.error = ''

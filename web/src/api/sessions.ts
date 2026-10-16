@@ -57,10 +57,21 @@ export interface CreateSessionResult {
   messageError?: string
 }
 
+export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+
+export interface ImageAttachment {
+  id: string
+  name: string
+  mediaType: ImageMediaType
+  data: string
+  size: number
+}
+
 // Mirrors #/components/schemas/SendAgentSessionMessageRequest.
 export interface SendMessageBody {
   text: string
   model?: string
+  images?: ImageAttachment[]
 }
 
 // The normalized event union (internal/agents/events.go). Exactly one typed
@@ -88,6 +99,7 @@ export interface MessageModel {
 export interface MessagePayload {
   role: string
   text: string
+  images?: ImageAttachment[]
   final: boolean
   model?: MessageModel
   // Exact per-message token usage from the backend, present on final

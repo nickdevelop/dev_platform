@@ -7,6 +7,7 @@
 import {
   sessionEventsPath,
   type AgentSession,
+  type ImageAttachment,
   type InteractionPayload,
   type InteractionSnapshot,
   type MessageModel,
@@ -42,6 +43,7 @@ export interface StreamStore {
     sequence: number,
     model?: MessageModel,
     usage?: MessageUsage,
+    images?: ImageAttachment[],
   ) => void
   appendThinking: (sessionId: string, text: string, final: boolean, sequence: number) => void
   applyLifecycle: (sessionId: string, event: NormalizedEvent) => void
@@ -228,6 +230,7 @@ export function consumeEventFrame(store: StreamStore, sessionId: string, data: s
       event.sequence,
       event.message.model,
       event.message.usage,
+      event.message.images,
     )
     return
   }
