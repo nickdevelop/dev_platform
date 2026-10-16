@@ -74,6 +74,40 @@ describe('open tabs store', () => {
     ])
   })
 
+  it('removes the legacy key after migrating, so it never comes back', () => {
+    localStorage.setItem(
+      'dev-platform-open-tabs',
+      JSON.stringify([{ projectId: 7, sessionId: 'ses-old', title: 'old session' }]),
+    )
+    const store = freshStore()
+
+    expect(store.tabs).toHaveLength(1)
+    expect(localStorage.getItem('dev-platform-open-tabs')).toBeNull()
+  })
+
+  it('keeps an emptied strip empty instead of resurrecting legacy tabs', () => {
+    // A user who migrated earlier still has the legacy key around; emptying
+    // the strip must stay empty on the next load, not bring the old tabs back.
+    localStorage.setItem(
+      'dev-platform-open-tabs',
+      JSON.stringify([{ projectId: 7, sessionId: 'ses-old', title: 'old session' }]),
+    )
+    localStorage.setItem('dev-platform-open-tabs-v2', '[]')
+    expect(freshStore().tabs).toEqual([])
+
+    localStorage.setItem(
+      'dev-platform-open-tabs',
+      JSON.stringify([{ projectId: 7, sessionId: 'ses-old', title: 'old session' }]),
+    )
+    const store = freshStore()
+    store.openTab(3, 'ses-1', 'first')
+    store.closeAllTabs()
+    expect(store.tabs).toEqual([])
+
+    const reloaded = freshStore()
+    expect(reloaded.tabs).toEqual([])
+  })
+
   it('restores what it persisted, and ignores a corrupt store', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')

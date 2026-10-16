@@ -67,10 +67,17 @@ function read(key: string): unknown[] {
 }
 
 function loadPersisted(): OpenTab[] {
-  const current = read(STORAGE_KEY)
-    .map(normalize)
-    .filter((tab): tab is OpenTab => tab !== null)
-  if (current.length > 0) return current.slice(0, MAX_TABS)
+  // An explicitly emptied strip persists as `[]`: the key existing means the
+  // user has a (possibly empty) working set, so the legacy key must not be
+  // consulted again — otherwise closing every tab resurrects old tabs on the
+  // next refresh. Only a missing key falls back to the one-time migration.
+  if (hasStored(STORAGE_KEY)) {
+    forget(LEGACY_STORAGE_KEY)
+    return read(STORAGE_KEY)
+      .map(normalize)
+      .filter((tab): tab is OpenTab => tab !== null)
+      .slice(0, MAX_TABS)
+  }
 
   const migrated = read(LEGACY_STORAGE_KEY)
     .map(normalize)
@@ -79,7 +86,24 @@ function loadPersisted(): OpenTab[] {
   // Writing the migrated set down at once means the old shape is read exactly
   // once, and a later visit never has to know it existed.
   if (migrated.length > 0) persist(migrated)
+  forget(LEGACY_STORAGE_KEY)
   return migrated
+}
+
+function hasStored(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== null
+  } catch {
+    return false
+  }
+}
+
+function forget(key: string) {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Persistence is best-effort only.
+  }
 }
 
 function persist(tabs: OpenTab[]) {
