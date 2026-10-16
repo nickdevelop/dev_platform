@@ -1,21 +1,21 @@
 // End-to-end lifecycle: LAN-style login through the real UI against the real
 // Go backend, then a full project lifecycle (register, create, search,
-// rename, move, unregister, delete-to-trash, logout) inside a temporary
-// scratch directory. Filesystem effects are asserted directly from the
-// Node side, including the freedesktop trash used by the server.
+// rename, move, unregister, logout) inside a temporary scratch directory.
+// Filesystem effects are asserted directly from the Node side. The platform
+// never deletes project directories, so every removal here must leave them
+// on disk.
 //
-// Started via `npm run test:e2e`, which provides E2E_PASSWORD,
-// E2E_WORKSPACE_ROOT and E2E_TRASH_DIR pointing at an isolated scratch
-// directory; the password is a throwaway value created for this run only.
-import { existsSync, mkdirSync, readdirSync } from 'node:fs'
+// Started via `npm run test:e2e`, which provides E2E_PASSWORD and
+// E2E_WORKSPACE_ROOT pointing at an isolated scratch directory; the password
+// is a throwaway value created for this run only.
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
-const trashDir = process.env.E2E_TRASH_DIR
 
-if (!password || !workspaceRoot || !trashDir) {
+if (!password || !workspaceRoot) {
   throw new Error('run this spec through web/scripts/run-e2e.mjs, not plain playwright test')
 }
 
@@ -101,24 +101,16 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await settings.getByRole('button', { name: '解除登记' }).click()
   const unregisterDialog = page.getByRole('dialog')
   await expect(unregisterDialog).toContainText('会被完整保留')
-  await unregisterDialog.getByRole('button', { name: '移除记录', exact: true }).click()
+  await unregisterDialog.getByRole('button', { name: '解除登记', exact: true }).click()
   await expect(alphaItem).toBeHidden()
   expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
 
-  // Delete is destructive: it needs the typed name and prefers the OS trash.
+  // The project moved to archive is unregistered the same way and survives too.
   await openSettings('gamma')
-  await settings.getByRole('button', { name: '删除目录' }).click()
-  const deleteDialog = page.getByRole('dialog')
-  const deleteConfirm = deleteDialog.getByRole('button', { name: '删除目录', exact: true })
-  await expect(deleteConfirm).toBeDisabled()
-  await deleteDialog.getByLabel(/输入项目名/).fill('gamma')
-  await expect(deleteConfirm).toBeEnabled()
-  await deleteConfirm.click()
+  await settings.getByRole('button', { name: '解除登记' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '解除登记', exact: true }).click()
   await expect(row('gamma')).toBeHidden()
-  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(false)
-  // The directory landed in the server's isolated trash, not the void.
-  const trashed = readdirSync(join(trashDir, 'files'))
-  expect(trashed.some((name) => name.startsWith('gamma'))).toBe(true)
+  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(true)
 
   // Logging out ends the session and returns to the login view.
   await page.getByTitle('退出登录').click()

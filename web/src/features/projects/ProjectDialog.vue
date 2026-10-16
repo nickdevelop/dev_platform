@@ -8,7 +8,6 @@ const emit = defineEmits<{ close: [] }>()
 
 defineProps<{
   title: string
-  danger?: boolean
 }>()
 
 const panel = ref<HTMLElement | null>(null)
@@ -59,7 +58,6 @@ function onKeydown(event: KeyboardEvent) {
     <div
       ref="panel"
       class="dialog"
-      :class="{ danger }"
       role="dialog"
       aria-modal="true"
       :aria-label="title"
@@ -91,10 +89,6 @@ function onKeydown(event: KeyboardEvent) {
   max-height: calc(100vh - 4rem);
   overflow: auto;
   box-shadow: 0 10px 40px rgba(15, 23, 42, 0.35);
-}
-
-.dialog.danger {
-  border-top: 4px solid var(--color-danger);
 }
 
 .dialog-title {

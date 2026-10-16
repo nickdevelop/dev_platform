@@ -23,7 +23,7 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
 import SessionTabs from './SessionTabs.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
+type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister'
 
 const route = useRoute()
 const router = useRouter()
@@ -214,12 +214,12 @@ function openManage(kind: DialogKind, project: Project | null = null) {
 }
 
 // A removed project's open pages must not outlive it, so the shell returns home
-// after unregister or delete and drops that project's tabs. Rename and move
-// keep the id and stay where they are.
+// after unregister and drops that project's tabs. Rename and move keep the id
+// and stay where they are.
 async function onSubmitted(kind: DialogKind) {
   const removed = dialog.value?.project ?? null
   await projects.load()
-  if ((kind === 'unregister' || kind === 'delete') && removed) {
+  if (kind === 'unregister' && removed) {
     for (const tab of openTabs.tabs.filter((entry) => entry.projectId === removed.id)) {
       if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
       openTabs.closeTabByKey(tabKey(tab))

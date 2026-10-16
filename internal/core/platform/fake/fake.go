@@ -16,7 +16,6 @@ type Platform struct {
 	instance    Instance
 	process     Process
 	executables Executables
-	trash       Trash
 	perms       Perms
 	shutdown    Shutdown
 	terminal    Terminal
@@ -39,7 +38,6 @@ func (p *Platform) Dirs() platform.Dirs               { return &p.dirs }
 func (p *Platform) Instance() platform.Instance       { return &p.instance }
 func (p *Platform) Process() platform.Process         { return &p.process }
 func (p *Platform) Executables() platform.Executables { return &p.executables }
-func (p *Platform) Trash() platform.Trash             { return &p.trash }
 func (p *Platform) Perms() platform.Perms             { return &p.perms }
 func (p *Platform) Shutdown() platform.Shutdown       { return &p.shutdown }
 func (p *Platform) Terminal() platform.Terminal       { return &p.terminal }
@@ -77,11 +75,6 @@ func WithAlive(table map[int]bool) Option {
 // WithExecutables injects the executable lookup table.
 func WithExecutables(table map[string]string) Option {
 	return func(p *Platform) { p.executables.Paths = table }
-}
-
-// WithTrashErr injects the trash error.
-func WithTrashErr(err error) Option {
-	return func(p *Platform) { p.trash.Err = err }
 }
 
 // WithPermsEnforced injects the Perms.Enforced value.
@@ -225,19 +218,6 @@ func (e *Executables) IsExecutable(path string) bool {
 		return e.IsExecutableFunc(path)
 	}
 	return false
-}
-
-// Trash fakes the OS trash.
-type Trash struct {
-	// Err makes Move fail.
-	Err error
-	// Moved records paths passed to Move.
-	Moved []string
-}
-
-func (t *Trash) Move(path string) error {
-	t.Moved = append(t.Moved, path)
-	return t.Err
 }
 
 // Perms fakes private permissions.

@@ -2,7 +2,7 @@
 //
 //   1. builds the Go server and the E2E password-setup helper,
 //   2. prepares an isolated scratch directory (SQLite data dir, authorized
-//      workspace root, XDG data home so server-side trash deletes stay local),
+//      workspace root, XDG data home so the platform data directory stays local),
 //   3. starts the mock opencode machine-wide service, then the backend and the
 //      Vite dev server (same-origin /api proxy),
 //   4. runs Playwright, forwarding any CLI arguments (e.g. a spec filter),
@@ -43,7 +43,6 @@ const scratch = mkdtempSync(path.join(scratchRoot, 'platform-e2e-'))
 const dataDir = path.join(scratch, 'data')
 const workspaceRoot = path.join(scratch, 'workspace')
 const xdgDataHome = path.join(scratch, 'xdg-data')
-const trashDir = path.join(xdgDataHome, 'Trash')
 // The pi adapter discovers and replays sessions from this directory, and the
 // fake pi executable writes to it. Pointing it into the scratch directory
 // keeps the run from reading or writing the developer's real pi sessions.
@@ -237,7 +236,6 @@ try {
       ...process.env,
       E2E_PASSWORD,
       E2E_WORKSPACE_ROOT: workspaceRoot,
-      E2E_TRASH_DIR: trashDir,
     },
   })
   shutdown(result.status ?? 1)

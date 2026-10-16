@@ -99,13 +99,12 @@ describe('ProjectSettingsPanel', () => {
     await pick('重命名').trigger('click')
     await pick('移动').trigger('click')
     await pick('解除登记').trigger('click')
-    await pick('删除目录').trigger('click')
+    expect(wrapper.findAll('button').some((item) => item.text() === '删除目录')).toBe(false)
 
     expect(wrapper.emitted('manage')?.map((entry) => entry[0])).toEqual([
       'rename',
       'move',
       'unregister',
-      'delete',
     ])
     expect((wrapper.emitted('manage')![0][1] as { id: number }).id).toBe(1)
   })

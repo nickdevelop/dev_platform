@@ -327,8 +327,11 @@ paths:
     post:
       summary: Unregister a project
       description: >-
-        Removes only the platform project record. The directory on disk is never
-        touched. This is the non-destructive alternative to delete.
+        Removes the project from the platform. Its live agent instances are
+        stopped first; if any stop fails the request fails with 409 and nothing
+        is removed. The project's instances, sessions and backend configs are
+        then removed together with the record. The directory on disk is never
+        touched: the platform never deletes project directories.
       operationId: unregisterProject
       security:
         - cookieAuth: []
@@ -360,58 +363,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /projects/{id}/delete:
-    post:
-      summary: Delete a project directory
-      description: >-
-        Deletes the project directory and its record, preferring the OS trash.
-        When the trash is unavailable the request fails with 409 and nothing is
-        removed; the caller must re-issue it with permanent=true after an
-        explicit confirmation. The typed confirmation of the project's current
-        name is always required.
-      operationId: deleteProject
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the project to delete.
-          schema:
-            type: integer
-            format: int64
-        - $ref: '#/components/parameters/CSRFToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeleteProjectRequest'
-      responses:
-        '204':
-          description: Project directory deleted and record removed.
-        '400':
-          description: Malformed body, bad id, or mismatched confirmation.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/CSRFRejected'
-        '404':
-          description: No project with the given id.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: >-
-            The directory is missing, or the OS trash is unavailable and the
-            request did not explicitly confirm permanent deletion.
+            A live agent instance of the project could not be stopped. The
+            project stays registered; retry after the instance is resolved.
           content:
             application/json:
               schema:
@@ -2477,22 +2432,6 @@ components:
           type: string
           description: >-
             Typed confirmation; must equal the project's current name.
-      additionalProperties: false
-    DeleteProjectRequest:
-      type: object
-      required:
-        - confirmName
-      properties:
-        confirmName:
-          type: string
-          description: >-
-            Typed confirmation; must equal the project's current name.
-        permanent:
-          type: boolean
-          default: false
-          description: >-
-            Explicit second confirmation required to permanently delete the
-            directory when the OS trash is unavailable. It is never implied.
       additionalProperties: false
     ErrorResponse:
       type: object

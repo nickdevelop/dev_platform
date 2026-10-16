@@ -1,7 +1,6 @@
 package fake_test
 
 import (
-	"errors"
 	"testing"
 
 	"devplatform/internal/core/platform"
@@ -37,9 +36,6 @@ func TestZeroValueIsNoOp(t *testing.T) {
 	if p.Executables().IsExecutable("/bin/sh") {
 		t.Fatal("IsExecutable() = true, want false")
 	}
-	if err := p.Trash().Move("/tmp/x"); err != nil {
-		t.Fatalf("Move() error = %v, want nil", err)
-	}
 	if p.Perms().Enforced() {
 		t.Fatal("Enforced() = true, want false")
 	}
@@ -56,7 +52,6 @@ func TestZeroValueIsNoOp(t *testing.T) {
 
 // TestInjectedValuesReturned checks every New option is returned as-is.
 func TestInjectedValuesReturned(t *testing.T) {
-	trashErr := errors.New("trash unavailable")
 	p := fake.New(
 		fake.WithHomeDir("/home/user"),
 		fake.WithConfigDir("/home/user/.config"),
@@ -64,7 +59,6 @@ func TestInjectedValuesReturned(t *testing.T) {
 		fake.WithStateDir("/home/user/.local/state"),
 		fake.WithAlive(map[int]bool{4242: true}),
 		fake.WithExecutables(map[string]string{"opencode": "/usr/bin/opencode"}),
-		fake.WithTrashErr(trashErr),
 		fake.WithPermsEnforced(true),
 		fake.WithInteractive(true),
 		fake.WithSecret("s3cret"),
@@ -90,9 +84,6 @@ func TestInjectedValuesReturned(t *testing.T) {
 	}
 	if got, _ := p.Executables().Resolve("opencode"); got != "/usr/bin/opencode" {
 		t.Fatalf("Resolve() = %q", got)
-	}
-	if err := p.Trash().Move("/tmp/x"); !errors.Is(err, trashErr) {
-		t.Fatalf("Move() error = %v, want trashErr", err)
 	}
 	if !p.Perms().Enforced() {
 		t.Fatal("Enforced() = false, want true")

@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/app/paths"
-	"devplatform/internal/core/platform"
 )
 
 // RegisterRoutes registers the project management routes under r. The caller
@@ -21,7 +20,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/move", s.handleMove)
 	r.POST("/projects/:id/rename", s.handleRename)
 	r.POST("/projects/:id/unregister", s.handleUnregister)
-	r.POST("/projects/:id/delete", s.handleDelete)
 }
 
 // errorResponse is the JSON error envelope for project API failures.
@@ -51,11 +49,11 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_name")
 	case errors.Is(err, ErrConfirmationMismatch):
 		respondError(c, http.StatusBadRequest, "confirmation_mismatch")
-	case errors.Is(err, platform.ErrTrashUnavailable):
-		respondError(c, http.StatusConflict, "trash_unavailable")
+	case errors.Is(err, ErrInstanceStop):
+		respondError(c, http.StatusConflict, "instance_stop_failed")
 	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, ErrPathChanged):
 		respondError(c, http.StatusBadRequest, "invalid_target")
-	case errors.Is(err, ErrRestoreFailed), errors.Is(err, ErrRollbackFailed):
+	case errors.Is(err, ErrRollbackFailed):
 		respondError(c, http.StatusInternalServerError, "inconsistent_state")
 	default:
 		respondError(c, http.StatusInternalServerError, "server_error")
@@ -88,14 +86,6 @@ type moveRequest struct {
 type renameRequest struct {
 	Name        string `json:"name"`
 	ConfirmName string `json:"confirmName"`
-}
-
-// deleteRequest is the JSON body of POST /api/projects/{id}/delete. The typed
-// confirmation must match the project name; Permanent is the explicit second
-// confirmation required when the OS trash is unavailable.
-type deleteRequest struct {
-	ConfirmName string `json:"confirmName"`
-	Permanent   bool   `json:"permanent"`
 }
 
 // handleList returns all registered projects.
@@ -180,33 +170,14 @@ func (s *Service) handleRename(c *gin.Context) {
 	c.JSON(http.StatusOK, project)
 }
 
-// handleUnregister removes the platform record without touching the directory.
+// handleUnregister removes the project from the platform, stopping its live
+// instances first. The directory on disk is never touched.
 func (s *Service) handleUnregister(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
 		return
 	}
-	if err := s.Unregister(id); err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-// handleDelete deletes the project directory (trash first, permanent only with
-// explicit confirmation) and its record.
-func (s *Service) handleDelete(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	var req deleteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-
-	if err := s.Delete(id, req.ConfirmName, req.Permanent); err != nil {
+	if err := s.Unregister(c.Request.Context(), id); err != nil {
 		respondServiceError(c, err)
 		return
 	}

@@ -1,21 +1,24 @@
 // Package projects implements the platform's project records and the safe
 // lifecycle of the managed project directories: register, create, rename,
-// move, unregister and delete.
+// move and unregister.
 //
 // Every filesystem operation acts on the canonical path returned by
 // paths.Resolve; raw user input is never re-derived into a path after
-// canonicalization. Record changes run in GORM transactions and no
-// target is ever overwritten. Most operations change the filesystem first and
-// update the record after; the compensating direction differs per operation
-// (create removes the new directory on a failed insert, relocate moves it
-// back on a failed update). Delete is record-first: the record is removed
-// before the directory is touched and restored if the filesystem operation
-// fails, so the platform never points at a directory this call deleted.
-// Deletion prefers the OS trash; permanent deletion is only performed when
-// the caller passes an explicit permanent flag, and never silently.
+// canonicalization. Record changes run in GORM transactions and no target is
+// ever overwritten. Most operations change the filesystem first and update the
+// record after; the compensating direction differs per operation (create removes
+// the new directory on a failed insert, relocate moves it back on a failed
+// update).
+//
+// The platform never deletes a project directory. Unregister removes only the
+// platform's records: it first stops every live agent instance of the project
+// (aborting if any stop fails), then removes the project's instances, sessions,
+// backend configs and the project record in one transaction. The directory on
+// disk is left untouched.
 package projects
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -27,6 +30,7 @@ import (
 
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/paths"
+	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
 )
 
@@ -58,9 +62,10 @@ var (
 	// was replaced by a symlink, or the authorizing root was removed. The path
 	// is refused rather than mutated.
 	ErrPathChanged = errors.New("projects: stored project path is no longer authorized or canonical")
-	// ErrRestoreFailed reports that a failed delete operation could not restore
-	// the project record, leaving the record and the directory out of step.
-	ErrRestoreFailed = errors.New("projects: failed to restore project record after a failed delete")
+	// ErrInstanceStop reports that unregistering was refused because the
+	// project's live agent instances could not all be stopped. Nothing is
+	// removed in that case.
+	ErrInstanceStop = errors.New("projects: stopping project instances failed")
 	// ErrRollbackFailed reports that a directory was moved but its record could
 	// not be updated and the compensating move back also failed.
 	ErrRollbackFailed = errors.New("projects: failed to roll back directory move after a record update failure")
@@ -74,43 +79,41 @@ type Project struct {
 	Path string `json:"path"`
 }
 
-// Trash moves a directory to the operating system's trash.
-type Trash interface {
-	Move(path string) error
+// InstanceStopper stops every live agent instance of one project. The
+// instances package implements it. It is injected by the composition root
+// because instances already depends on projects. An implementation must not
+// call back into this Service.
+type InstanceStopper interface {
+	StopProjectInstances(ctx context.Context, projectID uint) error
 }
 
-// Option configures a Service.
-type Option func(*Service)
-
-// WithTrash overrides the OS trash implementation. It is primarily a test
-// seam; production uses the platform Trash port.
-func WithTrash(t Trash) Option {
-	return func(s *Service) {
-		if t != nil {
-			s.trash = t
-		}
-	}
-}
-
-// Service manages project records and their directories. All directory
-// mutations are serialized by mu so two concurrent requests can never both
-// observe a free target and race the filesystem.
+// Service manages project records and their directories. All operations are
+// serialized by mu so two concurrent requests can never both observe a free
+// target and race the filesystem, and so an unregister cannot interleave with
+// a start that is resolving the same project.
 type Service struct {
-	db    *gorm.DB
-	trash Trash
+	db *gorm.DB
 	// renamePath renames a directory. It defaults to os.Rename and is a test
 	// seam for exercising failure/compensation paths.
 	renamePath func(oldpath, newpath string) error
-	mu         sync.Mutex
+	// stopper stops a project's live instances before it is unregistered.
+	stopper InstanceStopper
+	mu      sync.Mutex
 }
 
-// NewService builds the project service over the platform database.
-func NewService(db *gorm.DB, opts ...Option) *Service {
-	s := &Service{db: db, trash: platform.New().Trash(), renamePath: os.Rename}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
+// NewService builds the project service over the platform database. The
+// instance stopper is wired afterwards with SetInstanceStopper, because the
+// instance service itself is built from this Service.
+func NewService(db *gorm.DB) *Service {
+	return &Service{db: db, renamePath: os.Rename}
+}
+
+// SetInstanceStopper installs the component that stops a project's live
+// instances. The composition root calls it once, before serving requests.
+func (s *Service) SetInstanceStopper(stopper InstanceStopper) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopper = stopper
 }
 
 // List returns the registered projects in creation order.
@@ -278,74 +281,27 @@ func (s *Service) ResolveDirectory(id uint) (string, error) {
 	return row.Path, nil
 }
 
-// Unregister removes only the platform record; the directory on disk is never
-// touched.
-func (s *Service) Unregister(id uint) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.deleteRecord(id)
-}
-
-// Delete removes the project directory and its record. Preferring the OS
-// trash, it moves the directory there; when trash is unavailable (or fails)
-// the call fails with ErrTrashUnavailable and the directory is left in place,
-// so the caller must re-issue the request with permanent=true after explicit
-// confirmation. The typed confirmation must match the project's current name
-// in every case.
+// Unregister removes the project from the platform. It is the only way a
+// project leaves the platform, and it never touches the directory on disk.
 //
-// The record is removed before the directory so the platform can never end up
-// holding a record that points at a directory this call deleted. If the
-// filesystem operation then fails, the record is restored; if that restore
-// itself fails the call reports ErrRestoreFailed rather than a misleading
-// success. The stored path is re-authorized against the current roots first,
-// so a project whose authorizing root was removed is refused, not deleted.
-func (s *Service) Delete(id uint, confirmName string, permanent bool) error {
+// Live agent instances are stopped first. If any stop fails the call returns
+// ErrInstanceStop and nothing is removed, so the caller can retry. The record
+// removal then runs in one transaction that also drops the project's instances,
+// sessions and backend configs; see removeProject.
+func (s *Service) Unregister(ctx context.Context, id uint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	row, err := s.load(id)
-	if err != nil {
+	if _, err := s.load(id); err != nil {
 		return err
 	}
-	if err := confirmNameMatches(row, confirmName); err != nil {
-		return err
+	if s.stopper == nil {
+		return fmt.Errorf("%w: no instance stopper is configured", ErrInstanceStop)
 	}
-	if err := s.authorizeStoredPath(row.Path); err != nil {
-		return err
+	if err := s.stopper.StopProjectInstances(ctx, id); err != nil {
+		return fmt.Errorf("%w: %v", ErrInstanceStop, err)
 	}
-	if err := s.requireDirectory(row.Path); err != nil {
-		return err
-	}
-
-	if err := s.deleteRecord(id); err != nil {
-		return err
-	}
-
-	operationErr := s.removeDirectory(row.Path, permanent)
-	if operationErr == nil {
-		return nil
-	}
-	if restoreErr := s.restoreProject(row); restoreErr != nil {
-		return fmt.Errorf("%w: delete of %q failed (%v), and record %d could not be restored: %v",
-			ErrRestoreFailed, row.Path, operationErr, row.ID, restoreErr)
-	}
-	return operationErr
-}
-
-// removeDirectory performs the destructive half of Delete: the OS trash by
-// default, or an explicit permanent removal.
-func (s *Service) removeDirectory(path string, permanent bool) error {
-	if permanent {
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("projects: permanently delete %q: %w", path, err)
-		}
-		return nil
-	}
-	if err := s.trash.Move(path); err != nil {
-		return fmt.Errorf("%w: %v", platform.ErrTrashUnavailable, err)
-	}
-	return nil
+	return s.removeProject(id)
 }
 
 // relocate moves the directory at row.Path to target and updates the record.
@@ -379,12 +335,6 @@ func (s *Service) relocate(row database.Project, target, name string) (Project, 
 	return projectFromModel(row), nil
 }
 
-// restoreProject re-inserts a project record after a failed delete, preserving
-// its identity and timestamps.
-func (s *Service) restoreProject(row database.Project) error {
-	return s.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error })
-}
-
 // insertProject records a directory as a project in its own transaction.
 func (s *Service) insertProject(path, name string) (database.Project, error) {
 	row := database.Project{Name: name, Path: path}
@@ -397,15 +347,39 @@ func (s *Service) insertProject(path, name string) (database.Project, error) {
 	return row, nil
 }
 
-// deleteRecord removes a project record in its own transaction.
-func (s *Service) deleteRecord(id uint) error {
+// removeProject deletes a project and everything the platform owns for it in
+// one transaction: agent sessions, agent instances, backend configs, then the
+// project record. Before deleting, it refuses if any instance of the project is
+// still live, so an instance started concurrently with the stop above can never
+// be orphaned from its project.
+func (s *Service) removeProject(id uint) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&database.Project{}, id)
-		if result.Error != nil {
-			return fmt.Errorf("projects: delete record %d: %w", id, result.Error)
+		var row database.Project
+		if err := tx.First(&row, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrProjectNotFound
+			}
+			return fmt.Errorf("projects: load project %d: %w", id, err)
 		}
-		if result.RowsAffected == 0 {
-			return ErrProjectNotFound
+
+		var live int64
+		if err := tx.Model(&database.AgentInstance{}).
+			Where("project_id = ? AND status NOT IN ?", id,
+				[]string{string(agents.InstanceStopped), string(agents.InstanceFailed)}).
+			Count(&live).Error; err != nil {
+			return fmt.Errorf("projects: count live instances of project %d: %w", id, err)
+		}
+		if live > 0 {
+			return fmt.Errorf("%w: %d instance(s) of project %d are still live", ErrInstanceStop, live, id)
+		}
+
+		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}, &database.AgentBackendConfig{}} {
+			if err := tx.Where("project_id = ?", id).Delete(model).Error; err != nil {
+				return fmt.Errorf("projects: delete project %d rows: %w", id, err)
+			}
+		}
+		if err := tx.Delete(&database.Project{}, id).Error; err != nil {
+			return fmt.Errorf("projects: delete project %d: %w", id, err)
 		}
 		return nil
 	})

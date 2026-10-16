@@ -315,6 +315,9 @@ func runServer(args []string) error {
 		return err
 	}
 	instanceService := instances.NewService(db, registry, projectService, instances.WithPlatformEnabled(settingsService.Enabled))
+	// Unregistering a project stops its live instances first; the instance
+	// service is built from the project service, so the link is set here.
+	projectService.SetInstanceStopper(instanceService)
 	sessionService := sessions.NewService(db, registry, instanceService,
 		sessions.WithPlatformEnabled(settingsService.Enabled),
 		sessions.WithCatalog(catalog),

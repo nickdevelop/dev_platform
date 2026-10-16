@@ -21,7 +21,6 @@ type Platform interface {
 	Instance() Instance
 	Process() Process
 	Executables() Executables
-	Trash() Trash
 	Perms() Perms
 	Shutdown() Shutdown
 	Terminal() Terminal
@@ -97,13 +96,6 @@ type Executables interface {
 	IsExecutable(path string) bool
 }
 
-// Trash moves a path to the OS trash. The windows implementation always
-// returns ErrTrashUnavailable; callers fall back to permanent deletion with
-// confirmation.
-type Trash interface {
-	Move(path string) error
-}
-
 // Perms applies private permissions to platform-owned files.
 type Perms interface {
 	// PrivateDir creates path restricted to the current user.
@@ -152,12 +144,6 @@ type Environment interface {
 // without creating an import cycle).
 var ErrLockHeld = errors.New("single-instance lock is held by another process")
 
-// ErrTrashUnavailable reports that the OS trash could not be used, so
-// deletion requires an explicit permanent-delete confirmation. The message
-// text is frozen: it used to live in internal/app/projects and logs and API
-// details carry it verbatim.
-var ErrTrashUnavailable = errors.New("projects: os trash is unavailable")
-
 // stubPlatform is the placeholder returned by New until each port has a
 // real implementation. Ports are wired up task by task in phase 2 (unix)
 // and phase 4 (windows).
@@ -170,7 +156,6 @@ func (s stubPlatform) Dirs() Dirs               { return nil }
 func (s stubPlatform) Instance() Instance       { return nil }
 func (s stubPlatform) Process() Process         { return nil }
 func (s stubPlatform) Executables() Executables { return nil }
-func (s stubPlatform) Trash() Trash             { return nil }
 func (s stubPlatform) Perms() Perms             { return nil }
 func (s stubPlatform) Shutdown() Shutdown       { return nil }
 func (s stubPlatform) Terminal() Terminal       { return nil }

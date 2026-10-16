@@ -56,21 +56,8 @@ export function renameProject(
   })
 }
 
+// Removes the project from the platform, stopping its live instances first; the
+// directory on disk is never touched.
 export function unregisterProject(id: number, csrfToken: string): Promise<void> {
   return apiRequest<void>('POST', `/projects/${id}/unregister`, { csrfToken })
-}
-
-// Mirrors #/components/schemas/DeleteProjectRequest. `permanent` is the
-// explicit second confirmation required when the OS trash is unavailable; it
-// is never implied by the UI.
-export function deleteProject(
-  id: number,
-  confirmName: string,
-  permanent: boolean,
-  csrfToken: string,
-): Promise<void> {
-  return apiRequest<void>('POST', `/projects/${id}/delete`, {
-    body: { confirmName, permanent },
-    csrfToken,
-  })
 }

@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/auth'
 
 // The stub answers fetch calls in strict request order: each stubbed route is
 // consumed exactly once, which lets a test script multi-step flows such as
-// "delete fails with trash_unavailable, then succeeds with permanent=true".
+// "rename fails with invalid_name, then succeeds with a valid name".
 // Paths match exactly, so /api/projects never swallows /api/projects/1/... calls.
 interface StubRoute {
   method: string
@@ -272,7 +272,7 @@ describe('project management', () => {
     expect(wrapper.text()).toContain('没有匹配的项目')
   })
 
-  it('distinguishes unregister (keeps directory) from delete (removes directory)', async () => {
+  it('unregisters a project without touching its directory and needs no typed name', async () => {
     const { wrapper, calls, router } = await mountWithProjects(
       [
         ...settingsRoutes(),
@@ -281,39 +281,16 @@ describe('project management', () => {
       '/projects/1/settings',
     )
 
-    // Both actions exist as separate, clearly-labeled buttons.
+    // The only removal action is unregister; there is no directory deletion.
+    expect(wrapper.find('button.delete').exists()).toBe(false)
     const unregisterButton = wrapper.find('button.unregister')
-    const deleteButton = wrapper.find('button.delete')
     expect(unregisterButton.text()).toBe('解除登记')
-    expect(deleteButton.text()).toBe('删除目录')
 
-    // Delete is destructive: it must not proceed before the project name is typed.
-    await deleteButton.trigger('click')
-    const deleteDialog = dialog(wrapper)
-    expect(deleteDialog.attributes('aria-label')).toContain('删除')
-    expect(deleteDialog.text()).toContain('回收站')
-    const confirmButton = deleteDialog.find('button.confirm')
-    expect(buttonDisabled(confirmButton.element)).toBe(true)
-
-    // The confirmation input is labeled and associated with the field.
-    expect(deleteDialog.find('label[for="dialog-confirm-name"]').exists()).toBe(true)
-
-    await deleteDialog.find('input.confirm-name').setValue('wrong-name')
-    expect(buttonDisabled(confirmButton.element)).toBe(true)
-    await deleteDialog.find('input.confirm-name').setValue('demo')
-    expect(buttonDisabled(confirmButton.element)).toBe(false)
-
-    // Escape closes the dialog without deleting anything.
-    await deleteDialog.trigger('keydown', { key: 'Escape' })
-    await flushPromises()
-    expect(dialog(wrapper).exists()).toBe(false)
-    expect(calls.some((call) => call.path === '/api/projects/1/delete')).toBe(false)
-
-    // Unregister warns that the directory is kept and needs no typed confirmation.
     await unregisterButton.trigger('click')
     const unregisterDialog = dialog(wrapper)
     expect(unregisterDialog.attributes('aria-label')).toContain('保留目录')
     expect(unregisterDialog.text()).toContain('会被完整保留')
+    expect(unregisterDialog.find('label[for="dialog-confirm-name"]').exists()).toBe(false)
     const unregisterConfirm = unregisterDialog.find('button.confirm')
     expect(buttonDisabled(unregisterConfirm.element)).toBe(false)
     await unregisterConfirm.trigger('click')
@@ -322,46 +299,6 @@ describe('project management', () => {
     expect(dialog(wrapper).exists()).toBe(false)
     // The unregistered project's page is closed and the shell returns home.
     expect(router.currentRoute.value.name).toBe('home')
-  })
-
-  it('offers explicit permanent deletion only after the trash is reported unavailable', async () => {
-    const { wrapper, calls } = await mountWithProjects(
-      [
-        ...settingsRoutes(),
-        { method: 'POST', path: '/api/projects/1/delete', status: 409, body: { error: 'trash_unavailable' } },
-        { method: 'POST', path: '/api/projects/1/delete', status: 204 },
-      ],
-      '/projects/1/settings',
-    )
-
-    await wrapper.find('button.delete').trigger('click')
-    const dialogElement = dialog(wrapper)
-    // The permanent option is hidden until the server asks for it.
-    expect(dialogElement.find('input[type="checkbox"]').exists()).toBe(false)
-
-    await dialogElement.find('input.confirm-name').setValue('demo')
-    await dialogElement.find('button.confirm').trigger('click')
-    await flushPromises()
-
-    // First attempt goes through the trash; the server reports it unavailable.
-    const firstAttempt = calls.find((call) => call.path === '/api/projects/1/delete')
-    expect(firstAttempt?.body).toEqual({ confirmName: 'demo', permanent: false })
-    expect(dialog(wrapper).exists()).toBe(true)
-    expect(dialog(wrapper).text()).toContain('永久删除')
-
-    const permanentOption = dialog(wrapper).find('input[type="checkbox"]')
-    expect(permanentOption.exists()).toBe(true)
-    expect(buttonDisabled(dialog(wrapper).find('button.confirm').element)).toBe(true)
-
-    await permanentOption.setValue(true)
-    expect(buttonDisabled(dialog(wrapper).find('button.confirm').element)).toBe(false)
-    await dialog(wrapper).find('button.confirm').trigger('click')
-    await flushPromises()
-
-    const attempts = calls.filter((call) => call.path === '/api/projects/1/delete')
-    expect(attempts).toHaveLength(2)
-    expect(attempts[1]?.body).toEqual({ confirmName: 'demo', permanent: true })
-    expect(dialog(wrapper).exists()).toBe(false)
   })
 
   it('registers a project directory', async () => {

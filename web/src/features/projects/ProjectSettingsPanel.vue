@@ -19,7 +19,7 @@ import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 const props = defineProps<{ projectId: number }>()
 
 const emit = defineEmits<{
-  manage: [kind: 'move' | 'rename' | 'unregister' | 'delete', project: Project]
+  manage: [kind: 'move' | 'rename' | 'unregister', project: Project]
 }>()
 
 const projectsStore = useProjectsStore()
@@ -101,7 +101,7 @@ const canScan = computed(
     agents.capabilitiesFor(selectedBackend.value)?.sessionDiscovery === true,
 )
 
-function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
+function manage(kind: 'move' | 'rename' | 'unregister') {
   if (project.value) emit('manage', kind, project.value)
 }
 </script>
@@ -117,7 +117,6 @@ function manage(kind: 'move' | 'rename' | 'unregister' | 'delete') {
         <button type="button" @click="manage('rename')">重命名</button>
         <button type="button" @click="manage('move')">移动</button>
         <button type="button" class="unregister" @click="manage('unregister')">解除登记</button>
-        <button type="button" class="delete" @click="manage('delete')">删除目录</button>
       </div>
     </header>
 

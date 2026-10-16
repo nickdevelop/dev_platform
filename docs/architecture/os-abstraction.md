@@ -9,7 +9,7 @@
 | 支持的运行环境 | Linux、WSL2（运行 Linux 构建）、Windows 原生 |
 | WSL1 | 不支持。启动时检测到 WSL1 直接报错退出 |
 | Linux 与 WSL2 | 使用同一套实现，不做区分 |
-| Windows 回收站 | 不支持。删除项目始终走"永久删除 + 二次确认"分支（即 `ErrTrashUnavailable` 的既有路径） |
+| 回收站 | 不适用。平台不删除项目目录，回收站端口已移除（见 5.5 节） |
 | opencode 在 Windows 上的形态 | 用户通过 npm 等方式安装 `opencode` 命令到 PATH，平台启动 `opencode serve --service`，行为与 Linux 相同 |
 | 服务注册文件路径 | 已确认：Windows 上为 `%USERPROFILE%\.local\state\opencode\service.json`（如 `C:\Users\chenli\.local\state\opencode\service.json`），与 Linux 的 `~/.local/state/opencode/service.json` 使用同一规则，不需要 Windows 专用逻辑 |
 | 权限模型 | Windows 接受降级：不实现 ACL 收紧，POSIX 权限位在 Windows 上不生效。依赖用户配置文件目录的默认 ACL 与运维约束，见第 5.7 节 |
@@ -25,7 +25,7 @@
 │        禁止：import syscall / x/sys / 直接 os/exec / GOOS 判断 │
 ├──────────────────────────────────────────────────────────────┤
 │ OS 端口：internal/core/platform（接口 + 平台无关策略）               │
-│   Dirs · Instance · Process · Executables · Trash · Perms ·  │
+│   Dirs · Instance · Process · Executables · Perms ·          │
 │   Shutdown · Terminal · Environment                           │
 ├─────────────────────────────┬────────────────────────────────┤
 │ unix 实现（Linux / WSL2）     │ windows 实现（原生 Windows）      │
@@ -47,7 +47,7 @@ internal/core/platform/
 ```
 
 - `internal/core/platform/unix` 与 `internal/core/platform/windows` 之外不得出现 `syscall`、`golang.org/x/sys/*`。
-- 现有 `internal/app/runtime/single_instance_*.go`、`internal/core/agents/*/process_*.go`、`internal/app/projects/trash_*.go` 的平台文件迁入上述实现，不再散落在业务包中。
+- 现有 `internal/app/runtime/single_instance_*.go`、`internal/core/agents/*/process_*.go`、的平台文件迁入上述实现，不再散落在业务包中。
 - 守卫测试：仿照 `internal/app/sessions/dependency_guard_test.go`，扫描业务包，禁止 import `syscall`、`golang.org/x/sys/*`，禁止在业务包中出现 `runtime.GOOS` 或 `runtime.GOARCH` 判断。
 
 ## 3. 端口定义
@@ -64,7 +64,6 @@ type Platform interface {
     Instance() Instance
     Process() Process
     Executables() Executables
-    Trash() Trash
     Perms() Perms
     Shutdown() Shutdown
     Terminal() Terminal
@@ -107,11 +106,6 @@ type Executables interface {
     IsExecutable(path string) bool
 }
 
-type Trash interface {
-    // windows 实现直接返回 ErrTrashUnavailable
-    Move(path string) error
-}
-
 type Perms interface {
     PrivateDir(path string) error   // unix: 0700；windows: 不做 ACL 收紧，仅创建目录
     PrivateFile(path string) error  // unix: 0600；windows: 不做 ACL 收紧
@@ -148,7 +142,7 @@ type Environment interface {
 | 可执行查找 | `pi/adapter.go:215`、`opencode/adapter.go:216`、`settings/agents.go:211` | `LookPath` | `LookPath` + PATHEXT，忽略无扩展名的 sh shim，解析 `.cmd` 入口（见第 5.3 节） |
 | 可执行判断 | `settings/handlers_agents.go:217-227` | 权限位 `0o111` | 扩展名与文件类型 |
 | 路径规范化 | `internal/app/paths/paths.go` | 保留 `/mnt/<drive>` 翻译与拒绝规则 | 保留盘符与 UNC，大小写不敏感比较 |
-| 回收站 | `internal/app/projects/trash_linux.go` | freedesktop | `ErrTrashUnavailable` |
+| 回收站 | 已移除 | 不适用 | 不适用 |
 | 文件权限 | `database.go`、`secrets/store.go`、`runtime` | POSIX 模式位，真正生效 | 模式位调用保留但不生效；通过 `Perms.Enforced()` 告警（见第 5.7 节） |
 | 关停信号 | `cmd/platform/main.go:388` | `SIGINT`、`SIGTERM` | `os.Interrupt`、控制台关闭 |
 | 密码输入 | `cmd/platform/main.go:174-192` | `term.ReadPassword` | 控制台读取，管道输入时退回 stdin |
@@ -205,8 +199,7 @@ npm 全局安装的 prefix 目录（如 `C:\Users\chenli\AppData\Roaming\npm`）
 
 ### 5.5 回收站
 
-- Windows 实现返回 `ErrTrashUnavailable`。
-- `internal/app/projects/service.go` 已有的"回收站不可用时要求永久删除二次确认"逻辑直接生效，不需要额外改动业务代码。
+- 平台不再提供回收站端口（`Trash`）。项目删除改为只解除登记（见 `docs/api/openapi.yaml` 的 `unregister`），磁盘上的目录永远不由平台删除，因此无需按平台区分回收站实现。
 
 ### 5.6 终端与密码输入
 

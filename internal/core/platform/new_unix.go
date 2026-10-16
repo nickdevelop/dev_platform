@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"runtime"
 
-	"devplatform/internal/core/platform/policy"
 	"devplatform/internal/core/platform/unix"
 )
 
@@ -32,9 +31,6 @@ func (p unixPlatform) Process() Process { return unixProcess{} }
 
 // Dirs returns the unix directory resolution and path policy.
 func (p unixPlatform) Dirs() Dirs { return unix.Dirs{} }
-
-// Trash returns the unix trash mover.
-func (p unixPlatform) Trash() Trash { return unixTrash{} }
 
 // Shutdown returns the unix termination signals.
 func (p unixPlatform) Shutdown() Shutdown { return unix.Shutdown{} }
@@ -83,17 +79,4 @@ func (unixProcess) IsZombie(pid int) bool { return unix.Process{}.IsZombie(pid) 
 
 func (unixProcess) Terminate(pid int) error {
 	return unix.Process{}.Terminate(pid)
-}
-
-// unixTrash adapts the unix implementation to the Trash port.
-type unixTrash struct{}
-
-func (unixTrash) Move(path string) error {
-	err := unix.Trash{}.Move(path)
-	if err != nil && errors.Is(err, policy.ErrTrashUnavailable) {
-		// Map the implementation's copy to the canonical port value;
-		// callers match with errors.Is against platform.ErrTrashUnavailable.
-		return ErrTrashUnavailable
-	}
-	return err
 }

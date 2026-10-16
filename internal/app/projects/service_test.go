@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -14,7 +15,6 @@ import (
 
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/paths"
-	"devplatform/internal/core/platform"
 )
 
 // openTestDB opens and migrates a throwaway platform database. The GORM
@@ -39,60 +39,36 @@ func openTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// fakeTrash records every directory routed to the trash and simulates the
-// move by renaming it into an isolated trash directory. When err is set the
-// move fails, standing in for an unavailable or broken OS trash.
-type fakeTrash struct {
+// fakeStopper stands in for the instance service. It records the projects it
+// was asked to stop; err makes the stop fail, and onStop (when set) runs for
+// each call, for example to simulate an instance started during the stop.
+type fakeStopper struct {
 	mu     sync.Mutex
-	dir    string
 	err    error
-	onMove func()
-	moved  []string
+	onStop func(projectID uint)
+	calls  []uint
 }
 
-func (f *fakeTrash) Move(path string) error {
+func (f *fakeStopper) StopProjectInstances(_ context.Context, projectID uint) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	if f.onMove != nil {
-		f.onMove()
+	f.calls = append(f.calls, projectID)
+	if f.onStop != nil {
+		f.onStop(projectID)
 	}
-	if f.err != nil {
-		return f.err
-	}
-	if err := os.MkdirAll(f.dir, 0o755); err != nil {
-		return err
-	}
-	dest := filepath.Join(f.dir, strconv.Itoa(len(f.moved))+"-"+filepath.Base(path))
-	if err := os.Rename(path, dest); err != nil {
-		return err
-	}
-	f.moved = append(f.moved, path)
-	return nil
+	return f.err
 }
 
-func (f *fakeTrash) setErr(err error) {
+func (f *fakeStopper) stopCalls() []uint {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.err = err
+	return append([]uint(nil), f.calls...)
 }
 
-func (f *fakeTrash) setOnMove(fn func()) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.onMove = fn
-}
-
-func (f *fakeTrash) movedPaths() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.moved...)
-}
-
-// newTestService builds a project service over a throwaway database, returning
-// the service, database, a canonical working directory and the injected fake
-// trash.
-func newTestService(t *testing.T) (*Service, *gorm.DB, string, *fakeTrash) {
+// newTestService builds a project service over a throwaway database with a
+// fake instance stopper, returning the service, database, a canonical working
+// directory and the stopper.
+func newTestService(t *testing.T) (*Service, *gorm.DB, string, *fakeStopper) {
 	t.Helper()
 
 	db := openTestDB(t)
@@ -100,8 +76,10 @@ func newTestService(t *testing.T) (*Service, *gorm.DB, string, *fakeTrash) {
 	if err != nil {
 		t.Fatalf("EvalSymlinks: %v", err)
 	}
-	trash := &fakeTrash{dir: filepath.Join(t.TempDir(), "trash")}
-	return NewService(db, WithTrash(trash)), db, root, trash
+	stopper := &fakeStopper{}
+	svc := NewService(db)
+	svc.SetInstanceStopper(stopper)
+	return svc, db, root, stopper
 }
 
 // mustMkdir creates dir and fails the test on error.
@@ -350,98 +328,137 @@ func TestMoveProject(t *testing.T) {
 }
 
 func TestUnregisterKeepsDirectory(t *testing.T) {
-	svc, db, root, _ := newTestService(t)
+	svc, db, root, stopper := newTestService(t)
 
-	project, err := svc.Create(root, "keep")
+	project, err := svc.Create(root, "kept")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := svc.Unregister(project.ID); err != nil {
+	if err := svc.Unregister(context.Background(), project.ID); err != nil {
 		t.Fatalf("Unregister: %v", err)
-	}
-	if info, err := os.Stat(filepath.Join(root, "keep")); err != nil || !info.IsDir() {
-		t.Errorf("directory removed by Unregister: err=%v", err)
 	}
 	if got := projectCount(t, db); got != 0 {
 		t.Errorf("project count = %d, want 0", got)
 	}
-	if err := svc.Unregister(project.ID); !errors.Is(err, ErrProjectNotFound) {
+	if info, err := os.Stat(filepath.Join(root, "kept")); err != nil || !info.IsDir() {
+		t.Errorf("directory was touched by unregister: err=%v", err)
+	}
+	if calls := stopper.stopCalls(); len(calls) != 1 || calls[0] != project.ID {
+		t.Errorf("stop calls = %v, want [%d]", calls, project.ID)
+	}
+	if err := svc.Unregister(context.Background(), project.ID); !errors.Is(err, ErrProjectNotFound) {
 		t.Errorf("Unregister unknown id error = %v, want ErrProjectNotFound", err)
 	}
 }
 
-func TestDeleteMovesDirectoryToTrash(t *testing.T) {
-	svc, db, root, trash := newTestService(t)
+func TestUnregisterCascadesPlatformRows(t *testing.T) {
+	svc, db, root, _ := newTestService(t)
 
-	project, err := svc.Create(root, "trashme")
+	project, err := svc.Create(root, "cascade")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := svc.Delete(project.ID, "trashme", false); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if got := projectCount(t, db); got != 0 {
-		t.Errorf("project count = %d, want 0", got)
-	}
-	if _, err := os.Stat(filepath.Join(root, "trashme")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("directory still present after trashing: %v", err)
-	}
-	moved := trash.movedPaths()
-	if len(moved) != 1 || moved[0] != project.Path {
-		t.Errorf("trashed paths = %v, want [%s]", moved, project.Path)
-	}
-	// The directory must now live in the trash, not be gone permanently.
-	entries, err := os.ReadDir(trash.dir)
+	other, err := svc.Create(root, "bystander")
 	if err != nil {
-		t.Fatalf("read trash dir: %v", err)
+		t.Fatalf("Create other: %v", err)
 	}
-	if len(entries) != 1 {
-		t.Errorf("trash contains %d entries, want 1", len(entries))
+	seedProjectRows(t, db, project.ID, "stopped-inst")
+	seedProjectRows(t, db, other.ID, "other-inst")
+
+	if err := svc.Unregister(context.Background(), project.ID); err != nil {
+		t.Fatalf("Unregister: %v", err)
+	}
+
+	for _, model := range []any{&database.AgentInstance{}, &database.AgentSession{}, &database.AgentBackendConfig{}} {
+		var n int64
+		if err := db.Model(model).Where("project_id = ?", project.ID).Count(&n).Error; err != nil {
+			t.Fatalf("count rows: %v", err)
+		}
+		if n != 0 {
+			t.Errorf("%T rows for unregistered project = %d, want 0", model, n)
+		}
+	}
+	// Rows of other projects are untouched.
+	var instances int64
+	db.Model(&database.AgentInstance{}).Where("project_id = ?", other.ID).Count(&instances)
+	if instances != 1 {
+		t.Errorf("other project instances = %d, want 1", instances)
+	}
+	var sessions int64
+	db.Model(&database.AgentSession{}).Where("project_id = ?", other.ID).Count(&sessions)
+	if sessions != 1 {
+		t.Errorf("other project sessions = %d, want 1", sessions)
+	}
+	if got := projectCount(t, db); got != 1 {
+		t.Errorf("project count = %d, want 1", got)
 	}
 }
 
-func TestDeleteRequiresPermanentConfirmationWhenTrashUnavailable(t *testing.T) {
-	svc, db, root, trash := newTestService(t)
+// seedProjectRows inserts one stopped instance, one session on it and one
+// backend config for the project, standing in for the state the platform
+// accumulates while a project is in use.
+func seedProjectRows(t *testing.T, db *gorm.DB, projectID uint, instanceID string) {
+	t.Helper()
 
-	project, err := svc.Create(root, "keepme")
+	rows := []any{
+		&database.AgentInstance{ID: instanceID, ProjectID: projectID, Backend: "pi", Directory: "/x", Status: "stopped"},
+		&database.AgentSession{ID: instanceID + "-s", ProjectID: projectID, Backend: "pi", InstanceID: instanceID, NativeSessionID: instanceID + "-native", Status: "idle"},
+		&database.AgentBackendConfig{ProjectID: projectID, Backend: "pi", Enabled: true},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+}
+
+func TestUnregisterAbortsWhenInstanceStopFails(t *testing.T) {
+	svc, db, root, stopper := newTestService(t)
+
+	project, err := svc.Create(root, "busy")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	trash.setErr(platform.ErrTrashUnavailable)
+	seedProjectRows(t, db, project.ID, "busy-inst")
+	stopper.err = errors.New("adapter refused to stop")
 
-	// Without an explicit permanent flag the platform must refuse rather than
-	// silently permanently delete.
-	if err := svc.Delete(project.ID, "keepme", false); !errors.Is(err, platform.ErrTrashUnavailable) {
-		t.Fatalf("Delete with unavailable trash error = %v, want ErrTrashUnavailable", err)
-	}
-	if info, err := os.Stat(filepath.Join(root, "keepme")); err != nil || !info.IsDir() {
-		t.Fatalf("directory changed despite refused deletion: err=%v", err)
+	err = svc.Unregister(context.Background(), project.ID)
+	if !errors.Is(err, ErrInstanceStop) {
+		t.Fatalf("Unregister error = %v, want ErrInstanceStop", err)
 	}
 	if got := projectCount(t, db); got != 1 {
-		t.Fatalf("project count = %d, want record preserved", got)
+		t.Errorf("project count = %d, want the record preserved", got)
+	}
+	var instances int64
+	db.Model(&database.AgentInstance{}).Where("project_id = ?", project.ID).Count(&instances)
+	if instances != 1 {
+		t.Errorf("instance rows = %d, want the rows preserved", instances)
+	}
+	if info, err := os.Stat(filepath.Join(root, "busy")); err != nil || !info.IsDir() {
+		t.Errorf("directory touched by refused unregister: err=%v", err)
+	}
+}
+
+func TestUnregisterRefusesInstanceStartedDuringStop(t *testing.T) {
+	svc, db, root, stopper := newTestService(t)
+
+	project, err := svc.Create(root, "racy")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// The stopper reports success, but an instance is running when the
+	// transaction runs: the platform must not drop the project under it.
+	stopper.onStop = func(projectID uint) {
+		if err := db.Create(&database.AgentInstance{ID: "late", ProjectID: projectID, Backend: "pi", Directory: "/x", Status: "running"}).Error; err != nil {
+			t.Errorf("seed late instance: %v", err)
+		}
 	}
 
-	// Permanent deletion still requires the typed confirmation.
-	if err := svc.Delete(project.ID, "wrong", true); !errors.Is(err, ErrConfirmationMismatch) {
-		t.Errorf("Delete wrong confirmation error = %v, want ErrConfirmationMismatch", err)
+	if err := svc.Unregister(context.Background(), project.ID); !errors.Is(err, ErrInstanceStop) {
+		t.Fatalf("Unregister error = %v, want ErrInstanceStop", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, "keepme")); err != nil {
-		t.Fatalf("directory removed despite confirmation mismatch: %v", err)
-	}
-
-	// With explicit permanent confirmation the directory is removed and the
-	// trash is never consulted.
-	if err := svc.Delete(project.ID, "keepme", true); err != nil {
-		t.Fatalf("Delete permanent: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "keepme")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("directory still present after permanent delete: %v", err)
-	}
-	if got := projectCount(t, db); got != 0 {
-		t.Errorf("project count = %d, want 0", got)
-	}
-	if len(trash.movedPaths()) != 0 {
-		t.Errorf("trash consulted for explicit permanent delete: %v", trash.movedPaths())
+	if got := projectCount(t, db); got != 1 {
+		t.Errorf("project count = %d, want the record preserved", got)
 	}
 }
 
@@ -461,9 +478,6 @@ func TestOperationsFailWhenDirectoryMissing(t *testing.T) {
 	}
 	if _, err := svc.Move(project.ID, filepath.Join(root, "x"), "gone"); !errors.Is(err, ErrDirectoryMissing) {
 		t.Errorf("Move missing directory error = %v, want ErrDirectoryMissing", err)
-	}
-	if err := svc.Delete(project.ID, "gone", false); !errors.Is(err, ErrDirectoryMissing) {
-		t.Errorf("Delete missing directory error = %v, want ErrDirectoryMissing", err)
 	}
 	if got := projectCount(t, db); got != 1 {
 		t.Errorf("project count = %d, want record preserved", got)
@@ -510,7 +524,7 @@ func TestConcurrentCreateTargetCollision(t *testing.T) {
 }
 
 func TestMutationsRejectedWhenStoredPathChanged(t *testing.T) {
-	svc, db, root, trash := newTestService(t)
+	svc, db, root, _ := newTestService(t)
 
 	project, err := svc.Create(root, "orphan")
 	if err != nil {
@@ -532,8 +546,6 @@ func TestMutationsRejectedWhenStoredPathChanged(t *testing.T) {
 	}{
 		{"rename", func() error { _, err := svc.Rename(project.ID, "renamed", "orphan"); return err }},
 		{"move", func() error { _, err := svc.Move(project.ID, filepath.Join(root, "moved"), "orphan"); return err }},
-		{"trash delete", func() error { return svc.Delete(project.ID, "orphan", false) }},
-		{"permanent delete", func() error { return svc.Delete(project.ID, "orphan", true) }},
 	}
 	for _, tc := range cases {
 		if err := tc.call(); !errors.Is(err, ErrPathChanged) {
@@ -546,67 +558,6 @@ func TestMutationsRejectedWhenStoredPathChanged(t *testing.T) {
 	}
 	if got := projectCount(t, db); got != 1 {
 		t.Errorf("project count = %d, want the record preserved", got)
-	}
-	if moved := trash.movedPaths(); len(moved) != 0 {
-		t.Errorf("trash consulted despite refusal: %v", moved)
-	}
-}
-
-func TestDeleteRestoresRecordWhenFilesystemOperationFails(t *testing.T) {
-	svc, db, root, trash := newTestService(t)
-
-	project, err := svc.Create(root, "retained")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	trash.setErr(platform.ErrTrashUnavailable)
-
-	if err := svc.Delete(project.ID, "retained", false); !errors.Is(err, platform.ErrTrashUnavailable) {
-		t.Fatalf("Delete error = %v, want ErrTrashUnavailable", err)
-	}
-
-	// The record must be restored with its identity intact and must still
-	// point at the directory that is still on disk.
-	list, err := svc.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(list) != 1 || list[0].ID != project.ID || list[0].Path != project.Path {
-		t.Fatalf("list after failed delete = %+v, want the original record %+v", list, project)
-	}
-	if got := projectCount(t, db); got != 1 {
-		t.Errorf("project count = %d, want 1", got)
-	}
-	if info, err := os.Stat(project.Path); err != nil || !info.IsDir() {
-		t.Errorf("directory missing after failed delete: err=%v", err)
-	}
-}
-
-func TestDeleteSurfacesRestoreFailure(t *testing.T) {
-	svc, db, root, trash := newTestService(t)
-
-	project, err := svc.Create(root, "doomed")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	trash.setErr(platform.ErrTrashUnavailable)
-	trash.setOnMove(func() {
-		// Simulate another writer claiming the now-record-free path before the
-		// failed delete can restore its own record.
-		if err := db.Create(&database.Project{Name: "intruder", Path: project.Path}).Error; err != nil {
-			t.Errorf("inject conflicting record: %v", err)
-		}
-	})
-
-	err = svc.Delete(project.ID, "doomed", false)
-	if !errors.Is(err, ErrRestoreFailed) {
-		t.Fatalf("Delete error = %v, want ErrRestoreFailed", err)
-	}
-	if !strings.Contains(err.Error(), project.Path) || !strings.Contains(err.Error(), strconv.FormatUint(uint64(project.ID), 10)) {
-		t.Errorf("error %q should identify the affected path and record id", err)
-	}
-	if info, err := os.Stat(project.Path); err != nil || !info.IsDir() {
-		t.Errorf("directory mutated despite failed delete: err=%v", err)
 	}
 }
 

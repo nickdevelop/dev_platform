@@ -134,7 +134,7 @@ const errorMessages: Record<string, string> = {
   project_not_authorized: '项目路径已失效或不可访问，请刷新后重试。',
   invalid_name: '名称不合法。',
   confirmation_mismatch: '确认输入与项目名不一致。',
-  trash_unavailable: '系统回收站不可用。',
+  instance_stop_failed: '项目的 Agent 实例未能全部停止，项目未被移除，请稍后重试。',
   inconsistent_state: '操作未能完成，状态可能不一致，请刷新后确认。',
   permission_expired: '该工具确认请求已过期（对方已处理或超时），列表已刷新。',
   form_expired: '该提问已过期（对方已处理或超时），列表已刷新。',

@@ -1031,3 +1031,50 @@ func (f *fakeAdapter) Capabilities() agents.Capabilities {
 	defer f.mu.Unlock()
 	return f.caps
 }
+
+// TestStopProjectInstancesStopsOnlyLiveInstances checks the unregister path:
+// every live instance of the project is stopped, terminal ones are left alone,
+// and a failing adapter is reported without skipping the other instances.
+func TestStopProjectInstancesStopsOnlyLiveInstances(t *testing.T) {
+	svc, _, projectID, _, fake := newTestService(t)
+	first, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start first: %v", err)
+	}
+	second, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start second: %v", err)
+	}
+	if _, err := svc.Stop(context.Background(), first.ID); err != nil {
+		t.Fatalf("Stop first: %v", err)
+	}
+	fake.mu.Lock()
+	fake.stopped = nil
+	fake.mu.Unlock()
+
+	if err := svc.StopProjectInstances(context.Background(), projectID); err != nil {
+		t.Fatalf("StopProjectInstances: %v", err)
+	}
+	if stopped := fake.stoppedIDs(); len(stopped) != 1 || stopped[0] != second.ID {
+		t.Errorf("adapter stopped %v, want only the still-live [%s]", stopped, second.ID)
+	}
+	got, err := svc.Get(second.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != agents.InstanceStopped {
+		t.Errorf("status = %q, want stopped", got.Status)
+	}
+
+	// A third instance whose adapter refuses to stop makes the call fail, and
+	// the error is returned so the caller can refuse to remove the project.
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
+		t.Fatalf("Start third: %v", err)
+	}
+	fake.mu.Lock()
+	fake.stopErr = errors.New("adapter boom")
+	fake.mu.Unlock()
+	if err := svc.StopProjectInstances(context.Background(), projectID); err == nil {
+		t.Fatal("StopProjectInstances with a failing adapter = nil, want error")
+	}
+}

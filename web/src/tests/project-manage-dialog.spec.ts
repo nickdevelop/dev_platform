@@ -1,6 +1,5 @@
 // Unit tests for the project management dialog: typed-name confirmation gates
-// move, rename and delete; an unavailable OS trash requires an explicit
-// permanent-delete checkbox; unregister keeps the directory and needs no name.
+// move and rename; unregister keeps the directory and needs no typed name.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -16,7 +15,7 @@ function stubResponse(status: number, body: unknown = {}) {
   )
 }
 
-function mountDialog(kind: 'move' | 'rename' | 'unregister' | 'delete' | 'register' | 'create') {
+function mountDialog(kind: 'move' | 'rename' | 'unregister' | 'register' | 'create') {
   return mount(ProjectManageDialog, {
     props: { kind, project: kind === 'register' || kind === 'create' ? null : project },
     attachTo: document.body,
@@ -37,18 +36,6 @@ describe('ProjectManageDialog', () => {
     document.body.innerHTML = ''
   })
 
-  it('keeps delete disabled until the typed project name matches', async () => {
-    const wrapper = mountDialog('delete')
-    expect(confirmButton(wrapper).attributes('disabled')).toBeDefined()
-
-    await wrapper.find('#dialog-confirm-name').setValue('alph')
-    expect(confirmButton(wrapper).attributes('disabled')).toBeDefined()
-
-    await wrapper.find('#dialog-confirm-name').setValue('alpha')
-    expect(confirmButton(wrapper).attributes('disabled')).toBeUndefined()
-    wrapper.unmount()
-  })
-
   it('requires the typed name for move and rename', async () => {
     const move = mountDialog('move')
     await move.find('#dialog-path').setValue('/workspace/moved')
@@ -65,27 +52,12 @@ describe('ProjectManageDialog', () => {
     rename.unmount()
   })
 
-  it('offers permanent delete only after the trash is reported unavailable', async () => {
-    stubResponse(409, { error: 'trash_unavailable' })
-    const wrapper = mountDialog('delete')
-    await wrapper.find('#dialog-confirm-name').setValue('alpha')
-    await confirmButton(wrapper).trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('.permanent-option input').exists()).toBe(true)
-    expect(wrapper.text()).toContain('目录未被删除')
-    expect(confirmButton(wrapper).attributes('disabled')).toBeDefined()
-
-    await wrapper.find('.permanent-option input').setValue(true)
-    expect(confirmButton(wrapper).attributes('disabled')).toBeUndefined()
-    wrapper.unmount()
-  })
-
   it('needs no typed name to unregister and reports success', async () => {
     stubResponse(200, {})
     const wrapper = mountDialog('unregister')
     expect(wrapper.find('#dialog-confirm-name').exists()).toBe(false)
     expect(wrapper.text()).toContain('磁盘上的目录')
+    expect(wrapper.text()).not.toContain('删除')
 
     await confirmButton(wrapper).trigger('click')
     await flushPromises()

@@ -496,6 +496,29 @@ func (s *Service) Stop(ctx context.Context, instanceID string) (Instance, error)
 	return instanceFromModel(row), nil
 }
 
+// StopProjectInstances stops every live instance of one project. It is the
+// instance side of unregistering a project (projects.InstanceStopper). Each
+// live instance goes through the same idempotent Stop path; instances that are
+// already stopped or failed are skipped. One failure never prevents the others
+// from being stopped, and the failures are joined and returned so the caller
+// can refuse to remove the project.
+func (s *Service) StopProjectInstances(ctx context.Context, projectID uint) error {
+	list, err := s.List(projectID)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, inst := range list {
+		if inst.Status == agents.InstanceStopped || inst.Status == agents.InstanceFailed {
+			continue
+		}
+		if _, err := s.Stop(ctx, inst.ID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Close stops every live instance and tears down its event fan-out. It is the
 // platform shutdown seam: without it, `opencode serve` servers and pi child
 // processes would outlive the platform and could never be reaped after a

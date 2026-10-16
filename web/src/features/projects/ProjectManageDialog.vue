@@ -1,15 +1,13 @@
 <script setup lang="ts">
-// Project management dialog for one action: register, create, move, rename,
-// unregister or delete. Unregister (keeps the directory) and delete (removes
-// the directory) are separate, explicitly labeled flows; move, rename and
-// delete require the typed current project name, and delete additionally needs
-// an explicit permanent-delete confirmation when the server reports the OS trash
-// unavailable. The parent owns visibility: it receives `submitted` and `close`.
+// Project management dialog for one action: register, create, move, rename or
+// unregister. Unregister removes the project from the platform (stopping its
+// live agent instances and dropping their sessions) and never touches the
+// directory on disk. Move and rename require the typed current project name.
+// The parent owns visibility: it receives `submitted` and `close`.
 import { computed, ref } from 'vue'
-import { ApiError, describeApiError, UnauthorizedError } from '../../api/client'
+import { describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
-  deleteProject,
   moveProject,
   registerProject,
   renameProject,
@@ -19,7 +17,7 @@ import {
 import { useAuthStore } from '../../stores/auth'
 import ProjectDialog from './ProjectDialog.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister' | 'delete'
+type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister'
 
 const props = defineProps<{
   kind: DialogKind
@@ -38,8 +36,6 @@ const submitting = ref(false)
 const pathInput = ref('')
 const nameInput = ref('')
 const confirmNameInput = ref('')
-const permanent = ref(false)
-const trashUnavailable = ref(false)
 
 const dialogTitle = computed(() => {
   const name = props.project?.name
@@ -53,9 +49,7 @@ const dialogTitle = computed(() => {
     case 'rename':
       return `重命名项目 ${name}`
     case 'unregister':
-      return '移除平台记录（保留目录）'
-    case 'delete':
-      return '删除项目目录'
+      return '解除项目登记（保留目录）'
   }
 })
 
@@ -70,15 +64,11 @@ const confirmLabel = computed(() => {
     case 'rename':
       return '重命名'
     case 'unregister':
-      return '移除记录'
-    case 'delete':
-      return '删除目录'
+      return '解除登记'
   }
 })
 
-const needsTypedConfirmation = computed(
-  () => props.kind === 'move' || props.kind === 'rename' || props.kind === 'delete',
-)
+const needsTypedConfirmation = computed(() => props.kind === 'move' || props.kind === 'rename')
 
 const typedNameMatches = computed(
   () => !!props.project && confirmNameInput.value === props.project.name,
@@ -87,7 +77,6 @@ const typedNameMatches = computed(
 const canSubmit = computed(() => {
   if (submitting.value) return false
   if (needsTypedConfirmation.value && !typedNameMatches.value) return false
-  if (props.kind === 'delete' && trashUnavailable.value && !permanent.value) return false
   return true
 })
 
@@ -114,22 +103,12 @@ async function submit() {
       case 'unregister':
         await unregisterProject(project!.id, auth.csrfToken)
         break
-      case 'delete':
-        await deleteProject(project!.id, confirmNameInput.value, permanent.value, auth.csrfToken)
-        break
     }
     emit('submitted', kind)
     emit('close')
   } catch (error) {
     if (error instanceof UnauthorizedError) return // global handler went to login
-    if (error instanceof ApiError && error.code === 'trash_unavailable' && kind === 'delete') {
-      // The server refused to delete without the trash; nothing was removed.
-      // Offer the explicit permanent-delete confirmation.
-      trashUnavailable.value = true
-      dialogError.value = '系统回收站不可用，目录未被删除。如确认放弃该目录，请勾选永久删除后重试。'
-    } else {
-      dialogError.value = describeApiError(error)
-    }
+    dialogError.value = describeApiError(error)
   } finally {
     submitting.value = false
   }
@@ -137,7 +116,7 @@ async function submit() {
 </script>
 
 <template>
-  <ProjectDialog :title="dialogTitle" :danger="kind === 'delete'" @close="emit('close')">
+  <ProjectDialog :title="dialogTitle" @close="emit('close')">
     <form class="dialog-form" @submit.prevent="submit">
       <template v-if="kind === 'register'">
         <label for="dialog-path">目录的绝对路径</label>
@@ -169,22 +148,9 @@ async function submit() {
       </template>
 
       <template v-else-if="kind === 'unregister'">
-        <p>将从平台移除项目 {{ project?.name }} 的记录。</p>
+        <p>将从平台移除项目 {{ project?.name }}，同时停止它正在运行的 Agent 实例，并清除其会话索引。</p>
         <p class="safe-note">磁盘上的目录 {{ project?.path }} 会被完整保留，不受影响。</p>
-      </template>
-
-      <template v-else-if="kind === 'delete'">
-        <p class="danger-note">项目 {{ project?.name }} 的目录将被删除！</p>
-        <p>平台会优先把目录 {{ project?.path }} 移入系统回收站。</p>
-        <p v-if="trashUnavailable" class="danger-note">
-          系统回收站不可用。若继续，只能永久删除该目录，且无法恢复。
-        </p>
-        <label v-if="trashUnavailable" class="permanent-option">
-          <input v-model="permanent" type="checkbox" />
-          我确认永久删除该目录（不进回收站，无法恢复）
-        </label>
-        <label for="dialog-confirm-name">输入项目名“{{ project?.name }}”以确认删除</label>
-        <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
+        <p class="hint">如有实例无法停止，移除会被中止，项目保持登记。</p>
       </template>
 
       <p v-if="dialogError" class="dialog-error" role="alert">{{ dialogError }}</p>
@@ -235,17 +201,6 @@ async function submit() {
   color: var(--color-success);
 }
 
-.dialog-form .danger-note {
-  color: var(--color-danger);
-}
-
-.dialog-form .permanent-option {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-weight: 400;
-}
-
 .dialog-error {
   color: var(--color-danger);
   margin: 0;
@@ -268,15 +223,5 @@ async function submit() {
   background: var(--color-info-border);
   border-color: var(--color-info-border);
   cursor: default;
-}
-
-:deep(.dialog.danger) .dialog-actions .confirm {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-}
-
-:deep(.dialog.danger) .dialog-actions .confirm:disabled {
-  background: var(--color-danger-border);
-  border-color: var(--color-danger-border);
 }
 </style>

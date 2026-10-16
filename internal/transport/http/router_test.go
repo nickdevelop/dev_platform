@@ -18,12 +18,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"devplatform/internal/core/agents"
-	"devplatform/internal/app/instances"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/instances"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/sessions"
+	"devplatform/internal/core/agents"
 )
 
 // openTestDB opens and migrates a throwaway database under a temp directory.
@@ -62,7 +62,7 @@ func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 	}
 	router := NewRouter(Dependencies{
 		Auth:     authSvc,
-		Projects: projects.NewService(db),
+		Projects: newProjectService(db),
 	})
 
 	jar, err := cookiejar.New(nil)
@@ -203,6 +203,14 @@ func TestRouterServesProjectsBehindSessionAndCSRF(t *testing.T) {
 	}
 }
 
+// newProjectService builds the project service the way the composition root
+// does: unregister stops live instances through the instance service.
+func newProjectService(db *gorm.DB) *projects.Service {
+	projectService := projects.NewService(db)
+	projectService.SetInstanceStopper(instances.NewService(db, agents.NewRegistry(), projectService))
+	return projectService
+}
+
 // decodeError reads and closes a response, returning its JSON error code.
 func decodeError(t *testing.T, resp *http.Response) string {
 	t.Helper()
@@ -218,9 +226,9 @@ func decodeError(t *testing.T, resp *http.Response) string {
 }
 
 // TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF exercises the
-// move/rename/delete routes over the real router: each requires the session
-// CSRF token and a typed confirmation matching the project's current name,
-// and a rename/move keeps the recorded path in step with the directory.
+// move/rename routes over the real router: each requires the session CSRF
+// token and a typed confirmation matching the project's current name, and a
+// rename/move keeps the recorded path in step with the directory.
 func TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF(t *testing.T) {
 	client, base, csrf := newAuthedClient(t)
 
@@ -309,27 +317,10 @@ func TestRouterDestructiveProjectOpsRequireConfirmationAndCSRF(t *testing.T) {
 		t.Fatalf("moved project = %+v, want name gamma path %q", moved, gamma)
 	}
 
-	// A delete with a mismatched confirmation is rejected and deletes nothing.
-	deleteWrong := postJSON(t, client, base, "/api/projects/"+id+"/delete", csrf, map[string]any{
-		"confirmName": "beta", "permanent": true,
-	})
-	if code := decodeError(t, deleteWrong); code != "confirmation_mismatch" {
-		t.Errorf("delete wrong-confirm error = %q, want confirmation_mismatch", code)
-	}
+	// Projects are never deleted from disk: the directory survives the rename
+	// and move, and the route for removing it no longer exists.
 	if _, err := os.Stat(gamma); err != nil {
-		t.Fatalf("directory removed despite rejected delete: %v", err)
-	}
-
-	// A confirmed permanent delete removes the directory and the record.
-	deleteOK := postJSON(t, client, base, "/api/projects/"+id+"/delete", csrf, map[string]any{
-		"confirmName": "gamma", "permanent": true,
-	})
-	deleteOK.Body.Close()
-	if deleteOK.StatusCode != http.StatusNoContent {
-		t.Fatalf("delete status = %d, want %d", deleteOK.StatusCode, http.StatusNoContent)
-	}
-	if _, err := os.Stat(gamma); !os.IsNotExist(err) {
-		t.Errorf("directory still exists after confirmed delete: %v", err)
+		t.Fatalf("directory missing after move: %v", err)
 	}
 }
 
@@ -430,7 +421,7 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	if err := registry.Register(agents.BackendPi, &routerFakeAdapter{}); err != nil {
 		t.Fatalf("register fake adapter: %v", err)
 	}
-	projectService := projects.NewService(db)
+	projectService := newProjectService(db)
 	router := NewRouter(Dependencies{
 		Auth:      authSvc,
 		Projects:  projectService,
@@ -594,6 +585,7 @@ func TestRouterServesSessionRoutesBehindSessionAndCSRF(t *testing.T) {
 	}
 	projectService := projects.NewService(db)
 	instanceService := instances.NewService(db, registry, projectService)
+	projectService.SetInstanceStopper(instanceService)
 	router := NewRouter(Dependencies{
 		Auth:      authSvc,
 		Projects:  projectService,

@@ -1,4 +1,4 @@
-# 交接：架构评审七项整改 —— 第 7 项已提交，第 1/2/3/4/6 项待实施
+# 交接：架构评审七项整改 —— 第 1、7 项已完成，第 2/3/4/6 项待实施
 
 > 分支：`refactor/remove-resources`，HEAD `c9128d4`，工作树干净，未推送。
 > 恢复：`git checkout refactor/remove-resources && git status --short && git log --oneline -2`。
@@ -9,6 +9,16 @@
 | # | 问题 | 落点 |
 |---|---|---|
 | 7 | resourcesync 手工装配 → **资源功能整体下线** | 提交 `c9128d4`（53 文件，+105/−7862，独立提交） |
+| 1 | 项目删除不级联 → **改为解除登记并级联清理** | 分支 `refactor/project-delete-cascade`（见下方第 1 项落地说明） |
+
+第 1 项落地说明：
+- `projects.Service.Delete` 与 `/projects/:id/delete` 路由已删除；`/projects/:id/unregister` 成为唯一的移除入口，不再删除目录。
+- 停实例经 `projects.InstanceStopper` 注入（组合根 `SetInstanceStopper`，因 `instances` 已依赖 `projects`）；任一停止失败返回 409 `instance_stop_failed`，不删除任何记录。
+- 事务内删除 `agent_sessions`、`agent_instances`、`agent_backend_configs` 与项目记录；事务内再次检查，仍有运行中实例则中止（防止停实例与启动竞争）。
+- "删备份文件"：当前代码已无备份文件来源（`ManagedResourceFile.BackupPath` 随资源功能下线），本项不涉及。
+- `agent_backend_configs` 未在原清单中，但属于项目私有数据，一并清理；第 2 项取消项目级开关时会整体移除该表的使用。
+- 平台 `Trash` 端口、`ErrTrashUnavailable`、unix/windows 实现与 `policy/trash.go` 全部移除；前端删除对话框与 `trash_unavailable` 文案移除；OpenAPI、`os-abstraction.md`、`operations.md` 同步。
+- 验证：`make verify` exit=0；`make e2e` 8 failed / 7 passed，其中 `agent-failures` 单独运行通过（并行 flake），`layout` 两项在基线提交 `72b2d15` 上复现一致，其余失败文件均在基线集合内，无新增回归。
 
 第 7 项内容：删除 `internal/app/resources/`、`internal/app/resourcesync/`（含 `adapters/`）、`internal/app/secrets/handlers.go`；
 组合根与路由摘除 `Resources` / `Secrets` / `ResourceSync` 接线（`secretStore` 保留供 `modelconfig` 用）；
@@ -25,19 +35,17 @@ openapi.yaml 删除 resources/prompts/secrets/sync 相关 paths、schemas、para
 
 ## 2. 未完成（均未开始，均需新会话先读码再动手）
 
-建议实施顺序：1 → 2 → 3 → 4 → 6，**每项独立分支、独立提交，不混交**。
-新分支从 `refactor/remove-resources` 切出（即含第 7 项的 HEAD）。
+建议实施顺序：2 → 3 → 4 → 6，**每项独立分支、独立提交，不混交**。
+新分支从上一已完成项的分支切出（第 2 项从 `refactor/project-delete-cascade` 切出，它含第 1 项）。
 
 | # | 问题 | 已确认的决定 |
 |---|---|---|
-| 1 | 项目删除不级联 | 删除项目改为只解除注册，不再删目录；停实例失败则中止；事务内清理 `agent_instances`、`agent_sessions`、`session_prompts`、`project_resources` 并删备份文件；移除 trash 端口与目录删除功能。 |
 | 2 | agent 启用判断分散 | 取消项目级开关，只保留 `settings` 平台级开关；新建/继续/发送/启动实例统一经它判断；禁用后阻止新入口，不自动停实例。 |
 | 3 | `instances` / `sessions` 过重 | `git-info` 移到 `projects`；服务控制拆为独立包 `agentservices`；`sessions` 按子包拆分。 |
 | 4 | session 与 instance 绑定（含原第 5 项） | 会话归属改为 `(项目, 后端, 原生会话 id)`，实例仅作运行时宿主；无运行实例时自动启动并继续；删 `rebind` 与合并逻辑；turn 跟踪改键；迁移前去重。 |
 | 6 | 领域层直接用 GORM 实体 | 每个领域引入 repository 接口。 |
 
-注意：第 1 项提到清理 `session_prompts` / `project_resources` 表——这两张表在第 7 项迁移 v17 中**已被删除**。
-实施第 1 项时以 v17 后的实际 schema 为准，相关清理逻辑相应省略，不要试图清理不存在的表。
+注意：原第 1 项提到的 `session_prompts` / `project_resources` 表已在第 7 项迁移 v17 中删除，清理逻辑已省略，不要试图清理不存在的表。
 
 ## 3. 通用约束（每项都适用）
 
