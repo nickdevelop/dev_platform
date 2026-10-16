@@ -1,6 +1,6 @@
 # 架构评审七项整改 —— 全部完成总结
 
-> 分支：`refactor/domain-repositories`（基于 `refactor/session-owned-by-project`，依次累积 7 → 1 → 2 → 3 → 4 → 6）。
+> 分支：`master`，HEAD `acb7525`，已推送至 `origin/master`。
 > 详细过程见下文各项目落点与说明。
 
 ## 1. 整改完成汇总
@@ -12,7 +12,7 @@
 | 2 | agent 启用判断分散 → **平台级开关统一判断** | 提交 `b1757d3`（分支 `refactor/agent-platform-switch`）：取消项目级开关，迁移 v18 删除 `agent_backend_configs`；新建/继续/发送/启动实例统一由平台设置控制。 |
 | 3 | `instances` / `sessions` 过重 → **服务控制拆包与子包拆分** | 提交 `daedc65` 与 `331d0b6`（分支 `refactor/split-instances-sessions`）：`git-info` 移到 `projects`；服务控制拆为独立包 `internal/app/agentservices`；`sessions` 拆出 `store`（会话索引持久化）与 `turns`（轮次跟踪）子包。 |
 | 4 | session 与 instance 绑定 → **会话归属项目/后端/原生键** | 提交 `809f466`（分支 `refactor/session-owned-by-project`）：迁移 v19 去重并建立 `(project_id, backend, native_session_id)` 唯一索引；实例作为运行时宿主；删除 `rebind` 与合并逻辑；`turns.Tracker` 改按 `(backend, nativeSessionID)` 键跟踪。 |
-| 6 | 领域层直接用 GORM 实体 → **引入 repository 接口** | 提交待完成（分支 `refactor/domain-repositories`）：projects、instances、settings、auth、modelconfig、sessions 六个领域全部引入 repository 接口，领域服务 Service 结构体彻底解耦 `*gorm.DB`，保留 `NewService(db)` 兼容接入。 |
+| 6 | 领域层直接用 GORM 实体 → **引入 repository 接口** | 提交 `acb7525`（分支 `refactor/domain-repositories`）：projects、instances、settings、auth、modelconfig、sessions 六个领域全部引入 repository 接口，领域服务 Service 结构体彻底解耦 `*gorm.DB`，保留 `NewService(db)` 兼容接入。 |
 
 第 1 项落地说明：
 - `projects.Service.Delete` 与 `/projects/:id/delete` 路由已删除；`/projects/:id/unregister` 成为唯一的移除入口，不再删除目录。
