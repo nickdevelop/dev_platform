@@ -348,7 +348,7 @@ func (s *Service) Delete(projectID uint, sessionID string) error {
 	}
 	// The turn tracker is keyed by native session; drop the entry so a later
 	// re-index of the same native session starts from a clean state.
-	s.turnTracker.Forget(row.InstanceID, row.NativeSessionID)
+	s.turnTracker.Forget(agents.BackendID(row.Backend), row.NativeSessionID)
 	return nil
 }
 
@@ -552,9 +552,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 		if err != nil {
 			return Session{}, err
 		}
-		if err := s.rebind(projectID, &row, inst); err != nil {
-			return Session{}, err
-		}
+		row.InstanceID = inst.ID
 	}
 
 	adapter, err := s.adapter(backend)
@@ -588,43 +586,6 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	}
 	s.turnTracker.Ensure(inst.ID)
 	return s.sessionFromModel(row), nil
-}
-
-// rebind points a session row at another instance, merging away any other row
-// that already indexes the same native session under that instance.
-//
-// The index's unique key includes the instance, so discovery can legitimately
-// create a second row for one native session after a restart. The row the user
-// has open wins: keeping it preserves the platform session id in the URL they
-// are looking at, and the other row is deleted rather than left to appear as a
-// duplicate session.
-func (s *Service) rebind(projectID uint, row *database.AgentSession, inst instances.Instance) error {
-	existing, err := s.store.GetByNative(inst.ID, row.NativeSessionID)
-	switch {
-	case err == nil && existing.ID == row.ID:
-		// Already bound to this instance; nothing to merge.
-	case err == nil:
-		if existing.ProjectID != projectID {
-			// Defensive: never absorb a row indexed for another project.
-			return fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
-		}
-		// Keep whichever side knows more before dropping the duplicate.
-		if row.Title == "" {
-			row.Title = existing.Title
-		}
-		if !existing.CreatedAt.IsZero() && (row.CreatedAt.IsZero() || existing.CreatedAt.Before(row.CreatedAt)) {
-			row.CreatedAt = existing.CreatedAt
-		}
-		if err := s.store.Delete(existing.ID); err != nil {
-			return err
-		}
-	case errors.Is(err, ErrSessionNotFound):
-		// No duplicate row to merge.
-	default:
-		return err
-	}
-	row.InstanceID = inst.ID
-	return nil
 }
 
 // Send delivers one user turn to the session's native session.
@@ -755,7 +716,7 @@ func (s *Service) Interrupt(ctx context.Context, projectID uint, sessionID strin
 	if !s.capabilities(inst.Backend).Interrupt {
 		return Session{}, fmt.Errorf("%w: interrupt", ErrUnsupportedCapability)
 	}
-	if s.turnTracker.Of(row.InstanceID, row.NativeSessionID) != TurnRunning {
+	if s.turnTracker.Of(agents.BackendID(row.Backend), row.NativeSessionID) != TurnRunning {
 		return s.sessionFromModel(row), nil
 	}
 	adapter, err := s.adapter(inst.Backend)
@@ -792,7 +753,7 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 	if !s.capabilities(inst.Backend).Interrupt {
 		return Session{}, fmt.Errorf("%w: stop", ErrUnsupportedCapability)
 	}
-	if s.turnTracker.Of(row.InstanceID, row.NativeSessionID) == TurnRunning && instanceRunnable(inst) {
+	if s.turnTracker.Of(agents.BackendID(row.Backend), row.NativeSessionID) == TurnRunning && instanceRunnable(inst) {
 		adapter, err := s.adapter(inst.Backend)
 		if err != nil {
 			return Session{}, err
@@ -1083,10 +1044,7 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 		return Session{}, err
 	}
 	if err := s.store.Create(row); err != nil {
-		if existing, getErr := s.store.GetByNative(inst.ID, ref.SessionID); getErr == nil {
-			if existing.ProjectID != projectID {
-				return Session{}, fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
-			}
+		if existing, getErr := s.store.GetByNative(projectID, string(inst.Backend), ref.SessionID); getErr == nil {
 			return s.sessionFromModel(existing), nil
 		}
 		return Session{}, err
@@ -1099,24 +1057,21 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 // wins over whatever the platform holds; a preview never overwrites a title,
 // it only fills an empty one.
 func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.SessionRef) (database.AgentSession, error) {
-	existing, err := s.store.GetByNative(inst.ID, ref.SessionID)
+	existing, err := s.store.GetByNative(projectID, string(inst.Backend), ref.SessionID)
 	if err == nil {
-		if existing.ProjectID != projectID {
-			// Defensive: never expose a session indexed for another project.
-			return database.AgentSession{}, fmt.Errorf("%w: %s", ErrSessionNotFound, existing.ID)
+		if existing.InstanceID != inst.ID {
+			existing.InstanceID = inst.ID
+			existing.Status = string(SessionActive)
 		}
 		if ref.Title != "" && ref.Title != existing.Title {
 			existing.Title = ref.Title
 			existing.UpdatedAt = s.now()
-			if err := s.store.Update(existing); err != nil {
-				return database.AgentSession{}, err
-			}
 		} else if existing.Title == "" && ref.Preview != "" {
 			existing.Title = ref.Preview
 			existing.UpdatedAt = s.now()
-			if err := s.store.Update(existing); err != nil {
-				return database.AgentSession{}, err
-			}
+		}
+		if err := s.store.Update(existing); err != nil {
+			return database.AgentSession{}, err
 		}
 		return existing, nil
 	}
@@ -1171,7 +1126,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
 		Status:          SessionStatus(row.Status),
-		Turn:            s.turnTracker.Of(row.InstanceID, row.NativeSessionID),
+		Turn:            s.turnTracker.Of(backend, row.NativeSessionID),
 		Capabilities:    s.capabilities(backend),
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,

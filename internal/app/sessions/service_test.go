@@ -1567,35 +1567,46 @@ func TestContinueIsIdempotentWhenInstanceRuns(t *testing.T) {
 	}
 }
 
-// TestContinueRebindMergesDuplicateRowOnNewInstance pins the merge: because the
-// unique key includes the instance, discovery can index the same native session
-// a second time under a new instance, and rebinding must not leave the user
-// with two sessions for one conversation.
-func TestContinueRebindMergesDuplicateRowOnNewInstance(t *testing.T) {
+// TestDiscoveryOnReplacementInstanceUpdatesHostWithoutDuplication pins that
+// session identity is (project_id, backend, native_session_id): when a new
+// instance discovers an existing native session, it updates the host instance
+// in-place rather than creating a duplicate row, and rebind/merge logic is
+// unnecessary.
+func TestDiscoveryOnReplacementInstanceUpdatesHostWithoutDuplication(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-dup")
 	stopEnvInstance(t, env)
 
-	// A second index row for the same native session, already bound to the
-	// replacement instance discovery would have created.
+	// A replacement instance starts in the same project.
 	replacement, err := env.instances.Start(context.Background(), env.projectID, agents.BackendPi)
 	if err != nil {
 		t.Fatalf("start replacement instance: %v", err)
 	}
-	now := time.Now().UTC()
-	duplicate := database.AgentSession{
-		ID:              "duplicate-row",
-		ProjectID:       env.projectID,
-		Backend:         string(agents.BackendPi),
-		InstanceID:      replacement.ID,
-		NativeSessionID: "native-dup",
-		Title:           "native-dup",
-		Status:          string(SessionActive),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+
+	env.fake.mu.Lock()
+	env.fake.listRefs = []agents.SessionRef{
+		{Backend: agents.BackendPi, SessionID: "native-dup", Title: "native-dup"},
 	}
-	if err := env.db.Create(&duplicate).Error; err != nil {
-		t.Fatalf("create duplicate row: %v", err)
+	env.fake.listBindInstance = true
+	env.fake.mu.Unlock()
+
+	// Discovery on the replacement instance finds the existing native session and
+	// updates its host instance without duplicating rows.
+	discovered, err := env.svc.Discover(context.Background(), env.projectID, replacement.ID)
+	if err != nil {
+		t.Fatalf("Discover on replacement: %v", err)
+	}
+	if len(discovered) != 1 {
+		t.Fatalf("discovered count = %d, want 1", len(discovered))
+	}
+	if discovered[0].ID != session.ID {
+		t.Errorf("discovered session id = %q, want original %q", discovered[0].ID, session.ID)
+	}
+	if discovered[0].InstanceID != replacement.ID {
+		t.Errorf("InstanceID = %q, want replacement %q", discovered[0].InstanceID, replacement.ID)
+	}
+	if got := sessionCount(t, env.db); got != 1 {
+		t.Errorf("session count = %d, want 1 (no duplicate row)", got)
 	}
 
 	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
@@ -1603,20 +1614,17 @@ func TestContinueRebindMergesDuplicateRowOnNewInstance(t *testing.T) {
 		t.Fatalf("Continue: %v", err)
 	}
 	if continued.ID != session.ID {
-		t.Errorf("continued session id = %q, want the session the user opened (%q)", continued.ID, session.ID)
+		t.Errorf("continued session id = %q, want %q", continued.ID, session.ID)
 	}
 	if continued.InstanceID != replacement.ID {
-		t.Errorf("InstanceID = %q, want the replacement instance %q", continued.InstanceID, replacement.ID)
-	}
-	if got := sessionCount(t, env.db); got != 1 {
-		t.Errorf("session count = %d, want the duplicate merged away (1)", got)
+		t.Errorf("InstanceID = %q, want %q", continued.InstanceID, replacement.ID)
 	}
 	var rows []database.AgentSession
 	if err := env.db.Where("native_session_id = ?", "native-dup").Find(&rows).Error; err != nil {
 		t.Fatalf("load rows: %v", err)
 	}
 	if len(rows) != 1 || rows[0].ID != session.ID {
-		t.Errorf("native-session rows = %+v, want only the opened session %q", rows, session.ID)
+		t.Errorf("native-session rows = %+v, want only original %q", rows, session.ID)
 	}
 }
 

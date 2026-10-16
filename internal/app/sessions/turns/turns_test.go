@@ -21,6 +21,7 @@ func turnEvent(sessionID string, phase agents.TurnPhase) agents.NormalizedEvent 
 	return agents.NormalizedEvent{
 		Type:      agents.EventTurn,
 		SessionID: sessionID,
+		Backend:   agents.BackendPi,
 		Turn:      &agents.TurnPayload{Phase: phase},
 	}
 }
@@ -41,22 +42,22 @@ func TestTrackerFollowsTurnsAndForgetsSessions(t *testing.T) {
 	source := &fakeSource{events: make(chan agents.NormalizedEvent, 4)}
 	tracker := NewTracker(source)
 
-	if got := tracker.Of("inst", "s1"); got != Idle {
+	if got := tracker.Of(agents.BackendPi, "s1"); got != Idle {
 		t.Fatalf("untracked session = %q, want idle", got)
 	}
 
 	tracker.Ensure("inst")
 	source.events <- turnEvent("s1", agents.TurnStarted)
-	waitFor(t, func() bool { return tracker.Of("inst", "s1") == Running })
+	waitFor(t, func() bool { return tracker.Of(agents.BackendPi, "s1") == Running })
 
-	tracker.Forget("inst", "s1")
-	if got := tracker.Of("inst", "s1"); got != Idle {
+	tracker.Forget(agents.BackendPi, "s1")
+	if got := tracker.Of(agents.BackendPi, "s1"); got != Idle {
 		t.Errorf("forgotten session = %q, want idle", got)
 	}
 
 	close(source.events)
 	// Once the stream closes the instance's records are dropped with it.
-	waitFor(t, func() bool { return tracker.Of("inst", "s1") == Idle })
+	waitFor(t, func() bool { return tracker.Of(agents.BackendPi, "s1") == Idle })
 }
 
 // waitFor polls until cond holds or the test times out.

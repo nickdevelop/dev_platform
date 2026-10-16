@@ -35,7 +35,7 @@ func TestStoreRoundTripsAnIndexRow(t *testing.T) {
 	if err != nil || byID.NativeSessionID != "native" {
 		t.Fatalf("GetByID = (%+v, %v), want the created row", byID, err)
 	}
-	byNative, err := s.GetByNative("inst", "native")
+	byNative, err := s.GetByNative(1, "pi", "native")
 	if err != nil || byNative.ID != "p1" {
 		t.Fatalf("GetByNative = (%+v, %v), want the created row", byNative, err)
 	}

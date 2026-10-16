@@ -50,14 +50,14 @@ func (r *Store) GetByID(id string) (database.AgentSession, error) {
 	return row, nil
 }
 
-// GetByNative loads the index row mapping one instance's native session.
-func (r *Store) GetByNative(instanceID, nativeID string) (database.AgentSession, error) {
+// GetByNative loads the index row mapping one native session in a project.
+func (r *Store) GetByNative(projectID uint, backend, nativeID string) (database.AgentSession, error) {
 	var row database.AgentSession
-	if err := r.db.Where("instance_id = ? AND native_session_id = ?", instanceID, nativeID).First(&row).Error; err != nil {
+	if err := r.db.Where("project_id = ? AND backend = ? AND native_session_id = ?", projectID, backend, nativeID).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return database.AgentSession{}, fmt.Errorf("%w: %s/%s", ErrNotFound, instanceID, nativeID)
+			return database.AgentSession{}, fmt.Errorf("%w: %d/%s/%s", ErrNotFound, projectID, backend, nativeID)
 		}
-		return database.AgentSession{}, fmt.Errorf("sessions: load native %s/%s: %w", instanceID, nativeID, err)
+		return database.AgentSession{}, fmt.Errorf("sessions: load native %d/%s/%s: %w", projectID, backend, nativeID, err)
 	}
 	return row, nil
 }

@@ -43,9 +43,9 @@ var logOutput io.Writer = os.Stdout
 //
 // Missing rows are never logged: every lookup that can legitimately miss uses
 // the miss as control flow (not-found sentinels behind 404-style API answers,
-// session discovery and the rebind duplicate check), so GORM's record-not-found
-// warning would bury real warnings in noise on routine paths such as opening a
-// session. The error itself is still returned to callers.
+// session discovery), so GORM's record-not-found warning would bury real
+// warnings in noise on routine paths such as opening a session. The error itself
+// is still returned to callers.
 func newDBLogger() logger.Interface {
 	return logger.New(log.New(logOutput, "\r\n", log.LstdFlags), logger.Config{
 		SlowThreshold:             200 * time.Millisecond,

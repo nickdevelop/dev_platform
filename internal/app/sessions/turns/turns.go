@@ -29,25 +29,33 @@ type Subscriber interface {
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 }
 
+// SessionKey identifies the native session whose turn is being tracked.
+type SessionKey struct {
+	Backend  agents.BackendID
+	NativeID string
+}
+
 // Tracker records the turn state of every native session of every instance it
 // watches. It is safe for concurrent use.
 type Tracker struct {
 	subscriber Subscriber
 
-	// mu guards watching and states. states maps instance id to native session
-	// id to the session's current state; watching records the instances that
-	// already have a tracking goroutine.
-	mu       sync.Mutex
-	watching map[string]bool
-	states   map[string]map[string]State
+	// mu guards watching and states. states maps (backend, nativeSessionID)
+	// to the session's current turn state; instanceKeys tracks which sessions
+	// were observed on an instance so they are cleared when the instance stops.
+	mu           sync.Mutex
+	watching     map[string]bool
+	states       map[SessionKey]State
+	instanceKeys map[string]map[SessionKey]bool
 }
 
 // NewTracker builds a tracker that subscribes through the given stream source.
 func NewTracker(subscriber Subscriber) *Tracker {
 	return &Tracker{
-		subscriber: subscriber,
-		watching:   make(map[string]bool),
-		states:     make(map[string]map[string]State),
+		subscriber:   subscriber,
+		watching:     make(map[string]bool),
+		states:       make(map[SessionKey]State),
+		instanceKeys: make(map[string]map[SessionKey]bool),
 	}
 }
 
@@ -93,25 +101,33 @@ func (t *Tracker) track(instanceID string, events <-chan agents.NormalizedEvent)
 		if !ok || ev.SessionID == "" {
 			continue
 		}
+		key := SessionKey{Backend: ev.Backend, NativeID: ev.SessionID}
 		t.mu.Lock()
-		if t.states[instanceID] == nil {
-			t.states[instanceID] = make(map[string]State)
+		t.states[key] = state
+		if t.instanceKeys[instanceID] == nil {
+			t.instanceKeys[instanceID] = make(map[SessionKey]bool)
 		}
-		t.states[instanceID][ev.SessionID] = state
+		t.instanceKeys[instanceID][key] = true
 		t.mu.Unlock()
 	}
 	t.mu.Lock()
 	delete(t.watching, instanceID)
-	delete(t.states, instanceID)
+	for k := range t.instanceKeys[instanceID] {
+		delete(t.states, k)
+	}
+	delete(t.instanceKeys, instanceID)
 	t.mu.Unlock()
 }
 
 // Of returns the tracked state of one native session, idle when no event has
 // reported otherwise.
-func (t *Tracker) Of(instanceID, nativeSessionID string) State {
+func (t *Tracker) Of(backend agents.BackendID, nativeSessionID string) State {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if state, ok := t.states[instanceID][nativeSessionID]; ok {
+	if state, ok := t.states[SessionKey{Backend: backend, NativeID: nativeSessionID}]; ok {
+		return state
+	}
+	if state, ok := t.states[SessionKey{Backend: "", NativeID: nativeSessionID}]; ok {
 		return state
 	}
 	return Idle
@@ -119,8 +135,9 @@ func (t *Tracker) Of(instanceID, nativeSessionID string) State {
 
 // Forget drops one native session's tracked state, if any. It is called when a
 // session's index row is deleted so a re-indexed native session starts clean.
-func (t *Tracker) Forget(instanceID, nativeSessionID string) {
+func (t *Tracker) Forget(backend agents.BackendID, nativeSessionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.states[instanceID], nativeSessionID)
+	delete(t.states, SessionKey{Backend: backend, NativeID: nativeSessionID})
+	delete(t.states, SessionKey{Backend: "", NativeID: nativeSessionID})
 }

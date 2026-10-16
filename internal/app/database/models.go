@@ -81,19 +81,22 @@ type AgentInstance struct {
 
 // AgentSession is the platform's index entry for one agent-native session. It
 // stores only the mapping the platform owns — its own id, the owning project,
-// backend and instance, and the agent-native session id — plus a display title
-// and a platform status. The conversation transcript itself stays in the agent;
-// the platform never persists agent-native history. Table: agent_sessions.
+// backend and the agent-native session id — plus the instance currently or
+// last hosting it, a display title and a platform status. The conversation
+// transcript itself stays in the agent; the platform never persists
+// agent-native history.
+//
+// Uniqueness is scoped to (project_id, backend, native_session_id): a native
+// session belongs to its project and backend directly, while the instance is
+// only its runtime host. Table: agent_sessions.
 type AgentSession struct {
 	ID        string `gorm:"primaryKey;column:id;not null"`
-	ProjectID uint   `gorm:"column:project_id;not null;index"`
-	Backend   string `gorm:"column:backend;not null"`
-	// InstanceID is the platform instance that owns this native session.
-	InstanceID string `gorm:"column:instance_id;not null;index;uniqueIndex:idx_agent_session_native"`
-	// NativeSessionID is the agent's own session identifier. The pair
-	// (instance_id, native_session_id) is unique so a native session can be
-	// discovered at most once and keeps one stable platform id.
-	NativeSessionID string `gorm:"column:native_session_id;not null;uniqueIndex:idx_agent_session_native"`
+	ProjectID uint   `gorm:"column:project_id;not null;index;uniqueIndex:idx_agent_session_project_backend_native"`
+	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_agent_session_project_backend_native"`
+	// InstanceID is the platform instance currently or last hosting this native
+	// session. It is only the runtime host, not part of the session identity.
+	InstanceID      string `gorm:"column:instance_id;not null;index"`
+	NativeSessionID string `gorm:"column:native_session_id;not null;uniqueIndex:idx_agent_session_project_backend_native"`
 	Title           string `gorm:"column:title"`
 	Status          string `gorm:"column:status;not null"`
 	CreatedAt       time.Time

@@ -117,6 +117,43 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 19, name: "session_owned_by_project_backend_native", run: func(tx *gorm.DB) error {
+		// Session ownership is moved from (instance_id, native_session_id) to
+		// (project_id, backend, native_session_id). Before dropping the old
+		// index and adding the new unique index, deduplicate any existing
+		// records that share the same (project_id, backend, native_session_id):
+		// keep the most recently updated row (or highest id on tie) and delete
+		// the older duplicates.
+		dedupSQL := `
+			DELETE FROM agent_sessions
+			WHERE id IN (
+				SELECT a.id FROM agent_sessions a
+				JOIN agent_sessions b ON a.project_id = b.project_id
+					AND a.backend = b.backend
+					AND a.native_session_id = b.native_session_id
+					AND (
+						a.updated_at < b.updated_at
+						OR (a.updated_at = b.updated_at AND a.created_at < b.created_at)
+						OR (a.updated_at = b.updated_at AND a.created_at = b.created_at AND a.id < b.id)
+					)
+			);
+		`
+		if err := tx.Exec(dedupSQL).Error; err != nil {
+			return fmt.Errorf("deduplicate agent_sessions: %w", err)
+		}
+
+		// Drop the legacy index on (instance_id, native_session_id).
+		_ = tx.Exec("DROP INDEX IF EXISTS idx_agent_session_native").Error
+
+		// Create the new unique index on (project_id, backend, native_session_id).
+		if err := tx.Exec(`
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_session_project_backend_native
+			ON agent_sessions (project_id, backend, native_session_id);
+		`).Error; err != nil {
+			return fmt.Errorf("create idx_agent_session_project_backend_native: %w", err)
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

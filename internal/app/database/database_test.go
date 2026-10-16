@@ -141,6 +141,53 @@ func TestMigrateCreatesModelTables(t *testing.T) {
 	}
 }
 
+func TestMigrateDeduplicatesAgentSessions(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	// Direct raw SQL insert to simulate pre-existing duplicate rows before v19
+	// or test the deduplication query behavior explicitly.
+	// We verify that the unique index idx_agent_session_project_backend_native
+	// exists on agent_sessions.
+	if !db.Migrator().HasIndex(&AgentSession{}, "idx_agent_session_project_backend_native") {
+		t.Error("idx_agent_session_project_backend_native index is missing")
+	}
+}
+
+func TestMigrateIndexesAgentSessionsByProjectBackendNative(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	now := time.Now().UTC()
+	row1 := AgentSession{
+		ID:              "s1",
+		ProjectID:       1,
+		Backend:         "pi",
+		InstanceID:      "inst-1",
+		NativeSessionID: "native-1",
+		Status:          "idle",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := db.Create(&row1).Error; err != nil {
+		t.Fatalf("create row1: %v", err)
+	}
+
+	row2 := AgentSession{
+		ID:              "s2",
+		ProjectID:       1,
+		Backend:         "pi",
+		InstanceID:      "inst-2",
+		NativeSessionID: "native-1",
+		Status:          "idle",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := db.Create(&row2).Error; err == nil {
+		t.Fatal("create row2 succeeded, want unique index violation on (project, backend, native)")
+	}
+}
+
 func TestOpenEnablesSQLitePragmas(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)

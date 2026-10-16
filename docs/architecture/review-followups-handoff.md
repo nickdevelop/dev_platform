@@ -1,4 +1,4 @@
-# 交接：架构评审七项整改 —— 第 1、2、3、7 项已完成，第 4/6 项待实施
+# 交接：架构评审七项整改 —— 第 1、2、3、4、7 项已完成，第 6 项待实施
 
 > 分支：`refactor/remove-resources`，HEAD `c9128d4`，工作树干净，未推送。
 > 恢复：`git checkout refactor/remove-resources && git status --short && git log --oneline -2`。
@@ -35,14 +35,14 @@ openapi.yaml 删除 resources/prompts/secrets/sync 相关 paths、schemas、para
 
 ## 2. 未完成（均未开始，均需新会话先读码再动手）
 
-建议实施顺序：4 → 6，**每项独立分支、独立提交，不混交**。
-新分支从上一已完成项的分支切出（第 2 项从 `refactor/project-delete-cascade` 切出，它含第 1 项）。
+建议实施顺序：6，**独立分支、独立提交，不混交**。
+新分支从上一已完成项的分支切出（第 6 项从 `refactor/session-owned-by-project` 切出，它含第 4 项）。
 
 | # | 问题 | 已确认的决定 |
 |---|---|---|
 | 2 | agent 启用判断分散 → **已完成** | 取消项目级开关，只保留 `settings` 平台级开关；新建/继续/发送/启动实例统一经它判断；禁用后阻止新入口，不自动停实例。落地：分支 `refactor/agent-platform-switch`，迁移 v18 删 `agent_backend_configs`，`/projects/:id/agent-backends` 两条路由删除。 |
 | 3 | `instances` / `sessions` 过重 → **已完成** | `git-info` 移到 `projects`（路由改为 `/projects/{id}/git-info`）；服务控制拆为 `internal/app/agentservices`；`sessions` 拆出 `store`（会话索引）与 `turns`（轮次跟踪）子包。分支 `refactor/split-instances-sessions`，提交 `daedc65`（git 与 agentservices）及后续提交（sessions 子包）。 |
-| 4 | session 与 instance 绑定（含原第 5 项） | 会话归属改为 `(项目, 后端, 原生会话 id)`，实例仅作运行时宿主；无运行实例时自动启动并继续；删 `rebind` 与合并逻辑；turn 跟踪改键；迁移前去重。 |
+| 4 | session 与 instance 绑定（含原第 5 项） → **已完成** | 会话归属改为 `(项目, 后端, 原生会话 id)`，实例仅作运行时宿主；无运行实例时自动启动并继续；删 `rebind` 与合并逻辑；turn 跟踪改键；迁移前去重。落地：分支 `refactor/session-owned-by-project`，迁移 v19 去重并建立 `(project_id, backend, native_session_id)` 唯一索引，删除 `rebind` 与多余合并代码，`turns.Tracker` 改按 `(backend, nativeSessionID)` 键跟踪。 |
 | 6 | 领域层直接用 GORM 实体 | 每个领域引入 repository 接口。 |
 
 注意：原第 1 项提到的 `session_prompts` / `project_resources` 表已在第 7 项迁移 v17 中删除，清理逻辑已省略，不要试图清理不存在的表。
