@@ -61,8 +61,6 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusNotFound, "instance_not_found")
 	case errors.Is(err, instances.ErrInstanceNotRunning):
 		respondError(c, http.StatusConflict, "instance_not_running")
-	case errors.Is(err, instances.ErrBackendDisabled):
-		respondError(c, http.StatusConflict, "backend_disabled")
 	case errors.Is(err, ErrAgentDisabled):
 		respondError(c, http.StatusConflict, "agent_disabled")
 	case errors.Is(err, ErrServiceNotRunning):

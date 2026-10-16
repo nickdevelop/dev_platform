@@ -78,10 +78,14 @@ func TestOpenMigratesFreshDatabase(t *testing.T) {
 	db := mustOpen(t, dataDir)
 	mustMigrate(t, db)
 
-	for _, model := range []any{&Setting{}, &AuthSession{}, &Project{}, &AgentBackendConfig{}, &AgentInstance{}, &AgentSession{}} {
+	for _, model := range []any{&Setting{}, &AuthSession{}, &Project{}, &AgentInstance{}, &AgentSession{}} {
 		if !db.Migrator().HasTable(model) {
 			t.Errorf("table for %T does not exist after migration", model)
 		}
+	}
+	// Migration 18 drops the per-project backend switch table.
+	if db.Migrator().HasTable(&AgentBackendConfig{}) {
+		t.Error("agent_backend_configs still exists after migration 18")
 	}
 
 	var applied int64

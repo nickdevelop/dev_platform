@@ -65,8 +65,6 @@ describe('ProjectSettingsPanel', () => {
     // The panel no longer asks about instances; a service look happens once.
     vi.spyOn(agents, 'detectService').mockResolvedValue(null as never)
     vi.spyOn(agents, 'loadDiagnostics').mockResolvedValue(undefined as never)
-    vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
-    vi.spyOn(agents, 'setBackendEnabled').mockResolvedValue(true as never)
   })
 
   afterEach(() => {
@@ -79,16 +77,6 @@ describe('ProjectSettingsPanel', () => {
 
     expect(wrapper.text()).toContain('alpha')
     expect(wrapper.text()).toContain('/workspace/alpha')
-  })
-
-  it('toggles a backend for this project through the agents store', async () => {
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    await wrapper.find('[data-test="backend-toggle-pi"]').setValue(false)
-    await flushPromises()
-
-    expect(useAgentsStore().setBackendEnabled).toHaveBeenCalledWith(1, 'pi', false)
   })
 
   it('hands the danger-zone actions to the manage dialog with the project', async () => {
@@ -162,7 +150,9 @@ describe('ProjectSettingsPanel', () => {
 
   it('asks for discovery from the project page without picking an instance', async () => {
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false }]
+    agents.backends = [
+      { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false },
+    ]
     const sessions = useSessionsStore()
     const discover = vi.spyOn(sessions, 'discoverProjectSessions').mockResolvedValue([] as never)
 
@@ -185,14 +175,17 @@ describe('ProjectSettingsPanel', () => {
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
   })
 
-  it('disables discovery when the selected backend is disabled for the project', async () => {
+  it('disables discovery when the selected backend is disabled platform-wide', async () => {
     const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false }]
-    agents.backendConfigs = [{ projectId: 1, backend: 'pi', enabled: false } as never]
+    agents.backends = [
+      { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false, enabled: false },
+    ]
 
     const wrapper = mountPanel()
     await flushPromises()
 
     expect(wrapper.find('[data-test="discover-sessions"]').attributes('disabled')).toBeDefined()
+    // The project page no longer carries its own enable/disable switches.
+    expect(wrapper.find('[data-test^="backend-toggle-"]').exists()).toBe(false)
   })
 })

@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"devplatform/internal/core/agents"
 	"devplatform/internal/app/database"
@@ -44,10 +43,6 @@ var (
 	// ErrInstanceNotRunning reports a subscription to an instance that is not
 	// starting or running.
 	ErrInstanceNotRunning = errors.New("instances: instance is not running")
-	// ErrBackendDisabled reports an attempt to start a backend that the project
-	// has explicitly disabled. The default is enabled, so this only happens
-	// after an operator turned the backend off for the project.
-	ErrBackendDisabled = errors.New("instances: backend is disabled for this project")
 	// ErrAgentDisabled reports an attempt to start a backend the platform has
 	// disabled. Disabling only blocks new work; existing instances keep running.
 	ErrAgentDisabled = errors.New("instances: agent is disabled platform-wide")
@@ -196,16 +191,8 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 		return Instance{}, err
 	}
 
-	// Honor the project's backend enable/disable configuration before starting
-	// anything. A backend with no stored config is enabled by default.
-	enabled, err := s.backendEnabled(projectID, backend)
-	if err != nil {
-		return Instance{}, err
-	}
-	if !enabled {
-		return Instance{}, fmt.Errorf("%w: %q", ErrBackendDisabled, backend)
-	}
-	// Platform-level enablement gates new work for every project.
+	// Platform-level enablement is the only switch: it gates new work for every
+	// project and is checked before anything starts.
 	if s.platformEnabled != nil && !s.platformEnabled(backend) {
 		return Instance{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
 	}
@@ -362,78 +349,6 @@ func (s *Service) Get(instanceID string) (Instance, error) {
 		return Instance{}, err
 	}
 	return instanceFromModel(row), nil
-}
-
-// BackendConfig is the JSON-stable per-project enable/disable state of one
-// registered agent backend.
-type BackendConfig struct {
-	Backend agents.BackendID `json:"backend"`
-	Enabled bool             `json:"enabled"`
-}
-
-// Backends returns the project's enable/disable state for every registered
-// backend, in the registry's stable order. A backend with no stored config is
-// reported enabled (the sane default).
-func (s *Service) Backends(projectID uint) ([]BackendConfig, error) {
-	if _, err := s.resolveProject(projectID); err != nil {
-		return nil, err
-	}
-	ids := s.registry.Backends()
-	out := make([]BackendConfig, 0, len(ids))
-	for _, id := range ids {
-		enabled, err := s.backendEnabled(projectID, id)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, BackendConfig{Backend: id, Enabled: enabled})
-	}
-	return out, nil
-}
-
-// SetBackendEnabled records whether a backend is enabled for the project,
-// upserting the (project_id, backend) row so concurrent toggles cannot create
-// duplicates. It validates the backend id and the project.
-func (s *Service) SetBackendEnabled(projectID uint, backend agents.BackendID, enabled bool) (BackendConfig, error) {
-	if !backend.Valid() {
-		return BackendConfig{}, fmt.Errorf("%w: %q", ErrUnknownBackend, backend)
-	}
-	if _, err := s.resolveProject(projectID); err != nil {
-		return BackendConfig{}, err
-	}
-	now := s.now()
-	// A map insert is deliberate: GORM skips a zero-value bool for a column
-	// carrying a `default:true` tag, which would silently turn an explicit
-	// disable back on. The map writes the literal value.
-	if err := s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "project_id"}, {Name: "backend"}},
-		DoUpdates: clause.Assignments(map[string]any{"enabled": enabled, "updated_at": now}),
-	}).Model(&database.AgentBackendConfig{}).Create(map[string]any{
-		"project_id": projectID,
-		"backend":    string(backend),
-		"enabled":    enabled,
-		"created_at": now,
-		"updated_at": now,
-	}).Error; err != nil {
-		return BackendConfig{}, fmt.Errorf("instances: set backend config: %w", err)
-	}
-	return BackendConfig{Backend: backend, Enabled: enabled}, nil
-}
-
-// backendEnabled reports whether a backend is enabled for the project. A
-// backend with no stored config is enabled: once an adapter is registered it is
-// usable by default, and only an explicit disable turns it off.
-func (s *Service) backendEnabled(projectID uint, backend agents.BackendID) (bool, error) {
-	// Find (not First) so a missing row is an empty result rather than a
-	// logged ErrRecordNotFound: the default-enabled path is not an error.
-	var rows []database.AgentBackendConfig
-	if err := s.db.Where("project_id = ? AND backend = ?", projectID, string(backend)).
-		Limit(1).Find(&rows).Error; err != nil {
-		return false, fmt.Errorf("instances: read backend config: %w", err)
-	}
-	if len(rows) == 0 {
-		return true, nil
-	}
-	return rows[0].Enabled, nil
 }
 
 // Stop terminates an instance and tears down its event fan-out. It is

@@ -536,18 +536,26 @@ func TestCreateReportsStartFailureWithoutIndexing(t *testing.T) {
 	}
 }
 
-// TestCreateRefusesDisabledBackend verifies create does not silently start a
-// backend the project has disabled.
-func TestCreateRefusesDisabledBackend(t *testing.T) {
-	env := newTestEnv(t)
-	otherProject := env.registerProject(t, "beta")
-	if _, err := env.instances.SetBackendEnabled(otherProject, agents.BackendPi, false); err != nil {
-		t.Fatalf("disable backend: %v", err)
-	}
+// TestPlatformSwitchRefusesNewWorkOnExistingSession verifies the platform
+// switch gates every new-work entry point (create, continue, send) while
+// interrupt is not gated.
+func TestPlatformSwitchRefusesNewWorkOnExistingSession(t *testing.T) {
+	enabled := true
+	env := newTestEnv(t, func(agents.BackendID) bool { return enabled })
+	session := createNativeSession(t, env, "native-gate")
 
-	_, err := env.svc.Create(context.Background(), otherProject, agents.BackendPi, "t", "", "")
-	if !errors.Is(err, instances.ErrBackendDisabled) {
-		t.Fatalf("Create error = %v, want instances.ErrBackendDisabled", err)
+	enabled = false
+	if _, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "t2", "", ""); !errors.Is(err, ErrAgentDisabled) {
+		t.Errorf("Create while disabled error = %v, want ErrAgentDisabled", err)
+	}
+	if _, err := env.svc.Continue(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrAgentDisabled) {
+		t.Errorf("Continue while disabled error = %v, want ErrAgentDisabled", err)
+	}
+	if _, err := env.svc.Send(context.Background(), env.projectID, session.ID, "hello", ""); !errors.Is(err, ErrAgentDisabled) {
+		t.Errorf("Send while disabled error = %v, want ErrAgentDisabled", err)
+	}
+	if _, err := env.svc.Interrupt(context.Background(), env.projectID, session.ID); errors.Is(err, ErrAgentDisabled) {
+		t.Errorf("Interrupt while disabled error = %v; interrupt must not be gated", err)
 	}
 }
 
@@ -1163,19 +1171,18 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	}
 }
 
-// TestHandleCreateMapsStartFailures verifies create maps a project-disabled
-// backend to 409 backend_disabled and a failed auto-start to 502
+// TestHandleCreateMapsStartFailures verifies create maps a platform-disabled
+// backend to 409 agent_disabled and a failed auto-start to 502
 // instance_start_failed, matching the instance routes' existing contract.
 func TestHandleCreateMapsStartFailures(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	env := newTestEnv(t)
+	enabled := true
+	env := newTestEnv(t, func(agents.BackendID) bool { return enabled })
 	router := gin.New()
 	env.svc.RegisterRoutes(router)
 
 	disabled := env.registerProject(t, "beta-disabled")
-	if _, err := env.instances.SetBackendEnabled(disabled, agents.BackendPi, false); err != nil {
-		t.Fatalf("disable backend: %v", err)
-	}
+	enabled = false
 
 	post := func(projectID uint) *httptest.ResponseRecorder {
 		body, _ := json.Marshal(createSessionRequest{Backend: agents.BackendPi})
@@ -1187,10 +1194,11 @@ func TestHandleCreateMapsStartFailures(t *testing.T) {
 	}
 
 	rec := post(disabled)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "backend_disabled") {
-		t.Fatalf("POST disabled backend = %d %s, want 409 backend_disabled", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "agent_disabled") {
+		t.Fatalf("POST disabled backend = %d %s, want 409 agent_disabled", rec.Code, rec.Body.String())
 	}
 
+	enabled = true
 	failing := env.registerProject(t, "beta-failing")
 	env.fake.mu.Lock()
 	env.fake.startErr = errors.New("adapter cannot start")

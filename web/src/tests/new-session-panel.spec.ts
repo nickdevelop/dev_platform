@@ -43,16 +43,19 @@ function setup(options: {
       order: 1,
       serviceSupported: true,
     },
-    { backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false },
+    {
+      backend: 'pi',
+      capabilities: capabilities(),
+      label: 'Pi Agent',
+      order: 2,
+      serviceSupported: false,
+      enabled: options.piEnabled !== false,
+    },
   ]
-  if (options.piEnabled === false) {
-    agents.backendConfigs = [{ projectId: 1, backend: 'pi', enabled: false } as never]
-  }
   if (options.instances !== undefined) {
     agents.instances = options.instances
   }
   vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
-  vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
   vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
 
   const sessions = useSessionsStore()
@@ -230,13 +233,12 @@ describe('NewSessionPanel', () => {
     expect(createSpy).not.toHaveBeenCalled()
   })
 
-  it('disables a backend disabled for the project and labels it', async () => {
+  it('does not offer a backend disabled platform-wide', async () => {
     const { wrapper } = setup({ piEnabled: false })
     await flushPromises()
 
-    const piButton = backendButton(wrapper, 'pi')
-    expect(piButton.attributes('disabled')).toBeDefined()
-    expect(piButton.text()).toContain('已在项目中禁用')
+    expect(backendButton(wrapper, 'pi').exists()).toBe(false)
+    expect(backendButton(wrapper, 'opencode-v2').exists()).toBe(true)
 
     await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()
@@ -248,8 +250,7 @@ describe('NewSessionPanel', () => {
     const agents = useAgentsStore()
     agents.backends = [{ backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false }]
     vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
-    vi.spyOn(agents, 'loadBackendConfigs').mockResolvedValue(undefined as never)
-    vi.stubGlobal(
+      vi.stubGlobal(
       'fetch',
       vi.fn(
         async () =>

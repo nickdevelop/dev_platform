@@ -120,7 +120,6 @@ const errorMessages: Record<string, string> = {
   not_a_directory: '该路径不是目录。',
   path_conflict: '目标路径已存在。',
   project_not_found: '项目不存在。',
-  backend_disabled: '该项目已禁用此 Agent 后端，请先在项目 Agent 设置中启用。',
   // The opencode service is a third-party process the platform never starts on
   // its own, so every message about it points at the one place an operator can
   // act. These two strings are the product's wording, not a paraphrase.

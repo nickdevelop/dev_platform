@@ -521,6 +521,9 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	row = s.reconcile(row)
 
 	backend := agents.BackendID(row.Backend)
+	if s.agentDisabled(backend) {
+		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
+	}
 	if !s.capabilities(backend).SessionContinue {
 		return Session{}, fmt.Errorf("%w: session continue", ErrUnsupportedCapability)
 	}
@@ -676,6 +679,9 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 		return Session{}, err
 	}
 	row = s.reconcile(row)
+	if s.agentDisabled(agents.BackendID(row.Backend)) {
+		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, row.Backend)
+	}
 	if strings.TrimSpace(text) == "" {
 		return Session{}, fmt.Errorf("%w: message text is required", ErrInvalidRequest)
 	}

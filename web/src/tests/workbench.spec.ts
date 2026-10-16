@@ -537,32 +537,30 @@ describe('session chat and new session panels', () => {
 
 })
 
-describe('project backend enable/disable store', () => {
-  it('loads and toggles a backend, reflecting the new state locally', async () => {
+describe('platform agent switch in the agents store', () => {
+  it('reflects a platform-level disable once the backend list is reloaded', async () => {
+    const { agents } = setupStores()
+    expect(agents.backendEnabledFor('pi')).toBe(true)
+
     const calls = stubRoutes([
       [
         'GET',
-        '/api/projects/1/agent-backends',
-        { status: 200, body: { backends: [{ backend: 'pi', enabled: true }] } },
-      ],
-      [
-        'PUT',
-        '/api/projects/1/agent-backends/pi',
-        { status: 200, body: { backend: 'pi', enabled: false } },
+        '/api/agent-backends',
+        {
+          status: 200,
+          body: {
+            backends: backendFixtures().map((entry) =>
+              entry.backend === 'pi' ? { ...entry, enabled: false } : entry,
+            ),
+          },
+        },
       ],
     ])
-    const { agents, auth } = setupStores()
-    auth.csrfToken = 'csrf-1'
+    await agents.refreshBackends()
 
-    await agents.loadBackendConfigs(1)
-    expect(agents.backendEnabledFor('pi')).toBe(true)
-
-    const updated = await agents.setBackendEnabled(1, 'pi', false)
-    expect(updated?.enabled).toBe(false)
+    expect(calls.map((call) => call.path)).toEqual(['/api/agent-backends'])
     expect(agents.backendEnabledFor('pi')).toBe(false)
-
-    const put = calls.find((call) => call.method === 'PUT')
-    expect(put?.body).toEqual({ enabled: false })
+    expect(agents.backendEnabledFor('opencode-v2')).toBe(true)
   })
 })
 

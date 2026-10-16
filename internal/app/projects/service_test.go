@@ -369,7 +369,7 @@ func TestUnregisterCascadesPlatformRows(t *testing.T) {
 		t.Fatalf("Unregister: %v", err)
 	}
 
-	for _, model := range []any{&database.AgentInstance{}, &database.AgentSession{}, &database.AgentBackendConfig{}} {
+	for _, model := range []any{&database.AgentInstance{}, &database.AgentSession{}} {
 		var n int64
 		if err := db.Model(model).Where("project_id = ?", project.ID).Count(&n).Error; err != nil {
 			t.Fatalf("count rows: %v", err)
@@ -394,8 +394,8 @@ func TestUnregisterCascadesPlatformRows(t *testing.T) {
 	}
 }
 
-// seedProjectRows inserts one stopped instance, one session on it and one
-// backend config for the project, standing in for the state the platform
+// seedProjectRows inserts one stopped instance and one session on it for the
+// project, standing in for the state the platform
 // accumulates while a project is in use.
 func seedProjectRows(t *testing.T, db *gorm.DB, projectID uint, instanceID string) {
 	t.Helper()
@@ -403,7 +403,6 @@ func seedProjectRows(t *testing.T, db *gorm.DB, projectID uint, instanceID strin
 	rows := []any{
 		&database.AgentInstance{ID: instanceID, ProjectID: projectID, Backend: "pi", Directory: "/x", Status: "stopped"},
 		&database.AgentSession{ID: instanceID + "-s", ProjectID: projectID, Backend: "pi", InstanceID: instanceID, NativeSessionID: instanceID + "-native", Status: "idle"},
-		&database.AgentBackendConfig{ProjectID: projectID, Backend: "pi", Enabled: true},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {

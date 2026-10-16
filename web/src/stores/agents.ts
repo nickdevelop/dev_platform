@@ -7,9 +7,7 @@ import {
   fetchAgentDiagnostics,
   getServiceStatus,
   listAgentBackends,
-  listProjectBackendConfigs,
   listProjectInstances,
-  setProjectBackendConfig,
   startAgentService,
   startProjectInstance,
   stopAgentService,
@@ -17,7 +15,6 @@ import {
   type AgentBackend,
   type AgentInstance,
   type AgentServiceStatus,
-  type BackendConfig,
   type BackendDiagnostics,
   type BackendId,
   type Capabilities,
@@ -30,10 +27,6 @@ export const useAgentsStore = defineStore('agents', {
     backends: [] as AgentBackend[],
     backendsLoaded: false,
     instances: [] as AgentInstance[],
-    // Per-project backend enable/disable state (spec §5.3). Loaded when a
-    // project's Agent settings open; a backend absent from this list is
-    // treated as enabled (the server default).
-    backendConfigs: [] as BackendConfig[],
     projectId: null as number | null,
     // Per-backend startup diagnostics. Point-in-time results, refetched every
     // time the agents view loads; they are never cached like the capability
@@ -76,12 +69,13 @@ export const useAgentsStore = defineStore('agents', {
       return this.orderedBackends.filter((entry) => entry.serviceSupported)
     },
     runningInstances: (state) => state.instances.filter((entry) => entry.status === 'running'),
-    // Whether a backend is enabled for the open project. Unknown backends
-    // default to enabled, matching the server.
+    // Whether a backend is enabled platform-wide. The platform setting is the
+    // only enable/disable; an unknown backend defaults to enabled, matching the
+    // server.
     backendEnabledFor:
       (state) =>
       (backend: BackendId | string): boolean =>
-        state.backendConfigs.find((entry) => entry.backend === backend)?.enabled ?? true,
+        state.backends.find((entry) => entry.backend === backend)?.enabled ?? true,
   },
 
   actions: {
@@ -177,36 +171,11 @@ export const useAgentsStore = defineStore('agents', {
       }
     },
 
-    // Loads the project's per-backend enable/disable state.
-    async loadBackendConfigs(projectId: number) {
-      try {
-        const list = await listProjectBackendConfigs(projectId)
-        this.backendConfigs = list.backends
-      } catch (error) {
-        if (error instanceof UnauthorizedError) return
-        this.error = describeApiError(error)
-      }
-    },
-
-    // Enables or disables one backend for the project, updating the local
-    // list on success.
-    async setBackendEnabled(projectId: number, backend: BackendId, enabled: boolean) {
-      const auth = useAuthStore()
-      try {
-        const updated = await setProjectBackendConfig(projectId, backend, enabled, auth.csrfToken)
-        const exists = this.backendConfigs.some((entry) => entry.backend === updated.backend)
-        this.backendConfigs = exists
-          ? this.backendConfigs.map((entry) =>
-              entry.backend === updated.backend ? updated : entry,
-            )
-          : [...this.backendConfigs, updated]
-        this.error = ''
-        return updated
-      } catch (error) {
-        if (error instanceof UnauthorizedError) return null
-        this.error = describeApiError(error)
-        return null
-      }
+    // Reloads the backend registry after a platform-level enable/disable change,
+    // so the workbench sees the new state without a page reload.
+    async refreshBackends() {
+      this.backendsLoaded = false
+      await this.loadBackends()
     },
 
     async startInstance(projectId: number, backend: BackendId) {

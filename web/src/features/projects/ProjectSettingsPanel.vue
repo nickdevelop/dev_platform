@@ -42,7 +42,6 @@ async function load() {
   }
   await Promise.all([
     agents.loadDiagnostics(),
-    agents.loadBackendConfigs(props.projectId),
     // One look per service-backed backend, on open, so the notice below tells
     // the truth about whether a session could start here at all. The platform
     // neither polls nor starts it.
@@ -81,15 +80,8 @@ async function scan() {
   scanning.value = false
 }
 
-async function toggleBackend(backend: BackendId, event: Event) {
-  const enabled = (event.target as HTMLInputElement).checked
-  actionError.value = ''
-  const updated = await agents.setBackendEnabled(props.projectId, backend, enabled)
-  if (!updated) actionError.value = agents.error
-}
-
-// The scan control is disabled when the selected backend is disabled for the
-// project, so the UI never offers an action the server will refuse.
+// The scan control is disabled when the selected backend is disabled
+// platform-wide, so the UI never offers an action the server will refuse.
 const selectedBackendEnabled = computed(
   () => selectedBackend.value === '' || agents.backendEnabledFor(selectedBackend.value),
 )
@@ -134,24 +126,6 @@ function manage(kind: 'move' | 'rename' | 'unregister') {
     </p>
 
     <BackendDiagnostics :diagnostics="agents.diagnostics" />
-
-    <section class="backend-config" aria-label="项目 Agent 后端启用">
-      <h2>项目后端启用</h2>
-      <ul class="backend-config-list">
-        <li v-for="backend in agents.backends" :key="backend.backend" class="backend-config-item">
-          <label>
-            <input
-              type="checkbox"
-              :checked="agents.backendEnabledFor(backend.backend)"
-              :data-test="`backend-toggle-${backend.backend}`"
-              @change="toggleBackend(backend.backend, $event)"
-            />
-            启用 {{ backend.backend }}
-          </label>
-        </li>
-      </ul>
-      <p class="hint">未显式禁用的后端默认启用；禁用的后端无法在该项目中创建新会话。</p>
-    </section>
 
     <section class="scan-sessions" aria-label="扫描原生会话">
       <h2>扫描原生会话</h2>
@@ -231,15 +205,6 @@ function manage(kind: 'move' | 'rename' | 'unregister') {
 .actions .unregister {
   color: var(--color-text);
   border-color: var(--color-border-strong);
-}
-
-.backend-config-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
 }
 
 .scan-controls {

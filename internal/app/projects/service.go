@@ -373,7 +373,7 @@ func (s *Service) removeProject(id uint) error {
 			return fmt.Errorf("%w: %d instance(s) of project %d are still live", ErrInstanceStop, live, id)
 		}
 
-		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}, &database.AgentBackendConfig{}} {
+		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}} {
 			if err := tx.Where("project_id = ?", id).Delete(model).Error; err != nil {
 				return fmt.Errorf("projects: delete project %d rows: %w", id, err)
 			}

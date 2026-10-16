@@ -235,16 +235,15 @@ opencode's history read needs a running server, because that is where the
 message log lives; the platform starts one if none is running before reading.
 pi's read touches only the filesystem, so it needs no process at all.
 
-## Project backend enable/disable
+## Backend enable/disable (platform-wide)
 
-`AgentBackendConfig` stores a per-project `enabled` flag for each backend
-(spec §5.3). The default is **enabled**: a registered backend is usable in a
-project until an operator disables it from the project Agent settings
-(`GET`/`PUT /api/projects/{id}/agent-backends[/{backend}]`). Starting an
-instance of a disabled backend is refused with `backend_disabled` (409);
-already-running instances are unaffected, and re-enabling restores starting
-immediately. The `(project_id, backend)` pair is unique, so toggles are
-idempotent upserts.
+The platform-level agent setting (`settings`) is the only enable/disable
+switch. A disabled backend is refused for every new entry point, in every
+project: creating or continuing a session, sending a message, discovering
+native sessions and starting an instance (`agent_disabled`, 409). Interrupt
+and stop are never gated. Disabling never stops an instance that is already
+running, and re-enabling restores new work immediately. The per-project switch
+(`agent_backend_configs`) was removed by migration 18.
 
 ## Resilience and isolation (tested)
 

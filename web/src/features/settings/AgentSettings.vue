@@ -46,8 +46,11 @@ async function detect(backend: string) {
   detections[backend] = await settings.detectAgent(backend)
 }
 
-function toggle(backend: string, value: boolean) {
-  void settings.setAgentEnabled(backend, value)
+async function toggle(backend: string, value: boolean) {
+  await settings.setAgentEnabled(backend, value)
+  // The workbench reads the platform switch from the agents store; reload it
+  // so the new state applies without a page reload.
+  await agents.refreshBackends()
 }
 
 function onModeChange(backend: string, mode: string) {

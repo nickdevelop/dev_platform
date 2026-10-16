@@ -2,19 +2,14 @@ package instances
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
@@ -376,106 +371,6 @@ func TestStartAssociatesProjectAndPersistsInstance(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != inst.ID {
 		t.Fatalf("List = %+v, want exactly the started instance", list)
-	}
-}
-
-// TestBackendEnableDisableGatesStart proves finding 3: a backend defaults to
-// enabled, an operator can disable it per project, a disabled backend cannot be
-// started, and re-enabling restores starting.
-func TestBackendEnableDisableGatesStart(t *testing.T) {
-	svc, _, projectID, _, fake := newTestService(t)
-
-	// Default: enabled without any stored config.
-	configs, err := svc.Backends(projectID)
-	if err != nil {
-		t.Fatalf("Backends: %v", err)
-	}
-	if len(configs) != 1 || configs[0].Backend != agents.BackendPi || !configs[0].Enabled {
-		t.Fatalf("default configs = %+v, want pi enabled", configs)
-	}
-	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
-		t.Fatalf("Start with the default (enabled) backend: %v", err)
-	}
-
-	// Disable it, and prove starting is refused without invoking the adapter.
-	if _, err := svc.SetBackendEnabled(projectID, agents.BackendPi, false); err != nil {
-		t.Fatalf("SetBackendEnabled(false): %v", err)
-	}
-	before := fake.startCount()
-	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); !errors.Is(err, ErrBackendDisabled) {
-		t.Fatalf("Start on a disabled backend error = %v, want ErrBackendDisabled", err)
-	}
-	if got := fake.startCount(); got != before {
-		t.Errorf("adapter was started %d times for a disabled backend, want %d", got, before)
-	}
-	configs, err = svc.Backends(projectID)
-	if err != nil {
-		t.Fatalf("Backends after disable: %v", err)
-	}
-	if configs[0].Enabled {
-		t.Errorf("configs after disable = %+v, want pi disabled", configs)
-	}
-
-	// Re-enabling restores the ability to start (upsert, no duplicate rows).
-	if _, err := svc.SetBackendEnabled(projectID, agents.BackendPi, true); err != nil {
-		t.Fatalf("SetBackendEnabled(true): %v", err)
-	}
-	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
-		t.Fatalf("Start after re-enable: %v", err)
-	}
-	var count int64
-	if err := svc.db.Model(&database.AgentBackendConfig{}).Count(&count).Error; err != nil {
-		t.Fatalf("count backend configs: %v", err)
-	}
-	if count != 1 {
-		t.Errorf("backend config rows = %d, want 1 (upsert, not duplicate)", count)
-	}
-
-	if _, err := svc.SetBackendEnabled(projectID, "claude-code", true); !errors.Is(err, ErrUnknownBackend) {
-		t.Errorf("SetBackendEnabled unknown backend error = %v, want ErrUnknownBackend", err)
-	}
-}
-
-// TestBackendConfigRoutes proves the per-project backend config routes: GET
-// lists the state, PUT toggles it, and starting a disabled backend maps to a
-// 409 backend_disabled.
-func TestBackendConfigRoutes(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	svc, _, projectID, _, _ := newTestService(t)
-
-	router := gin.New()
-	svc.RegisterRoutes(router)
-	base := fmt.Sprintf("/projects/%d/agent-backends", projectID)
-
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base, nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"pi"`) {
-		t.Fatalf("GET %s = %d %s", base, rec.Code, rec.Body.String())
-	}
-
-	body := strings.NewReader(`{"enabled":false}`)
-	req := httptest.NewRequest(http.MethodPut, base+"/pi", body)
-	req.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("PUT %s/pi = %d %s", base, rec.Code, rec.Body.String())
-	}
-	var config BackendConfig
-	if err := json.Unmarshal(rec.Body.Bytes(), &config); err != nil {
-		t.Fatalf("decode config: %v", err)
-	}
-	if config.Backend != agents.BackendPi || config.Enabled {
-		t.Errorf("config = %+v, want pi disabled", config)
-	}
-
-	// Starting the disabled backend is a 409 with the documented code.
-	startReq := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/projects/%d/instances", projectID), strings.NewReader(`{"backend":"pi"}`))
-	startReq.Header.Set("Content-Type", "application/json")
-	rec = httptest.NewRecorder()
-	router.ServeHTTP(rec, startReq)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "backend_disabled") {
-		t.Fatalf("POST disabled instance = %d %s, want 409 backend_disabled", rec.Code, rec.Body.String())
 	}
 }
 
@@ -1076,5 +971,39 @@ func TestStopProjectInstancesStopsOnlyLiveInstances(t *testing.T) {
 	fake.mu.Unlock()
 	if err := svc.StopProjectInstances(context.Background(), projectID); err == nil {
 		t.Fatal("StopProjectInstances with a failing adapter = nil, want error")
+	}
+}
+
+// TestPlatformSwitchGatesNewWorkOnly checks the single enable/disable switch.
+// Disabling a backend platform-wide refuses new starts without touching the
+// adapter or the instance that is already running; re-enabling restores starts.
+func TestPlatformSwitchGatesNewWorkOnly(t *testing.T) {
+	enabled := true
+	svc, _, projectID, _, fake := newTestService(t,
+		WithPlatformEnabled(func(agents.BackendID) bool { return enabled }))
+
+	running, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start while enabled: %v", err)
+	}
+
+	enabled = false
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); !errors.Is(err, ErrAgentDisabled) {
+		t.Fatalf("Start while disabled error = %v, want ErrAgentDisabled", err)
+	}
+	if got := fake.startCount(); got != 1 {
+		t.Errorf("adapter starts = %d, want 1 (the refused start must not reach the adapter)", got)
+	}
+	still, err := svc.Get(running.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if still.Status == agents.InstanceStopped || still.Status == agents.InstanceFailed {
+		t.Errorf("running instance status = %q after disabling; disabling must not stop it", still.Status)
+	}
+
+	enabled = true
+	if _, err := svc.Start(context.Background(), projectID, agents.BackendPi); err != nil {
+		t.Fatalf("Start after re-enabling: %v", err)
 	}
 }

@@ -62,7 +62,7 @@ const createLabel = computed(() => {
 })
 
 onMounted(async () => {
-  await Promise.all([agents.loadBackends(), agents.loadBackendConfigs(props.projectId)])
+  await agents.loadBackends()
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
     selectedBackend.value = selectableBackends.value[0].backend
   }
@@ -119,17 +119,11 @@ function onComposerEnter() {
             class="backend-option"
             :class="{ active: selectedBackend === backend.backend }"
             :aria-checked="selectedBackend === backend.backend"
-            :disabled="!agents.backendEnabledFor(backend.backend)"
             :data-backend="backend.backend"
-            :title="
-              agents.backendEnabledFor(backend.backend) ? backend.label : `${backend.label}（已在项目中禁用）`
-            "
+            :title="backend.label"
             @click="selectBackend(backend.backend)"
           >
             <span class="backend-name">{{ backend.label || backend.backend }}</span>
-            <span v-if="!agents.backendEnabledFor(backend.backend)" class="backend-disabled">
-              已在项目中禁用
-            </span>
           </button>
         </div>
         <p v-if="selectedCapabilities" class="hint">
@@ -265,10 +259,6 @@ function onComposerEnter() {
 .backend-option:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.backend-disabled {
-  font-size: 0.75rem;
 }
 
 /* Desktop-style composer: one rounded box holds the input and its toolbar,

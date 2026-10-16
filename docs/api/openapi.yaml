@@ -453,7 +453,7 @@ paths:
         '409':
           description: >-
             The project directory is missing or is not a directory, or the
-            backend is disabled for the project.
+            backend is disabled platform-wide.
           content:
             application/json:
               schema:
@@ -633,100 +633,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/agent-backends:
-    get:
-      summary: List a project's backend enable/disable state
-      description: >-
-        Returns each registered backend with whether it is enabled for the
-        project. A backend with no stored configuration is enabled by default.
-      operationId: listProjectBackendConfigs
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the owning project.
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '200':
-          description: The project's per-backend enable/disable state.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentBackendConfigList'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: No project with the given id.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /projects/{id}/agent-backends/{backend}:
-    put:
-      summary: Enable or disable a backend for a project
-      description: >-
-        Upserts the project's enable/disable state for one backend. A disabled
-        backend cannot start a new instance in the project; already-running
-        instances are unaffected. The pair (project, backend) is unique, so the
-        toggle is idempotent.
-      operationId: setProjectBackendConfig
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the owning project.
-          schema:
-            type: integer
-            format: int64
-        - name: backend
-          in: path
-          required: true
-          description: Backend id to configure.
-          schema:
-            type: string
-            enum:
-              - opencode-v2
-              - pi
-        - $ref: '#/components/parameters/CSRFToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SetAgentBackendConfigRequest'
-      responses:
-        '200':
-          description: The updated backend configuration.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentBackendConfig'
-        '400':
-          description: Malformed body or unknown backend.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/CSRFRejected'
-        '404':
-          description: No project with the given id.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          $ref: '#/components/responses/InternalError'
   /agent-backends:
     get:
       summary: List agent backends and their capabilities
@@ -956,7 +862,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: >-
-            The backend is disabled for the project, or the request requires a
+            The backend is disabled platform-wide, or the request requires a
             capability the backend does not support, or the backend runs a
             machine-level service that is not running (`service_not_running`) —
             starting that service is an operator action on the platform
@@ -1076,7 +982,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: >-
-            The backend is disabled for the project, or does not declare
+            The backend is disabled platform-wide, or does not declare
             session discovery support.
           content:
             application/json:
@@ -2528,39 +2434,6 @@ components:
           enum:
             - opencode-v2
             - pi
-      additionalProperties: false
-    AgentBackendConfig:
-      type: object
-      required:
-        - backend
-        - enabled
-      properties:
-        backend:
-          type: string
-          enum:
-            - opencode-v2
-            - pi
-        enabled:
-          type: boolean
-          description: Whether the backend is enabled for the project.
-      additionalProperties: false
-    AgentBackendConfigList:
-      type: object
-      required:
-        - backends
-      properties:
-        backends:
-          type: array
-          items:
-            $ref: '#/components/schemas/AgentBackendConfig'
-      additionalProperties: false
-    SetAgentBackendConfigRequest:
-      type: object
-      required:
-        - enabled
-      properties:
-        enabled:
-          type: boolean
       additionalProperties: false
     AgentCapabilities:
       type: object

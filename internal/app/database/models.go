@@ -48,10 +48,10 @@ type Project struct {
 	UpdatedAt time.Time
 }
 
-// AgentBackendConfig records whether one agent backend is enabled for one
-// project. Backend holds a platform backend id (for example "opencode-v2" or
-// "pi"); the pair (project_id, backend) is unique so a project can enable each
-// backend at most once. Table: agent_backend_configs.
+// AgentBackendConfig is a legacy per-project backend switch. Migration 5
+// creates its table and migration 18 drops it; no current code reads or writes
+// it. The platform-level agent setting is the only enable/disable.
+// Table: agent_backend_configs.
 type AgentBackendConfig struct {
 	ID        uint   `gorm:"primaryKey;column:id"`
 	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_agent_backend_project"`

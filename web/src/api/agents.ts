@@ -34,8 +34,9 @@ export type InstanceStatus = 'starting' | 'running' | 'stopped' | 'failed'
 export interface AgentBackend {
   backend: BackendId
   capabilities: Capabilities
-  // Platform-level enablement: a disabled backend cannot be chosen for new
-  // sessions. Absent is treated as enabled (the server always sends it).
+  // Platform-level enablement (the only switch): a disabled backend cannot be
+  // chosen for new sessions or instances. Absent is treated as enabled (the
+  // server always sends it).
   enabled?: boolean
   // Display name from the platform catalog; falls back to the raw id.
   label: string
@@ -141,37 +142,6 @@ export interface BackendModelList {
   models: ModelInfo[]
   updatedAt: string
   stale: boolean
-}
-
-// Mirrors the per-project backend enable/disable state
-// (#/components/schemas/AgentBackendConfig).
-export interface BackendConfig {
-  backend: BackendId
-  enabled: boolean
-}
-
-// Mirrors #/components/schemas/AgentBackendConfigList.
-export interface BackendConfigList {
-  backends: BackendConfig[]
-}
-
-// GET /api/projects/{id}/agent-backends
-export function listProjectBackendConfigs(projectId: number): Promise<BackendConfigList> {
-  return apiRequest<BackendConfigList>('GET', `/projects/${projectId}/agent-backends`)
-}
-
-// PUT /api/projects/{id}/agent-backends/{backend}
-export function setProjectBackendConfig(
-  projectId: number,
-  backend: BackendId,
-  enabled: boolean,
-  csrfToken: string,
-): Promise<BackendConfig> {
-  return apiRequest<BackendConfig>(
-    'PUT',
-    `/projects/${projectId}/agent-backends/${encodeURIComponent(backend)}`,
-    { body: { enabled }, csrfToken },
-  )
 }
 
 // GET /api/agent-backends

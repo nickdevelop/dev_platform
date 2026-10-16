@@ -108,6 +108,15 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 18, name: "drop_agent_backend_configs", run: func(tx *gorm.DB) error {
+		// Per-project backend switches were removed: the platform-level agent
+		// setting is the only enable/disable. The table holds data no code
+		// reads any more, so it is dropped; project directories are untouched.
+		if tx.Migrator().HasTable(&AgentBackendConfig{}) {
+			return tx.Migrator().DropTable(&AgentBackendConfig{})
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

@@ -23,12 +23,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/instances/:instanceId/stop", s.handleStop)
 	r.GET("/projects/:id/instances/:instanceId/git-info", s.handleGitInfo)
 
-	// Per-project backend enable/disable (spec §5.3): an operator turns a
-	// backend on or off for one project; starting a disabled backend is
-	// refused. The pair (project, backend) is upserted, never duplicated.
-	r.GET("/projects/:id/agent-backends", s.handleBackendConfigs)
-	r.PUT("/projects/:id/agent-backends/:backend", s.handleSetBackendConfig)
-
 	// A backend's model catalog belongs to the backend and the project's
 	// directory, not to an instance: the workbench needs it while creating a
 	// session, when no instance exists yet. ?refresh=1 asks the backend now
@@ -121,8 +115,6 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "unknown_backend")
 	case errors.Is(err, ErrInstanceNotRunning):
 		respondError(c, http.StatusConflict, "instance_not_running")
-	case errors.Is(err, ErrBackendDisabled):
-		respondError(c, http.StatusConflict, "backend_disabled")
 	case errors.Is(err, ErrAgentDisabled):
 		respondError(c, http.StatusConflict, "agent_disabled")
 	case errors.Is(err, ErrStartFailed):
@@ -246,57 +238,6 @@ func (s *Service) handleStop(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, instance)
-}
-
-// backendConfigListResponse is the JSON body of
-// GET /api/projects/{id}/agent-backends.
-type backendConfigListResponse struct {
-	Backends []BackendConfig `json:"backends"`
-}
-
-// setBackendConfigRequest is the JSON body of
-// PUT /api/projects/{id}/agent-backends/{backend}. Enabled is a pointer so a
-// missing field is rejected instead of silently defaulting.
-type setBackendConfigRequest struct {
-	Enabled *bool `json:"enabled"`
-}
-
-// handleBackendConfigs returns the project's per-backend enable/disable state.
-func (s *Service) handleBackendConfigs(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	list, err := s.Backends(id)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, backendConfigListResponse{Backends: list})
-}
-
-// handleSetBackendConfig enables or disables one backend for the project.
-func (s *Service) handleSetBackendConfig(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	backend := agents.BackendID(c.Param("backend"))
-	if backend == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	var req setBackendConfigRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	config, err := s.SetBackendEnabled(id, backend, *req.Enabled)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, config)
 }
 
 // backendModelsResponse is the JSON body of
