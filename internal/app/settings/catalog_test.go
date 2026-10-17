@@ -4,15 +4,28 @@ import (
 	"testing"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/providers/opencode"
-	"devplatform/internal/providers/pi"
 )
 
-// testCatalog is the catalog the composition root builds, from the real
-// adapter descriptors.
+// testCatalog is a mock catalog describing two backends with no dependencies on concrete providers.
 func testCatalog(t testing.TB) *agents.Catalog {
 	t.Helper()
-	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor)
+	catalog, err := agents.NewCatalog(
+		agents.BackendDescriptor{
+			ID:             agents.BackendOpenCodeV2,
+			Label:          "OpenCode",
+			Binary:         "opencode",
+			DefaultEnabled: true,
+			Order:          1,
+		},
+		agents.BackendDescriptor{
+			ID:             agents.BackendPi,
+			Label:          "Pi Agent",
+			Binary:         "pi",
+			DefaultEnabled: true,
+			Order:          2,
+			Modes:          []string{"cli", "rpc"},
+		},
+	)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
 	}

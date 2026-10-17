@@ -6,10 +6,17 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"devplatform/internal/core/agents"
+)
+
+var (
+	_ agents.AgentAdapter      = (*Adapter)(nil)
+	_ agents.PermissionReplier = (*Adapter)(nil)
+	_ agents.RawEventOpener    = (*Adapter)(nil)
 )
 
 // TestClientPermissionAndFormRoundTrip proves the new v2 client methods hit
@@ -62,8 +69,39 @@ func TestClientPermissionAndFormRoundTrip(t *testing.T) {
 // before any HTTP call.
 func TestAdapterReplyPermissionValidation(t *testing.T) {
 	adapter, _, _ := newAdapterWithServer(t, queueHandler(nil))
-	adapter.newID = func() (string, error) { return "inst-1", nil }
-	_ = adapter
+	ref := agents.SessionRef{
+		InstanceID: "inst-1",
+		Backend:    agents.BackendOpenCodeV2,
+		SessionID:  "ses_1",
+	}
+	ctx := context.Background()
+
+	// 1. Missing request ID
+	err := adapter.ReplyPermission(ctx, ref, "", "once", "")
+	if err == nil || !strings.Contains(err.Error(), "permission request id is required") {
+		t.Fatalf("ReplyPermission empty requestID err = %v, want 'permission request id is required'", err)
+	}
+
+	// 2. Invalid decision
+	err = adapter.ReplyPermission(ctx, ref, "req-1", "invalid-decision", "")
+	if err == nil || !strings.Contains(err.Error(), "must be once, always or reject") {
+		t.Fatalf("ReplyPermission invalid decision err = %v, want 'must be once, always or reject'", err)
+	}
+
+	// 3. Invalid session ref
+	badRef := agents.SessionRef{}
+	err = adapter.ReplyPermission(ctx, badRef, "req-1", "once", "")
+	if err == nil {
+		t.Fatal("ReplyPermission with invalid session ref must fail")
+	}
+
+	// 4. Canceled context
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = adapter.ReplyPermission(canceledCtx, ref, "req-1", "once", "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReplyPermission with canceled context err = %v, want context.Canceled", err)
+	}
 }
 
 func newPermissionStub(t *testing.T, permissionReply, formReply *map[string]any) *httptest.Server {

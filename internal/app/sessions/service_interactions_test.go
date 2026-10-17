@@ -11,7 +11,6 @@ import (
 
 	"devplatform/internal/core/agents"
 	"devplatform/internal/app/instances"
-	"devplatform/internal/providers/opencode"
 	"devplatform/internal/app/projects"
 )
 
@@ -176,20 +175,6 @@ func TestInteractionReplyExpiredMapsTo409(t *testing.T) {
 	err = env.svc.ReplyForm(ctx, env.projectID, outcome.Session.ID, "frm_gone", map[string]any{"a": "b"})
 	if !errors.Is(err, ErrFormExpired) {
 		t.Fatalf("ReplyForm = %v, want ErrFormExpired", err)
-	}
-}
-
-// TestRealOpencodeAdapterSatisfiesService guards the production wiring the
-// 502 came from: the service must assert the real adapter through the shared
-// opencode interfaces, so a signature drift fails here instead of silently
-// degrading to unsupported/502 at runtime.
-func TestRealOpencodeAdapterSatisfiesService(t *testing.T) {
-	var adapter agents.AgentAdapter = opencode.New(opencode.Options{})
-	if _, ok := adapter.(opencode.PermissionReplier); !ok {
-		t.Fatal("real opencode adapter does not implement opencode.PermissionReplier")
-	}
-	if _, ok := adapter.(opencode.RawEventOpener); !ok {
-		t.Fatal("real opencode adapter does not implement opencode.RawEventOpener")
 	}
 }
 
