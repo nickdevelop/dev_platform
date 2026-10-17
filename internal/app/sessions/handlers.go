@@ -110,10 +110,11 @@ type backendDiagnosticsResponse struct {
 // Message and model are optional: when present, the session is created on the
 // model and the message is admitted as its first turn in the same request.
 type createSessionRequest struct {
-	Backend agents.BackendID `json:"backend"`
-	Title   string           `json:"title,omitempty"`
-	Message string           `json:"message,omitempty"`
-	Model   string           `json:"model,omitempty"`
+	Backend agents.BackendID        `json:"backend"`
+	Title   string                  `json:"title,omitempty"`
+	Message string                  `json:"message,omitempty"`
+	Model   string                  `json:"model,omitempty"`
+	Images  []agents.ImageAttachment `json:"images,omitempty"`
 }
 
 // createSessionResponse is the JSON body of a successful create. MessageError
@@ -202,7 +203,11 @@ func (s *Service) handleCreate(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	outcome, err := s.Create(c.Request.Context(), id, req.Backend, req.Title, req.Message, req.Model)
+	if err := validateImages(req.Images); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	outcome, err := s.Create(c.Request.Context(), id, req.Backend, req.Title, req.Message, req.Model, req.Images)
 	if err != nil {
 		respondServiceError(c, err)
 		return

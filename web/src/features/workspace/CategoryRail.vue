@@ -33,6 +33,13 @@ const route = useRoute()
 // current one on every other authenticated view.
 const projectActive = computed(() => route.meta.settings !== true)
 const settingsActive = computed(() => route.meta.settings === true)
+
+function onProjectClick(event: MouseEvent) {
+  emit('expandSidebar')
+  if (projectActive.value) {
+    event.preventDefault()
+  }
+}
 </script>
 
 <template>
@@ -43,7 +50,7 @@ const settingsActive = computed(() => route.meta.settings === true)
       title="项目"
       :aria-current="projectActive ? 'page' : undefined"
       :to="{ name: 'home' }"
-      @click="emit('expandSidebar')"
+      @click="onProjectClick"
     >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />

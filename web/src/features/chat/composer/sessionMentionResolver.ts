@@ -59,16 +59,25 @@ export async function resolveSessionMentions(
     seenSessions.add(mention.sessionId)
 
     try {
-      const history = await fetchHistory(mention.sessionId)
-      if (history && history.entries && history.entries.length > 0) {
+      const history = (await fetchHistory(mention.sessionId)) as any
+      const entries: Array<{ kind?: string; role?: string; text?: string }> =
+        history?.entries ||
+        (history?.events || [])
+          .filter((e: any) => e.type === 'message')
+          .map((e: any) => ({
+            role: e.message?.role,
+            text: e.message?.text,
+          }))
+
+      if (entries.length > 0) {
         // Extract up to the last 4 user/agent messages as summary context
-        const relevantEntries = history.entries
-          .filter((e) => e.kind === 'user' || e.kind === 'agent')
+        const relevantEntries = entries
+          .filter((e) => e.kind === 'user' || e.kind === 'agent' || e.role === 'user' || e.role === 'assistant')
           .slice(-4)
 
         if (relevantEntries.length > 0) {
           const dialogue = relevantEntries
-            .map((e) => `[${e.kind === 'user' ? '用户' : 'Agent'}]: ${e.text.trim()}`)
+            .map((e) => `[${e.kind === 'user' || e.role === 'user' ? '用户' : 'Agent'}]: ${(e.text || '').trim()}`)
             .join('\n')
 
           sessionContexts.push(

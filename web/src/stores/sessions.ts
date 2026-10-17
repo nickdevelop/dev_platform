@@ -29,6 +29,7 @@ import {
   type MessagePayload,
   type MessageUsage,
   type NormalizedEvent,
+  type SendMessageBody,
   type SessionHistory,
   type ThinkingPayload,
   type TurnPayload,

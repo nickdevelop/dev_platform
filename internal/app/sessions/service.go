@@ -388,7 +388,7 @@ type CreateOutcome struct {
 // turn runs while the workbench opens the session. The message failing to be
 // admitted does not fail the create — the session is already live and the caller
 // surfaces MessageError instead.
-func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string) (CreateOutcome, error) {
+func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (CreateOutcome, error) {
 	if !backend.Valid() {
 		return CreateOutcome{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
 	}
@@ -434,8 +434,12 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 		return CreateOutcome{}, err
 	}
 	outcome := CreateOutcome{Session: row}
-	if message != "" {
-		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message}); err != nil {
+	var imgs []agents.ImageAttachment
+	if len(images) > 0 {
+		imgs = images[0]
+	}
+	if message != "" || len(imgs) > 0 {
+		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message, Images: imgs}); err != nil {
 			// The session stays; the workbench pre-fills the composer and
 			// reports the failure so the user can send again.
 			outcome.MessageError = "agent_operation_failed"

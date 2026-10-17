@@ -8,12 +8,20 @@
 // optional message rides along with the create request and the waiting is
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useSessionsStore } from '../../../stores/sessions'
-import type { BackendId } from '../../../api/agents'
+import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import ModelSelect from './ModelSelect.vue'
+import ComposerDropdown from './dropdown/ComposerDropdown.vue'
+import { useComposerDropdown } from './dropdown/useComposerDropdown'
+import { BuiltInSlashSource } from './dropdown/sources/BuiltInSlashSource'
+import { WorkspaceFileSource } from './dropdown/sources/WorkspaceFileSource'
+import { SessionMentionSource } from './dropdown/sources/SessionMentionSource'
+import { resolveSessionMentions } from './sessionMentionResolver'
+import ComposerImageTray from './ComposerImageTray.vue'
+import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
 
 const props = defineProps<{ projectId: number }>()
 
@@ -28,6 +36,8 @@ const selectedModel = ref('')
 const modelOk = ref(false)
 const creating = ref(false)
 const composerBox = ref<HTMLElement | null>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const toolNotice = ref('')
 
 const selectedCapabilities = computed(() =>
   selectedBackend.value === '' ? null : agents.capabilitiesFor(selectedBackend.value),
@@ -37,13 +47,208 @@ const selectedEnabled = computed(
   () => selectedBackend.value !== '' && agents.backendEnabledFor(selectedBackend.value),
 )
 
+// Dropdown autocomplete for slash commands, workspace files (@) and session mentions (@)
+const dropdown = useComposerDropdown({
+  sources: [
+    new BuiltInSlashSource(),
+    new WorkspaceFileSource({
+      projectId: () => props.projectId,
+    }),
+    new SessionMentionSource({
+      projectId: () => props.projectId,
+    }),
+  ],
+  text: messageText,
+  onApplyText: (newText, newCursor) => {
+    messageText.value = newText
+    void nextTick(() => {
+      if (textareaRef.value) {
+        textareaRef.value.focus()
+        textareaRef.value.setSelectionRange(newCursor, newCursor)
+      }
+    })
+  },
+})
+
+function onTextareaInput() {
+  if (textareaRef.value) {
+    void dropdown.onInput(textareaRef.value)
+  }
+}
+
+function onCompositionEnd() {
+  if (textareaRef.value) {
+    dropdown.onCompositionEnd(textareaRef.value)
+  }
+}
+
+function onTextareaKeydown(event: KeyboardEvent) {
+  if (dropdown.onKeydown(event)) return
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void createSession()
+  }
+}
+
+// Image and file attachment support
+const attachedImages = ref<ImageAttachment[]>([])
+const previewModalImage = ref<ImageAttachment | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+const MAX_TEXT_FILE_SIZE_BYTES = 1024 * 1024 // 1MB
+const MAX_IMAGES_COUNT = 10
+const VALID_IMAGE_TYPES: Record<string, ImageMediaType> = {
+  'image/jpeg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/webp': 'image/webp',
+  'image/gif': 'image/gif',
+}
+
+function removeImage(id: string) {
+  attachedImages.value = attachedImages.value.filter((img) => img.id !== id)
+}
+
+function openImagePreview(img: ImageAttachment) {
+  previewModalImage.value = img
+}
+
+function triggerFileInput() {
+  fileInputRef.value?.click()
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      const commaIndex = result.indexOf(',')
+      resolve(commaIndex !== -1 ? result.slice(commaIndex + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string) || '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
+
+async function addImageFiles(files: FileList | File[]) {
+  const list = Array.from(files)
+  for (const file of list) {
+    if (attachedImages.value.length >= MAX_IMAGES_COUNT) {
+      toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
+      break
+    }
+    const mediaType = VALID_IMAGE_TYPES[file.type]
+    if (!mediaType) {
+      toolNotice.value = `不支持的文件类型: ${file.name} (仅支持 PNG/JPEG/WebP/GIF)`
+      continue
+    }
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      toolNotice.value = `图片超过 5MB 限制: ${file.name}`
+      continue
+    }
+
+    try {
+      const base64 = await readFileAsBase64(file)
+      attachedImages.value.push({
+        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: file.name,
+        mediaType,
+        data: base64,
+        size: file.size,
+      })
+    } catch {
+      toolNotice.value = `读取图片失败: ${file.name}`
+    }
+  }
+}
+
+async function handleUploadedFiles(files: FileList | File[]) {
+  const list = Array.from(files)
+  const imageFiles: File[] = []
+  const textFiles: File[] = []
+
+  for (const file of list) {
+    if (file.type.startsWith('image/') || VALID_IMAGE_TYPES[file.type]) {
+      imageFiles.push(file)
+    } else {
+      textFiles.push(file)
+    }
+  }
+
+  if (imageFiles.length > 0) {
+    await addImageFiles(imageFiles)
+  }
+
+  for (const file of textFiles) {
+    if (file.size > MAX_TEXT_FILE_SIZE_BYTES) {
+      toolNotice.value = `文本文件超过 1MB 限制: ${file.name}`
+      continue
+    }
+    try {
+      const text = await readFileAsText(file)
+      const prefix = messageText.value.trim() ? '\n\n' : ''
+      messageText.value += `${prefix}--- 文件: ${file.name} ---\n${text}\n---`
+    } catch {
+      toolNotice.value = `读取文件失败: ${file.name}`
+    }
+  }
+}
+
+function onFileInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    void handleUploadedFiles(target.files)
+    target.value = ''
+  }
+}
+
+function onPaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  const imageFiles: File[] = []
+  for (const item of Array.from(items)) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) imageFiles.push(file)
+    }
+  }
+  if (imageFiles.length > 0) {
+    event.preventDefault()
+    void addImageFiles(imageFiles)
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  if (event.dataTransfer?.types?.includes('Files')) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function onDrop(event: DragEvent) {
+  const files = event.dataTransfer?.files
+  if (files && files.length > 0) {
+    void handleUploadedFiles(files)
+  }
+}
+
+const hasContent = computed(() => messageText.value.trim() !== '' || attachedImages.value.length > 0)
+
 // A first message that needs a model (the backend supports choosing one) waits
 // for the model list, which is always available: a backend's catalog is scoped to
 // the project, not to a running instance, so creating the very first session of a
 // project can still name a model. Until the list arrives the create is held back
 // rather than silently sending on the backend's default model.
 const firstMessageReady = computed(() => {
-  if (messageText.value.trim() === '') return true
+  if (!hasContent.value) return true
   if (!selectedCapabilities.value?.modelSelection) return true
   return modelOk.value && selectedModel.value !== ''
 })
@@ -58,7 +263,7 @@ const canCreate = computed(
 
 const createLabel = computed(() => {
   if (creating.value) return '创建中…'
-  return messageText.value.trim() !== '' ? '创建并开始对话' : '新建会话'
+  return hasContent.value ? '创建并开始对话' : '新建会话'
 })
 
 onMounted(async () => {
@@ -66,7 +271,7 @@ onMounted(async () => {
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
     selectedBackend.value = selectableBackends.value[0].backend
   }
-  composerBox.value?.querySelector('textarea')?.focus()
+  textareaRef.value?.focus()
 })
 
 function selectBackend(backend: BackendId) {
@@ -81,7 +286,14 @@ async function createSession() {
   if (selectedBackend.value === '' || creating.value || !selectedEnabled.value) return
   if (!firstMessageReady.value) return
   creating.value = true
-  const text = messageText.value.trim()
+  toolNotice.value = ''
+  const rawText = messageText.value.trim()
+  const textToSend =
+    rawText !== ''
+      ? await resolveSessionMentions(props.projectId, rawText, (targetId) =>
+          getSessionHistory(props.projectId, targetId),
+        )
+      : ''
   // The model is part of the session's identity, not only of its first turn, so
   // it rides the create request even when no message is sent: the session is
   // created on the model the user saw, and the conversation opens on it.
@@ -91,15 +303,12 @@ async function createSession() {
     selectedModel.value !== ''
   const created = await sessions.createSession(props.projectId, {
     backend: selectedBackend.value,
-    ...(text !== '' ? { message: text } : {}),
+    ...(textToSend !== '' ? { message: textToSend } : {}),
     ...(withModel ? { model: selectedModel.value } : {}),
+    ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
   })
   creating.value = false
   if (created) emit('created', created.id)
-}
-
-function onComposerEnter() {
-  void createSession()
 }
 </script>
 
@@ -134,17 +343,57 @@ function onComposerEnter() {
           }}
         </p>
 
-        <div ref="composerBox" class="composer-box">
+        <div
+          ref="composerBox"
+          class="composer-box"
+          @dragover.prevent="onDragOver"
+          @drop.prevent="onDrop"
+        >
+          <ComposerDropdown
+            v-if="dropdown.isOpen.value"
+            :items="dropdown.items.value"
+            :selected-index="dropdown.selectedIndex.value"
+            :loading="dropdown.loading.value"
+            @select="dropdown.selectItem"
+          />
           <label class="composer-label" for="first-message">会话描述</label>
           <textarea
             id="first-message"
+            ref="textareaRef"
             v-model="messageText"
             rows="5"
-            placeholder="描述会话，例如：帮我检查构建失败的原因…"
-            @keydown.enter.exact.prevent="onComposerEnter"
+            placeholder="描述会话，例如：帮我检查构建失败的原因… (输入 / 使用快捷命令，@ 引用文件或会话)"
+            @input="onTextareaInput"
+            @keydown="onTextareaKeydown"
+            @paste="onPaste"
+            @compositionstart="dropdown.onCompositionStart"
+            @compositionend="onCompositionEnd"
           ></textarea>
+          <ComposerImageTray
+            :images="attachedImages"
+            @remove="removeImage"
+            @preview="openImagePreview"
+          />
           <div class="composer-bar">
             <div class="composer-tools">
+              <button
+                type="button"
+                class="composer-tool-btn composer-plus-btn"
+                title="添加图片或文件"
+                aria-label="添加图片或文件"
+                data-test="attach-image-btn"
+                @click="triggerFileInput"
+              >
+                +
+              </button>
+              <input
+                ref="fileInputRef"
+                type="file"
+                multiple
+                style="display: none;"
+                data-test="file-input"
+                @change="onFileInput"
+              />
               <ModelSelect
                 v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
@@ -161,7 +410,8 @@ function onComposerEnter() {
             </button>
           </div>
         </div>
-        <p v-if="messageText.trim() !== '' && !firstMessageReady" class="hint" data-test="model-required-hint">
+        <p v-if="toolNotice" class="notice-bar" role="status">{{ toolNotice }}</p>
+        <p v-if="hasContent && !firstMessageReady" class="hint" data-test="model-required-hint">
           模型列表尚未就绪，暂时无法发送首条消息。
         </p>
 
@@ -178,6 +428,12 @@ function onComposerEnter() {
         </p>
       </form>
     </div>
+
+    <ImagePreviewModal
+      v-if="previewModalImage"
+      :image="previewModalImage"
+      @close="previewModalImage = null"
+    />
   </section>
 </template>
 
@@ -264,41 +520,42 @@ function onComposerEnter() {
 /* Desktop-style composer: one rounded box holds the input and its toolbar,
    like the opencode new-session view and the conversation composer. */
 .composer-box {
+  position: relative;
   border: 1px solid var(--color-border-strong);
   border-radius: 12px;
   background: var(--color-surface);
-  padding: 0.6rem 0.7rem 0.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  transition: border-color 0.15s ease;
 }
 
 .composer-box:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-info-soft);
 }
 
 .composer-label {
   position: absolute;
   width: 1px;
   height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  border: 0;
 }
 
 .composer-box textarea {
-  padding: 0.15rem 0.1rem;
   border: none;
-  outline: none;
-  resize: vertical;
-  font: inherit;
-  line-height: 1.5;
   background: transparent;
   color: var(--color-text);
-  min-height: 6rem;
-  max-height: 16rem;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  padding: 0.75rem 0.85rem 0.35rem;
+  resize: vertical;
+  min-height: 5.5rem;
+  outline: none;
 }
 
 .composer-box textarea::placeholder {
@@ -309,52 +566,108 @@ function onComposerEnter() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.35rem;
+  gap: 0.75rem;
+  padding: 0.4rem 0.6rem 0.5rem;
   border-top: 1px solid var(--color-border);
 }
 
 .composer-tools {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
+  gap: 0.4rem;
   flex-wrap: wrap;
 }
 
-.composer-hint {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
+.composer-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.create.send-button {
-  min-width: 7rem;
+.composer-tool-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.composer-plus-btn {
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.composer-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-left: 0.25rem;
+}
+
+.create {
+  margin-left: auto;
+}
+
+.send-button {
   padding: 0.4rem 1rem;
-  border: 1px solid var(--color-primary);
-  border-radius: 999px;
+  border: none;
+  border-radius: 6px;
   background: var(--color-primary);
-  color: var(--color-surface);
+  color: #fff;
   font: inherit;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.create.send-button:disabled {
-  background: var(--color-info-border);
-  border-color: var(--color-info-border);
-  cursor: default;
+.send-button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.send-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .hint {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
   margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.notice-bar {
+  margin: 0;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background: var(--color-warning-soft, rgba(234, 179, 8, 0.15));
+  color: var(--color-warning, #ca8a04);
+  font-size: 0.82rem;
 }
 
 .page-error {
-  color: var(--color-danger);
-  font-size: 0.85rem;
   margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  background: var(--color-danger-soft, #fee2e2);
+  color: var(--color-danger, #b91c1c);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.page-error a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
 }
 </style>

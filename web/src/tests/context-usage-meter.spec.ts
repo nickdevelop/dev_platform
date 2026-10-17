@@ -19,7 +19,7 @@ describe('ContextUsageMeter', () => {
       limit: 100000,
       percent: 25,
       estimated: false,
-      parts: { input: 20000, output: 5000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      parts: { total: 25000, input: 20000, output: 5000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
     }
 
     const wrapper = mount(ContextUsageMeter, {
@@ -51,7 +51,7 @@ describe('ContextUsageMeter', () => {
       limit: 100000,
       percent: 85,
       estimated: false,
-      parts: { input: 80000, output: 5000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      parts: { total: 85000, input: 80000, output: 5000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
     }
 
     const wrapper = mount(ContextUsageMeter, {
@@ -69,7 +69,7 @@ describe('ContextUsageMeter', () => {
       limit: 100000,
       percent: 96,
       estimated: false,
-      parts: { input: 90000, output: 6000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      parts: { total: 96000, input: 90000, output: 6000, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
     }
 
     const wrapper = mount(ContextUsageMeter, {

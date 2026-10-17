@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'open-settings': [projectId: number]
   'select-session': [projectId: number, sessionId: string]
   'new-session': [projectId: number]
+  'delete-session': [projectId: number, sessionId: string]
 }>()
 
 const projectsStore = useProjectsStore()
@@ -217,6 +218,51 @@ function onProjectClick(projectId: number) {
 function retryProject(projectId: number) {
   void loadProject(projectId)
 }
+
+function formatSessionTime(isoString?: string): string {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) return ''
+
+  const now = new Date()
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+
+  if (isToday) {
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    return `${hours}:${minutes}:${seconds}`
+  } else {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+}
+
+function formatFullTime(isoString?: string): string {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) return ''
+  return date.toLocaleString()
+}
+
+async function onDeleteSession(projectId: number, sessionId: string) {
+  if (!window.confirm('确定要删除该会话吗？')) return
+
+  const success = await sessionsStore.deleteSession(projectId, sessionId)
+  if (success) {
+    if (sessionsByProject.value[projectId]) {
+      sessionsByProject.value[projectId] = sessionsByProject.value[projectId].filter(
+        (s) => s.id !== sessionId,
+      )
+    }
+    emit('delete-session', projectId, sessionId)
+  }
+}
 </script>
 
 <template>
@@ -227,7 +273,7 @@ function retryProject(projectId: number) {
           type="button"
           class="project-toggle"
           :aria-expanded="isExpanded(project.id)"
-          @click="onProjectClick(project.id)"
+          @click.stop="onProjectClick(project.id)"
         >
           <span class="caret">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
           <span class="project-name">{{ project.name }}</span>
@@ -254,16 +300,49 @@ function retryProject(projectId: number) {
       </div>
 
       <ul v-if="isExpanded(project.id)" class="sessions">
-        <li v-for="entry in visibleSessionsFor(project.id)" :key="entry.id" class="session" :class="{ selected: entry.id === props.activeSessionId }">
-          <button
-            type="button"
+        <li
+          v-for="entry in visibleSessionsFor(project.id)"
+          :key="entry.id"
+          class="session"
+          :class="{ selected: entry.id === props.activeSessionId }"
+        >
+          <div
             class="session-open"
+            role="button"
+            tabindex="0"
+            :aria-label="entry.title || untitledLabel"
             @click="emit('select-session', project.id, entry.id)"
+            @keydown.enter.prevent="emit('select-session', project.id, entry.id)"
+            @keydown.space.prevent="emit('select-session', project.id, entry.id)"
           >
-            <RunningIndicator v-if="isRunning(entry)" />
-            <span class="title">{{ entry.title || untitledLabel }}</span>
-            <BackendTag :backend="entry.backend" />
-          </button>
+            <div class="session-row-top">
+              <RunningIndicator v-if="isRunning(entry)" />
+              <span class="title" :title="entry.title || untitledLabel">{{ entry.title || untitledLabel }}</span>
+            </div>
+            <div class="session-row-bottom">
+              <div class="session-bottom-left">
+                <BackendTag :backend="entry.backend" />
+              </div>
+              <div class="session-bottom-right">
+                <span class="session-time" :title="formatFullTime(entry.updatedAt)">
+                  {{ formatSessionTime(entry.updatedAt) }}
+                </span>
+                <button
+                  type="button"
+                  class="session-delete"
+                  title="删除会话"
+                  aria-label="删除会话"
+                  data-test="delete-session-btn"
+                  @click.stop="onDeleteSession(project.id, entry.id)"
+                >
+                  <svg class="delete-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
         </li>
         <li v-if="loadFailed[project.id]" class="empty">会话加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
         <li v-else-if="sessionsFor(project.id).length === 0" class="empty">该项目还没有会话。</li>
@@ -287,8 +366,7 @@ function retryProject(projectId: number) {
 }
 
 .project-row,
-.project-toggle,
-.session-open {
+.project-toggle {
   display: flex;
   align-items: center;
   gap: calc(var(--space-unit) * 1.000);
@@ -366,12 +444,92 @@ function retryProject(projectId: number) {
 
 .session.selected .session-open {
   background: var(--color-surface-muted);
+}
+
+.session.selected .title {
   font-weight: 600;
 }
 
 .session-open {
-  padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.333);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.333);
+  width: 100%;
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.000);
   font-size: 0.929rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.session-row-top {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
+  width: 100%;
+  min-width: 0;
+}
+
+.session-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+}
+
+.session-bottom-left {
+  display: flex;
+  align-items: center;
+}
+
+.session-bottom-right {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
+  margin-left: auto;
+}
+
+.session-time {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: all 0.15s ease;
+}
+
+.session-open:hover .session-delete,
+.session-delete:focus-visible {
+  opacity: 1;
+}
+
+.session-delete:hover {
+  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-soft, rgba(239, 68, 68, 0.15));
+}
+
+.delete-icon {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .title {

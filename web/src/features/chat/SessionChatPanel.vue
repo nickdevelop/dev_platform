@@ -159,18 +159,21 @@ function openImagePreview(img: ImageAttachment) {
 }
 
 function triggerFileInput() {
-  if (!currentModelSupportsImages.value) {
-    toolNotice.value = '当前选择的模型不支持图片或视觉输入，请切换模型'
-    return
-  }
   fileInputRef.value?.click()
 }
 
+const MAX_TEXT_FILE_SIZE_BYTES = 1024 * 1024 // 1MB
+
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string) || '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file)
+  })
+}
+
 async function addImageFiles(files: FileList | File[]) {
-  if (!currentModelSupportsImages.value) {
-    toolNotice.value = '当前选择的模型不支持图片或视觉输入'
-    return
-  }
   const list = Array.from(files)
   for (const file of list) {
     if (attachedImages.value.length >= MAX_IMAGES_COUNT) {
@@ -202,6 +205,38 @@ async function addImageFiles(files: FileList | File[]) {
   }
 }
 
+async function handleUploadedFiles(files: FileList | File[]) {
+  const list = Array.from(files)
+  const imageFiles: File[] = []
+  const textFiles: File[] = []
+
+  for (const file of list) {
+    if (file.type.startsWith('image/') || VALID_IMAGE_TYPES[file.type]) {
+      imageFiles.push(file)
+    } else {
+      textFiles.push(file)
+    }
+  }
+
+  if (imageFiles.length > 0) {
+    await addImageFiles(imageFiles)
+  }
+
+  for (const file of textFiles) {
+    if (file.size > MAX_TEXT_FILE_SIZE_BYTES) {
+      toolNotice.value = `文本文件超过 1MB 限制: ${file.name}`
+      continue
+    }
+    try {
+      const text = await readFileAsText(file)
+      const prefix = messageText.value.trim() ? '\n\n' : ''
+      messageText.value += `${prefix}--- 文件: ${file.name} ---\n${text}\n---`
+    } catch {
+      toolNotice.value = `读取文件失败: ${file.name}`
+    }
+  }
+}
+
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -218,7 +253,7 @@ function readFileAsBase64(file: File): Promise<string> {
 function onFileInput(event: Event) {
   const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    void addImageFiles(target.files)
+    void handleUploadedFiles(target.files)
     target.value = ''
   }
 }
@@ -248,10 +283,7 @@ function onDragOver(event: DragEvent) {
 function onDrop(event: DragEvent) {
   const files = event.dataTransfer?.files
   if (files && files.length > 0) {
-    const imageFiles = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    if (imageFiles.length > 0) {
-      void addImageFiles(imageFiles)
-    }
+    void handleUploadedFiles(files)
   }
 }
 // Scrolling follows the newest entry only while the user is at the bottom;
@@ -789,6 +821,24 @@ async function removeSession() {
               />
               <div class="composer-bar">
                 <div class="composer-tools">
+                  <button
+                    type="button"
+                    class="composer-tool-btn composer-plus-btn"
+                    title="添加图片或文件"
+                    aria-label="添加图片或文件"
+                    data-test="attach-image-btn"
+                    @click="triggerFileInput"
+                  >
+                    +
+                  </button>
+                  <input
+                    ref="fileInputRef"
+                    type="file"
+                    multiple
+                    style="display: none;"
+                    data-test="file-input"
+                    @change="onFileInput"
+                  />
                   <ModelSelect
                     ref="modelPicker"
                     v-model="selectedModel"
@@ -797,27 +847,6 @@ async function removeSession() {
                     :model-selection="activeSession.capabilities.modelSelection"
                     @status="onModelStatus"
                     @picked="onModelPicked"
-                  />
-                  <button
-                    type="button"
-                    class="composer-tool-btn"
-                    :class="{ disabled: !currentModelSupportsImages }"
-                    :disabled="!currentModelSupportsImages"
-                    :title="currentModelSupportsImages ? '添加图片附件 (支持粘贴/拖拽)' : '当前选择的模型不支持图片/视觉输入'"
-                    aria-label="添加图片"
-                    data-test="attach-image-btn"
-                    @click="triggerFileInput"
-                  >
-                    🖼️
-                  </button>
-                  <input
-                    ref="fileInputRef"
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
-                    multiple
-                    style="display: none;"
-                    data-test="file-input"
-                    @change="onFileInput"
                   />
                   <ContextUsageMeter
                     :usage="contextUsage"
@@ -1460,6 +1489,12 @@ async function removeSession() {
   font-size: 0.88rem;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.composer-plus-btn {
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 .composer-tool-btn:hover:not(:disabled) {

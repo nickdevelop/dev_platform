@@ -271,4 +271,14 @@ describe('NewSessionPanel', () => {
     expect(wrapper.emitted('created')).toBeUndefined()
     expect(sessions.sessions).toHaveLength(0)
   })
+
+  it('renders a plus button to attach files or images in new session composer', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+
+    const plusBtn = wrapper.find('[data-test="attach-image-btn"]')
+    expect(plusBtn.exists()).toBe(true)
+    expect(plusBtn.text()).toBe('+')
+    expect(wrapper.find('input[data-test="file-input"]').exists()).toBe(true)
+  })
 })

@@ -1179,4 +1179,15 @@ describe('SessionChatPanel scroll following', () => {
     await flushPromises()
     expect(el.scrollTop).toBe(900)
   })
+
+  it('renders a plus button before the model select to attach files/images without model restriction', async () => {
+    stubSessionList([session('sess-1')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const plusBtn = wrapper.find('[data-test="attach-image-btn"]')
+    expect(plusBtn.exists()).toBe(true)
+    expect(plusBtn.text()).toBe('+')
+    expect(plusBtn.attributes('disabled')).toBeUndefined()
+  })
 })

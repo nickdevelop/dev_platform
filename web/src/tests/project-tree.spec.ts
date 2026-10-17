@@ -418,4 +418,45 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('Session B')
     expect(wrapper.text()).toContain('Session A')
   })
+
+  it('renders sessions in two rows: title on first row, backend and time with delete button on second row', async () => {
+    const today = new Date()
+    today.setHours(14, 30, 45, 0)
+    const yesterday = new Date(Date.now() - 24 * 3600 * 1000)
+
+    stubSessions({
+      1: [
+        session({ id: 's1', title: 'Today Session', backend: 'opencode-v2', updatedAt: today.toISOString() }),
+        session({ id: 's2', title: 'Yesterday Session', backend: 'pi', updatedAt: yesterday.toISOString() }),
+      ],
+    })
+
+    const wrapper = mountTree({ activeProjectId: 1 })
+    await flushPromises()
+
+    const sessions = wrapper.findAll('.session')
+    expect(sessions).toHaveLength(2)
+
+    // First session: today -> HH:mm:ss
+    const first = sessions[0]
+    expect(first.find('.session-row-top .title').text()).toBe('Today Session')
+    expect(first.find('.session-row-bottom .session-bottom-left').text().toLowerCase()).toContain('opencode')
+    expect(first.find('.session-row-bottom .session-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+    expect(first.find('.session-delete').exists()).toBe(true)
+
+    // Second session: yesterday -> YYYY-MM-DD
+    const second = sessions[1]
+    expect(second.find('.session-row-top .title').text()).toBe('Yesterday Session')
+    expect(second.find('.session-row-bottom .session-bottom-left').text().toLowerCase()).toContain('pi')
+    expect(second.find('.session-row-bottom .session-time').text()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    // Click delete button
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const deleteSpy = vi.spyOn(useSessionsStore(), 'deleteSession').mockResolvedValue(true)
+    await first.find('.session-delete').trigger('click')
+    await flushPromises()
+
+    expect(deleteSpy).toHaveBeenCalledWith(1, 's1')
+    expect(wrapper.emitted('delete-session')).toEqual([[1, 's1']])
+  })
 })

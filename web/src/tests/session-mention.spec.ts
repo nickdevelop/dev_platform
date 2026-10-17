@@ -21,7 +21,7 @@ describe('sessionMentionResolver', () => {
 
   it('resolves session mentions by injecting history dialogue', async () => {
     const text = '请对比 @[方案 A](session:ses-1) 与最新进展'
-    const mockHistory: SessionHistory = {
+    const mockHistory: any = {
       entries: [
         {
           id: '1',
@@ -67,7 +67,7 @@ describe('SessionMentionSource', () => {
     instanceId: 'inst-1',
     nativeSessionId: `nat-${id}`,
     title,
-    status: 'running',
+    status: 'active',
     turn: 'idle',
     capabilities: {
       streaming: true,

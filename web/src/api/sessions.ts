@@ -48,6 +48,7 @@ export interface CreateSessionBody {
   title?: string
   message?: string
   model?: string
+  images?: ImageAttachment[]
 }
 
 // Mirrors #/components/schemas/CreateAgentSessionResult. messageError carries

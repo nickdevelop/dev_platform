@@ -201,6 +201,13 @@ function openSessionTab(id: number, sessionId: string) {
   void router.push({ name: 'session', params: { projectId: String(id), sessionId } })
 }
 
+function onDeleteSession(_id: number, sessionId: string) {
+  const tab = openTabs.tabs.find((t) => t.kind === 'session' && t.sessionId === sessionId)
+  if (tab) {
+    closeTab(tab)
+  }
+}
+
 function onCreated(sessionId: string) {
   if (projectId.value !== null) openSessionTab(projectId.value, sessionId)
 }
@@ -273,6 +280,7 @@ async function logout() {
           @open-settings="openSettings"
           @select-session="openSessionTab"
           @new-session="openNewSession"
+          @delete-session="onDeleteSession"
         />
       </div>
     </aside>
