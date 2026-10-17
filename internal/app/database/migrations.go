@@ -157,6 +157,19 @@ var migrationSteps = []migrationStep{
 	{version: 20, name: "create_tasks", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&Task{})
 	}},
+	{version: 21, name: "task_runs_and_execution_prompt", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&Task{}, "execution_prompt") {
+			if err := tx.Migrator().AddColumn(&Task{}, "execution_prompt"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&TaskRun{}) {
+			if err := tx.Migrator().CreateTable(&TaskRun{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

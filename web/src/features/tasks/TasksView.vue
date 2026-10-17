@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { FlowType, Task, TaskStatus } from '../../api/tasks'
+import type { FlowType, Task, TaskRun, TaskStatus } from '../../api/tasks'
 import BackendTag from '../../shared/components/BackendTag.vue'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
@@ -23,6 +23,8 @@ const selectedFlowFilter = ref<FlowType | undefined>(undefined)
 const selectedStatusFilter = ref<TaskStatus | undefined>(undefined)
 
 const activeTaskId = ref<number | null>(null)
+const viewingSessionId = ref<string | null>(null)
+
 const showManageDialog = ref(false)
 const editingTask = ref<Task | null>(null)
 const showScheduleDialog = ref(false)
@@ -32,8 +34,6 @@ const creatingSession = ref(false)
 const triggering = ref(false)
 const actionError = ref('')
 
-// The status filter offers every status a task can hold, in flow order. The
-// labels match the badges in the list so a filter reads like the status it keeps.
 const statusOptions: TaskStatus[] = [
   'draft',
   'in_progress',
@@ -67,6 +67,27 @@ watch(
   },
 )
 
+const activeTask = computed(() => {
+  if (!activeTaskId.value) return null
+  return tasksStore.byId(activeTaskId.value) ?? null
+})
+
+watch(
+  () => activeTask.value?.id,
+  (taskId) => {
+    if (taskId) {
+      viewingSessionId.value = activeTask.value?.activeSessionId || null
+      void tasksStore.loadTaskRuns(taskId)
+    }
+  },
+  { immediate: true },
+)
+
+const taskRuns = computed<TaskRun[]>(() => {
+  if (!activeTaskId.value) return []
+  return tasksStore.runsByTaskId(activeTaskId.value)
+})
+
 const filteredTasks = computed(() => {
   return tasksStore.tasks.filter((t) => {
     if (searchKeyword.value.trim()) {
@@ -88,11 +109,6 @@ const filteredTasks = computed(() => {
   })
 })
 
-const activeTask = computed(() => {
-  if (!activeTaskId.value) return null
-  return tasksStore.byId(activeTaskId.value) ?? null
-})
-
 const activeFlowDef = computed(() => {
   if (!activeTask.value) return undefined
   return tasksStore.flowDefByType(activeTask.value.flowType)
@@ -103,6 +119,10 @@ const isFinalStep = computed(() => {
   const maxStep = activeTask.value.flowType === 'transactional' ? 2 : 4
   return activeTask.value.currentStep === maxStep
 })
+
+const isDevelopmentCompleted = computed(
+  () => activeTask.value?.flowType === 'development' && activeTask.value?.status === 'completed',
+)
 
 function selectTask(id: number) {
   activeTaskId.value = id
@@ -137,13 +157,33 @@ async function deleteTask(t: Task) {
   }
 }
 
-async function handleAdvanceStep(confirmed: boolean, notes?: string) {
+async function handleAdvanceStep(
+  confirmed: boolean,
+  notes?: string,
+  driverPrompt?: string,
+  executionPrompt?: string,
+) {
   if (!activeTask.value) return
   actionError.value = ''
   try {
-    await tasksStore.advanceStep(activeTask.value.id, { confirmed, notes })
+    await tasksStore.advanceStep(activeTask.value.id, {
+      confirmed,
+      notes,
+      driverPrompt,
+      executionPrompt,
+    })
   } catch (err: any) {
     actionError.value = err.message || '步骤推进失败'
+  }
+}
+
+async function handleSavePrompt(prompt: string) {
+  if (!activeTask.value) return
+  actionError.value = ''
+  try {
+    await tasksStore.saveExecutionPrompt(activeTask.value.id, prompt)
+  } catch (err: any) {
+    actionError.value = err.message || '保存执行提示词失败'
   }
 }
 
@@ -152,7 +192,8 @@ async function createSessionForTask() {
   creatingSession.value = true
   actionError.value = ''
   try {
-    await tasksStore.createSession(activeTask.value.id)
+    const res = await tasksStore.createSession(activeTask.value.id)
+    viewingSessionId.value = res.session.id
   } catch (err: any) {
     actionError.value = err.message || '创建会话失败'
   } finally {
@@ -165,11 +206,24 @@ async function triggerExecutionNow() {
   triggering.value = true
   actionError.value = ''
   try {
-    await tasksStore.triggerExecution(activeTask.value.id)
+    const res = await tasksStore.triggerExecution(activeTask.value.id, 'manual')
+    if (res.run?.sessionId) {
+      viewingSessionId.value = res.run.sessionId
+    }
   } catch (err: any) {
     actionError.value = err.message || '触发执行失败'
   } finally {
     triggering.value = false
+  }
+}
+
+function switchViewingSession(sid: string) {
+  viewingSessionId.value = sid
+}
+
+function resetToMainSession() {
+  if (activeTask.value?.activeSessionId) {
+    viewingSessionId.value = activeTask.value.activeSessionId
   }
 }
 
@@ -216,9 +270,7 @@ function getStatusLabel(status: TaskStatus) {
 
 <template>
   <div class="tasks-workbench">
-    <!-- Middle Column: Task List & Filters. Mirrors the project sidebar: same
-         width, head, search and row metrics, so switching between the project
-         and task centers is one continuous surface. -->
+    <!-- Middle Column: Task List & Filters -->
     <aside class="tasks-sidebar" aria-label="任务列表">
       <div class="sidebar-head">
         <h2>任务</h2>
@@ -232,18 +284,26 @@ function getStatusLabel(status: TaskStatus) {
         type="search"
         class="search"
         placeholder="搜索任务名称或描述"
-        aria-label="搜索任务"
+        aria-label="搜索任务名称或描述"
       />
 
-      <div class="filters">
-        <select v-model="selectedProjectFilter" class="filter-select" aria-label="按项目筛选">
+      <div class="sidebar-filters">
+        <select
+          v-model="selectedProjectFilter"
+          class="filter-select project-filter"
+          aria-label="按项目筛选"
+        >
           <option :value="undefined">全部项目</option>
           <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
             {{ p.name }}
           </option>
         </select>
 
-        <select v-model="selectedFlowFilter" class="filter-select" aria-label="按流程筛选">
+        <select
+          v-model="selectedFlowFilter"
+          class="filter-select flow-filter"
+          aria-label="按流程筛选"
+        >
           <option :value="undefined">全部流程</option>
           <option value="transactional">事务型</option>
           <option value="development">开发类</option>
@@ -355,21 +415,45 @@ function getStatusLabel(status: TaskStatus) {
               type="button"
               class="btn-schedule"
               :class="{ active: activeTask.scheduleEnabled }"
+              :disabled="isDevelopmentCompleted"
               @click="openScheduleDialog(activeTask)"
               title="配置定时/周期调度"
             >
               ⏰ 调度配置
             </button>
+
+            <!-- Completed state for development task -->
             <button
-              v-if="isFinalStep && activeTask.isConfirmed"
+              v-if="isDevelopmentCompleted"
+              type="button"
+              class="btn-completed"
+              disabled
+            >
+              ✓ 已完成
+            </button>
+            <!-- Ready to execute state -->
+            <button
+              v-else-if="isFinalStep && activeTask.isConfirmed"
               type="button"
               class="btn-trigger"
               :disabled="triggering"
               @click="triggerExecutionNow"
               title="立即执行任务最终步骤"
             >
-              ▶ 立即执行
+              {{ triggering ? '正在启动...' : '▶ 立即执行' }}
             </button>
+            <!-- Failed state retry -->
+            <button
+              v-else-if="activeTask.status === 'failed'"
+              type="button"
+              class="btn-retry"
+              :disabled="triggering"
+              @click="triggerExecutionNow"
+              title="在当前会话重试执行"
+            >
+              🔄 重试执行
+            </button>
+
             <button
               type="button"
               class="btn-secondary"
@@ -397,26 +481,75 @@ function getStatusLabel(status: TaskStatus) {
             :task="activeTask"
             :flow-def="activeFlowDef"
             @advance="handleAdvanceStep"
+            @save-prompt="handleSavePrompt"
           />
+        </section>
+
+        <!-- Runs History (For transactional tasks) -->
+        <section v-if="activeTask.flowType === 'transactional' && taskRuns.length > 0" class="runs-history-box">
+          <div class="runs-header">
+            <h4>执行历史记录（共 {{ taskRuns.length }} 次运行）</h4>
+            <span class="runs-hint">事务型任务每次执行均新启动独立 Agent 会话，点击记录可切换查看</span>
+          </div>
+          <div class="runs-chips">
+            <button
+              v-for="r in taskRuns"
+              :key="r.id"
+              type="button"
+              class="run-chip"
+              :class="{
+                active: viewingSessionId === r.sessionId,
+                success: r.status === 'success',
+                failed: r.status === 'failed',
+              }"
+              @click="switchViewingSession(r.sessionId)"
+            >
+              <span class="run-trig">[{{ r.triggerType === 'cron' ? '周期' : r.triggerType === 'once' ? '定时' : '手动' }}]</span>
+              <span class="run-time">{{ new Date(r.triggeredAt).toLocaleTimeString() }}</span>
+              <span class="run-badge">{{ r.status }}</span>
+            </button>
+          </div>
         </section>
 
         <!-- Session Execution Area -->
         <section class="session-section">
           <div class="section-title-bar">
-            <h3>任务执行会话</h3>
-            <span v-if="activeTask.activeSessionId" class="session-id-tag">
-              Session: {{ activeTask.activeSessionId }}
+            <div class="session-label-group">
+              <h3>
+                {{
+                  activeTask.flowType === 'transactional'
+                    ? viewingSessionId === activeTask.activeSessionId
+                      ? '任务分析会话（主会话）'
+                      : '独立执行会话（执行实例）'
+                    : '任务全流程执行会话'
+                }}
+              </h3>
+              <button
+                v-if="viewingSessionId && activeTask.activeSessionId && viewingSessionId !== activeTask.activeSessionId"
+                type="button"
+                class="btn-switch-main"
+                @click="resetToMainSession"
+              >
+                ↩ 返回任务分析主会话
+              </button>
+            </div>
+            <span v-if="viewingSessionId" class="session-id-tag">
+              Session: {{ viewingSessionId }}
             </span>
           </div>
 
           <!-- If no session created yet -->
           <div v-if="!activeTask.activeSessionId" class="no-session-card">
             <div class="no-session-content">
-              <h4>尚未创建执行会话</h4>
+              <h4>尚未创建任务会话</h4>
               <p>
                 已为此任务配置了 <strong>{{ activeTask.backend }}</strong> Agent 与
                 <strong>{{ activeTask.model }}</strong> 模型。
-                点击下方按钮即可立即在任务界面中拉起专属会话，按照流程步骤指引开始交互与执行。
+                {{
+                  activeTask.flowType === 'transactional'
+                    ? '点击下方按钮拉起【任务分析】会话，Agent 将对任务进行分析并识别歧义与不确定点。'
+                    : '点击下方按钮拉起会话，Agent 将从第一步【需求分析】开始介入处理。'
+                }}
               </p>
               <button
                 type="button"
@@ -430,11 +563,11 @@ function getStatusLabel(status: TaskStatus) {
           </div>
 
           <!-- Embedded Session Chat Panel -->
-          <div v-else class="embedded-chat-panel">
+          <div v-else-if="viewingSessionId" class="embedded-chat-panel">
             <SessionChatPanel
-              :key="activeTask.activeSessionId"
+              :key="viewingSessionId"
               :project-id="activeTask.projectId"
-              :session-id="activeTask.activeSessionId"
+              :session-id="viewingSessionId"
             />
           </div>
         </section>
@@ -459,215 +592,184 @@ function getStatusLabel(status: TaskStatus) {
 </template>
 
 <style scoped>
-/* The workbench is the task center's version of the shell's own two columns:
-   the list column matches the project sidebar's 272px and the detail column
-   matches the pane. minmax(0, 1fr) on the row is what keeps a long task list
-   scrolling inside its column instead of stretching the grid. */
 .tasks-workbench {
   display: grid;
   grid-template-columns: 272px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
   background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
 }
 
-/* --- List column (same metrics as the project sidebar) --- */
-
+/* Sidebar */
 .tasks-sidebar {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--color-surface);
+  height: 100%;
+  min-height: 0;
   border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
 }
 
 .sidebar-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 1.333);
+  justify-content: space-between;
+  padding: calc(var(--space-unit) * 2.5) calc(var(--space-unit) * 3);
+  border-bottom: 1px solid var(--color-border);
+  gap: calc(var(--space-unit) * 1.5);
 }
 
 .sidebar-head h2 {
-  font-size: 1.071rem;
   margin: 0;
-}
-
-.head-actions {
-  display: flex;
-  gap: calc(var(--space-unit) * 0.667);
-}
-
-.head-actions button {
-  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 1.333);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
+  font-size: 1.15rem;
+  font-weight: 700;
   color: var(--color-text);
+}
+
+.new-task {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 2);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.857rem;
 }
 
 .search {
-  margin: 0 calc(var(--space-unit) * 2) calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.667);
-  border: 1px solid var(--color-border-strong);
+  margin: calc(var(--space-unit) * 2) calc(var(--space-unit) * 3);
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: var(--color-surface);
+  background: var(--color-bg);
   color: var(--color-text);
-  font: inherit;
-  font-size: 0.929rem;
+  font-size: 0.88rem;
+  outline: none;
 }
 
-.filters {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: calc(var(--space-unit) * 0.667);
-  padding: 0 calc(var(--space-unit) * 2) calc(var(--space-unit) * 1.333);
+.sidebar-filters {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.5);
+  padding: 0 calc(var(--space-unit) * 3) calc(var(--space-unit) * 2.5);
   border-bottom: 1px solid var(--color-border);
 }
 
 .filter-select {
-  min-width: 0;
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1);
-  border: 1px solid var(--color-border-strong);
+  padding: calc(var(--space-unit) * 1.2) calc(var(--space-unit) * 1.5);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: var(--color-surface);
+  background: var(--color-bg);
   color: var(--color-text);
-  font: inherit;
-  font-size: 0.857rem;
-}
-
-/* Three filters, two columns: the status filter takes the free row. */
-.filter-select.status-filter {
-  grid-column: 1 / -1;
+  font-size: 0.82rem;
+  outline: none;
 }
 
 .task-list {
   flex: 1;
-  min-height: 0;
   overflow-y: auto;
-  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2);
+  padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 3);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 1);
+  gap: calc(var(--space-unit) * 1.5);
 }
 
 .empty-list {
   text-align: center;
   color: var(--color-text-muted);
-  font-size: 0.857rem;
+  font-size: 0.85rem;
   padding: calc(var(--space-unit) * 4) 0;
 }
 
 .task-card {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.667);
-  padding: calc(var(--space-unit) * 1.333);
+  background: var(--color-surface-muted);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: var(--color-surface);
+  padding: calc(var(--space-unit) * 2);
   cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1);
 }
 
 .task-card:hover {
+  border-color: var(--color-primary);
   background: var(--color-surface-muted);
 }
 
 .task-card.active {
   border-color: var(--color-primary);
-  background: var(--color-primary-soft);
+  background: var(--color-surface-muted);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
 }
 
 .card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.5);
-}
-
-.flow-pill,
-.flow-badge {
-  font-weight: 600;
-  border-radius: var(--radius);
-  line-height: 1.7;
 }
 
 .flow-pill {
-  font-size: 0.714rem;
-  padding: 0 calc(var(--space-unit) * 0.667);
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
 }
 
-.flow-badge {
-  font-size: 0.786rem;
-  padding: 0 calc(var(--space-unit) * 0.833);
+.flow-pill.transactional {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
 }
 
-/* A flow type is a category, not a state: the accent marks the transactional
-   flow and the info color the development one. */
-.flow-pill.transactional,
-.flow-badge.transactional {
-  background: var(--color-accent-soft);
-  color: var(--color-accent);
-}
-
-.flow-pill.development,
-.flow-badge.development {
-  background: var(--color-info-soft);
-  color: var(--color-info);
-}
-
-.status-badge,
-.status-badge-lg {
-  border-radius: 999px;
-  line-height: 1.7;
-  white-space: nowrap;
+.flow-pill.development {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
 }
 
 .status-badge {
-  font-size: 0.714rem;
-  padding: 0 calc(var(--space-unit) * 0.667);
-}
-
-.status-badge-lg {
-  font-size: 0.8rem;
-  padding: 0 calc(var(--space-unit) * 1);
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 10px;
 }
 
 .badge-draft {
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
+  background: rgba(156, 163, 175, 0.2);
+  color: #9ca3af;
 }
 
 .badge-progress {
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
 }
 
-.badge-ready,
-.badge-completed {
-  background: var(--color-success-soft);
-  color: var(--color-success);
+.badge-ready {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
 }
 
 .badge-executing {
-  background: var(--color-info-soft);
-  color: var(--color-info);
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.badge-completed {
+  background: rgba(16, 185, 129, 0.25);
+  color: #10b981;
 }
 
 .badge-failed {
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
 }
 
 .card-title {
   margin: 0;
-  font-size: 0.929rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--color-text);
   line-height: 1.3;
@@ -676,29 +778,26 @@ function getStatusLabel(status: TaskStatus) {
 .card-meta {
   display: flex;
   justify-content: space-between;
-  gap: calc(var(--space-unit) * 0.5);
-  font-size: 0.786rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
 }
 
 .schedule-tag {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.333);
-  align-self: flex-start;
-  font-size: 0.75rem;
-  color: var(--color-warning);
-  background: var(--color-warning-soft);
-  padding: calc(var(--space-unit) * 0.25) calc(var(--space-unit) * 0.667);
-  border-radius: var(--radius);
+  gap: 4px;
+  font-size: 0.74rem;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 3px 6px;
+  border-radius: 4px;
 }
 
-/* --- Detail column (same inset as an ordinary pane body) --- */
-
+/* Right Content */
 .tasks-content {
-  min-width: 0;
-  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .empty-workbench {
@@ -706,13 +805,12 @@ function getStatusLabel(status: TaskStatus) {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: calc(var(--space-unit) * 3);
 }
 
 .empty-card {
   text-align: center;
-  max-width: 27rem;
-  padding: calc(var(--space-unit) * 5);
+  max-width: 440px;
+  padding: 40px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -720,11 +818,11 @@ function getStatusLabel(status: TaskStatus) {
 
 .empty-icon {
   font-size: 3rem;
-  margin-bottom: calc(var(--space-unit) * 1.333);
+  margin-bottom: 12px;
 }
 
 .empty-card h3 {
-  margin: 0 0 calc(var(--space-unit) * 1) 0;
+  margin: 0 0 8px 0;
   font-size: 1.25rem;
 }
 
@@ -732,49 +830,74 @@ function getStatusLabel(status: TaskStatus) {
   color: var(--color-text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
-  margin-bottom: calc(var(--space-unit) * 3);
+  margin-bottom: 20px;
 }
 
 .task-detail-pane {
   display: flex;
   flex-direction: column;
   gap: calc(var(--space-unit) * 3);
-  padding: calc(var(--space-unit) * 3) calc(var(--space-unit) * 3.333);
+  padding: calc(var(--space-unit) * 4);
+  max-width: 1360px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .detail-header-panel {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: calc(var(--space-unit) * 3);
-  padding-bottom: calc(var(--space-unit) * 2);
+  gap: 20px;
+  padding-bottom: calc(var(--space-unit) * 3);
   border-bottom: 1px solid var(--color-border);
 }
 
 .title-section {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 1);
-  min-width: 0;
+  gap: calc(var(--space-unit) * 1.5);
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 1.333);
+  gap: 12px;
   flex-wrap: wrap;
+}
+
+.flow-badge {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.flow-badge.transactional {
+  background: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+}
+
+.flow-badge.development {
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
 }
 
 .task-main-title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  word-break: break-word;
+}
+
+.status-badge-lg {
+  font-size: 0.8rem;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
 }
 
 .task-main-desc {
   margin: 0;
-  font-size: 0.929rem;
+  font-size: 0.92rem;
   color: var(--color-text-muted);
   line-height: 1.4;
 }
@@ -782,123 +905,238 @@ function getStatusLabel(status: TaskStatus) {
 .meta-bar {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 2);
-  font-size: 0.857rem;
+  gap: 16px;
+  font-size: 0.85rem;
   color: var(--color-text-muted);
-  margin-top: calc(var(--space-unit) * 0.5);
+  margin-top: 4px;
   flex-wrap: wrap;
 }
 
 .meta-item {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.667);
+  gap: 6px;
+}
+
+.meta-item .label {
+  color: var(--color-text-muted);
 }
 
 .meta-item code {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  padding: 0 calc(var(--space-unit) * 0.667);
-  border-radius: var(--radius);
-  font-family: var(--font-mono);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
   font-size: 0.8rem;
 }
 
 .meta-item.schedule-active {
-  color: var(--color-warning);
+  color: #fbbf24;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.667);
+  gap: 8px;
   flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.header-actions button {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.857rem;
 }
 
 .btn-schedule {
-  background: var(--color-warning-soft);
-  border-color: var(--color-warning-border);
-  color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.btn-schedule.active {
-  background: var(--color-warning);
-  border-color: var(--color-warning);
-  color: var(--color-on-primary);
+.btn-schedule:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-completed {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #10b981;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: default;
 }
 
 .btn-trigger {
-  background: var(--color-success);
-  border-color: var(--color-success);
-  color: var(--color-on-primary);
+  background: #10b981;
+  color: #fff;
+  border: none;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-retry {
+  background: #f59e0b;
+  color: #000;
+  border: none;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .btn-danger {
-  background: var(--color-surface);
-  border-color: var(--color-danger-border);
-  color: var(--color-danger);
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 7px 12px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .action-error-banner {
-  background: var(--color-danger-soft);
-  border: 1px solid var(--color-danger-border);
-  color: var(--color-danger);
-  padding: calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #ff6b6b;
+  padding: 8px 14px;
   border-radius: var(--radius);
   margin: 0;
-  font-size: 0.886rem;
+  font-size: 0.88rem;
 }
 
-.stepper-section {
+/* Runs History Box */
+.runs-history-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 2.5);
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
 
+.runs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.runs-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.runs-hint {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.runs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.run-chip {
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--color-text);
+}
+
+.run-chip.active {
+  border-color: var(--color-primary);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.run-trig {
+  font-weight: 600;
+  color: #60a5fa;
+}
+
+.run-badge {
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.run-chip.success .run-badge {
+  color: #34d399;
+}
+
+.run-chip.failed .run-badge {
+  color: #f87171;
+}
+
+/* Session Section */
 .session-section {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 2);
-  min-height: 34rem;
+  gap: calc(var(--space-unit) * 1.5);
 }
 
 .section-title-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: calc(var(--space-unit) * 1);
 }
 
-.section-title-bar h3 {
+.session-label-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-label-group h3 {
   margin: 0;
-  font-size: 1.071rem;
+  font-size: 1.1rem;
   font-weight: 600;
 }
 
+.btn-switch-main {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #60a5fa;
+  font-size: 0.8rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 .session-id-tag {
-  font-size: 0.786rem;
-  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-family: monospace;
   color: var(--color-text-muted);
 }
 
 .no-session-card {
   background: var(--color-surface);
-  border: 1px dashed var(--color-border-strong);
+  border: 1px dashed var(--color-border);
   border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 6) calc(var(--space-unit) * 4);
+  padding: 40px 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -906,44 +1144,36 @@ function getStatusLabel(status: TaskStatus) {
 }
 
 .no-session-content {
-  max-width: 32rem;
+  max-width: 500px;
 }
 
 .no-session-content h4 {
-  margin: 0 0 calc(var(--space-unit) * 1) 0;
-  font-size: 1.071rem;
+  margin: 0 0 8px 0;
+  font-size: 1.1rem;
 }
 
 .no-session-content p {
   color: var(--color-text-muted);
-  font-size: 0.886rem;
+  font-size: 0.88rem;
   line-height: 1.5;
-  margin-bottom: calc(var(--space-unit) * 3);
+  margin-bottom: 20px;
 }
 
 .btn-launch-session {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 3);
   background: var(--color-primary);
-  border: 1px solid var(--color-primary);
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
   border-radius: var(--radius);
-  color: var(--color-on-primary);
-  font: inherit;
-  font-size: 0.929rem;
+  font-size: 0.92rem;
   font-weight: 600;
   cursor: pointer;
-}
-
-.btn-launch-session:disabled {
-  background: var(--color-info-border);
-  border-color: var(--color-info-border);
-  cursor: default;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
 }
 
 .embedded-chat-panel {
-  flex: 1;
-  min-height: 24rem;
-  height: 34rem;
+  min-height: 540px;
+  height: 640px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   overflow: hidden;

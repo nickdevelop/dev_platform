@@ -79,22 +79,22 @@ type FlowDef struct {
 var FlowTransactionalDef = FlowDef{
 	Type:        FlowTransactional,
 	Name:        "事务型",
-	Description: "包含任务确认与任务执行两阶段，在前置确认阶段明确所有细节，避免执行时被打断。",
+	Description: "包含任务分析与任务执行两阶段。任务分析阶段由 Agent 分析任务、识别歧义与不确定点并输出可直接执行计划；执行阶段每次新起会话免打断执行。",
 	Steps: []StepDef{
 		{
 			Index:       1,
-			Key:         "confirm",
-			Name:        "任务确认",
-			Description: "将任务执行过程中可能遇到的需要确认的事项确认清楚，避免执行过程中被打断。",
-			Prompt:      "【任务确认阶段】请针对当前任务需求，仔细梳理任务执行过程中可能涉及到的关键决策、风险点、执行范围、外部依赖和边界条件，列出所有需要向用户确认的事项清单。在所有事项均得到用户明确答复与确认前，切勿提前执行变更操作。",
+			Key:         "analysis",
+			Name:        "任务分析",
+			Description: "Agent 分析任务需求，识别信息是否有歧义、执行过程是否存在不确定点与潜在风险，全面与用户确认清楚，并输出可直接执行的执行计划。",
+			Prompt:      "【任务分析阶段】请仔细分析当前任务需求，重点识别用户提供的信息是否存在歧义、不明确或遗漏之处，全面审查后续执行过程中可能遇到的不确定点、环境依赖、破坏性变更与潜在风险。请列出所有需要向用户提问和确认的事项清单，并在对话中逐一确认清楚。确认完成后，请输出一份结构清晰、步骤具体、可以直接执行的执行方案/计划，作为下一步自动执行的依据。",
 			IsFinal:     false,
 		},
 		{
 			Index:       2,
 			Key:         "execute",
 			Name:        "任务执行",
-			Description: "免打断执行任务。",
-			Prompt:      "【任务执行阶段】前期所有需要确认的事项已明确并确认完毕。请直接执行任务，过程中请自主解决常规问题，避免额外交互打断。",
+			Description: "使用任务分析阶段沉淀的执行方案提示词，新启动独立会话免打断执行任务。",
+			Prompt:      "【任务执行阶段】前期任务分析与澄清已全部完成。请严格依据已确认的执行方案开始执行，全程自主处理常规问题，避免额外交互打断。",
 			IsFinal:     true,
 		},
 	},
@@ -177,9 +177,24 @@ type Task struct {
 	LastRunAt       *time.Time   `json:"lastRunAt,omitempty"`
 	NextRunAt       *time.Time   `json:"nextRunAt,omitempty"`
 	LastRunStatus   RunStatus    `json:"lastRunStatus,omitempty"`
+	ExecutionPrompt string       `json:"executionPrompt,omitempty"`
 
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// TaskRun represents one concrete execution of a task.
+type TaskRun struct {
+	ID          uint       `json:"id"`
+	TaskID      uint       `json:"taskId"`
+	SessionID   string     `json:"sessionId"`
+	TriggerType string     `json:"triggerType"` // "manual" | "once" | "cron"
+	Status      string     `json:"status"`      // "running" | "success" | "failed"
+	Prompt      string     `json:"prompt"`
+	Error       string     `json:"error,omitempty"`
+	TriggeredAt time.Time  `json:"triggeredAt"`
+	FinishedAt  *time.Time `json:"finishedAt,omitempty"`
+	CreatedAt   time.Time  `json:"createdAt"`
 }
 
 // Validation errors.
@@ -192,4 +207,5 @@ var (
 	ErrCronNotSupported     = errors.New("tasks: cron scheduling only supported for transactional tasks")
 	ErrInvalidScheduleTime  = errors.New("tasks: invalid scheduled time")
 	ErrInvalidCronExpr      = errors.New("tasks: invalid cron expression")
+	ErrTaskAlreadyCompleted = errors.New("tasks: development task is completed and cannot be executed again")
 )

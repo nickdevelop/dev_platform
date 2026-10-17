@@ -49,6 +49,7 @@ func toDB(t Task) database.Task {
 		LastRunAt:       t.LastRunAt,
 		NextRunAt:       t.NextRunAt,
 		LastRunStatus:   string(t.LastRunStatus),
+		ExecutionPrompt: t.ExecutionPrompt,
 		CreatedAt:       t.CreatedAt,
 		UpdatedAt:       t.UpdatedAt,
 	}
@@ -76,6 +77,7 @@ func fromDB(row database.Task) Task {
 		LastRunAt:       row.LastRunAt,
 		NextRunAt:       row.NextRunAt,
 		LastRunStatus:   RunStatus(row.LastRunStatus),
+		ExecutionPrompt: row.ExecutionPrompt,
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
 	}
@@ -125,6 +127,7 @@ func (r *Repository) Update(t Task) error {
 		"last_run_at":       row.LastRunAt,
 		"next_run_at":       row.NextRunAt,
 		"last_run_status":   row.LastRunStatus,
+		"execution_prompt":  row.ExecutionPrompt,
 	})
 	if res.Error != nil {
 		return res.Error
@@ -184,3 +187,66 @@ func (r *Repository) FindSchedulableTasks(now time.Time) ([]Task, error) {
 	}
 	return out, nil
 }
+
+func runToDB(r TaskRun) database.TaskRun {
+	return database.TaskRun{
+		ID:          r.ID,
+		TaskID:      r.TaskID,
+		SessionID:   r.SessionID,
+		TriggerType: r.TriggerType,
+		Status:      r.Status,
+		Prompt:      r.Prompt,
+		Error:       r.Error,
+		TriggeredAt: r.TriggeredAt,
+		FinishedAt:  r.FinishedAt,
+		CreatedAt:   r.CreatedAt,
+	}
+}
+
+func runFromDB(row database.TaskRun) TaskRun {
+	return TaskRun{
+		ID:          row.ID,
+		TaskID:      row.TaskID,
+		SessionID:   row.SessionID,
+		TriggerType: row.TriggerType,
+		Status:      row.Status,
+		Prompt:      row.Prompt,
+		Error:       row.Error,
+		TriggeredAt: row.TriggeredAt,
+		FinishedAt:  row.FinishedAt,
+		CreatedAt:   row.CreatedAt,
+	}
+}
+
+// CreateRun inserts one execution run.
+func (r *Repository) CreateRun(run TaskRun) (TaskRun, error) {
+	row := runToDB(run)
+	if err := r.db.Create(&row).Error; err != nil {
+		return TaskRun{}, err
+	}
+	return runFromDB(row), nil
+}
+
+// UpdateRun updates an existing execution run.
+func (r *Repository) UpdateRun(run TaskRun) error {
+	row := runToDB(run)
+	return r.db.Model(&database.TaskRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+		"status":      row.Status,
+		"error":       row.Error,
+		"finished_at": row.FinishedAt,
+	}).Error
+}
+
+// ListRuns returns all runs for a task in reverse chronological order.
+func (r *Repository) ListRuns(taskID uint) ([]TaskRun, error) {
+	var rows []database.TaskRun
+	if err := r.db.Where("task_id = ?", taskID).Order("triggered_at desc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]TaskRun, len(rows))
+	for i, row := range rows {
+		out[i] = runFromDB(row)
+	}
+	return out, nil
+}
+

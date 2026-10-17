@@ -8,7 +8,9 @@ import {
   deleteTask,
   getFlowDefs,
   getTask,
+  listTaskRuns,
   listTasks,
+  saveExecutionPrompt,
   triggerTaskExecution,
   updateTask,
   updateTaskSchedule,
@@ -18,6 +20,7 @@ import {
   type FlowType,
   type ScheduleConfigPayload,
   type Task,
+  type TaskRun,
   type TaskStatus,
   type UpdateTaskPayload,
 } from '../api/tasks'
@@ -28,6 +31,7 @@ export const useTasksStore = defineStore('tasks', {
     tasks: [] as Task[],
     currentTask: null as Task | null,
     flowDefs: [] as FlowDef[],
+    taskRuns: {} as Record<number, TaskRun[]>,
     loading: false,
     error: '',
   }),
@@ -37,6 +41,8 @@ export const useTasksStore = defineStore('tasks', {
       state.tasks.find((task) => task.id === id),
     flowDefByType: (state) => (type: FlowType): FlowDef | undefined =>
       state.flowDefs.find((f) => f.type === type),
+    runsByTaskId: (state) => (taskId: number): TaskRun[] =>
+      state.taskRuns[taskId] || [],
   },
 
   actions: {
@@ -159,9 +165,33 @@ export const useTasksStore = defineStore('tasks', {
       return res
     },
 
-    async triggerExecution(id: number) {
+    async saveExecutionPrompt(id: number, prompt: string) {
       const auth = useAuthStore()
-      const res = await triggerTaskExecution(auth.csrfToken, id)
+      const task = await saveExecutionPrompt(auth.csrfToken, id, prompt)
+      const idx = this.tasks.findIndex((t) => t.id === id)
+      if (idx !== -1) {
+        this.tasks[idx] = task
+      }
+      if (this.currentTask?.id === id) {
+        this.currentTask = task
+      }
+      return task
+    },
+
+    async loadTaskRuns(taskId: number) {
+      try {
+        const runs = await listTaskRuns(taskId)
+        this.taskRuns[taskId] = runs
+        return runs
+      } catch (error) {
+        console.error('Failed to load task runs', error)
+        return []
+      }
+    },
+
+    async triggerExecution(id: number, triggerType?: string) {
+      const auth = useAuthStore()
+      const res = await triggerTaskExecution(auth.csrfToken, id, triggerType)
       const idx = this.tasks.findIndex((t) => t.id === id)
       if (idx !== -1) {
         this.tasks[idx] = res.task
@@ -169,6 +199,7 @@ export const useTasksStore = defineStore('tasks', {
       if (this.currentTask?.id === id) {
         this.currentTask = res.task
       }
+      void this.loadTaskRuns(id)
       return res
     },
   },

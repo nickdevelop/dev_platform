@@ -229,10 +229,32 @@ type Task struct {
 	LastRunAt       *time.Time `gorm:"column:last_run_at"`
 	NextRunAt       *time.Time `gorm:"column:next_run_at"`
 	LastRunStatus   string     `gorm:"column:last_run_status"` // "idle" | "running" | "success" | "failed" | "skipped_not_ready"
+	ExecutionPrompt string     `gorm:"column:execution_prompt;type:text"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
 // TableName pins the table name for Task.
 func (Task) TableName() string { return "tasks" }
+
+// TaskRun records one concrete execution run of a task, especially for transactional tasks
+// which spawn a new AgentSession on every run.
+// Table: task_runs.
+type TaskRun struct {
+	ID          uint       `gorm:"primaryKey;column:id"`
+	TaskID      uint       `gorm:"column:task_id;not null;index"`
+	SessionID   string     `gorm:"column:session_id;not null;index"`
+	TriggerType string     `gorm:"column:trigger_type;not null"` // "manual" | "once" | "cron"
+	Status      string     `gorm:"column:status;not null"`       // "running" | "success" | "failed"
+	Prompt      string     `gorm:"column:prompt;type:text"`
+	Error       string     `gorm:"column:error"`
+	TriggeredAt time.Time  `gorm:"column:triggered_at;not null"`
+	FinishedAt  *time.Time `gorm:"column:finished_at"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// TableName pins the table name for TaskRun.
+func (TaskRun) TableName() string { return "task_runs" }
+
 

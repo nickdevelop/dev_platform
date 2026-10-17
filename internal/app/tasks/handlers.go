@@ -19,6 +19,8 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		tasks.PUT("/:id", s.handleUpdate)
 		tasks.DELETE("/:id", s.handleDelete)
 		tasks.POST("/:id/advance", s.handleAdvance)
+		tasks.PUT("/:id/execution-prompt", s.handleSaveExecutionPrompt)
+		tasks.GET("/:id/runs", s.handleListRuns)
 		tasks.PUT("/:id/schedule", s.handleUpdateSchedule)
 		tasks.POST("/:id/session", s.handleCreateSession)
 		tasks.POST("/:id/trigger", s.handleTrigger)
@@ -251,15 +253,66 @@ func (s *Service) handleCreateSession(c *gin.Context) {
 	})
 }
 
+type saveExecutionPromptRequest struct {
+	ExecutionPrompt string `json:"executionPrompt"`
+}
+
+func (s *Service) handleSaveExecutionPrompt(c *gin.Context) {
+	id, ok := parseTaskID(c)
+	if !ok {
+		return
+	}
+
+	var req saveExecutionPromptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	task, err := s.SaveExecutionPrompt(c.Request.Context(), id, req.ExecutionPrompt)
+	if err != nil {
+		if errors.Is(err, ErrTaskNotFound) {
+			respondError(c, http.StatusNotFound, "task_not_found")
+			return
+		}
+		respondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+func (s *Service) handleListRuns(c *gin.Context) {
+	id, ok := parseTaskID(c)
+	if !ok {
+		return
+	}
+
+	runs, err := s.ListRuns(c.Request.Context(), id)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"runs": runs})
+}
+
 func (s *Service) handleTrigger(c *gin.Context) {
 	id, ok := parseTaskID(c)
 	if !ok {
 		return
 	}
 
-	if err := s.TriggerExecution(c.Request.Context(), id); err != nil {
+	triggerType := c.DefaultQuery("triggerType", "manual")
+
+	run, err := s.TriggerExecution(c.Request.Context(), id, triggerType)
+	if err != nil {
 		if errors.Is(err, ErrTaskNotFound) {
 			respondError(c, http.StatusNotFound, "task_not_found")
+			return
+		}
+		if errors.Is(err, ErrTaskAlreadyCompleted) {
+			respondError(c, http.StatusConflict, "task_already_completed")
 			return
 		}
 		if errors.Is(err, ErrScheduleNotAllowed) {
@@ -274,5 +327,6 @@ func (s *Service) handleTrigger(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "execution_triggered",
 		"task":    task,
+		"run":     run,
 	})
 }

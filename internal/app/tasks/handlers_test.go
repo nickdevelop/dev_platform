@@ -100,13 +100,17 @@ func TestTaskHandlers(t *testing.T) {
 		}
 	}
 
-	// 6. POST /api/tasks/:id/session (Create session for task)
+	// 6. PUT /api/tasks/:id/execution-prompt
 	{
+		body, _ := json.Marshal(saveExecutionPromptRequest{
+			ExecutionPrompt: "执行方案：直接构建镜像并部署",
+		})
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("POST", "/api/tasks/1/session", nil)
+		req, _ := http.NewRequest("PUT", "/api/tasks/1/execution-prompt", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
 		engine.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("create session code = %d, want %d", w.Code, http.StatusOK)
+			t.Fatalf("save execution prompt code = %d, want %d", w.Code, http.StatusOK)
 		}
 	}
 
@@ -117,6 +121,16 @@ func TestTaskHandlers(t *testing.T) {
 		engine.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("trigger code = %d, want %d", w.Code, http.StatusOK)
+		}
+	}
+
+	// 8. GET /api/tasks/:id/runs
+	{
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/tasks/1/runs", nil)
+		engine.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("list runs code = %d, want %d", w.Code, http.StatusOK)
 		}
 	}
 }

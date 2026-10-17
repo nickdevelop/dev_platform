@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -52,13 +51,13 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&database.Task{}); err != nil {
-		t.Fatalf("migrate task: %v", err)
+	if err := db.AutoMigrate(&database.Task{}, &database.TaskRun{}); err != nil {
+		t.Fatalf("migrate task & runs: %v", err)
 	}
 	return db
 }
 
-func TestTaskCRUDAndFlowAdvance(t *testing.T) {
+func TestTransactionalTaskFlowAndRuns(t *testing.T) {
 	db := setupTestDB(t)
 	launcher := &fakeSessionLauncher{}
 	svc := NewService(NewRepository(db), launcher)
@@ -76,85 +75,65 @@ func TestTaskCRUDAndFlowAdvance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if task.CurrentStep != 1 || task.StepStatus != StepPending || task.IsConfirmed {
-		t.Fatalf("unexpected initial task state: %+v", task)
+	// Step 1 is "analysis"
+	step1Def, ok := GetStepDef(FlowTransactional, 1)
+	if !ok || step1Def.Key != "analysis" || step1Def.Name != "任务分析" {
+		t.Fatalf("expected step 1 to be analysis, got: %+v", step1Def)
 	}
 
-	// 2. Cannot schedule when at step 1
-	future := time.Now().Add(1 * time.Hour)
-	_, err = svc.UpdateSchedule(ctx, task.ID, ScheduleConfigRequest{
-		ScheduleType:    ScheduleOnce,
-		ScheduledAt:     &future,
-		ScheduleEnabled: true,
-	})
-	if err == nil {
-		t.Fatalf("expected error when scheduling unconfirmed task at step 1")
-	}
-
-	// 3. Advance to Step 2 (Task Execution) without confirmation should fail
-	_, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
-		Confirmed: false,
-		NextStep:  intPtr(2),
-	})
-	if err == nil {
-		t.Fatalf("expected error advancing without confirmation")
-	}
-
-	// 4. Confirm step 1 and advance to step 2
-	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
-		Confirmed: true,
-		Notes:     "参数已全部确认无误",
-	})
+	// 2. Start initial analysis session
+	task, sess1, err := svc.CreateSessionForTask(ctx, task.ID)
 	if err != nil {
-		t.Fatalf("advance step: %v", err)
+		t.Fatalf("create analysis session: %v", err)
 	}
-	if task.CurrentStep != 2 || !task.IsConfirmed || task.Status != StatusReadyForExecution {
-		t.Fatalf("expected task at step 2 ready for execution, got %+v", task)
-	}
-
-	// 5. Now at step 2 and confirmed: scheduling should succeed!
-	// Transactional supports Cron
-	task, err = svc.UpdateSchedule(ctx, task.ID, ScheduleConfigRequest{
-		ScheduleType:    ScheduleCron,
-		CronExpr:        "0 2 * * *", // 2 AM every day
-		ScheduleEnabled: true,
-	})
-	if err != nil {
-		t.Fatalf("schedule cron failed: %v", err)
-	}
-	if task.NextRunAt == nil {
-		t.Fatalf("expected nextRunAt to be calculated")
+	if task.ActiveSessionID != sess1.ID {
+		t.Fatalf("expected active session to be %s", sess1.ID)
 	}
 
-	// 6. Test session creation from task
-	task, sess, err := svc.CreateSessionForTask(ctx, task.ID)
+	// 3. Save execution prompt (task analysis finished, output direct execution plan)
+	task, err = svc.SaveExecutionPrompt(ctx, task.ID, "请按以下步骤执行部署：1.拉取镜像 2.重启容器 3.健康检查")
 	if err != nil {
-		t.Fatalf("create session for task: %v", err)
+		t.Fatalf("save execution prompt: %v", err)
 	}
-	if task.ActiveSessionID != sess.ID {
-		t.Fatalf("active session id mismatch: %s != %s", task.ActiveSessionID, sess.ID)
+	if !task.IsConfirmed || task.Status != StatusReadyForExecution || task.CurrentStep != 2 {
+		t.Fatalf("expected task ready for execution at step 2, got: %+v", task)
 	}
 
-	// 7. Trigger execution
-	err = svc.TriggerExecution(ctx, task.ID)
+	// 4. Trigger Execution 1: should spawn a NEW independent session and create TaskRun
+	run1, err := svc.TriggerExecution(ctx, task.ID, "manual")
 	if err != nil {
-		t.Fatalf("trigger execution: %v", err)
+		t.Fatalf("trigger execution 1: %v", err)
 	}
-	if task.LastRunStatus != RunSuccess {
-		updated, _ := svc.Get(task.ID)
-		if updated.LastRunStatus != RunSuccess {
-			t.Fatalf("expected RunSuccess, got %s", updated.LastRunStatus)
-		}
+	if run1.SessionID == sess1.ID {
+		t.Fatalf("expected run 1 to have a new session, but got analysis session id %s", run1.SessionID)
+	}
+
+	// 5. Trigger Execution 2 (e.g. periodic or manual repeat): should spawn ANOTHER new session
+	run2, err := svc.TriggerExecution(ctx, task.ID, "cron")
+	if err != nil {
+		t.Fatalf("trigger execution 2: %v", err)
+	}
+	if run2.SessionID == run1.SessionID {
+		t.Fatalf("expected run 2 to have a distinct session from run 1")
+	}
+
+	// 6. Check runs history
+	runs, err := svc.ListRuns(ctx, task.ID)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("expected 2 runs, got %d (err: %v)", len(runs), err)
+	}
+	if runs[0].TriggerType != "cron" || runs[1].TriggerType != "manual" {
+		t.Fatalf("unexpected runs order or trigger type: %+v", runs)
 	}
 }
 
-func TestDevelopmentTaskFlowAndCronForbidden(t *testing.T) {
+func TestDevelopmentTaskFlowAndCompletionLock(t *testing.T) {
 	db := setupTestDB(t)
 	launcher := &fakeSessionLauncher{}
 	svc := NewService(NewRepository(db), launcher)
 	ctx := context.Background()
 
-	// Create Development Task (4 steps)
+	// 1. Create Development Task (4 steps)
 	task, err := svc.Create(ctx, CreateTaskRequest{
 		Title:       "新特性开发",
 		Description: "用户中心重构",
@@ -167,47 +146,60 @@ func TestDevelopmentTaskFlowAndCronForbidden(t *testing.T) {
 		t.Fatalf("create dev task: %v", err)
 	}
 
-	// Step 1 -> Step 2
-	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{Confirmed: true})
+	// 2. Start initial session for step 1
+	task, sess, err := svc.CreateSessionForTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// 3. Step 1 -> Step 2: system sends DriverPrompt to the SAME session to invoke Agent
+	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
+		Confirmed:    true,
+		DriverPrompt: "【进入需求设计】请输出技术架构设计方案",
+	})
 	if err != nil || task.CurrentStep != 2 {
 		t.Fatalf("advance to step 2 failed: %v", err)
 	}
-	// Step 2 -> Step 3
-	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{Confirmed: true})
+	if len(launcher.sentMessages) < 2 {
+		t.Fatalf("expected driver prompt to be sent to session, got %d messages", len(launcher.sentMessages))
+	}
+
+	// 4. Step 2 -> Step 3
+	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
+		Confirmed:    true,
+		DriverPrompt: "【进入制定计划】请输出分步执行计划并澄清所有确认事项",
+	})
 	if err != nil || task.CurrentStep != 3 {
 		t.Fatalf("advance to step 3 failed: %v", err)
 	}
-	// Step 3 -> Step 4
-	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{Confirmed: true, Notes: "计划制定完毕，所有事项已确认"})
-	if err != nil || task.CurrentStep != 4 || !task.IsConfirmed {
+
+	// 5. Step 3 -> Step 4 (Ready for execution)
+	task, err = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
+		Confirmed: true,
+		Notes:     "计划已确认无歧义",
+	})
+	if err != nil || task.CurrentStep != 4 || !task.IsConfirmed || task.Status != StatusReadyForExecution {
 		t.Fatalf("advance to step 4 failed: %v, task: %+v", err, task)
 	}
 
-	// Development task must NOT allow Cron
-	_, err = svc.UpdateSchedule(ctx, task.ID, ScheduleConfigRequest{
-		ScheduleType:    ScheduleCron,
-		CronExpr:        "0 3 * * *",
-		ScheduleEnabled: true,
-	})
-	if err == nil {
-		t.Fatalf("expected cron to be forbidden for development tasks")
-	}
-
-	// Development task DOES allow once scheduling
-	future := time.Now().Add(2 * time.Hour)
-	task, err = svc.UpdateSchedule(ctx, task.ID, ScheduleConfigRequest{
-		ScheduleType:    ScheduleOnce,
-		ScheduledAt:     &future,
-		ScheduleEnabled: true,
-	})
+	// 6. Trigger execution in existing session
+	run, err := svc.TriggerExecution(ctx, task.ID, "manual")
 	if err != nil {
-		t.Fatalf("scheduled once failed: %v", err)
+		t.Fatalf("trigger execution: %v", err)
 	}
-	if task.ScheduleType != ScheduleOnce || !task.ScheduleEnabled {
-		t.Fatalf("unexpected schedule state: %+v", task)
+	if run.SessionID != sess.ID {
+		t.Fatalf("expected development run to execute in existing session %s, got %s", sess.ID, run.SessionID)
 	}
-}
 
-func intPtr(i int) *int {
-	return &i
+	// 7. Check task status: must be StatusCompleted
+	task, _ = svc.Get(task.ID)
+	if task.Status != StatusCompleted {
+		t.Fatalf("expected development task status to be completed, got %s", task.Status)
+	}
+
+	// 8. Try to trigger again: must be refused with ErrTaskAlreadyCompleted!
+	_, err = svc.TriggerExecution(ctx, task.ID, "manual")
+	if err == nil || err != ErrTaskAlreadyCompleted {
+		t.Fatalf("expected ErrTaskAlreadyCompleted, got: %v", err)
+	}
 }

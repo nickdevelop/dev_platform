@@ -52,8 +52,22 @@ export interface Task {
   lastRunAt?: string
   nextRunAt?: string
   lastRunStatus?: RunStatus
+  executionPrompt?: string
   createdAt: string
   updatedAt: string
+}
+
+export interface TaskRun {
+  id: number
+  taskId: number
+  sessionId: string
+  triggerType: 'manual' | 'once' | 'cron'
+  status: 'running' | 'success' | 'failed'
+  prompt: string
+  error?: string
+  triggeredAt: string
+  finishedAt?: string
+  createdAt: string
 }
 
 export interface CreateTaskPayload {
@@ -77,6 +91,8 @@ export interface AdvanceStepPayload {
   confirmed: boolean
   nextStep?: number
   notes?: string
+  driverPrompt?: string
+  executionPrompt?: string
 }
 
 export interface ScheduleConfigPayload {
@@ -174,11 +190,29 @@ export async function createTaskSession(csrfToken: string, id: number): Promise<
   })
 }
 
+export async function saveExecutionPrompt(
+  csrfToken: string,
+  id: number,
+  executionPrompt: string,
+): Promise<Task> {
+  return apiRequest<Task>('PUT', `/tasks/${id}/execution-prompt`, {
+    csrfToken,
+    body: { executionPrompt },
+  })
+}
+
+export async function listTaskRuns(id: number): Promise<TaskRun[]> {
+  const res = await apiRequest<{ runs: TaskRun[] }>('GET', `/tasks/${id}/runs`)
+  return res.runs
+}
+
 export async function triggerTaskExecution(
   csrfToken: string,
   id: number,
-): Promise<{ message: string; task: Task }> {
-  return apiRequest<{ message: string; task: Task }>('POST', `/tasks/${id}/trigger`, {
+  triggerType?: string,
+): Promise<{ message: string; task: Task; run: TaskRun }> {
+  const qs = triggerType ? `?triggerType=${encodeURIComponent(triggerType)}` : ''
+  return apiRequest<{ message: string; task: Task; run: TaskRun }>('POST', `/tasks/${id}/trigger${qs}`, {
     csrfToken,
   })
 }

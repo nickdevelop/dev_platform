@@ -208,7 +208,7 @@ async function submit() {
             />
             <span class="flow-info">
               <span class="flow-name">事务型（2 步）</span>
-              <span class="flow-desc">1. 任务确认 ➔ 2. 任务执行。提前确认所有事项，执行不打断。</span>
+              <span class="flow-desc">1. 任务分析 ➔ 2. 任务执行。Agent 分析任务、消除歧义与不确定点，确认后每次新起独立会话执行。</span>
             </span>
           </label>
           <label class="flow-card" :class="{ selected: selectedFlowType === 'development' }">

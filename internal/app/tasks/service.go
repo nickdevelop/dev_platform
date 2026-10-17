@@ -54,9 +54,11 @@ type UpdateTaskRequest struct {
 
 // AdvanceStepRequest carries data to confirm and advance the step.
 type AdvanceStepRequest struct {
-	Confirmed bool   `json:"confirmed"`
-	NextStep  *int   `json:"nextStep,omitempty"`
-	Notes     string `json:"notes,omitempty"`
+	Confirmed       bool   `json:"confirmed"`
+	NextStep        *int   `json:"nextStep,omitempty"`
+	Notes           string `json:"notes,omitempty"`
+	DriverPrompt    string `json:"driverPrompt,omitempty"`
+	ExecutionPrompt string `json:"executionPrompt,omitempty"`
 }
 
 // ScheduleConfigRequest carries schedule configuration for a task.
@@ -156,7 +158,36 @@ func (s *Service) Delete(id uint) error {
 	return s.repo.Delete(id)
 }
 
+// SaveExecutionPrompt saves the validated execution prompt for a transactional task,
+// advancing it to ready_for_execution state.
+func (s *Service) SaveExecutionPrompt(ctx context.Context, id uint, prompt string) (Task, error) {
+	t, err := s.repo.Get(id)
+	if err != nil {
+		return Task{}, err
+	}
+	if t.FlowType != FlowTransactional {
+		return Task{}, errors.New("tasks: execution prompt can only be set for transactional tasks")
+	}
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return Task{}, errors.New("tasks: execution prompt cannot be empty")
+	}
+
+	t.ExecutionPrompt = prompt
+	t.CurrentStep = 2
+	t.StepStatus = StepConfirmed
+	t.IsConfirmed = true
+	t.Status = StatusReadyForExecution
+
+	if err := s.repo.Update(t); err != nil {
+		return Task{}, err
+	}
+	return s.repo.Get(id)
+}
+
 // AdvanceStep confirms the current step and advances to the next step if requested.
+// For development tasks, when moving to a new step, it automatically delivers the stage
+// driver prompt to the active session so the Agent steps in immediately.
 func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepRequest) (Task, error) {
 	t, err := s.repo.Get(id)
 	if err != nil {
@@ -183,7 +214,13 @@ func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepReque
 		t.StepStatus = StepConfirmed
 	}
 
+	// For transactional task, if execution prompt is supplied on confirmation
+	if t.FlowType == FlowTransactional && req.ExecutionPrompt != "" {
+		t.ExecutionPrompt = strings.TrimSpace(req.ExecutionPrompt)
+	}
+
 	// Advance step
+	oldStep := t.CurrentStep
 	targetStep := t.CurrentStep
 	if req.NextStep != nil {
 		targetStep = *req.NextStep
@@ -200,6 +237,8 @@ func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepReque
 	}
 
 	t.CurrentStep = targetStep
+	stepChanged := targetStep != oldStep
+
 	if targetStep == finalStep && req.Confirmed {
 		t.IsConfirmed = true
 		t.Status = StatusReadyForExecution
@@ -209,6 +248,18 @@ func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepReque
 	} else {
 		t.Status = StatusInProgress
 		t.IsConfirmed = false
+	}
+
+	// For development tasks, if step changed and session is active, invoke Agent with DriverPrompt
+	if t.FlowType == FlowDevelopment && stepChanged && t.ActiveSessionID != "" && s.sessions != nil {
+		stepDef, _ := GetStepDef(t.FlowType, targetStep)
+		driverText := strings.TrimSpace(req.DriverPrompt)
+		if driverText == "" {
+			driverText = fmt.Sprintf("【推进至第 %d 步：%s】\n%s", targetStep, stepDef.Name, stepDef.Prompt)
+		}
+		// Send prompt to existing active session so Agent intervenes in this step
+		_, _ = s.sessions.Send(ctx, t.ProjectID, t.ActiveSessionID, driverText, t.Model)
+		t.StepStatus = StepInProgress
 	}
 
 	if err := s.repo.Update(t); err != nil {
@@ -292,10 +343,22 @@ func (s *Service) CreateSessionForTask(ctx context.Context, id uint) (Task, sess
 }
 
 // TriggerExecution executes the final step of the task.
-func (s *Service) TriggerExecution(ctx context.Context, id uint) error {
+// For transactional tasks, it spawns a NEW independent AgentSession on each execution run.
+// For development tasks, it executes in the existing active session and locks to completed on success.
+func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...string) (TaskRun, error) {
 	t, err := s.repo.Get(id)
 	if err != nil {
-		return err
+		return TaskRun{}, err
+	}
+
+	trig := "manual"
+	if len(triggerType) > 0 && triggerType[0] != "" {
+		trig = triggerType[0]
+	}
+
+	// Development task cannot be executed again once completed
+	if t.FlowType == FlowDevelopment && t.Status == StatusCompleted {
+		return TaskRun{}, ErrTaskAlreadyCompleted
 	}
 
 	// Gatekeeper check: must be final step and confirmed
@@ -304,25 +367,61 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint) error {
 		now := time.Now().UTC()
 		t.LastRunAt = &now
 		_ = s.repo.Update(t)
-		return checkErr
+		return TaskRun{}, checkErr
 	}
 
 	if s.sessions == nil {
-		return errors.New("tasks: session service not configured")
+		return TaskRun{}, errors.New("tasks: session service not configured")
 	}
-
-	finalStep := FinalStepIndex(t.FlowType)
-	stepDef, _ := GetStepDef(t.FlowType, finalStep)
-	execPrompt := fmt.Sprintf("【自动执行 - %s】\n任务：%s\n前期所有事项已在计划阶段明确确认完毕，本次执行不会再进行交互打断。\n请严格按照已确认的执行方案开始自动执行：\n%s",
-		stepDef.Name, t.Title, stepDef.Prompt)
 
 	now := time.Now().UTC()
 	t.LastRunAt = &now
+
+	if t.FlowType == FlowTransactional {
+		// TRANSACTIONAL: Spawn a new independent session on every run!
+		execPrompt := t.ExecutionPrompt
+		if strings.TrimSpace(execPrompt) == "" {
+			finalStep := FinalStepIndex(t.FlowType)
+			stepDef, _ := GetStepDef(t.FlowType, finalStep)
+			execPrompt = fmt.Sprintf("【执行方案】\n任务：%s\n%s", t.Title, stepDef.Prompt)
+		}
+
+		sessTitle := fmt.Sprintf("[%s执行] %s", trig, t.Title)
+		outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, sessTitle, execPrompt, t.Model)
+		if err != nil {
+			t.LastRunStatus = RunFailed
+			_ = s.repo.Update(t)
+			return TaskRun{}, fmt.Errorf("tasks: execute create session: %w", err)
+		}
+
+		run := TaskRun{
+			TaskID:      t.ID,
+			SessionID:   outcome.Session.ID,
+			TriggerType: trig,
+			Status:      "running",
+			Prompt:      execPrompt,
+			TriggeredAt: now,
+		}
+		createdRun, _ := s.repo.CreateRun(run)
+
+		t.ActiveSessionID = outcome.Session.ID
+		t.LastRunStatus = RunSuccess
+		t.Status = StatusReadyForExecution // ready for subsequent runs
+		_ = s.repo.Update(t)
+
+		return createdRun, nil
+	}
+
+	// DEVELOPMENT: Execute in existing active session, lock to completed on success
+	finalStep := FinalStepIndex(t.FlowType)
+	stepDef, _ := GetStepDef(t.FlowType, finalStep)
+	execPrompt := fmt.Sprintf("【自动执行 - %s】\n任务：%s\n前期所有需求分析、设计与计划已明确确认完毕，执行过程免打断。\n请严格按照已确认的执行方案开始自动执行：\n%s",
+		stepDef.Name, t.Title, stepDef.Prompt)
+
 	t.LastRunStatus = RunExecuting
 	t.Status = StatusExecuting
 	_ = s.repo.Update(t)
 
-	// Send to session
 	var sessionID = t.ActiveSessionID
 	if sessionID == "" {
 		outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, t.Title+" (执行)", execPrompt, t.Model)
@@ -330,21 +429,40 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint) error {
 			t.LastRunStatus = RunFailed
 			t.Status = StatusFailed
 			_ = s.repo.Update(t)
-			return fmt.Errorf("tasks: execute create session: %w", err)
+			return TaskRun{}, fmt.Errorf("tasks: execute create session: %w", err)
 		}
-		t.ActiveSessionID = outcome.Session.ID
+		sessionID = outcome.Session.ID
+		t.ActiveSessionID = sessionID
 	} else {
 		_, err := s.sessions.Send(ctx, t.ProjectID, sessionID, execPrompt, t.Model)
 		if err != nil {
 			t.LastRunStatus = RunFailed
 			t.Status = StatusFailed
 			_ = s.repo.Update(t)
-			return fmt.Errorf("tasks: execute send message: %w", err)
+			return TaskRun{}, fmt.Errorf("tasks: execute send message: %w", err)
 		}
 	}
 
+	run := TaskRun{
+		TaskID:      t.ID,
+		SessionID:   sessionID,
+		TriggerType: trig,
+		Status:      "success",
+		Prompt:      execPrompt,
+		TriggeredAt: now,
+	}
+	createdRun, _ := s.repo.CreateRun(run)
+
+	// Development task completed successfully!
 	t.LastRunStatus = RunSuccess
-	t.Status = StatusExecuting
+	t.Status = StatusCompleted
 	_ = s.repo.Update(t)
-	return nil
+
+	return createdRun, nil
 }
+
+// ListRuns returns all execution runs for a task.
+func (s *Service) ListRuns(ctx context.Context, taskID uint) ([]TaskRun, error) {
+	return s.repo.ListRuns(taskID)
+}
+

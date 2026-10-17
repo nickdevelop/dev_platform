@@ -89,7 +89,7 @@ func (s *Scheduler) dispatch(t Task, now time.Time) {
 	execCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	if err := s.svc.TriggerExecution(execCtx, t.ID); err != nil {
+	if _, err := s.svc.TriggerExecution(execCtx, t.ID, string(t.ScheduleType)); err != nil {
 		log.Printf("scheduler: task %d execution error: %v", t.ID, err)
 	}
 
