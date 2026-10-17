@@ -15,7 +15,7 @@ import {
   type Project,
 } from '../../api/projects'
 import { useAuthStore } from '../../stores/auth'
-import ProjectDialog from './ProjectDialog.vue'
+import AppDialog from '../../shared/components/AppDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister'
 
@@ -116,7 +116,7 @@ async function submit() {
 </script>
 
 <template>
-  <ProjectDialog :title="dialogTitle" @close="emit('close')">
+  <AppDialog :title="dialogTitle" @close="emit('close')">
     <form class="dialog-form" @submit.prevent="submit">
       <template v-if="kind === 'register'">
         <label for="dialog-path">目录的绝对路径</label>
@@ -162,16 +162,19 @@ async function submit() {
         </button>
       </div>
     </form>
-  </ProjectDialog>
+  </AppDialog>
 </template>
 
 <style scoped>
 .dialog-actions button {
-  padding: 0.35rem 0.7rem;
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1.5);
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
+  font: inherit;
 }
 
 .dialog-form {
@@ -186,9 +189,13 @@ async function submit() {
 }
 
 .dialog-form input[type='text'] {
-  padding: 0.4rem 0.6rem;
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1.5);
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
 }
 
 .dialog-form .hint {
@@ -216,7 +223,7 @@ async function submit() {
 .dialog-actions .confirm {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: var(--color-surface);
+  color: var(--color-on-primary);
 }
 
 .dialog-actions .confirm:disabled {

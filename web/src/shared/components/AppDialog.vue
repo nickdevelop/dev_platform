@@ -2,6 +2,11 @@
 // Accessible modal dialog: role="dialog" with an accessible name, focus
 // moved into the dialog on open and restored to the trigger on close,
 // Escape to cancel, and a Tab trap that keeps keyboard focus inside.
+//
+// This is the one dialog frame the platform uses, so every module — project
+// management, tasks, scheduling — renders the same backdrop, chrome and
+// keyboard behavior instead of hand-rolling its own. It is content-neutral: the
+// caller owns the title and the body through the default slot.
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 const emit = defineEmits<{ close: [] }>()
@@ -83,8 +88,8 @@ function onKeydown(event: KeyboardEvent) {
 .dialog {
   background: var(--color-surface);
   color: var(--color-text);
-  border-radius: 8px;
-  padding: 1.25rem 1.5rem;
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 2.5) calc(var(--space-unit) * 3);
   width: min(30rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow: auto;
@@ -92,7 +97,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .dialog-title {
-  margin: 0 0 0.75rem;
+  margin: 0 0 calc(var(--space-unit) * 1.5);
   font-size: 1.1rem;
 }
 </style>

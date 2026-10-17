@@ -32,6 +32,17 @@ const creatingSession = ref(false)
 const triggering = ref(false)
 const actionError = ref('')
 
+// The status filter offers every status a task can hold, in flow order. The
+// labels match the badges in the list so a filter reads like the status it keeps.
+const statusOptions: TaskStatus[] = [
+  'draft',
+  'in_progress',
+  'ready_for_execution',
+  'executing',
+  'completed',
+  'failed',
+]
+
 onMounted(async () => {
   await Promise.all([
     tasksStore.loadFlowDefs(),
@@ -205,37 +216,49 @@ function getStatusLabel(status: TaskStatus) {
 
 <template>
   <div class="tasks-workbench">
-    <!-- Middle Column: Task List & Filters -->
-    <aside class="tasks-sidebar">
-      <div class="sidebar-header">
-        <h2>任务管理</h2>
-        <button type="button" class="btn-create-task" @click="openCreateDialog">
-          + 新建任务
-        </button>
+    <!-- Middle Column: Task List & Filters. Mirrors the project sidebar: same
+         width, head, search and row metrics, so switching between the project
+         and task centers is one continuous surface. -->
+    <aside class="tasks-sidebar" aria-label="任务列表">
+      <div class="sidebar-head">
+        <h2>任务</h2>
+        <div class="head-actions">
+          <button type="button" class="new-task" @click="openCreateDialog">新建</button>
+        </div>
       </div>
 
-      <div class="sidebar-filters">
-        <input
-          v-model="searchKeyword"
-          type="search"
-          placeholder="搜索任务名称或描述..."
-          class="filter-search"
-        />
+      <input
+        v-model="searchKeyword"
+        type="search"
+        class="search"
+        placeholder="搜索任务名称或描述"
+        aria-label="搜索任务"
+      />
 
-        <div class="filter-row">
-          <select v-model="selectedProjectFilter" class="filter-select">
-            <option :value="undefined">全部项目</option>
-            <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-              {{ p.name }}
-            </option>
-          </select>
+      <div class="filters">
+        <select v-model="selectedProjectFilter" class="filter-select" aria-label="按项目筛选">
+          <option :value="undefined">全部项目</option>
+          <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
+            {{ p.name }}
+          </option>
+        </select>
 
-          <select v-model="selectedFlowFilter" class="filter-select">
-            <option :value="undefined">全部流程</option>
-            <option value="transactional">事务型</option>
-            <option value="development">开发类</option>
-          </select>
-        </div>
+        <select v-model="selectedFlowFilter" class="filter-select" aria-label="按流程筛选">
+          <option :value="undefined">全部流程</option>
+          <option value="transactional">事务型</option>
+          <option value="development">开发类</option>
+        </select>
+
+        <select
+          v-model="selectedStatusFilter"
+          class="filter-select status-filter"
+          aria-label="按状态筛选"
+        >
+          <option :value="undefined">全部状态</option>
+          <option v-for="status in statusOptions" :key="status" :value="status">
+            {{ getStatusLabel(status) }}
+          </option>
+        </select>
       </div>
 
       <!-- Task items list -->
@@ -282,7 +305,7 @@ function getStatusLabel(status: TaskStatus) {
           <div class="empty-icon">📋</div>
           <h3>选择任务或新建任务</h3>
           <p>从左侧列表中选择一个任务以查看其编排流程、会话与调度配置，或点击上方新建任务。</p>
-          <button type="button" class="btn-create-task-lg" @click="openCreateDialog">
+          <button type="button" class="btn-launch-session" @click="openCreateDialog">
             + 立即新建任务
           </button>
         </div>
@@ -436,211 +459,246 @@ function getStatusLabel(status: TaskStatus) {
 </template>
 
 <style scoped>
+/* The workbench is the task center's version of the shell's own two columns:
+   the list column matches the project sidebar's 272px and the detail column
+   matches the pane. minmax(0, 1fr) on the row is what keeps a long task list
+   scrolling inside its column instead of stretching the grid. */
 .tasks-workbench {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
-  background: var(--color-bg, #18181f);
+  background: var(--color-bg);
 }
 
-/* Sidebar */
+/* --- List column (same metrics as the project sidebar) --- */
+
 .tasks-sidebar {
-  border-right: 1px solid var(--color-border, #2d2d38);
   display: flex;
   flex-direction: column;
-  background: var(--color-sidebar-bg, #1e1e26);
+  min-width: 0;
   overflow: hidden;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
 }
 
-.sidebar-header {
-  padding: 16px;
+.sidebar-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--color-border, #2d2d38);
+  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 1.333);
 }
 
-.sidebar-header h2 {
+.sidebar-head h2 {
+  font-size: 1.071rem;
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
 }
 
-.btn-create-task {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.sidebar-filters {
-  padding: 12px 16px;
+.head-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-bottom: 1px solid var(--color-border, #2d2d38);
+  gap: calc(var(--space-unit) * 0.667);
 }
 
-.filter-search {
-  background: var(--color-input-bg, #282834);
-  border: 1px solid var(--color-border, #3a3a48);
-  color: #fff;
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  outline: none;
+.head-actions button {
+  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 1.333);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.857rem;
 }
 
-.filter-row {
+.search {
+  margin: 0 calc(var(--space-unit) * 2) calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.667);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.929rem;
+}
+
+.filters {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 0.667);
+  padding: 0 calc(var(--space-unit) * 2) calc(var(--space-unit) * 1.333);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .filter-select {
-  background: var(--color-input-bg, #282834);
-  border: 1px solid var(--color-border, #3a3a48);
-  color: #ddd;
-  padding: 6px 8px;
-  border-radius: 6px;
-  font-size: 0.8rem;
-  outline: none;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.857rem;
+}
+
+/* Three filters, two columns: the status filter takes the free row. */
+.filter-select.status-filter {
+  grid-column: 1 / -1;
 }
 
 .task-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 12px;
+  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: calc(var(--space-unit) * 1);
 }
 
 .empty-list {
   text-align: center;
-  color: var(--color-text-muted, #777);
-  font-size: 0.85rem;
-  padding: 24px 0;
+  color: var(--color-text-muted);
+  font-size: 0.857rem;
+  padding: calc(var(--space-unit) * 4) 0;
 }
 
 .task-card {
-  background: var(--color-card-bg, #242430);
-  border: 1px solid var(--color-border, #333342);
-  border-radius: 8px;
-  padding: 12px 14px;
-  cursor: pointer;
-  transition: all 0.2s;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 0.667);
+  padding: calc(var(--space-unit) * 1.333);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  cursor: pointer;
 }
 
 .task-card:hover {
-  border-color: var(--color-primary, #3b82f6);
-  background: rgba(59, 130, 246, 0.05);
+  background: var(--color-surface-muted);
 }
 
 .task-card.active {
-  border-color: var(--color-primary, #3b82f6);
-  background: rgba(59, 130, 246, 0.12);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
+}
+
+.flow-pill,
+.flow-badge {
+  font-weight: 600;
+  border-radius: var(--radius);
+  line-height: 1.7;
 }
 
 .flow-pill {
-  font-size: 0.72rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 600;
+  font-size: 0.714rem;
+  padding: 0 calc(var(--space-unit) * 0.667);
 }
 
-.flow-pill.transactional {
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+.flow-badge {
+  font-size: 0.786rem;
+  padding: 0 calc(var(--space-unit) * 0.833);
 }
 
-.flow-pill.development {
-  background: rgba(14, 165, 233, 0.15);
-  color: #38bdf8;
+/* A flow type is a category, not a state: the accent marks the transactional
+   flow and the info color the development one. */
+.flow-pill.transactional,
+.flow-badge.transactional {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.flow-pill.development,
+.flow-badge.development {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.status-badge,
+.status-badge-lg {
+  border-radius: 999px;
+  line-height: 1.7;
+  white-space: nowrap;
 }
 
 .status-badge {
-  font-size: 0.72rem;
-  padding: 2px 6px;
-  border-radius: 10px;
+  font-size: 0.714rem;
+  padding: 0 calc(var(--space-unit) * 0.667);
+}
+
+.status-badge-lg {
+  font-size: 0.8rem;
+  padding: 0 calc(var(--space-unit) * 1);
 }
 
 .badge-draft {
-  background: rgba(156, 163, 175, 0.2);
-  color: #9ca3af;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
 }
 
 .badge-progress {
-  background: rgba(245, 158, 11, 0.2);
-  color: #fbbf24;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
-.badge-ready {
-  background: rgba(16, 185, 129, 0.2);
-  color: #34d399;
+.badge-ready,
+.badge-completed {
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .badge-executing {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
-}
-
-.badge-completed {
-  background: rgba(16, 185, 129, 0.25);
-  color: #10b981;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .badge-failed {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .card-title {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: 0.929rem;
   font-weight: 600;
-  color: var(--color-text, #fff);
+  color: var(--color-text);
   line-height: 1.3;
 }
 
 .card-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 0.78rem;
-  color: var(--color-text-muted, #888);
+  gap: calc(var(--space-unit) * 0.5);
+  font-size: 0.786rem;
+  color: var(--color-text-muted);
 }
 
 .schedule-tag {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.74rem;
-  color: #fbbf24;
-  background: rgba(245, 158, 11, 0.1);
-  padding: 3px 6px;
-  border-radius: 4px;
+  gap: calc(var(--space-unit) * 0.333);
+  align-self: flex-start;
+  font-size: 0.75rem;
+  color: var(--color-warning);
+  background: var(--color-warning-soft);
+  padding: calc(var(--space-unit) * 0.25) calc(var(--space-unit) * 0.667);
+  border-radius: var(--radius);
 }
 
-/* Right Workbench Pane */
+/* --- Detail column (same inset as an ordinary pane body) --- */
+
 .tasks-content {
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
 }
 
 .empty-workbench {
@@ -648,208 +706,160 @@ function getStatusLabel(status: TaskStatus) {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: calc(var(--space-unit) * 3);
 }
 
 .empty-card {
   text-align: center;
-  max-width: 440px;
-  padding: 40px;
-  background: var(--color-card-bg, #202028);
-  border: 1px solid var(--color-border, #333342);
-  border-radius: 12px;
+  max-width: 27rem;
+  padding: calc(var(--space-unit) * 5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
 }
 
 .empty-icon {
   font-size: 3rem;
-  margin-bottom: 12px;
+  margin-bottom: calc(var(--space-unit) * 1.333);
 }
 
 .empty-card h3 {
-  margin: 0 0 8px 0;
+  margin: 0 0 calc(var(--space-unit) * 1) 0;
   font-size: 1.25rem;
 }
 
 .empty-card p {
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
-  margin-bottom: 20px;
-}
-
-.btn-create-task-lg {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
+  margin-bottom: calc(var(--space-unit) * 3);
 }
 
 .task-detail-pane {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 24px;
-  max-width: 1280px;
-  margin: 0 auto;
-  width: 100%;
-  height: 100%;
+  gap: calc(var(--space-unit) * 3);
+  padding: calc(var(--space-unit) * 3) calc(var(--space-unit) * 3.333);
 }
 
 .detail-header-panel {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--color-border, #2d2d38);
+  gap: calc(var(--space-unit) * 3);
+  padding-bottom: calc(var(--space-unit) * 2);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .title-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 1);
+  min-width: 0;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: calc(var(--space-unit) * 1.333);
   flex-wrap: wrap;
-}
-
-.flow-badge {
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
-.flow-badge.transactional {
-  background: rgba(139, 92, 246, 0.2);
-  color: #c4b5fd;
-}
-
-.flow-badge.development {
-  background: rgba(14, 165, 233, 0.2);
-  color: #7dd3fc;
 }
 
 .task-main-title {
   margin: 0;
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   font-weight: 700;
-}
-
-.status-badge-lg {
-  font-size: 0.8rem;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-weight: 600;
+  word-break: break-word;
 }
 
 .task-main-desc {
   margin: 0;
-  font-size: 0.92rem;
-  color: var(--color-text-muted, #aaa);
+  font-size: 0.929rem;
+  color: var(--color-text-muted);
   line-height: 1.4;
 }
 
 .meta-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  font-size: 0.85rem;
-  color: var(--color-text-muted, #999);
-  margin-top: 4px;
+  gap: calc(var(--space-unit) * 2);
+  font-size: 0.857rem;
+  color: var(--color-text-muted);
+  margin-top: calc(var(--space-unit) * 0.5);
   flex-wrap: wrap;
 }
 
 .meta-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.meta-item .label {
-  color: var(--color-text-muted, #777);
+  gap: calc(var(--space-unit) * 0.667);
 }
 
 .meta-item code {
-  background: rgba(255, 255, 255, 0.08);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  padding: 0 calc(var(--space-unit) * 0.667);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
   font-size: 0.8rem;
 }
 
 .meta-item.schedule-active {
-  color: #fbbf24;
+  color: var(--color-warning);
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 0.667);
   flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.header-actions button {
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1.5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.857rem;
 }
 
 .btn-schedule {
-  background: rgba(245, 158, 11, 0.15);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-  color: #fbbf24;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  background: var(--color-warning-soft);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning);
 }
 
 .btn-schedule.active {
-  background: #f59e0b;
-  color: #000;
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+  color: var(--color-on-primary);
 }
 
 .btn-trigger {
-  background: #10b981;
-  color: #fff;
-  border: none;
-  padding: 7px 14px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.btn-secondary {
-  background: transparent;
-  border: 1px solid var(--color-border, #444);
-  color: var(--color-text, #ddd);
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: var(--color-on-primary);
 }
 
 .btn-danger {
-  background: transparent;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #f87171;
-  padding: 7px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
+  background: var(--color-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
 }
 
 .action-error-banner {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  color: #ff6b6b;
-  padding: 8px 14px;
-  border-radius: 6px;
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  padding: calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
+  border-radius: var(--radius);
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 0.886rem;
 }
 
 .stepper-section {
@@ -861,33 +871,34 @@ function getStatusLabel(status: TaskStatus) {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  min-height: 550px;
+  gap: calc(var(--space-unit) * 2);
+  min-height: 34rem;
 }
 
 .section-title-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: calc(var(--space-unit) * 1);
 }
 
 .section-title-bar h3 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.071rem;
   font-weight: 600;
 }
 
 .session-id-tag {
-  font-size: 0.78rem;
-  font-family: monospace;
-  color: var(--color-text-muted, #888);
+  font-size: 0.786rem;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
 }
 
 .no-session-card {
-  background: var(--color-card-bg, #22222a);
-  border: 1px dashed var(--color-border, #444);
-  border-radius: 8px;
-  padding: 40px 24px;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 6) calc(var(--space-unit) * 4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -895,40 +906,47 @@ function getStatusLabel(status: TaskStatus) {
 }
 
 .no-session-content {
-  max-width: 500px;
+  max-width: 32rem;
 }
 
 .no-session-content h4 {
-  margin: 0 0 8px 0;
-  font-size: 1.1rem;
+  margin: 0 0 calc(var(--space-unit) * 1) 0;
+  font-size: 1.071rem;
 }
 
 .no-session-content p {
-  color: var(--color-text-muted, #aaa);
-  font-size: 0.88rem;
+  color: var(--color-text-muted);
+  font-size: 0.886rem;
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin-bottom: calc(var(--space-unit) * 3);
 }
 
 .btn-launch-session {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  padding: 10px 24px;
-  border-radius: 6px;
-  font-size: 0.92rem;
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 3);
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  color: var(--color-on-primary);
+  font: inherit;
+  font-size: 0.929rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+}
+
+.btn-launch-session:disabled {
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
+  cursor: default;
 }
 
 .embedded-chat-panel {
   flex: 1;
-  min-height: 520px;
-  height: 600px;
-  border: 1px solid var(--color-border, #333342);
-  border-radius: 8px;
+  min-height: 24rem;
+  height: 34rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
   overflow: hidden;
-  background: var(--color-bg, #18181f);
+  background: var(--color-bg);
 }
 </style>

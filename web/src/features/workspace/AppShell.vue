@@ -250,7 +250,14 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'settings-mode': settingsMode || tasksMode, 'sidebar-collapsed': sidebarCollapsed }">
+  <div
+    class="app-shell"
+    :class="{
+      'settings-mode': settingsMode || tasksMode,
+      'tasks-mode': tasksMode,
+      'sidebar-collapsed': sidebarCollapsed,
+    }"
+  >
     <CategoryRail
       :sidebar-collapsed="sidebarCollapsed"
       :sidebar-collapsible="!settingsMode && !tasksMode"
@@ -384,7 +391,7 @@ async function logout() {
 .head-actions button {
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: calc(var(--space-unit) * 0.500) calc(var(--space-unit) * 1.333);
   cursor: pointer;
   font-size: 0.857rem;
@@ -394,7 +401,9 @@ async function logout() {
   margin: 0 calc(var(--space-unit) * 2.000) calc(var(--space-unit) * 1.333);
   padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.667);
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
   font-size: 0.929rem;
 }
@@ -428,6 +437,13 @@ async function logout() {
    height: 100% resolves against this definite box. */
 .pane-full .pane-body {
   overflow: hidden;
+}
+
+/* The tasks center owns a full-bleed two-column layout of its own, so its pane
+   body drops the inset: the task list column then sits flush against the rail
+   exactly like the project sidebar does, instead of floating inside a padded box. */
+.tasks-mode .pane-body {
+  padding: 0;
 }
 
 .page-error {

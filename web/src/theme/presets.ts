@@ -23,10 +23,16 @@ export interface ThemeColors {
   borderStrong: string
   primary: string
   primaryHover: string
+  // primarySoft is the tinted fill a selected/highlighted surface sits on. It is
+  // a preset color rather than a translucent overlay so a themed UI never has to
+  // guess at the primary's hue with an rgba() literal.
+  primarySoft: string
   onPrimary: string
   danger: string
   dangerBorder: string
+  dangerSoft: string
   accent: string
+  accentSoft: string
   success: string
   successSoft: string
   successBorder: string
@@ -74,10 +80,13 @@ export const themes: ThemePreset[] = [
       borderStrong: '#cbd5e1',
       primary: '#2563eb',
       primaryHover: '#1d4ed8',
+      primarySoft: '#e8effd',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
       dangerBorder: '#fca5a5',
+      dangerSoft: '#fee2e2',
       accent: '#7c3aed',
+      accentSoft: '#f1e9fe',
       success: '#15803d',
       successSoft: '#ecfdf5',
       successBorder: '#86efac',
@@ -106,10 +115,13 @@ export const themes: ThemePreset[] = [
       borderStrong: '#3a4150',
       primary: '#4f8cff',
       primaryHover: '#6ba0ff',
+      primarySoft: '#17233a',
       onPrimary: '#0b0d11',
       danger: '#f87171',
       dangerBorder: '#7f1d1d',
+      dangerSoft: '#3a1a1a',
       accent: '#a78bfa',
+      accentSoft: '#241c3a',
       success: '#4ade80',
       successSoft: '#10261a',
       successBorder: '#1f6b43',
@@ -138,10 +150,13 @@ export const themes: ThemePreset[] = [
       borderStrong: '#d3c4a8',
       primary: '#b45309',
       primaryHover: '#92400e',
+      primarySoft: '#f9ead7',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
       dangerBorder: '#e0a3a3',
+      dangerSoft: '#fbe3e3',
       accent: '#9333ea',
+      accentSoft: '#f4e8fe',
       success: '#15803d',
       successSoft: '#eef7ee',
       successBorder: '#a7d8a7',
@@ -170,10 +185,13 @@ export const themes: ThemePreset[] = [
       borderStrong: '#c2ccda',
       primary: '#0f766e',
       primaryHover: '#115e59',
+      primarySoft: '#dcefec',
       onPrimary: '#ffffff',
       danger: '#b91c1c',
       dangerBorder: '#e0a3a3',
+      dangerSoft: '#fbe3e3',
       accent: '#6366f1',
+      accentSoft: '#e9e9fd',
       success: '#0f766e',
       successSoft: '#e6f4f1',
       successBorder: '#8ecfc6',

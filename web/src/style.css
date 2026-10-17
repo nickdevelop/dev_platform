@@ -16,10 +16,13 @@
   --color-border-strong: #d0d5dd;
   --color-primary: #2563eb;
   --color-primary-hover: #1d4ed8;
+  --color-primary-soft: #e8effd;
   --color-on-primary: #ffffff;
   --color-danger: #b91c1c;
   --color-danger-border: #fca5a5;
+  --color-danger-soft: #fee2e2;
   --color-accent: #7c3aed;
+  --color-accent-soft: #f1e9fe;
   --color-success: #15803d;
   --color-success-soft: #ecfdf5;
   --color-success-border: #86efac;
@@ -38,6 +41,10 @@
      SC. Order is the mechanism — the browser takes the first family that has a
      glyph for the character. */
   --font-family: 'Google Sans Code', 'Noto Sans SC', sans-serif;
+  /* --font-mono is the family for code, paths and identifiers. The bundled face
+     is already monospaced, so it leads the stack; the system monospace families
+     stay as a fallback for glyphs the bundled face does not cover. */
+  --font-mono: 'Google Sans Code', 'Noto Sans SC', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-size-base: 14px;
 
   --space-unit: 6px;

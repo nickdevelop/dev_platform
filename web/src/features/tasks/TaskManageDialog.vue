@@ -6,6 +6,7 @@ import type { FlowType, Task } from '../../api/tasks'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
+import AppDialog from '../../shared/components/AppDialog.vue'
 
 const props = defineProps<{
   task?: Task | null
@@ -135,267 +136,198 @@ async function submit() {
 </script>
 
 <template>
-  <div class="dialog-backdrop" @click.self="emit('close')">
-    <div class="task-dialog" role="dialog" :aria-label="isEditing ? '编辑任务' : '新建任务'">
-      <div class="dialog-header">
-        <h2>{{ isEditing ? '编辑任务' : '新建任务' }}</h2>
-        <button type="button" class="close-btn" @click="emit('close')" aria-label="关闭">×</button>
+  <AppDialog
+    :title="isEditing ? '编辑任务' : '新建任务'"
+    @close="emit('close')"
+  >
+    <form class="dialog-form" @submit.prevent="submit">
+      <p v-if="errorMessage" class="dialog-error" role="alert">{{ errorMessage }}</p>
+
+      <label for="task-title">任务名称 <span class="required">*</span></label>
+      <input
+        id="task-title"
+        v-model="title"
+        type="text"
+        placeholder="简要概括任务目标"
+        required
+        autofocus
+      />
+
+      <label for="task-desc">任务描述 / 需求说明</label>
+      <textarea
+        id="task-desc"
+        v-model="description"
+        rows="3"
+        placeholder="详细描述具体需求、业务背景或约束条件..."
+      ></textarea>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="task-project">关联项目 <span class="required">*</span></label>
+          <select id="task-project" v-model="selectedProjectId" required>
+            <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
+              {{ p.name }}
+            </option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="task-backend">Agent 类型 <span class="required">*</span></label>
+          <select id="task-backend" v-model="selectedBackend" required>
+            <option v-for="b in selectableBackends" :key="b.backend" :value="b.backend">
+              {{ b.label || b.backend }}
+            </option>
+          </select>
+        </div>
       </div>
 
-      <form @submit.prevent="submit" class="dialog-body">
-        <p v-if="errorMessage" class="error-banner" role="alert">{{ errorMessage }}</p>
+      <label for="task-model">执行模型 <span class="required">*</span></label>
+      <select v-if="models.length > 0" id="task-model" v-model="selectedModel" :disabled="loadingModels" required>
+        <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name || m.id }}</option>
+      </select>
+      <input
+        v-else
+        id="task-model"
+        v-model="selectedModel"
+        type="text"
+        placeholder="请输入模型名称（如 openai/gpt-4o）"
+        :disabled="loadingModels"
+        required
+      />
+      <p v-if="loadingModels" class="hint">加载模型列表中...</p>
 
-        <div class="form-group">
-          <label for="task-title">任务名称 <span class="required">*</span></label>
-          <input
-            id="task-title"
-            v-model="title"
-            type="text"
-            placeholder="简要概括任务目标"
-            required
-            autofocus
-          />
-        </div>
-
-        <div class="form-group">
-          <label for="task-desc">任务描述 / 需求说明</label>
-          <textarea
-            id="task-desc"
-            v-model="description"
-            rows="3"
-            placeholder="详细描述具体需求、业务背景或约束条件..."
-          ></textarea>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="task-project">关联项目 <span class="required">*</span></label>
-            <select id="task-project" v-model="selectedProjectId" required>
-              <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-                {{ p.name }}
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label for="task-backend">Agent 类型 <span class="required">*</span></label>
-            <select id="task-backend" v-model="selectedBackend" required>
-              <option v-for="b in selectableBackends" :key="b.backend" :value="b.backend">
-                {{ b.label || b.backend }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="task-model">执行模型 <span class="required">*</span></label>
-          <div class="model-select-wrapper">
-            <select
-              v-if="models.length > 0"
-              id="task-model"
-              v-model="selectedModel"
-              :disabled="loadingModels"
-              required
-            >
-              <option v-for="m in models" :key="m.id" :value="m.id">
-                {{ m.name || m.id }}
-              </option>
-            </select>
+      <template v-if="!isEditing">
+        <span class="field-label">编排流程类型 <span class="required">*</span></span>
+        <div class="flow-options">
+          <label class="flow-card" :class="{ selected: selectedFlowType === 'transactional' }">
             <input
-              v-else
-              id="task-model"
-              v-model="selectedModel"
-              type="text"
-              placeholder="请输入模型名称（如 openai/gpt-4o）"
-              :disabled="loadingModels"
-              required
+              type="radio"
+              v-model="selectedFlowType"
+              value="transactional"
+              name="flowType"
             />
-          </div>
-          <span v-if="loadingModels" class="field-hint">加载模型列表中...</span>
+            <span class="flow-info">
+              <span class="flow-name">事务型（2 步）</span>
+              <span class="flow-desc">1. 任务确认 ➔ 2. 任务执行。提前确认所有事项，执行不打断。</span>
+            </span>
+          </label>
+          <label class="flow-card" :class="{ selected: selectedFlowType === 'development' }">
+            <input
+              type="radio"
+              v-model="selectedFlowType"
+              value="development"
+              name="flowType"
+            />
+            <span class="flow-info">
+              <span class="flow-name">开发类（4 步）</span>
+              <span class="flow-desc">1. 需求分析 ➔ 2. 需求设计 ➔ 3. 制定计划 ➔ 4. 执行。制定计划时完成全项确认。</span>
+            </span>
+          </label>
         </div>
+      </template>
 
-        <div v-if="!isEditing" class="form-group">
-          <label>编排流程类型 <span class="required">*</span></label>
-          <div class="flow-options">
-            <label class="flow-card" :class="{ selected: selectedFlowType === 'transactional' }">
-              <input
-                type="radio"
-                v-model="selectedFlowType"
-                value="transactional"
-                name="flowType"
-              />
-              <div class="flow-info">
-                <span class="flow-name">事务型（2 步）</span>
-                <span class="flow-desc">1. 任务确认 ➔ 2. 任务执行。提前确认所有事项，执行不打断。</span>
-              </div>
-            </label>
-            <label class="flow-card" :class="{ selected: selectedFlowType === 'development' }">
-              <input
-                type="radio"
-                v-model="selectedFlowType"
-                value="development"
-                name="flowType"
-              />
-              <div class="flow-info">
-                <span class="flow-name">开发类（4 步）</span>
-                <span class="flow-desc">1. 需求分析 ➔ 2. 需求设计 ➔ 3. 制定计划 ➔ 4. 执行。制定计划时完成全项确认。</span>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        <div class="dialog-actions">
-          <button type="button" class="btn-cancel" @click="emit('close')">取消</button>
-          <button type="submit" class="btn-primary" :disabled="saving">
-            {{ saving ? '保存中...' : isEditing ? '保存修改' : '立即创建' }}
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <div class="dialog-actions">
+        <button type="button" class="cancel" @click="emit('close')">取消</button>
+        <button type="submit" class="confirm" :disabled="saving">
+          {{ saving ? '保存中...' : isEditing ? '保存修改' : '立即创建' }}
+        </button>
+      </div>
+    </form>
+  </AppDialog>
 </template>
 
 <style scoped>
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(2px);
-}
-
-.task-dialog {
-  background: var(--color-bg, #1e1e24);
-  border: 1px solid var(--color-border, #333);
-  border-radius: 8px;
-  width: 540px;
-  max-width: 90vw;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
-  overflow: hidden;
+/* The dialog body follows the project dialogs' conventions: labels at
+   --space-unit rhythm, controls at --control-height and --radius, and the same
+   cancel/confirm footer. AppDialog owns the frame. */
+.dialog-form {
   display: flex;
   flex-direction: column;
+  gap: calc(var(--space-unit) * 0.75);
 }
 
-.dialog-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border, #333);
-}
-
-.dialog-header h2 {
-  font-size: 1.15rem;
-  margin: 0;
+.dialog-form label,
+.field-label {
   font-weight: 600;
+  margin-top: calc(var(--space-unit) * 0.5);
 }
 
-.close-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.5rem;
-  line-height: 1;
-  color: var(--color-text-muted, #888);
-  cursor: pointer;
+.field-label {
+  display: inline-block;
 }
 
-.dialog-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.dialog-form input[type='text'],
+.dialog-form textarea,
+.dialog-form select {
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
 }
 
-.error-banner {
-  background: rgba(220, 53, 69, 0.15);
-  border: 1px solid rgba(220, 53, 69, 0.4);
-  color: #ff6b6b;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 0.9rem;
+.dialog-form input[type='text'],
+.dialog-form select {
+  height: var(--control-height);
+}
+
+.dialog-form textarea {
+  resize: vertical;
+}
+
+.dialog-form .required {
+  color: var(--color-danger);
+}
+
+.hint {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
   margin: 0;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 0.88rem;
-  font-weight: 500;
-  color: var(--color-text, #e0e0e0);
-}
-
-.required {
-  color: #ff6b6b;
 }
 
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: calc(var(--space-unit) * 1.5);
 }
 
-input[type='text'],
-textarea,
-select {
-  background: var(--color-input-bg, #2a2a32);
-  border: 1px solid var(--color-border, #444);
-  color: var(--color-text, #fff);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  font-family: inherit;
-  outline: none;
-}
-
-input[type='text']:focus,
-textarea:focus,
-select:focus {
-  border-color: var(--color-primary, #3b82f6);
-}
-
-.field-hint {
-  font-size: 0.8rem;
-  color: var(--color-text-muted, #888);
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.5);
 }
 
 .flow-options {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 1);
 }
 
 .flow-card {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border, #444);
-  border-radius: 6px;
-  background: var(--color-card-bg, #25252c);
+  gap: calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 1.667);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
 }
 
 .flow-card.selected {
-  border-color: var(--color-primary, #3b82f6);
-  background: rgba(59, 130, 246, 0.08);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .flow-card input[type='radio'] {
-  margin-top: 3px;
+  margin-top: calc(var(--space-unit) * 0.5);
 }
 
 .flow-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: calc(var(--space-unit) * 0.25);
 }
 
 .flow-name {
@@ -405,37 +337,41 @@ select:focus {
 
 .flow-desc {
   font-size: 0.8rem;
-  color: var(--color-text-muted, #999);
+  color: var(--color-text-muted);
+}
+
+.dialog-error {
+  color: var(--color-danger);
+  margin: 0;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 8px;
+  gap: calc(var(--space-unit) * 0.75);
+  margin-top: calc(var(--space-unit) * 1.5);
 }
 
-.btn-cancel {
-  background: transparent;
-  border: 1px solid var(--color-border, #555);
-  color: var(--color-text, #eee);
-  padding: 8px 16px;
-  border-radius: 6px;
+.dialog-actions button {
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1.5);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
+  font: inherit;
 }
 
-.btn-primary {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  padding: 8px 18px;
-  border-radius: 6px;
-  font-weight: 500;
-  cursor: pointer;
+.dialog-actions .confirm {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.dialog-actions .confirm:disabled {
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
+  cursor: default;
 }
 </style>

@@ -143,13 +143,13 @@ function handleConfirmAndAdvance() {
 
 <style scoped>
 .flow-stepper-box {
-  background: var(--color-card-bg, #22222a);
-  border: 1px solid var(--color-border, #333);
-  border-radius: 8px;
-  padding: 18px 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 3) calc(var(--space-unit) * 3.333);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: calc(var(--space-unit) * 2.667);
 }
 
 .stepper-track {
@@ -157,17 +157,17 @@ function handleConfirmAndAdvance() {
   align-items: center;
   justify-content: space-between;
   position: relative;
-  padding: 0 10px;
+  padding: 0 calc(var(--space-unit) * 1.667);
 }
 
 .stepper-track::before {
   content: '';
   position: absolute;
-  top: 16px;
-  left: 30px;
-  right: 30px;
+  top: 1rem;
+  left: calc(var(--space-unit) * 5);
+  right: calc(var(--space-unit) * 5);
   height: 2px;
-  background: var(--color-border, #444);
+  background: var(--color-border);
   z-index: 1;
 }
 
@@ -177,81 +177,83 @@ function handleConfirmAndAdvance() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: calc(var(--space-unit) * 1);
 }
 
 .step-indicator {
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  height: 2rem;
   border-radius: 50%;
-  background: var(--color-bg, #1a1a20);
-  border: 2px solid var(--color-border, #555);
-  color: var(--color-text-muted, #888);
+  background: var(--color-surface-muted);
+  border: 2px solid var(--color-border-strong);
+  color: var(--color-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.88rem;
+  font-size: 0.886rem;
   font-weight: 600;
-  transition: all 0.2s;
 }
 
 .step-name {
   font-size: 0.8rem;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   white-space: nowrap;
 }
 
 .step-item.active .step-indicator {
-  border-color: var(--color-primary, #3b82f6);
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
 }
 
 .step-item.active .step-name {
-  color: var(--color-text, #fff);
+  color: var(--color-text);
   font-weight: 600;
 }
 
 .step-item.completed .step-indicator {
-  border-color: #10b981;
-  background: #10b981;
-  color: #fff;
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: var(--color-on-primary);
 }
 
 .step-item.completed .step-name {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .step-detail-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--color-border, #3a3a46);
-  border-radius: 6px;
-  padding: 14px 16px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.667);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: calc(var(--space-unit) * 2);
 }
 
 .detail-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: calc(var(--space-unit) * 1);
+  flex-wrap: wrap;
 }
 
 .detail-title-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: calc(var(--space-unit) * 1.667);
 }
 
 .step-badge {
-  background: rgba(59, 130, 246, 0.15);
-  color: var(--color-primary, #3b82f6);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
   font-size: 0.75rem;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: calc(var(--space-unit) * 0.25) calc(var(--space-unit) * 1);
+  border-radius: var(--radius);
+  white-space: nowrap;
 }
 
 .step-title {
@@ -262,73 +264,74 @@ function handleConfirmAndAdvance() {
 
 .status-pill {
   font-size: 0.75rem;
-  padding: 3px 8px;
-  border-radius: 12px;
+  padding: calc(var(--space-unit) * 0.333) calc(var(--space-unit) * 1);
+  border-radius: 999px;
+  white-space: nowrap;
 }
 
 .status-pill.ready {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-border);
 }
 
 .status-pill.confirmed {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  border: 1px solid var(--color-info-border);
 }
 
 .status-pill.in-progress {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
 }
 
 .step-desc {
   margin: 0;
-  font-size: 0.85rem;
-  color: var(--color-text-muted, #aaa);
+  font-size: 0.857rem;
+  color: var(--color-text-muted);
 }
 
 .confirmation-notice {
-  background: rgba(245, 158, 11, 0.12);
-  border-left: 3px solid #f59e0b;
-  padding: 8px 12px;
-  border-radius: 0 4px 4px 0;
+  background: var(--color-warning-soft);
+  border-left: 3px solid var(--color-warning);
+  padding: calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2);
+  border-radius: 0 var(--radius) var(--radius) 0;
 }
 
 .notice-badge {
-  font-size: 0.78rem;
+  font-size: 0.786rem;
   font-weight: 700;
-  color: #f59e0b;
-  margin-bottom: 2px;
+  color: var(--color-warning);
+  margin-bottom: calc(var(--space-unit) * 0.333);
 }
 
 .notice-text {
   margin: 0;
   font-size: 0.82rem;
-  color: var(--color-text, #ddd);
+  color: var(--color-text);
   line-height: 1.4;
 }
 
 .prompt-guide {
-  background: var(--color-bg, #1a1a20);
-  border: 1px solid var(--color-border, #333);
-  border-radius: 4px;
-  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 1.667) calc(var(--space-unit) * 2);
 }
 
 .guide-label {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-text-muted, #888);
+  color: var(--color-text-muted);
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: calc(var(--space-unit) * 0.667);
 }
 
 .guide-content {
   font-size: 0.82rem;
-  color: var(--color-text, #ccc);
+  color: var(--color-text);
   white-space: pre-wrap;
   line-height: 1.4;
 }
@@ -336,44 +339,50 @@ function handleConfirmAndAdvance() {
 .stepper-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 4px;
+  gap: calc(var(--space-unit) * 2);
+  margin-top: calc(var(--space-unit) * 0.667);
+  flex-wrap: wrap;
 }
 
 .notes-field {
   flex: 1;
+  min-width: 14rem;
 }
 
 .notes-input {
   width: 100%;
-  background: var(--color-input-bg, #2a2a32);
-  border: 1px solid var(--color-border, #444);
-  color: var(--color-text, #fff);
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  outline: none;
+  height: var(--control-height);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+  padding: 0 calc(var(--space-unit) * 1.667);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.857rem;
 }
 
 .notes-input:focus {
-  border-color: var(--color-primary, #3b82f6);
+  outline: none;
+  border-color: var(--color-primary);
 }
 
 .btn-advance {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  height: var(--control-height);
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  color: var(--color-on-primary);
+  padding: 0 calc(var(--space-unit) * 2.667);
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.857rem;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: opacity 0.2s;
 }
 
 .btn-advance:hover {
-  opacity: 0.9;
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .btn-advance:disabled {
@@ -382,8 +391,8 @@ function handleConfirmAndAdvance() {
 }
 
 .ready-banner {
-  color: #34d399;
-  font-size: 0.85rem;
+  color: var(--color-success);
+  font-size: 0.857rem;
   font-weight: 500;
 }
 </style>
