@@ -48,5 +48,8 @@ export default defineConfig({
     // once and caches it, and a data URL would bury all 123 of them in the CSS
     // download instead.
     assetsInlineLimit: (filePath) => (filePath.endsWith('.woff2') ? false : undefined),
+    // PlantUML core ships a bundled WebAssembly runtime (3.6MB + 1.4MB);
+    // bound the chunk size warning limit so it does not trigger spurious build warnings.
+    chunkSizeWarningLimit: 4000,
   },
 })
