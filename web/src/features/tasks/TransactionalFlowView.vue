@@ -168,7 +168,7 @@ async function confirmStage2AndAdvance() {
     const scheduleEnabled = stage2ScheduleType.value !== 'none'
     let scheduledAtIso: string | undefined = undefined
     if (stage2ScheduleType.value === 'once' && stage2ScheduledAt.value) {
-      schedAtIso = new Date(stage2ScheduledAt.value).toISOString()
+      scheduledAtIso = new Date(stage2ScheduledAt.value).toISOString()
     }
 
     await tasksStore.updateSchedule(props.task.id, {
@@ -549,3 +549,7 @@ function switchViewingSession(sid: string) {
     </section>
   </div>
 </template>
+
+<style scoped>
+@import './transactional-flow.css';
+</style>

@@ -106,4 +106,19 @@ describe('tasks view', () => {
     // No session yet: the pane offers to create one instead of rendering chat.
     expect(wrapper.find('.no-session-card').exists()).toBe(true)
   })
+
+  it('renders development workflow layout with flow-workspace-body', async () => {
+    const wrapper = await mountView([
+      task({
+        id: 8,
+        title: '开发类流程任务',
+        flowType: 'development',
+        currentStep: 1,
+        status: 'in_progress',
+      }),
+    ])
+
+    expect(wrapper.find('.stepper-section').exists()).toBe(true)
+    expect(wrapper.find('.flow-workspace-body').exists()).toBe(true)
+  })
 })

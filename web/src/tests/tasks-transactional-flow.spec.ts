@@ -232,4 +232,38 @@ describe('Tasks Transactional Flow: Stage Transitions & Prompt Extraction', () =
     await flushPromises()
     expect(wrapper.find('.stage-execution-view').exists()).toBe(true)
   })
+
+  it('renders root workspace container and supports one-time schedule confirmation without errors', async () => {
+    const task = transactionalTask()
+    const wrapper = await mountViewWithTask(task)
+
+    // Verify root layout container
+    expect(wrapper.find('.transactional-flow-workspace').exists()).toBe(true)
+
+    // Advance to Stage 2
+    await wrapper.find('.btn-extract-next').trigger('click')
+    await flushPromises()
+
+    // Select "定时单次执行"
+    const radioOnce = wrapper.findAll<HTMLInputElement>('input[type="radio"]')
+    const onceOpt = radioOnce.find((r) => r.element.value === 'once')
+    expect(onceOpt).toBeDefined()
+    await onceOpt!.setValue(true)
+    await flushPromises()
+
+    // Datetime input should be present
+    const datetimeInput = wrapper.find<HTMLInputElement>('.datetime-input')
+    expect(datetimeInput.exists()).toBe(true)
+    await datetimeInput.setValue('2026-10-25T14:30')
+    await flushPromises()
+
+    // Confirm Stage 2 without runtime ReferenceError (schedAtIso bug fix)
+    const confirmBtn = wrapper.find('.btn-confirm-ready')
+    await confirmBtn.trigger('click')
+    await flushPromises()
+
+    // Should successfully reach Stage 3 without error banner
+    expect(wrapper.find('.action-error-banner').exists()).toBe(false)
+    expect(wrapper.find('.stage-execution-view').exists()).toBe(true)
+  })
 })
