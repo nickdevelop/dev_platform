@@ -154,6 +154,9 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 20, name: "create_tasks", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&Task{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

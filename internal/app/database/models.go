@@ -205,3 +205,34 @@ type ModelDef struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
+
+// Task is one managed task with orchestration flow, agent/model binding and scheduling.
+// Table: tasks.
+type Task struct {
+	ID              uint       `gorm:"primaryKey;column:id"`
+	Title           string     `gorm:"column:title;not null"`
+	Description     string     `gorm:"column:description"`
+	ProjectID       uint       `gorm:"column:project_id;not null;index"`
+	Backend         string     `gorm:"column:backend;not null"`
+	Model           string     `gorm:"column:model;not null"`
+	FlowType        string     `gorm:"column:flow_type;not null"` // "transactional" | "development"
+	CurrentStep     int        `gorm:"column:current_step;not null;default:1"`
+	StepStatus      string     `gorm:"column:step_status;not null;default:'pending'"` // "pending" | "in_progress" | "confirmed" | "completed"
+	Status          string     `gorm:"column:status;not null;default:'draft'"`        // "draft" | "in_progress" | "ready_for_execution" | "executing" | "completed" | "failed"
+	IsConfirmed     bool       `gorm:"column:is_confirmed;not null;default:false"`
+	StepsData       string     `gorm:"column:steps_data;type:text"`
+	ActiveSessionID string     `gorm:"column:active_session_id;index"`
+	ScheduleType    string     `gorm:"column:schedule_type;not null;default:'none'"` // "none" | "once" | "cron"
+	ScheduledAt     *time.Time `gorm:"column:scheduled_at"`
+	CronExpr        string     `gorm:"column:cron_expr"`
+	ScheduleEnabled bool       `gorm:"column:schedule_enabled;not null;default:false"`
+	LastRunAt       *time.Time `gorm:"column:last_run_at"`
+	NextRunAt       *time.Time `gorm:"column:next_run_at"`
+	LastRunStatus   string     `gorm:"column:last_run_status"` // "idle" | "running" | "success" | "failed" | "skipped_not_ready"
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// TableName pins the table name for Task.
+func (Task) TableName() string { return "tasks" }
+

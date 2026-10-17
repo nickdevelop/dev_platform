@@ -29,14 +29,22 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
-// The settings routes declare `meta.settings`, so the project category is the
-// current one on every other authenticated view.
-const projectActive = computed(() => route.meta.settings !== true)
+// The tasks routes declare `meta.tasks` or start with /tasks.
+// The settings routes declare `meta.settings`.
+const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const settingsActive = computed(() => route.meta.settings === true)
+const projectActive = computed(() => !settingsActive.value && !tasksActive.value)
 
 function onProjectClick(event: MouseEvent) {
   emit('expandSidebar')
   if (projectActive.value) {
+    event.preventDefault()
+  }
+}
+
+function onTasksClick(event: MouseEvent) {
+  emit('expandSidebar')
+  if (tasksActive.value) {
     event.preventDefault()
   }
 }
@@ -56,6 +64,20 @@ function onProjectClick(event: MouseEvent) {
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
       <span>项目</span>
+    </RouterLink>
+    <RouterLink
+      class="category"
+      :class="{ active: tasksActive }"
+      title="任务管理"
+      :aria-current="tasksActive ? 'page' : undefined"
+      :to="{ name: 'tasks' }"
+      @click="onTasksClick"
+    >
+      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>任务</span>
     </RouterLink>
     <button type="button" class="category reserved" title="Chat（预留）" disabled>
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

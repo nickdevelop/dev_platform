@@ -13,6 +13,7 @@ import (
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
+	"devplatform/internal/app/tasks"
 )
 
 // maxRequestBodyBytes bounds every API request body (1 MiB). All platform
@@ -64,6 +65,8 @@ type Dependencies struct {
 	// routes are served under /api/projects/{id}/sessions behind
 	// RequireSession.
 	Sessions *sessions.Service
+	// Tasks manages tasks, flows, orchestration, and scheduling.
+	Tasks *tasks.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -117,6 +120,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		if deps.Sessions != nil {
 			deps.Sessions.RegisterRoutes(protected)
 			deps.Sessions.RegisterInteractionRoutes(protected)
+		}
+		if deps.Tasks != nil {
+			deps.Tasks.RegisterRoutes(protected)
 		}
 	}
 

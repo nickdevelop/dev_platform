@@ -236,12 +236,13 @@ describe('three-pane app shell', () => {
   it('shows an inline icon on every first-level rail entry', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
-    // 项目 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
+    // 项目 / 任务 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(5)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(6)
     // The icons are decorative: the labels stay as the entries' readable text.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
+      '任务',
       'Chat',
       '设置',
       '退出',

@@ -20,6 +20,7 @@ import SettingsView from './features/settings/SettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
+import TasksView from './features/tasks/TasksView.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -54,6 +55,18 @@ export function createAppRouter() {
               { path: 'models', name: 'settings-models', component: ModelSettings },
               { path: 'agents', name: 'settings-agents', component: AgentSettings },
             ],
+          },
+          {
+            path: 'tasks',
+            name: 'tasks',
+            component: TasksView,
+            meta: { tasks: true, fullHeight: true },
+          },
+          {
+            path: 'tasks/:taskId',
+            name: 'task-detail',
+            component: TasksView,
+            meta: { tasks: true, fullHeight: true },
           },
           {
             path: 'projects/:projectId/sessions/new',

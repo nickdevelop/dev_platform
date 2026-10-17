@@ -82,6 +82,8 @@ const fullHeightPane = computed(() => route.meta.fullHeight === true)
 // The settings center is a platform-wide area: the project tree would only be
 // noise there, so the shell hides it and lets the settings view use the pane.
 const settingsMode = computed(() => route.meta.settings === true)
+// The tasks center manages tasks with their own flow and list sidebar.
+const tasksMode = computed(() => route.meta.tasks === true)
 
 onMounted(async () => {
   // The backend catalog facts (labels, order, service support) are read by
@@ -248,16 +250,16 @@ async function logout() {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'settings-mode': settingsMode, 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="app-shell" :class="{ 'settings-mode': settingsMode || tasksMode, 'sidebar-collapsed': sidebarCollapsed }">
     <CategoryRail
       :sidebar-collapsed="sidebarCollapsed"
-      :sidebar-collapsible="!settingsMode"
+      :sidebar-collapsible="!settingsMode && !tasksMode"
       @logout="logout"
       @toggle-sidebar="toggleSidebar"
       @expand-sidebar="setSidebarCollapsed(false)"
     />
 
-    <aside v-if="!settingsMode && !sidebarCollapsed" class="sidebar" aria-label="项目导航">
+    <aside v-if="!settingsMode && !tasksMode && !sidebarCollapsed" class="sidebar" aria-label="项目导航">
       <div class="sidebar-head">
         <h2>项目</h2>
         <div class="head-actions">
@@ -287,7 +289,7 @@ async function logout() {
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
       <SessionTabs
-        v-if="!settingsMode && openTabs.tabs.length > 0"
+        v-if="!settingsMode && !tasksMode && openTabs.tabs.length > 0"
         :tabs="openTabs.tabs"
         :active-key="activeKey"
         :project-names="projectNames"
