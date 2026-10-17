@@ -100,14 +100,41 @@ func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (Task, erro
 	return s.repo.Create(t)
 }
 
-// Get returns one task by ID.
+// Get returns one task by ID. If the task is currently executing, it syncs
+// its status with the underlying agent session first.
 func (s *Service) Get(id uint) (Task, error) {
+	if s.sessions != nil {
+		t, err := s.repo.Get(id)
+		if err == nil && (t.Status == StatusExecuting || t.LastRunStatus == RunExecuting) {
+			if synced, err := s.SyncTaskStatus(context.Background(), id); err == nil {
+				return synced, nil
+			}
+		}
+	}
 	return s.repo.Get(id)
 }
 
-// List returns tasks matching the filter.
+// List returns tasks matching the filter, syncing any executing tasks first.
 func (s *Service) List(filter ListFilter) ([]Task, error) {
-	return s.repo.List(filter)
+	list, err := s.repo.List(filter)
+	if err != nil {
+		return nil, err
+	}
+	if s.sessions == nil {
+		return list, nil
+	}
+
+	hasExecuting := false
+	for _, t := range list {
+		if t.Status == StatusExecuting || t.LastRunStatus == RunExecuting {
+			hasExecuting = true
+			_, _ = s.SyncTaskStatus(context.Background(), t.ID)
+		}
+	}
+	if hasExecuting {
+		return s.repo.List(filter)
+	}
+	return list, nil
 }
 
 // Update updates task fields.
@@ -258,7 +285,9 @@ func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepReque
 			driverText = fmt.Sprintf("【推进至第 %d 步：%s】\n%s", targetStep, stepDef.Name, stepDef.Prompt)
 		}
 		// Send prompt to existing active session so Agent intervenes in this step
-		_, _ = s.sessions.Send(ctx, t.ProjectID, t.ActiveSessionID, driverText, t.Model)
+		if _, err := s.sessions.Send(ctx, t.ProjectID, t.ActiveSessionID, driverText, t.Model); err != nil {
+			return Task{}, fmt.Errorf("tasks: advance send driver prompt: %w", err)
+		}
 		t.StepStatus = StepInProgress
 	}
 
@@ -344,7 +373,9 @@ func (s *Service) CreateSessionForTask(ctx context.Context, id uint) (Task, sess
 
 // TriggerExecution executes the final step of the task.
 // For transactional tasks, it spawns a NEW independent AgentSession on each execution run.
-// For development tasks, it executes in the existing active session and locks to completed on success.
+// For development tasks, it executes in the existing active session.
+// In both cases, the run is initially marked as "running" and the task status becomes "executing"
+// until the agent's turn completes or fails.
 func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...string) (TaskRun, error) {
 	t, err := s.repo.Get(id)
 	if err != nil {
@@ -366,7 +397,9 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 		t.LastRunStatus = RunSkippedNotReady
 		now := time.Now().UTC()
 		t.LastRunAt = &now
-		_ = s.repo.Update(t)
+		if err := s.repo.Update(t); err != nil {
+			return TaskRun{}, fmt.Errorf("tasks: update task status: %w", err)
+		}
 		return TaskRun{}, checkErr
 	}
 
@@ -390,6 +423,7 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 		outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, sessTitle, execPrompt, t.Model)
 		if err != nil {
 			t.LastRunStatus = RunFailed
+			t.Status = StatusFailed
 			_ = s.repo.Update(t)
 			return TaskRun{}, fmt.Errorf("tasks: execute create session: %w", err)
 		}
@@ -402,17 +436,22 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 			Prompt:      execPrompt,
 			TriggeredAt: now,
 		}
-		createdRun, _ := s.repo.CreateRun(run)
+		createdRun, err := s.repo.CreateRun(run)
+		if err != nil {
+			return TaskRun{}, fmt.Errorf("tasks: create run: %w", err)
+		}
 
 		t.ActiveSessionID = outcome.Session.ID
-		t.LastRunStatus = RunSuccess
-		t.Status = StatusReadyForExecution // ready for subsequent runs
-		_ = s.repo.Update(t)
+		t.LastRunStatus = RunExecuting
+		t.Status = StatusExecuting
+		if err := s.repo.Update(t); err != nil {
+			return createdRun, fmt.Errorf("tasks: update task: %w", err)
+		}
 
 		return createdRun, nil
 	}
 
-	// DEVELOPMENT: Execute in existing active session, lock to completed on success
+	// DEVELOPMENT: Execute in existing active session
 	finalStep := FinalStepIndex(t.FlowType)
 	stepDef, _ := GetStepDef(t.FlowType, finalStep)
 	execPrompt := fmt.Sprintf("【自动执行 - %s】\n任务：%s\n前期所有需求分析、设计与计划已明确确认完毕，执行过程免打断。\n请严格按照已确认的执行方案开始自动执行：\n%s",
@@ -420,7 +459,6 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 
 	t.LastRunStatus = RunExecuting
 	t.Status = StatusExecuting
-	_ = s.repo.Update(t)
 
 	var sessionID = t.ActiveSessionID
 	if sessionID == "" {
@@ -447,22 +485,118 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 		TaskID:      t.ID,
 		SessionID:   sessionID,
 		TriggerType: trig,
-		Status:      "success",
+		Status:      "running",
 		Prompt:      execPrompt,
 		TriggeredAt: now,
 	}
-	createdRun, _ := s.repo.CreateRun(run)
+	createdRun, err := s.repo.CreateRun(run)
+	if err != nil {
+		return TaskRun{}, fmt.Errorf("tasks: create run: %w", err)
+	}
 
-	// Development task completed successfully!
-	t.LastRunStatus = RunSuccess
-	t.Status = StatusCompleted
-	_ = s.repo.Update(t)
+	if err := s.repo.Update(t); err != nil {
+		return createdRun, fmt.Errorf("tasks: update task: %w", err)
+	}
 
 	return createdRun, nil
 }
 
-// ListRuns returns all execution runs for a task.
+// SyncTaskStatus checks the underlying session for any running runs and updates
+// the Task and TaskRun states accordingly.
+func (s *Service) SyncTaskStatus(ctx context.Context, id uint) (Task, error) {
+	t, err := s.repo.Get(id)
+	if err != nil {
+		return Task{}, err
+	}
+	if s.sessions == nil {
+		return t, nil
+	}
+
+	runs, err := s.repo.ListRuns(t.ID)
+	if err != nil {
+		return t, nil
+	}
+
+	hasChanges := false
+	now := time.Now().UTC()
+
+	for _, run := range runs {
+		if run.Status != "running" {
+			continue
+		}
+		sess, err := s.sessions.Get(t.ProjectID, run.SessionID)
+		if err != nil {
+			if errors.Is(err, sessions.ErrSessionNotFound) {
+				run.Status = "failed"
+				run.Error = "session not found"
+				run.FinishedAt = &now
+				_ = s.repo.UpdateRun(run)
+				hasChanges = true
+			}
+			continue
+		}
+
+		if sess.Turn == sessions.TurnRunning {
+			// Agent is still running the turn
+			continue
+		}
+
+		// Turn has ended (TurnIdle or unstated)
+		if sess.Status == sessions.SessionStopped {
+			run.Status = "failed"
+			run.Error = "execution stopped by user"
+			run.FinishedAt = &now
+			_ = s.repo.UpdateRun(run)
+			hasChanges = true
+		} else if sess.Status == sessions.SessionDisconnected {
+			run.Status = "failed"
+			run.Error = "instance disconnected"
+			run.FinishedAt = &now
+			_ = s.repo.UpdateRun(run)
+			hasChanges = true
+		} else {
+			// Succeeded
+			run.Status = "success"
+			run.FinishedAt = &now
+			_ = s.repo.UpdateRun(run)
+			hasChanges = true
+		}
+	}
+
+	if hasChanges {
+		updatedRuns, _ := s.repo.ListRuns(t.ID)
+		if len(updatedRuns) > 0 {
+			latest := updatedRuns[0]
+			switch latest.Status {
+			case "success":
+				t.LastRunStatus = RunSuccess
+				if t.FlowType == FlowDevelopment {
+					t.Status = StatusCompleted
+					t.StepStatus = StepCompleted
+				} else {
+					t.Status = StatusReadyForExecution
+				}
+				_ = s.repo.Update(t)
+			case "failed":
+				t.LastRunStatus = RunFailed
+				t.Status = StatusFailed
+				_ = s.repo.Update(t)
+			case "running":
+				t.LastRunStatus = RunExecuting
+				t.Status = StatusExecuting
+				_ = s.repo.Update(t)
+			}
+		}
+	}
+
+	return s.repo.Get(id)
+}
+
+// ListRuns returns all execution runs for a task, syncing status for live runs first.
 func (s *Service) ListRuns(ctx context.Context, taskID uint) ([]TaskRun, error) {
+	if s.sessions != nil {
+		_, _ = s.SyncTaskStatus(ctx, taskID)
+	}
 	return s.repo.ListRuns(taskID)
 }
 

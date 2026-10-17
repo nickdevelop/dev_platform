@@ -35,8 +35,9 @@ func TestSchedulerTick(t *testing.T) {
 	taskNotReady.NextRunAt = &past
 	_ = svc.repo.Update(taskNotReady)
 
-	// Run scheduler tick
+	// Run scheduler tick and wait for workers
 	scheduler.tick(time.Now().UTC())
+	scheduler.Wait()
 
 	reloaded, _ := svc.Get(taskNotReady.ID)
 	if reloaded.LastRunStatus != RunSkippedNotReady {
@@ -62,8 +63,9 @@ func TestSchedulerTick(t *testing.T) {
 	taskReady.NextRunAt = &past
 	_ = svc.repo.Update(taskReady)
 
-	// Run tick
+	// Run tick and wait for workers
 	scheduler.tick(time.Now().UTC())
+	scheduler.Wait()
 
 	reloadedReady, _ := svc.Get(taskReady.ID)
 	if reloadedReady.LastRunStatus != RunSuccess {
@@ -71,5 +73,52 @@ func TestSchedulerTick(t *testing.T) {
 	}
 	if reloadedReady.ScheduleEnabled {
 		t.Fatalf("expected once schedule to be disabled after run")
+	}
+}
+
+func TestSchedulerConcurrentDispatch(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{}
+	svc := NewService(NewRepository(db), launcher)
+	scheduler := NewScheduler(svc, 100*time.Millisecond)
+	ctx := context.Background()
+
+	past := time.Now().Add(-1 * time.Minute).UTC()
+
+	// Create 3 ready tasks
+	for i := 1; i <= 3; i++ {
+		task, err := svc.Create(ctx, CreateTaskRequest{
+			Title:     "并发任务",
+			ProjectID: uint(i),
+			Backend:   agents.BackendOpenCodeV2,
+			Model:     "gpt-4o",
+			FlowType:  FlowTransactional,
+		})
+		if err != nil {
+			t.Fatalf("create task %d: %v", i, err)
+		}
+		_, _ = svc.SaveExecutionPrompt(ctx, task.ID, "并发执行方案")
+		task, _ = svc.Get(task.ID)
+		task.ScheduleEnabled = true
+		task.ScheduleType = ScheduleOnce
+		task.NextRunAt = &past
+		_ = svc.repo.Update(task)
+	}
+
+	// Tick and wait
+	scheduler.tick(time.Now().UTC())
+	scheduler.Wait()
+
+	tasks, err := svc.List(ListFilter{})
+	if err != nil || len(tasks) != 3 {
+		t.Fatalf("list tasks: %v", err)
+	}
+	for _, task := range tasks {
+		if task.LastRunStatus != RunSuccess {
+			t.Fatalf("expected task %d run success, got %s", task.ID, task.LastRunStatus)
+		}
+		if task.ScheduleEnabled {
+			t.Fatalf("expected task %d schedule disabled", task.ID)
+		}
 	}
 }

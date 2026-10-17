@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -16,6 +17,7 @@ import (
 type fakeSessionLauncher struct {
 	createdSessions []sessions.Session
 	sentMessages    []string
+	sendErr         error
 }
 
 func (f *fakeSessionLauncher) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
@@ -32,6 +34,9 @@ func (f *fakeSessionLauncher) Create(ctx context.Context, projectID uint, backen
 }
 
 func (f *fakeSessionLauncher) Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error) {
+	if f.sendErr != nil {
+		return sessions.Session{}, f.sendErr
+	}
 	f.sentMessages = append(f.sentMessages, text)
 	return sessions.Session{ID: sessionID, ProjectID: projectID, Status: sessions.SessionActive}, nil
 }
@@ -45,9 +50,20 @@ func (f *fakeSessionLauncher) Get(projectID uint, sessionID string) (sessions.Se
 	return sessions.Session{}, sessions.ErrSessionNotFound
 }
 
+func (f *fakeSessionLauncher) setSessionState(sessionID string, status sessions.SessionStatus, turn sessions.TurnState) {
+	for i, s := range f.createdSessions {
+		if s.ID == sessionID {
+			f.createdSessions[i].Status = status
+			f.createdSessions[i].Turn = turn
+			return
+		}
+	}
+}
+
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -201,5 +217,135 @@ func TestDevelopmentTaskFlowAndCompletionLock(t *testing.T) {
 	_, err = svc.TriggerExecution(ctx, task.ID, "manual")
 	if err == nil || err != ErrTaskAlreadyCompleted {
 		t.Fatalf("expected ErrTaskAlreadyCompleted, got: %v", err)
+	}
+}
+
+func TestTaskExecutionTurnSync(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{}
+	svc := NewService(NewRepository(db), launcher)
+	ctx := context.Background()
+
+	// 1. Create a confirmed transactional task
+	task, err := svc.Create(ctx, CreateTaskRequest{
+		Title:       "定时同步任务",
+		ProjectID:   1,
+		Backend:     agents.BackendOpenCodeV2,
+		Model:       "gpt-4o",
+		FlowType:    FlowTransactional,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	task, err = svc.SaveExecutionPrompt(ctx, task.ID, "同步脚本提示词")
+	if err != nil {
+		t.Fatalf("save prompt: %v", err)
+	}
+
+	// 2. Trigger execution
+	run, err := svc.TriggerExecution(ctx, task.ID, "manual")
+	if err != nil {
+		t.Fatalf("trigger execution: %v", err)
+	}
+	if run.Status != "running" {
+		t.Fatalf("expected initial run status to be 'running', got %s", run.Status)
+	}
+
+	// Task should be in executing state while turn is running
+	launcher.setSessionState(run.SessionID, sessions.SessionActive, sessions.TurnRunning)
+	syncedTask, err := svc.SyncTaskStatus(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("sync status: %v", err)
+	}
+	if syncedTask.Status != StatusExecuting || syncedTask.LastRunStatus != RunExecuting {
+		t.Fatalf("expected task executing while turn running, got task=%s run=%s", syncedTask.Status, syncedTask.LastRunStatus)
+	}
+
+	// 3. Agent turn completes
+	launcher.setSessionState(run.SessionID, sessions.SessionActive, sessions.TurnIdle)
+	syncedTask, err = svc.SyncTaskStatus(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("sync status: %v", err)
+	}
+	if syncedTask.Status != StatusReadyForExecution || syncedTask.LastRunStatus != RunSuccess {
+		t.Fatalf("expected task ready and run success, got task=%s run=%s", syncedTask.Status, syncedTask.LastRunStatus)
+	}
+
+	// Verify run was updated in repository
+	runs, err := svc.ListRuns(ctx, task.ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("list runs: %v", err)
+	}
+	if runs[0].Status != "success" || runs[0].FinishedAt == nil {
+		t.Fatalf("expected run status to be success with finished_at, got: %+v", runs[0])
+	}
+}
+
+func TestTaskExecutionStoppedByUser(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{}
+	svc := NewService(NewRepository(db), launcher)
+	ctx := context.Background()
+
+	task, _ := svc.Create(ctx, CreateTaskRequest{
+		Title:       "长耗时分析任务",
+		ProjectID:   1,
+		Backend:     agents.BackendOpenCodeV2,
+		Model:       "gpt-4o",
+		FlowType:    FlowTransactional,
+	})
+	task, _ = svc.SaveExecutionPrompt(ctx, task.ID, "执行长任务")
+
+	run, err := svc.TriggerExecution(ctx, task.ID, "manual")
+	if err != nil {
+		t.Fatalf("trigger execution: %v", err)
+	}
+
+	// User clicked "Stop" on session
+	launcher.setSessionState(run.SessionID, sessions.SessionStopped, sessions.TurnIdle)
+
+	syncedTask, err := svc.SyncTaskStatus(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("sync status: %v", err)
+	}
+	if syncedTask.LastRunStatus != RunFailed {
+		t.Fatalf("expected last run status failed, got %s", syncedTask.LastRunStatus)
+	}
+
+	runs, _ := svc.ListRuns(ctx, task.ID)
+	if runs[0].Status != "failed" || runs[0].Error != "execution stopped by user" {
+		t.Fatalf("expected run status failed with reason, got %+v", runs[0])
+	}
+}
+
+func TestTaskAdvanceStepSendFailure(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{
+		sendErr: fmt.Errorf("connection refused"),
+	}
+	svc := NewService(NewRepository(db), launcher)
+	ctx := context.Background()
+
+	task, _ := svc.Create(ctx, CreateTaskRequest{
+		Title:       "网络异常任务",
+		ProjectID:   1,
+		Backend:     agents.BackendPi,
+		Model:       "claude-3-5-sonnet",
+		FlowType:    FlowDevelopment,
+	})
+	task, _, _ = svc.CreateSessionForTask(ctx, task.ID)
+
+	// Advancing step should fail when sending driver prompt fails, and NOT advance current step
+	_, err := svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{
+		Confirmed:    true,
+		DriverPrompt: "下一阶段提示",
+	})
+	if err == nil {
+		t.Fatal("expected advance step to fail when send driver prompt fails")
+	}
+
+	latest, _ := svc.repo.Get(task.ID)
+	if latest.CurrentStep != 1 {
+		t.Fatalf("step should not advance on failure, got step %d", latest.CurrentStep)
 	}
 }

@@ -7,11 +7,15 @@ import (
 	"time"
 )
 
+// maxConcurrentTasks bounds how many tasks the scheduler may execute in parallel.
+const maxConcurrentTasks = 5
+
 // Scheduler runs periodic checks and executes schedulable tasks.
 type Scheduler struct {
 	svc      *Service
 	interval time.Duration
 	stopCh   chan struct{}
+	sem      chan struct{}
 	wg       sync.WaitGroup
 }
 
@@ -24,6 +28,7 @@ func NewScheduler(svc *Service, checkInterval time.Duration) *Scheduler {
 		svc:      svc,
 		interval: checkInterval,
 		stopCh:   make(chan struct{}),
+		sem:      make(chan struct{}, maxConcurrentTasks),
 	}
 }
 
@@ -36,6 +41,11 @@ func (s *Scheduler) Start() {
 // Stop signals the scheduler to stop and waits for ongoing tasks to finish.
 func (s *Scheduler) Stop() {
 	close(s.stopCh)
+	s.wg.Wait()
+}
+
+// Wait blocks until all currently executing dispatch workers have finished.
+func (s *Scheduler) Wait() {
 	s.wg.Wait()
 }
 
@@ -54,7 +64,7 @@ func (s *Scheduler) run() {
 	}
 }
 
-// tick checks for schedulable tasks and dispatches them.
+// tick checks for schedulable tasks and dispatches them concurrently.
 func (s *Scheduler) tick(now time.Time) {
 	tasks, err := s.svc.repo.FindSchedulableTasks(now)
 	if err != nil {
@@ -63,7 +73,20 @@ func (s *Scheduler) tick(now time.Time) {
 	}
 
 	for _, task := range tasks {
-		s.dispatch(task, now)
+		t := task
+		select {
+		case <-s.stopCh:
+			return
+		case s.sem <- struct{}{}:
+			s.wg.Add(1)
+			go func() {
+				defer func() {
+					<-s.sem
+					s.wg.Done()
+				}()
+				s.dispatch(t, now)
+			}()
+		}
 	}
 }
 
@@ -81,7 +104,9 @@ func (s *Scheduler) dispatch(t Task, now time.Time) {
 			next, _ := CalculateNextRun(t, now)
 			t.NextRunAt = next
 		}
-		_ = s.svc.repo.Update(t)
+		if err := s.svc.repo.Update(t); err != nil {
+			log.Printf("scheduler: update skipped task %d failed: %v", t.ID, err)
+		}
 		return
 	}
 
@@ -108,5 +133,7 @@ func (s *Scheduler) dispatch(t Task, now time.Time) {
 			latest.NextRunAt = next
 		}
 	}
-	_ = s.svc.repo.Update(latest)
+	if err := s.svc.repo.Update(latest); err != nil {
+		log.Printf("scheduler: update scheduled task %d failed: %v", latest.ID, err)
+	}
 }
