@@ -166,8 +166,9 @@ test('an activity card never adds a horizontal scroller to the activity pane', a
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(conversation).toContainText('opencode reply: step group please', { timeout: 20_000 })
   // The reply's reasoning lands in the flat activity list, which is the box
-  // under test.
-  await expect(conversation.locator('[data-test="activity-scroll"] [data-test="thinking"]')).toBeVisible()
+  // under test. Each turn contributes its own reasoning block, so the card under
+  // test is the first one — the same element the geometry check below reads.
+  await expect(conversation.locator('[data-test="activity-scroll"] [data-test="thinking"]').first()).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const log = document.querySelector('[data-test="activity-scroll"]') as HTMLElement

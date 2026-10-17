@@ -156,7 +156,7 @@ func TestStreamSessionFramesOrderedEvents(t *testing.T) {
 		Type:       agents.EventUnknown,
 		Raw:        json.RawMessage(`{"backendField":"kept"}`),
 	})
-	waitForFrames(t, w, 3)
+	waitForFrames(t, w, 4)
 
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
@@ -164,10 +164,15 @@ func TestStreamSessionFramesOrderedEvents(t *testing.T) {
 	}
 
 	frames := parseFrames(t, w.Bytes())
-	if len(frames) != 3 {
-		t.Fatalf("got %d frames, want 3: %+v", len(frames), frames)
+	if len(frames) != 4 {
+		t.Fatalf("got %d frames, want the join frame plus 3 events: %+v", len(frames), frames)
 	}
-	wantIDs := []string{"1", "2", "3"}
+	// The stream opens with the session's turn state, framed as a turn boundary.
+	// That frame belongs to no position in the sequence, so it carries no id.
+	if frames[0].event != string(agents.EventTurn) || frames[0].id != "" {
+		t.Errorf("join frame = %+v, want an id-less turn frame", frames[0])
+	}
+	wantIDs := []string{"", "1", "2", "3"}
 	for i, frame := range frames {
 		if frame.id != wantIDs[i] {
 			t.Errorf("frame[%d] id = %q, want %q", i, frame.id, wantIDs[i])
@@ -188,14 +193,14 @@ func TestStreamSessionFramesOrderedEvents(t *testing.T) {
 		}
 	}
 
-	if frames[0].event != string(agents.EventMessage) || frames[1].event != string(agents.EventMessage) {
-		t.Errorf("first two frame events = %q/%q, want message", frames[0].event, frames[1].event)
+	if frames[1].event != string(agents.EventMessage) || frames[2].event != string(agents.EventMessage) {
+		t.Errorf("message frame events = %q/%q, want message", frames[1].event, frames[2].event)
 	}
-	if frames[2].event != string(agents.EventUnknown) {
-		t.Errorf("third frame event = %q, want unknown", frames[2].event)
+	if frames[3].event != string(agents.EventUnknown) {
+		t.Errorf("unknown frame event = %q, want unknown", frames[3].event)
 	}
-	if !strings.Contains(frames[2].data, `"backendField":"kept"`) {
-		t.Errorf("unknown event raw metadata was not preserved: %s", frames[2].data)
+	if !strings.Contains(frames[3].data, `"backendField":"kept"`) {
+		t.Errorf("unknown event raw metadata was not preserved: %s", frames[3].data)
 	}
 }
 
@@ -253,17 +258,20 @@ func TestStreamSessionSkipsMalformedAndPreservesUnknown(t *testing.T) {
 		Type:       agents.EventUnknown,
 		Raw:        json.RawMessage(`{"diagnostic":true}`),
 	})
-	waitForFrames(t, w, 1)
+	waitForFrames(t, w, 2)
 
 	cancel()
 	<-done
 
 	frames := parseFrames(t, w.Bytes())
-	if len(frames) != 1 {
-		t.Fatalf("got %d frames, want only the valid unknown event: %+v", len(frames), frames)
+	if len(frames) != 2 {
+		t.Fatalf("got %d frames, want the join frame and the valid unknown event: %+v", len(frames), frames)
 	}
-	if frames[0].event != string(agents.EventUnknown) || !strings.Contains(frames[0].data, `"diagnostic":true`) {
-		t.Errorf("valid unknown event not preserved: %+v", frames[0])
+	if frames[0].event != string(agents.EventTurn) {
+		t.Errorf("join frame event = %q, want turn", frames[0].event)
+	}
+	if frames[1].event != string(agents.EventUnknown) || !strings.Contains(frames[1].data, `"diagnostic":true`) {
+		t.Errorf("valid unknown event not preserved: %+v", frames[1])
 	}
 }
 
@@ -548,20 +556,104 @@ func TestStreamSessionResumeWithoutCoverageResyncs(t *testing.T) {
 	// The instance's buffer holds nothing (or at most older events), so
 	// position 10 cannot be trusted: the client must rebuild from history.
 	env.fake.emit(t, env.instanceID, streamMessageEvent(11, "native-1", "eleventh"))
-	waitForFrames(t, w, 2)
+	waitForFrames(t, w, 3)
 	cancel()
 	<-done
 
 	frames := parseFrames(t, w.Bytes())
-	if len(frames) != 2 {
-		t.Fatalf("got %d frames, want resync + one live event: %+v", len(frames), frames)
+	if len(frames) != 3 {
+		t.Fatalf("got %d frames, want resync + join frame + one live event: %+v", len(frames), frames)
 	}
 	if frames[0].event != "resync" {
 		t.Errorf("first frame event = %q, want resync", frames[0].event)
 	}
-	if frames[1].id != "11" || frames[1].event != string(agents.EventMessage) {
-		t.Errorf("second frame = %+v, want the live message at id 11", frames[1])
+	if frames[1].event != string(agents.EventTurn) || frames[1].id != "" {
+		t.Errorf("second frame = %+v, want the id-less turn join frame", frames[1])
 	}
+	if frames[2].id != "11" || frames[2].event != string(agents.EventMessage) {
+		t.Errorf("third frame = %+v, want the live message at id 11", frames[2])
+	}
+}
+
+// turnBoundaryEvent builds a turn boundary for the environment's session.
+func turnBoundaryEvent(phase agents.TurnPhase, outcome agents.TurnOutcome) agents.NormalizedEvent {
+	return agents.NormalizedEvent{
+		InstanceID: "unused",
+		Backend:    agents.BackendPi,
+		SessionID:  "native-1",
+		Sequence:   1,
+		Timestamp:  time.Now().UTC(),
+		Type:       agents.EventTurn,
+		Turn:       &agents.TurnPayload{ID: "turn-1", Phase: phase, Outcome: outcome},
+	}
+}
+
+// waitForTurnState blocks until the tracker reports the wanted state for the
+// environment's session.
+func waitForTurnState(t *testing.T, env *testEnv, want TurnState) {
+	t.Helper()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if env.svc.turnTracker.Of(agents.BackendPi, "native-1") == want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for turn state %q", want)
+}
+
+// assertJoinTurnPhase opens a stream and checks that its first frame is the
+// session's turn state: an id-less turn frame with the wanted phase.
+func assertJoinTurnPhase(t *testing.T, env *testEnv, sessionID string, want agents.TurnPhase) {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w := &recordingWriter{}
+	done := make(chan error, 1)
+	go func() {
+		done <- env.svc.StreamSession(ctx, env.projectID, sessionID, 0, w, nil)
+	}()
+	waitForFrames(t, w, 1)
+	cancel()
+	<-done
+
+	frames := parseFrames(t, w.Bytes())
+	join := frames[0]
+	if join.event != string(agents.EventTurn) || join.id != "" {
+		t.Fatalf("join frame = %+v, want an id-less turn frame", join)
+	}
+	var payload struct {
+		Turn *agents.TurnPayload `json:"turn"`
+	}
+	if err := json.Unmarshal([]byte(join.data), &payload); err != nil {
+		t.Fatalf("join frame data is not JSON: %v", err)
+	}
+	if payload.Turn == nil || payload.Turn.Phase != want {
+		t.Fatalf("join frame turn = %+v, want phase %q", payload.Turn, want)
+	}
+}
+
+// TestStreamSessionOpensWithTurnState verifies the first frame of a stream
+// restates the session's tracked turn state. A turn boundary is published on
+// the instance stream while the agent runs, so a client that attaches after the
+// turn ended never sees the closing frame; without the join frame the state it
+// last read stays "running" forever and the composer is stuck on 停止.
+func TestStreamSessionOpensWithTurnState(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-1")
+
+	// A turn under way is reported as running at the join point.
+	env.fake.emit(t, env.instanceID, turnBoundaryEvent(agents.TurnStarted, ""))
+	waitForTurnState(t, env, TurnRunning)
+	assertJoinTurnPhase(t, env, session.ID, agents.TurnStarted)
+
+	// Once it has ended, the join point says so even though the closing boundary
+	// was published long before the client attached.
+	env.fake.emit(t, env.instanceID, turnBoundaryEvent(agents.TurnEnded, agents.TurnCompleted))
+	waitForTurnState(t, env, TurnIdle)
+	assertJoinTurnPhase(t, env, session.ID, agents.TurnEnded)
 }
 
 // TestStreamSessionOpensWithInteractionSnapshot verifies a stream of a session

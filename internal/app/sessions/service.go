@@ -99,6 +99,11 @@ const heartbeatInterval = 15 * time.Second
 // because it belongs to no position in the sequence.
 const resyncFrame = "event: resync\ndata: {}\n\n"
 
+// turnSnapshotID identifies the synthetic turn frame a stream opens with. It is
+// deliberately not a real turn id: the frame restates tracked state rather than
+// reporting a boundary, so no consumer ever pairs it with a started/ended pair.
+const turnSnapshotID = "stream-join"
+
 // Session is the JSON-stable API representation of a session index entry. The
 // embedded capabilities tell the workbench which controls the backend actually
 // supports, so unsupported controls can be hidden.
@@ -904,7 +909,22 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 		return err
 	}
 
-	queue := make(chan agents.NormalizedEvent, s.streamBuffer)
+	// The stream opens with the session's turn state, seeded as the queue's first
+	// item. A turn boundary is published on the instance stream while the agent
+	// runs, so a client that subscribes after the turn ended would never see the
+	// closing frame: the state it last read (the REST DTO at open time) would
+	// keep saying "running" with nothing left to correct it. Restating the
+	// tracked state here gives the joining client the same answer the DTO would
+	// report now, in stream order. It goes through the queue rather than being
+	// written here so a wedged client meets the same policy as any other event.
+	type streamItem struct {
+		event agents.NormalizedEvent
+		// join marks the state frame a stream opens with: it belongs to no
+		// position in the sequence, so it is written without an SSE id.
+		join bool
+	}
+	queue := make(chan streamItem, s.streamBuffer)
+	queue <- streamItem{event: s.turnSnapshotEvent(row), join: true}
 	var slow atomic.Bool
 	go func() {
 		defer close(queue)
@@ -931,7 +951,7 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 					continue
 				}
 				select {
-				case queue <- ev:
+				case queue <- streamItem{event: ev}:
 				case <-subCtx.Done():
 					return
 				default:
@@ -962,7 +982,7 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 			if flush != nil {
 				flush()
 			}
-		case ev, ok := <-queue:
+		case item, ok := <-queue:
 			if !ok {
 				if slow.Load() {
 					return errSlowClient
@@ -973,7 +993,13 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 				s.markDisconnected(row)
 				return nil
 			}
-			if err := writeEvent(w, ev); err != nil {
+			var err error
+			if item.join {
+				err = writeFrame(w, item.event)
+			} else {
+				err = writeEvent(w, item.event)
+			}
+			if err != nil {
 				if errors.Is(err, errEventEncode) {
 					// A single unencodable event (for example a backend raw
 					// body that is not valid JSON) is dropped rather than
@@ -1000,6 +1026,47 @@ func writeEvent(w io.Writer, ev agents.NormalizedEvent) error {
 		return fmt.Errorf("sessions: write event: %w", err)
 	}
 	return nil
+}
+
+// writeFrame writes an event as an SSE event/data block with no id line: the
+// frame belongs to no position in the event sequence. The frames written at a
+// stream's join point use it, so a client never adopts a resume position it did
+// not actually reach.
+func writeFrame(w io.Writer, ev agents.NormalizedEvent) error {
+	payload, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errEventEncode, err)
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, payload); err != nil {
+		return fmt.Errorf("sessions: write frame: %w", err)
+	}
+	return nil
+}
+
+// turnSnapshotEvent is the session's turn state at a join point, framed as a
+// turn boundary so the client's existing turn handling consumes it: "started"
+// while the agent is working, "ended" once it is not. The ending's outcome is
+// not knowable here and is not read from this frame, but a valid turn payload
+// names one.
+func (s *Service) turnSnapshotEvent(row database.AgentSession) agents.NormalizedEvent {
+	phase := agents.TurnEnded
+	outcome := agents.TurnCompleted
+	if s.turnTracker.Of(agents.BackendID(row.Backend), row.NativeSessionID) == TurnRunning {
+		phase = agents.TurnStarted
+		outcome = ""
+	}
+	return agents.NormalizedEvent{
+		InstanceID: row.InstanceID,
+		SessionID:  row.ID,
+		Backend:    agents.BackendID(row.Backend),
+		Timestamp:  s.now(),
+		Type:       agents.EventTurn,
+		Turn: &agents.TurnPayload{
+			ID:      turnSnapshotID,
+			Phase:   phase,
+			Outcome: outcome,
+		},
+	}
 }
 
 // matchesSession reports whether an event belongs to the session: a

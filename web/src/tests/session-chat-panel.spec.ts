@@ -663,6 +663,32 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(interrupt).toHaveBeenCalledWith(1, 'sess-1')
   })
 
+  it('settles a stale running turn when the stream opens with its state', async () => {
+    // The list still reports the session as running. A turn that ended before
+    // this client attached would leave the composer on 停止 with nothing left to
+    // correct it; the frame the stream opens with is what settles it.
+    stubSessionList([session('sess-1', { turn: 'running' })])
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+    expect(wrapper.find('button.stop-button').exists()).toBe(true)
+
+    sessionStream('sess-1').dispatch('turn', {
+      type: 'turn',
+      instanceId: 'inst-1',
+      sessionId: 'sess-1',
+      backend: 'opencode-v2',
+      sequence: 0,
+      timestamp: '2026-10-09T00:00:00Z',
+      turn: { id: 'stream-join', phase: 'ended', outcome: 'completed' },
+    })
+    await flushPromises()
+
+    const button = wrapper.find('button.send-button')
+    expect(button.exists()).toBe(true)
+    expect(button.text()).toBe('发送')
+  })
+
   it('disables sending when the model list fails to load', async () => {
     vi.stubGlobal(
       'fetch',
