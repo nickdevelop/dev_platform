@@ -1233,6 +1233,9 @@ func (inst *instance) owns(event *Event, sessionID string) bool {
 func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 	data := decodeEventData(event.Data)
 	sessionID := data.SessionID
+	if sessionID == "" && data.Form != nil && data.Form.SessionID != "" {
+		sessionID = data.Form.SessionID
+	}
 	if !inst.owns(event, sessionID) {
 		return nil
 	}
@@ -1544,9 +1547,10 @@ type eventData struct {
 
 // nativeFormInfo mirrors the form object of form.created.
 type nativeFormInfo struct {
-	ID     string          `json:"id"`
-	Title  string          `json:"title"`
-	Fields json.RawMessage `json:"fields"`
+	ID        string          `json:"id"`
+	SessionID string          `json:"sessionID"`
+	Title     string          `json:"title"`
+	Fields    json.RawMessage `json:"fields"`
 }
 
 // structuredError mirrors Session.StructuredError.

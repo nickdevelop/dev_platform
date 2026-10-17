@@ -1,23 +1,24 @@
 <script setup lang="ts">
-// Project management dialog for one action: register, create, move, rename or
-// unregister. Unregister removes the project from the platform (stopping its
-// live agent instances and dropping their sessions) and never touches the
-// directory on disk. Move and rename require the typed current project name.
+// Project management dialog for one action: register, create, move, rename (directory),
+// rename-name (display name) or unregister. Unregister removes the project from the platform
+// (stopping its live agent instances and dropping their sessions) and never touches the
+// directory on disk. Move and rename directory require the typed current project name.
 // The parent owns visibility: it receives `submitted` and `close`.
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
   moveProject,
   registerProject,
   renameProject,
+  updateProjectName,
   unregisterProject,
   type Project,
 } from '../../api/projects'
 import { useAuthStore } from '../../stores/auth'
 import AppDialog from '../../shared/components/AppDialog.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister'
+type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
 const props = defineProps<{
   kind: DialogKind
@@ -37,6 +38,12 @@ const pathInput = ref('')
 const nameInput = ref('')
 const confirmNameInput = ref('')
 
+onMounted(() => {
+  if (props.kind === 'rename-name' && props.project) {
+    nameInput.value = props.project.name
+  }
+})
+
 const dialogTitle = computed(() => {
   const name = props.project?.name
   switch (props.kind) {
@@ -47,7 +54,9 @@ const dialogTitle = computed(() => {
     case 'move':
       return `移动项目 ${name}`
     case 'rename':
-      return `重命名项目 ${name}`
+      return `重命名项目目录 ${name}`
+    case 'rename-name':
+      return `修改项目名称 ${name}`
     case 'unregister':
       return '解除项目登记（保留目录）'
   }
@@ -62,7 +71,9 @@ const confirmLabel = computed(() => {
     case 'move':
       return '移动'
     case 'rename':
-      return '重命名'
+      return '重命名目录'
+    case 'rename-name':
+      return '保存'
     case 'unregister':
       return '解除登记'
   }
@@ -76,6 +87,9 @@ const typedNameMatches = computed(
 
 const canSubmit = computed(() => {
   if (submitting.value) return false
+  if (props.kind === 'rename-name') {
+    return nameInput.value.trim() !== ''
+  }
   if (needsTypedConfirmation.value && !typedNameMatches.value) return false
   return true
 })
@@ -99,6 +113,9 @@ async function submit() {
         break
       case 'rename':
         await renameProject(project!.id, nameInput.value.trim(), confirmNameInput.value, auth.csrfToken)
+        break
+      case 'rename-name':
+        await updateProjectName(project!.id, nameInput.value.trim(), auth.csrfToken)
         break
       case 'unregister':
         await unregisterProject(project!.id, auth.csrfToken)
@@ -140,11 +157,18 @@ async function submit() {
         <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
       </template>
 
+      <template v-else-if="kind === 'rename-name'">
+        <label for="dialog-display-name">项目显示名称</label>
+        <input id="dialog-display-name" v-model="nameInput" type="text" autocomplete="off" spellcheck="false" />
+        <p class="hint">仅修改在平台中展示的项目名称，不会修改磁盘上的物理目录。</p>
+      </template>
+
       <template v-else-if="kind === 'rename'">
         <label for="dialog-name">新目录名</label>
         <input id="dialog-name" v-model="nameInput" type="text" autocomplete="off" spellcheck="false" />
-        <label for="dialog-confirm-name">输入当前项目名“{{ project?.name }}”以确认重命名</label>
+        <label for="dialog-confirm-name">输入当前项目名“{{ project?.name }}”以确认重命名目录</label>
         <input id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" type="text" autocomplete="off" />
+        <p class="hint">将重命名磁盘上的项目文件夹，同时需要暂停关联的 Agent 实例。</p>
       </template>
 
       <template v-else-if="kind === 'unregister'">
@@ -190,45 +214,53 @@ async function submit() {
 
 .dialog-form input[type='text'] {
   height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
+  padding: 0 calc(var(--space-unit) * 0.75);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
 }
 
-.dialog-form .hint {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  margin: 0;
+.dialog-form input[type='text']:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
 }
 
-.dialog-form .safe-note {
-  color: var(--color-success);
+.hint {
+  margin: 0;
+  font-size: 0.857rem;
+  color: var(--color-text-muted);
+}
+
+.safe-note {
+  margin: 0;
+  font-size: 0.857rem;
+  color: var(--color-success, #16a34a);
 }
 
 .dialog-error {
+  margin: 0.25rem 0 0 0;
   color: var(--color-danger);
-  margin: 0;
+  font-size: 0.857rem;
 }
 
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  gap: calc(var(--space-unit) * 0.75);
+  margin-top: calc(var(--space-unit) * 1.25);
 }
 
 .dialog-actions .confirm {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: var(--color-on-primary);
+  color: #fff;
 }
 
 .dialog-actions .confirm:disabled {
-  background: var(--color-info-border);
-  border-color: var(--color-info-border);
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

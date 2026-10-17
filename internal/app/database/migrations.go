@@ -170,6 +170,12 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 22, name: "add_model_to_agent_sessions", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasColumn(&AgentSession{}, "model") {
+			return tx.Migrator().AddColumn(&AgentSession{}, "model")
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

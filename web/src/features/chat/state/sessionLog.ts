@@ -18,7 +18,7 @@ import type {
 // separator between them, so a resumed turn appends to the same blocks.
 export interface ChatEntry {
   id: string
-  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error'
+  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'notice'
   role: string
   text: string
   images?: ImageAttachment[]

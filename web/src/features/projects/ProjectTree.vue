@@ -250,6 +250,18 @@ function formatFullTime(isoString?: string): string {
   return date.toLocaleString()
 }
 
+function sessionModelFull(session: AgentSession): string {
+  if (session.model) return session.model
+  return sessionsStore.modelFor(session.id)
+}
+
+function sessionModelLabel(session: AgentSession): string {
+  const full = sessionModelFull(session)
+  if (!full) return ''
+  const slash = full.lastIndexOf('/')
+  return slash >= 0 ? full.slice(slash + 1) : full
+}
+
 async function onDeleteSession(projectId: number, sessionId: string) {
   if (!window.confirm('确定要删除该会话吗？')) return
 
@@ -322,6 +334,14 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             <div class="session-row-bottom">
               <div class="session-bottom-left">
                 <BackendTag :backend="entry.backend" />
+                <span
+                  v-if="sessionModelLabel(entry)"
+                  class="session-model"
+                  :title="sessionModelFull(entry)"
+                  data-test="session-model"
+                >
+                  {{ sessionModelLabel(entry) }}
+                </span>
               </div>
               <div class="session-bottom-right">
                 <span class="session-time" :title="formatFullTime(entry.updatedAt)">
@@ -480,6 +500,23 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 .session-bottom-left {
   display: flex;
   align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.session-model {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted, #f1f5f9);
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  max-width: 90px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  line-height: 1.2;
 }
 
 .session-bottom-right {

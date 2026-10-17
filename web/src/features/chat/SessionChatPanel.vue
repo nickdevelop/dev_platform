@@ -745,6 +745,7 @@ async function removeSession() {
                 :messages="activeMessages"
                 :capabilities="activeSession.capabilities"
                 :stream-status="streamStatus"
+                :running="isRunning"
                 display="messages"
               />
 
@@ -925,6 +926,7 @@ async function removeSession() {
               :messages="activeMessages"
               :capabilities="activeSession.capabilities"
               :stream-status="streamStatus"
+              :running="isRunning"
               display="activity"
             />
           </div>

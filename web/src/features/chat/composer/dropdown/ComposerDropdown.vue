@@ -50,9 +50,9 @@ watch(
             <template v-else>•</template>
           </span>
           <span class="item-label">{{ item.label }}</span>
-          <span v-if="item.badge" class="item-badge">{{ item.badge }}</span>
+          <span v-if="item.detail" class="item-detail">{{ item.detail }}</span>
         </div>
-        <div v-if="item.detail" class="item-detail">{{ item.detail }}</div>
+        <span v-if="item.badge" class="item-badge">{{ item.badge }}</span>
       </div>
     </div>
   </div>
@@ -65,36 +65,39 @@ watch(
   left: 0;
   right: 0;
   z-index: 50;
-  max-height: 18rem;
+  max-height: 16rem;
   background: var(--color-surface, #ffffff);
   border: 1px solid var(--color-border-strong, #cbd5e1);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
   overflow-y: auto;
-  padding: 0.35rem;
+  padding: 0.25rem;
 }
 
 .dropdown-loading {
-  padding: 0.6rem 0.8rem;
+  padding: 0.5rem 0.75rem;
   color: var(--color-text-muted, #64748b);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   text-align: center;
 }
 
 .dropdown-list {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.1rem;
 }
 
+/* Compact single-row layout */
 .dropdown-item {
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  min-height: 28px;
+  border-radius: 5px;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color 0.1s ease;
 }
 
 .dropdown-item:hover,
@@ -105,42 +108,50 @@ watch(
 .item-main {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .item-icon {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  width: 1.1rem;
 }
 
 .item-label {
   font-weight: 500;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   color: var(--color-text, #0f172a);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.item-detail {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 .item-badge {
-  font-size: 0.7rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
   background: var(--color-border, #e2e8f0);
   color: var(--color-text-muted, #64748b);
-  margin-left: auto;
+  flex-shrink: 0;
+  line-height: 1.2;
 }
 
 .dropdown-item.active .item-badge {
   background: var(--color-primary, #3b82f6);
   color: #ffffff;
-}
-
-.item-detail {
-  font-size: 0.78rem;
-  color: var(--color-text-muted, #64748b);
-  padding-left: 1.35rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 </style>

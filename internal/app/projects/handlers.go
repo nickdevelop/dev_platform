@@ -19,6 +19,8 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/create", s.handleCreate)
 	r.POST("/projects/:id/move", s.handleMove)
 	r.POST("/projects/:id/rename", s.handleRename)
+	r.POST("/projects/:id/name", s.handleUpdateName)
+	r.PUT("/projects/:id/name", s.handleUpdateName)
 	r.POST("/projects/:id/unregister", s.handleUnregister)
 	r.GET("/projects/:id/git-info", s.handleGitInfo)
 	r.GET("/projects/:id/files", s.handleSearchFiles)
@@ -88,6 +90,11 @@ type moveRequest struct {
 type renameRequest struct {
 	Name        string `json:"name"`
 	ConfirmName string `json:"confirmName"`
+}
+
+// updateNameRequest is the JSON body of POST /api/projects/{id}/name.
+type updateNameRequest struct {
+	Name string `json:"name"`
 }
 
 // handleList returns all registered projects.
@@ -165,6 +172,26 @@ func (s *Service) handleRename(c *gin.Context) {
 	}
 
 	project, err := s.Rename(id, req.Name, req.ConfirmName)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, project)
+}
+
+// handleUpdateName updates only the project's display name without modifying its filesystem directory.
+func (s *Service) handleUpdateName(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req updateNameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	project, err := s.UpdateName(id, req.Name)
 	if err != nil {
 		respondServiceError(c, err)
 		return

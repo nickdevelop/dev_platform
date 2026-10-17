@@ -69,6 +69,7 @@ export type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as AgentSession[],
+    sessionsByProject: {} as Record<number, AgentSession[]>,
     projectId: null as number | null,
     messages: {} as Record<string, ChatEntry[]>,
     streamStatus: {} as Record<string, StreamStatus>,
@@ -130,8 +131,15 @@ export const useSessionsStore = defineStore('sessions', {
   getters: {
     messagesFor: (state) => (sessionId: string) => state.messages[sessionId] ?? [],
     statusFor: (state) => (sessionId: string) => state.streamStatus[sessionId] ?? 'idle',
-    sessionById: (state) => (sessionId: string) =>
-      state.sessions.find((entry) => entry.id === sessionId) ?? null,
+    sessionById: (state) => (sessionId: string) => {
+      const direct = state.sessions.find((entry) => entry.id === sessionId)
+      if (direct) return direct
+      for (const list of Object.values(state.sessionsByProject)) {
+        const found = list.find((entry) => entry.id === sessionId)
+        if (found) return found
+      }
+      return null
+    },
     // modelFor is the model the composer shows and sends for a session. The
     // user's explicit choice wins; otherwise the model the session was created on
     // — the one chosen on the new-session form — so the composer shows it before
@@ -157,20 +165,10 @@ export const useSessionsStore = defineStore('sessions', {
     async loadSessions(projectId: number) {
       const request = ++this.listRequest
       if (this.projectId !== projectId) {
-        this.sessions = []
-        // History is per session id, but a different project's log must never
-        // render under the new project, so the replay state is reset with the
-        // list it belongs to.
-        this.messages = {}
-        this.historyLoaded = {}
-        this.historyError = {}
-        this.historyTruncated = {}
-        this.historyTailGuard = {}
-        this.echoPending = {}
+        // Preload session list from cache so UI updates immediately
+        this.sessions = this.sessionsByProject[projectId] ?? []
         this.selectedModels = {}
         this.autoModels = {}
-        this.lifecycleUsage = {}
-        clearResumePositions()
       }
       this.loading = true
       this.projectId = projectId
@@ -178,6 +176,7 @@ export const useSessionsStore = defineStore('sessions', {
         const list = await listProjectSessions(projectId)
         if (request !== this.listRequest) return
         this.sessions = list.sessions
+        this.sessionsByProject[projectId] = list.sessions
         this.error = ''
       } catch (error) {
         if (error instanceof UnauthorizedError) return
@@ -636,14 +635,29 @@ export const useSessionsStore = defineStore('sessions', {
       this.ensureMessages(sessionId).push(entry)
     },
 
+    appendNotice(sessionId: string, text: string) {
+      const list = this.ensureMessages(sessionId)
+      list.push({
+        id: nextEntryID(sessionId, Date.now(), 'notice'),
+        kind: 'notice',
+        role: 'system',
+        text,
+        streaming: false,
+      })
+    },
+
     // setModel remembers a model the user explicitly chose for one session. It
     // is view state the platform keeps for convenience — the model is not
     // persisted to the session index; the backend still receives it with each
     // message. It outranks the session's own model when the composer resolves
     // which model to show and send.
     setModel(sessionId: string, model: string) {
+      const oldModel = this.modelFor(sessionId)
       if (this.selectedModels[sessionId] === model) return
       this.selectedModels[sessionId] = model
+      if (model && oldModel && oldModel !== model && (this.messages[sessionId]?.length ?? 0) > 0) {
+        this.appendNotice(sessionId, `已切换模型为: ${model}`)
+      }
     },
 
     // setAutoModel records the model the picker selected on its own (the

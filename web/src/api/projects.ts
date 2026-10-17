@@ -56,6 +56,18 @@ export function renameProject(
   })
 }
 
+// Updates only the project's display name without touching the directory on disk.
+export function updateProjectName(
+  id: number,
+  name: string,
+  csrfToken: string,
+): Promise<Project> {
+  return apiRequest<Project>('POST', `/projects/${id}/name`, {
+    body: { name },
+    csrfToken,
+  })
+}
+
 // Removes the project from the platform, stopping its live instances first; the
 // directory on disk is never touched.
 export function unregisterProject(id: number, csrfToken: string): Promise<void> {

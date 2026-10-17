@@ -28,6 +28,7 @@ import PlantumlBlock from './PlantumlBlock.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
 import ImagePreviewModal from './ImagePreviewModal.vue'
+import RunningIndicator from '../../../shared/components/RunningIndicator.vue'
 import type { Capabilities, ImageAttachment } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../../../stores/sessions'
 import * as log from './logModel'
@@ -36,13 +37,8 @@ const props = defineProps<{
   messages: ChatEntry[]
   capabilities?: Capabilities | null
   streamStatus?: StreamStatus
-  // Which slice of the log to render. The chat panel renders the log split:
-  // display="messages" shows only user/agent message and error entries for
-  // the left column, display="activity" shows only the thinking/tool entries
-  // for the right activity pane (a flat list; thinking/edit/shell/question fold
-  // and start expanded, other tools are a summary line). display="all"
-  // keeps the legacy interleaved log.
   display?: 'all' | 'messages' | 'activity'
+  running?: boolean
 }>()
 
 // The whole render model — call/result joins, step groups, subagent facts and
@@ -323,6 +319,14 @@ function closeSubagent() {
           </div>
         </div>
       </li>
+
+      <!-- Running indicator row when session turn is running -->
+      <li v-if="props.running" class="chat-entry kind-running" data-test="running-entry">
+        <div class="running-indicator-card">
+          <RunningIndicator label="正在运行" />
+          <span class="running-text">正在运行...</span>
+        </div>
+      </li>
     </ol>
 
     <ol
@@ -376,6 +380,17 @@ function closeSubagent() {
 
           <template v-else-if="block.entry.kind === 'error'">
             <p class="agent-error" data-test="agent-error">{{ block.entry.text }}</p>
+          </template>
+
+          <template v-else-if="block.entry.kind === 'notice'">
+            <div class="system-notice-row" data-test="system-notice">
+              <span class="notice-line"></span>
+              <span class="notice-pill">
+                <span class="notice-icon" aria-hidden="true">🔀</span>
+                <span class="notice-text">{{ block.entry.text }}</span>
+              </span>
+              <span class="notice-line"></span>
+            </div>
           </template>
 
           <template v-else>
@@ -475,6 +490,14 @@ function closeSubagent() {
             </div>
           </details>
         </template>
+      </li>
+
+      <!-- Running indicator row when session turn is running -->
+      <li v-if="props.running" class="chat-entry kind-running" data-test="running-entry">
+        <div class="running-indicator-card">
+          <RunningIndicator label="正在运行" />
+          <span class="running-text">正在运行...</span>
+        </div>
       </li>
     </ol>
 
@@ -1042,5 +1065,70 @@ function closeSubagent() {
 
 .empty {
   color: var(--color-text-muted);
+}
+
+/* System notice row (model switch, etc.) */
+.system-notice-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin: 0.75rem 0;
+  user-select: none;
+}
+
+.notice-line {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+  opacity: 0.6;
+}
+
+.notice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  background: var(--color-surface-muted, #f1f5f9);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.notice-icon {
+  font-size: 0.8rem;
+}
+
+.notice-text {
+  font-weight: 500;
+}
+
+/* Running indicator at the end of the log */
+.kind-running {
+  display: flex;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.running-indicator-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--color-surface-muted, #f8fafc);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.running-text {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
 }
 </style>

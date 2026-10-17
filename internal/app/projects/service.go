@@ -211,6 +211,26 @@ func (s *Service) Rename(id uint, name, confirmName string) (Project, error) {
 	return s.relocate(row, target, name)
 }
 
+// UpdateName updates only the project's display name without touching the
+// filesystem directory or stopping live instances.
+func (s *Service) UpdateName(id uint, name string) (Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	name = strings.TrimSpace(name)
+	if err := validateName(name); err != nil {
+		return Project{}, err
+	}
+	row, err := s.load(id)
+	if err != nil {
+		return Project{}, err
+	}
+	if row.Name == name {
+		return row, nil
+	}
+	return s.repo.Update(row.ID, name, row.Path)
+}
+
 // Move moves the project directory to the authorized destination path. The
 // typed confirmation must match the project's current name. An existing
 // destination, or one inside the source directory, is rejected.
@@ -331,6 +351,13 @@ func (s *Service) insertProject(path, name string) (Project, error) {
 // removeProject deletes a project and everything the platform owns for it.
 func (s *Service) removeProject(id uint) error {
 	return s.repo.RemoveProject(id)
+}
+
+// Get returns the project record with the given id.
+func (s *Service) Get(id uint) (Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load(id)
 }
 
 // load reads the project record with the given id.

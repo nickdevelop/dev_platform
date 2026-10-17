@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -64,32 +65,28 @@ func setupTestProject(t *testing.T) (*Service, uint, string) {
 	t.Helper()
 	dir := t.TempDir()
 
-	// Create test structure:
+	// Non-git test structure:
 	// dir/
 	//   src/
 	//     main.go
 	//     utils/
 	//       helper.go
 	//   README.md
-	//   node_modules/
-	//     secret.js (should be ignored)
-	//   .git/
-	//     config (should be ignored)
+	//   .hidden_dir/
+	//     secret.js (should be hidden)
+	//   .env (should be hidden)
 	if err := os.MkdirAll(filepath.Join(dir, "src", "utils"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "node_modules"), 0o755); err != nil {
-		t.Fatalf("mkdir node_modules: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
-		t.Fatalf("mkdir .git: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, ".hidden_dir"), 0o755); err != nil {
+		t.Fatalf("mkdir .hidden_dir: %v", err)
 	}
 
 	_ = os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Hello"), 0o644)
 	_ = os.WriteFile(filepath.Join(dir, "src", "main.go"), []byte("package main"), 0o644)
 	_ = os.WriteFile(filepath.Join(dir, "src", "utils", "helper.go"), []byte("package utils"), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, "node_modules", "secret.js"), []byte(""), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, ".git", "config"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".hidden_dir", "secret.js"), []byte(""), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=1"), 0o644)
 
 	repo := &memoryRepo{projects: make(map[uint]Project)}
 	p, _ := repo.Create("test-project", dir)
@@ -98,11 +95,11 @@ func setupTestProject(t *testing.T) (*Service, uint, string) {
 	return svc, p.ID, dir
 }
 
-func TestSearchFiles(t *testing.T) {
+func TestSearchFiles_NonGit(t *testing.T) {
 	svc, id, _ := setupTestProject(t)
 	ctx := context.Background()
 
-	// 1. Search without query should return all non-ignored items
+	// 1. Search without query should return all non-hidden items
 	items, err := svc.SearchFiles(ctx, id, "", 50)
 	if err != nil {
 		t.Fatalf("SearchFiles: %v", err)
@@ -117,9 +114,9 @@ func TestSearchFiles(t *testing.T) {
 		t.Fatalf("expected workspace files not found: %v", paths)
 	}
 
-	// Must ignore node_modules and .git contents
-	if paths["node_modules/secret.js"] || paths[".git/config"] {
-		t.Fatalf("ignored directories leaked into results: %v", paths)
+	// Must hide dot files and dot folders
+	if paths[".env"] || paths[".hidden_dir"] || paths[".hidden_dir/secret.js"] {
+		t.Fatalf("hidden items leaked into non-git results: %v", paths)
 	}
 
 	// 2. Search with query "helper"
@@ -138,6 +135,63 @@ func TestSearchFiles(t *testing.T) {
 	}
 	if len(limited) != 1 {
 		t.Fatalf("expected 1 item, got: %d", len(limited))
+	}
+}
+
+func TestSearchFiles_GitProject(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("git CLI unavailable")
+	}
+	dir := t.TempDir()
+
+	// Initialize git repo
+	cmd := exec.Command("git", "init", "-q")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+
+	// Create files:
+	//   .gitignore
+	//   app.go
+	//   ignored.log
+	//   node_modules/dep.js
+	//   src/component.go
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules"), 0o755); err != nil {
+		t.Fatalf("mkdir node_modules: %v", err)
+	}
+
+	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\nnode_modules/\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "app.go"), []byte("package app"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "src", "component.go"), []byte("package src"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "debug.log"), []byte("log"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "node_modules", "dep.js"), []byte("console.log(1)"), 0o644)
+
+	repo := &memoryRepo{projects: make(map[uint]Project)}
+	p, _ := repo.Create("git-project", dir)
+	svc := NewServiceWithRepository(repo)
+
+	items, err := svc.SearchFiles(context.Background(), p.ID, "", 50)
+	if err != nil {
+		t.Fatalf("SearchFiles: %v", err)
+	}
+
+	paths := make(map[string]bool)
+	for _, item := range items {
+		paths[item.Path] = true
+	}
+
+	// app.go and src/component.go must be present
+	if !paths["app.go"] || !paths["src/component.go"] {
+		t.Fatalf("expected git files not found: %v", paths)
+	}
+
+	// .gitignore excluded items (debug.log, node_modules) and .git must be filtered
+	if paths["debug.log"] || paths["node_modules/dep.js"] || paths[".git"] || paths[".git/config"] {
+		t.Fatalf("git ignored files leaked into results: %v", paths)
 	}
 }
 

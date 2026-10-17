@@ -26,6 +26,7 @@ export interface AgentSession {
   instanceId: string
   nativeSessionId: string
   title?: string
+  model?: string
   status: SessionStatus
   turn: TurnState
   capabilities: Capabilities

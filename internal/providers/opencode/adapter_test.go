@@ -1389,7 +1389,7 @@ func TestAdapterSubscribeMapsTurnsAndInteractions(t *testing.T) {
 		sseEvent("evt_1", "session.execution.started", `{"sessionID":"ses_1"}`, "/x"),
 		sseEvent("evt_2", "permission.asked", `{"sessionID":"ses_1","requestID":"per_1","action":"bash","resources":["ls"],"message":"run ls?"}`, "/x"),
 		sseEvent("evt_3", "permission.replied", `{"sessionID":"ses_1","requestID":"per_1"}`, "/x"),
-		sseEvent("evt_4", "form.created", `{"sessionID":"ses_1","form":{"id":"frm_1","title":"Pick","fields":[{"name":"x"}]}}`, "/x"),
+		sseEvent("evt_4", "form.created", `{"form":{"id":"frm_1","sessionID":"ses_1","title":"Pick","fields":[{"name":"x"}]}}`, "/x"),
 		sseEvent("evt_5", "form.cancelled", `{"sessionID":"ses_1","id":"frm_1"}`, "/x"),
 		sseEvent("evt_6", "session.execution.succeeded", `{"sessionID":"ses_1"}`, "/x"),
 		sseEvent("evt_7", "session.execution.started", `{"sessionID":"ses_1"}`, "/x"),

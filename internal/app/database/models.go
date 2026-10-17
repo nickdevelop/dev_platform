@@ -98,6 +98,7 @@ type AgentSession struct {
 	InstanceID      string `gorm:"column:instance_id;not null;index"`
 	NativeSessionID string `gorm:"column:native_session_id;not null;uniqueIndex:idx_agent_session_project_backend_native"`
 	Title           string `gorm:"column:title"`
+	Model           string `gorm:"column:model"`
 	Status          string `gorm:"column:status;not null"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time

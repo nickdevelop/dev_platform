@@ -114,6 +114,7 @@ type Session struct {
 	InstanceID      string              `json:"instanceId"`
 	NativeSessionID string              `json:"nativeSessionId"`
 	Title           string              `json:"title,omitempty"`
+	Model           string              `json:"model,omitempty"`
 	Status          SessionStatus       `json:"status"`
 	Turn            TurnState           `json:"turn"`
 	Capabilities    agents.Capabilities `json:"capabilities"`
@@ -438,6 +439,13 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	if err != nil {
 		return CreateOutcome{}, err
 	}
+	if model != "" {
+		if dbRow, getErr := s.store.GetByID(row.ID); getErr == nil {
+			dbRow.Model = model
+			_ = s.store.Update(dbRow)
+			row.Model = model
+		}
+	}
 	outcome := CreateOutcome{Session: row}
 	var imgs []agents.ImageAttachment
 	if len(images) > 0 {
@@ -722,6 +730,9 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	}
 	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
+	}
+	if model != "" {
+		row.Model = model
 	}
 	row.Status = string(SessionActive)
 	row.UpdatedAt = s.now()
@@ -1071,9 +1082,24 @@ func (s *Service) turnSnapshotEvent(row database.AgentSession) agents.Normalized
 
 // matchesSession reports whether an event belongs to the session: a
 // session-scoped event for its native id, or an instance-scoped event (empty
-// session id) that applies to every session of the instance.
+// session id) that applies to every session of the instance. Strict session-scoped
+// event types (interactions, messages, turns, tool activity) are never broadcast
+// to other sessions even if their session id happens to be empty.
 func matchesSession(row database.AgentSession, ev agents.NormalizedEvent) bool {
+	if isSessionStrictEvent(ev.Type) {
+		return ev.SessionID == row.NativeSessionID
+	}
 	return ev.SessionID == "" || ev.SessionID == row.NativeSessionID
+}
+
+func isSessionStrictEvent(eventType agents.EventType) bool {
+	switch eventType {
+	case agents.EventInteraction, agents.EventTurn, agents.EventMessage,
+		agents.EventThinking, agents.EventToolCall, agents.EventToolResult:
+		return true
+	default:
+		return false
+	}
 }
 
 // markDisconnected marks an active session disconnected after its stream ends.
@@ -1220,6 +1246,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		InstanceID:      row.InstanceID,
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
+		Model:           row.Model,
 		Status:          SessionStatus(row.Status),
 		Turn:            s.turnTracker.Of(backend, row.NativeSessionID),
 		Capabilities:    s.capabilities(backend),

@@ -5,11 +5,14 @@ import type { FlowDef, StepDef, Task } from '../../api/tasks'
 const props = defineProps<{
   task: Task
   flowDef?: FlowDef
+  activeStage?: number
 }>()
 
 const emit = defineEmits<{
   advance: [confirmed: boolean, notes?: string, driverPrompt?: string, executionPrompt?: string]
   savePrompt: [prompt: string]
+  selectStage: [stage: number]
+  extractPrompt: []
 }>()
 
 const notesInput = ref('')
@@ -109,10 +112,12 @@ function handleFinalPlanConfirm() {
         :key="step.index"
         class="step-item"
         :class="{
-          active: step.index === task.currentStep,
+          active: activeStage ? step.index === activeStage : step.index === task.currentStep,
           completed: step.index < task.currentStep || (step.isFinal && task.isConfirmed),
           confirmed: step.index === task.currentStep && task.stepStatus === 'confirmed',
+          clickable: true,
         }"
+        @click="emit('selectStage', step.index)"
       >
         <div class="step-indicator">
           <span v-if="step.index < task.currentStep || (step.isFinal && task.isConfirmed)">✓</span>
@@ -169,7 +174,17 @@ function handleFinalPlanConfirm() {
         class="execution-prompt-box"
       >
         <div class="prompt-box-header">
-          <span class="prompt-box-title">📝 提炼第二步执行提示词（Execution Prompt）</span>
+          <div class="prompt-box-title-wrap">
+            <span class="prompt-box-title">📝 提炼第二步执行提示词（Execution Prompt）</span>
+            <button
+              type="button"
+              class="btn-re-extract"
+              @click="emit('extractPrompt')"
+              title="从分析会话中自动识别并提取执行方案"
+            >
+              🪄 从会话中自动提取
+            </button>
+          </div>
           <span class="prompt-box-hint">
             任务分析完成后，请在此确认可直接执行的方案提示词，确认后任务即刻就绪。
           </span>
@@ -329,6 +344,14 @@ function handleFinalPlanConfirm() {
   white-space: nowrap;
 }
 
+.step-item.clickable {
+  cursor: pointer;
+}
+
+.step-item.clickable:hover .step-indicator {
+  border-color: var(--color-primary, #3b82f6);
+}
+
 .step-item.active .step-indicator {
   border-color: var(--color-primary, #3b82f6);
   background: var(--color-primary, #3b82f6);
@@ -482,7 +505,30 @@ function handleFinalPlanConfirm() {
 .prompt-box-header {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+}
+
+.prompt-box-title-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-re-extract {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-re-extract:hover {
+  background: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
 }
 
 .prompt-box-title {

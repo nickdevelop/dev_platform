@@ -288,6 +288,38 @@ func TestRenameProject(t *testing.T) {
 	}
 }
 
+func TestUpdateProjectName(t *testing.T) {
+	svc, _, root, _ := newTestService(t)
+
+	project, err := svc.Create(root, "my-dir")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	originalPath := filepath.Join(root, "my-dir")
+
+	updated, err := svc.UpdateName(project.ID, "Custom Project Name")
+	if err != nil {
+		t.Fatalf("UpdateName: %v", err)
+	}
+	if updated.Name != "Custom Project Name" {
+		t.Errorf("updated.Name = %q, want 'Custom Project Name'", updated.Name)
+	}
+	if updated.Path != originalPath {
+		t.Errorf("updated.Path = %q, want original %q", updated.Path, originalPath)
+	}
+	if _, err := os.Stat(originalPath); err != nil {
+		t.Errorf("directory missing after UpdateName: %v", err)
+	}
+
+	loaded, err := svc.Get(project.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if loaded.Name != "Custom Project Name" || loaded.Path != originalPath {
+		t.Errorf("loaded = %+v, want name 'Custom Project Name' and path %q", loaded, originalPath)
+	}
+}
+
 func TestMoveProject(t *testing.T) {
 	svc, _, root, _ := newTestService(t)
 

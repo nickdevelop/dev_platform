@@ -23,7 +23,7 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
 import SessionTabs from './SessionTabs.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'unregister'
+type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
 const route = useRoute()
 const router = useRouter()

@@ -147,7 +147,8 @@ export function blocksForDisplay(blocks: RenderBlock[], display: string): Render
   if (display === 'messages') {
     return blocks.filter(
       (block) =>
-        block.kind === 'entry' && (block.entry.kind === 'message' || block.entry.kind === 'error'),
+        block.kind === 'entry' &&
+        (block.entry.kind === 'message' || block.entry.kind === 'error' || block.entry.kind === 'notice'),
     )
   }
   if (display === 'activity') {
