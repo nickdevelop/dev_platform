@@ -180,10 +180,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 			return events, more || scanner.Err() != nil, nil
 		}
 		if record.Type == "model_change" && (record.Provider != "" || record.ModelID != "") {
-			id := record.ModelID
-			if record.Provider != "" && !strings.Contains(id, "/") {
-				id = record.Provider + "/" + record.ModelID
-			}
+			id := qualifyModelID(record.Provider, record.ModelID)
 			currentModel = &agents.MessageModel{
 				ID:       id,
 				Provider: record.Provider,

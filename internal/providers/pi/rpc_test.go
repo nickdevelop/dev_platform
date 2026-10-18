@@ -507,6 +507,119 @@ func TestRPCListModelsUsesLiveChild(t *testing.T) {
 	}
 }
 
+// TestRPCListModelsPreservesMultiPartModel verifies live child get_available_models
+// properly preserves 3-part model IDs like occ-commandcode-o/deepseek/deepseek-v4.1-flash.
+func TestRPCListModelsPreservesMultiPartModel(t *testing.T) {
+	adapter := newRPCAdapter(t, t.TempDir(), "multi-part-models")
+	ctx := context.Background()
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
+	})
+
+	models, err := adapter.ListModels(ctx, inst.Directory)
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("ListModels() returned %d models, want 2: %+v", len(models), models)
+	}
+	ds := models[1]
+	wantID := "occ-commandcode-o/deepseek/deepseek-v4.1-flash"
+	if ds.ID != wantID {
+		t.Errorf("model.ID = %q, want %q", ds.ID, wantID)
+	}
+	if ds.Provider != "occ-commandcode-o" {
+		t.Errorf("model.Provider = %q, want occ-commandcode-o", ds.Provider)
+	}
+	if ds.Name != "DeepSeek V4.1 Flash" {
+		t.Errorf("model.Name = %q, want DeepSeek V4.1 Flash", ds.Name)
+	}
+	if ds.ContextLimit == nil || *ds.ContextLimit != 1000000 {
+		t.Errorf("model.ContextLimit = %v, want 1000000", ds.ContextLimit)
+	}
+	if !ds.SupportsImages {
+		t.Errorf("model.SupportsImages = false, want true")
+	}
+}
+
+// TestRPCSwitchMultiPartModel verifies sending a message with a 3-part model
+// successfully switches to the model with pi's provider and model id.
+func TestRPCSwitchMultiPartModel(t *testing.T) {
+	adapter := newRPCAdapter(t, t.TempDir(), "multi-part-models")
+	ctx := context.Background()
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Initial send with default model
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "turn 1"}); err != nil {
+		t.Fatal(err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
+	})
+
+	// Switch to 3-part model: occ-commandcode-o/deepseek/deepseek-v4.1-flash
+	threePartModel := "occ-commandcode-o/deepseek/deepseek-v4.1-flash"
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "turn 2", Model: threePartModel}); err != nil {
+		t.Fatalf("SendMessage with 3-part model failed: %v", err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
+	})
+}
+
+// TestRPCSwitchLegacyTwoPartModelSelfHeals verifies that when a caller supplies
+// a legacy 2-part model string (e.g. deepseek/deepseek-v4.1-flash), the adapter
+// detects rejection, queries available models, and automatically self-heals by
+// finding the correct provider (occ-commandcode-o).
+func TestRPCSwitchLegacyTwoPartModelSelfHeals(t *testing.T) {
+	adapter := newRPCAdapter(t, t.TempDir(), "multi-part-models")
+	ctx := context.Background()
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Initial turn
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "turn 1"}); err != nil {
+		t.Fatal(err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
+	})
+
+	// Attempt switch with legacy 2-part model: deepseek/deepseek-v4.1-flash
+	legacyModel := "deepseek/deepseek-v4.1-flash"
+	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "turn 2", Model: legacyModel}); err != nil {
+		t.Fatalf("SendMessage with legacy 2-part model failed to self heal: %v", err)
+	}
+	drainUntil(t, events, func(ev agents.NormalizedEvent) bool {
+		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
+	})
+}
+
 // TestRPCConnMalformedRecordsContinue verifies one bad record becomes a
 // parse_error event and the reader keeps going, matching the JSON-mode
 // resilience contract.

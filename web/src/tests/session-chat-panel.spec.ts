@@ -901,6 +901,59 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(wrapper.find('.model-trigger').text()).toContain('Model B')
   })
 
+  it('selects and sends a 3-part model id without truncating', async () => {
+    const models = [
+      { id: 'ankki/ankki-code-plus', name: 'Ankki Code Plus', provider: 'ankki' },
+      { id: 'occ-commandcode-o/deepseek/deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash', provider: 'occ-commandcode-o' },
+    ]
+    const selectable = capabilities({ modelSelection: true })
+    let sentModel: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/models')) return { status: 200, json: async () => ({ models }) } as Response
+        if (url.endsWith('/messages')) {
+          const body = JSON.parse(String(init?.body || '{}'))
+          sentModel = body.model
+          return { status: 200, json: async () => session('sess-1', { capabilities: selectable }) } as Response
+        }
+        if (url.endsWith('/continue')) {
+          return { status: 200, json: async () => session('sess-1', { capabilities: selectable }) } as Response
+        }
+        if (url.endsWith('/history')) {
+          return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({ sessions: [session('sess-1', { capabilities: selectable })] }),
+        } as Response
+      }),
+    )
+    useAgentsStore().instances = [instance('running')]
+    const store = useSessionsStore()
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // Open model picker and click 3-part model
+    await wrapper.find('.model-trigger').trigger('click')
+    const option = wrapper.find('[data-model-id="occ-commandcode-o/deepseek/deepseek-v4.1-flash"]')
+    expect(option.exists()).toBe(true)
+    expect(option.text()).toContain('DeepSeek V4.1 Flash')
+    expect(option.text()).toContain('occ-commandcode-o/deepseek/deepseek-v4.1-flash')
+    await option.trigger('click')
+
+    expect(store.modelFor('sess-1')).toBe('occ-commandcode-o/deepseek/deepseek-v4.1-flash')
+    expect(wrapper.find('.model-trigger').text()).toContain('DeepSeek V4.1 Flash')
+
+    // Submit a message and verify sent model
+    await wrapper.find('#message-text').setValue('Hello')
+    await wrapper.find('form.send').trigger('submit')
+    await flushPromises()
+
+    expect(sentModel).toBe('occ-commandcode-o/deepseek/deepseek-v4.1-flash')
+  })
+
   it('keeps a cancelled turn idle without an error entry', () => {
     const store = useSessionsStore()
     store.sessions = [session('sess-1', { turn: 'running' })]

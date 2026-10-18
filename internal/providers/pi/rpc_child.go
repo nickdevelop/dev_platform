@@ -2,6 +2,7 @@ package pi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -378,12 +379,55 @@ func (c *rpcChild) setModel(ctx context.Context, model string) error {
 		return err
 	}
 	if !response.Success {
+		// When pi rejects the model (for example, if a legacy 2-part model string
+		// like "deepseek/deepseek-v4.1-flash" was supplied where the real provider is
+		// "occ-commandcode-o"), inspect available models to see if the full model matches
+		// an available model ID under another provider.
+		if altProvider, altModelID, ok := c.resolveAvailableModel(ctx, model); ok && (altProvider != provider || altModelID != modelID) {
+			retryResp, retryErr := c.conn.request(ctx, rpcCommand{Type: "set_model", Provider: altProvider, ModelID: altModelID}, rpcCommandTimeout)
+			if retryErr == nil && retryResp.Success {
+				c.stateMu.Lock()
+				c.model = qualifyModelID(altProvider, altModelID)
+				c.stateMu.Unlock()
+				return nil
+			}
+		}
 		return fmt.Errorf("pi: set_model %q rejected: %s", model, redactSecrets(response.Error))
 	}
 	c.stateMu.Lock()
-	c.model = model
+	c.model = qualifyModelID(provider, modelID)
 	c.stateMu.Unlock()
 	return nil
+}
+
+// resolveAvailableModel queries get_available_models and looks for a configured model
+// that matches either:
+// 1. m.ID == target (handles legacy 2-part input where target was "deepseek/deepseek-v4.1-flash" but provider was "occ-commandcode-o")
+// 2. qualifyModelID(m.Provider, m.ID) == target
+func (c *rpcChild) resolveAvailableModel(ctx context.Context, target string) (provider, modelID string, ok bool) {
+	resp, err := c.conn.request(ctx, newGetAvailableModelsCommand(""), rpcCommandTimeout)
+	if err != nil || !resp.Success {
+		return "", "", false
+	}
+	var payload struct {
+		Models []rpcModelData `json:"models"`
+	}
+	if err := json.Unmarshal(resp.Data, &payload); err != nil {
+		return "", "", false
+	}
+	// First pass: exact match on pi's raw model ID
+	for _, m := range payload.Models {
+		if m.ID == target {
+			return m.Provider, m.ID, true
+		}
+	}
+	// Second pass: match on fully qualified ID
+	for _, m := range payload.Models {
+		if qualifyModelID(m.Provider, m.ID) == target {
+			return m.Provider, m.ID, true
+		}
+	}
+	return "", "", false
 }
 
 // setName switches the child's session display name through set_session_name.

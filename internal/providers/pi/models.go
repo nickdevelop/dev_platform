@@ -40,7 +40,7 @@ func parseModelList(output string) []agents.ModelInfo {
 			continue
 		}
 		provider, model := fields[0], fields[1]
-		modelID := provider + "/" + model
+		modelID := qualifyModelID(provider, model)
 		entry := agents.ModelInfo{
 			ID:             modelID,
 			Name:           model,

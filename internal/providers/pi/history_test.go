@@ -262,3 +262,38 @@ func TestListHistoryToleratesHalfWrittenLastLine(t *testing.T) {
 		t.Error("Truncated = true for a half-written trailing line, want false: nothing before it was lost")
 	}
 }
+
+// TestListHistoryPreservesMultiPartModel pins that a model_change record whose
+// modelId contains a slash (such as deepseek/deepseek-v4.1-flash) is properly
+// prefixed with its provider name into a 3-part ID on subsequent messages.
+func TestListHistoryPreservesMultiPartModel(t *testing.T) {
+	dir := t.TempDir()
+	sessionRoot := t.TempDir()
+	const sessionID = "sess-multi-part"
+
+	lines := []string{
+		fmt.Sprintf(`{"type":"session","version":3,"id":%q,"timestamp":"2026-10-09T00:00:00.000Z","cwd":%q}`, sessionID, dir),
+		`{"type":"model_change","provider":"occ-commandcode-o","modelId":"deepseek/deepseek-v4.1-flash","timestamp":"2026-10-09T00:00:01.000Z"}`,
+		`{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-09T00:00:02.000Z","message":{"role":"user","content":[{"type":"text","text":"你好"}]}}`,
+		`{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-09T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"你好！"}]}}`,
+	}
+	writeTranscriptFile(t, sessionRoot, dir, sessionID, strings.Join(lines, "\n")+"\n")
+
+	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
+	result := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID})
+
+	if len(result.Events) != 2 {
+		t.Fatalf("events count = %d, want 2 (user, assistant)", len(result.Events))
+	}
+	assistant := result.Events[1]
+	if assistant.Message == nil || assistant.Message.Model == nil {
+		t.Fatalf("assistant message model is nil: %+v", assistant)
+	}
+	wantID := "occ-commandcode-o/deepseek/deepseek-v4.1-flash"
+	if assistant.Message.Model.ID != wantID {
+		t.Errorf("assistant model.ID = %q, want %q", assistant.Message.Model.ID, wantID)
+	}
+	if assistant.Message.Model.Provider != "occ-commandcode-o" {
+		t.Errorf("assistant model.Provider = %q, want occ-commandcode-o", assistant.Message.Model.Provider)
+	}
+}

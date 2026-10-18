@@ -68,9 +68,33 @@ type rpcStateData struct {
 
 // rpcModelData is one model in a get_available_models response.
 type rpcModelData struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Provider string `json:"provider"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Provider      string   `json:"provider"`
+	ContextWindow int      `json:"contextWindow"`
+	Input         []string `json:"input"`
+}
+
+// qualifyModelID ensures a model id is prefixed with its provider name.
+// When id already starts with "provider/", it is kept as-is.
+func qualifyModelID(provider, id string) string {
+	if provider == "" || id == "" {
+		return id
+	}
+	prefix := provider + "/"
+	if strings.HasPrefix(id, prefix) {
+		return id
+	}
+	return prefix + id
+}
+
+func hasImageInput(inputs []string) bool {
+	for _, in := range inputs {
+		if strings.EqualFold(in, "image") {
+			return true
+		}
+	}
+	return false
 }
 
 type rpcImageContent struct {
@@ -153,18 +177,20 @@ func parseAvailableModels(raw json.RawMessage) ([]agents.ModelInfo, error) {
 	}
 	models := make([]agents.ModelInfo, 0, len(payload.Models))
 	for _, model := range payload.Models {
-		id := model.ID
-		if model.Provider != "" && !strings.Contains(id, "/") {
-			id = model.Provider + "/" + id
-		}
+		id := qualifyModelID(model.Provider, model.ID)
 		if id == "" {
 			continue
 		}
-		models = append(models, agents.ModelInfo{
-			ID:       id,
-			Name:     firstNonEmpty(model.Name, model.ID),
-			Provider: model.Provider,
-		})
+		entry := agents.ModelInfo{
+			ID:             id,
+			Name:           firstNonEmpty(model.Name, model.ID),
+			Provider:       model.Provider,
+			SupportsImages: hasImageInput(model.Input) || isMultimodalModel(id),
+		}
+		if model.ContextWindow > 0 {
+			entry.ContextLimit = &model.ContextWindow
+		}
+		models = append(models, entry)
 	}
 	return models, nil
 }
@@ -182,8 +208,5 @@ func rpcModelID(raw json.RawMessage) string {
 	if model.ID == "" {
 		return ""
 	}
-	if model.Provider != "" && !strings.Contains(model.ID, "/") {
-		return model.Provider + "/" + model.ID
-	}
-	return model.ID
+	return qualifyModelID(model.Provider, model.ID)
 }

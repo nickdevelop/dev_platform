@@ -105,6 +105,17 @@ func (s *stubState) handle(command map[string]any) {
 	case "set_model":
 		provider, _ := command["provider"].(string)
 		modelID, _ := command["modelId"].(string)
+		if s.scenario == "multi-part-models" {
+			if provider == "occ-commandcode-o" && modelID == "deepseek/deepseek-v4.1-flash" {
+				s.model = "occ-commandcode-o/deepseek/deepseek-v4.1-flash"
+				s.response(id, "set_model", true, map[string]any{"id": modelID, "provider": provider, "name": "DeepSeek V4.1 Flash"})
+				return
+			}
+			if provider == "deepseek" {
+				s.response(id, "set_model", false, "Model not found: "+provider+"/"+modelID)
+				return
+			}
+		}
 		s.model = modelID
 		if provider != "" {
 			s.model = provider + "/" + modelID
@@ -114,6 +125,21 @@ func (s *stubState) handle(command map[string]any) {
 		s.name, _ = command["name"].(string)
 		s.response(id, "set_session_name", true, nil)
 	case "get_available_models":
+		if s.scenario == "multi-part-models" {
+			s.response(id, "get_available_models", true, map[string]any{
+				"models": []map[string]any{
+					{"id": "gpt-1", "provider": "stub", "name": "gpt-1"},
+					{
+						"id":            "deepseek/deepseek-v4.1-flash",
+						"name":          "DeepSeek V4.1 Flash",
+						"provider":      "occ-commandcode-o",
+						"contextWindow": 1000000,
+						"input":         []string{"text", "image"},
+					},
+				},
+			})
+			return
+		}
 		s.response(id, "get_available_models", true, map[string]any{
 			"models": []map[string]any{{"id": "gpt-1", "provider": "stub", "name": "gpt-1"}},
 		})
