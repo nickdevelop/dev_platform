@@ -168,6 +168,58 @@ func TestClientPromptPostsText(t *testing.T) {
 	}
 }
 
+func TestClientPromptPostsImagesWithDataURI(t *testing.T) {
+	var body struct {
+		Text  string           `json:"text"`
+		Files []FileAttachment `json:"files"`
+	}
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/session/ses_img/prompt" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		io.WriteString(w, `{"data":{"id":"msg_img","sessionID":"ses_img"}}`)
+	})
+
+	images := []agents.ImageAttachment{
+		{
+			ID:        "img_1",
+			Name:      "screenshot.png",
+			MediaType: "image/png",
+			Data:      "iVBORw0KGgo\r\nAAAANSUhEUg==\n",
+		},
+		{
+			ID:        "img_2",
+			Name:      "",
+			MediaType: "image/jpeg",
+			Data:      "data:image/jpeg;base64,/9j/4AAQ\r\nSkZJRg==",
+		},
+	}
+
+	if err := client.Prompt(context.Background(), "ses_img", "", images); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	if body.Text != "" {
+		t.Errorf("body.Text = %q, want empty", body.Text)
+	}
+	if len(body.Files) != 2 {
+		t.Fatalf("len(body.Files) = %d, want 2", len(body.Files))
+	}
+	if body.Files[0].Name != "screenshot.png" {
+		t.Errorf("body.Files[0].Name = %q, want screenshot.png", body.Files[0].Name)
+	}
+	if body.Files[0].URI != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==" {
+		t.Errorf("body.Files[0].URI = %q, want canonical data uri", body.Files[0].URI)
+	}
+	if body.Files[1].Name != "image.png" {
+		t.Errorf("body.Files[1].Name = %q, want image.png fallback", body.Files[1].Name)
+	}
+	if body.Files[1].URI != "data:image/jpeg;base64,/9j/4AAQSkZJRg==" {
+		t.Errorf("body.Files[1].URI = %q, want canonical data uri", body.Files[1].URI)
+	}
+}
+
 func TestClientAuthAndErrorStatus(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"devplatform/internal/core/agents"
@@ -105,12 +106,43 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 
 	switch message.Type {
 	case "user":
-		if message.Text == "" {
+		var images []agents.ImageAttachment
+		for i, f := range message.Files {
+			mime := f.Mime
+			data := f.Data
+			if data == "" && strings.HasPrefix(f.URI, "data:") {
+				comma := strings.Index(f.URI, ",")
+				if comma != -1 {
+					meta := f.URI[5:comma]
+					data = f.URI[comma+1:]
+					parts := strings.Split(meta, ";")
+					if len(parts) > 0 && strings.HasPrefix(parts[0], "image/") {
+						mime = parts[0]
+					}
+				}
+			}
+			if mime == "" && strings.HasPrefix(f.Mime, "image/") {
+				mime = f.Mime
+			}
+			if strings.HasPrefix(mime, "image/") && data != "" {
+				name := f.Name
+				if name == "" {
+					name = fmt.Sprintf("image_%d.png", i+1)
+				}
+				images = append(images, agents.ImageAttachment{
+					ID:        fmt.Sprintf("img_%d", i+1),
+					Name:      name,
+					MediaType: mime,
+					Data:      data,
+				})
+			}
+		}
+		if message.Text == "" && len(images) == 0 {
 			return nil
 		}
 		event := envelope
 		event.Type = agents.EventMessage
-		event.Message = &agents.MessagePayload{Role: "user", Text: message.Text, Final: true}
+		event.Message = &agents.MessagePayload{Role: "user", Text: message.Text, Final: true, Images: images}
 		return []agents.NormalizedEvent{event}
 
 	case "assistant":

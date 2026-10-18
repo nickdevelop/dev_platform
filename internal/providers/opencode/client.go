@@ -181,13 +181,22 @@ type CreateSessionRequest struct {
 // in Model. An assistant message may also carry the tokens its turn consumed
 // in Tokens; the adapter forwards them as the message's usage anchor.
 type Message struct {
-	ID      string         `json:"id"`
-	Type    string         `json:"type"`
-	Text    string         `json:"text,omitempty"`
-	Content []ContentBlock `json:"content,omitempty"`
-	Model   *ModelRef      `json:"model,omitempty"`
-	Tokens  *WireTokens    `json:"tokens,omitempty"`
-	Time    MessageTime    `json:"time"`
+	ID      string                  `json:"id"`
+	Type    string                  `json:"type"`
+	Text    string                  `json:"text,omitempty"`
+	Files   []HistoryFileAttachment `json:"files,omitempty"`
+	Content []ContentBlock          `json:"content,omitempty"`
+	Model   *ModelRef               `json:"model,omitempty"`
+	Tokens  *WireTokens             `json:"tokens,omitempty"`
+	Time    MessageTime             `json:"time"`
+}
+
+// HistoryFileAttachment represents a file/image attachment in an opencode message.
+type HistoryFileAttachment struct {
+	Name string `json:"name,omitempty"`
+	Mime string `json:"mime,omitempty"`
+	Data string `json:"data,omitempty"`
+	URI  string `json:"uri,omitempty"`
 }
 
 // WireTokens mirrors opencode's TokenUsage.Info: per-turn token usage with
@@ -426,10 +435,37 @@ func (c *Client) SwitchModel(ctx context.Context, sessionID string, model ModelR
 }
 
 // FileAttachment represents a file/image payload for opencode session prompt.
+// OpenCode v2 PromptInput expects { "uri": "data:<mime>;base64,<data>", "name": "..." }.
 type FileAttachment struct {
+	URI  string `json:"uri"`
 	Name string `json:"name,omitempty"`
-	Mime string `json:"mime"`
-	Data string `json:"data"`
+}
+
+func cleanBase64DataURL(data, mediaType string) string {
+	data = strings.TrimSpace(data)
+	if strings.HasPrefix(data, "data:") {
+		comma := strings.Index(data, ",")
+		if comma != -1 {
+			prefix := data[:comma+1]
+			payload := cleanBase64(data[comma+1:])
+			return prefix + payload
+		}
+		return data
+	}
+	mime := mediaType
+	if mime == "" {
+		mime = "image/png"
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mime, cleanBase64(data))
+}
+
+func cleanBase64(raw string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, raw)
 }
 
 // Prompt admits one user message and schedules the agent loop. The reply and
@@ -443,9 +479,8 @@ func (c *Client) Prompt(ctx context.Context, sessionID, text string, images []ag
 				name = "image.png"
 			}
 			files = append(files, FileAttachment{
+				URI:  cleanBase64DataURL(img.Data, img.MediaType),
 				Name: name,
-				Mime: img.MediaType,
-				Data: img.Data,
 			})
 		}
 	}

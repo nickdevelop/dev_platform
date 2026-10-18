@@ -429,7 +429,7 @@ func TestAdapterSendMessageValidation(t *testing.T) {
 	ref := agents.SessionRef{InstanceID: instance.ID, Backend: agents.BackendOpenCodeV2, SessionID: "ses_1"}
 
 	if err := adapter.SendMessage(context.Background(), ref, agents.SendMessageRequest{Text: "   "}); err == nil {
-		t.Fatal("expected error for empty text")
+		t.Fatal("expected error for empty text without images")
 	}
 	if err := adapter.SendMessage(context.Background(), agents.SessionRef{InstanceID: instance.ID, Backend: agents.BackendPi, SessionID: "ses_1"}, agents.SendMessageRequest{Text: "x"}); err == nil {
 		t.Fatal("expected error for wrong backend")
@@ -439,6 +439,96 @@ func TestAdapterSendMessageValidation(t *testing.T) {
 	}
 	if err := adapter.SendMessage(context.Background(), ref, agents.SendMessageRequest{Text: "x", Model: "nope"}); err == nil {
 		t.Fatal("expected error for unparseable model")
+	}
+}
+
+func TestAdapterSendMessageAllowsPureImages(t *testing.T) {
+	var promptCalled bool
+	var receivedBody struct {
+		Text  string           `json:"text"`
+		Files []FileAttachment `json:"files"`
+	}
+	adapter, _, _ := newAdapterWithServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/ses_img/prompt" {
+			promptCalled = true
+			defer r.Body.Close()
+			_ = json.NewDecoder(r.Body).Decode(&receivedBody)
+			io.WriteString(w, `{"data":{"id":"msg_1","sessionID":"ses_img"}}`)
+			return
+		}
+	})
+	instance := startTestInstance(t, adapter)
+	ref := agents.SessionRef{InstanceID: instance.ID, Backend: agents.BackendOpenCodeV2, SessionID: "ses_img"}
+
+	img := agents.ImageAttachment{
+		ID:        "img_test",
+		Name:      "test.png",
+		MediaType: "image/png",
+		Data:      "iVBORw0KGgoAAAANSUhEUg==",
+	}
+	err := adapter.SendMessage(context.Background(), ref, agents.SendMessageRequest{
+		Text:   "",
+		Images: []agents.ImageAttachment{img},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage with pure image returned error: %v", err)
+	}
+	if !promptCalled {
+		t.Fatal("expected Prompt endpoint to be called")
+	}
+	if receivedBody.Text != "" {
+		t.Errorf("received text = %q, want empty", receivedBody.Text)
+	}
+	if len(receivedBody.Files) != 1 || receivedBody.Files[0].URI != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==" {
+		t.Fatalf("received files = %+v, want 1 file with data URI", receivedBody.Files)
+	}
+}
+
+func TestNormalizeHistoryMessageWithImages(t *testing.T) {
+	msg := Message{
+		ID:   "msg_usr",
+		Type: "user",
+		Text: "请分析这张图",
+		Files: []HistoryFileAttachment{
+			{
+				Name: "chart.png",
+				Mime: "image/png",
+				Data: "base64data",
+			},
+		},
+	}
+	events := normalizeHistoryMessage(msg)
+	if len(events) != 1 {
+		t.Fatalf("normalizeHistoryMessage returned %d events, want 1", len(events))
+	}
+	if events[0].Type != agents.EventMessage {
+		t.Fatalf("event type = %s, want %s", events[0].Type, agents.EventMessage)
+	}
+	if len(events[0].Message.Images) != 1 {
+		t.Fatalf("len(Images) = %d, want 1", len(events[0].Message.Images))
+	}
+	if events[0].Message.Images[0].Name != "chart.png" || events[0].Message.Images[0].Data != "base64data" {
+		t.Fatalf("unexpected image payload: %+v", events[0].Message.Images[0])
+	}
+
+	// Also verify pure image user message is not dropped
+	pureImgMsg := Message{
+		ID:   "msg_pure_usr",
+		Type: "user",
+		Text: "",
+		Files: []HistoryFileAttachment{
+			{
+				URI:  "data:image/jpeg;base64,jpgdata",
+				Name: "screenshot.jpg",
+			},
+		},
+	}
+	pureEvents := normalizeHistoryMessage(pureImgMsg)
+	if len(pureEvents) != 1 {
+		t.Fatalf("pure image normalizeHistoryMessage returned %d events, want 1", len(pureEvents))
+	}
+	if len(pureEvents[0].Message.Images) != 1 || pureEvents[0].Message.Images[0].MediaType != "image/jpeg" {
+		t.Fatalf("unexpected pure image payload: %+v", pureEvents[0].Message.Images)
 	}
 }
 

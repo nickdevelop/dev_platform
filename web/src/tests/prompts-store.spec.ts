@@ -68,7 +68,7 @@ describe('prompts store', () => {
       description: 'New Desc',
       content: 'New {user_prompt}',
     })
-    expect(created.id).toBe(3)
+    expect(created?.id).toBe(3)
     expect(store.prompts).toHaveLength(1)
     expect(store.prompts[0].name).toBe('New Prompt')
     expect(calls[0].headers?.['X-CSRF-Token']).toBe('csrf-token')
@@ -92,7 +92,7 @@ describe('prompts store', () => {
     store.currentPrompt = store.prompts[0]
 
     const updated = await store.updatePrompt(1, { name: 'Updated Name' })
-    expect(updated.name).toBe('Updated Name')
+    expect(updated?.name).toBe('Updated Name')
     expect(store.prompts[0].name).toBe('Updated Name')
     expect(store.currentPrompt?.name).toBe('Updated Name')
     expect(calls[0].headers?.['X-CSRF-Token']).toBe('csrf-token')

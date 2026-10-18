@@ -215,27 +215,29 @@ async function addImageFiles(files: FileList | File[]) {
       toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
       break
     }
-    const mediaType = VALID_IMAGE_TYPES[file.type]
+    const cleanType = (file.type || '').split(';')[0].trim().toLowerCase()
+    const mediaType = VALID_IMAGE_TYPES[cleanType]
     if (!mediaType) {
-      toolNotice.value = `不支持的文件类型: ${file.name} (仅支持 PNG/JPEG/WebP/GIF)`
+      toolNotice.value = `不支持的文件类型: ${file.name || '未命名图片'} (仅支持 PNG/JPEG/WebP/GIF)`
       continue
     }
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toolNotice.value = `图片超过 5MB 限制: ${file.name}`
+      toolNotice.value = `图片超过 5MB 限制: ${file.name || '未命名图片'}`
       continue
     }
 
     try {
       const base64 = await readFileAsBase64(file)
+      const fileName = file.name || `image-${Date.now()}.png`
       attachedImages.value.push({
         id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: file.name,
+        name: fileName,
         mediaType,
         data: base64,
         size: file.size,
       })
     } catch {
-      toolNotice.value = `读取图片失败: ${file.name}`
+      toolNotice.value = `读取图片失败: ${file.name || '未命名图片'}`
     }
   }
 }
@@ -300,7 +302,13 @@ function onPaste(event: ClipboardEvent) {
   for (const item of Array.from(items)) {
     if (item.kind === 'file' && item.type.startsWith('image/')) {
       const file = item.getAsFile()
-      if (file) imageFiles.push(file)
+      if (file) {
+        const ext = file.type.split('/')[1]?.split('+')[0] || 'png'
+        const rawName = file.name || ''
+        const isGeneric = !rawName || rawName === 'image.png' || rawName === 'blob' || !rawName.includes('.')
+        const name = isGeneric ? `pasted-image-${Date.now()}.${ext}` : rawName
+        imageFiles.push(new File([file], name, { type: file.type }))
+      }
     }
   }
   if (imageFiles.length > 0) {

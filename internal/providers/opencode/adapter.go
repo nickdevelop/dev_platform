@@ -645,8 +645,8 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if ref.Backend != agents.BackendOpenCodeV2 {
 		return fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
 	}
-	if strings.TrimSpace(message.Text) == "" {
-		return errors.New("opencode: message text is required")
+	if strings.TrimSpace(message.Text) == "" && len(message.Images) == 0 {
+		return errors.New("opencode: message text or images required")
 	}
 	inst, err := a.getInstance(ref.InstanceID)
 	if err != nil {

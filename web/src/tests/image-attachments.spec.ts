@@ -142,4 +142,36 @@ describe('MessageView image rendering', () => {
 
     wrapper.unmount()
   })
+
+  it('renders user message that only has images without text', () => {
+    const dummyImage: ImageAttachment = {
+      id: 'img-pure',
+      name: 'screenshot.png',
+      mediaType: 'image/png',
+      data: 'base64test',
+      size: 512,
+    }
+
+    const messages: ChatEntry[] = [
+      {
+        id: 'msg-pure',
+        kind: 'message',
+        role: 'user',
+        text: '',
+        images: [dummyImage],
+        streaming: false,
+      },
+    ]
+
+    const wrapper = mount(MessageView, {
+      props: {
+        messages,
+        display: 'messages',
+      },
+    })
+
+    const imagesGrid = wrapper.find('[data-test="message-images"]')
+    expect(imagesGrid.exists()).toBe(true)
+    expect(imagesGrid.findAll('.message-image-item')).toHaveLength(1)
+  })
 })
