@@ -15,6 +15,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		tasks.GET("", s.handleList)
 		tasks.POST("", s.handleCreate)
 		tasks.GET("/flows", s.handleFlowDefs)
+		tasks.GET("/session-ids", s.handleGetSessionIDs)
 		tasks.GET("/:id", s.handleGet)
 		tasks.PUT("/:id", s.handleUpdate)
 		tasks.DELETE("/:id", s.handleDelete)
@@ -330,3 +331,23 @@ func (s *Service) handleTrigger(c *gin.Context) {
 		"run":     run,
 	})
 }
+
+func (s *Service) handleGetSessionIDs(c *gin.Context) {
+	var projectID uint
+	if pidStr := c.Query("projectId"); pidStr != "" {
+		if val, err := strconv.ParseUint(pidStr, 10, 64); err == nil {
+			projectID = uint(val)
+		}
+	}
+
+	ids, err := s.GetTaskSessionIDs(projectID)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{"sessionIds": ids})
+}
+

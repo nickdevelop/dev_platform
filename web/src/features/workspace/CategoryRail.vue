@@ -11,6 +11,7 @@
 // asks the shell to show the column again.
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { useOpenTabsStore } from '../../stores/openTabs'
 
 defineProps<{
   // Whether the middle project/task column is currently collapsed.
@@ -29,11 +30,24 @@ const emit = defineEmits<{
 }>()
 
 const route = useRoute()
+const openTabs = useOpenTabsStore()
+
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The settings routes declare `meta.settings`.
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(() => !settingsActive.value && !tasksActive.value)
+
+const projectDestination = computed(() => {
+  const preferred = openTabs.preferredTab
+  if (preferred) {
+    if (preferred.kind === 'project-settings') {
+      return { name: 'project-settings', params: { projectId: String(preferred.projectId) } }
+    }
+    return { name: 'session', params: { projectId: String(preferred.projectId), sessionId: preferred.sessionId } }
+  }
+  return { name: 'home' }
+})
 
 function onProjectClick(event: MouseEvent) {
   emit('expandSidebar')
@@ -57,7 +71,7 @@ function onTasksClick(event: MouseEvent) {
       :class="{ active: projectActive }"
       title="项目"
       :aria-current="projectActive ? 'page' : undefined"
-      :to="{ name: 'home' }"
+      :to="projectDestination"
       @click="onProjectClick"
     >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

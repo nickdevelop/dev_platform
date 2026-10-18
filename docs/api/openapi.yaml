@@ -2411,6 +2411,37 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /tasks/session-ids:
+    get:
+      summary: List session IDs created by tasks
+      description: Returns all platform session IDs created during task advancement or execution, optionally filtered by project.
+      operationId: listTaskSessionIds
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: projectId
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Optional project ID filter.
+      responses:
+        '200':
+          description: Task session IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionIds]
+                properties:
+                  sessionIds:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /tasks/{id}:
     get:
       summary: Get task by ID

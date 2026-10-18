@@ -164,4 +164,39 @@ describe('open tabs store', () => {
       { kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'first', pinned: true },
     ])
   })
+
+  it('computes preferredTab as last active tab or first tab, and null when empty', () => {
+    const store = freshStore()
+    expect(store.preferredTab).toBeNull()
+
+    // 1. When tabs exist but no explicit lastActiveKey set: defaults to first tab
+    store.openTab(3, 'ses-1', 'first')
+    store.openTab(3, 'ses-2', 'second')
+    // openTab automatically marks the newly opened tab as active: ses-2
+    expect(store.preferredTab?.sessionId).toBe('ses-2')
+
+    // 2. Setting active key explicitly
+    store.setActiveKey('ses-1')
+    expect(store.preferredTab?.sessionId).toBe('ses-1')
+
+    // 3. If active tab is closed, preferredTab falls back to remaining
+    store.closeTab('ses-1')
+    expect(store.preferredTab?.sessionId).toBe('ses-2')
+
+    // 4. Closing all tabs clears preferredTab
+    store.closeAllTabs()
+    expect(store.preferredTab).toBeNull()
+  })
+
+  it('persists lastActiveKey and restores it on next load', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-1', 'first')
+    store.openTab(3, 'ses-2', 'second')
+    store.setActiveKey('ses-1')
+
+    const reloaded = freshStore()
+    expect(reloaded.lastActiveKey).toBe('ses-1')
+    expect(reloaded.preferredTab?.sessionId).toBe('ses-1')
+  })
 })
+

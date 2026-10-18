@@ -133,4 +133,14 @@ func TestTaskHandlers(t *testing.T) {
 			t.Fatalf("list runs code = %d, want %d", w.Code, http.StatusOK)
 		}
 	}
+
+	// 9. GET /api/tasks/session-ids
+	{
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/api/tasks/session-ids?projectId=1", nil)
+		engine.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("get session ids code = %d, want %d", w.Code, http.StatusOK)
+		}
+	}
 }

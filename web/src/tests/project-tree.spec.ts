@@ -51,12 +51,15 @@ function session(overrides: Partial<AgentSession> = {}): AgentSession {
 
 // Serves /api/projects/{id}/sessions from a map and records every request so a
 // test can prove which projects' sessions were fetched.
-function stubSessions(byProject: Record<number, AgentSession[]>): string[] {
+function stubSessions(byProject: Record<number, AgentSession[]>, taskSessionIds: string[] = []): string[] {
   const requested: string[] = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), 'http://localhost')
+      if (url.pathname === '/api/tasks/session-ids') {
+        return { status: 200, json: async () => ({ sessionIds: taskSessionIds }) } as Response
+      }
       requested.push(url.pathname)
       const match = url.pathname.match(/^\/api\/projects\/(\d+)\/sessions$/)
       if (!match) throw new Error(`unexpected GET ${url.pathname}`)
@@ -69,12 +72,18 @@ function stubSessions(byProject: Record<number, AgentSession[]>): string[] {
 
 const mounted: ReturnType<typeof mount>[] = []
 
-function mountTree(props: { activeProjectId: number | null; activeSessionId?: string | null; search?: string }) {
+function mountTree(props: {
+  activeProjectId: number | null
+  activeSessionId?: string | null
+  search?: string
+  showTaskSessions?: boolean
+}) {
   const wrapper = mount(ProjectTree, {
     props: {
       activeProjectId: props.activeProjectId,
       activeSessionId: props.activeSessionId ?? null,
       search: props.search ?? '',
+      showTaskSessions: props.showTaskSessions ?? false,
     },
   })
   mounted.push(wrapper)
@@ -256,9 +265,9 @@ describe('ProjectTree', () => {
     expect(titles[2]).toContain('Oldest')
   })
 
-  it('shows only the newest 15 sessions and reveals the next page on demand', async () => {
+  it('shows only the newest 10 sessions and reveals the next page on demand', async () => {
     stubSessions({
-      1: Array.from({ length: 40 }, (_, index) =>
+      1: Array.from({ length: 25 }, (_, index) =>
         session({
           id: `s-${index}`,
           title: `Session ${index}`,
@@ -266,22 +275,22 @@ describe('ProjectTree', () => {
         }),
       ),
     })
-    const wrapper = mountTree({ activeProjectId: 1 })
+    const wrapper = mountTree({ activeProjectId: 1, showTaskSessions: true })
     await flushPromises()
 
-    expect(wrapper.findAll('.session').length).toBe(15)
-    // Newest first: index 39 is the most recent interaction.
-    expect(wrapper.findAll('.session')[0].text()).toContain('Session 39')
-    expect(wrapper.text()).not.toContain('Session 24')
+    expect(wrapper.findAll('.session').length).toBe(10)
+    // Newest first: index 24 is the most recent interaction.
+    expect(wrapper.findAll('.session')[0].text()).toContain('Session 24')
+    expect(wrapper.text()).not.toContain('Session 14')
 
     const more = wrapper.find('.load-more')
     expect(more.exists()).toBe(true)
     await more.trigger('click')
-    expect(wrapper.findAll('.session').length).toBe(30)
-    expect(wrapper.text()).not.toContain('Session 9')
+    expect(wrapper.findAll('.session').length).toBe(20)
+    expect(wrapper.text()).not.toContain('Session 4')
 
     await wrapper.find('.load-more').trigger('click')
-    expect(wrapper.findAll('.session').length).toBe(40)
+    expect(wrapper.findAll('.session').length).toBe(25)
     expect(wrapper.find('.load-more').exists()).toBe(false)
   })
 
@@ -296,17 +305,17 @@ describe('ProjectTree', () => {
         }),
       )
     stubSessions({ 1: many(1), 2: many(2) })
-    const wrapper = mountTree({ activeProjectId: 1 })
+    const wrapper = mountTree({ activeProjectId: 1, showTaskSessions: true })
     await flushPromises()
     await wrapper.find('.load-more').trigger('click')
     expect(wrapper.findAll('.session').length).toBe(20)
 
     // Opening another project expands it alongside the first: both lists stay
     // visible, each with its own page (project 1 expanded to 20, project 2 at
-    // the first 15).
+    // the first 10).
     await wrapper.setProps({ activeProjectId: 2 })
     await flushPromises()
-    expect(wrapper.findAll('.session').length).toBe(35)
+    expect(wrapper.findAll('.session').length).toBe(30)
     expect(wrapper.text()).toContain('Session 2-19')
     expect(wrapper.text()).toContain('Session 1-19')
   })
@@ -459,4 +468,54 @@ describe('ProjectTree', () => {
     expect(deleteSpy).toHaveBeenCalledWith(1, 's1')
     expect(wrapper.emitted('delete-session')).toEqual([[1, 's1']])
   })
+
+  it('marks active session as selected with matching class', async () => {
+    stubSessions({
+      1: [
+        session({ id: 's1', title: 'Session 1' }),
+        session({ id: 's2', title: 'Session 2' }),
+      ],
+    })
+    const wrapper = mountTree({ activeProjectId: 1, activeSessionId: 's1', showTaskSessions: true })
+    await flushPromises()
+
+    const sessions = wrapper.findAll('.session')
+    expect(sessions[0].classes()).toContain('selected')
+    expect(sessions[0].find('.session-open').exists()).toBe(true)
+    expect(sessions[1].classes()).not.toContain('selected')
+  })
+
+  it('filters out task sessions by default and shows them when showTaskSessions is true', async () => {
+    stubSessions(
+      {
+        1: [
+          session({ id: 's-normal', title: 'Normal Discussion' }),
+          session({ id: 's-task-title', title: '[需求确认] Task A' }),
+          session({ id: 's-task-exec', title: '[manual执行] Task B' }),
+          session({ id: 's-task-id', title: 'Task generated without prefix' }),
+        ],
+      },
+      ['s-task-id'],
+    )
+
+    // 1. Default (showTaskSessions: false): only normal session is visible
+    const wrapper = mountTree({ activeProjectId: 1, showTaskSessions: false })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Normal Discussion')
+    expect(wrapper.text()).not.toContain('[需求确认] Task A')
+    expect(wrapper.text()).not.toContain('[manual执行] Task B')
+    expect(wrapper.text()).not.toContain('Task generated without prefix')
+    expect(wrapper.findAll('.session').length).toBe(1)
+
+    // 2. Toggle to showTaskSessions: true -> all sessions become visible
+    await wrapper.setProps({ showTaskSessions: true })
+    await flushPromises()
+
+    expect(wrapper.findAll('.session').length).toBe(4)
+    expect(wrapper.text()).toContain('[需求确认] Task A')
+    expect(wrapper.text()).toContain('[manual执行] Task B')
+    expect(wrapper.text()).toContain('Task generated without prefix')
+  })
 })
+

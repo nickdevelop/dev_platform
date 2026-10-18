@@ -60,6 +60,27 @@ function toggleSidebar() {
   setSidebarCollapsed(!sidebarCollapsed.value)
 }
 
+// Whether task-generated sessions are shown in the project tree.
+// Defaults to false (Option B: hidden by default). Persisted in localStorage.
+const SHOW_TASK_SESSIONS_STORAGE_KEY = 'dev-platform-show-task-sessions'
+const showTaskSessions = ref(false)
+try {
+  const saved = localStorage.getItem(SHOW_TASK_SESSIONS_STORAGE_KEY)
+  if (saved !== null) {
+    showTaskSessions.value = saved === 'true'
+  }
+} catch {
+  showTaskSessions.value = false
+}
+
+function onShowTaskSessionsChange() {
+  try {
+    localStorage.setItem(SHOW_TASK_SESSIONS_STORAGE_KEY, String(showTaskSessions.value))
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
+
 const projectId = computed<number | null>(() =>
   route.params.projectId === undefined ? null : Number(route.params.projectId),
 )
@@ -102,6 +123,12 @@ onMounted(async () => {
 // once it loads. Tabs are never removed implicitly except when their project is
 // gone.
 function syncTabWithRoute() {
+  if (route.name === 'home') {
+    if (openTabs.preferredTab) {
+      selectTab(openTabs.preferredTab)
+      return
+    }
+  }
   if (projectId.value === null) return
   if (settingsRoute.value) {
     openTabs.openProjectSettings(projectId.value)
@@ -113,6 +140,16 @@ function syncTabWithRoute() {
 }
 
 watch([() => route.fullPath], syncTabWithRoute)
+
+watch(
+  activeKey,
+  (key) => {
+    if (key) {
+      openTabs.setActiveKey(key)
+    }
+  },
+  { immediate: true },
+)
 
 // Session titles arrive after the list loads; keep the matching tab label
 // fresh without touching other tabs.
@@ -137,6 +174,7 @@ const runningSessionIds = computed<string[]>(() =>
 )
 
 function selectTab(tab: OpenTab) {
+  openTabs.setActiveKey(tabKey(tab))
   if (tab.kind === 'project-settings') {
     void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return
@@ -281,11 +319,23 @@ async function logout() {
         placeholder="搜索项目或会话"
         aria-label="搜索项目或会话"
       />
+      <div class="sidebar-filter-bar">
+        <label class="filter-task-checkbox">
+          <input
+            v-model="showTaskSessions"
+            type="checkbox"
+            data-test="show-task-sessions"
+            @change="onShowTaskSessionsChange"
+          />
+          <span>显示任务会话</span>
+        </label>
+      </div>
       <div class="tree">
         <ProjectTree
           :active-project-id="projectId"
           :active-session-id="sessionId"
           :search="search"
+          :show-task-sessions="showTaskSessions"
           @open-settings="openSettings"
           @select-session="openSessionTab"
           @new-session="openNewSession"
@@ -406,6 +456,32 @@ async function logout() {
   color: var(--color-text);
   font: inherit;
   font-size: 0.929rem;
+}
+
+.sidebar-filter-bar {
+  display: flex;
+  align-items: center;
+  padding: 0 calc(var(--space-unit) * 2.000) calc(var(--space-unit) * 1.000);
+  margin-top: calc(var(--space-unit) * -0.5);
+}
+
+.filter-task-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.667);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.filter-task-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.filter-task-checkbox:hover {
+  color: var(--color-text);
 }
 
 .tree {

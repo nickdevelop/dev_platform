@@ -600,3 +600,8 @@ func (s *Service) ListRuns(ctx context.Context, taskID uint) ([]TaskRun, error) 
 	return s.repo.ListRuns(taskID)
 }
 
+// GetTaskSessionIDs returns all session IDs created by tasks in the given project (or all if projectID is 0).
+func (s *Service) GetTaskSessionIDs(projectID uint) ([]string, error) {
+	return s.repo.GetTaskSessionIDs(projectID)
+}
+

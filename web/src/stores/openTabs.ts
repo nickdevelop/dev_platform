@@ -19,12 +19,30 @@ export function tabKey(tab: OpenTab): string {
 }
 
 const STORAGE_KEY = 'dev-platform-open-tabs-v2'
+const ACTIVE_TAB_KEY = 'dev-platform-active-tab-key'
 // The pre-tab-model key: it stored session tabs without a kind. Read once, then
 // never written again, so a user who installed this version keeps their tabs and
 // never sees the old shape again.
 const LEGACY_STORAGE_KEY = 'dev-platform-open-tabs'
 
 const MAX_TABS = 20
+
+function loadPersistedActiveKey(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_TAB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistActiveKey(key: string | null) {
+  try {
+    if (key) localStorage.setItem(ACTIVE_TAB_KEY, key)
+    else localStorage.removeItem(ACTIVE_TAB_KEY)
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
 
 // Only set the flag when it is true, so an unpinned tab carries no `pinned`
 // field and a round-tripped tab compares equal to one that was just opened.
@@ -134,9 +152,27 @@ function trim(tabs: OpenTab[]) {
 export const useOpenTabsStore = defineStore('openTabs', {
   state: () => ({
     tabs: loadPersisted() as OpenTab[],
+    lastActiveKey: loadPersistedActiveKey(),
   }),
 
+  getters: {
+    // preferredTab returns the last active tab if still open, otherwise the first tab, or null if no tabs.
+    preferredTab: (state): OpenTab | null => {
+      if (state.tabs.length === 0) return null
+      if (state.lastActiveKey) {
+        const found = state.tabs.find((tab) => tabKey(tab) === state.lastActiveKey)
+        if (found) return found
+      }
+      return state.tabs[0]
+    },
+  },
+
   actions: {
+    setActiveKey(key: string | null) {
+      this.lastActiveKey = key
+      persistActiveKey(key)
+    },
+
     // Opens a session tab, or updates the existing one in place: re-opening the
     // session the user is already looking at must not reshuffle the strip.
     openTab(projectId: number, sessionId: string, title = '') {
@@ -151,6 +187,7 @@ export const useOpenTabsStore = defineStore('openTabs', {
         this.tabs.push({ kind: 'session', projectId, sessionId, title })
         trim(this.tabs)
       }
+      this.setActiveKey(sessionId)
       persist(this.tabs)
     },
 
@@ -166,6 +203,7 @@ export const useOpenTabsStore = defineStore('openTabs', {
         trim(this.tabs)
         this.tabs = pinnedFirst(this.tabs)
       }
+      this.setActiveKey(`settings:${projectId}`)
       persist(this.tabs)
     },
 
@@ -183,8 +221,7 @@ export const useOpenTabsStore = defineStore('openTabs', {
     // closeTab closes a session tab by session id — the shape callers that know
     // they are finished with a session already use.
     closeTab(sessionId: string) {
-      this.tabs = this.tabs.filter((tab) => !(tab.kind === 'session' && tab.sessionId === sessionId))
-      persist(this.tabs)
+      this.closeTabByKey(sessionId)
     },
 
     // closeTabByKey closes either kind of tab. It forces the close: cleanup
@@ -192,6 +229,9 @@ export const useOpenTabsStore = defineStore('openTabs', {
     // tab, so the pinned guard lives in the strip, not here.
     closeTabByKey(key: string) {
       this.tabs = this.tabs.filter((tab) => tabKey(tab) !== key)
+      if (this.lastActiveKey === key) {
+        this.setActiveKey(this.tabs.length > 0 ? tabKey(this.tabs[this.tabs.length - 1]) : null)
+      }
       persist(this.tabs)
     },
 
@@ -227,6 +267,9 @@ export const useOpenTabsStore = defineStore('openTabs', {
     closeOtherTabsByKey(key: string): OpenTab[] {
       const closing = this.tabs.filter((tab) => tabKey(tab) !== key && tab.pinned !== true)
       this.tabs = this.tabs.filter((tab) => tabKey(tab) === key || tab.pinned === true)
+      if (this.lastActiveKey && !this.tabs.some((t) => tabKey(t) === this.lastActiveKey)) {
+        this.setActiveKey(this.tabs.length > 0 ? tabKey(this.tabs[0]) : null)
+      }
       persist(this.tabs)
       return closing
     },
@@ -236,6 +279,9 @@ export const useOpenTabsStore = defineStore('openTabs', {
     closeAllTabs(): OpenTab[] {
       const closing = this.tabs.filter((tab) => tab.pinned !== true)
       this.tabs = this.tabs.filter((tab) => tab.pinned === true)
+      if (this.lastActiveKey && !this.tabs.some((t) => tabKey(t) === this.lastActiveKey)) {
+        this.setActiveKey(this.tabs.length > 0 ? tabKey(this.tabs[0]) : null)
+      }
       persist(this.tabs)
       return closing
     },

@@ -206,6 +206,12 @@ export async function listTaskRuns(id: number): Promise<TaskRun[]> {
   return res.runs
 }
 
+export async function listTaskSessionIds(projectId?: number): Promise<string[]> {
+  const qs = projectId ? `?projectId=${projectId}` : ''
+  const res = await apiRequest<{ sessionIds: string[] }>('GET', `/tasks/session-ids${qs}`)
+  return res.sessionIds || []
+}
+
 export async function triggerTaskExecution(
   csrfToken: string,
   id: number,
