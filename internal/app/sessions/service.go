@@ -200,6 +200,9 @@ type Service struct {
 
 	// turnTracker records the turn state of each native session.
 	turnTracker *turns.Tracker
+
+	// eventBus manages multiplexed client event streams.
+	eventBus *EventBusManager
 }
 
 // NewService builds the session service over the platform database, the
@@ -219,6 +222,7 @@ func NewServiceWithStore(st StoreRepository, registry *agents.Registry, instance
 		streamBuffer: defaultStreamBuffer,
 		turnTracker:  turns.NewTracker(instanceService),
 	}
+	s.eventBus = NewEventBusManager(s)
 	for _, opt := range opts {
 		opt(s)
 	}

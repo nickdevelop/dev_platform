@@ -1559,6 +1559,137 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /events/{uuid}:
+    get:
+      summary: Connect to multiplexed client event bus stream
+      description: >-
+        Streams normalized events for all sessions subscribed to this client bus UUID as Server-Sent Events (text/event-stream).
+      operationId: connectEventBus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server-Sent Event stream of normalized events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /events/{uuid}/subscriptions:
+    post:
+      summary: Subscribe a session to the client event bus
+      description: >-
+        Attaches a session to the client event bus and returns its current turn and interaction snapshot.
+      operationId: subscribeEventBusSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, sessionId]
+              properties:
+                projectId:
+                  type: integer
+                sessionId:
+                  type: string
+                lastEventId:
+                  type: integer
+      responses:
+        '200':
+          description: Subscription snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Session not found.
+        '409':
+          description: Instance not running or capability unsupported.
+    get:
+      summary: List session subscriptions on the client event bus
+      description: Lists all sessions currently subscribed to the given event bus.
+      operationId: listEventBusSubscriptions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of subscribed session IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /events/{uuid}/subscriptions/{sessionId}:
+    delete:
+      summary: Unsubscribe a session from the client event bus
+      description: Detaches a session from the client event bus.
+      operationId: unsubscribeEventBusSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully unsubscribed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /projects/{id}/sessions/{sessionId}/commands:
     get:
       summary: List slash commands and skills for the session

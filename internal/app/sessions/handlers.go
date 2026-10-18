@@ -40,6 +40,12 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
+
+	// EventBus multiplexed streaming routes.
+	r.GET("/events/:uuid", s.handleBusEvents)
+	r.POST("/events/:uuid/subscriptions", s.handleBusSubscribe)
+	r.DELETE("/events/:uuid/subscriptions/:sessionId", s.handleBusUnsubscribe)
+	r.GET("/events/:uuid/subscriptions", s.handleBusListSubscriptions)
 }
 
 // errorResponse is the JSON error envelope for session API failures.
@@ -481,3 +487,86 @@ func projectID(c *gin.Context) (uint, bool) {
 	}
 	return uint(id), true
 }
+
+// busSubscribeRequest is the JSON payload for subscribing a session to an event bus.
+type busSubscribeRequest struct {
+	ProjectID   uint   `json:"projectId"`
+	SessionID   string `json:"sessionId"`
+	LastEventID uint64 `json:"lastEventId,omitempty"`
+}
+
+// handleBusEvents establishes the multiplexed SSE connection for a client UUID.
+func (s *Service) handleBusEvents(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	c.Writer.Flush()
+
+	_ = s.eventBus.StreamBus(c.Request.Context(), uuid, c.Writer, func() { c.Writer.Flush() })
+}
+
+// handleBusSubscribe registers a session with a client event bus.
+func (s *Service) handleBusSubscribe(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	var req busSubscribeRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.ProjectID == 0 || req.SessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	snapshot, err := s.eventBus.SubscribeSession(c.Request.Context(), uuid, req.ProjectID, req.SessionID, req.LastEventID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, snapshot)
+}
+
+// handleBusUnsubscribe removes a session subscription from an event bus.
+func (s *Service) handleBusUnsubscribe(c *gin.Context) {
+	uuid := c.Param("uuid")
+	sessionID := c.Param("sessionId")
+	if uuid == "" || sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	if err := s.eventBus.UnsubscribeSession(uuid, sessionID); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// handleBusListSubscriptions lists active session subscriptions for an event bus.
+func (s *Service) handleBusListSubscriptions(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	subs, err := s.eventBus.ListSubscriptions(uuid)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"subscriptions": subs})
+}
+

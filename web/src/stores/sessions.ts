@@ -49,6 +49,11 @@ import {
   subscribeSession,
 } from '../features/chat/execution/SessionEventStream'
 import {
+  subscribeSessionOnBus,
+  unsubscribeSessionFromBus,
+  closeBus,
+} from '../features/chat/execution/EventBusClient'
+import {
   findOpenStreaming,
   keepSettledTurn,
   entryFromEvent,
@@ -355,6 +360,21 @@ export const useSessionsStore = defineStore('sessions', {
 
     unsubscribeAll() {
       closeAllSessionStreams(this)
+    },
+
+    // Multiplexed EventBus streaming: one long connection for the entire window
+    async subscribeBus(projectId: number, sessionId: string) {
+      const auth = useAuthStore()
+      return subscribeSessionOnBus(this, projectId, sessionId, auth.csrfToken)
+    },
+
+    async unsubscribeBus(sessionId: string) {
+      const auth = useAuthStore()
+      return unsubscribeSessionFromBus(this, sessionId, auth.csrfToken)
+    },
+
+    closeAllBus() {
+      closeBus(this)
     },
 
     // Applies one normalized event to its owning session. Events addressed to
