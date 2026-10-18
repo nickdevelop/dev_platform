@@ -100,6 +100,7 @@ function select(sessionId: string) {
   padding: 0.5rem 0.75rem;
   cursor: pointer;
   border-radius: 8px;
+  box-sizing: border-box;
 }
 
 .session-open:focus-visible {

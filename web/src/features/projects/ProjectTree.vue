@@ -423,6 +423,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
   font: inherit;
   cursor: pointer;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .project-row {
@@ -431,6 +432,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
   gap: calc(var(--space-unit) * 0.333);
   padding: 0 calc(var(--space-unit) * 0.667) 0 0;
   border-radius: 6px;
+  box-sizing: border-box;
 }
 
 .project-toggle {
@@ -481,10 +483,14 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 
 .sessions {
   padding-left: calc(var(--space-unit) * 2.333);
+  padding-right: calc(var(--space-unit) * 0.667);
+  box-sizing: border-box;
 }
 
 .session {
   border-radius: 6px;
+  box-sizing: border-box;
+  margin-bottom: calc(var(--space-unit) * 0.333);
 }
 
 .session.selected .session-open {
@@ -508,6 +514,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
   cursor: pointer;
   border: 1px solid transparent;
   transition: all 0.2s;
+  box-sizing: border-box;
 }
 
 .session-open:hover {
@@ -522,6 +529,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
   gap: calc(var(--space-unit) * 0.5);
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .session-row-bottom {
@@ -530,6 +538,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
   justify-content: space-between;
   width: 100%;
   min-width: 0;
+  box-sizing: border-box;
 }
 
 .session-bottom-left {
@@ -612,6 +621,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 }
 
 .load-more {
+  box-sizing: border-box;
   width: 100%;
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   border: none;

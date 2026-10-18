@@ -581,6 +581,7 @@ async function logout() {
 }
 
 .tree {
+  box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 2.000);
