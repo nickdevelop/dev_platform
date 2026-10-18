@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { usePromptsStore } from '../stores/prompts'
 import { useAuthStore } from '../stores/auth'
 
-type Call = { method: string; path: string; body: unknown }
+type Call = { method: string; path: string; body: unknown; headers?: Record<string, string> }
 
 function stubFetch(routes: Record<string, unknown> = {}) {
   const calls: Call[] = []
@@ -14,7 +14,8 @@ function stubFetch(routes: Record<string, unknown> = {}) {
       const url = String(input)
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      calls.push({ method, path: url.replace('/api', ''), body })
+      const headers = (init?.headers as Record<string, string>) ?? {}
+      calls.push({ method, path: url.replace('/api', ''), body, headers })
       const key = `${method} ${url.replace('/api', '')}`
       if (key in routes) return { status: 200, json: async () => routes[key] } as Response
       return { status: 200, json: async () => ({}) } as Response
@@ -51,7 +52,7 @@ describe('prompts store', () => {
   })
 
   it('creates a new prompt and unshifts into list', async () => {
-    stubFetch({
+    const calls = stubFetch({
       'POST /prompts': {
         id: 3,
         name: 'New Prompt',
@@ -70,10 +71,11 @@ describe('prompts store', () => {
     expect(created.id).toBe(3)
     expect(store.prompts).toHaveLength(1)
     expect(store.prompts[0].name).toBe('New Prompt')
+    expect(calls[0].headers?.['X-CSRF-Token']).toBe('csrf-token')
   })
 
   it('updates an existing prompt', async () => {
-    stubFetch({
+    const calls = stubFetch({
       'PUT /prompts/1': {
         id: 1,
         name: 'Updated Name',
@@ -93,10 +95,11 @@ describe('prompts store', () => {
     expect(updated.name).toBe('Updated Name')
     expect(store.prompts[0].name).toBe('Updated Name')
     expect(store.currentPrompt?.name).toBe('Updated Name')
+    expect(calls[0].headers?.['X-CSRF-Token']).toBe('csrf-token')
   })
 
   it('deletes a prompt and removes from list and currentPrompt', async () => {
-    stubFetch({
+    const calls = stubFetch({
       'DELETE /prompts/1': { ok: true },
     })
     const store = initStore()
@@ -110,5 +113,6 @@ describe('prompts store', () => {
     expect(store.prompts).toHaveLength(1)
     expect(store.prompts[0].id).toBe(2)
     expect(store.currentPrompt).toBeNull()
+    expect(calls[0].headers?.['X-CSRF-Token']).toBe('csrf-token')
   })
 })

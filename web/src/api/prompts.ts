@@ -36,14 +36,14 @@ export async function getPrompt(id: number): Promise<Prompt> {
   return apiRequest<Prompt>('GET', `/prompts/${id}`)
 }
 
-export async function createPrompt(payload: CreatePromptPayload): Promise<Prompt> {
-  return apiRequest<Prompt>('POST', '/prompts', { body: payload })
+export async function createPrompt(csrfToken: string, payload: CreatePromptPayload): Promise<Prompt> {
+  return apiRequest<Prompt>('POST', '/prompts', { body: payload, csrfToken })
 }
 
-export async function updatePrompt(id: number, payload: UpdatePromptPayload): Promise<Prompt> {
-  return apiRequest<Prompt>('PUT', `/prompts/${id}`, { body: payload })
+export async function updatePrompt(csrfToken: string, id: number, payload: UpdatePromptPayload): Promise<Prompt> {
+  return apiRequest<Prompt>('PUT', `/prompts/${id}`, { body: payload, csrfToken })
 }
 
-export async function deletePrompt(id: number): Promise<void> {
-  await apiRequest<{ ok: boolean }>('DELETE', `/prompts/${id}`)
+export async function deletePrompt(csrfToken: string, id: number): Promise<void> {
+  await apiRequest<{ ok: boolean }>('DELETE', `/prompts/${id}`, { csrfToken })
 }

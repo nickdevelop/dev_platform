@@ -11,6 +11,7 @@ import {
   type CreatePromptPayload,
   type UpdatePromptPayload,
 } from '../api/prompts'
+import { useAuthStore } from './auth'
 
 export const usePromptsStore = defineStore('prompts', {
   state: () => ({
@@ -64,7 +65,8 @@ export const usePromptsStore = defineStore('prompts', {
     async createPrompt(payload: CreatePromptPayload) {
       this.loading = true
       try {
-        const prompt = await createPrompt(payload)
+        const auth = useAuthStore()
+        const prompt = await createPrompt(auth.csrfToken, payload)
         this.prompts.unshift(prompt)
         this.error = ''
         return prompt
@@ -80,7 +82,8 @@ export const usePromptsStore = defineStore('prompts', {
     async updatePrompt(id: number, payload: UpdatePromptPayload) {
       this.loading = true
       try {
-        const updated = await updatePrompt(id, payload)
+        const auth = useAuthStore()
+        const updated = await updatePrompt(auth.csrfToken, id, payload)
         const idx = this.prompts.findIndex((p) => p.id === id)
         if (idx !== -1) {
           this.prompts[idx] = updated
@@ -102,7 +105,8 @@ export const usePromptsStore = defineStore('prompts', {
     async deletePrompt(id: number) {
       this.loading = true
       try {
-        await deletePrompt(id)
+        const auth = useAuthStore()
+        await deletePrompt(auth.csrfToken, id)
         this.prompts = this.prompts.filter((p) => p.id !== id)
         if (this.currentPrompt?.id === id) {
           this.currentPrompt = null
