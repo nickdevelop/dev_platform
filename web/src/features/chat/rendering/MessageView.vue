@@ -22,6 +22,7 @@
 // expands the rest, so a long output never dominates the pane. display="all"
 // (the default) keeps the legacy interleaved log.
 import { computed, reactive, ref } from 'vue'
+import { formatMessageTime } from '../../../shared/format'
 import { renderMarkdown } from '../../../shared/markdown'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
@@ -370,11 +371,29 @@ function closeSubagent() {
                 </template>
               </div>
               <span v-if="block.entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
-              <span
-                v-if="block.entry.role !== 'user' && block.entry.model"
-                class="message-model"
-                data-test="message-model"
-              >{{ modelLabel(block.entry.model) }}</span>
+              <div
+                v-if="block.entry.role !== 'user' && (block.entry.model || block.entry.timestamp)"
+                class="message-meta"
+                data-test="message-meta"
+              >
+                <span
+                  v-if="block.entry.model"
+                  class="message-model"
+                  data-test="message-model"
+                >{{ modelLabel(block.entry.model) }}</span>
+                <span
+                  v-if="block.entry.timestamp"
+                  class="message-time"
+                  data-test="message-time"
+                >{{ formatMessageTime(block.entry.timestamp) }}</span>
+              </div>
+            </div>
+            <div
+              v-if="block.entry.role === 'user' && block.entry.timestamp"
+              class="user-message-time"
+              data-test="user-message-time"
+            >
+              {{ formatMessageTime(block.entry.timestamp) }}
             </div>
           </template>
 
@@ -661,11 +680,32 @@ function closeSubagent() {
 
 /* The per-message model tag: small, muted, and set apart from the reply text
    it belongs to. */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
 .message-model {
   display: inline-block;
-  margin-top: 0.25rem;
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.message-time {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.user-message-time {
+  align-self: flex-end;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-top: 0.2rem;
+  margin-right: 0.25rem;
+  line-height: 1;
 }
 
 .markdown-body :deep(table) {
@@ -683,10 +723,12 @@ function closeSubagent() {
    agent's on the left, so a long exchange stays scannable. */
 .entries > .kind-message {
   display: flex;
+  flex-direction: column;
 }
 
 .kind-message {
   display: flex;
+  flex-direction: column;
 }
 
 .bubble {

@@ -17,3 +17,23 @@ export function ellipsisMiddle(path: string, maxLength = 48): string {
   const tail = path.slice(path.length - Math.floor(keep))
   return `${head}/.../${tail}`
 }
+
+export function formatMessageTime(isoString?: string): string {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) return ''
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`)
+  const hours = pad(date.getHours())
+  const minutes = pad(date.getMinutes())
+  const now = new Date()
+  const isSameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  if (isSameDay) {
+    return `${hours}:${minutes}`
+  }
+  const month = pad(date.getMonth() + 1)
+  const day = pad(date.getDate())
+  return `${month}-${day} ${hours}:${minutes}`
+}

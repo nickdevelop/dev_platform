@@ -10,6 +10,7 @@ import SessionChatPanel from '../chat/SessionChatPanel.vue'
 import FlowStepper from './FlowStepper.vue'
 import ScheduleConfigDialog from './ScheduleConfigDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
+import TaskChatDialog from './TaskChatDialog.vue'
 import TransactionalFlowView from './TransactionalFlowView.vue'
 
 const route = useRoute()
@@ -25,6 +26,7 @@ const selectedStatusFilter = ref<TaskStatus | undefined>(undefined)
 
 const activeTaskId = ref<number | null>(null)
 const viewingSessionId = ref<string | null>(null)
+const showChatDialog = ref(false)
 
 const showManageDialog = ref(false)
 const editingTask = ref<Task | null>(null)
@@ -195,6 +197,7 @@ async function createSessionForTask() {
   try {
     const res = await tasksStore.createSession(activeTask.value.id)
     viewingSessionId.value = res.session.id
+    showChatDialog.value = true
   } catch (err: any) {
     actionError.value = err.message || '创建会话失败'
   } finally {
@@ -513,12 +516,22 @@ function getStatusLabel(status: TaskStatus) {
               </div>
             </div>
 
-            <div v-else class="embedded-chat-panel full-height">
-              <SessionChatPanel
-                :key="activeTask.activeSessionId"
-                :project-id="activeTask.projectId"
-                :session-id="activeTask.activeSessionId"
-              />
+            <div v-else class="session-active-card">
+              <div class="session-active-content">
+                <div class="session-active-badge">💬 Agent 会话已就绪</div>
+                <h4>当前阶段 Agent 会话</h4>
+                <p>
+                  已连接至后端 <strong>{{ activeTask.backend }}</strong> · <strong>{{ activeTask.model }}</strong>
+                </p>
+                <button
+                  type="button"
+                  class="btn-open-session-dialog"
+                  data-test="btn-open-session-dialog"
+                  @click="showChatDialog = true"
+                >
+                  💬 打开 Agent 会话窗口
+                </button>
+              </div>
             </div>
           </section>
         </template>
@@ -538,6 +551,16 @@ function getStatusLabel(status: TaskStatus) {
       :task="schedulingTask"
       @close="showScheduleDialog = false"
       @updated="(t) => { schedulingTask = t }"
+    />
+
+    <TaskChatDialog
+      v-if="showChatDialog && activeTask && activeTask.activeSessionId"
+      :title="`任务会话：${activeTask.title}`"
+      :project-id="activeTask.projectId"
+      :session-id="activeTask.activeSessionId"
+      :backend="activeTask.backend"
+      :model="activeTask.model"
+      @close="showChatDialog = false"
     />
   </div>
 </template>

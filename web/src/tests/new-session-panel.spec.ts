@@ -7,6 +7,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
+import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
@@ -89,12 +90,12 @@ describe('NewSessionPanel', () => {
     expect(wrapper.find('.backend-switch [data-backend="opencode-v2"]').exists()).toBe(true)
     expect(wrapper.find('.backend-switch [data-backend="pi"]').exists()).toBe(true)
     expect(wrapper.find('#first-message').exists()).toBe(true)
-    expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.find('#session-title').exists()).toBe(false)
     expect(wrapper.find('#backend-select').exists()).toBe(false)
     expect(wrapper.find('#instance-select').exists()).toBe(false)
     expect(wrapper.find('#new-session-model').exists()).toBe(false)
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-select"]').exists()).toBe(true)
   })
 
   it('submits { backend, message } and never a title, instanceId', async () => {
@@ -111,7 +112,7 @@ describe('NewSessionPanel', () => {
     expect(body).not.toHaveProperty('title')
     expect(body).not.toHaveProperty('instanceId')
     expect(body).not.toHaveProperty('model')
-    expect(wrapper.emitted('created')).toEqual([['sess-new']])
+    expect(wrapper.emitted('created')?.[0]?.[0]).toBe('sess-new')
   })
 
   it('creates an empty session without a message field', async () => {
@@ -170,7 +171,7 @@ describe('NewSessionPanel', () => {
     expect(body.model).toBe('p/m')
     expect(body).not.toHaveProperty('title')
     expect(body).not.toHaveProperty('instanceId')
-    expect(wrapper.emitted('created')).toEqual([['sess-new']])
+    expect(wrapper.emitted('created')?.[0]?.[0]).toBe('sess-new')
   })
 
   it('sends the chosen model even when no first message is sent', async () => {
@@ -280,5 +281,31 @@ describe('NewSessionPanel', () => {
     expect(plusBtn.exists()).toBe(true)
     expect(plusBtn.text()).toBe('+')
     expect(wrapper.find('input[data-test="file-input"]').exists()).toBe(true)
+  })
+
+  it('selects project automatically when projectId prop is provided and allows manual change', async () => {
+    const { wrapper, createSpy } = setup()
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: '项目一', path: '/path/1', defaultBackend: 'pi' },
+      { id: 2, name: '项目二', path: '/path/2', defaultBackend: 'opencode-v2' },
+    ]
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
+    expect(select.exists()).toBe(true)
+    // 初始传入 props: { projectId: 1 }，应自动选中项目 1
+    expect(select.element.value).toBe('1')
+
+    // 手动切换为项目 2
+    await select.setValue('2')
+    await flushPromises()
+    expect(select.element.value).toBe('2')
+
+    // 提交创建，应以项目 2 创建会话
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledWith(2, expect.objectContaining({ backend: 'opencode-v2' }))
   })
 })

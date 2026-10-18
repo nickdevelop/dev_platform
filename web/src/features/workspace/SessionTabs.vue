@@ -27,6 +27,7 @@ const emit = defineEmits<{
   togglePin: [tab: OpenTab]
   closeOthers: [tab: OpenTab]
   closeAll: []
+  newTab: []
 }>()
 
 function label(tab: OpenTab): string {
@@ -157,6 +158,17 @@ onBeforeUnmount(() => {
         ×
       </button>
     </div>
+
+    <button
+      type="button"
+      class="tab-add-btn"
+      title="新建会话"
+      aria-label="新建会话"
+      data-test="tab-add-session"
+      @click="emit('newTab')"
+    >
+      +
+    </button>
 
     <div
       v-if="menu"
@@ -329,5 +341,29 @@ onBeforeUnmount(() => {
 .tab-menu button:disabled {
   color: var(--color-text-muted);
   cursor: default;
+}
+
+.tab-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  width: 24px;
+  margin-left: 6px;
+  align-self: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tab-add-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
 }
 </style>

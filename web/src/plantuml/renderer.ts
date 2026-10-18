@@ -17,6 +17,8 @@ import DOMPurify from 'dompurify'
 export interface DiagramRequest {
   source: string
   dark: boolean
+  mode?: 'local' | 'online'
+  serverUrl?: string
 }
 
 export type DiagramResult = { ok: true; svg: string } | { ok: false; reason: string }
@@ -88,7 +90,103 @@ const cache = new Map<string, DiagramResult>()
 const inFlight = new Map<string, Promise<DiagramResult>>()
 
 function cacheKey(request: DiagramRequest): string {
-  return `${request.dark ? 'd' : 'l'}\u0000${request.source}`
+  const m = request.mode ?? 'local'
+  const u = request.serverUrl ?? ''
+  return `${request.dark ? 'd' : 'l'}\u0000${m}\u0000${u}\u0000${request.source}`
+}
+
+const PLANTUML_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'
+
+function encode6bit(b: number): string {
+  return PLANTUML_ALPHABET[b & 0x3f] || '?'
+}
+
+function append3bytes(b1: number, b2: number, b3: number): string {
+  const c1 = b1 >> 2
+  const c2 = ((b1 & 0x3) << 4) | (b2 >> 4)
+  const c3 = ((b2 & 0xf) << 2) | (b3 >> 6)
+  const c4 = b3 & 0x3f
+  return encode6bit(c1) + encode6bit(c2) + encode6bit(c3) + encode6bit(c4)
+}
+
+function encodePlantUML(data: Uint8Array): string {
+  let r = ''
+  for (let i = 0; i < data.length; i += 3) {
+    if (i + 2 === data.length) {
+      r += append3bytes(data[i], data[i + 1], 0)
+    } else if (i + 1 === data.length) {
+      r += append3bytes(data[i], 0, 0)
+    } else {
+      r += append3bytes(data[i], data[i + 1], data[i + 2])
+    }
+  }
+  return r
+}
+
+async function drawOnline(request: DiagramRequest): Promise<DiagramResult> {
+  const server = (request.serverUrl || 'https://www.plantuml.com/plantuml').replace(/\/+$/, '')
+  try {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), RENDER_TIMEOUT_MS)
+      const response = await fetch(`${server}/svg`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          Accept: 'image/svg+xml, */*',
+        },
+        body: request.source,
+        signal: controller.signal,
+      })
+      clearTimeout(timer)
+      if (response.ok) {
+        const text = await response.text()
+        if (text && (text.includes('<svg') || text.includes('<?xml'))) {
+          if (ERROR_BOARD.test(text)) {
+            return fail('PlantUML 无法解析这段图源码')
+          }
+          return { ok: true, svg: DOMPurify.sanitize(text) }
+        }
+      }
+    } catch {
+      // POST 失败或被阻止时降级到 GET
+    }
+
+    let encoded = ''
+    try {
+      if (typeof CompressionStream !== 'undefined') {
+        const stream = new Blob([new TextEncoder().encode(request.source)])
+          .stream()
+          .pipeThrough(new CompressionStream('deflate-raw'))
+        const buf = await new Response(stream).arrayBuffer()
+        encoded = '~1' + encodePlantUML(new Uint8Array(buf))
+      }
+    } catch {
+      // CompressionStream 不可用或出错
+    }
+
+    if (encoded) {
+      const getController = new AbortController()
+      const getTimer = setTimeout(() => getController.abort(), RENDER_TIMEOUT_MS)
+      const res = await fetch(`${server}/svg/${encoded}`, {
+        signal: getController.signal,
+      })
+      clearTimeout(getTimer)
+      if (res.ok) {
+        const text = await res.text()
+        if (text && (text.includes('<svg') || text.includes('<?xml'))) {
+          if (ERROR_BOARD.test(text)) {
+            return fail('PlantUML 无法解析这段图源码')
+          }
+          return { ok: true, svg: DOMPurify.sanitize(text) }
+        }
+      }
+    }
+
+    return fail('在线渲染失败：服务器返回异常或网络不可达')
+  } catch (err) {
+    return fail(`在线渲染错误：${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function fail(reason: unknown): DiagramResult {
@@ -114,6 +212,10 @@ async function loadEngine(): Promise<Engine> {
 }
 
 async function draw(request: DiagramRequest): Promise<DiagramResult> {
+  if (request.mode === 'online') {
+    return drawOnline(request)
+  }
+
   if (timeouts >= TIMEOUTS_BEFORE_WEDGE && Date.now() < refusedUntil) {
     return fail('PlantUML 渲染引擎已停止响应')
   }

@@ -8,9 +8,10 @@
 // optional message rides along with the create request and the waiting is
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
+import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import ModelSelect from './ModelSelect.vue'
@@ -23,12 +24,25 @@ import { resolveSessionMentions } from './sessionMentionResolver'
 import ComposerImageTray from './ComposerImageTray.vue'
 import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
 
-const props = defineProps<{ projectId: number }>()
+const props = defineProps<{ projectId?: number }>()
 
-const emit = defineEmits<{ created: [sessionId: string] }>()
+const emit = defineEmits<{ created: [sessionId: string, projectId?: number] }>()
 
 const agents = useAgentsStore()
+const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
+
+const selectedProjectId = ref<number | null>(props.projectId ? Number(props.projectId) : null)
+
+watch(
+  () => props.projectId,
+  (id) => {
+    if (id !== undefined && id !== null) {
+      selectedProjectId.value = Number(id)
+    }
+  },
+  { immediate: true },
+)
 
 const selectedBackend = ref<BackendId | ''>('')
 const messageText = ref('')
@@ -52,10 +66,10 @@ const dropdown = useComposerDropdown({
   sources: [
     new BuiltInSlashSource(),
     new WorkspaceFileSource({
-      projectId: () => props.projectId,
+      projectId: () => selectedProjectId.value ?? 0,
     }),
     new SessionMentionSource({
-      projectId: () => props.projectId,
+      projectId: () => selectedProjectId.value ?? 0,
     }),
   ],
   text: messageText,
@@ -258,7 +272,12 @@ const firstMessageReady = computed(() => {
 const selectableBackends = computed(() => agents.backends.filter((entry) => entry.enabled !== false))
 
 const canCreate = computed(
-  () => selectedBackend.value !== '' && selectedEnabled.value && firstMessageReady.value && !creating.value,
+  () =>
+    selectedProjectId.value !== null &&
+    selectedBackend.value !== '' &&
+    selectedEnabled.value &&
+    firstMessageReady.value &&
+    !creating.value,
 )
 
 const createLabel = computed(() => {
@@ -268,6 +287,12 @@ const createLabel = computed(() => {
 
 onMounted(async () => {
   await agents.loadBackends()
+  if (projectsStore.projects.length === 0) {
+    await projectsStore.load()
+  }
+  if (!selectedProjectId.value && projectsStore.projects.length > 0) {
+    selectedProjectId.value = projectsStore.projects[0].id
+  }
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
     selectedBackend.value = selectableBackends.value[0].backend
   }
@@ -283,6 +308,11 @@ function selectBackend(backend: BackendId) {
 }
 
 async function createSession() {
+  const targetProjectId = selectedProjectId.value
+  if (!targetProjectId) {
+    toolNotice.value = '请先选择关联的项目'
+    return
+  }
   if (selectedBackend.value === '' || creating.value || !selectedEnabled.value) return
   if (!firstMessageReady.value) return
   creating.value = true
@@ -290,8 +320,8 @@ async function createSession() {
   const rawText = messageText.value.trim()
   const textToSend =
     rawText !== ''
-      ? await resolveSessionMentions(props.projectId, rawText, (targetId) =>
-          getSessionHistory(props.projectId, targetId),
+      ? await resolveSessionMentions(targetProjectId, rawText, (targetId) =>
+          getSessionHistory(targetProjectId, targetId),
         )
       : ''
   // The model is part of the session's identity, not only of its first turn, so
@@ -301,14 +331,14 @@ async function createSession() {
     selectedCapabilities.value?.modelSelection === true &&
     modelOk.value &&
     selectedModel.value !== ''
-  const created = await sessions.createSession(props.projectId, {
+  const created = await sessions.createSession(targetProjectId, {
     backend: selectedBackend.value,
     ...(textToSend !== '' ? { message: textToSend } : {}),
     ...(withModel ? { model: selectedModel.value } : {}),
     ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
   })
   creating.value = false
-  if (created) emit('created', created.id)
+  if (created) emit('created', created.id, targetProjectId)
 }
 </script>
 
@@ -319,6 +349,25 @@ async function createSession() {
       <p class="subtitle">选择 Agent 后端，描述你要做的事</p>
 
       <form class="create-session" @submit.prevent="createSession">
+        <div class="project-selector-group">
+          <label for="project-select" class="project-label">关联项目</label>
+          <select
+            id="project-select"
+            v-model="selectedProjectId"
+            class="project-select"
+            data-test="project-select"
+          >
+            <option :value="null" disabled>请选择项目…</option>
+            <option
+              v-for="p in projectsStore.projects"
+              :key="p.id"
+              :value="p.id"
+            >
+              {{ p.name }} ({{ p.path }})
+            </option>
+          </select>
+        </div>
+
         <div class="backend-switch" role="radiogroup" aria-label="Agent 后端">
           <button
             v-for="backend in selectableBackends"
@@ -397,8 +446,8 @@ async function createSession() {
               <ModelSelect
                 v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
-                :key="selectedBackend"
-                :project-id="props.projectId"
+                :key="`${selectedBackend}-${selectedProjectId}`"
+                :project-id="selectedProjectId ?? props.projectId ?? 0"
                 :backend="selectedBackend"
                 :model-selection="true"
                 @status="modelOk = $event"
@@ -462,6 +511,42 @@ async function createSession() {
   text-align: center;
   color: var(--color-text-muted);
   font-size: 0.9rem;
+}
+
+.project-selector-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.project-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.project-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.project-select:focus {
+  border-color: var(--color-primary);
 }
 
 .create-session {

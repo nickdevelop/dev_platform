@@ -11,6 +11,8 @@ export const defaultAppearance: Appearance = {
   theme: 'light',
   fontSize: 14,
   density: 'standard',
+  plantumlMode: 'local',
+  plantumlServerUrl: 'https://www.plantuml.com/plantuml',
 }
 
 export function getAppearance(): Promise<Appearance> {

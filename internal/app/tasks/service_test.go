@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -17,6 +18,7 @@ import (
 type fakeSessionLauncher struct {
 	createdSessions []sessions.Session
 	sentMessages    []string
+	deletedSessions []string
 	sendErr         error
 }
 
@@ -48,6 +50,11 @@ func (f *fakeSessionLauncher) Get(projectID uint, sessionID string) (sessions.Se
 		}
 	}
 	return sessions.Session{}, sessions.ErrSessionNotFound
+}
+
+func (f *fakeSessionLauncher) Delete(projectID uint, sessionID string) error {
+	f.deletedSessions = append(f.deletedSessions, sessionID)
+	return nil
 }
 
 func (f *fakeSessionLauncher) setSessionState(sessionID string, status sessions.SessionStatus, turn sessions.TurnState) {
@@ -347,5 +354,64 @@ func TestTaskAdvanceStepSendFailure(t *testing.T) {
 	latest, _ := svc.repo.Get(task.ID)
 	if latest.CurrentStep != 1 {
 		t.Fatalf("step should not advance on failure, got step %d", latest.CurrentStep)
+	}
+}
+
+func TestDeleteTaskCleansUpSessions(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{}
+	svc := NewService(NewRepository(db), launcher)
+	ctx := context.Background()
+
+	// 创建一个任务并拉起会话
+	task, err := svc.Create(ctx, CreateTaskRequest{
+		Title:     "待删除任务",
+		ProjectID: 1,
+		Backend:   agents.BackendPi,
+		Model:     "claude-3-5-sonnet",
+		FlowType:  FlowTransactional,
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	task, _, err = svc.CreateSessionForTask(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	activeSessionID := task.ActiveSessionID
+	if activeSessionID == "" {
+		t.Fatal("expected active session ID")
+	}
+
+	// 确认并就绪，再触发一次执行生成一个 run 会话
+	_, _ = svc.AdvanceStep(ctx, task.ID, AdvanceStepRequest{Confirmed: true})
+	task, _ = svc.SaveExecutionPrompt(ctx, task.ID, "测试执行")
+	run, err := svc.TriggerExecution(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("trigger execution: %v", err)
+	}
+
+	// 执行删除任务
+	if err := svc.Delete(task.ID); err != nil {
+		t.Fatalf("delete task: %v", err)
+	}
+
+	// 验证任务已被删除
+	if _, err := svc.Get(task.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("expected ErrTaskNotFound, got %v", err)
+	}
+
+	// 验证任务关联的 activeSessionID 和 run.SessionID 都被传递给了 launcher.Delete
+	deletedMap := make(map[string]bool)
+	for _, sid := range launcher.deletedSessions {
+		deletedMap[sid] = true
+	}
+
+	if !deletedMap[activeSessionID] {
+		t.Errorf("expected activeSessionID %s to be deleted, got %v", activeSessionID, launcher.deletedSessions)
+	}
+	if !deletedMap[run.SessionID] {
+		t.Errorf("expected run session ID %s to be deleted, got %v", run.SessionID, launcher.deletedSessions)
 	}
 }

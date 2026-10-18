@@ -65,11 +65,18 @@ async function draw(): Promise<void> {
     return
   }
 
-  const key = `${dark.value ? 'd' : 'l'}\u0000${props.source}`
+  const plantumlMode = computed(() => settings.appearance.plantumlMode ?? 'local')
+  const plantumlServerUrl = computed(() => settings.appearance.plantumlServerUrl ?? '')
+  const key = `${dark.value ? 'd' : 'l'}\u0000${plantumlMode.value}\u0000${plantumlServerUrl.value}\u0000${props.source}`
   if (drawn === key && state.value === 'ready') return
 
   state.value = 'rendering'
-  const result = await renderDiagram({ source: props.source, dark: dark.value })
+  const result = await renderDiagram({
+    source: props.source,
+    dark: dark.value,
+    mode: plantumlMode.value,
+    serverUrl: plantumlServerUrl.value,
+  })
   if (token !== request) return // a newer reply or palette change superseded this one
 
   if (result.ok) {
@@ -235,7 +242,18 @@ onBeforeUnmount(() => {
   if (viewerOpen.value) unlockBody()
 })
 
-watch(() => [props.ready, props.source, dark.value, props.finished], draw, { immediate: true })
+watch(
+  () => [
+    props.ready,
+    props.source,
+    dark.value,
+    props.finished,
+    settings.appearance.plantumlMode,
+    settings.appearance.plantumlServerUrl,
+  ],
+  draw,
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -489,18 +507,19 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.55);
+  padding: 0;
+  background: rgba(15, 23, 42, 0.7);
 }
 
 .plantuml-viewer-panel {
   display: flex;
   flex-direction: column;
-  width: min(72rem, 94vw);
-  max-height: 90vh;
-  border-radius: 12px;
+  width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  border-radius: 0;
   background: var(--color-surface);
-  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.4);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -546,8 +565,8 @@ watch(() => [props.ready, props.source, dark.value, props.finished], draw, { imm
 
 .plantuml-viewer-canvas {
   flex: 1;
-  min-height: 50vh;
-  max-height: calc(90vh - 7rem);
+  min-height: 0;
+  max-height: none;
   overflow: hidden;
   padding: 1rem;
   background: #ffffff;

@@ -37,7 +37,7 @@ func TestAppearanceDefaultsWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "light", FontSize: 14, Density: "standard"}
+	want := DefaultAppearance()
 	if got != want {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}
@@ -47,7 +47,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))
 
-	input := Appearance{Theme: "dark", FontSize: 18, Density: "compact"}
+	input := Appearance{Theme: "dark", FontSize: 18, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
 	saved, err := svc.SetAppearance(input)
 	if err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -77,6 +77,7 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 		{"density", func(a *Appearance) { a.Density = "huge" }},
 		{"font size low", func(a *Appearance) { a.FontSize = 11 }},
 		{"font size high", func(a *Appearance) { a.FontSize = 21 }},
+		{"plantuml mode", func(a *Appearance) { a.PlantumlMode = "invalid_mode" }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,7 +133,7 @@ func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "dark", FontSize: 16, Density: "compact"}
+	want := Appearance{Theme: "dark", FontSize: 16, Density: "compact", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if got != want {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}

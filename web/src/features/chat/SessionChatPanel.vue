@@ -67,6 +67,41 @@ const deleteError = ref('')
 const preparing = ref(false)
 const messageText = ref('')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const textareaHeight = ref<number | null>(null)
+let isResizing = false
+let startY = 0
+let startHeight = 0
+
+function onResizerMouseDown(e: MouseEvent) {
+  if (!textareaRef.value) return
+  isResizing = true
+  startY = e.clientY
+  startHeight = textareaRef.value.getBoundingClientRect().height
+  document.body.style.cursor = 'ns-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMouseMove = (ev: MouseEvent) => {
+    if (!isResizing) return
+    const delta = startY - ev.clientY
+    const newHeight = Math.max(36, Math.min(600, startHeight + delta))
+    textareaHeight.value = newHeight
+  }
+
+  const onMouseUp = () => {
+    isResizing = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+function resetComposerHeight() {
+  textareaHeight.value = null
+}
 const slashSource = new BuiltInSlashSource()
 const providerSlashSource = new ProviderSlashSource(
   () => props.projectId,
@@ -795,6 +830,15 @@ async function removeSession() {
               @dragover.prevent="onDragOver"
               @drop.prevent="onDrop"
             >
+              <div
+                class="composer-resizer"
+                data-test="composer-resizer"
+                title="拖拽调整输入框高度，双击重置"
+                @mousedown="onResizerMouseDown"
+                @dblclick="resetComposerHeight"
+              >
+                <span class="resizer-handle"></span>
+              </div>
               <ComposerDropdown
                 v-if="dropdown.isOpen.value"
                 :items="dropdown.items.value"
@@ -808,6 +852,7 @@ async function removeSession() {
                 ref="textareaRef"
                 v-model="messageText"
                 rows="2"
+                :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
                 placeholder="向 Agent 发送消息… (输入 / 使用快捷命令，@ 引用文件或会话)"
                 @input="onTextareaInput"
                 @keydown="onTextareaKeydown"
@@ -1411,6 +1456,31 @@ async function removeSession() {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.composer-resizer {
+  height: 10px;
+  margin-top: -0.25rem;
+  margin-bottom: 0.1rem;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.composer-resizer .resizer-handle {
+  width: 38px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-strong);
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.composer-resizer:hover .resizer-handle {
+  opacity: 1;
+  background: var(--color-primary);
 }
 
 /* Desktop-style composer: one rounded box holds the input and its toolbar,

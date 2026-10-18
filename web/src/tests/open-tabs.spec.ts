@@ -3,7 +3,9 @@
 // settings page. Tab identity is a single key, so closing, activating and
 // rendering never have to know which kind they are dealing with.
 import { beforeEach, describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import SessionTabs from '../features/workspace/SessionTabs.vue'
 import { tabKey, useOpenTabsStore, type OpenTab } from '../stores/openTabs'
 
 function freshStore() {
@@ -197,6 +199,27 @@ describe('open tabs store', () => {
     const reloaded = freshStore()
     expect(reloaded.lastActiveKey).toBe('ses-1')
     expect(reloaded.preferredTab?.sessionId).toBe('ses-1')
+  })
+})
+
+describe('SessionTabs component', () => {
+  it('renders a plus button to add new session and emits newTab', async () => {
+    const tabs: OpenTab[] = [
+      { kind: 'session', projectId: 1, sessionId: 'ses-1', title: '会话 1' },
+    ]
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'ses-1',
+      },
+    })
+
+    const addBtn = wrapper.find('[data-test="tab-add-session"]')
+    expect(addBtn.exists()).toBe(true)
+    expect(addBtn.text()).toBe('+')
+
+    await addBtn.trigger('click')
+    expect(wrapper.emitted('newTab')).toHaveLength(1)
   })
 })
 

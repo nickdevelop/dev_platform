@@ -296,6 +296,25 @@ describe('MessageView per-message model', () => {
 
     expect(wrapper.find('[data-test="message-model"]').exists()).toBe(false)
   })
+
+  it('renders timestamp for assistant and user messages', () => {
+    const now = new Date('2026-10-18T14:30:00Z').toISOString()
+    const assistantEntry: ChatEntry = {
+      ...message('assistant', '助手回答'),
+      model: { id: 'acme/acme-code', provider: 'acme' },
+      timestamp: now,
+    }
+    const userEntry: ChatEntry = {
+      ...message('user', '用户提问'),
+      timestamp: now,
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [userEntry, assistantEntry], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="user-message-time"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="message-time"]').exists()).toBe(true)
+  })
 })
 
 describe('MessageView plantuml blocks', () => {

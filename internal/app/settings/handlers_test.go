@@ -55,7 +55,7 @@ func TestAppearanceHandlerPutPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed"}
+	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if stored != want {
 		t.Errorf("stored = %+v, want %+v", stored, want)
 	}
@@ -85,7 +85,7 @@ func TestAppearanceHandlerPutIgnoresFontFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed"}
+	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if stored != want {
 		t.Errorf("stored = %+v, want %+v", stored, want)
 	}

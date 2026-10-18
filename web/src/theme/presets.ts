@@ -10,6 +10,8 @@ export interface Appearance {
   theme: string
   fontSize: number
   density: string
+  plantumlMode?: 'local' | 'online'
+  plantumlServerUrl?: string
 }
 
 // ThemeColors is the full palette a theme defines, not just an accent color.

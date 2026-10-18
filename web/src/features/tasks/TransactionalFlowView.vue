@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { ScheduleType, Task, TaskRun } from '../../api/tasks'
 import { useSessionsStore } from '../../stores/sessions'
 import { useTasksStore } from '../../stores/tasks'
-import SessionChatPanel from '../chat/SessionChatPanel.vue'
+import TaskChatDialog from './TaskChatDialog.vue'
 import { extractExecutionPrompt } from './promptExtractor'
 
 const props = defineProps<{
@@ -189,8 +189,34 @@ async function confirmStage2AndAdvance() {
   }
 }
 
+const chatModal = ref<{
+  title: string
+  sessionId: string
+  backend?: string
+  model?: string
+} | null>(null)
+
+function openChatModal(sessionId: string, title?: string) {
+  chatModal.value = {
+    title: title || `任务对话：${props.task.title}`,
+    sessionId,
+    backend: props.task.backend,
+    model: props.task.model,
+  }
+}
+
+watch(
+  () => props.task.activeSessionId,
+  (newId, oldId) => {
+    if (newId && !oldId && transactionalStage.value === 1) {
+      openChatModal(newId, `任务需求分析对话：${props.task.title}`)
+    }
+  },
+)
+
 function switchViewingSession(sid: string) {
   viewingSessionId.value = sid
+  openChatModal(sid, `任务执行会话 (${sid.slice(0, 8)})`)
 }
 </script>
 
@@ -289,12 +315,23 @@ function switchViewingSession(sid: string) {
           </div>
         </div>
 
-        <div v-else class="embedded-chat-panel full-height">
-          <SessionChatPanel
-            :key="task.activeSessionId"
-            :project-id="task.projectId"
-            :session-id="task.activeSessionId"
-          />
+        <div v-else class="session-active-card">
+          <div class="session-active-content">
+            <div class="session-active-badge">💬 分析会话已就绪</div>
+            <h4>任务分析 Agent 会话</h4>
+            <p>
+              会话已启动，已配置 <strong>{{ task.backend }}</strong> · {{ task.model }}。<br />
+              所有对话通过弹窗窗口进行，避免占用页面流。
+            </p>
+            <button
+              type="button"
+              class="btn-open-session-dialog"
+              data-test="btn-open-stage1-dialog"
+              @click="openChatModal(task.activeSessionId, `任务需求分析对话：${task.title}`)"
+            >
+              💬 打开 Agent 分析会话窗口
+            </button>
+          </div>
         </div>
       </div>
 
@@ -538,15 +575,33 @@ function switchViewingSession(sid: string) {
           <p>任务方案已确认就绪，点击上方【▶ 立即执行一次】启动免打断运行，或等待设定的定时/周期调度自动触发。</p>
         </div>
 
-        <div v-else-if="viewingSessionId" class="embedded-chat-panel full-height">
-          <SessionChatPanel
-            :key="viewingSessionId"
-            :project-id="task.projectId"
-            :session-id="viewingSessionId"
-          />
+        <div v-else-if="viewingSessionId" class="session-active-card">
+          <div class="session-active-content">
+            <div class="session-active-badge">⚡ 独立执行会话</div>
+            <h4>已选择执行会话：<code>{{ viewingSessionId.slice(0, 8) }}...</code></h4>
+            <p>已通过弹窗方式打开，如需再次查看完整执行日志与思考过程，请点击下方按钮。</p>
+            <button
+              type="button"
+              class="btn-open-session-dialog"
+              data-test="btn-open-stage3-dialog"
+              @click="openChatModal(viewingSessionId, `任务执行会话 (${viewingSessionId.slice(0, 8)})`)"
+            >
+              💬 打开当前执行会话窗口
+            </button>
+          </div>
         </div>
       </div>
     </section>
+
+    <TaskChatDialog
+      v-if="chatModal"
+      :title="chatModal.title"
+      :project-id="task.projectId"
+      :session-id="chatModal.sessionId"
+      :backend="chatModal.backend"
+      :model="chatModal.model"
+      @close="chatModal = null"
+    />
   </div>
 </template>
 

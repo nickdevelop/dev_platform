@@ -26,6 +26,15 @@ function updateFontSize(event: Event) {
 function selectDensity(key: string) {
   if (settings.appearance.density !== key) void settings.saveAppearance({ density: key })
 }
+
+function selectPlantumlMode(mode: 'local' | 'online') {
+  if (settings.appearance.plantumlMode !== mode) void settings.saveAppearance({ plantumlMode: mode })
+}
+
+function updatePlantumlServerUrl(event: Event) {
+  const value = (event.target as HTMLInputElement).value.trim()
+  void settings.saveAppearance({ plantumlServerUrl: value })
+}
 </script>
 
 <template>
@@ -88,6 +97,45 @@ function selectDensity(key: string) {
         >
           {{ density.label }}
         </button>
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>PlantUML 渲染模式</legend>
+      <div class="density-row">
+        <button
+          type="button"
+          class="density-option"
+          :class="{ active: (settings.appearance.plantumlMode || 'local') === 'local' }"
+          data-plantuml-mode="local"
+          @click="selectPlantumlMode('local')"
+        >
+          离线渲染（本地）
+        </button>
+        <button
+          type="button"
+          class="density-option"
+          :class="{ active: settings.appearance.plantumlMode === 'online' }"
+          data-plantuml-mode="online"
+          @click="selectPlantumlMode('online')"
+        >
+          在线渲染（服务器）
+        </button>
+      </div>
+
+      <div v-if="settings.appearance.plantumlMode === 'online'" class="plantuml-url-field">
+        <label class="field">
+          <span>服务器地址</span>
+          <input
+            type="text"
+            data-plantuml-url
+            class="plantuml-url-input"
+            placeholder="https://www.plantuml.com/plantuml"
+            :value="settings.appearance.plantumlServerUrl || 'https://www.plantuml.com/plantuml'"
+            @change="updatePlantumlServerUrl"
+          />
+        </label>
+        <span class="field-hint">支持自建 PlantUML 服务地址，默认使用官方服务器。</span>
       </div>
     </fieldset>
 
@@ -166,5 +214,34 @@ function selectDensity(key: string) {
 .error {
   color: var(--color-danger);
   margin: 0;
+}
+
+.plantuml-url-field {
+  margin-top: calc(var(--space-unit) * 1.5);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.5);
+}
+
+.plantuml-url-input {
+  width: 100%;
+  padding: calc(var(--space-unit) * 1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.plantuml-url-input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 </style>

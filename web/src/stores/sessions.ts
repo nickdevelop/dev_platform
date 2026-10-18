@@ -390,6 +390,7 @@ export const useSessionsStore = defineStore('sessions', {
               event.message.model,
               event.message.usage,
               event.message.images,
+              event.timestamp,
             )
             continue
           }
@@ -436,6 +437,7 @@ export const useSessionsStore = defineStore('sessions', {
       model?: MessageModel,
       usage?: MessageUsage,
       images?: ImageAttachment[],
+      timestamp?: string,
     ) {
       const list = this.ensureMessages(sessionId)
       const open = findOpenStreaming(list, 'message', role)
@@ -455,6 +457,7 @@ export const useSessionsStore = defineStore('sessions', {
         // Usage rides final events only; a late terminator still anchors the
         // block even when its text was already complete.
         if (final && usage) open.usage = usage
+        if (timestamp && !open.timestamp) open.timestamp = timestamp
         return
       }
       // An empty event with no open block: a terminator whose block already
@@ -468,6 +471,7 @@ export const useSessionsStore = defineStore('sessions', {
         text,
         images,
         streaming: !final,
+        timestamp: timestamp || new Date().toISOString(),
         model,
         usage: final ? usage : undefined,
       })
@@ -681,7 +685,17 @@ export const useSessionsStore = defineStore('sessions', {
       if (trimmed === '' && (!images || images.length === 0)) return null
       // Show the user's turn immediately; the stream echo is matched against
       // this pending text and dropped.
-      this.appendMessage(sessionId, 'user', trimmed, true, 0, undefined, undefined, images)
+      this.appendMessage(
+        sessionId,
+        'user',
+        trimmed,
+        true,
+        0,
+        undefined,
+        undefined,
+        images,
+        new Date().toISOString(),
+      )
       this.echoPending[sessionId] = trimmed
       try {
         const body: SendMessageBody = { text: trimmed }

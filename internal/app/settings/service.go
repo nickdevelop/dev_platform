@@ -26,24 +26,33 @@ var ErrInvalidAppearance = errors.New("settings: invalid appearance")
 // and mirrors the frontend's Appearance DTO. The type of face is not part of
 // it: the UI bundles its own fonts (web/src/fonts) and always uses them.
 type Appearance struct {
-	Theme    string `json:"theme"`
-	FontSize int    `json:"fontSize"`
-	Density  string `json:"density"`
+	Theme             string `json:"theme"`
+	FontSize          int    `json:"fontSize"`
+	Density           string `json:"density"`
+	PlantumlMode      string `json:"plantumlMode"`
+	PlantumlServerURL string `json:"plantumlServerUrl"`
 }
 
 // DefaultAppearance is the configuration used before the operator saves one.
 func DefaultAppearance() Appearance {
-	return Appearance{Theme: "light", FontSize: 14, Density: "standard"}
+	return Appearance{
+		Theme:             "light",
+		FontSize:          14,
+		Density:           "standard",
+		PlantumlMode:      "local",
+		PlantumlServerURL: "https://www.plantuml.com/plantuml",
+	}
 }
 
 // Allowed values. The frontend's presets mirror these lists.
 var (
-	validThemes    = map[string]bool{"light": true, "dark": true, "warm": true, "cool": true}
-	validDensities = map[string]bool{"compact": true, "standard": true, "relaxed": true}
+	validThemes         = map[string]bool{"light": true, "dark": true, "warm": true, "cool": true}
+	validDensities      = map[string]bool{"compact": true, "standard": true, "relaxed": true}
+	validPlantumlModes  = map[string]bool{"local": true, "online": true}
 )
 
 // Validate reports whether the appearance value is one the platform accepts.
-func (a Appearance) Validate() error {
+func (a *Appearance) Validate() error {
 	if !validThemes[a.Theme] {
 		return fmt.Errorf("%w: theme %q", ErrInvalidAppearance, a.Theme)
 	}
@@ -52,6 +61,15 @@ func (a Appearance) Validate() error {
 	}
 	if !validDensities[a.Density] {
 		return fmt.Errorf("%w: density %q", ErrInvalidAppearance, a.Density)
+	}
+	if a.PlantumlMode == "" {
+		a.PlantumlMode = "local"
+	}
+	if !validPlantumlModes[a.PlantumlMode] {
+		return fmt.Errorf("%w: plantuml mode %q", ErrInvalidAppearance, a.PlantumlMode)
+	}
+	if a.PlantumlServerURL == "" {
+		a.PlantumlServerURL = "https://www.plantuml.com/plantuml"
 	}
 	return nil
 }

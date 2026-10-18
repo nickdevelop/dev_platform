@@ -44,6 +44,7 @@ export interface StreamStore {
     model?: MessageModel,
     usage?: MessageUsage,
     images?: ImageAttachment[],
+    timestamp?: string,
   ) => void
   appendThinking: (sessionId: string, text: string, final: boolean, sequence: number) => void
   applyLifecycle: (sessionId: string, event: NormalizedEvent) => void
@@ -231,6 +232,7 @@ export function consumeEventFrame(store: StreamStore, sessionId: string, data: s
       event.message.model,
       event.message.usage,
       event.message.images,
+      event.timestamp,
     )
     return
   }

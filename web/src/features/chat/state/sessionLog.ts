@@ -23,6 +23,8 @@ export interface ChatEntry {
   text: string
   images?: ImageAttachment[]
   streaming: boolean
+  // Timestamp of the entry, formatted as ISO string
+  timestamp?: string
   // The model that produced an assistant message, when the backend reports
   // one. Absent on user messages and on backends without per-message models.
   model?: MessageModel
@@ -119,6 +121,7 @@ export function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatE
         role: 'assistant',
         text: event.toolCall.name,
         streaming: false,
+        timestamp: event.timestamp,
         callId: event.toolCall.callId,
         name: event.toolCall.name,
         input: event.toolCall.input,
@@ -131,6 +134,7 @@ export function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatE
         role: 'tool',
         text: event.toolResult.output ?? '',
         streaming: false,
+        timestamp: event.timestamp,
         callId: event.toolResult.callId,
         isError: event.toolResult.isError,
         diff: firstChangedFile(event.toolResult.metadata),
@@ -143,6 +147,7 @@ export function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatE
         role: 'system',
         text: event.error.message,
         streaming: false,
+        timestamp: event.timestamp,
       }
     default:
       return null

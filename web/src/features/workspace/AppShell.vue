@@ -248,12 +248,23 @@ function onDeleteSession(_id: number, sessionId: string) {
   }
 }
 
-function onCreated(sessionId: string) {
-  if (projectId.value !== null) openSessionTab(projectId.value, sessionId)
+function onCreated(sessionId: string, targetProjectId?: number) {
+  const pId = targetProjectId ?? projectId.value
+  if (pId !== null && pId !== undefined) openSessionTab(pId, sessionId)
 }
 
 function openNewSession(id: number) {
   void router.push({ name: 'session-new', params: { projectId: String(id) } })
+}
+
+function onNewTab() {
+  if (projectId.value !== null) {
+    openNewSession(projectId.value)
+  } else if (projects.projects.length > 0) {
+    openNewSession(projects.projects[0].id)
+  } else {
+    void router.push({ name: 'session-new-global' })
+  }
 }
 
 function openManage(kind: DialogKind, project: Project | null = null) {
@@ -356,6 +367,7 @@ async function logout() {
         @toggle-pin="togglePinTab"
         @close-others="closeOtherTabs"
         @close-all="closeAllTabs"
+        @new-tab="onNewTab"
       />
       <div class="pane-body">
         <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>

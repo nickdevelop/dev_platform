@@ -17,6 +17,7 @@ type SessionLauncher interface {
 	Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
 	Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error)
 	Get(projectID uint, sessionID string) (sessions.Session, error)
+	Delete(projectID uint, sessionID string) error
 }
 
 // Service manages task lifecycles, flow advancement, scheduling and execution.
@@ -180,8 +181,33 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateTaskRequest) (T
 	return s.repo.Get(id)
 }
 
-// Delete removes a task.
+// Delete removes a task and cleans up sessions created by this task from the platform's index.
 func (s *Service) Delete(id uint) error {
+	t, err := s.repo.Get(id)
+	if err != nil {
+		return err
+	}
+
+	// Collect session IDs created by this task
+	sessionIDs := make(map[string]bool)
+	if t.ActiveSessionID != "" {
+		sessionIDs[t.ActiveSessionID] = true
+	}
+
+	runs, _ := s.repo.ListRuns(id)
+	for _, run := range runs {
+		if run.SessionID != "" {
+			sessionIDs[run.SessionID] = true
+		}
+	}
+
+	// Remove these sessions from the platform index (underlying native sessions untouched)
+	if s.sessions != nil {
+		for sid := range sessionIDs {
+			_ = s.sessions.Delete(t.ProjectID, sid)
+		}
+	}
+
 	return s.repo.Delete(id)
 }
 
@@ -441,7 +467,9 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 			return TaskRun{}, fmt.Errorf("tasks: create run: %w", err)
 		}
 
-		t.ActiveSessionID = outcome.Session.ID
+		if t.ActiveSessionID == "" {
+			t.ActiveSessionID = outcome.Session.ID
+		}
 		t.LastRunStatus = RunExecuting
 		t.Status = StatusExecuting
 		if err := s.repo.Update(t); err != nil {

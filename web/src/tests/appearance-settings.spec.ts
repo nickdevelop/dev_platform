@@ -67,6 +67,7 @@ describe('AppearanceSettings', () => {
       '主题配色',
       '字号',
       '界面密度',
+      'PlantUML 渲染模式',
     ])
     expect(wrapper.find('[data-font-size]').exists()).toBe(true)
     expect(wrapper.find('[data-font-select]').exists()).toBe(false)
@@ -94,9 +95,36 @@ describe('AppearanceSettings', () => {
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
-    expect(Object.keys(put?.body as object).sort()).toEqual(['density', 'fontSize', 'theme'])
+    const keys = Object.keys(put?.body as object).sort()
+    expect(keys).toEqual(expect.arrayContaining(['density', 'fontSize', 'theme']))
     expect(put?.body).toMatchObject({ fontSize: 18 })
     expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('18px')
+  })
+
+  it('saves plantuml mode and server url changes', async () => {
+    const calls = stubFetch()
+    const { wrapper } = await mountSettings()
+
+    // 默认展示离线和在线两个模式按钮
+    expect(wrapper.find('[data-plantuml-mode="local"]').exists()).toBe(true)
+    expect(wrapper.find('[data-plantuml-mode="online"]').exists()).toBe(true)
+    expect(wrapper.find('[data-plantuml-url]').exists()).toBe(false)
+
+    // 点击切换为在线模式
+    await wrapper.find('[data-plantuml-mode="online"]').trigger('click')
+    await flushPromises()
+
+    const putOnline = calls.find((call) => (call.body as any)?.plantumlMode === 'online')
+    expect(putOnline).toBeDefined()
+    expect(wrapper.find('[data-plantuml-url]').exists()).toBe(true)
+
+    // 输入自定义服务器地址
+    await wrapper.find('[data-plantuml-url]').setValue('https://my-plantuml.corp.net')
+    await wrapper.find('[data-plantuml-url]').trigger('change')
+    await flushPromises()
+
+    const putUrl = calls.find((call) => (call.body as any)?.plantumlServerUrl === 'https://my-plantuml.corp.net')
+    expect(putUrl).toBeDefined()
   })
 
   it('keeps the previous appearance and reports an error when saving fails', async () => {

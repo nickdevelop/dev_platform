@@ -25,6 +25,8 @@ import {
   type UpdateTaskPayload,
 } from '../api/tasks'
 import { useAuthStore } from './auth'
+import { useSessionsStore } from './sessions'
+import { tabKey, useOpenTabsStore } from './openTabs'
 
 export const useTasksStore = defineStore('tasks', {
   state: () => ({
@@ -119,10 +121,27 @@ export const useTasksStore = defineStore('tasks', {
 
     async deleteTask(id: number) {
       const auth = useAuthStore()
+      const taskToDelete =
+        this.tasks.find((t) => t.id === id) ||
+        (this.currentTask?.id === id ? this.currentTask : null)
       await deleteTask(auth.csrfToken, id)
       this.tasks = this.tasks.filter((t) => t.id !== id)
       if (this.currentTask?.id === id) {
         this.currentTask = null
+      }
+      if (taskToDelete) {
+        const sessionsStore = useSessionsStore()
+        const openTabsStore = useOpenTabsStore()
+        if (taskToDelete.activeSessionId) {
+          const tab = openTabsStore.tabs.find(
+            (t) => t.kind === 'session' && t.sessionId === taskToDelete.activeSessionId,
+          )
+          if (tab) {
+            sessionsStore.unsubscribe(taskToDelete.activeSessionId)
+            openTabsStore.closeTabByKey(tabKey(tab))
+          }
+        }
+        void sessionsStore.loadSessions(taskToDelete.projectId)
       }
     },
 

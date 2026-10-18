@@ -75,6 +75,11 @@ export function createAppRouter() {
             props: (route) => ({ projectId: Number(route.params.projectId) }),
           },
           {
+            path: 'sessions/new',
+            name: 'session-new-global',
+            component: NewSessionPanel,
+          },
+          {
             path: 'projects/:projectId/sessions/:sessionId',
             name: 'session',
             component: SessionChatPanel,
