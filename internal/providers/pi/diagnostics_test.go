@@ -58,7 +58,7 @@ func TestAdapterDiagnosticsHealthy(t *testing.T) {
 			t.Errorf("check %+v = %q, want ok", check.Kind, check.Status)
 		}
 	}
-	if report.Capabilities == nil || !report.Capabilities.ToolCallEvents || report.Capabilities.ToolConfirmation {
+	if report.Capabilities == nil || !report.Capabilities.ToolCallEvents || !report.Capabilities.ToolConfirmation {
 		t.Errorf("capabilities = %+v, want the adapter declaration", report.Capabilities)
 	}
 }

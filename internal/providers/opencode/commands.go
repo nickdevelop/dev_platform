@@ -8,30 +8,29 @@ import (
 
 var _ agents.CommandDiscoverer = (*Adapter)(nil)
 
-// ListCommands returns the slash commands and skills supported by the opencode backend.
+// ListCommands returns the built-in slash commands supported across the platform.
 func (a *Adapter) ListCommands(ctx context.Context, ref agents.SessionRef) ([]agents.AgentCommand, error) {
 	commands := []agents.AgentCommand{
 		{
-			Name:         "review",
-			Description:  "审查当前工作区的代码变更或指定文件",
-			Kind:         agents.CommandKindSlash,
-			ArgumentHint: "[path]",
+			Name:        "new",
+			Description: "新建并切换到全新会话",
+			Kind:        agents.CommandKindSlash,
 		},
 		{
-			Name:         "commit",
-			Description:  "根据当前变更自动生成规范的 Git 提交信息并提交",
-			Kind:         agents.CommandKindSlash,
-			ArgumentHint: "[message]",
+			Name:        "stop",
+			Description: "停止当前正在运行的 Agent 任务",
+			Kind:        agents.CommandKindSlash,
 		},
 		{
-			Name:         "test",
-			Description:  "执行项目测试套件并分析修复失败项",
+			Name:         "model",
+			Description:  "切换当前会话所使用的模型",
 			Kind:         agents.CommandKindSlash,
+			ArgumentHint: "[model-name]",
 		},
 		{
-			Name:         "opencode",
-			Description:  "加载 OpenCode 专家系统技能与知识库",
-			Kind:         agents.CommandKindSkill,
+			Name:        "help",
+			Description: "查看可用命令与快捷操作提示",
+			Kind:        agents.CommandKindSlash,
 		},
 	}
 

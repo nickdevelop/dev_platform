@@ -128,18 +128,14 @@ func Register(registry *agents.Registry) error {
 	return registry.Register(agents.BackendPi, New(Options{}))
 }
 
-// New builds a pi adapter.
+// New builds a pi adapter. Pi runs exclusively in RPC mode.
 func New(options Options) *Adapter {
-	mode := options.Mode
-	if mode != ModeRPC {
-		mode = ModeCLI
-	}
 	adapter := &Adapter{
 		executable:        options.Executable,
 		resolveExecutable: options.ResolveExecutable,
 		sessionDir:        options.SessionDir,
 		env:               options.Env,
-		mode:              mode,
+		mode:              ModeRPC,
 		extensions:        options.Extensions,
 		rpcIdleTimeout:    options.RPCIdleTimeout,
 		rpcReapInterval:   options.RPCReapInterval,
@@ -201,7 +197,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		Stop:             true,
 		ModelSelection:   true,
 		ToolCallEvents:   true,
-		ToolConfirmation: a.mode == ModeRPC,
+		ToolConfirmation: true,
 		Interrupt:        true,
 		SessionHistory:   true,
 	}
@@ -533,35 +529,7 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		name = a.sessionTitle(ref.InstanceID, ref.SessionID)
 	}
 
-	if a.mode == ModeRPC {
-		return a.sendRPC(ctx, inst, ref, message, model, name)
-	}
-
-	spec := processSpec{
-		executable: a.execPath(),
-		args: promptArgs(promptOptions{
-			sessionID:      ref.SessionID,
-			sessionDir:     a.sessionDir,
-			passSessionDir: a.passSessionDir,
-			model:          model,
-			name:           name,
-			text:           message.Text,
-		}),
-		dir: inst.directory,
-		env: a.env,
-	}
-	resolved, err := a.resolveSpec(spec)
-	if err != nil {
-		return err
-	}
-	proc, err := startProcess(inst.ctx, resolved)
-	if err != nil {
-		return fmt.Errorf("pi: send message on instance %q: %w", ref.InstanceID, err)
-	}
-	if !inst.attachProcess(proc, ref.SessionID) {
-		return fmt.Errorf("pi: instance %q is stopping", ref.InstanceID)
-	}
-	return nil
+	return a.sendRPC(ctx, inst, ref, message, model, name)
 }
 
 // sendRPC delivers a turn through the session's RPC child, starting it lazily
@@ -634,14 +602,12 @@ func (a *Adapter) ListModels(ctx context.Context, _ string) ([]agents.ModelInfo,
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if a.mode == ModeRPC {
-		if child := a.anyChild(); child != nil {
-			rpcCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			defer cancel()
-			if response, err := child.conn.request(rpcCtx, newGetAvailableModelsCommand(""), rpcCommandTimeout); err == nil && response.Success {
-				if models, err := parseAvailableModels(response.Data); err == nil && len(models) > 0 {
-					return models, nil
-				}
+	if child := a.anyChild(); child != nil {
+		rpcCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if response, err := child.conn.request(rpcCtx, newGetAvailableModelsCommand(""), rpcCommandTimeout); err == nil && response.Success {
+			if models, err := parseAvailableModels(response.Data); err == nil && len(models) > 0 {
+				return models, nil
 			}
 		}
 	}
@@ -695,17 +661,13 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	if err != nil {
 		return err
 	}
-	if a.mode == ModeRPC {
-		child := inst.child(ref.SessionID)
-		if child == nil {
-			return nil
-		}
-		if err := child.abort(ctx); err != nil && !errors.Is(err, errRPCClosed) {
-			return fmt.Errorf("pi: interrupt session %q: %w", ref.SessionID, err)
-		}
+	child := inst.child(ref.SessionID)
+	if child == nil {
 		return nil
 	}
-	inst.interruptSession(ref.SessionID)
+	if err := child.abort(ctx); err != nil && !errors.Is(err, errRPCClosed) {
+		return fmt.Errorf("pi: interrupt session %q: %w", ref.SessionID, err)
+	}
 	return nil
 }
 

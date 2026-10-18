@@ -97,6 +97,8 @@ func (a *Adapter) historyFile(request agents.ListHistoryRequest) (string, error)
 type historyRecord struct {
 	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
+	Provider  string    `json:"provider"`
+	ModelID   string    `json:"modelId"`
 	Message   *struct {
 		Role       string          `json:"role"`
 		Content    json.RawMessage `json:"content"`
@@ -165,6 +167,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 	scanner.Buffer(make([]byte, 0, 64*1024), maxHistoryRecordBytes)
 
 	events := make([]agents.NormalizedEvent, 0, 16)
+	var currentModel *agents.MessageModel
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -176,7 +179,17 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 			more := scanner.Scan()
 			return events, more || scanner.Err() != nil, nil
 		}
-		events = append(events, normalizeHistoryRecord(record)...)
+		if record.Type == "model_change" && (record.Provider != "" || record.ModelID != "") {
+			id := record.ModelID
+			if record.Provider != "" && !strings.Contains(id, "/") {
+				id = record.Provider + "/" + record.ModelID
+			}
+			currentModel = &agents.MessageModel{
+				ID:       id,
+				Provider: record.Provider,
+			}
+		}
+		events = append(events, normalizeHistoryRecord(record, currentModel)...)
 	}
 	if err := scanner.Err(); err != nil {
 		// An unreadable or oversized record ended the read before the end.
@@ -188,7 +201,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 // normalizeHistoryRecord translates one transcript record. A record can yield
 // two events (an assistant message that both speaks and calls a tool) or none
 // (the session header, model changes, system preamble, thinking).
-func normalizeHistoryRecord(record historyRecord) []agents.NormalizedEvent {
+func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []agents.NormalizedEvent {
 	if record.Type != "message" || record.Message == nil {
 		return nil
 	}
@@ -221,6 +234,10 @@ func normalizeHistoryRecord(record historyRecord) []agents.NormalizedEvent {
 				if record.Message.Role == "assistant" {
 					event.Message.Usage = usage
 					usage = nil
+					if model != nil {
+						m := *model
+						event.Message.Model = &m
+					}
 				}
 				events = append(events, event)
 			case "toolCall":

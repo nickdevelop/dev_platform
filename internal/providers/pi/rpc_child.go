@@ -143,6 +143,15 @@ func (a *Adapter) startRPCChild(inst *instance, sessionID, model, name string) (
 	// before the event reaches subscribers.
 	conn := newRPCConn(proc.stdin, parser, func(event agents.NormalizedEvent) {
 		child.observe(event)
+		if event.Type == agents.EventMessage && event.Message != nil && event.Message.Role == "assistant" && event.Message.Model == nil {
+			if m := child.currentModel(); m != "" {
+				provider, _ := splitModelRef(m)
+				event.Message.Model = &agents.MessageModel{
+					ID:       m,
+					Provider: provider,
+				}
+			}
+		}
 		inst.publish(event)
 	})
 	child.conn = conn

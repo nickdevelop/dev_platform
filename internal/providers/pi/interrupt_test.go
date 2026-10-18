@@ -2,15 +2,11 @@ package pi
 
 import (
 	"context"
-	"path/filepath"
 	"reflect"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/core/platform"
 )
 
 func intPtr(v int) *int { return &v }
@@ -54,18 +50,9 @@ exit 0
 }
 
 func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, sleepingFakePi)
-	pidFile := filepath.Join(dir, "pid.txt")
-	t.Setenv("FAKE_PI_PID", pidFile)
-
-	adapter := newTestAdapter(t, fake, "")
+	adapter := newRPCAdapter(t, t.TempDir(), "sleep")
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = adapter.StopInstance(context.Background(), inst.ID) })
+	inst, _ := rpcInstance(t, adapter)
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -77,9 +64,18 @@ func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
 	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "block"}); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(waitForFile(t, pidFile))))
-	if err != nil {
-		t.Fatalf("parse pid: %v", err)
+
+	// Drain until the run begins so abort has something to cancel.
+	deadline := time.After(5 * time.Second)
+	for started := false; !started; {
+		select {
+		case ev := <-events:
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnStarted {
+				started = true
+			}
+		case <-deadline:
+			t.Fatal("turn never started")
+		}
 	}
 
 	if err := adapter.Interrupt(ctx, *ref); err != nil {
@@ -87,7 +83,7 @@ func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
 	}
 
 	// The aborted turn settles on the stream; no error is published for it.
-	deadline := time.After(5 * time.Second)
+	deadline = time.After(5 * time.Second)
 	for settled := false; !settled; {
 		select {
 		case ev, ok := <-events:
@@ -102,10 +98,6 @@ func TestAdapterInterruptEndsOnlyTheTargetTurn(t *testing.T) {
 		case <-deadline:
 			t.Fatal("aborted turn never settled")
 		}
-	}
-
-	if platform.New().Process().Alive(pid) {
-		t.Errorf("process %d still alive after interrupt", pid)
 	}
 
 	// The instance keeps running, so the session accepts the next turn.

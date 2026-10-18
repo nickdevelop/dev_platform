@@ -196,7 +196,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
 		Interrupt:        true,
-		SessionDiscovery: true,
+		SessionDiscovery: false,
 		SessionContinue:  true,
 		Stop:             true,
 		ModelSelection:   true,
@@ -674,37 +674,18 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	return nil
 }
 
-// ListSessions returns the native sessions the server knows for the instance's
-// directory.
+// ErrSessionDiscoveryUnsupported reports that opencode session discovery is not supported.
+var ErrSessionDiscoveryUnsupported = errors.New("opencode: session discovery is not supported")
+
+// ListSessions is disabled on the opencode backend: session discovery is not supported.
 func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents.SessionRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	inst, err := a.getInstance(instanceID)
-	if err != nil {
+	if _, err := a.getInstance(instanceID); err != nil {
 		return nil, err
 	}
-	sessions, err := inst.client.ListSessions(ctx, inst.directory)
-	if err != nil {
-		return nil, fmt.Errorf("opencode: list sessions on instance %q: %w", instanceID, err)
-	}
-	refs := make([]agents.SessionRef, 0, len(sessions))
-	for _, session := range sessions {
-		if session.ID == "" {
-			continue
-		}
-		inst.registerSession(session.ID, session.Title)
-		if session.Model != nil {
-			inst.setSessionModel(session.ID, *session.Model)
-		}
-		refs = append(refs, agents.SessionRef{
-			InstanceID: instanceID,
-			Backend:    agents.BackendOpenCodeV2,
-			SessionID:  session.ID,
-			Title:      session.Title,
-		})
-	}
-	return refs, nil
+	return nil, ErrSessionDiscoveryUnsupported
 }
 
 // getInstance returns a registered instance or an error.

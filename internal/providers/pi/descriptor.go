@@ -14,7 +14,4 @@ var Descriptor = agents.BackendDescriptor{
 	Minimum:          "1.0.0",
 	Maximum:          "2.0.0",
 	ServiceSupported: false,
-	// The pi adapter supports two transports; the operator can switch between
-	// them in Platform Settings and restart as a rollback lever.
-	Modes: []string{ModeCLI, ModeRPC},
 }

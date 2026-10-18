@@ -177,8 +177,11 @@ func collectEvents(t *testing.T, ch <-chan agents.NormalizedEvent, want int) []a
 func TestAdapterCapabilitiesDeclared(t *testing.T) {
 	adapter := New(Options{})
 	caps := adapter.Capabilities()
-	if !caps.Streaming || !caps.SessionDiscovery || !caps.SessionContinue || !caps.Stop {
+	if !caps.Streaming || !caps.SessionContinue || !caps.Stop {
 		t.Fatalf("core capabilities not declared: %+v", caps)
+	}
+	if caps.SessionDiscovery {
+		t.Fatalf("SessionDiscovery must be false: opencode session discovery is removed: %+v", caps)
 	}
 	if !caps.ModelSelection || !caps.ToolCallEvents || !caps.Interrupt {
 		t.Fatalf("model/tool/interrupt capabilities not declared: %+v", caps)
@@ -281,32 +284,13 @@ func TestAdapterStartValidations(t *testing.T) {
 	}
 }
 
-func TestAdapterListSessionsMapsNativeSessions(t *testing.T) {
-	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
-		"GET /api/session": func(w http.ResponseWriter, r *http.Request) {
-			if got := r.URL.Query().Get("directory"); got == "" {
-				t.Errorf("directory query missing")
-			}
-			io.WriteString(w, `{"data":[
-				{"id":"ses_a","projectID":"prj","title":"Alpha","time":{"created":1,"updated":1},"location":{"directory":"/x"}},
-				{"id":"ses_b","projectID":"prj","time":{"created":2,"updated":2},"location":{"directory":"/x"}}
-			],"cursor":{}}`)
-		},
-	}))
+func TestAdapterListSessionsUnsupported(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{}))
 	instance := startTestInstance(t, adapter)
 
-	refs, err := adapter.ListSessions(context.Background(), instance.ID)
-	if err != nil {
-		t.Fatalf("ListSessions: %v", err)
-	}
-	if len(refs) != 2 {
-		t.Fatalf("got %d refs, want 2", len(refs))
-	}
-	if refs[0].SessionID != "ses_a" || refs[0].Title != "Alpha" || refs[0].InstanceID != instance.ID || refs[0].Backend != agents.BackendOpenCodeV2 {
-		t.Fatalf("unexpected ref: %+v", refs[0])
-	}
-	if err := refs[0].Validate(); err != nil {
-		t.Fatalf("ref does not validate: %v", err)
+	_, err := adapter.ListSessions(context.Background(), instance.ID)
+	if !errors.Is(err, ErrSessionDiscoveryUnsupported) {
+		t.Fatalf("ListSessions error = %v, want ErrSessionDiscoveryUnsupported", err)
 	}
 }
 

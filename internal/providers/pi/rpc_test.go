@@ -128,14 +128,16 @@ func TestRPCSendMessageStreamsEvents(t *testing.T) {
 
 // TestRPCCapabilitiesToolConfirmation pins that only RPC mode advertises tool
 // confirmation.
+// TestRPCCapabilitiesToolConfirmation verifies pi declares tool confirmation
+// unconditionally now that it runs exclusively in RPC mode.
 func TestRPCCapabilitiesToolConfirmation(t *testing.T) {
 	rpc := newRPCAdapter(t, "", "")
 	if !rpc.Capabilities().ToolConfirmation {
 		t.Error("RPC Capabilities().ToolConfirmation = false, want true")
 	}
-	cli := New(Options{})
-	if cli.Capabilities().ToolConfirmation {
-		t.Error("CLI Capabilities().ToolConfirmation = true, want false")
+	def := New(Options{})
+	if !def.Capabilities().ToolConfirmation {
+		t.Error("Default Capabilities().ToolConfirmation = false, want true")
 	}
 }
 

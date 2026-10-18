@@ -87,6 +87,9 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 		assistant.Message.Role != "assistant" || assistant.Message.Text != "历史里的助手回复" || !assistant.Message.Final {
 		t.Errorf("events[2] = %+v, want a final assistant message", assistant)
 	}
+	if assistant.Message.Model == nil || assistant.Message.Model.ID != "acme/acme-code" || assistant.Message.Model.Provider != "acme" {
+		t.Errorf("assistant model = %+v, want acme/acme-code (acme)", assistant.Message.Model)
+	}
 
 	call := events[3]
 	if call.Type != agents.EventToolCall || call.ToolCall == nil ||

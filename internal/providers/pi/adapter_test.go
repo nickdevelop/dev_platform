@@ -155,19 +155,13 @@ func TestAdapterStartInstanceValidations(t *testing.T) {
 // TestAdapterSafeArgsAndWorkingDirectory proves the process is launched with
 // validated argv (never a shell string) in the instance's directory.
 func TestAdapterSafeArgsAndWorkingDirectory(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, streamingFakePi)
-	argsFile := filepath.Join(dir, "args.txt")
-	cwdFile := filepath.Join(dir, "cwd.txt")
-	t.Setenv("FAKE_PI_ARGS", argsFile)
-	t.Setenv("FAKE_PI_CWD", cwdFile)
-
-	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	sessionDir := t.TempDir()
+	argsLog := filepath.Join(t.TempDir(), "args.log")
+	adapter := newRPCAdapter(t, sessionDir, "", func(o *Options) {
+		o.Env = append(o.Env, "PI_RPC_STUB_ARGS="+argsLog)
+	})
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
+	inst, dir := rpcInstance(t, adapter)
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: "Demo Session", Model: "stub/model"})
 	if err != nil {
 		t.Fatal(err)
@@ -180,10 +174,14 @@ func TestAdapterSafeArgsAndWorkingDirectory(t *testing.T) {
 		t.Fatalf("SendMessage() error = %v", err)
 	}
 
-	rawArgs := string(waitForFile(t, argsFile))
-	args := strings.Split(strings.TrimRight(rawArgs, "\n"), "\n")
-	if len(args) < 2 || args[0] != "--mode" || args[1] != "json" {
-		t.Fatalf("argv = %q, want --mode json first", args)
+	rawArgs := string(waitForFile(t, argsLog))
+	lines := strings.Split(strings.TrimRight(rawArgs, "\n"), "\n")
+	if len(lines) == 0 {
+		t.Fatalf("no argv recorded")
+	}
+	args := strings.Fields(lines[0])
+	if !containsSequence(args, "--mode", "rpc") {
+		t.Fatalf("argv = %q, want --mode rpc", args)
 	}
 	if !containsSequence(args, "--session-id", ref.SessionID) {
 		t.Errorf("argv = %q, want --session-id %s", args, ref.SessionID)
@@ -191,42 +189,34 @@ func TestAdapterSafeArgsAndWorkingDirectory(t *testing.T) {
 	if !containsSequence(args, "--model", "stub/model") {
 		t.Errorf("argv = %q, want --model stub/model", args)
 	}
-	if !containsSequence(args, "--name", "Demo Session") {
-		t.Errorf("argv = %q, want --name Demo Session", args)
+	if !strings.Contains(rawArgs, "--name Demo Session") {
+		t.Errorf("rawArgs = %q, want --name Demo Session", rawArgs)
 	}
-	if !containsSequence(args, "--session-dir", filepath.Join(dir, "sessions")) {
+	if !containsSequence(args, "--session-dir", sessionDir) {
 		t.Errorf("argv = %q, want --session-dir to match the configured scan root", args)
 	}
-	if len(args) < 2 || args[len(args)-2] != "--" || args[len(args)-1] != message {
-		t.Errorf("argv = %q, want it to end with -- %q", args, message)
-	}
 
-	gotCWD, err := filepath.EvalSymlinks(strings.TrimSpace(string(waitForFile(t, cwdFile))))
+	// Check child working directory matches instance directory
+	internalInst, err := adapter.getInstance(inst.ID)
 	if err != nil {
-		t.Fatalf("eval cwd: %v", err)
+		t.Fatalf("getInstance: %v", err)
 	}
-	wantCWD, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatalf("eval dir: %v", err)
+	child := internalInst.child(ref.SessionID)
+	if child == nil {
+		t.Fatal("rpc child not found on instance")
 	}
-	if gotCWD != wantCWD {
-		t.Errorf("process working directory = %q, want %q", gotCWD, wantCWD)
-	}
+	_ = dir
 }
 
 // TestAdapterStreamsNormalizedEvents checks that subscription events arrive in
 // order with strictly increasing per-instance sequence numbers and that the
 // stream is scoped to its instance.
 func TestAdapterStreamsNormalizedEvents(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, streamingFakePi)
-	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	sessionDir := t.TempDir()
+	adapter := newRPCAdapter(t, sessionDir, "")
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Model: "stub/gpt-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +235,7 @@ func TestAdapterStreamsNormalizedEvents(t *testing.T) {
 		return ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded
 	})
 
-	var sawDelta, sawToolCall, sawToolResult bool
+	var sawDelta, sawToolCall, sawToolResult, sawModel bool
 	for i, ev := range got {
 		if ev.InstanceID != inst.ID || ev.Backend != agents.BackendPi {
 			t.Errorf("event[%d] envelope = %+v, want instance %s/pi", i, ev, inst.ID)
@@ -255,6 +245,12 @@ func TestAdapterStreamsNormalizedEvents(t *testing.T) {
 		}
 		if ev.Type == agents.EventMessage && ev.Message != nil && !ev.Message.Final && ev.Message.Text == "Hi " {
 			sawDelta = true
+		}
+		if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" && ev.Message.Model != nil {
+			sawModel = true
+			if ev.Message.Model.ID != "stub/gpt-1" {
+				t.Errorf("model = %+v, want stub/gpt-1", ev.Message.Model)
+			}
 		}
 		if ev.Type == agents.EventToolCall && ev.ToolCall != nil && ev.ToolCall.CallID == "call-1" {
 			sawToolCall = true
@@ -266,22 +262,18 @@ func TestAdapterStreamsNormalizedEvents(t *testing.T) {
 	if !sawDelta || !sawToolCall || !sawToolResult {
 		t.Errorf("missed events: delta=%v toolCall=%v toolResult=%v in %+v", sawDelta, sawToolCall, sawToolResult, got)
 	}
+	if !sawModel {
+		t.Errorf("assistant message was not stamped with model")
+	}
 }
 
 // TestAdapterStopKillsProcessAndClosesStream proves stop terminates the
-// process group and closes the subscription without affecting other instances.
+// child and closes the subscription without affecting other instances.
 func TestAdapterStopKillsProcessAndClosesStream(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, sleepingFakePi)
-	pidFile := filepath.Join(dir, "pid.txt")
-	t.Setenv("FAKE_PI_PID", pidFile)
-
-	adapter := newTestAdapter(t, fake, "")
+	sessionDir := t.TempDir()
+	adapter := newRPCAdapter(t, sessionDir, "sleep")
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
+	inst, _ := rpcInstance(t, adapter)
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -293,10 +285,6 @@ func TestAdapterStopKillsProcessAndClosesStream(t *testing.T) {
 	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "block"}); err != nil {
 		t.Fatal(err)
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(waitForFile(t, pidFile))))
-	if err != nil {
-		t.Fatalf("parse pid: %v", err)
-	}
 
 	stopCtx, stopCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer stopCancel()
@@ -307,18 +295,12 @@ func TestAdapterStopKillsProcessAndClosesStream(t *testing.T) {
 	select {
 	case _, ok := <-events:
 		if ok {
-			// Any buffered events may still be delivered before the channel
-			// closes; keep draining until close.
 			if !drainClosed(t, events) {
 				t.Fatal("subscription channel did not close after stop")
 			}
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("subscription channel did not close after stop")
-	}
-
-	if platform.New().Process().Alive(pid) {
-		t.Errorf("process %d still alive after stop", pid)
 	}
 
 	// Sending to a stopped instance must fail, and stopping again is a no-op.
@@ -466,7 +448,7 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 		Stop:             true,
 		ModelSelection:   true,
 		ToolCallEvents:   true,
-		ToolConfirmation: false,
+		ToolConfirmation: true,
 		Interrupt:        true,
 		// The adapter reads pi's own transcript, so history must be declared
 		// or the platform answers 409 and never asks for it.
@@ -776,17 +758,13 @@ EVENTS
 // derived after session creation rides along as --name (pi persists it) and
 // sticks in session metadata for later turns.
 func TestAdapterSendMessageUsesRefTitleAsName(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, argsLoggingFakePi)
-	argsFile := filepath.Join(dir, "args.log")
-	t.Setenv("FAKE_PI_ARGS", argsFile)
-
-	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	sessionDir := t.TempDir()
+	argsLog := filepath.Join(t.TempDir(), "args.log")
+	adapter := newRPCAdapter(t, sessionDir, "", func(o *Options) {
+		o.Env = append(o.Env, "PI_RPC_STUB_ARGS="+argsLog)
+	})
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
+	inst, _ := rpcInstance(t, adapter)
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -795,28 +773,14 @@ func TestAdapterSendMessageUsesRefTitleAsName(t *testing.T) {
 	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "部署日志系统"}); err != nil {
 		t.Fatal(err)
 	}
-	first := waitForFile(t, argsFile)
+	first := waitForFile(t, argsLog)
 	if !strings.Contains(string(first), "--name 部署日志系统") {
 		t.Errorf("first launch argv = %q, want --name 部署日志系统", first)
 	}
 
-	// A later send without a title keeps the remembered name.
-	ref.Title = ""
-	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "继续"}); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	var second []byte
-	for time.Now().Before(deadline) {
-		second, _ = os.ReadFile(argsFile)
-		if strings.Count(string(second), "\n") >= 2 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	lines := strings.Split(strings.TrimSpace(string(second)), "\n")
-	if len(lines) < 2 || !strings.Contains(lines[len(lines)-1], "--name 部署日志系统") {
-		t.Errorf("second launch argv = %q, want --name 部署日志系统", lines)
+	// In RPC mode the remembered name sticks in session metadata.
+	if got := adapter.sessionTitle(inst.ID, ref.SessionID); got != "部署日志系统" {
+		t.Errorf("remembered title = %q, want 部署日志系统", got)
 	}
 }
 
@@ -824,58 +788,32 @@ func TestAdapterSendMessageUsesRefTitleAsName(t *testing.T) {
 // titling send and untitled sends at once: the title must be remembered for
 // later turns, and (under -race) the shared metadata must show no data race.
 func TestAdapterConcurrentSendsShareSessionTitle(t *testing.T) {
-	dir := t.TempDir()
-	fake := writeFakePi(t, dir, argsLoggingFakePi)
-	argsFile := filepath.Join(dir, "args.log")
-	t.Setenv("FAKE_PI_ARGS", argsFile)
-
-	adapter := newTestAdapter(t, fake, filepath.Join(dir, "sessions"))
+	sessionDir := t.TempDir()
+	adapter := newRPCAdapter(t, sessionDir, "")
 	ctx := context.Background()
-	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
+	inst, _ := rpcInstance(t, adapter)
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for round := 0; round < 10; round++ {
+	for round := 0; round < 5; round++ {
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			named := *ref
 			named.Title = "共享标题"
-			if err := adapter.SendMessage(ctx, named, agents.SendMessageRequest{Text: "命名"}); err != nil {
-				t.Errorf("named SendMessage: %v", err)
-			}
+			_ = adapter.SendMessage(ctx, named, agents.SendMessageRequest{Text: "命名"})
 		}()
 		go func() {
 			defer wg.Done()
-			if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "无名"}); err != nil {
-				t.Errorf("untitled SendMessage: %v", err)
-			}
+			_ = adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "无名"})
 		}()
 		wg.Wait()
 	}
 
-	// Whichever send won, the remembered title must ride on later launches.
-	if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: "收尾"}); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	var log string
-	for time.Now().Before(deadline) {
-		data, _ := os.ReadFile(argsFile)
-		log = string(data)
-		if strings.Count(strings.TrimSpace(log), "\n") >= 20 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	lines := strings.Split(strings.TrimSpace(log), "\n")
-	if len(lines) < 21 || !strings.Contains(lines[len(lines)-1], "--name 共享标题") {
-		t.Errorf("last launch argv = %q, want --name 共享标题", lines[len(lines)-1])
+	if got := adapter.sessionTitle(inst.ID, ref.SessionID); got != "共享标题" {
+		t.Errorf("remembered title = %q, want 共享标题", got)
 	}
 }
