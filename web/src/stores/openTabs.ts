@@ -1,21 +1,41 @@
-// Open workbench tabs: what this browser has open right now. Two kinds share
+// Open workbench tabs: what this browser has open right now. Five kinds share
 // the strip — a session (a session with its cached transcript and live SSE
-// subscription) and a project's settings page. Switching a tab is navigation;
-// the tab strip renders both kinds from one `tabKey`, so nothing downstream has
-// to know which is which. Tabs persist in localStorage so a refresh restores the
-// working set. A tab can be pinned: pinned tabs sort to the front, carry no
-// close control, and survive "close others"/"close all", so the pages a user
-// anchored never disappear by accident.
+// subscription), a project's settings page, the new-session form (labelled
+// "new" until the session is created), a task's detail page, and the platform
+// settings center. Switching a tab is navigation; the tab strip renders every
+// kind from one `tabKey`, so nothing downstream has to know which is which.
+// Tabs persist in localStorage so a refresh restores the working set. A tab can
+// be pinned: pinned tabs sort to the front, carry no close control, and survive
+// "close others"/"close all", so the pages a user anchored never disappear by
+// accident.
 import { defineStore } from 'pinia'
 
 export type OpenTab =
   | { kind: 'session'; projectId: number; sessionId: string; title: string; pinned?: boolean }
   | { kind: 'project-settings'; projectId: number; pinned?: boolean }
+  // The new-session form is a single strip-wide tab: opening it from any project
+  // focuses the same tab, and the form's project picker decides the target.
+  | { kind: 'new-session'; pinned?: boolean }
+  | { kind: 'task'; taskId: number; title: string; pinned?: boolean }
+  | { kind: 'platform-settings'; pinned?: boolean }
 
 // tabKey identifies a tab. A session is identified by its session (machine-unique),
-// a settings page by its project; the prefixes keep the two namespaces apart.
+// a project's settings page by its project, a task by its task id, and the two
+// platform-wide pages have fixed singleton keys; the prefixes keep the kinds
+// apart.
 export function tabKey(tab: OpenTab): string {
-  return tab.kind === 'session' ? tab.sessionId : `settings:${tab.projectId}`
+  switch (tab.kind) {
+    case 'session':
+      return tab.sessionId
+    case 'project-settings':
+      return `settings:${tab.projectId}`
+    case 'new-session':
+      return 'new-session'
+    case 'task':
+      return `task:${tab.taskId}`
+    case 'platform-settings':
+      return 'platform-settings'
+  }
 }
 
 const STORAGE_KEY = 'dev-platform-open-tabs-v2'
@@ -60,8 +80,16 @@ function isSession(entry: unknown): entry is Extract<OpenTab, { kind: 'session' 
 
 function normalize(entry: unknown): OpenTab | null {
   const tab = entry as Record<string, unknown>
-  if (typeof tab !== 'object' || tab === null || typeof tab.projectId !== 'number') return null
+  if (typeof tab !== 'object' || tab === null) return null
   const pinned = tab.pinned === true ? PINNED : {}
+  if (tab.kind === 'new-session') return { kind: 'new-session', ...pinned }
+  if (tab.kind === 'task') {
+    if (typeof tab.taskId !== 'number') return null
+    const title = typeof tab.title === 'string' ? tab.title : ''
+    return { kind: 'task', taskId: tab.taskId, title, ...pinned }
+  }
+  if (tab.kind === 'platform-settings') return { kind: 'platform-settings', ...pinned }
+  if (typeof tab.projectId !== 'number') return null
   if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId, ...pinned }
   if (tab.kind === 'session' || tab.kind === undefined) {
     if (!isSession(entry)) return null
@@ -205,6 +233,80 @@ export const useOpenTabsStore = defineStore('openTabs', {
       }
       this.setActiveKey(`settings:${projectId}`)
       persist(this.tabs)
+    },
+
+    // Opens (or focuses) the one new-session tab. It labels itself "new" until
+    // the session is created, and whichever project the form targets, the same
+    // tab is reused.
+    openNewSession() {
+      const existing = this.tabs.find((tab) => tab.kind === 'new-session')
+      if (existing) {
+        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
+      }
+      if (!existing) {
+        this.tabs.push({ kind: 'new-session' })
+        trim(this.tabs)
+      }
+      this.setActiveKey('new-session')
+      persist(this.tabs)
+    },
+
+    // Opens (or focuses) a task's detail tab. The title follows the task list
+    // once it loads; a stored tab keeps the last-known title until then.
+    openTask(taskId: number, title = '') {
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'task' }> => tab.kind === 'task' && tab.taskId === taskId,
+      )
+      if (existing) {
+        if (title !== '') existing.title = title
+      } else {
+        this.tabs.push({ kind: 'task', taskId, title })
+        trim(this.tabs)
+      }
+      this.setActiveKey(`task:${taskId}`)
+      persist(this.tabs)
+    },
+
+    // Opens (or focuses) the platform settings tab — one per strip.
+    openPlatformSettings() {
+      const existing = this.tabs.find((tab) => tab.kind === 'platform-settings')
+      if (existing) {
+        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
+      } else {
+        this.tabs.push({ kind: 'platform-settings' })
+        trim(this.tabs)
+      }
+      this.setActiveKey('platform-settings')
+      persist(this.tabs)
+    },
+
+    // promoteNewSession turns the new-session tab into a session tab in place:
+    // the position in the strip is kept, and the strip's focus follows the
+    // created session. A stored title arrives later, once the session list
+    // reports the server-derived one. Without a new-session tab the session
+    // opens as an ordinary tab, so the action stays safe from any call site.
+    promoteNewSession(projectId: number, sessionId: string) {
+      const index = this.tabs.findIndex((tab) => tab.kind === 'new-session')
+      if (index === -1) {
+        this.tabs.push({ kind: 'session', projectId, sessionId, title: '' })
+      } else {
+        const { pinned } = this.tabs[index]
+        const carried = pinned === true ? PINNED : {}
+        this.tabs.splice(index, 1, { kind: 'session', projectId, sessionId, title: '', ...carried })
+      }
+      this.setActiveKey(sessionId)
+      persist(this.tabs)
+    },
+
+    // updateTaskTitle renames a task tab without touching the other tabs.
+    updateTaskTitle(taskId: number, title: string) {
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'task' }> => tab.kind === 'task' && tab.taskId === taskId,
+      )
+      if (existing && existing.title !== title) {
+        existing.title = title
+        persist(this.tabs)
+      }
     },
 
     updateTitle(sessionId: string, title: string) {

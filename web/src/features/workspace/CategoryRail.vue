@@ -11,6 +11,7 @@
 // asks the shell to show the column again.
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import { tabKey } from '../../stores/openTabs'
 import { useOpenTabsStore } from '../../stores/openTabs'
 
 defineProps<{
@@ -39,12 +40,25 @@ const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(() => !settingsActive.value && !tasksActive.value)
 
 const projectDestination = computed(() => {
-  const preferred = openTabs.preferredTab
-  if (preferred) {
+  // Only restore to tabs that actually belong to the workspace area.
+  const workspaceTabs = openTabs.tabs.filter(
+    (tab) => tab.kind === 'session' || tab.kind === 'new-session' || tab.kind === 'project-settings',
+  )
+  if (workspaceTabs.length > 0) {
+    const preferred =
+      (openTabs.lastActiveKey
+        ? workspaceTabs.find((tab) => tabKey(tab) === openTabs.lastActiveKey)
+        : null) ?? workspaceTabs[workspaceTabs.length - 1]
+
+    if (preferred.kind === 'new-session') {
+      return { name: 'session-new-global' }
+    }
     if (preferred.kind === 'project-settings') {
       return { name: 'project-settings', params: { projectId: String(preferred.projectId) } }
     }
-    return { name: 'session', params: { projectId: String(preferred.projectId), sessionId: preferred.sessionId } }
+    if (preferred.kind === 'session') {
+      return { name: 'session', params: { projectId: String(preferred.projectId), sessionId: preferred.sessionId } }
+    }
   }
   return { name: 'home' }
 })

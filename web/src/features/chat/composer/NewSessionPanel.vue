@@ -9,7 +9,7 @@
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
@@ -26,11 +26,15 @@ import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
 
 const props = defineProps<{ projectId?: number }>()
 
-const emit = defineEmits<{ created: [sessionId: string, projectId?: number] }>()
+const emit = defineEmits<{
+  created: [sessionId: string, projectId?: number]
+  manage: [kind: 'register' | 'create', project: null]
+}>()
 
 const agents = useAgentsStore()
 const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
+const router = useRouter()
 
 const selectedProjectId = ref<number | null>(props.projectId ? Number(props.projectId) : null)
 
@@ -43,6 +47,17 @@ watch(
   },
   { immediate: true },
 )
+
+watch(selectedProjectId, (newId) => {
+  if (newId && Number(newId) !== Number(props.projectId)) {
+    if (router && typeof router.replace === 'function') {
+      void router.replace({
+        name: 'session-new',
+        params: { projectId: String(newId) },
+      })
+    }
+  }
+})
 
 const selectedBackend = ref<BackendId | ''>('')
 const messageText = ref('')
@@ -287,10 +302,10 @@ const createLabel = computed(() => {
 
 onMounted(async () => {
   await agents.loadBackends()
-  if (projectsStore.projects.length === 0) {
+  if (Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0) {
     await projectsStore.load()
   }
-  if (!selectedProjectId.value && projectsStore.projects.length > 0) {
+  if (!selectedProjectId.value && (projectsStore.projects ?? []).length > 0) {
     selectedProjectId.value = projectsStore.projects[0].id
   }
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
@@ -359,13 +374,37 @@ async function createSession() {
           >
             <option :value="null" disabled>请选择项目…</option>
             <option
-              v-for="p in projectsStore.projects"
+              v-for="p in projectsStore.projects ?? []"
               :key="p.id"
               :value="p.id"
             >
               {{ p.name }} ({{ p.path }})
             </option>
           </select>
+          <div
+            v-if="Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0"
+            class="no-projects-hint"
+            data-test="no-projects-hint"
+          >
+            <span>暂无可用项目：</span>
+            <button
+              type="button"
+              class="btn-proj-link"
+              data-test="btn-register-project"
+              @click="emit('manage', 'register', null)"
+            >
+              注册已有目录
+            </button>
+            <span class="divider">·</span>
+            <button
+              type="button"
+              class="btn-proj-link"
+              data-test="btn-create-project"
+              @click="emit('manage', 'create', null)"
+            >
+              新建项目
+            </button>
+          </div>
         </div>
 
         <div class="backend-switch" role="radiogroup" aria-label="Agent 后端">
@@ -547,6 +586,30 @@ async function createSession() {
 
 .project-select:focus {
   border-color: var(--color-primary);
+}
+
+.no-projects-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.btn-proj-link {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+}
+
+.btn-proj-link:hover {
+  color: var(--color-primary-hover);
 }
 
 .create-session {

@@ -915,6 +915,7 @@ function closeSubagent() {
   margin-left: 0.35rem;
   color: var(--color-text-muted);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .question-multiple {
@@ -969,6 +970,7 @@ function closeSubagent() {
   margin-bottom: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
@@ -1000,11 +1002,15 @@ function closeSubagent() {
   padding: 0.05rem 0.45rem;
 }
 
+/* Tool args and running note are literal text: they wrap anywhere so a long
+   unbroken token (a path, a hash) cannot widen the card and grow a horizontal
+   scrollbar in the narrow activity pane. */
 .tool-args,
 .tool-running {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: var(--font-family);
   font-size: 0.8rem;
   color: var(--color-text);

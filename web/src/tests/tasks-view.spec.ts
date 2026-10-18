@@ -1,7 +1,7 @@
-// Unit tests for the task center view. The list column is normalized to the
-// project sidebar's chrome (same head/search/filter controls), and every filter
-// it offers actually narrows the list — including the status filter, which was
-// declared in the view but had no control before.
+// Unit tests for the task detail pane (see TasksView.vue). The list column
+// lives in the shell's middle column (TasksSidebar.vue, covered separately);
+// these tests exercise what the third column shows for the task the route — or
+// the first task in the list when none was picked yet — points at.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -9,10 +9,13 @@ import type { Task } from '../api/tasks'
 import TasksView from '../features/tasks/TasksView.vue'
 
 // The view navigates with the router; the routing itself is covered elsewhere,
-// so the composables are stubbed to keep this test on the rendered list.
+// so the composables are stubbed to keep this test on the rendered pane.
+const routeParams: Record<string, string> = {}
+const routerPush = vi.fn()
+
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: {} }),
-  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ params: routeParams }),
+  useRouter: () => ({ push: routerPush }),
 }))
 
 function task(overrides: Partial<Task> = {}): Task {
@@ -38,7 +41,10 @@ function task(overrides: Partial<Task> = {}): Task {
   }
 }
 
-async function mountView(tasks: Task[]) {
+async function mountPane(tasks: Task[], params: Record<string, string> = {}) {
+  Object.keys(routeParams).forEach((key) => delete routeParams[key])
+  Object.assign(routeParams, params)
+  routerPush.mockClear()
   const pinia = createPinia()
   setActivePinia(pinia)
   vi.stubGlobal(
@@ -63,52 +69,42 @@ async function mountView(tasks: Task[]) {
   return wrapper
 }
 
-describe('tasks view', () => {
+describe('tasks detail pane', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    localStorage.clear()
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('renders the list column with the project sidebar chrome', async () => {
-    const wrapper = await mountView([task({ id: 1 }), task({ id: 2, title: '另一个' })])
+  it('shows the first task when no task detail route is active', async () => {
+    const wrapper = await mountPane([task({ id: 7, title: '被选中的任务' })])
 
-    // Same head / search structure the project sidebar uses, so the two columns
-    // are one continuous surface.
-    expect(wrapper.find('.tasks-sidebar .sidebar-head h2').text()).toBe('任务')
-    expect(wrapper.find('.tasks-sidebar .head-actions button').text()).toBe('新建')
-    expect(wrapper.find('.tasks-sidebar input.search').exists()).toBe(true)
-    expect(wrapper.findAll('.tasks-sidebar .filter-select')).toHaveLength(3)
-    expect(wrapper.findAll('.task-card')).toHaveLength(2)
-  })
-
-  it('narrows the list with the status filter', async () => {
-    const wrapper = await mountView([
-      task({ id: 1, title: '已完成任务', status: 'completed' }),
-      task({ id: 2, title: '进行中任务', status: 'in_progress' }),
-    ])
-
-    await wrapper.find('.filter-select.status-filter').setValue('completed')
-
-    const cards = wrapper.findAll('.task-card')
-    expect(cards).toHaveLength(1)
-    expect(cards[0].text()).toContain('已完成任务')
-  })
-
-  it('marks the active task and shows its flow workspace', async () => {
-    const wrapper = await mountView([task({ id: 7, title: '被选中的任务' })])
-
-    const cards = wrapper.findAll('.task-card')
-    expect(cards[0].classes()).toContain('active')
     expect(wrapper.find('.task-detail-pane .task-main-title').text()).toBe('被选中的任务')
     // No session yet: the pane offers to create one instead of rendering chat.
     expect(wrapper.find('.no-session-card').exists()).toBe(true)
   })
 
+  it('shows the task the route points at', async () => {
+    const wrapper = await mountPane(
+      [task({ id: 7, title: '第一个' }), task({ id: 8, title: '路由选中' })],
+      { taskId: '8' },
+    )
+
+    expect(wrapper.find('.task-detail-pane .task-main-title').text()).toBe('路由选中')
+  })
+
+  it('renders the empty state when no task exists', async () => {
+    const wrapper = await mountPane([])
+
+    expect(wrapper.find('.empty-workbench').exists()).toBe(true)
+    expect(wrapper.find('.task-detail-pane').exists()).toBe(false)
+  })
+
   it('renders development workflow layout with flow-workspace-body', async () => {
-    const wrapper = await mountView([
+    const wrapper = await mountPane([
       task({
         id: 8,
         title: '开发类流程任务',

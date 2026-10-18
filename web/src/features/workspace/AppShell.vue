@@ -1,14 +1,13 @@
 <script setup lang="ts">
-// Three-pane shell: category rail, project/session tree, and the right pane chosen
-// by the child route. The shell owns the single project-manage dialog and turns
-// tree and panel events into navigation, and pins the open-session tab bar to the
-// very top of the right pane at full width so several sessions stay open at once
-// while only the body below it scrolls. A project id that is not
-// in the loaded list shows a not-found notice instead of any panel, so a stale
-// or foreign URL never renders another project's content. The settings center
-// hides the project sidebar so it occupies the full pane, and the rail's bottom
-// toggle collapses that column on demand (the choice is persisted) so a
-// conversation can take the full width.
+// Three-pane shell: category rail, middle column, and the right pane chosen by
+// the child route. The middle column renders the menu's own list — the project/
+// session tree, the task list or the settings categories — and can be collapsed
+// from the rail (the choice is persisted). The pane always mounts the tab strip
+// pinned to the very top at full width: sessions, project settings, the
+// new-session form, task details and the platform settings center all appear as
+// tabs, so several pages stay open at once while only the body below scrolls. A
+// project id that is not in the loaded list shows a not-found notice instead of
+// any panel, so a stale or foreign URL never renders another project's content.
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import type { Project } from '../../api/projects'
@@ -18,10 +17,13 @@ import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
 import { useOpenTabsStore, tabKey, type OpenTab } from '../../stores/openTabs'
 import { useSettingsStore } from '../../stores/settings'
+import { useTasksStore } from '../../stores/tasks'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
 import SessionTabs from './SessionTabs.vue'
+import TasksSidebar from '../tasks/TasksSidebar.vue'
+import SettingsNav from '../settings/SettingsNav.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
@@ -33,14 +35,16 @@ const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const openTabs = useOpenTabsStore()
 const settings = useSettingsStore()
+const tasksStore = useTasksStore()
 
 const search = ref('')
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
 
-// The middle project/task column can be collapsed from the rail so the
-// conversation takes the full width. The choice is persisted so a refresh keeps
-// it; the default is expanded, and the settings center hides the column anyway.
+// The middle column (project tree, task list or settings menu) can be collapsed
+// from the rail so the conversation takes the full width. The choice is
+// persisted so a refresh keeps it; the default is expanded, and every area
+// shares one choice because the column is the same slot in all of them.
 const SIDEBAR_STORAGE_KEY = 'dev-platform-sidebar-v1'
 const sidebarCollapsed = ref(false)
 try {
@@ -59,6 +63,13 @@ function setSidebarCollapsed(collapsed: boolean) {
 function toggleSidebar() {
   setSidebarCollapsed(!sidebarCollapsed.value)
 }
+
+// In settings mode the navigation categories are essential and should not be collapsed
+// by the workspace's project sidebar toggle.
+const isSidebarVisible = computed(() => {
+  if (settingsMode.value) return true
+  return !sidebarCollapsed.value
+})
 
 // Whether task-generated sessions are shown in the project tree.
 // Defaults to false (Option B: hidden by default). Persisted in localStorage.
@@ -87,10 +98,40 @@ const projectId = computed<number | null>(() =>
 const sessionId = computed<string | null>(() =>
   route.params.sessionId === undefined ? null : String(route.params.sessionId),
 )
-// Which tab the URL is showing. A project-settings route has no session, and a
-// session route is identified by its session id — the same keys the strip renders.
+// Which tab the URL is showing. Sessions, project settings, the new-session
+// form, task details and the platform settings each map onto their tab key the
+// strip renders.
 const settingsRoute = computed(() => route.name === 'project-settings')
+const platformSettingsRoute = computed(
+  () => typeof route.name === 'string' && route.name.startsWith('settings-'),
+)
+const newSessionRoute = computed(
+  () => route.name === 'session-new' || route.name === 'session-new-global',
+)
+const taskRoute = computed(() => route.name === 'task-detail')
+// The settings center renders its category links in the middle column and its
+// panels in the pane.
+const settingsMode = computed(() => route.meta.settings === true)
+// The tasks center manages tasks with their own list column and detail pane.
+const tasksMode = computed(() => route.meta.tasks === true)
+// The project/workspace area is the default when neither settings nor tasks is open.
+const projectActive = computed(() => !settingsMode.value && !tasksMode.value)
+
+// Tabs belong strictly to the project workspace: sessions, project settings, and
+// new session creation. Task detail and platform settings are managed by their own
+// respective centers and do not appear as workspace tabs.
+const workspaceTabs = computed(() =>
+  openTabs.tabs.filter(
+    (entry) =>
+      entry.kind === 'session' ||
+      entry.kind === 'new-session' ||
+      entry.kind === 'project-settings',
+  ),
+)
+
 const activeKey = computed<string | null>(() => {
+  if (!projectActive.value) return null
+  if (newSessionRoute.value) return 'new-session'
   if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
   return sessionId.value
 })
@@ -100,11 +141,11 @@ const missingProject = computed(
 // A route whose panel fills the pane (the conversation) declares it, so the pane
 // stops scrolling and the panel's own message log is the only scroller.
 const fullHeightPane = computed(() => route.meta.fullHeight === true)
-// The settings center is a platform-wide area: the project tree would only be
-// noise there, so the shell hides it and lets the settings view use the pane.
-const settingsMode = computed(() => route.meta.settings === true)
-// The tasks center manages tasks with their own flow and list sidebar.
-const tasksMode = computed(() => route.meta.tasks === true)
+// The middle column carries one list at a time; its accessible name should say
+// which, since screen-reader users navigate columns by name.
+const columnLabel = computed(() =>
+  settingsMode.value ? '功能导航' : tasksMode.value ? '任务列表' : '项目导航',
+)
 
 onMounted(async () => {
   // The backend catalog facts (labels, order, service support) are read by
@@ -118,16 +159,19 @@ onMounted(async () => {
   syncTabWithRoute()
 })
 
-// The tab bar mirrors the current route: opening a session or a project's settings
-// URL registers (or refreshes) its tab, and a tab title follows the session list
-// once it loads. Tabs are never removed implicitly except when their project is
-// gone.
+// The tab bar mirrors the current route in the project workspace: opening a session,
+// a project's settings, or the new-session form registers (or refreshes) its tab.
+// Tab titles follow the session list once it loads, and the new-session tab is replaced
+// by the created session's tab on success. Tabs are never removed implicitly except
+// when their project is gone.
 function syncTabWithRoute() {
-  if (route.name === 'home') {
-    if (openTabs.preferredTab) {
-      selectTab(openTabs.preferredTab)
-      return
-    }
+  // Only sync tabs when within the project workspace area.
+  // Settings and tasks have their own dedicated views and do not participate in workspace tabs.
+  if (!projectActive.value) return
+
+  if (newSessionRoute.value) {
+    openTabs.openNewSession()
+    return
   }
   if (projectId.value === null) return
   if (settingsRoute.value) {
@@ -179,15 +223,21 @@ function selectTab(tab: OpenTab) {
     void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return
   }
-  void router.push({ name: 'session', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
+  if (tab.kind === 'new-session') {
+    void router.push({ name: 'session-new-global' })
+    return
+  }
+  if (tab.kind === 'session') {
+    void router.push({ name: 'session', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
+  }
 }
 
 // focusAfterClose picks a new tab when the one the URL pointed at is gone: the
-// last remaining tab, or the workbench home when nothing is left. Closing a tab
-// that was not active leaves the view where it was.
-function focusAfterClose(activeRemoved: boolean) {
+// last remaining tab in the workspace, or the workbench home when nothing is left.
+// Closing a tab that was not active leaves the view where it was.
+function focusAfterClose(activeRemoved: boolean, _closed?: OpenTab) {
   if (!activeRemoved) return
-  const remaining = openTabs.tabs
+  const remaining = workspaceTabs.value
   if (remaining.length > 0) {
     selectTab(remaining[remaining.length - 1])
   } else {
@@ -197,11 +247,29 @@ function focusAfterClose(activeRemoved: boolean) {
 
 function releaseSessions(tabs: OpenTab[]) {
   // Releasing a closed session's streams keeps background sessions from
-  // lingering; a settings page has no stream.
+  // lingering; the other kinds have no stream.
   for (const tab of tabs) {
     if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
   }
 }
+
+// Automatically unsubscribe from SSE streams when a session tab leaves the openTabs set
+// (whether via manual close, close others, close all, or store capacity trimming).
+watch(
+  () =>
+    openTabs.tabs
+      .filter((t): t is Extract<OpenTab, { kind: 'session' }> => t.kind === 'session')
+      .map((t) => t.sessionId),
+  (currentIds, oldIds) => {
+    if (!oldIds) return
+    const currentSet = new Set(currentIds)
+    for (const oldId of oldIds) {
+      if (!currentSet.has(oldId)) {
+        sessions.unsubscribe(oldId)
+      }
+    }
+  },
+)
 
 function closeTab(tab: OpenTab) {
   // Pinned tabs are the user's anchors: the strip hides their close control and
@@ -210,21 +278,21 @@ function closeTab(tab: OpenTab) {
   const wasActive = tabKey(tab) === activeKey.value
   releaseSessions([tab])
   openTabs.closeTabByKey(tabKey(tab))
-  focusAfterClose(wasActive)
+  focusAfterClose(wasActive, tab)
 }
 
 // Closing the other tabs keeps the clicked one, and any pinned tabs, open.
 function closeOtherTabs(tab: OpenTab) {
   const closed = openTabs.closeOtherTabsByKey(tabKey(tab))
   releaseSessions(closed)
-  focusAfterClose(!openTabs.tabs.some((entry) => tabKey(entry) === activeKey.value))
+  focusAfterClose(!workspaceTabs.value.some((entry) => tabKey(entry) === activeKey.value))
 }
 
 // Closing all tabs empties the strip except for its pinned tabs.
 function closeAllTabs() {
   const closed = openTabs.closeAllTabs()
   releaseSessions(closed)
-  focusAfterClose(!openTabs.tabs.some((entry) => tabKey(entry) === activeKey.value))
+  focusAfterClose(!workspaceTabs.value.some((entry) => tabKey(entry) === activeKey.value))
 }
 
 function togglePinTab(tab: OpenTab) {
@@ -248,9 +316,14 @@ function onDeleteSession(_id: number, sessionId: string) {
   }
 }
 
+// A created session replaces the "new" tab in place: the strip's position is
+// kept, the focus follows the created session, and its tab title follows the
+// session list as soon as the server-derived one arrives.
 function onCreated(sessionId: string, targetProjectId?: number) {
   const pId = targetProjectId ?? projectId.value
-  if (pId !== null && pId !== undefined) openSessionTab(pId, sessionId)
+  if (pId === null || pId === undefined) return
+  openTabs.promoteNewSession(pId, sessionId)
+  void router.push({ name: 'session', params: { projectId: String(pId), sessionId } })
 }
 
 function openNewSession(id: number) {
@@ -302,63 +375,74 @@ async function logout() {
   <div
     class="app-shell"
     :class="{
-      'settings-mode': settingsMode || tasksMode,
+      'settings-mode': settingsMode,
       'tasks-mode': tasksMode,
-      'sidebar-collapsed': sidebarCollapsed,
+      'sidebar-collapsed': !isSidebarVisible,
     }"
   >
     <CategoryRail
-      :sidebar-collapsed="sidebarCollapsed"
-      :sidebar-collapsible="!settingsMode && !tasksMode"
+      :sidebar-collapsed="!isSidebarVisible"
+      :sidebar-collapsible="!settingsMode"
       @logout="logout"
       @toggle-sidebar="toggleSidebar"
       @expand-sidebar="setSidebarCollapsed(false)"
     />
 
-    <aside v-if="!settingsMode && !tasksMode && !sidebarCollapsed" class="sidebar" aria-label="项目导航">
-      <div class="sidebar-head">
-        <h2>项目</h2>
-        <div class="head-actions">
-          <button type="button" class="register" @click="openManage('register')">注册</button>
-          <button type="button" class="create" @click="openManage('create')">新建</button>
+    <!-- The column's accessible name follows the list it currently carries. -->
+    <aside
+      v-if="isSidebarVisible"
+      class="sidebar"
+      :aria-label="columnLabel"
+    >
+      <!-- The middle column carries whichever list the open menu owns: the
+           tasks' task list, the settings' categories, or the project tree. -->
+      <TasksSidebar v-if="tasksMode" />
+      <SettingsNav v-else-if="settingsMode" />
+      <template v-else>
+        <div class="sidebar-head">
+          <h2>项目</h2>
+          <div class="head-actions">
+            <button type="button" class="register" @click="openManage('register')">注册</button>
+            <button type="button" class="create" @click="openManage('create')">新建</button>
+          </div>
         </div>
-      </div>
-      <input
-        v-model="search"
-        class="search"
-        type="search"
-        placeholder="搜索项目或会话"
-        aria-label="搜索项目或会话"
-      />
-      <div class="sidebar-filter-bar">
-        <label class="filter-task-checkbox">
-          <input
-            v-model="showTaskSessions"
-            type="checkbox"
-            data-test="show-task-sessions"
-            @change="onShowTaskSessionsChange"
-          />
-          <span>显示任务会话</span>
-        </label>
-      </div>
-      <div class="tree">
-        <ProjectTree
-          :active-project-id="projectId"
-          :active-session-id="sessionId"
-          :search="search"
-          :show-task-sessions="showTaskSessions"
-          @open-settings="openSettings"
-          @select-session="openSessionTab"
-          @new-session="openNewSession"
-          @delete-session="onDeleteSession"
+        <input
+          v-model="search"
+          class="search"
+          type="search"
+          placeholder="搜索项目或会话"
+          aria-label="搜索项目或会话"
         />
-      </div>
+        <div class="sidebar-filter-bar">
+          <label class="filter-task-checkbox">
+            <input
+              v-model="showTaskSessions"
+              type="checkbox"
+              data-test="show-task-sessions"
+              @change="onShowTaskSessionsChange"
+            />
+            <span>显示任务会话</span>
+          </label>
+        </div>
+        <div class="tree">
+          <ProjectTree
+            :active-project-id="projectId"
+            :active-session-id="sessionId"
+            :search="search"
+            :show-task-sessions="showTaskSessions"
+            @open-settings="openSettings"
+            @select-session="openSessionTab"
+            @new-session="openNewSession"
+            @delete-session="onDeleteSession"
+          />
+        </div>
+      </template>
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
       <SessionTabs
-        v-if="!settingsMode && !tasksMode && openTabs.tabs.length > 0"
-        :tabs="openTabs.tabs"
+        v-if="projectActive && workspaceTabs.length > 0"
+        :tabs="workspaceTabs"
         :active-key="activeKey"
         :project-names="projectNames"
         :running-session-ids="runningSessionIds"
@@ -400,7 +484,11 @@ async function logout() {
 <style scoped>
 .app-shell {
   display: grid;
-  grid-template-columns: 56px 272px 1fr;
+  /* The layout is always the same three columns: the category rail, the menu's
+     middle column and the tabbed pane. minmax(0,1fr) caps the single row so
+     each column scrolls inside itself, and 1fr on the last column keeps it from
+     growing past the viewport (no horizontal scrollbar). */
+  grid-template-columns: 56px 272px minmax(0, 1fr);
   /* The single row must be pinned to the viewport: an implicit auto row sizes
      to its content, so a long session tree stretched the whole shell (and with it
      the conversation's 100%-height panel) past the fold, pushing the composer
@@ -408,21 +496,17 @@ async function logout() {
      column scrolls inside itself. */
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
+  min-width: 0;
   background: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family);
   font-size: 1rem;
 }
 
-/* The settings center has no project tree, so the middle column collapses. */
-.app-shell.settings-mode {
-  grid-template-columns: 56px 1fr;
-}
-
-/* Collapsing the project/task column from the rail leaves only the rail and the
+/* Collapsing the middle column from the rail leaves only the rail and the
    content pane, so the conversation can use the full width. */
 .app-shell.sidebar-collapsed {
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 56px minmax(0, 1fr);
 }
 
 .sidebar {
@@ -497,7 +581,8 @@ async function logout() {
 }
 
 .tree {
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 2.000);
   flex: 1;
 }

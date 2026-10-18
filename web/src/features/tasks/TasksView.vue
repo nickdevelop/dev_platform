@@ -1,7 +1,13 @@
 <script setup lang="ts">
+// Task detail pane: the third column's content while the tasks area is open.
+// The task list itself lives in the shell's middle column (see
+// ./TasksSidebar.vue); the URL's taskId — or, when no task is selected yet, the
+// first task in the list — picks the task this pane shows. Its flow workspace
+// (transactional stages or the development stepper) owns the pane; a task run's
+// agent session opens as the full conversation dialog over the pane.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { FlowType, Task, TaskRun, TaskStatus } from '../../api/tasks'
+import type { Task, TaskRun } from '../../api/tasks'
 import BackendTag from '../../shared/components/BackendTag.vue'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
@@ -12,6 +18,7 @@ import ScheduleConfigDialog from './ScheduleConfigDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
 import TaskChatDialog from './TaskChatDialog.vue'
 import TransactionalFlowView from './TransactionalFlowView.vue'
+import { getStatusBadgeClass, getStatusLabel } from './status'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,12 +26,6 @@ const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
 const agentsStore = useAgentsStore()
 
-const searchKeyword = ref('')
-const selectedProjectFilter = ref<number | undefined>(undefined)
-const selectedFlowFilter = ref<FlowType | undefined>(undefined)
-const selectedStatusFilter = ref<TaskStatus | undefined>(undefined)
-
-const activeTaskId = ref<number | null>(null)
 const viewingSessionId = ref<string | null>(null)
 const showChatDialog = ref(false)
 
@@ -37,15 +38,6 @@ const creatingSession = ref(false)
 const triggering = ref(false)
 const actionError = ref('')
 
-const statusOptions: TaskStatus[] = [
-  'draft',
-  'in_progress',
-  'ready_for_execution',
-  'executing',
-  'completed',
-  'failed',
-]
-
 onMounted(async () => {
   await Promise.all([
     tasksStore.loadFlowDefs(),
@@ -53,22 +45,15 @@ onMounted(async () => {
     agentsStore.loadBackends(),
     tasksStore.loadTasks(),
   ])
-
-  if (route.params.taskId) {
-    activeTaskId.value = Number(route.params.taskId)
-  } else if (tasksStore.tasks.length > 0) {
-    activeTaskId.value = tasksStore.tasks[0].id
-  }
 })
 
-watch(
-  () => route.params.taskId,
-  (newId) => {
-    if (newId) {
-      activeTaskId.value = Number(newId)
-    }
-  },
-)
+// A task-detail URL selects that task; leaving the task center on the plain
+// /tasks route falls back to the first task so the pane is never blank when
+// tasks exist.
+const activeTaskId = computed<number | null>(() => {
+  if (route.params.taskId !== undefined) return Number(route.params.taskId)
+  return tasksStore.tasks.length > 0 ? tasksStore.tasks[0].id : null
+})
 
 const activeTask = computed(() => {
   if (!activeTaskId.value) return null
@@ -91,27 +76,6 @@ const taskRuns = computed<TaskRun[]>(() => {
   return tasksStore.runsByTaskId(activeTaskId.value)
 })
 
-const filteredTasks = computed(() => {
-  return tasksStore.tasks.filter((t) => {
-    if (searchKeyword.value.trim()) {
-      const q = searchKeyword.value.trim().toLowerCase()
-      const matchTitle = t.title.toLowerCase().includes(q)
-      const matchDesc = t.description?.toLowerCase().includes(q)
-      if (!matchTitle && !matchDesc) return false
-    }
-    if (selectedProjectFilter.value && t.projectId !== selectedProjectFilter.value) {
-      return false
-    }
-    if (selectedFlowFilter.value && t.flowType !== selectedFlowFilter.value) {
-      return false
-    }
-    if (selectedStatusFilter.value && t.status !== selectedStatusFilter.value) {
-      return false
-    }
-    return true
-  })
-})
-
 const activeFlowDef = computed(() => {
   if (!activeTask.value) return undefined
   return tasksStore.flowDefByType(activeTask.value.flowType)
@@ -127,16 +91,6 @@ const isDevelopmentCompleted = computed(
   () => activeTask.value?.flowType === 'development' && activeTask.value?.status === 'completed',
 )
 
-function selectTask(id: number) {
-  activeTaskId.value = id
-  void router.push({ name: 'task-detail', params: { taskId: id } })
-}
-
-function openCreateDialog() {
-  editingTask.value = null
-  showManageDialog.value = true
-}
-
 function openEditDialog(t: Task) {
   editingTask.value = t
   showManageDialog.value = true
@@ -150,13 +104,8 @@ function openScheduleDialog(t: Task) {
 async function deleteTask(t: Task) {
   if (!confirm(`确定要删除任务「${t.title}」吗？`)) return
   await tasksStore.deleteTask(t.id)
-  if (activeTaskId.value === t.id) {
-    activeTaskId.value = tasksStore.tasks.length > 0 ? tasksStore.tasks[0].id : null
-    if (activeTaskId.value) {
-      void router.push({ name: 'task-detail', params: { taskId: activeTaskId.value } })
-    } else {
-      void router.push({ name: 'tasks' })
-    }
+  if (route.params.taskId !== undefined && Number(route.params.taskId) === t.id) {
+    void router.push({ name: 'tasks' })
   }
 }
 
@@ -225,144 +174,17 @@ async function triggerExecutionNow() {
 function getProjectName(pid: number) {
   return projectsStore.byId(pid)?.name ?? `项目 #${pid}`
 }
-
-function getStatusBadgeClass(status: TaskStatus) {
-  switch (status) {
-    case 'ready_for_execution':
-      return 'badge-ready'
-    case 'executing':
-      return 'badge-executing'
-    case 'completed':
-      return 'badge-completed'
-    case 'failed':
-      return 'badge-failed'
-    case 'in_progress':
-      return 'badge-progress'
-    default:
-      return 'badge-draft'
-  }
-}
-
-function getStatusLabel(status: TaskStatus) {
-  switch (status) {
-    case 'draft':
-      return '草稿'
-    case 'in_progress':
-      return '进行中'
-    case 'ready_for_execution':
-      return '就绪待执行'
-    case 'executing':
-      return '执行中'
-    case 'completed':
-      return '已完成'
-    case 'failed':
-      return '执行失败'
-    default:
-      return status
-  }
-}
 </script>
 
 <template>
   <div class="tasks-workbench">
-    <!-- Middle Column: Task List & Filters -->
-    <aside class="tasks-sidebar" aria-label="任务列表">
-      <div class="sidebar-head">
-        <h2>任务</h2>
-        <div class="head-actions">
-          <button type="button" class="new-task" @click="openCreateDialog">新建</button>
-        </div>
-      </div>
-
-      <input
-        v-model="searchKeyword"
-        type="search"
-        class="search"
-        placeholder="搜索任务名称或描述"
-        aria-label="搜索任务名称或描述"
-      />
-
-      <div class="sidebar-filters">
-        <select
-          v-model="selectedProjectFilter"
-          class="filter-select project-filter"
-          aria-label="按项目筛选"
-        >
-          <option :value="undefined">全部项目</option>
-          <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-            {{ p.name }}
-          </option>
-        </select>
-
-        <select
-          v-model="selectedFlowFilter"
-          class="filter-select flow-filter"
-          aria-label="按流程筛选"
-        >
-          <option :value="undefined">全部流程</option>
-          <option value="transactional">事务型</option>
-          <option value="development">开发类</option>
-        </select>
-
-        <select
-          v-model="selectedStatusFilter"
-          class="filter-select status-filter"
-          aria-label="按状态筛选"
-        >
-          <option :value="undefined">全部状态</option>
-          <option v-for="status in statusOptions" :key="status" :value="status">
-            {{ getStatusLabel(status) }}
-          </option>
-        </select>
-      </div>
-
-      <!-- Task items list -->
-      <div class="task-list">
-        <p v-if="filteredTasks.length === 0" class="empty-list">暂无匹配任务</p>
-        <div
-          v-for="t in filteredTasks"
-          :key="t.id"
-          class="task-card"
-          :class="{ active: activeTaskId === t.id }"
-          @click="selectTask(t.id)"
-        >
-          <div class="card-top">
-            <span class="flow-pill" :class="t.flowType">
-              {{ t.flowType === 'transactional' ? '事务型' : '开发类' }}
-            </span>
-            <span class="status-badge" :class="getStatusBadgeClass(t.status)">
-              {{ getStatusLabel(t.status) }}
-            </span>
-          </div>
-
-          <h4 class="card-title">{{ t.title }}</h4>
-
-          <div class="card-meta">
-            <span class="meta-project">{{ getProjectName(t.projectId) }}</span>
-            <span class="meta-step">
-              步骤 {{ t.currentStep }}/{{ t.flowType === 'transactional' ? 2 : 4 }}
-            </span>
-          </div>
-
-          <div v-if="t.scheduleEnabled" class="schedule-tag">
-            <span class="tag-icon">⏰</span>
-            <span v-if="t.scheduleType === 'cron'">周期调度: {{ t.cronExpr }}</span>
-            <span v-else>定时调度</span>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Right Column: Task Detail & Flow Execution Workspace -->
     <main class="tasks-content">
       <div v-if="!activeTask" class="empty-workbench">
         <div class="empty-card">
           <div class="empty-icon">📋</div>
           <h3>选择任务或新建任务</h3>
           <p>从左侧列表中选择一个任务以查看其编排流程、会话与调度配置，或点击上方新建任务。</p>
-          <button type="button" class="btn-launch-session" @click="openCreateDialog">
-            + 立即新建任务
-          </button>
+          <p class="empty-hint-muted">暂无任务时，可先在左侧列表点击「新建」。</p>
         </div>
       </div>
 
@@ -543,14 +365,14 @@ function getStatusLabel(status: TaskStatus) {
       v-if="showManageDialog"
       :task="editingTask"
       @close="showManageDialog = false"
-      @saved="(t) => { activeTaskId = t.id }"
+      @saved="() => (showManageDialog = false)"
     />
 
     <ScheduleConfigDialog
       v-if="showScheduleDialog && schedulingTask"
       :task="schedulingTask"
       @close="showScheduleDialog = false"
-      @updated="(t) => { schedulingTask = t }"
+      @updated="(t) => (schedulingTask = t)"
     />
 
     <TaskChatDialog

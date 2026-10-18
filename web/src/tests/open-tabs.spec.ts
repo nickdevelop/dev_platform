@@ -13,6 +13,12 @@ function freshStore() {
   return useOpenTabsStore()
 }
 
+// sessionIdOf narrows the tab kinds the old assertions care about: only a
+// session tab carries a session id.
+function sessionIdOf(tab: OpenTab | null): string | null {
+  return tab && tab.kind === 'session' ? tab.sessionId : null
+}
+
 describe('open tabs store', () => {
   beforeEach(() => localStorage.clear())
 
@@ -21,6 +27,73 @@ describe('open tabs store', () => {
     const settings: OpenTab = { kind: 'project-settings', projectId: 3 }
     expect(tabKey(session)).toBe('ses-1')
     expect(tabKey(settings)).toBe('settings:3')
+  })
+
+  it('opens one new-session tab however often its routes are visited', () => {
+    const store = freshStore()
+    store.openNewSession()
+    store.openNewSession()
+    expect(store.tabs).toHaveLength(1)
+    expect(store.tabs[0]).toEqual({ kind: 'new-session' })
+    expect(tabKey(store.tabs[0])).toBe('new-session')
+  })
+
+  it('opens one task tab per task and refreshes its title from the task list', () => {
+    const store = freshStore()
+    store.openTask(5, '')
+    store.openTask(5, '构建部署')
+    store.openTask(6, '另一个')
+    expect(store.tabs.map(tabKey)).toEqual(['task:5', 'task:6'])
+    expect(store.tabs[0]).toEqual({ kind: 'task', taskId: 5, title: '构建部署' })
+
+    store.updateTaskTitle(6, '改名后')
+    expect((store.tabs[1] as Extract<OpenTab, { kind: 'task' }>).title).toBe('改名后')
+  })
+
+  it('opens one platform-settings tab however often the categories are visited', () => {
+    const store = freshStore()
+    store.openPlatformSettings()
+    store.openPlatformSettings()
+    expect(store.tabs).toEqual([{ kind: 'platform-settings' }])
+    expect(tabKey(store.tabs[0])).toBe('platform-settings')
+  })
+
+  it('replaces the new-session tab in place with the created session tab', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-1', 'first')
+    store.openNewSession()
+
+    store.promoteNewSession(3, 'ses-new')
+    // The created session takes the strip position the new tab held, and the
+    // focus moves to it; the title arrives later via updateTitle.
+    expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'ses-new'])
+    expect(store.tabs[1]).toEqual({ kind: 'session', projectId: 3, sessionId: 'ses-new', title: '' })
+    expect(store.lastActiveKey).toBe('ses-new')
+
+    store.updateTitle('ses-new', '派生的任务名')
+    expect((store.tabs[1] as Extract<OpenTab, { kind: 'session' }>).title).toBe('派生的任务名')
+  })
+
+  it('still opens a plain session tab when promoting without a new tab', () => {
+    const store = freshStore()
+    store.promoteNewSession(3, 'ses-x')
+    expect(store.tabs).toEqual([{ kind: 'session', projectId: 3, sessionId: 'ses-x', title: '' }])
+  })
+
+  it('persists and restores the new kinds', () => {
+    const store = freshStore()
+    store.openNewSession()
+    store.openTask(5, '构建部署')
+    store.openPlatformSettings()
+    store.setActiveKey('task:5')
+
+    const reloaded = freshStore()
+    expect(reloaded.tabs).toEqual([
+      { kind: 'new-session' },
+      { kind: 'task', taskId: 5, title: '构建部署' },
+      { kind: 'platform-settings' },
+    ])
+    expect(reloaded.preferredTab ? tabKey(reloaded.preferredTab) : null).toBe('task:5')
   })
 
   it('opens one project-settings tab per project, whatever the user clicks', () => {
@@ -175,15 +248,15 @@ describe('open tabs store', () => {
     store.openTab(3, 'ses-1', 'first')
     store.openTab(3, 'ses-2', 'second')
     // openTab automatically marks the newly opened tab as active: ses-2
-    expect(store.preferredTab?.sessionId).toBe('ses-2')
+    expect(sessionIdOf(store.preferredTab)).toBe('ses-2')
 
     // 2. Setting active key explicitly
     store.setActiveKey('ses-1')
-    expect(store.preferredTab?.sessionId).toBe('ses-1')
+    expect(sessionIdOf(store.preferredTab)).toBe('ses-1')
 
     // 3. If active tab is closed, preferredTab falls back to remaining
     store.closeTab('ses-1')
-    expect(store.preferredTab?.sessionId).toBe('ses-2')
+    expect(sessionIdOf(store.preferredTab)).toBe('ses-2')
 
     // 4. Closing all tabs clears preferredTab
     store.closeAllTabs()
@@ -198,7 +271,8 @@ describe('open tabs store', () => {
 
     const reloaded = freshStore()
     expect(reloaded.lastActiveKey).toBe('ses-1')
-    expect(reloaded.preferredTab?.sessionId).toBe('ses-1')
+    expect(sessionIdOf(reloaded.preferredTab)).toBe('ses-1')
+    expect(reloaded.preferredTab ? tabKey(reloaded.preferredTab) : null).toBe('ses-1')
   })
 })
 
@@ -220,6 +294,23 @@ describe('SessionTabs component', () => {
 
     await addBtn.trigger('click')
     expect(wrapper.emitted('newTab')).toHaveLength(1)
+  })
+
+  it('labels the new-session tab, task tabs and platform settings', () => {
+    const tabs: OpenTab[] = [
+      { kind: 'new-session' },
+      { kind: 'task', taskId: 5, title: '构建部署' },
+      { kind: 'platform-settings' },
+    ]
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'new-session',
+      },
+    })
+
+    const labels = wrapper.findAll('[data-test="open-tab"] .tab-label').map((node) => node.text())
+    expect(labels).toEqual(['new', '构建部署', '设置'])
   })
 })
 

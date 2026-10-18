@@ -63,8 +63,11 @@ export function useActivityPane(onExpand: () => void) {
   // least a usable message column.
   const splitRef = ref<HTMLElement | null>(null)
   const draggingDivider = ref(false)
+  // flex: 0 1 auto with min-width 0 lets the fixed width yield when the
+  // viewport narrows, so the activity pane can never push the message column
+  // (and with it the whole shell) into a horizontal scrollbar.
   const activityPaneStyle = computed(() =>
-    activityCollapsed.value ? {} : { width: `${activityWidth.value}px`, flex: '0 0 auto' },
+    activityCollapsed.value ? {} : { width: `${activityWidth.value}px`, flex: '0 1 auto', minWidth: '0' },
   )
   function onDividerMouseDown(event: MouseEvent) {
     if (event.button !== 0) return

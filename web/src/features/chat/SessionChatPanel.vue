@@ -627,7 +627,7 @@ async function handleBuiltInCommand(input: string): Promise<boolean> {
       return true
     case 'new':
       messageText.value = ''
-      await router.push({ name: 'project-new-session', params: { id: props.projectId } })
+      await router.push({ name: 'session-new', params: { projectId: String(props.projectId) } })
       return true
     case 'model':
       if (builtIn.args) {
@@ -1059,6 +1059,7 @@ async function removeSession() {
   position: relative;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   gap: 0.75rem;
   align-items: stretch;
@@ -1086,7 +1087,11 @@ async function removeSession() {
 .conversation-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Horizontal content (long code lines, wide tables) scrolls inside its own
+     block — a markdown <pre> keeps its own overflow — so the message log itself
+     never grows a horizontal scrollbar. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .activity-pane {
@@ -1236,7 +1241,11 @@ async function removeSession() {
 .activity-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Thinking/tool cards wrap their text (overflow-wrap below), so only the
+     vertical axis ever scrolls here — the pane never grows a horizontal
+     scrollbar. */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.5rem 0.6rem;
 }
 

@@ -11,6 +11,7 @@ import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
+import type { Project } from '../api/projects'
 import type { Capabilities } from '../api/sessions'
 
 function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -289,7 +290,7 @@ describe('NewSessionPanel', () => {
     projectsStore.projects = [
       { id: 1, name: '项目一', path: '/path/1', defaultBackend: 'pi' },
       { id: 2, name: '项目二', path: '/path/2', defaultBackend: 'opencode-v2' },
-    ]
+    ] as unknown as Project[]
     await flushPromises()
 
     const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
@@ -307,5 +308,48 @@ describe('NewSessionPanel', () => {
     await flushPromises()
 
     expect(createSpy).toHaveBeenCalledWith(2, expect.objectContaining({ backend: 'opencode-v2' }))
+  })
+
+  it('synchronizes the route URL when the selected project changes', async () => {
+    setActivePinia(createPinia())
+    const agents = useAgentsStore()
+    agents.backends = [
+      {
+        backend: 'opencode-v2',
+        capabilities: capabilities(),
+        label: 'OpenCode',
+        order: 1,
+        serviceSupported: true,
+      },
+    ]
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    const replaceMock = vi.fn()
+
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: '项目一', path: '/path/1', defaultBackend: 'opencode-v2' },
+      { id: 3, name: '项目三', path: '/path/3', defaultBackend: 'opencode-v2' },
+    ] as unknown as Project[]
+
+    const wrapper = mount(NewSessionPanel, {
+      props: { projectId: 1 },
+      global: {
+        mocks: {
+          $router: { replace: replaceMock },
+        },
+        provide: {
+          // Provide mock router for vue-router useRouter()
+          router: { replace: replaceMock },
+        },
+      },
+    })
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
+    await select.setValue('3')
+    await flushPromises()
+
+    // selectedProjectId becomes 3
+    expect(select.element.value).toBe('3')
   })
 })

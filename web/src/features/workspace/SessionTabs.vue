@@ -35,10 +35,16 @@ function label(tab: OpenTab): string {
     const project = props.projectNames?.[tab.projectId]
     return project ? `${project} · 设置` : '项目设置'
   }
+  if (tab.kind === 'new-session') return 'new'
+  if (tab.kind === 'platform-settings') return '设置'
+  if (tab.kind === 'task') return tab.title !== '' ? tab.title : `任务 ${tab.taskId}`
   return tab.title !== '' ? tab.title : tab.sessionId.slice(0, 8)
 }
 
 function titleOf(tab: OpenTab): string {
+  if (tab.kind === 'new-session') return '新建会话'
+  if (tab.kind === 'platform-settings') return '平台设置'
+  if (tab.kind === 'task') return label(tab)
   if (tab.kind === 'project-settings') return label(tab)
   const project = props.projectNames?.[tab.projectId]
   const name = label(tab)
@@ -46,7 +52,16 @@ function titleOf(tab: OpenTab): string {
 }
 
 function isSettings(tab: OpenTab): boolean {
-  return tab.kind === 'project-settings'
+  return tab.kind === 'project-settings' || tab.kind === 'platform-settings'
+}
+
+// The strip's close control label and the pin metadata branch on kind only to
+// talk about the right thing; identity stays a tab key everywhere.
+function closeLabel(tab: OpenTab): string {
+  if (isSettings(tab)) return '关闭设置'
+  if (tab.kind === 'task') return `关闭任务：${label(tab)}`
+  if (tab.kind === 'new-session') return '关闭新建会话'
+  return `关闭会话：${label(tab)}`
 }
 
 function isPinned(tab: OpenTab): boolean {
@@ -122,7 +137,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的会话" @keydown="onKeydown">
+  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的页面" @keydown="onKeydown">
     <div
       v-for="tab in props.tabs"
       :key="tabKey(tab)"
@@ -142,6 +157,8 @@ onBeforeUnmount(() => {
       <button type="button" class="tab-select" @click="emit('select', tab)">
         <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">📌</span>
         <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
+        <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">📋</span>
+        <span v-else-if="tab.kind === 'new-session'" class="tab-icon" aria-hidden="true">✎</span>
         <span v-else-if="!isRunning(tab)" class="tab-dot" aria-hidden="true"></span>
         <RunningIndicator v-if="isRunning(tab)" />
         <span class="tab-label">{{ label(tab) }}</span>
@@ -150,7 +167,7 @@ onBeforeUnmount(() => {
         v-if="!isPinned(tab)"
         type="button"
         class="tab-close"
-        :aria-label="isSettings(tab) ? '关闭项目设置' : `关闭会话：${label(tab)}`"
+        :aria-label="closeLabel(tab)"
         title="关闭"
         data-test="close-tab"
         @click.stop="emit('close', tab)"

@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import type { Component } from 'vue'
 import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
 import ProjectSettingsPanel from '../features/projects/ProjectSettingsPanel.vue'
@@ -35,7 +36,7 @@ function capabilities(): Capabilities {
 
 async function setup(
   path: string,
-  stubs: Record<string, boolean> = {},
+  stubs: Record<string, boolean | Component> = {},
   prepare: () => void = () => {},
 ) {
   // Tabs persist in this browser's storage; a test must see only the tabs its
@@ -181,11 +182,24 @@ describe('three-pane app shell', () => {
       vi.spyOn(useSessionsStore(), 'createSession').mockResolvedValue({ id: 'sess-new' } as never)
     })
     expect(wrapper.findComponent(NewSessionPanel).exists()).toBe(true)
+
+    // The form itself is a tab, labelled "new" until the session exists.
+    const before = wrapper.findAll('[data-test="open-tab"]')
+    expect(before).toHaveLength(1)
+    expect(before[0].attributes('data-tab-key')).toBe('new-session')
+    expect(before[0].text()).toContain('new')
+
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
     expect(router.currentRoute.value.name).toBe('session')
     expect(router.currentRoute.value.params.sessionId).toBe('sess-new')
+    // The "new" tab is replaced in place by the created session's tab; the
+    // server-derived title fills the label once the session list reports it.
+    const openTabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(openTabs).toHaveLength(1)
+    expect(openTabs[0].attributes('data-tab-key')).toBe('sess-new')
+    expect(openTabs[0].text()).not.toBe('new')
   })
 
   it('gives the session conversation a non-scrolling outer pane', async () => {
@@ -298,11 +312,16 @@ describe('three-pane app shell', () => {
     expect(router.currentRoute.value.name).toBe('settings-appearance')
   })
 
-  it('hides the project sidebar in the settings center', async () => {
+  it('renders the settings menu in the middle column of the settings center and isolates workspace tabs', async () => {
     const { wrapper } = await setup('/settings/appearance')
 
-    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    // The middle column carries the settings categories instead of the project
+    // tree; the settings center is isolated from workspace session tabs.
+    expect(wrapper.find('[data-test="settings-nav"]').exists()).toBe(true)
+    expect(wrapper.findComponent(ProjectTree).exists()).toBe(false)
     expect(wrapper.text()).toContain('外观')
+    // Workspace tabs are not rendered in the settings center
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 
   it('returns to the project area when the project category is clicked in settings', async () => {
@@ -315,6 +334,48 @@ describe('three-pane app shell', () => {
 
     expect(router.currentRoute.value.name).toBe('home')
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+  })
+
+  it('isolates the tasks center so workspace session tabs do not display over tasks', async () => {
+    const { wrapper } = await setup('/tasks/5', {
+      TasksView: true,
+      TasksSidebar: { template: '<div class="tasks-nav-stub"></div>' },
+    })
+
+    // The middle column carries the task list in the tasks center.
+    expect(wrapper.find('.tasks-nav-stub').exists()).toBe(true)
+    // The workspace tab strip is isolated and not rendered in tasks mode.
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
+  })
+
+  it('keeps project tabs open without mixing them into tasks or settings', async () => {
+    const { wrapper, router } = await setup('/projects/1/sessions/ses-1', {
+      TasksView: true,
+      TasksSidebar: { template: '<div class="tasks-nav-stub"></div>' },
+    })
+    await flushPromises()
+
+    // Under project area: tab is present
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="open-tab"]').text()).toContain('ses-1')
+
+    // Navigate to tasks: tabs are not shown in tasks center
+    await router.push('/tasks')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
+
+    // Navigate to settings: tabs are not shown in settings center
+    await router.push('/settings/appearance')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
+
+    // Navigate back to project via rail link: tab is restored
+    const projectLink = wrapper.findAll('a').find((link) => link.text() === '项目')
+    expect(projectLink).toBeTruthy()
+    await projectLink!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="open-tab"]').text()).toContain('ses-1')
   })
 
   it('marks the project category as current only outside the settings center', async () => {
