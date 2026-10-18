@@ -109,7 +109,7 @@ function append3bytes(b1: number, b2: number, b3: number): string {
   return encode6bit(c1) + encode6bit(c2) + encode6bit(c3) + encode6bit(c4)
 }
 
-function encodePlantUML(data: Uint8Array): string {
+export function encodePlantUML(data: Uint8Array): string {
   let r = ''
   for (let i = 0; i < data.length; i += 3) {
     if (i + 2 === data.length) {
@@ -155,11 +155,13 @@ async function drawOnline(request: DiagramRequest): Promise<DiagramResult> {
     let encoded = ''
     try {
       if (typeof CompressionStream !== 'undefined') {
-        const stream = new Blob([new TextEncoder().encode(request.source)])
-          .stream()
-          .pipeThrough(new CompressionStream('deflate-raw'))
-        const buf = await new Response(stream).arrayBuffer()
-        encoded = '~1' + encodePlantUML(new Uint8Array(buf))
+        const bytes = new TextEncoder().encode(request.source)
+        const res = new Response(bytes)
+        if (res.body && typeof res.body.pipeThrough === 'function') {
+          const stream = res.body.pipeThrough(new CompressionStream('deflate-raw'))
+          const buf = await new Response(stream).arrayBuffer()
+          encoded = encodePlantUML(new Uint8Array(buf))
+        }
       }
     } catch {
       // CompressionStream 不可用或出错

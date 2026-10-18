@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearDiagramCache,
   configureEngineLoader,
+  encodePlantUML,
   MAX_SOURCE_CHARS,
   MAX_SOURCE_LINES,
   renderDiagram,
@@ -305,5 +306,82 @@ A -> B : ${'x'.repeat(MAX_SOURCE_CHARS)}
     )
     await renderDiagram({ source: '@startuml\nA->B\n@enduml', dark: true })
     expect(seen).toEqual([{ dark: true }])
+  })
+
+  describe('online rendering', () => {
+    const originalFetch = globalThis.fetch
+
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    it('encodes data using plantuml 64-char alphabet without prefix', () => {
+      const data = new Uint8Array([1, 2, 3])
+      const encoded = encodePlantUML(data)
+      expect(encoded).not.toMatch(/^~/)
+      expect(encoded).toMatch(/^[0-9A-Za-z_-]+$/)
+    })
+
+    it('renders via GET with no prefix when POST fails or is rejected', async () => {
+      const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          return Promise.reject(new Error('CORS or network error'))
+        }
+        expect(url).toContain('/svg/')
+        // Verify URL contains no ~1 prefix
+        expect(url).not.toMatch(/\/svg\/~1/)
+        return Promise.resolve(new Response('<svg><text>rendered</text></svg>', { status: 200 }))
+      })
+      globalThis.fetch = fetchMock
+
+      const result = await renderDiagram({
+        source: '@startuml\nA->B\n@enduml',
+        dark: false,
+        mode: 'online',
+        serverUrl: 'https://www.plantuml.com/plantuml',
+      })
+
+      expect(result.ok).toBe(true)
+      if (result.ok) {
+        expect(result.svg).toContain('<svg')
+        expect(result.svg).toContain('rendered')
+      }
+    })
+
+    it('reports failure when online server returns an error board', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response('<svg><text>PlantUML version 1.2026.9</text><text>Fatal parsing error</text></svg>', {
+          status: 200,
+        }),
+      )
+
+      const result = await renderDiagram({
+        source: '@startuml\nbad puml\n@enduml',
+        dark: false,
+        mode: 'online',
+        serverUrl: 'https://www.plantuml.com/plantuml',
+      })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.reason).toContain('无法解析')
+      }
+    })
+
+    it('reports failure when network is down', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network unreachable'))
+
+      const result = await renderDiagram({
+        source: '@startuml\nA->B\n@enduml',
+        dark: false,
+        mode: 'online',
+        serverUrl: 'https://www.plantuml.com/plantuml',
+      })
+
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.reason).toContain('在线渲染')
+      }
+    })
   })
 })
