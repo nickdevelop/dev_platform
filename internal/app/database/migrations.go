@@ -176,6 +176,9 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 23, name: "create_prompts", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&Prompt{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

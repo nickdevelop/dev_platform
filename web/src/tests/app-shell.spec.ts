@@ -250,13 +250,14 @@ describe('three-pane app shell', () => {
   it('shows an inline icon on every first-level rail entry', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
-    // 项目 / 任务 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
+    // 项目 / 任务 / 提示词 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(6)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
       '任务',
+      '提示词',
       'Chat',
       '设置',
       '退出',
@@ -390,5 +391,17 @@ describe('three-pane app shell', () => {
     expect(
       inside.findAll('a').find((link) => link.text() === '设置')!.attributes('aria-current'),
     ).toBe('page')
+  })
+
+  it('isolates the prompts center so workspace session tabs do not display over prompts', async () => {
+    const { wrapper } = await setup('/prompts', {
+      PromptsView: true,
+      PromptsSidebar: { template: '<div class="prompts-nav-stub"></div>' },
+    })
+
+    // The middle column carries the prompts list in the prompts center.
+    expect(wrapper.find('.prompts-nav-stub').exists()).toBe(true)
+    // The workspace tab strip is isolated and not rendered in prompts mode.
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 })

@@ -23,6 +23,7 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
+import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
@@ -114,8 +115,10 @@ const taskRoute = computed(() => route.name === 'task-detail')
 const settingsMode = computed(() => route.meta.settings === true)
 // The tasks center manages tasks with their own list column and detail pane.
 const tasksMode = computed(() => route.meta.tasks === true)
-// The project/workspace area is the default when neither settings nor tasks is open.
-const projectActive = computed(() => !settingsMode.value && !tasksMode.value)
+// The prompts center manages prompt templates with their own list column and detail pane.
+const promptsMode = computed(() => route.meta.prompts === true)
+// The project/workspace area is the default when neither settings, tasks nor prompts is open.
+const projectActive = computed(() => !settingsMode.value && !tasksMode.value && !promptsMode.value)
 
 // Tabs belong strictly to the project workspace: sessions, project settings, and
 // new session creation. Task detail and platform settings are managed by their own
@@ -144,7 +147,13 @@ const fullHeightPane = computed(() => route.meta.fullHeight === true)
 // The middle column carries one list at a time; its accessible name should say
 // which, since screen-reader users navigate columns by name.
 const columnLabel = computed(() =>
-  settingsMode.value ? '功能导航' : tasksMode.value ? '任务列表' : '项目导航',
+  settingsMode.value
+    ? '功能导航'
+    : tasksMode.value
+      ? '任务列表'
+      : promptsMode.value
+        ? '提示词列表'
+        : '项目导航',
 )
 
 onMounted(async () => {
@@ -377,6 +386,7 @@ async function logout() {
     :class="{
       'settings-mode': settingsMode,
       'tasks-mode': tasksMode,
+      'prompts-mode': promptsMode,
       'sidebar-collapsed': !isSidebarVisible,
     }"
   >
@@ -395,8 +405,9 @@ async function logout() {
       :aria-label="columnLabel"
     >
       <!-- The middle column carries whichever list the open menu owns: the
-           tasks' task list, the settings' categories, or the project tree. -->
+           tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
       <TasksSidebar v-if="tasksMode" />
+      <PromptsSidebar v-else-if="promptsMode" />
       <SettingsNav v-else-if="settingsMode" />
       <template v-else>
         <div class="sidebar-head">

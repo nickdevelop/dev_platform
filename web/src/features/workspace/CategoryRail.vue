@@ -34,10 +34,12 @@ const route = useRoute()
 const openTabs = useOpenTabsStore()
 
 // The tasks routes declare `meta.tasks` or start with /tasks.
+// The prompts routes declare `meta.prompts` or start with /prompts.
 // The settings routes declare `meta.settings`.
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
+const promptsActive = computed(() => route.meta.prompts === true || route.path.startsWith('/prompts'))
 const settingsActive = computed(() => route.meta.settings === true)
-const projectActive = computed(() => !settingsActive.value && !tasksActive.value)
+const projectActive = computed(() => !settingsActive.value && !tasksActive.value && !promptsActive.value)
 
 const projectDestination = computed(() => {
   // Only restore to tabs that actually belong to the workspace area.
@@ -76,6 +78,13 @@ function onTasksClick(event: MouseEvent) {
     event.preventDefault()
   }
 }
+
+function onPromptsClick(event: MouseEvent) {
+  emit('expandSidebar')
+  if (promptsActive.value) {
+    event.preventDefault()
+  }
+}
 </script>
 
 <template>
@@ -106,6 +115,20 @@ function onTasksClick(event: MouseEvent) {
         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span>任务</span>
+    </RouterLink>
+    <RouterLink
+      class="category"
+      :class="{ active: promptsActive }"
+      title="提示词管理"
+      :aria-current="promptsActive ? 'page' : undefined"
+      :to="{ name: 'prompts' }"
+      @click="onPromptsClick"
+    >
+      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 20h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>提示词</span>
     </RouterLink>
     <button type="button" class="category reserved" title="Chat（预留）" disabled>
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

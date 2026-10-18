@@ -9,6 +9,7 @@ import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
+import { usePromptsStore } from '../stores/prompts'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { Project } from '../api/projects'
@@ -351,5 +352,93 @@ describe('NewSessionPanel', () => {
 
     // selectedProjectId becomes 3
     expect(select.element.value).toBe('3')
+  })
+
+  it('selects a prompt template and substitutes {user_prompt} with user message', async () => {
+    const { wrapper, createSpy } = setup()
+    const promptsStore = usePromptsStore()
+    promptsStore.prompts = [
+      {
+        id: 10,
+        name: '代码审查',
+        description: '审查代码',
+        content: '请对以下代码进行审查：\n\n{user_prompt}\n\n给出优化建议。',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="prompt-select"]')
+    expect(select.exists()).toBe(true)
+
+    await select.setValue('10')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').text()).toContain('请对以下代码进行审查')
+    await wrapper.find('#first-message').setValue('function add(a, b) { return a + b }')
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const body = createSpy.mock.calls[0][1]
+    expect(body.message).toBe('请对以下代码进行审查：\n\nfunction add(a, b) { return a + b }\n\n给出优化建议。')
+  })
+
+  it('selects a prompt template without user input and replaces {user_prompt} with empty string', async () => {
+    const { wrapper, createSpy } = setup()
+    const promptsStore = usePromptsStore()
+    promptsStore.prompts = [
+      {
+        id: 20,
+        name: '系统自检',
+        description: '系统体检',
+        content: '执行完整自检：{user_prompt}',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="prompt-select"]')
+    await select.setValue('20')
+    await flushPromises()
+
+    // Even without user input, hasContent is true because prompt is selected
+    expect(wrapper.find('button.create').text()).toBe('创建并开始对话')
+
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const body = createSpy.mock.calls[0][1]
+    expect(body.message).toBe('执行完整自检：')
+  })
+
+  it('allows clearing the selected prompt via clear button', async () => {
+    const { wrapper } = setup()
+    const promptsStore = usePromptsStore()
+    promptsStore.prompts = [
+      {
+        id: 10,
+        name: '代码审查',
+        description: '审查代码',
+        content: '审查：{user_prompt}',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="prompt-select"]')
+    await select.setValue('10')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="btn-clear-prompt"]').exists()).toBe(true)
+    await wrapper.find('[data-test="btn-clear-prompt"]').trigger('click')
+    await flushPromises()
+
+    expect(select.element.value).toBe('')
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
   })
 })

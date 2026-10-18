@@ -258,4 +258,19 @@ type TaskRun struct {
 // TableName pins the table name for TaskRun.
 func (TaskRun) TableName() string { return "task_runs" }
 
+// Prompt is a reusable prompt template with optional {user_prompt} placeholder.
+// Table: prompts.
+type Prompt struct {
+	ID          uint      `gorm:"primaryKey;column:id"`
+	Name        string    `gorm:"column:name;not null;uniqueIndex"`
+	Description string    `gorm:"column:description"`
+	Content     string    `gorm:"column:content;type:text;not null"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// TableName pins the table name for Prompt.
+func (Prompt) TableName() string { return "prompts" }
+
+
 

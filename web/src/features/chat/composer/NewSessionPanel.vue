@@ -13,6 +13,8 @@ import { RouterLink, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { usePromptsStore } from '../../../stores/prompts'
+import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import ModelSelect from './ModelSelect.vue'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
@@ -34,7 +36,23 @@ const emit = defineEmits<{
 const agents = useAgentsStore()
 const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
+const promptsStore = usePromptsStore()
 const router = useRouter()
+
+const selectedPromptId = ref<number | ''>('')
+const selectedPrompt = computed(() =>
+  selectedPromptId.value !== '' ? promptsStore.byId(Number(selectedPromptId.value)) ?? null : null,
+)
+
+const textareaPlaceholder = computed(() => {
+  if (selectedPrompt.value) {
+    if (hasUserPromptPlaceholder(selectedPrompt.value.content)) {
+      return '输入的内容将替换模版中的 {user_prompt} 并发送给 Agent… (可选，留空则替换为空)'
+    }
+    return '输入的内容将追加在模版后发送给 Agent… (可选)'
+  }
+  return '描述会话，例如：帮我检查构建失败的原因… (输入 / 使用快捷命令，@ 引用文件或会话)'
+})
 
 const selectedProjectId = ref<number | null>(props.projectId ? Number(props.projectId) : null)
 
@@ -269,7 +287,12 @@ function onDrop(event: DragEvent) {
   }
 }
 
-const hasContent = computed(() => messageText.value.trim() !== '' || attachedImages.value.length > 0)
+const hasContent = computed(
+  () =>
+    messageText.value.trim() !== '' ||
+    attachedImages.value.length > 0 ||
+    selectedPrompt.value !== null,
+)
 
 // A first message that needs a model (the backend supports choosing one) waits
 // for the model list, which is always available: a backend's catalog is scoped to
@@ -301,6 +324,7 @@ const createLabel = computed(() => {
 })
 
 onMounted(async () => {
+  void promptsStore.loadPrompts()
   await agents.loadBackends()
   if (Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0) {
     await projectsStore.load()
@@ -339,6 +363,9 @@ async function createSession() {
           getSessionHistory(targetProjectId, targetId),
         )
       : ''
+  const finalMessage = selectedPrompt.value
+    ? applyUserPromptTemplate(selectedPrompt.value.content, textToSend)
+    : textToSend
   // The model is part of the session's identity, not only of its first turn, so
   // it rides the create request even when no message is sent: the session is
   // created on the model the user saw, and the conversation opens on it.
@@ -348,7 +375,7 @@ async function createSession() {
     selectedModel.value !== ''
   const created = await sessions.createSession(targetProjectId, {
     backend: selectedBackend.value,
-    ...(textToSend !== '' ? { message: textToSend } : {}),
+    ...(finalMessage !== '' ? { message: finalMessage } : {}),
     ...(withModel ? { model: selectedModel.value } : {}),
     ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
   })
@@ -431,6 +458,49 @@ async function createSession() {
           }}
         </p>
 
+        <div class="prompt-selector-group">
+          <div class="prompt-selector-header">
+            <label for="prompt-select" class="prompt-label">提示词模板</label>
+            <span
+              v-if="selectedPrompt && hasUserPromptPlaceholder(selectedPrompt.content)"
+              class="prompt-placeholder-hint"
+            >
+              输入内容将填充到模版的 {user_prompt} 处
+            </span>
+          </div>
+          <div class="prompt-select-row">
+            <select
+              id="prompt-select"
+              v-model="selectedPromptId"
+              class="prompt-select"
+              data-test="prompt-select"
+            >
+              <option value="">不使用提示词（默认）</option>
+              <option
+                v-for="p in promptsStore.prompts"
+                :key="p.id"
+                :value="p.id"
+              >
+                {{ p.name }}{{ p.description ? ` (${p.description})` : '' }}
+              </option>
+            </select>
+            <button
+              v-if="selectedPromptId !== ''"
+              type="button"
+              class="btn-clear-prompt"
+              title="清除选择"
+              data-test="btn-clear-prompt"
+              @click="selectedPromptId = ''"
+            >
+              ✕
+            </button>
+          </div>
+          <div v-if="selectedPrompt" class="prompt-preview-snippet" data-test="prompt-preview-snippet">
+            <div class="snippet-title">模板预览：</div>
+            <pre class="snippet-text">{{ selectedPrompt.content }}</pre>
+          </div>
+        </div>
+
         <div
           ref="composerBox"
           class="composer-box"
@@ -450,7 +520,7 @@ async function createSession() {
             ref="textareaRef"
             v-model="messageText"
             rows="5"
-            placeholder="描述会话，例如：帮我检查构建失败的原因… (输入 / 使用快捷命令，@ 引用文件或会话)"
+            :placeholder="textareaPlaceholder"
             @input="onTextareaInput"
             @keydown="onTextareaKeydown"
             @paste="onPaste"
@@ -610,6 +680,99 @@ async function createSession() {
 
 .btn-proj-link:hover {
   color: var(--color-primary-hover);
+}
+
+.prompt-selector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.prompt-selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prompt-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.prompt-placeholder-hint {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+}
+
+.prompt-select-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prompt-select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.6rem;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.prompt-select:focus {
+  border-color: var(--color-primary);
+}
+
+.btn-clear-prompt {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
+}
+
+.btn-clear-prompt:hover {
+  color: var(--color-danger);
+  background: var(--color-surface-muted);
+}
+
+.prompt-preview-snippet {
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: 6px;
+}
+
+.snippet-title {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.snippet-text {
+  margin: 0;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 6rem;
+  overflow-y: auto;
 }
 
 .create-session {

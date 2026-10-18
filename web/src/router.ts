@@ -21,6 +21,7 @@ import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
 import TasksView from './features/tasks/TasksView.vue'
+import PromptsView from './features/prompts/PromptsView.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -67,6 +68,18 @@ export function createAppRouter() {
             name: 'task-detail',
             component: TasksView,
             meta: { tasks: true, fullHeight: true },
+          },
+          {
+            path: 'prompts',
+            name: 'prompts',
+            component: PromptsView,
+            meta: { prompts: true, fullHeight: true },
+          },
+          {
+            path: 'prompts/:promptId',
+            name: 'prompt-detail',
+            component: PromptsView,
+            meta: { prompts: true, fullHeight: true },
           },
           {
             path: 'projects/:projectId/sessions/new',

@@ -11,6 +11,7 @@ import (
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
@@ -67,6 +68,8 @@ type Dependencies struct {
 	Sessions *sessions.Service
 	// Tasks manages tasks, flows, orchestration, and scheduling.
 	Tasks *tasks.Service
+	// Prompts manages reusable prompt templates.
+	Prompts *prompts.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -123,6 +126,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Tasks != nil {
 			deps.Tasks.RegisterRoutes(protected)
+		}
+		if deps.Prompts != nil {
+			deps.Prompts.RegisterRoutes(protected)
 		}
 	}
 
