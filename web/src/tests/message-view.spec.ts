@@ -330,7 +330,7 @@ describe('MessageView copy button', () => {
     vi.useRealTimers()
   })
 
-  it('renders a copy button for assistant replies but not user messages', () => {
+  it('renders a copy button for both assistant replies and user messages', () => {
     const assistant = message('assistant', '这是助手消息')
     const user = message('user', '这是用户消息')
     const wrapper = mount(MessageView, {
@@ -338,13 +338,47 @@ describe('MessageView copy button', () => {
     })
 
     const buttons = wrapper.findAll('[data-test="message-copy-btn"]')
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0].attributes('title')).toBe('复制本条消息')
-    expect(buttons[0].find('.copy-icon').exists()).toBe(true)
+    expect(buttons).toHaveLength(2)
 
     // Confirm it resides inside the assistant message-meta
-    const meta = wrapper.find('[data-test="message-meta"]')
-    expect(meta.find('[data-test="message-copy-btn"]').exists()).toBe(true)
+    const assistantMeta = wrapper.find('[data-test="message-meta"]')
+    expect(assistantMeta.find('[data-test="message-copy-btn"]').exists()).toBe(true)
+
+    // Confirm it resides inside the user message-meta
+    const userMeta = wrapper.find('[data-test="user-message-meta"]')
+    expect(userMeta.find('[data-test="message-copy-btn"]').exists()).toBe(true)
+  })
+
+  it('copies user message text to clipboard when clicking user copy button', async () => {
+    vi.useFakeTimers()
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      writable: true,
+      configurable: true,
+    })
+
+    const user = message('user', '用户提问内容')
+    const wrapper = mount(MessageView, {
+      props: { messages: [user], capabilities: capabilities() },
+    })
+
+    const userMeta = wrapper.get('[data-test="user-message-meta"]')
+    const btn = userMeta.get('[data-test="message-copy-btn"]')
+    expect(btn.attributes('title')).toBe('复制本条消息')
+
+    await btn.trigger('click')
+    await flushPromises()
+
+    expect(writeTextMock).toHaveBeenCalledWith('用户提问内容')
+    expect(btn.attributes('title')).toBe('已复制')
+    expect(btn.classes()).toContain('is-copied')
+
+    vi.advanceTimersByTime(1500)
+    await wrapper.vm.$nextTick()
+
+    expect(btn.attributes('title')).toBe('复制本条消息')
+    expect(btn.classes()).not.toContain('is-copied')
   })
 
   it('copies message text to clipboard and toggles status to 已复制', async () => {

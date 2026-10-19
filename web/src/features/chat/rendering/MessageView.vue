@@ -443,11 +443,53 @@ async function copyMessage(entry: ChatEntry) {
               </div>
             </div>
             <div
-              v-if="block.entry.role === 'user' && block.entry.timestamp"
-              class="user-message-time"
-              data-test="user-message-time"
+              v-if="block.entry.role === 'user' && (block.entry.timestamp || block.entry.text)"
+              class="user-message-meta"
+              data-test="user-message-meta"
             >
-              {{ formatMessageTime(block.entry.timestamp) }}
+              <span
+                v-if="block.entry.timestamp"
+                class="user-message-time"
+                data-test="user-message-time"
+              >{{ formatMessageTime(block.entry.timestamp) }}</span>
+              <button
+                v-if="block.entry.text"
+                type="button"
+                class="message-copy-btn user-copy-btn"
+                :class="{ 'is-copied': copiedEntryId === block.entry.id }"
+                data-test="message-copy-btn"
+                :title="copiedEntryId === block.entry.id ? '已复制' : '复制本条消息'"
+                :aria-label="copiedEntryId === block.entry.id ? '已复制' : '复制本条消息'"
+                @click="copyMessage(block.entry)"
+              >
+                <svg
+                  v-if="copiedEntryId === block.entry.id"
+                  class="copy-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <svg
+                  v-else
+                  class="copy-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
             </div>
           </template>
 
@@ -783,13 +825,19 @@ async function copyMessage(entry: ChatEntry) {
   flex-shrink: 0;
 }
 
-.user-message-time {
+.user-message-meta {
   align-self: flex-end;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   margin-top: 0.2rem;
   margin-right: 0.25rem;
   line-height: 1;
+}
+
+.user-message-time {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
 }
 
 .markdown-body :deep(table) {
