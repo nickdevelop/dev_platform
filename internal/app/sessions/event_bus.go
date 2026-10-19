@@ -472,3 +472,40 @@ func (m *EventBusManager) StreamBus(ctx context.Context, uuid string, w io.Write
 		}
 	}
 }
+
+// BroadcastTurnEnded notifies connected client buses that a session's turn has ended.
+func (m *EventBusManager) BroadcastTurnEnded(nativeSessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ev := agents.NormalizedEvent{
+		Type:      agents.EventTurn,
+		Timestamp: time.Now().UTC(),
+		Turn: &agents.TurnPayload{
+			ID:      "reconciled-turn-end",
+			Phase:   agents.TurnEnded,
+			Outcome: agents.TurnCompleted,
+		},
+	}
+
+	for _, bus := range m.buses {
+		bus.mu.Lock()
+		for _, sub := range bus.sessions {
+			if sub.nativeSessionID == nativeSessionID {
+				cloned := ev
+				cloned.SessionID = sub.sessionID
+				cloned.InstanceID = sub.instanceID
+				cloned.Backend = sub.backend
+				payload, err := json.Marshal(cloned)
+				if err == nil {
+					select {
+					case bus.out <- busEnvelope{id: 0, eventType: string(cloned.Type), data: payload}:
+					default:
+					}
+				}
+			}
+		}
+		bus.mu.Unlock()
+	}
+}
+

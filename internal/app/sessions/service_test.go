@@ -98,8 +98,9 @@ type fakeAdapter struct {
 	// the service collects backend diagnostics.
 	diagnostics agents.BackendDiagnostics
 
-	detectTurnMap map[string]bool
-	detectTurnErr error
+	detectTurnMap   map[string]bool
+	detectTurnErr   error
+	hasTurnDetector bool
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -252,6 +253,9 @@ func (f *fakeAdapter) ListHistory(_ context.Context, request agents.ListHistoryR
 func (f *fakeAdapter) DetectTurn(_ context.Context, ref agents.SessionRef) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if !f.hasTurnDetector {
+		return false, ErrUnsupportedCapability
+	}
 	if f.detectTurnErr != nil {
 		return false, f.detectTurnErr
 	}

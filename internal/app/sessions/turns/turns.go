@@ -35,6 +35,13 @@ type SessionKey struct {
 	NativeID string
 }
 
+// RunningSession describes one native session currently tracked as running.
+type RunningSession struct {
+	Backend    agents.BackendID
+	NativeID   string
+	InstanceID string
+}
+
 // Tracker records the turn state of every native session of every instance it
 // watches. It is safe for concurrent use.
 type Tracker struct {
@@ -47,6 +54,7 @@ type Tracker struct {
 	watching     map[string]bool
 	states       map[SessionKey]State
 	instanceKeys map[string]map[SessionKey]bool
+	keyInstance  map[SessionKey]string
 }
 
 // NewTracker builds a tracker that subscribes through the given stream source.
@@ -56,6 +64,7 @@ func NewTracker(subscriber Subscriber) *Tracker {
 		watching:     make(map[string]bool),
 		states:       make(map[SessionKey]State),
 		instanceKeys: make(map[string]map[SessionKey]bool),
+		keyInstance:  make(map[SessionKey]string),
 	}
 }
 
@@ -104,6 +113,7 @@ func (t *Tracker) track(instanceID string, events <-chan agents.NormalizedEvent)
 		key := SessionKey{Backend: ev.Backend, NativeID: ev.SessionID}
 		t.mu.Lock()
 		t.states[key] = state
+		t.keyInstance[key] = instanceID
 		if t.instanceKeys[instanceID] == nil {
 			t.instanceKeys[instanceID] = make(map[SessionKey]bool)
 		}
@@ -114,6 +124,7 @@ func (t *Tracker) track(instanceID string, events <-chan agents.NormalizedEvent)
 	delete(t.watching, instanceID)
 	for k := range t.instanceKeys[instanceID] {
 		delete(t.states, k)
+		delete(t.keyInstance, k)
 	}
 	delete(t.instanceKeys, instanceID)
 	t.mu.Unlock()
@@ -138,14 +149,48 @@ func (t *Tracker) Of(backend agents.BackendID, nativeSessionID string) State {
 func (t *Tracker) Forget(backend agents.BackendID, nativeSessionID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.states, SessionKey{Backend: backend, NativeID: nativeSessionID})
-	delete(t.states, SessionKey{Backend: "", NativeID: nativeSessionID})
+	k1 := SessionKey{Backend: backend, NativeID: nativeSessionID}
+	k2 := SessionKey{Backend: "", NativeID: nativeSessionID}
+	delete(t.states, k1)
+	delete(t.states, k2)
+	delete(t.keyInstance, k1)
+	delete(t.keyInstance, k2)
 }
 
 // Set manually aligns or overrides the tracked state of one native session.
 func (t *Tracker) Set(backend agents.BackendID, nativeSessionID string, state State) {
+	t.SetWithInstance(backend, nativeSessionID, "", state)
+}
+
+// SetWithInstance manually aligns or overrides the tracked state of one native session
+// and remembers the instance ID it belongs to.
+func (t *Tracker) SetWithInstance(backend agents.BackendID, nativeSessionID, instanceID string, state State) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.states[SessionKey{Backend: backend, NativeID: nativeSessionID}] = state
+	key := SessionKey{Backend: backend, NativeID: nativeSessionID}
+	t.states[key] = state
+	if instanceID != "" {
+		t.keyInstance[key] = instanceID
+	} else if state == Idle {
+		delete(t.keyInstance, key)
+	}
 }
+
+// RunningSessions returns the list of native sessions currently tracked as running.
+func (t *Tracker) RunningSessions() []RunningSession {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var running []RunningSession
+	for key, state := range t.states {
+		if state == Running {
+			running = append(running, RunningSession{
+				Backend:    key.Backend,
+				NativeID:   key.NativeID,
+				InstanceID: t.keyInstance[key],
+			})
+		}
+	}
+	return running
+}
+
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -203,7 +204,14 @@ type Service struct {
 
 	// eventBus manages multiplexed client event streams.
 	eventBus *EventBusManager
+
+	reconcileInterval time.Duration
+	stopReconcile     chan struct{}
+	reconcileDone     chan struct{}
+	closeOnce         sync.Once
 }
+
+const defaultReconcileInterval = 3 * time.Second
 
 // NewService builds the session service over the platform database, the
 // adapter registry and the instance lifecycle service.
@@ -214,17 +222,23 @@ func NewService(db *gorm.DB, registry *agents.Registry, instanceService Instance
 // NewServiceWithStore builds the session service over a custom session index store.
 func NewServiceWithStore(st StoreRepository, registry *agents.Registry, instanceService InstanceService, opts ...Option) *Service {
 	s := &Service{
-		store:        st,
-		registry:     registry,
-		instances:    instanceService,
-		newID:        randomID,
-		now:          func() time.Time { return time.Now().UTC() },
-		streamBuffer: defaultStreamBuffer,
-		turnTracker:  turns.NewTracker(instanceService),
+		store:             st,
+		registry:          registry,
+		instances:         instanceService,
+		newID:             randomID,
+		now:               func() time.Time { return time.Now().UTC() },
+		streamBuffer:      defaultStreamBuffer,
+		turnTracker:       turns.NewTracker(instanceService),
+		reconcileInterval: defaultReconcileInterval,
 	}
 	s.eventBus = NewEventBusManager(s)
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.reconcileInterval > 0 {
+		s.stopReconcile = make(chan struct{})
+		s.reconcileDone = make(chan struct{})
+		go s.runReconciler()
 	}
 	return s
 }
@@ -264,6 +278,14 @@ func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
 		if fn != nil {
 			s.platformEnabled = fn
 		}
+	}
+}
+
+// WithReconcileInterval configures the background turn reconciliation interval.
+// Non-positive disables the background worker.
+func WithReconcileInterval(interval time.Duration) Option {
+	return func(s *Service) {
+		s.reconcileInterval = interval
 	}
 }
 
@@ -781,6 +803,7 @@ func (s *Service) Interrupt(ctx context.Context, projectID uint, sessionID strin
 	if err := adapter.Interrupt(ctx, ref); err != nil {
 		return Session{}, fmt.Errorf("%w: interrupt session: %w", ErrBackendFailed, err)
 	}
+	s.alignTurnState(ctx, inst.Backend, ref)
 	return s.sessionFromModel(row), nil
 }
 
@@ -1093,11 +1116,89 @@ func (s *Service) alignTurnState(ctx context.Context, backend agents.BackendID, 
 		return
 	}
 	if detector, ok := adapter.(agents.SessionTurnDetector); ok {
-		if running, err := detector.DetectTurn(ctx, ref); err == nil && running {
-			s.turnTracker.Set(backend, ref.SessionID, TurnRunning)
+		running, err := detector.DetectTurn(ctx, ref)
+		if err != nil {
+			return
+		}
+		current := s.turnTracker.Of(backend, ref.SessionID)
+		if running && current != TurnRunning {
+			s.turnTracker.SetWithInstance(backend, ref.SessionID, ref.InstanceID, TurnRunning)
+		} else if !running && current == TurnRunning {
+			s.turnTracker.Set(backend, ref.SessionID, TurnIdle)
 		}
 	}
 }
+
+// Close gracefully stops the background reconciler.
+func (s *Service) Close() {
+	s.closeOnce.Do(func() {
+		if s.stopReconcile != nil {
+			close(s.stopReconcile)
+			<-s.reconcileDone
+		}
+	})
+}
+
+// runReconciler periodically inspects active sessions and clears stale running states.
+func (s *Service) runReconciler() {
+	defer close(s.reconcileDone)
+	ticker := time.NewTicker(s.reconcileInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.stopReconcile:
+			return
+		case <-ticker.C:
+			s.reconcileRunningTurns()
+		}
+	}
+}
+
+// reconcileRunningTurns probes each session currently marked as running.
+// If the backend agent is actually idle, it aligns the tracker and notifies subscribers.
+func (s *Service) reconcileRunningTurns() {
+	running := s.turnTracker.RunningSessions()
+	if len(running) == 0 {
+		return
+	}
+
+	for _, item := range running {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ref := agents.SessionRef{
+			InstanceID: item.InstanceID,
+			Backend:    item.Backend,
+			SessionID:  item.NativeID,
+		}
+		if ref.InstanceID == "" {
+			if row, err := s.store.GetByNative(0, string(item.Backend), item.NativeID); err == nil {
+				ref.InstanceID = row.InstanceID
+			}
+		}
+		if ref.InstanceID == "" {
+			cancel()
+			continue
+		}
+
+		adapter, err := s.adapter(item.Backend)
+		if err != nil {
+			cancel()
+			continue
+		}
+
+		if detector, ok := adapter.(agents.SessionTurnDetector); ok {
+			isRunning, detectErr := detector.DetectTurn(ctx, ref)
+			if detectErr == nil && !isRunning {
+				s.turnTracker.Set(item.Backend, item.NativeID, TurnIdle)
+				if s.eventBus != nil {
+					s.eventBus.BroadcastTurnEnded(item.NativeID)
+				}
+			}
+		}
+		cancel()
+	}
+}
+
 
 
 // matchesSession reports whether an event belongs to the session: a

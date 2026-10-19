@@ -91,3 +91,37 @@ func TestTrackerSetManuallyUpdatesState(t *testing.T) {
 	}
 }
 
+func TestTrackerRunningSessionsReportsActiveSessions(t *testing.T) {
+	source := &fakeSource{events: make(chan agents.NormalizedEvent, 4)}
+	tracker := NewTracker(source)
+
+	tracker.SetWithInstance(agents.BackendPi, "s1", "inst-1", Running)
+	tracker.SetWithInstance(agents.BackendOpenCodeV2, "s2", "inst-2", Running)
+	tracker.SetWithInstance(agents.BackendPi, "s3", "inst-1", Idle)
+
+	running := tracker.RunningSessions()
+	if len(running) != 2 {
+		t.Fatalf("RunningSessions() len = %d, want 2", len(running))
+	}
+
+	foundS1, foundS2 := false, false
+	for _, s := range running {
+		if s.NativeID == "s1" && s.Backend == agents.BackendPi && s.InstanceID == "inst-1" {
+			foundS1 = true
+		}
+		if s.NativeID == "s2" && s.Backend == agents.BackendOpenCodeV2 && s.InstanceID == "inst-2" {
+			foundS2 = true
+		}
+	}
+	if !foundS1 || !foundS2 {
+		t.Errorf("RunningSessions() = %+v, want s1 and s2 with their instance IDs", running)
+	}
+
+	tracker.Set(agents.BackendPi, "s1", Idle)
+	running = tracker.RunningSessions()
+	if len(running) != 1 || running[0].NativeID != "s2" {
+		t.Errorf("RunningSessions() after s1 idle = %+v, want only s2", running)
+	}
+}
+
+

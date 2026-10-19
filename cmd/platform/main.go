@@ -330,6 +330,7 @@ func runServer(args []string) error {
 		sessions.WithPlatformEnabled(settingsService.Enabled),
 		sessions.WithCatalog(catalog),
 	)
+	defer sessionService.Close()
 	secretStore, err := secrets.NewStore(dataDir)
 	if err != nil {
 		return fmt.Errorf("open secret store: %w", err)
