@@ -30,8 +30,10 @@ const (
 	// defaultRequestTimeout bounds every non-streaming API call when the
 	// caller's context carries no deadline of its own.
 	defaultRequestTimeout = 30 * time.Second
-	// maxResponseBytes bounds one non-streaming API response body.
-	maxResponseBytes = 4 * 1024 * 1024
+	// maxResponseBytes bounds one non-streaming API response body. It is sized to
+	// accommodate transcripts that carry heavy tool result blocks (e.g. read calls
+	// returning inlined images or large files) across a single message batch.
+	maxResponseBytes = 32 * 1024 * 1024
 	// maxEventBytes bounds the raw backend JSON carried inside one normalized
 	// event (the Raw blob and tool metadata), matching the event contract.
 	maxEventBytes = agents.MaxRawEventBytes

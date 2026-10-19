@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -1631,9 +1632,67 @@ func boundRaw(raw []byte) json.RawMessage {
 	return append(json.RawMessage(nil), raw[:cut]...)
 }
 
+// maxToolOutputBytes limits the text payload carried inside a NormalizedEvent's
+// ToolResult. It prevents multi-megabyte payloads (e.g. read calls returning
+// large files or inlined image Base64 data) from overwhelming memory, network,
+// or frontend rendering, while comfortably accommodating normal large outputs
+// (such as long diffs or test logs up to 256KiB).
+const maxToolOutputBytes = 256 * 1024 // 256KB
+
+var dataURIPattern = regexp.MustCompile(`data:image/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\s]{200,}`)
+
+// formatByteSize formats a byte count into a human-readable string.
+func formatByteSize(bytes int) string {
+	switch {
+	case bytes >= 1024*1024:
+		return fmt.Sprintf("%.2f MB", float64(bytes)/(1024*1024))
+	case bytes >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
+	default:
+		return fmt.Sprintf("%d 字节", bytes)
+	}
+}
+
+// compactDataURIs replaces long inlined data URI image payloads with a concise summary.
+func compactDataURIs(text string) string {
+	if !strings.Contains(text, "data:image/") {
+		return text
+	}
+	return dataURIPattern.ReplaceAllStringFunc(text, func(match string) string {
+		return fmt.Sprintf("[图片数据 (base64, 约 %s)]", formatByteSize(len(match)))
+	})
+}
+
+// summarizeToolOutput compacts tool result strings so multi-megabyte payloads
+// never overwhelm the event stream or client memory.
+func summarizeToolOutput(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	cleaned := compactDataURIs(raw)
+	if len(cleaned) <= maxToolOutputBytes {
+		return cleaned
+	}
+	cut := maxToolOutputBytes
+	for cut > 0 && !utf8.RuneStart(cleaned[cut]) {
+		cut--
+	}
+	lines := strings.Count(raw, "\n") + 1
+	return fmt.Sprintf("%s\n\n... [工具输出过长，已截断展示；原始内容共 %s，约 %d 行]",
+		cleaned[:cut],
+		formatByteSize(len(raw)),
+		lines,
+	)
+}
+
 // flattenContent renders a tool result content value (string, text blocks or a
-// wrapped object) as display text.
+// wrapped object) as display text, compacted to a safe size.
 func flattenContent(raw json.RawMessage) string {
+	text := flattenRawContent(raw)
+	return summarizeToolOutput(text)
+}
+
+func flattenRawContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
@@ -1645,7 +1704,7 @@ func flattenContent(raw json.RawMessage) string {
 	if err := json.Unmarshal(raw, &blocks); err == nil {
 		parts := make([]string, 0, len(blocks))
 		for _, block := range blocks {
-			if rendered := flattenContent(block); rendered != "" {
+			if rendered := flattenRawContent(block); rendered != "" {
 				parts = append(parts, rendered)
 			}
 		}
@@ -1662,7 +1721,7 @@ func flattenContent(raw json.RawMessage) string {
 			return object.Text
 		}
 		if len(object.Content) > 0 {
-			if rendered := flattenContent(object.Content); rendered != "" {
+			if rendered := flattenRawContent(object.Content); rendered != "" {
 				return rendered
 			}
 		}

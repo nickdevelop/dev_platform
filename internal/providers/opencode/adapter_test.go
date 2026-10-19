@@ -1531,3 +1531,31 @@ func TestAdapterSubscribeMapsTurnsAndInteractions(t *testing.T) {
 		}
 	}
 }
+
+func TestFlattenContentCompactDataURIs(t *testing.T) {
+	fakeBase64 := strings.Repeat("A", 1000)
+	raw := json.RawMessage(fmt.Sprintf(`"data:image/png;base64,%s"`, fakeBase64))
+	got := flattenContent(raw)
+	if strings.Contains(got, fakeBase64) {
+		t.Fatalf("flattenContent leaked huge base64 data: %s", got)
+	}
+	if !strings.Contains(got, "[图片数据") {
+		t.Fatalf("flattenContent did not replace with summary: %s", got)
+	}
+}
+
+func TestFlattenContentTruncatesHugeOutput(t *testing.T) {
+	huge := strings.Repeat("hello world line\n", 30000) // ~500KB
+	raw, err := json.Marshal(huge)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := flattenContent(raw)
+	if len(got) >= len(huge) {
+		t.Fatalf("flattenContent did not truncate huge text: len=%d, want < %d", len(got), len(huge))
+	}
+	if !strings.Contains(got, "工具输出过长，已截断展示") {
+		t.Fatalf("flattenContent missing truncation marker: %s", got)
+	}
+}
+
