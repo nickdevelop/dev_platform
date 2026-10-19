@@ -67,6 +67,10 @@ var (
 	// ErrRollbackFailed reports that a directory was moved but its record could
 	// not be updated and the compensating move back also failed.
 	ErrRollbackFailed = errors.New("projects: failed to roll back directory move after a record update failure")
+	// ErrFileNotFound reports that the requested file does not exist.
+	ErrFileNotFound = errors.New("projects: file not found")
+	// ErrPathEscaped reports that the requested path escapes the project root.
+	ErrPathEscaped = errors.New("projects: path escapes project root")
 )
 
 // Project is the JSON-stable API representation of a managed project. GORM

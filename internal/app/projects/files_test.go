@@ -219,3 +219,191 @@ func TestHandleSearchFiles(t *testing.T) {
 		t.Fatalf("expected src/main.go, got: %+v", resp.Files)
 	}
 }
+
+func TestGetFileTree_NonGit(t *testing.T) {
+	svc, id, _ := setupTestProject(t)
+	ctx := context.Background()
+
+	tree, err := svc.GetFileTree(ctx, id)
+	if err != nil {
+		t.Fatalf("GetFileTree: %v", err)
+	}
+
+	// README.md, src (dir) -> utils (dir) -> helper.go
+	if len(tree) != 2 {
+		t.Fatalf("expected 2 root items (src dir and README.md), got %d: %+v", len(tree), tree)
+	}
+
+	// Directories first: src should be first, then README.md
+	if tree[0].Name != "src" || !tree[0].IsDir {
+		t.Errorf("expected first item to be src directory, got: %+v", tree[0])
+	}
+	if tree[1].Name != "README.md" || tree[1].IsDir {
+		t.Errorf("expected second item to be README.md file, got: %+v", tree[1])
+	}
+
+	if len(tree[0].Children) == 0 {
+		t.Fatalf("expected src to have children, got none")
+	}
+}
+
+func TestReadFileContent_TextAndBinary(t *testing.T) {
+	svc, id, dir := setupTestProject(t)
+	ctx := context.Background()
+
+	// Text file
+	resp, err := svc.ReadFileContent(ctx, id, "README.md")
+	if err != nil {
+		t.Fatalf("ReadFileContent(README.md): %v", err)
+	}
+	if resp.IsBinary || resp.Content != "# Hello" || resp.Lines != 1 {
+		t.Errorf("unexpected text content response: %+v", resp)
+	}
+
+	// Binary file
+	binPath := filepath.Join(dir, "binary.bin")
+	_ = os.WriteFile(binPath, []byte{0x00, 0x01, 0x02, 0x03}, 0o644)
+
+	binResp, err := svc.ReadFileContent(ctx, id, "binary.bin")
+	if err != nil {
+		t.Fatalf("ReadFileContent(binary.bin): %v", err)
+	}
+	if !binResp.IsBinary || binResp.Content != "" {
+		t.Errorf("expected binary file to have IsBinary=true and empty Content, got: %+v", binResp)
+	}
+}
+
+func TestReadFileContent_PathEscape(t *testing.T) {
+	svc, id, _ := setupTestProject(t)
+	ctx := context.Background()
+
+	escapes := []string{
+		"../outside.txt",
+		"../../etc/passwd",
+		"src/../../outside.txt",
+		"/etc/passwd",
+	}
+
+	for _, p := range escapes {
+		_, err := svc.ReadFileContent(ctx, id, p)
+		if err == nil {
+			t.Errorf("expected path escape error for %q, got nil", p)
+		}
+	}
+}
+
+func TestHandleFileTreeAndContentRoutes(t *testing.T) {
+	svc, id, _ := setupTestProject(t)
+
+	r := gin.New()
+	svc.RegisterRoutes(r)
+
+	// Tree route
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/tree", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	var treeResp struct {
+		Tree []FileTreeNode `json:"tree"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &treeResp); err != nil {
+		t.Fatalf("unmarshal tree: %v", err)
+	}
+	if len(treeResp.Tree) == 0 {
+		t.Fatalf("expected non-empty tree")
+	}
+
+	// Content route
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/content?path=README.md", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	var contentResp FileContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &contentResp); err != nil {
+		t.Fatalf("unmarshal content: %v", err)
+	}
+	if contentResp.Content != "# Hello" {
+		t.Fatalf("expected '# Hello', got %q", contentResp.Content)
+	}
+
+	// Content path escape route
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/content?path=../outside.txt", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for path escape", w.Code)
+	}
+
+	// Raw route
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/raw?path=README.md", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("raw route status = %d, want 200", w.Code)
+	}
+	if w.Body.String() != "# Hello" {
+		t.Fatalf("expected raw body '# Hello', got %q", w.Body.String())
+	}
+}
+
+func TestGitStatus(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	dir := t.TempDir()
+	runGit := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v, out: %s", args, err, out)
+		}
+	}
+
+	runGit("init")
+	runGit("config", "user.name", "Test")
+	runGit("config", "user.email", "test@test.com")
+
+	f1 := filepath.Join(dir, "committed.txt")
+	_ = os.WriteFile(f1, []byte("initial"), 0o644)
+	runGit("add", "committed.txt")
+	runGit("commit", "-m", "init")
+
+	// Now modify committed.txt and add untracked.txt
+	_ = os.WriteFile(f1, []byte("modified"), 0o644)
+	f2 := filepath.Join(dir, "untracked.txt")
+	_ = os.WriteFile(f2, []byte("new"), 0o644)
+
+	repo := &memoryRepo{projects: make(map[uint]Project)}
+	p, _ := repo.Create("git-proj", dir)
+	svc := NewServiceWithRepository(repo)
+
+	status, err := svc.GitStatus(context.Background(), p.ID)
+	if err != nil {
+		t.Fatalf("GitStatus: %v", err)
+	}
+
+	if len(status) != 2 {
+		t.Fatalf("expected 2 changed files, got %d: %+v", len(status), status)
+	}
+
+	var foundModified, foundUntracked bool
+	for _, item := range status {
+		if item.Path == "committed.txt" && item.Status == "modified" {
+			foundModified = true
+		}
+		if item.Path == "untracked.txt" && item.Status == "untracked" {
+			foundUntracked = true
+		}
+	}
+
+	if !foundModified || !foundUntracked {
+		t.Fatalf("status items missing expected changes: %+v", status)
+	}
+}
+

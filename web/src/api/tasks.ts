@@ -91,7 +91,7 @@ export async function getTask(id: number): Promise<Task> {
 }
 
 export async function createTask(csrfToken: string, payload: CreateTaskPayload): Promise<Task> {
-  return apiRequest<Task>('POST', '/tasks', payload, { csrfToken })
+  return apiRequest<Task>('POST', '/tasks', { body: payload, csrfToken })
 }
 
 export async function updateTask(
@@ -99,11 +99,11 @@ export async function updateTask(
   id: number,
   payload: UpdateTaskPayload,
 ): Promise<Task> {
-  return apiRequest<Task>('PUT', `/tasks/${id}`, payload, { csrfToken })
+  return apiRequest<Task>('PUT', `/tasks/${id}`, { body: payload, csrfToken })
 }
 
 export async function deleteTask(csrfToken: string, id: number): Promise<void> {
-  await apiRequest<void>('DELETE', `/tasks/${id}`, undefined, { csrfToken })
+  await apiRequest<void>('DELETE', `/tasks/${id}`, { csrfToken })
 }
 
 export async function triggerTaskExecution(
@@ -111,7 +111,7 @@ export async function triggerTaskExecution(
   id: number,
   triggerType: 'manual' | 'once' | 'cron' = 'manual',
 ): Promise<{ run: TaskRun }> {
-  return apiRequest<{ run: TaskRun }>('POST', `/tasks/${id}/trigger`, { triggerType }, { csrfToken })
+  return apiRequest<{ run: TaskRun }>('POST', `/tasks/${id}/trigger`, { body: { triggerType }, csrfToken })
 }
 
 export async function listTaskRuns(id: number): Promise<TaskRun[]> {

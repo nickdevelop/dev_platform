@@ -106,7 +106,7 @@ export const useTasksStore = defineStore('tasks', {
         this.currentTask = null
       }
       const openTabs = useOpenTabsStore()
-      openTabs.closeTab(tabKey('task', id))
+      openTabs.closeTab(`task:${id}`)
     },
 
     async triggerExecution(id: number, triggerType: 'manual' | 'once' | 'cron' = 'manual') {

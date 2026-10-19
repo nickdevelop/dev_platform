@@ -644,6 +644,107 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/tree:
+    get:
+      summary: Get workspace file tree
+      description: Returns the multi-level file hierarchy of the project workspace.
+      operationId: getProjectFileTree
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Project directory tree.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tree]
+                properties:
+                  tree:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FileTreeNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/content:
+    get:
+      summary: Read project file content
+      description: Safely reads the text content and metadata of a file inside the project workspace.
+      operationId: readProjectFileContent
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: path
+          in: query
+          required: true
+          description: Relative path of the file inside the project.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File content and inspection details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileContentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: File or project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/raw:
+    get:
+      summary: Stream raw file content
+      description: Streams the raw bytes of a workspace file, suitable for media previews.
+      operationId: streamProjectFileRaw
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: path
+          in: query
+          required: true
+          description: Relative path of the file inside the project.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Raw file bytes.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: File or project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/git-info:
     get:
       summary: Git state of a project working directory
@@ -673,6 +774,38 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: No such instance in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/status:
+    get:
+      summary: Git status of project workspace
+      description: Returns the list of changed, added, or untracked files in the workspace.
+      operationId: getProjectGitStatus
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Git status changes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [changes]
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitStatusItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
           content:
             application/json:
               schema:
@@ -3989,6 +4122,54 @@ components:
           type: string
         isDir:
           type: boolean
+      additionalProperties: false
+    FileTreeNode:
+      type: object
+      required: [name, path, isDir]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        isDir:
+          type: boolean
+        size:
+          type: integer
+          format: int64
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileTreeNode'
+      additionalProperties: false
+    FileContentResponse:
+      type: object
+      required: [path, size, lines, mimeType, isBinary]
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+          format: int64
+        lines:
+          type: integer
+        mimeType:
+          type: string
+        isBinary:
+          type: boolean
+        content:
+          type: string
+        truncated:
+          type: boolean
+      additionalProperties: false
+    GitStatusItem:
+      type: object
+      required: [path, status]
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+          enum: [modified, added, deleted, untracked, renamed]
       additionalProperties: false
     AgentCommand:
       type: object

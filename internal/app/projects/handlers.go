@@ -24,6 +24,10 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/unregister", s.handleUnregister)
 	r.GET("/projects/:id/git-info", s.handleGitInfo)
 	r.GET("/projects/:id/files", s.handleSearchFiles)
+	r.GET("/projects/:id/files/tree", s.handleFileTree)
+	r.GET("/projects/:id/files/content", s.handleFileContent)
+	r.GET("/projects/:id/files/raw", s.handleFileRaw)
+	r.GET("/projects/:id/git/status", s.handleGitStatus)
 }
 
 // errorResponse is the JSON error envelope for project API failures.
@@ -57,6 +61,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "instance_stop_failed")
 	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, ErrPathChanged):
 		respondError(c, http.StatusBadRequest, "invalid_target")
+	case errors.Is(err, ErrFileNotFound):
+		respondError(c, http.StatusNotFound, "file_not_found")
+	case errors.Is(err, ErrPathEscaped):
+		respondError(c, http.StatusBadRequest, "path_escaped")
 	case errors.Is(err, ErrRollbackFailed):
 		respondError(c, http.StatusInternalServerError, "inconsistent_state")
 	default:
@@ -263,4 +271,71 @@ func projectID(c *gin.Context) (uint, bool) {
 		return 0, false
 	}
 	return uint(id), true
+}
+
+// handleFileTree returns the multi-level directory tree of the project workspace.
+func (s *Service) handleFileTree(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	tree, err := s.GetFileTree(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tree": tree})
+}
+
+// handleFileContent returns the inspected file content and metadata.
+func (s *Service) handleFileContent(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	filePath := c.Query("path")
+	if filePath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	resp, err := s.ReadFileContent(c.Request.Context(), id, filePath)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// handleFileRaw streams the raw bytes of the requested file (images/media).
+func (s *Service) handleFileRaw(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	filePath := c.Query("path")
+	if filePath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, filePath)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	defer reader.Close()
+	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
+}
+
+// handleGitStatus returns the list of changed files in the git workspace.
+func (s *Service) handleGitStatus(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	items, err := s.GitStatus(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"changes": items})
 }

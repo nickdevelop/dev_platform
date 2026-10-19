@@ -43,6 +43,8 @@ import { SessionMentionSource } from './composer/dropdown/sources/SessionMention
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
 import { getSessionHistory, type ImageAttachment, type ImageMediaType } from '../../api/sessions'
 import { detectBuiltInCommand } from './composer/builtInCommands'
+import FileSidebar from '../files/FileSidebar.vue'
+import FileViewer from '../files/FileViewer.vue'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
@@ -50,6 +52,37 @@ const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const interactions = useInteractionsStore()
 const router = useRouter()
+
+const RIGHT_PANE_TAB_KEY = 'dev-platform-right-pane-tab-v1'
+const rightPaneMode = ref<'activity' | 'files'>('activity')
+try {
+  const stored = localStorage.getItem(RIGHT_PANE_TAB_KEY)
+  if (stored === 'files' || stored === 'activity') {
+    rightPaneMode.value = stored
+  }
+} catch {
+  // best effort
+}
+function setRightPaneMode(mode: 'activity' | 'files') {
+  rightPaneMode.value = mode
+  try {
+    localStorage.setItem(RIGHT_PANE_TAB_KEY, mode)
+  } catch {
+    // best effort
+  }
+}
+
+const activeWorkspaceFile = ref<string>('')
+const fileSubView = ref<'tree' | 'viewer'>('tree')
+
+function onSelectWorkspaceFile(filePath: string) {
+  activeWorkspaceFile.value = filePath
+  fileSubView.value = 'viewer'
+}
+
+function onBackToTree() {
+  fileSubView.value = 'tree'
+}
 
 const ready = ref(false)
 const loadError = ref('')
@@ -318,12 +351,23 @@ function onPaste(event: ClipboardEvent) {
 }
 
 function onDragOver(event: DragEvent) {
-  if (event.dataTransfer?.types?.includes('Files')) {
+  if (
+    event.dataTransfer?.types?.includes('Files') ||
+    event.dataTransfer?.types?.includes('text/plain')
+  ) {
     event.dataTransfer.dropEffect = 'copy'
   }
 }
 
 function onDrop(event: DragEvent) {
+  const textData = event.dataTransfer?.getData('text/plain')
+  if (textData && textData.startsWith('@')) {
+    event.preventDefault()
+    const prefix = messageText.value.length > 0 && !messageText.value.endsWith(' ') ? ' ' : ''
+    messageText.value += `${prefix}${textData} `
+    return
+  }
+
   const files = event.dataTransfer?.files
   if (files && files.length > 0) {
     void handleUploadedFiles(files)
@@ -921,49 +965,102 @@ async function removeSession() {
         <aside
           v-if="!activityCollapsed"
           class="activity-pane"
-          aria-label="思考与工具"
+          aria-label="右侧活动面板"
           data-test="activity-pane"
         >
           <header class="activity-head">
-            <h3 class="activity-title">
-              思考与工具
-              <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
-            </h3>
-            <button
-              type="button"
-              class="activity-toggle"
-              data-test="activity-hide"
-              data-test-collapse="activity-collapse"
-              title="收起思考与工具"
-              aria-label="收起思考与工具栏"
-              @click="setActivityCollapsed(true)"
-            >
-              收起
-            </button>
+            <div class="activity-pane-tabs" role="tablist">
+              <button
+                type="button"
+                class="pane-tab activity-title"
+                :class="{ 'is-active': rightPaneMode === 'activity' }"
+                role="tab"
+                :aria-selected="rightPaneMode === 'activity'"
+                data-test="tab-activity"
+                @click="setRightPaneMode('activity')"
+              >
+                思考与工具<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
+              </button>
+              <button
+                type="button"
+                class="pane-tab"
+                :class="{ 'is-active': rightPaneMode === 'files' }"
+                role="tab"
+                :aria-selected="rightPaneMode === 'files'"
+                data-test="tab-files"
+                @click="setRightPaneMode('files')"
+              >
+                工作区文件
+              </button>
+            </div>
+
+            <div class="head-actions">
+              <button
+                v-if="rightPaneMode === 'files' && fileSubView === 'viewer'"
+                type="button"
+                class="back-to-tree-btn"
+                title="返回文件树"
+                @click="onBackToTree"
+              >
+                ‹ 文件树
+              </button>
+              <button
+                type="button"
+                class="activity-toggle"
+                data-test="activity-hide"
+                data-test-collapse="activity-collapse"
+                title="收起右侧栏"
+                aria-label="收起右侧栏"
+                @click="setActivityCollapsed(true)"
+              >
+                收起
+              </button>
+            </div>
           </header>
-          <div
-            class="activity-scroll"
-            data-test="activity-scroll"
-            ref="activityScroll"
-            @scroll.passive="onActivityScroll"
-          >
-            <MessageView
-              :messages="activeMessages"
-              :capabilities="activeSession.capabilities"
-              :stream-status="streamStatus"
-              :running="isRunning"
-              display="activity"
-            />
-          </div>
-          <button
-            v-if="showJumpActivity"
-            type="button"
-            class="jump-latest"
-            data-test="jump-activity"
-            @click="scrollActivityToBottom(true)"
-          >
-            ↓ 最新活动
-          </button>
+
+          <template v-if="rightPaneMode === 'activity'">
+            <div
+              class="activity-scroll"
+              data-test="activity-scroll"
+              ref="activityScroll"
+              @scroll.passive="onActivityScroll"
+            >
+              <MessageView
+                :messages="activeMessages"
+                :capabilities="activeSession.capabilities"
+                :stream-status="streamStatus"
+                :running="isRunning"
+                display="activity"
+              />
+            </div>
+            <button
+              v-if="showJumpActivity"
+              type="button"
+              class="jump-latest"
+              data-test="jump-activity"
+              @click="scrollActivityToBottom(true)"
+            >
+              ↓ 最新活动
+            </button>
+          </template>
+
+          <template v-else-if="rightPaneMode === 'files'">
+            <div class="files-pane-wrapper">
+              <FileSidebar
+                v-show="fileSubView === 'tree'"
+                :project-id="props.projectId"
+                :active-path="activeWorkspaceFile"
+                @select="onSelectWorkspaceFile"
+              />
+              <FileViewer
+                v-show="fileSubView === 'viewer'"
+                :project-id="props.projectId"
+                :active-path="activeWorkspaceFile"
+                @select="(p) => (activeWorkspaceFile = p)"
+                @close="() => {}"
+              />
+            </div>
+          </template>
         </aside>
 
         <button
@@ -1149,6 +1246,69 @@ async function removeSession() {
   background: var(--color-surface);
   border-top-left-radius: 10px;
   border-top-right-radius: 10px;
+}
+
+.activity-pane-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--color-bg, #f4f5f7);
+  padding: 2px;
+  border-radius: 5px;
+  border: 1px solid var(--color-border, #e3e6eb);
+}
+
+.pane-tab {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pane-tab:hover {
+  color: var(--color-text);
+}
+
+.pane-tab.is-active {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-primary, #2563eb);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.back-to-tree-btn {
+  border: 1px solid var(--color-border, #e3e6eb);
+  background: var(--color-surface, #ffffff);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.back-to-tree-btn:hover {
+  background: var(--color-primary-soft, #e8effd);
+}
+
+.files-pane-wrapper {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .activity-title {
