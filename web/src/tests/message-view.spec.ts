@@ -1,6 +1,6 @@
 // Presentation tests for the message log: agent replies render as sanitized
 // markdown, while user turns, reasoning and tool output stay literal text.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../features/chat/rendering/MessageView.vue'
@@ -314,6 +314,88 @@ describe('MessageView per-message model', () => {
 
     expect(wrapper.find('[data-test="user-message-time"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="message-time"]').exists()).toBe(true)
+  })
+})
+
+describe('MessageView copy button', () => {
+  const originalClipboard = navigator.clipboard
+
+  afterEach(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: originalClipboard,
+      writable: true,
+      configurable: true,
+    })
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('renders a copy button for assistant replies but not user messages', () => {
+    const assistant = message('assistant', '这是助手消息')
+    const user = message('user', '这是用户消息')
+    const wrapper = mount(MessageView, {
+      props: { messages: [user, assistant], capabilities: capabilities() },
+    })
+
+    const buttons = wrapper.findAll('[data-test="message-copy-btn"]')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].text()).toContain('复制')
+
+    // Confirm it resides inside the assistant message-meta
+    const meta = wrapper.find('[data-test="message-meta"]')
+    expect(meta.find('[data-test="message-copy-btn"]').exists()).toBe(true)
+  })
+
+  it('copies message text to clipboard and toggles status to 已复制', async () => {
+    vi.useFakeTimers()
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      writable: true,
+      configurable: true,
+    })
+
+    const assistant = message('assistant', '复制这行文字')
+    const wrapper = mount(MessageView, {
+      props: { messages: [assistant], capabilities: capabilities() },
+    })
+
+    const btn = wrapper.get('[data-test="message-copy-btn"]')
+    expect(btn.text()).toContain('复制')
+
+    await btn.trigger('click')
+    await flushPromises()
+
+    expect(writeTextMock).toHaveBeenCalledWith('复制这行文字')
+    expect(btn.text()).toContain('已复制')
+    expect(btn.classes()).toContain('is-copied')
+
+    vi.advanceTimersByTime(1500)
+    await wrapper.vm.$nextTick()
+
+    expect(btn.text()).toContain('复制')
+    expect(btn.classes()).not.toContain('is-copied')
+  })
+
+  it('places the copy button after model and timestamp when present', () => {
+    const entry: ChatEntry = {
+      ...message('assistant', '带元数据的消息'),
+      model: { id: 'test-provider/test-model', provider: 'test-provider' },
+      timestamp: new Date('2026-10-18T14:30:00Z').toISOString(),
+    }
+    const wrapper = mount(MessageView, {
+      props: { messages: [entry], capabilities: capabilities() },
+    })
+
+    const meta = wrapper.get('[data-test="message-meta"]')
+    expect(meta.find('[data-test="message-model"]').exists()).toBe(true)
+    expect(meta.find('[data-test="message-time"]').exists()).toBe(true)
+    expect(meta.find('[data-test="message-copy-btn"]').exists()).toBe(true)
+
+    const children = meta.element.children
+    expect(children[0].getAttribute('data-test')).toBe('message-model')
+    expect(children[1].getAttribute('data-test')).toBe('message-time')
+    expect(children[2].getAttribute('data-test')).toBe('message-copy-btn')
   })
 })
 

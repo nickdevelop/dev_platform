@@ -22,6 +22,7 @@
 // expands the rest, so a long output never dominates the pane. display="all"
 // (the default) keeps the legacy interleaved log.
 import { computed, reactive, ref } from 'vue'
+import { copyToClipboard } from '../../../shared/clipboard'
 import { formatMessageTime } from '../../../shared/format'
 import { renderMarkdown } from '../../../shared/markdown'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
@@ -156,6 +157,22 @@ function openSubagent(entry: ChatEntry) {
 
 function closeSubagent() {
   subagentModal.value = null
+}
+
+const copiedEntryId = ref<string | null>(null)
+let copyTimer: ReturnType<typeof setTimeout> | null = null
+
+async function copyMessage(entry: ChatEntry) {
+  if (!entry.text) return
+  const ok = await copyToClipboard(entry.text)
+  if (!ok) return
+  copiedEntryId.value = entry.id
+  if (copyTimer) clearTimeout(copyTimer)
+  copyTimer = setTimeout(() => {
+    if (copiedEntryId.value === entry.id) {
+      copiedEntryId.value = null
+    }
+  }, 1500)
 }
 </script>
 
@@ -372,7 +389,7 @@ function closeSubagent() {
               </div>
               <span v-if="block.entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
               <div
-                v-if="block.entry.role !== 'user' && (block.entry.model || block.entry.timestamp)"
+                v-if="block.entry.role !== 'user'"
                 class="message-meta"
                 data-test="message-meta"
               >
@@ -386,6 +403,44 @@ function closeSubagent() {
                   class="message-time"
                   data-test="message-time"
                 >{{ formatMessageTime(block.entry.timestamp) }}</span>
+                <button
+                  type="button"
+                  class="message-copy-btn"
+                  :class="{ 'is-copied': copiedEntryId === block.entry.id }"
+                  data-test="message-copy-btn"
+                  :title="copiedEntryId === block.entry.id ? '已复制' : '复制本条消息'"
+                  :aria-label="copiedEntryId === block.entry.id ? '已复制' : '复制本条消息'"
+                  @click="copyMessage(block.entry)"
+                >
+                  <svg
+                    v-if="copiedEntryId === block.entry.id"
+                    class="copy-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                  <svg
+                    v-else
+                    class="copy-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>{{ copiedEntryId === block.entry.id ? '已复制' : '复制' }}</span>
+                </button>
               </div>
             </div>
             <div
@@ -697,6 +752,38 @@ function closeSubagent() {
   display: inline-block;
   font-size: 0.72rem;
   color: var(--color-text-muted);
+}
+
+.message-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.message-copy-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.message-copy-btn.is-copied {
+  color: var(--color-success);
+}
+
+.message-copy-btn .copy-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
 }
 
 .user-message-time {
