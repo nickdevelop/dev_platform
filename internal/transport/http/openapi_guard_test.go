@@ -18,7 +18,9 @@ import (
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
+	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/platform/fake"
 )
 
 // openAPIDoc captures the top-level paths mapping from openapi.yaml.
@@ -69,6 +71,7 @@ func TestAllRoutesDocumentedInOpenAPI(t *testing.T) {
 		AgentServices: agentservices.NewService(nil),
 		Sessions:      sessions.NewService(db, registry, instSvc),
 		Tasks:         tasksSvc,
+		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
 	})
 
 	paramRegex := regexp.MustCompile(`:([a-zA-Z0-9_]+)`)

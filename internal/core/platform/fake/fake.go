@@ -20,6 +20,7 @@ type Platform struct {
 	shutdown    Shutdown
 	terminal    Terminal
 	environment Environment
+	pty         PTY
 }
 
 // Option configures a fake Platform.
@@ -44,6 +45,7 @@ func (p *Platform) Terminal() platform.Terminal       { return &p.terminal }
 func (p *Platform) Environment() platform.Environment {
 	return &p.environment
 }
+func (p *Platform) PTY() platform.PTY                 { return &p.pty }
 
 func (p *Platform) Name() string { return "fake" }
 
@@ -90,6 +92,11 @@ func WithSecret(secret string) Option {
 // WithInteractive injects the Terminal.IsInteractive value.
 func WithInteractive(interactive bool) Option {
 	return func(p *Platform) { p.terminal.Interactive = interactive }
+}
+
+// WithPTYSupported injects whether PTY is supported.
+func WithPTYSupported(supported bool) Option {
+	return func(p *Platform) { p.pty.SupportedValue = supported }
 }
 
 // Dirs fakes directory resolution and path policy.
@@ -273,3 +280,21 @@ type Environment struct {
 
 func (e *Environment) Describe(dataDir string) []string { return e.DescribeLines }
 func (e *Environment) Check() error                     { return e.CheckErr }
+
+// PTY fakes pseudoterminal operations.
+type PTY struct {
+	SupportedValue bool
+	StartFunc      func(cmd *exec.Cmd, rows, cols uint16) (platform.PTYSession, error)
+}
+
+func (pt *PTY) Supported() bool { return pt.SupportedValue }
+
+func (pt *PTY) Start(cmd *exec.Cmd, rows, cols uint16) (platform.PTYSession, error) {
+	if pt.StartFunc != nil {
+		return pt.StartFunc(cmd, rows, cols)
+	}
+	if !pt.SupportedValue {
+		return nil, platform.ErrUnsupported
+	}
+	return nil, nil
+}

@@ -3088,6 +3088,230 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /terminal/status:
+    get:
+      summary: Get terminal host status
+      description: Reports whether the platform host supports local terminal allocation (Linux only).
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Terminal engine status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  supported:
+                    type: boolean
+                  os:
+                    type: string
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /terminal/servers:
+    get:
+      summary: List terminal servers
+      description: Lists all available servers, with localhost at index 0 followed by third-party servers.
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of terminal servers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TerminalServer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Register a new third-party server
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - host
+                - username
+                - auth_type
+                - secret
+              properties:
+                name:
+                  type: string
+                host:
+                  type: string
+                port:
+                  type: integer
+                username:
+                  type: string
+                auth_type:
+                  type: string
+                  enum: [password, key]
+                secret:
+                  type: string
+      responses:
+        '201':
+          description: Server registered.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/servers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get server details
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Server details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Server not found.
+    put:
+      summary: Update a third-party server
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - host
+                - username
+                - auth_type
+              properties:
+                name:
+                  type: string
+                host:
+                  type: string
+                port:
+                  type: integer
+                username:
+                  type: string
+                auth_type:
+                  type: string
+                  enum: [password, key]
+                secret:
+                  type: string
+      responses:
+        '200':
+          description: Server updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Server not found.
+    delete:
+      summary: Delete a third-party server
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Server deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Server not found.
+
+  /terminal/servers/test:
+    post:
+      summary: Test SSH connectivity
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - host
+                - username
+                - auth_type
+              properties:
+                host:
+                  type: string
+                port:
+                  type: integer
+                username:
+                  type: string
+                auth_type:
+                  type: string
+                secret:
+                  type: string
+                server_id:
+                  type: integer
+      responses:
+        '200':
+          description: Connection successful.
+        '400':
+          description: Connection failed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/ws/{serverId}:
+    parameters:
+      - name: serverId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Interactive terminal WebSocket stream
+      description: Upgrades HTTP connection to WebSocket for bidirectional terminal I/O.
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -3218,6 +3442,43 @@ components:
         path:
           type: string
           description: Canonical absolute directory path of the project.
+      additionalProperties: false
+    TerminalServer:
+      type: object
+      required:
+        - id
+        - name
+        - host
+        - port
+        - username
+        - auth_type
+        - is_local
+        - has_secret
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        username:
+          type: string
+        auth_type:
+          type: string
+          enum: [local, password, key]
+        is_local:
+          type: boolean
+        has_secret:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
       additionalProperties: false
     ProjectList:
       type: object

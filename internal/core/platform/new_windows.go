@@ -46,6 +46,18 @@ func (p windowsPlatform) Shutdown() Shutdown { return windows.Shutdown{} }
 // Terminal returns the Windows console reader.
 func (p windowsPlatform) Terminal() Terminal { return windows.Terminal{} }
 
+// PTY returns the Windows pseudoterminal port stub.
+func (p windowsPlatform) PTY() PTY { return windowsPTY{} }
+
+// windowsPTY adapts the Windows implementation to the PTY port.
+type windowsPTY struct{}
+
+func (windowsPTY) Supported() bool { return false }
+
+func (windowsPTY) Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error) {
+	return nil, ErrUnsupported
+}
+
 // windowsInstance adapts the windows implementation to the Instance port.
 type windowsInstance struct{}
 

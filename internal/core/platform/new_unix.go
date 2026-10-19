@@ -47,6 +47,18 @@ func (p unixPlatform) Environment() Environment { return unix.Environment{} }
 // Terminal returns the unix console reader.
 func (p unixPlatform) Terminal() Terminal { return unix.Terminal{} }
 
+// PTY returns the unix pseudoterminal launcher.
+func (p unixPlatform) PTY() PTY { return unixPTY{} }
+
+// unixPTY adapts the unix implementation to the PTY port.
+type unixPTY struct{}
+
+func (unixPTY) Supported() bool { return unix.PTY{}.Supported() }
+
+func (unixPTY) Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error) {
+	return unix.PTY{}.Start(cmd, rows, cols)
+}
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

@@ -1,0 +1,273 @@
+<script setup lang="ts">
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Terminal } from 'xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import 'xterm/css/xterm.css'
+import { buildTerminalWSUrl } from '../../api/terminal'
+import { useTerminalStore } from '../../stores/terminal'
+
+const props = defineProps<{
+  tabId: string
+  serverId: number
+  active: boolean
+}>()
+
+const terminalStore = useTerminalStore()
+const containerRef = ref<HTMLDivElement | null>(null)
+
+let term: Terminal | null = null
+let fitAddon: FitAddon | null = null
+let ws: WebSocket | null = null
+let resizeObserver: ResizeObserver | null = null
+const isConnected = ref(false)
+const connectionError = ref<string | null>(null)
+
+function connect() {
+  if (!containerRef.value) return
+
+  cleanupWS()
+  terminalStore.updateTabStatus(props.tabId, 'connecting')
+  connectionError.value = null
+
+  const cols = term?.cols ?? 80
+  const rows = term?.rows ?? 24
+  const wsUrl = buildTerminalWSUrl(props.serverId, cols, rows)
+
+  try {
+    ws = new WebSocket(wsUrl)
+    ws.binaryType = 'arraybuffer'
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'WebSocket 创建失败'
+    connectionError.value = msg
+    terminalStore.updateTabStatus(props.tabId, 'error', msg)
+    term?.writeln(`\r\n\x1b[31m[连接异常] ${msg}\x1b[0m`)
+    return
+  }
+
+  ws.onopen = () => {
+    isConnected.value = true
+    terminalStore.updateTabStatus(props.tabId, 'connected')
+    sendResize()
+    if (props.active) {
+      term?.focus()
+    }
+  }
+
+  ws.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      term?.write(new Uint8Array(event.data))
+    } else if (typeof event.data === 'string') {
+      term?.write(event.data)
+    }
+  }
+
+  ws.onerror = () => {
+    const msg = '连接发生错误'
+    connectionError.value = msg
+    terminalStore.updateTabStatus(props.tabId, 'error', msg)
+  }
+
+  ws.onclose = (event) => {
+    isConnected.value = false
+    const reason = event.reason || (event.wasClean ? '已正常退出' : '连接中断')
+    terminalStore.updateTabStatus(props.tabId, 'disconnected', reason)
+    term?.writeln(`\r\n\x1b[33m[终端已断开: ${reason}]\x1b[0m`)
+  }
+}
+
+function sendResize() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !term) return
+  ws.send(
+    JSON.stringify({
+      type: 'resize',
+      cols: term.cols,
+      rows: term.rows,
+    }),
+  )
+}
+
+function handleFit() {
+  if (!fitAddon || !term || !containerRef.value) return
+  if (containerRef.value.clientWidth === 0 || containerRef.value.clientHeight === 0) return
+  try {
+    fitAddon.fit()
+    sendResize()
+  } catch {
+    // Ignore fit errors on detached DOM
+  }
+}
+
+function cleanupWS() {
+  if (ws) {
+    ws.onopen = null
+    ws.onmessage = null
+    ws.onerror = null
+    ws.onclose = null
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      ws.close()
+    }
+    ws = null
+  }
+}
+
+onMounted(() => {
+  if (!containerRef.value) return
+
+  term = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: 'var(--font-mono, "SF Mono", Monaco, Consolas, "Liberation Mono", monospace)',
+    theme: {
+      background: '#121316',
+      foreground: '#e4e4e7',
+      cursor: '#38bdf8',
+      cursorAccent: '#121316',
+      selectionBackground: 'rgba(56, 189, 248, 0.3)',
+      black: '#27272a',
+      red: '#ef4444',
+      green: '#22c55e',
+      yellow: '#eab308',
+      blue: '#3b82f6',
+      magenta: '#d946ef',
+      cyan: '#06b6d4',
+      white: '#f4f4f5',
+      brightBlack: '#71717a',
+      brightRed: '#f87171',
+      brightGreen: '#4ade80',
+      brightYellow: '#facc15',
+      brightBlue: '#60a5fa',
+      brightMagenta: '#e879f9',
+      brightCyan: '#22d3ee',
+      brightWhite: '#ffffff',
+    },
+    convertEol: true,
+  })
+
+  fitAddon = new FitAddon()
+  term.loadAddon(fitAddon)
+  term.open(containerRef.value)
+
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'input', data }))
+    }
+  })
+
+  // Watch size changes
+  resizeObserver = new ResizeObserver(() => {
+    if (props.active) {
+      handleFit()
+    }
+  })
+  resizeObserver.observe(containerRef.value)
+
+  connect()
+
+  void nextTick(() => {
+    handleFit()
+    if (props.active) {
+      term?.focus()
+    }
+  })
+})
+
+watch(
+  () => props.active,
+  (isActive) => {
+    if (isActive) {
+      void nextTick(() => {
+        handleFit()
+        term?.focus()
+      })
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  if (resizeObserver && containerRef.value) {
+    resizeObserver.unobserve(containerRef.value)
+    resizeObserver.disconnect()
+  }
+  cleanupWS()
+  if (term) {
+    term.dispose()
+    term = null
+  }
+  fitAddon = null
+})
+</script>
+
+<template>
+  <div class="xterm-wrapper" :class="{ 'is-active': active }">
+    <div ref="containerRef" class="xterm-container" />
+    <div v-if="!isConnected" class="terminal-bar">
+      <span class="disconnect-notice">
+        {{ connectionError ? `连接异常: ${connectionError}` : '终端会话已断开' }}
+      </span>
+      <button type="button" class="btn-reconnect" @click="connect">
+        重新连接
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.xterm-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #121316;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.xterm-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+
+.xterm-container :deep(.xterm) {
+  height: 100%;
+}
+
+.terminal-bar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(30, 32, 38, 0.9);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--color-border, #3f3f46);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #fbbf24;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.disconnect-notice {
+  font-family: var(--font-family);
+}
+
+.btn-reconnect {
+  background: var(--color-primary, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-reconnect:hover {
+  opacity: 0.9;
+}
+</style>

@@ -7,6 +7,7 @@ package platform
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 )
@@ -25,6 +26,7 @@ type Platform interface {
 	Shutdown() Shutdown
 	Terminal() Terminal
 	Environment() Environment
+	PTY() PTY
 }
 
 // Dirs resolves platform directories and compares user-supplied paths.
@@ -126,6 +128,25 @@ type Terminal interface {
 	ReadSecret(prompt string) (string, error)
 }
 
+// PTY abstracts pseudoterminal operations for interactive terminal sessions.
+type PTY interface {
+	// Supported reports whether pseudoterminal allocation is supported on this platform.
+	Supported() bool
+	// Start starts the command attached to a newly created pseudoterminal.
+	Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error)
+}
+
+// PTYSession abstracts an active pseudoterminal session.
+type PTYSession interface {
+	io.ReadWriteCloser
+	// Resize updates the terminal window size.
+	Resize(rows, cols uint16) error
+	// Wait waits for the command to exit.
+	Wait() error
+	// Pid returns the process ID of the started command.
+	Pid() int
+}
+
 // Environment runs startup environment checks.
 type Environment interface {
 	// Describe returns diagnostic lines for the startup log, including
@@ -136,6 +157,9 @@ type Environment interface {
 	// Check rejects unsupported environments, e.g. WSL1 on unix.
 	Check() error
 }
+
+// ErrUnsupported reports an operation not supported on the host platform.
+var ErrUnsupported = errors.New("platform: operation not supported")
 
 // ErrLockHeld reports that another process holds the single-instance lock.
 // It is the canonical port value; each platform implementation holds its
@@ -160,3 +184,4 @@ func (s stubPlatform) Perms() Perms             { return nil }
 func (s stubPlatform) Shutdown() Shutdown       { return nil }
 func (s stubPlatform) Terminal() Terminal       { return nil }
 func (s stubPlatform) Environment() Environment { return nil }
+func (s stubPlatform) PTY() PTY                 { return nil }

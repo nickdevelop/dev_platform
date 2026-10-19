@@ -15,6 +15,7 @@ import (
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
+	"devplatform/internal/app/terminal"
 )
 
 // maxRequestBodyBytes bounds every API request body (1 MiB). All platform
@@ -70,6 +71,8 @@ type Dependencies struct {
 	Tasks *tasks.Service
 	// Prompts manages reusable prompt templates.
 	Prompts *prompts.Service
+	// Terminal manages server connections and interactive terminal sessions.
+	Terminal *terminal.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -129,6 +132,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Prompts != nil {
 			deps.Prompts.RegisterRoutes(protected)
+		}
+		if deps.Terminal != nil {
+			deps.Terminal.RegisterRoutes(protected)
 		}
 	}
 

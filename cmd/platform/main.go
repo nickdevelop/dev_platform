@@ -30,6 +30,7 @@ import (
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
+	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
 	"devplatform/internal/providers/opencode"
@@ -346,6 +347,10 @@ func runServer(args []string) error {
 	promptRepo := prompts.NewRepository(db)
 	promptService := prompts.NewService(promptRepo)
 
+	terminalRepo := terminal.NewRepository(db)
+	terminalService := terminal.NewService(terminalRepo, secretStore, platform.New())
+	defer terminalService.Close()
+
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
 	// process outlives the platform (finding 1). Defers unwind LIFO, so this
@@ -368,6 +373,7 @@ func runServer(args []string) error {
 		Sessions:      sessionService,
 		Tasks:         taskService,
 		Prompts:       promptService,
+		Terminal:      terminalService,
 		WebDir:        webDir,
 	})
 

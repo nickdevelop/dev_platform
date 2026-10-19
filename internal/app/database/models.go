@@ -277,5 +277,23 @@ type Prompt struct {
 // TableName pins the table name for Prompt.
 func (Prompt) TableName() string { return "prompts" }
 
+// TerminalServer records a server configuration for terminal connections.
+// Table: terminal_servers.
+type TerminalServer struct {
+	ID        uint      `gorm:"primaryKey;column:id"`
+	Name      string    `gorm:"column:name;not null"`
+	Host      string    `gorm:"column:host;not null"`
+	Port      int       `gorm:"column:port;not null;default:22"`
+	Username  string    `gorm:"column:username;not null"`
+	AuthType  string    `gorm:"column:auth_type;not null;default:'password'"` // "password" | "key"
+	SecretRef string    `gorm:"column:secret_ref"`                           // reference in secrets.Store
+	IsLocal   bool      `gorm:"column:is_local;not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName pins the table name for TerminalServer.
+func (TerminalServer) TableName() string { return "terminal_servers" }
+
 
 

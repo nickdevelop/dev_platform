@@ -22,6 +22,7 @@ import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
 import TasksView from './features/tasks/TasksView.vue'
 import PromptsView from './features/prompts/PromptsView.vue'
+import TerminalWorkspace from './features/terminal/TerminalWorkspace.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -86,6 +87,12 @@ export function createAppRouter() {
             name: 'prompt-detail',
             component: PromptsView,
             meta: { prompts: true, fullHeight: true },
+          },
+          {
+            path: 'terminal',
+            name: 'terminal',
+            component: TerminalWorkspace,
+            meta: { terminal: true, fullHeight: true },
           },
           {
             path: 'projects/:projectId/sessions/new',

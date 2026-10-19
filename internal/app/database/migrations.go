@@ -198,6 +198,9 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 25, name: "create_terminal_servers", run: func(tx *gorm.DB) error {
+		return tx.Migrator().CreateTable(&TerminalServer{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the
