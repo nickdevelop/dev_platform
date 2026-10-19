@@ -979,7 +979,7 @@ async function removeSession() {
                 data-test="tab-activity"
                 @click="setRightPaneMode('activity')"
               >
-                思考与工具<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
+                活动<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
               </button>
               <button
                 type="button"
@@ -1069,10 +1069,10 @@ async function removeSession() {
           class="activity-fab"
           data-test="activity-expand"
           data-test-narrow="activity-expand-narrow"
-          :aria-label="`展开思考与工具（共 ${activityCount} 条）`"
+          :aria-label="`展开活动（共 ${activityCount} 条）`"
           @click="setActivityCollapsed(false)"
         >
-          <span class="fab-label">思考与工具</span>
+          <span class="fab-label">活动</span>
           <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
         </button>
       </div>

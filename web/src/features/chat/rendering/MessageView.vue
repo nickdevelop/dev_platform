@@ -193,7 +193,7 @@ async function copyMessage(entry: ChatEntry) {
       class="entries flat-activity"
       role="log"
       aria-live="polite"
-      aria-label="思考与工具活动"
+      aria-label="活动"
     >
       <li v-for="entry in flatActivityEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
         <div v-if="entry.kind === 'thinking'" class="flat-thinking" data-test="thinking">
@@ -616,7 +616,7 @@ async function copyMessage(entry: ChatEntry) {
       </li>
     </ol>
 
-    <p v-if="displayMode === 'activity' ? flatActivityEntries.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无思考与工具活动。' : '尚无消息。' }}</p>
+    <p v-if="displayMode === 'activity' ? flatActivityEntries.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无活动。' : '尚无消息。' }}</p>
 
     <div
       v-if="subagentModal"

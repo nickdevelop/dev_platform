@@ -233,7 +233,7 @@ describe('split message/activity log', () => {
     const wrapper = mount(MessageView, {
       props: { messages: [], capabilities: capabilities(), display: 'activity' },
     })
-    expect(wrapper.text()).toContain('暂无思考与工具活动')
+    expect(wrapper.text()).toContain('暂无活动')
   })
 })
 
@@ -273,7 +273,7 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
     const fab = wrapper.find('[data-test="activity-expand"]')
     expect(fab.exists()).toBe(true)
-    expect(fab.text()).toContain('思考与工具')
+    expect(fab.text()).toContain('活动')
   })
 
   it('opens in-tab popup on floating button click and persists expanded choice', async () => {
