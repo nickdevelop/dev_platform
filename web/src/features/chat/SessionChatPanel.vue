@@ -335,8 +335,8 @@ function onDrop(event: DragEvent) {
 // through the element itself.
 const logScroll = ref<HTMLElement | null>(null)
 const activityScroll = ref<HTMLElement | null>(null)
-// Whether the right activity pane is collapsed. Persisted in localStorage so
-// a refresh keeps the user's choice; defaults to expanded.
+// Whether the activity pane is collapsed (persisted in localStorage).
+// Defaults to collapsed, presenting a floating FAB that opens an in-tab drawer.
 const pane = useActivityPane(() => {
   // Expanding returns to the newest activity when the pane was following it.
   activityPinned.value = true
@@ -346,13 +346,6 @@ const pane = useActivityPane(() => {
 const {
   activityCollapsed: activityCollapsedState,
   setActivityCollapsed,
-  activityWidth,
-  splitRef,
-  draggingDivider,
-  activityPaneStyle,
-  onDividerMouseDown,
-  onDividerKeydown,
-  resetActivityWidth,
 } = pane
 const activityCollapsed = activityCollapsedState
 
@@ -772,9 +765,9 @@ async function removeSession() {
       </p>
 
       <div
-        ref="splitRef"
         class="conversation-split"
-        :class="{ 'activity-collapsed': activityCollapsed, dragging: draggingDivider }"
+        data-test="conversation-split"
+        :class="{ 'activity-collapsed': activityCollapsed }"
       >
         <div class="message-column">
           <div class="conversation-area">
@@ -925,44 +918,23 @@ async function removeSession() {
           </form>
         </div>
 
-        <div
-          class="split-divider"
-          data-test="split-divider"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="活动栏分隔条，拖拽调整宽度，双击恢复默认"
-          tabindex="0"
-          @mousedown="onDividerMouseDown"
-          @dblclick="resetActivityWidth"
-          @keydown="onDividerKeydown"
-        >
-          <button
-            type="button"
-            class="divider-toggle"
-            :data-test="activityCollapsed ? 'activity-expand' : 'activity-collapse'"
-            :title="activityCollapsed ? '展开活动栏' : '收起活动栏'"
-            :aria-label="activityCollapsed ? '展开思考与工具栏' : '收起思考与工具栏'"
-            :aria-expanded="(!activityCollapsed).toString()"
-            @click="setActivityCollapsed(!activityCollapsed)"
-          >
-            {{ activityCollapsed ? '«' : '»' }}
-          </button>
-        </div>
-
         <aside
           v-if="!activityCollapsed"
           class="activity-pane"
           aria-label="思考与工具"
           data-test="activity-pane"
-          :style="activityPaneStyle"
         >
           <header class="activity-head">
-            <h3 class="activity-title">思考与工具<span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span></h3>
+            <h3 class="activity-title">
+              思考与工具
+              <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
+            </h3>
             <button
               type="button"
-              class="activity-toggle narrow-only"
+              class="activity-toggle"
               data-test="activity-hide"
-              title="收起活动栏"
+              data-test-collapse="activity-collapse"
+              title="收起思考与工具"
               aria-label="收起思考与工具栏"
               @click="setActivityCollapsed(true)"
             >
@@ -997,11 +969,14 @@ async function removeSession() {
         <button
           v-if="activityCollapsed"
           type="button"
-          class="activity-fab narrow-only"
-          data-test="activity-expand-narrow"
+          class="activity-fab"
+          data-test="activity-expand"
+          data-test-narrow="activity-expand-narrow"
+          :aria-label="`展开思考与工具（共 ${activityCount} 条）`"
           @click="setActivityCollapsed(false)"
         >
-          活动<span v-if="activityCount > 0" class="activity-count">{{ activityCount }}</span>
+          <span class="fab-label">思考与工具</span>
+          <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
         </button>
       </div>
 
@@ -1062,14 +1037,13 @@ async function removeSession() {
 }
 
 .conversation-split {
-  /* Left messages + right activity share the pane height; each column scrolls
-     inside itself so tool output can never push the composer out of view. */
+  /* Conversation area fills the container height; activity pane floats over
+     the tab as an in-tab drawer / popup both on wide and narrow viewports. */
   position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
   display: flex;
-  gap: 0.75rem;
   align-items: stretch;
 }
 
@@ -1103,119 +1077,66 @@ async function removeSession() {
 }
 
 .activity-pane {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(32rem, 88vw);
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  position: relative;
+  z-index: 10;
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: var(--color-surface-muted);
-}
-
-/* The middle divider: a slim drag handle with the collapse toggle riding in
-   its vertical center. Collapsing hides the pane entirely, so the divider is
-   the only width the right side keeps. */
-.split-divider {
-  flex: 0 0 14px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  border-radius: 7px;
-  outline-offset: 1px;
-}
-
-.split-divider::before {
-  content: '';
-  position: absolute;
-  top: 4px;
-  bottom: 4px;
-  left: 50%;
-  width: 2px;
-  transform: translateX(-50%);
-  border-radius: 2px;
-  background: var(--color-border);
-}
-
-.split-divider:hover::before,
-.conversation-split.dragging .split-divider::before {
-  background: var(--color-primary);
-}
-
-.conversation-split.dragging,
-.conversation-split.dragging .split-divider {
-  user-select: none;
-}
-
-.divider-toggle {
-  position: relative;
-  z-index: 1;
-  width: 1.15rem;
-  height: 2.6rem;
-  padding: 0;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
   background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.7rem;
-  line-height: 1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.16);
+  animation: activitySlideIn 0.18s ease-out;
 }
 
-.divider-toggle:hover {
-  color: var(--color-primary-hover);
-  border-color: var(--color-primary);
+@keyframes activitySlideIn {
+  from {
+    transform: translateX(12px);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
-.narrow-only {
-  display: none;
+@media (max-width: 900px) {
+  .activity-pane {
+    width: min(24rem, 88vw);
+  }
 }
 
 .activity-fab {
   position: absolute;
-  right: 0.75rem;
+  right: 1rem;
   bottom: 5.5rem;
   z-index: 9;
-  padding: 0.4rem 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   background: var(--color-surface);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  color: var(--color-text);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
   cursor: pointer;
   font: inherit;
   font-size: 0.85rem;
+  font-weight: 500;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
-/* Narrow screens: the activity pane becomes an overlay drawer so it never
-   squeezes the message column; the divider steps aside for a floating button
-   and the pane's own header close. */
-@media (max-width: 900px) {
-  .split-divider {
-    display: none;
-  }
-
-  .narrow-only {
-    display: inline-block;
-  }
-
-  .activity-fab.narrow-only {
-    display: inline-block;
-  }
-
-  .activity-pane {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(22rem, 86vw) !important;
-    flex: none;
-    z-index: 8;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
-  }
+.activity-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .activity-head {
@@ -1223,26 +1144,34 @@ async function removeSession() {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
+  padding: 0.55rem 0.75rem;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
 }
 
 .activity-title {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
 }
 
 .activity-count {
-  display: inline-block;
-  min-width: 1.4rem;
-  text-align: center;
-  padding: 0.05rem 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.35rem;
   border-radius: 999px;
   background: var(--color-border);
   font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
   color: var(--color-text);
 }
 
@@ -1258,14 +1187,21 @@ async function removeSession() {
 }
 
 .activity-toggle {
-  padding: 0.2rem 0.6rem;
+  padding: 0.2rem 0.65rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   background: var(--color-surface);
+  color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: 0.8rem;
   white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.activity-toggle:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .jump-latest {

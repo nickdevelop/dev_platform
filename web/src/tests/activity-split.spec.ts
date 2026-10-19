@@ -237,7 +237,7 @@ describe('split message/activity log', () => {
   })
 })
 
-describe('activity pane collapse', () => {
+describe('activity pane floating button and in-tab popup', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     FakeEventSource.instances = []
@@ -264,52 +264,80 @@ describe('activity pane collapse', () => {
     return wrapper
   }
 
-  it('renders message and activity columns side by side', async () => {
+  it('defaults to collapsed with a floating FAB and a full-width message area', async () => {
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="conversation-scroll"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
-    // The composer stays in the left message column, not in a scroller.
-    expect(wrapper.find('[data-test="conversation-scroll"]').find('form.send').exists()).toBe(false)
+    // The message composer is in the message column.
     expect(wrapper.find('.message-column form.send').exists()).toBe(true)
+    // The activity pane is hidden by default and represented by a floating button.
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
+    const fab = wrapper.find('[data-test="activity-expand"]')
+    expect(fab.exists()).toBe(true)
+    expect(fab.text()).toContain('思考与工具')
   })
 
-  it('collapses from the middle divider and persists the choice', async () => {
+  it('opens in-tab popup on floating button click and persists expanded choice', async () => {
     const wrapper = await mountPanel()
-    // The toggle rides in the middle divider, not in the pane header.
-    expect(wrapper.find('[data-test="split-divider"] [data-test="activity-collapse"]').exists()).toBe(true)
-    await wrapper.find('[data-test="activity-collapse"]').trigger('click')
-    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    // Collapsing hides the pane entirely: no rail keeps occupying message width.
-    expect(wrapper.find('[data-test="activity-rail"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="split-divider"]').exists()).toBe(true)
-    expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
+    const fab = wrapper.find('[data-test="activity-expand"]')
+    expect(fab.exists()).toBe(true)
 
-    await wrapper.find('[data-test="activity-expand"]').trigger('click')
+    await fab.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(false)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
-  it('starts collapsed when the stored choice says so', async () => {
-    localStorage.setItem('dev-platform-activity-pane-v1', 'collapsed')
+  it('collapses back to floating button on hide click and persists collapsed choice', async () => {
     const wrapper = await mountPanel()
+    await wrapper.find('[data-test="activity-expand"]').trigger('click')
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
+
+    const hideBtn = wrapper.find('[data-test="activity-hide"]')
+    expect(hideBtn.exists()).toBe(true)
+    await hideBtn.trigger('click')
+
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+    expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
+  })
+
+  it('starts expanded when stored choice says so', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(false)
+  })
+
+  it('closes the open popup when Escape key is pressed', async () => {
+    const wrapper = await mountPanel()
+    await wrapper.find('[data-test="activity-expand"]').trigger('click')
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
   })
 
-  it('applies the stored divider width to the activity pane', async () => {
-    localStorage.setItem('dev-platform-activity-width-v1', '420')
+  it('displays activity count badge on floating button and popup title', async () => {
+    const sessionsStore = useSessionsStore()
     const wrapper = await mountPanel()
-    const pane = wrapper.find('[data-test="activity-pane"]')
-    expect(pane.exists()).toBe(true)
-    expect((pane.element as HTMLElement).style.width).toBe('420px')
-  })
 
-  it('restores the default width on divider double-click', async () => {
-    localStorage.setItem('dev-platform-activity-width-v1', '500')
-    const wrapper = await mountPanel()
-    await wrapper.find('[data-test="split-divider"]').trigger('dblclick')
-    expect((wrapper.find('[data-test="activity-pane"]').element as HTMLElement).style.width).toBe('340px')
-    expect(localStorage.getItem('dev-platform-activity-width-v1')).toBe('340')
+    // Push thinking and tool messages to sess-1
+    sessionsStore.messages['sess-1'] = [
+      { id: 'u1', kind: 'message', role: 'user', text: 'hi', streaming: false },
+      { id: 't1', kind: 'thinking', role: 'assistant', text: 'thinking...', streaming: false },
+      { id: 'c1', kind: 'tool_call', role: 'assistant', text: 'call', name: 'read', callId: '1', streaming: false },
+    ]
+    await flushPromises()
+
+    const fab = wrapper.find('[data-test="activity-expand"]')
+    expect(fab.find('[data-test="activity-count"]').text()).toBe('2')
+
+    await fab.trigger('click')
+    const pane = wrapper.find('[data-test="activity-pane"]')
+    expect(pane.find('.activity-title [data-test="activity-count"]').text()).toBe('2')
   })
 })
