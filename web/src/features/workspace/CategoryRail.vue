@@ -96,6 +96,10 @@ function onTerminalClick(event: MouseEvent) {
     event.preventDefault()
   }
 }
+
+function onSettingsClick() {
+  emit('expandSidebar')
+}
 </script>
 
 <template>
@@ -169,6 +173,7 @@ function onTerminalClick(event: MouseEvent) {
       title="设置"
       :aria-current="settingsActive ? 'page' : undefined"
       :to="{ name: 'settings-appearance' }"
+      @click="onSettingsClick"
     >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <circle cx="12" cy="12" r="3" />

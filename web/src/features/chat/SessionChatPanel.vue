@@ -945,7 +945,6 @@ async function removeSession() {
                   />
                 </div>
                 <div class="composer-actions">
-                  <span class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
                   <button
                     type="button"
                     class="composer-action"
@@ -1699,12 +1698,6 @@ async function removeSession() {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-}
-
-.composer-hint {
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  white-space: nowrap;
 }
 
 .composer-action {

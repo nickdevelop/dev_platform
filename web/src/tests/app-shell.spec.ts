@@ -281,18 +281,58 @@ describe('three-pane app shell', () => {
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
   })
 
-  it('brings the project column back when the project category is clicked', async () => {
+  it('brings the project column back floating when the project category is clicked and auto-collapses on outside click', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
     await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
 
-    // Clicking the already-active project entry changes no route, so the click
-    // itself has to restore the column it depends on.
+    // Clicking the rail item pops the middle column out floating
     await wrapper.findAll('a').find((link) => link.text() === '项目')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+    const sidebar = wrapper.find('aside.sidebar')
+    expect(sidebar.exists()).toBe(true)
+    expect(sidebar.classes()).toContain('sidebar-floating')
+    expect(wrapper.find('[data-test="sidebar-backdrop"]').exists()).toBe(true)
+
+    // Clicking outside (the backdrop) auto-collapses the floating column
+    await wrapper.find('[data-test="sidebar-backdrop"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+  })
+
+  it('supports pin/unpin and dock collapse controls on the sidebar', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const pinBtn = wrapper.find('[data-test="sidebar-pin-btn"]')
+    const collapseBtn = wrapper.find('[data-test="sidebar-collapse-btn"]')
+
+    expect(pinBtn.exists()).toBe(true)
+    expect(collapseBtn.exists()).toBe(true)
+    expect(pinBtn.classes()).toContain('pinned')
+
+    // Clicking collapse on the sidebar hides it
+    await collapseBtn.trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('collapsed')
+
+    // Clicking the rail category brings it out floating
+    await wrapper.findAll('a').find((link) => link.text() === '项目')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('aside.sidebar').classes()).toContain('sidebar-floating')
+
+    // Pinning the floating sidebar docks it
+    await wrapper.find('[data-test="sidebar-pin-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('aside.sidebar').classes()).toContain('sidebar-docked')
+    expect(wrapper.find('[data-test="sidebar-backdrop"]').exists()).toBe(false)
+    expect(localStorage.getItem('dev-platform-sidebar-pinned')).toBe('pinned')
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
+
+    // Unpinning turns it back into floating mode
+    await wrapper.find('[data-test="sidebar-pin-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('aside.sidebar').classes()).toContain('sidebar-floating')
+    expect(wrapper.find('[data-test="sidebar-backdrop"]').exists()).toBe(true)
   })
 
   it('starts with the project column collapsed when the stored choice says so', async () => {

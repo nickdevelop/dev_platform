@@ -43,17 +43,61 @@ const search = ref('')
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
 
-// The middle column (project tree, task list or settings menu) can be collapsed
-// from the rail so the conversation takes the full width. The choice is
-// persisted so a refresh keeps it; the default is expanded, and every area
-// shares one choice because the column is the same slot in all of them.
+// The middle column (project tree, task list or settings menu) can be pinned (docked)
+// or floating (unpinned/drawer), and can be collapsed from the dock controls or rail.
+// Pinned status defaults to true; collapsed status defaults to false.
 const SIDEBAR_STORAGE_KEY = 'dev-platform-sidebar-v1'
+const SIDEBAR_PINNED_STORAGE_KEY = 'dev-platform-sidebar-pinned'
+
 const sidebarCollapsed = ref(false)
 try {
   sidebarCollapsed.value = localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'collapsed'
 } catch {
   sidebarCollapsed.value = false
 }
+
+const sidebarPinned = ref(true)
+try {
+  const savedPinned = localStorage.getItem(SIDEBAR_PINNED_STORAGE_KEY)
+  if (savedPinned !== null) {
+    sidebarPinned.value = savedPinned === 'pinned'
+  }
+} catch {
+  sidebarPinned.value = true
+}
+
+const floatingOpen = ref(false)
+
+function setSidebarPinned(pinned: boolean) {
+  sidebarPinned.value = pinned
+  try {
+    localStorage.setItem(SIDEBAR_PINNED_STORAGE_KEY, pinned ? 'pinned' : 'unpinned')
+  } catch {
+    // Persistence is best-effort only.
+  }
+  if (pinned) {
+    // Pinning docks the panel into the normal layout
+    sidebarCollapsed.value = false
+    floatingOpen.value = false
+    try {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, 'expanded')
+    } catch {
+      // Persistence is best-effort only.
+    }
+  } else {
+    // Unpinning turns it into floating mode
+    floatingOpen.value = true
+  }
+}
+
+function toggleSidebarPinned() {
+  if (isDocked.value) {
+    setSidebarPinned(false)
+  } else {
+    setSidebarPinned(true)
+  }
+}
+
 function setSidebarCollapsed(collapsed: boolean) {
   sidebarCollapsed.value = collapsed
   try {
@@ -61,16 +105,52 @@ function setSidebarCollapsed(collapsed: boolean) {
   } catch {
     // Persistence is best-effort only.
   }
-}
-function toggleSidebar() {
-  setSidebarCollapsed(!sidebarCollapsed.value)
+  if (collapsed) {
+    floatingOpen.value = false
+  }
 }
 
-// In settings mode the navigation categories are essential and should not be collapsed
-// by the workspace's project sidebar toggle.
+function collapseSidebar() {
+  setSidebarCollapsed(true)
+  floatingOpen.value = false
+}
+
+function toggleSidebar() {
+  if (isSidebarVisible.value) {
+    collapseSidebar()
+  } else {
+    if (sidebarPinned.value) {
+      setSidebarCollapsed(false)
+    } else {
+      floatingOpen.value = true
+    }
+  }
+}
+
+// When clicking first-column rail items: if sidebar is collapsed or unpinned, pop it out floating.
+function onRailMenuClick() {
+  if (!isDocked.value) {
+    floatingOpen.value = true
+  }
+}
+
+function closeFloatingSidebar() {
+  floatingOpen.value = false
+}
+
+const isDocked = computed(() => {
+  return sidebarPinned.value && !sidebarCollapsed.value
+})
+
+const isFloating = computed(() => {
+  if (isDocked.value) return false
+  if (floatingOpen.value) return true
+  if (!sidebarPinned.value && !sidebarCollapsed.value) return true
+  return false
+})
+
 const isSidebarVisible = computed(() => {
-  if (settingsMode.value) return true
-  return !sidebarCollapsed.value
+  return isDocked.value || isFloating.value
 })
 
 // Whether task-generated sessions are shown in the project tree.
@@ -395,6 +475,18 @@ async function logout() {
   }
   await router.push({ name: 'login' })
 }
+
+const sidebarRef = ref<HTMLElement | null>(null)
+
+// When route changes and sidebar is floating, collapse it back so main pane gets focus
+watch(
+  () => route.fullPath,
+  () => {
+    if (isFloating.value) {
+      floatingOpen.value = false
+    }
+  },
+)
 </script>
 
 <template>
@@ -405,23 +497,67 @@ async function logout() {
       'tasks-mode': tasksMode,
       'prompts-mode': promptsMode,
       'terminal-mode': terminalMode,
-      'sidebar-collapsed': !isSidebarVisible,
+      'sidebar-collapsed': !isDocked,
     }"
   >
+    <!-- Floating sidebar backdrop for click-outside to collapse -->
+    <div
+      v-if="isFloating"
+      class="sidebar-backdrop"
+      data-test="sidebar-backdrop"
+      @click="closeFloatingSidebar"
+    />
+
     <CategoryRail
       :sidebar-collapsed="!isSidebarVisible"
       :sidebar-collapsible="!settingsMode"
       @logout="logout"
       @toggle-sidebar="toggleSidebar"
-      @expand-sidebar="setSidebarCollapsed(false)"
+      @expand-sidebar="onRailMenuClick"
     />
 
     <!-- The column's accessible name follows the list it currently carries. -->
     <aside
       v-if="isSidebarVisible"
+      ref="sidebarRef"
       class="sidebar"
+      :class="{
+        'sidebar-floating': isFloating,
+        'sidebar-docked': isDocked,
+      }"
       :aria-label="columnLabel"
     >
+      <div class="sidebar-dock-controls">
+        <button
+          type="button"
+          class="dock-btn pin-btn"
+          data-test="sidebar-pin-btn"
+          :class="{ pinned: isDocked }"
+          :title="isDocked ? '取消固定' : '固定侧边栏'"
+          :aria-label="isDocked ? '取消固定' : '固定侧边栏'"
+          :aria-pressed="isDocked.toString()"
+          @click="toggleSidebarPinned"
+        >
+          <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <line x1="12" y1="17" x2="12" y2="22" />
+            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="dock-btn collapse-btn"
+          data-test="sidebar-collapse-btn"
+          title="收起侧边栏"
+          aria-label="收起侧边栏"
+          @click="collapseSidebar"
+        >
+          <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <polyline points="11 17 6 12 11 7" />
+            <polyline points="18 17 13 12 18 7" />
+          </svg>
+        </button>
+      </div>
+
       <!-- The middle column carries whichever list the open menu owns: the
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
       <TasksSidebar v-if="tasksMode" />
@@ -539,16 +675,118 @@ async function logout() {
   grid-template-columns: 56px minmax(0, 1fr);
 }
 
+/* Sidebar backdrop for floating/drawer mode */
+.sidebar-backdrop {
+  position: fixed;
+  top: 0;
+  left: 56px;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 35;
+  animation: backdrop-fade-in 0.15s ease-out;
+}
+
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .sidebar {
+  position: relative;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   min-width: 0;
+  height: 100%;
+}
+
+.sidebar.sidebar-floating {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 56px;
+  width: 272px;
+  z-index: 40;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.18);
+  animation: sidebar-slide-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sidebar-slide-in {
+  from {
+    transform: translateX(-12px);
+    opacity: 0.85;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.sidebar-dock-controls {
+  position: absolute;
+  top: calc(var(--space-unit) * 1.8);
+  right: calc(var(--space-unit) * 1.5);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
+  z-index: 10;
+}
+
+.dock-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dock-btn:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.dock-btn.pin-btn.pinned {
+  color: var(--color-primary);
+}
+
+.dock-btn.pin-btn.pinned .dock-icon {
+  fill: currentColor;
+}
+
+.dock-btn.pin-btn:not(.pinned) .dock-icon {
+  transform: rotate(45deg);
+}
+
+.dock-icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.15s ease;
+}
+
+:deep(.sidebar-head) {
+  padding-right: calc(var(--space-unit) * 8.5) !important;
 }
 
 .sidebar-head {
-  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 8.5) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -664,5 +902,25 @@ async function logout() {
   flex-direction: column;
   gap: 0.5rem;
   align-items: flex-start;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 56px minmax(0, 1fr) !important;
+  }
+
+  .sidebar {
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 56px;
+    width: min(280px, calc(100vw - 56px)) !important;
+    z-index: 40;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
+  }
+
+  .sidebar-backdrop {
+    background: rgba(0, 0, 0, 0.4);
+  }
 }
 </style>
