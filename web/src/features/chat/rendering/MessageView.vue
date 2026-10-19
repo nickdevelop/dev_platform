@@ -439,7 +439,6 @@ async function copyMessage(entry: ChatEntry) {
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <span>{{ copiedEntryId === block.entry.id ? '已复制' : '复制' }}</span>
                 </button>
               </div>
             </div>
@@ -757,16 +756,14 @@ async function copyMessage(entry: ChatEntry) {
 .message-copy-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.1rem 0.35rem;
+  justify-content: center;
+  padding: 0.15rem;
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-family: inherit;
-  font-size: 0.72rem;
-  line-height: 1.2;
+  line-height: 1;
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -781,8 +778,8 @@ async function copyMessage(entry: ChatEntry) {
 }
 
 .message-copy-btn .copy-icon {
-  width: 0.75rem;
-  height: 0.75rem;
+  width: 0.85rem;
+  height: 0.85rem;
   flex-shrink: 0;
 }
 

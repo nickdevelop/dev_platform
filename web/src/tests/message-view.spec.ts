@@ -339,7 +339,8 @@ describe('MessageView copy button', () => {
 
     const buttons = wrapper.findAll('[data-test="message-copy-btn"]')
     expect(buttons).toHaveLength(1)
-    expect(buttons[0].text()).toContain('复制')
+    expect(buttons[0].attributes('title')).toBe('复制本条消息')
+    expect(buttons[0].find('.copy-icon').exists()).toBe(true)
 
     // Confirm it resides inside the assistant message-meta
     const meta = wrapper.find('[data-test="message-meta"]')
@@ -361,19 +362,20 @@ describe('MessageView copy button', () => {
     })
 
     const btn = wrapper.get('[data-test="message-copy-btn"]')
-    expect(btn.text()).toContain('复制')
+    expect(btn.attributes('title')).toBe('复制本条消息')
+    expect(btn.classes()).not.toContain('is-copied')
 
     await btn.trigger('click')
     await flushPromises()
 
     expect(writeTextMock).toHaveBeenCalledWith('复制这行文字')
-    expect(btn.text()).toContain('已复制')
+    expect(btn.attributes('title')).toBe('已复制')
     expect(btn.classes()).toContain('is-copied')
 
     vi.advanceTimersByTime(1500)
     await wrapper.vm.$nextTick()
 
-    expect(btn.text()).toContain('复制')
+    expect(btn.attributes('title')).toBe('复制本条消息')
     expect(btn.classes()).not.toContain('is-copied')
   })
 
