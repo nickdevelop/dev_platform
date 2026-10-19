@@ -384,6 +384,26 @@ func (c *Client) GetSession(ctx context.Context, sessionID string) (SessionInfo,
 	return payload.Data, nil
 }
 
+// ActiveSessions retrieves the map of currently active session IDs from the server.
+func (c *Client) ActiveSessions(ctx context.Context) (map[string]bool, error) {
+	var payload struct {
+		Data map[string]struct {
+			Type string `json:"type"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/api/session/active", nil, nil, &payload); err != nil {
+		return nil, err
+	}
+	result := make(map[string]bool, len(payload.Data))
+	for id, item := range payload.Data {
+		if item.Type == "running" {
+			result[id] = true
+		}
+	}
+	return result, nil
+}
+
+
 // ModelVariant mirrors Model.Variant: a named configuration of a model that a
 // message may select with ModelRef.Variant.
 type ModelVariant struct {

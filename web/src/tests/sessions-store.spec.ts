@@ -1472,3 +1472,59 @@ describe('sessions store stream resume', () => {
     expect(StreamingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
   })
 })
+
+describe('sessions store cross-project turn state', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps running session ids across projects and updates via setTurn', async () => {
+    const sessions = useSessionsStore()
+
+    // Load project 1 with a running session A1 and idle session A2
+    sessions.loadSessions = vi.fn().mockImplementation(async (projectId: number) => {
+      sessions.projectId = projectId
+      if (projectId === 1) {
+        const list = [
+          session('A1', 1, { turn: 'running' }),
+          session('A2', 1, { turn: 'idle' }),
+        ]
+        sessions.recordTurns(list)
+        sessions.sessions = list
+        sessions.sessionsByProject[1] = list
+      } else if (projectId === 2) {
+        const list = [
+          session('B1', 2, { turn: 'running' }),
+          session('B2', 2, { turn: 'running' }),
+        ]
+        sessions.recordTurns(list)
+        sessions.sessions = list
+        sessions.sessionsByProject[2] = list
+      }
+    })
+
+    await sessions.loadSessions(1)
+    expect(sessions.runningSessionIds).toEqual(['A1'])
+
+    // Now switch to project 2
+    await sessions.loadSessions(2)
+    // Both project 1's A1 and project 2's B1, B2 should be included in runningSessionIds!
+    expect(sessions.runningSessionIds).toContain('A1')
+    expect(sessions.runningSessionIds).toContain('B1')
+    expect(sessions.runningSessionIds).toContain('B2')
+
+    // Background session A1 finishes in project 1
+    sessions.setTurn('A1', 'idle')
+    expect(sessions.runningSessionIds).not.toContain('A1')
+    expect(sessions.runningSessionIds).toContain('B1')
+    expect(sessions.runningSessionIds).toContain('B2')
+
+    // And sessionById for background session A1 reflects idle
+    expect(sessions.sessionById('A1')?.turn).toBe('idle')
+  })
+})
+

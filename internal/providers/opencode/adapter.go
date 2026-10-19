@@ -26,7 +26,10 @@ import (
 )
 
 // Compile-time proof that the opencode adapter satisfies the platform contract.
-var _ agents.AgentAdapter = (*Adapter)(nil)
+var (
+	_ agents.AgentAdapter        = (*Adapter)(nil)
+	_ agents.SessionTurnDetector = (*Adapter)(nil)
+)
 
 const (
 	// streamRetryMin and streamRetryMax bound the reconnect backoff after the
@@ -874,6 +877,32 @@ func (inst *instance) removeSubscriber(sub *subscriber) {
 	delete(inst.subs, sub)
 	inst.mu.Unlock()
 }
+
+// DetectTurn reports whether the native session is actively running a turn.
+func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := ref.Validate(); err != nil {
+		return false, err
+	}
+	if ref.Backend != agents.BackendOpenCodeV2 {
+		return false, fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return false, err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return false, err
+	}
+	active, err := inst.client.ActiveSessions(ctx)
+	if err != nil {
+		return false, fmt.Errorf("opencode: check active sessions: %w", err)
+	}
+	return active[ref.SessionID], nil
+}
+
 
 // ensureStream starts the instance's single backend event reader on first use.
 func (inst *instance) ensureStream() {

@@ -968,6 +968,44 @@ func TestRegisterInstallsDefaultAdapter(t *testing.T) {
 	}
 }
 
+func TestAdapterDetectTurn(t *testing.T) {
+	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
+		"GET /api/session/active": func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "application/json")
+			io.WriteString(w, `{"data":{"ses_running":{"type":"running"}}}`)
+		},
+	}))
+	inst := startTestInstance(t, adapter)
+
+	runningRef := agents.SessionRef{
+		InstanceID: inst.ID,
+		Backend:    agents.BackendOpenCodeV2,
+		SessionID:  "ses_running",
+	}
+	idleRef := agents.SessionRef{
+		InstanceID: inst.ID,
+		Backend:    agents.BackendOpenCodeV2,
+		SessionID:  "ses_idle",
+	}
+
+	running, err := adapter.DetectTurn(context.Background(), runningRef)
+	if err != nil {
+		t.Fatalf("DetectTurn running: %v", err)
+	}
+	if !running {
+		t.Errorf("DetectTurn(ses_running) = false, want true")
+	}
+
+	idle, err := adapter.DetectTurn(context.Background(), idleRef)
+	if err != nil {
+		t.Fatalf("DetectTurn idle: %v", err)
+	}
+	if idle {
+		t.Errorf("DetectTurn(ses_idle) = true, want false")
+	}
+}
+
+
 func TestParseModelRef(t *testing.T) {
 	model, err := parseModelRef("prov/model#fast")
 	if err != nil {

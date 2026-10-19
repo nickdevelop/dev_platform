@@ -20,7 +20,10 @@ import (
 )
 
 // Compile-time proof that the pi adapter satisfies the platform contract.
-var _ agents.AgentAdapter = (*Adapter)(nil)
+var (
+	_ agents.AgentAdapter        = (*Adapter)(nil)
+	_ agents.SessionTurnDetector = (*Adapter)(nil)
+)
 
 // maxSessionScanBytes bounds how much of a session file is scanned for its
 // display name. Discovery reads the header plus a bounded prefix; it never
@@ -1387,3 +1390,26 @@ func newUUID() (string, error) {
 	buf[8] = (buf[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
+
+// DetectTurn reports whether the native session is actively running a turn.
+func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := ref.Validate(); err != nil {
+		return false, err
+	}
+	if ref.Backend != agents.BackendPi {
+		return false, fmt.Errorf("pi: session backend %q is not pi", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return false, err
+	}
+	child := inst.child(ref.SessionID)
+	if child == nil {
+		return false, nil
+	}
+	return child.isStreaming(), nil
+}
+

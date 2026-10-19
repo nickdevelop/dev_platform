@@ -166,6 +166,18 @@ onMounted(async () => {
   // it over the cached value painted before mount.
   void settings.loadAppearance()
   syncTabWithRoute()
+
+  // Warm up sessions for open tabs restored from cache so their initial state is known
+  const openProjectIds = new Set(
+    openTabs.tabs
+      .filter((tab): tab is OpenTab & { kind: 'session' } => tab.kind === 'session')
+      .map((tab) => tab.projectId),
+  )
+  for (const pId of openProjectIds) {
+    if (!sessions.sessionsByProject[pId]) {
+      void sessions.refreshSessions(pId)
+    }
+  }
 })
 
 // The tab bar mirrors the current route in the project workspace: opening a session,
@@ -220,11 +232,9 @@ const projectNames = computed<Record<number, string>>(() =>
   Object.fromEntries(projects.projects.map((project) => [project.id, project.name])),
 )
 
-// Ids of the open sessions whose turn is running. The tab strip reads it to mark
-// a running session with an animated icon before its label, matching the tree.
-const runningSessionIds = computed<string[]>(() =>
-  sessions.sessions.filter((entry) => entry.turn === 'running').map((entry) => entry.id),
-)
+// Ids of the open sessions whose turn is running across all open projects.
+// The tab strip reads it to mark a running session with an animated icon before its label.
+const runningSessionIds = computed<string[]>(() => sessions.runningSessionIds)
 
 function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))

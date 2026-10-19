@@ -622,6 +622,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 		return Session{}, err
 	}
 	s.turnTracker.Ensure(inst.ID)
+	s.alignTurnState(ctx, backend, ref)
 	return s.sessionFromModel(row), nil
 }
 
@@ -923,6 +924,7 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 		cancel()
 		return err
 	}
+	s.alignTurnState(subCtx, agents.BackendID(row.Backend), ref)
 
 	// The stream opens with the session's turn state, seeded as the queue's first
 	// item. A turn boundary is published on the instance stream while the agent
@@ -1083,6 +1085,20 @@ func (s *Service) turnSnapshotEvent(row database.AgentSession) agents.Normalized
 		},
 	}
 }
+
+// alignTurnState ensures the tracker aligns with the live agent backend state when opened.
+func (s *Service) alignTurnState(ctx context.Context, backend agents.BackendID, ref agents.SessionRef) {
+	adapter, err := s.adapter(backend)
+	if err != nil {
+		return
+	}
+	if detector, ok := adapter.(agents.SessionTurnDetector); ok {
+		if running, err := detector.DetectTurn(ctx, ref); err == nil && running {
+			s.turnTracker.Set(backend, ref.SessionID, TurnRunning)
+		}
+	}
+}
+
 
 // matchesSession reports whether an event belongs to the session: a
 // session-scoped event for its native id, or an instance-scoped event (empty

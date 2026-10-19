@@ -71,3 +71,23 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func TestTrackerSetManuallyUpdatesState(t *testing.T) {
+	source := &fakeSource{events: make(chan agents.NormalizedEvent, 4)}
+	tracker := NewTracker(source)
+
+	if got := tracker.Of(agents.BackendPi, "s1"); got != Idle {
+		t.Fatalf("untracked session = %q, want idle", got)
+	}
+
+	tracker.Set(agents.BackendPi, "s1", Running)
+	if got := tracker.Of(agents.BackendPi, "s1"); got != Running {
+		t.Errorf("tracker.Of after Set = %q, want running", got)
+	}
+
+	tracker.Set(agents.BackendPi, "s1", Idle)
+	if got := tracker.Of(agents.BackendPi, "s1"); got != Idle {
+		t.Errorf("tracker.Of after Set idle = %q, want idle", got)
+	}
+}
+

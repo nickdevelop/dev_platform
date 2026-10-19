@@ -75,6 +75,8 @@ export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as AgentSession[],
     sessionsByProject: {} as Record<number, AgentSession[]>,
+    // Global turn state indexed by sessionId, surviving across project switches
+    sessionTurns: {} as Record<string, 'idle' | 'running'>,
     projectId: null as number | null,
     messages: {} as Record<string, ChatEntry[]>,
     streamStatus: {} as Record<string, StreamStatus>,
@@ -136,12 +138,38 @@ export const useSessionsStore = defineStore('sessions', {
   getters: {
     messagesFor: (state) => (sessionId: string) => state.messages[sessionId] ?? [],
     statusFor: (state) => (sessionId: string) => state.streamStatus[sessionId] ?? 'idle',
+    runningSessionIds: (state): string[] => {
+      const ids = new Set<string>()
+      for (const [id, turn] of Object.entries(state.sessionTurns)) {
+        if (turn === 'running') ids.add(id)
+      }
+      for (const entry of state.sessions) {
+        if (entry.turn === 'running') ids.add(entry.id)
+      }
+      for (const list of Object.values(state.sessionsByProject)) {
+        for (const entry of list) {
+          if (entry.turn === 'running') ids.add(entry.id)
+        }
+      }
+      return Array.from(ids)
+    },
+    turnFor: (state) => (sessionId: string): 'idle' | 'running' => {
+      if (state.sessionTurns[sessionId]) return state.sessionTurns[sessionId]
+      const session = state.sessions.find((s) => s.id === sessionId)
+      if (session?.turn) return session.turn
+      for (const list of Object.values(state.sessionsByProject)) {
+        const found = list.find((s) => s.id === sessionId)
+        if (found?.turn) return found.turn
+      }
+      return 'idle'
+    },
     sessionById: (state) => (sessionId: string) => {
+      const turn = state.sessionTurns[sessionId]
       const direct = state.sessions.find((entry) => entry.id === sessionId)
-      if (direct) return direct
+      if (direct) return turn !== undefined ? { ...direct, turn } : direct
       for (const list of Object.values(state.sessionsByProject)) {
         const found = list.find((entry) => entry.id === sessionId)
-        if (found) return found
+        if (found) return turn !== undefined ? { ...found, turn } : found
       }
       return null
     },
@@ -167,6 +195,14 @@ export const useSessionsStore = defineStore('sessions', {
   },
 
   actions: {
+    recordTurns(sessions: AgentSession[]) {
+      for (const entry of sessions) {
+        if (entry.turn) {
+          this.sessionTurns[entry.id] = entry.turn
+        }
+      }
+    },
+
     async loadSessions(projectId: number) {
       const request = ++this.listRequest
       if (this.projectId !== projectId) {
@@ -180,6 +216,7 @@ export const useSessionsStore = defineStore('sessions', {
       try {
         const list = await listProjectSessions(projectId)
         if (request !== this.listRequest) return
+        this.recordTurns(list.sessions)
         this.sessions = list.sessions
         this.sessionsByProject[projectId] = list.sessions
         this.error = ''
@@ -201,6 +238,7 @@ export const useSessionsStore = defineStore('sessions', {
       try {
         const list = await listProjectSessions(projectId)
         if (request !== this.listRequest) return
+        this.recordTurns(list.sessions)
         if (this.projectId !== projectId) return
         this.sessions = list.sessions
       } catch (error) {
@@ -214,6 +252,7 @@ export const useSessionsStore = defineStore('sessions', {
     async discoverNativeSessions(projectId: number, instanceId: string) {
       try {
         const list = await discoverProjectInstanceSessions(projectId, instanceId)
+        this.recordTurns(list.sessions)
         const byId = new Map(this.sessions.map((entry) => [entry.id, entry]))
         for (const discovered of list.sessions) byId.set(discovered.id, discovered)
         this.sessions = [...byId.values()]
@@ -233,6 +272,7 @@ export const useSessionsStore = defineStore('sessions', {
     async discoverProjectSessions(projectId: number, backend: BackendId) {
       try {
         const list = await discoverProjectSessionsRequest(projectId, backend)
+        this.recordTurns(list.sessions)
         const byId = new Map(this.sessions.map((entry) => [entry.id, entry]))
         for (const discovered of list.sessions) byId.set(discovered.id, discovered)
         this.sessions = [...byId.values()]
@@ -310,6 +350,12 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.autoModels[sessionId]
       delete this.creationModels[sessionId]
       delete this.lifecycleUsage[sessionId]
+      delete this.sessionTurns[sessionId]
+      for (const pId in this.sessionsByProject) {
+        this.sessionsByProject[pId] = this.sessionsByProject[pId].filter(
+          (entry) => entry.id !== sessionId,
+        )
+      }
       forgetResumePosition(sessionId)
       this.error = ''
       return true
@@ -567,9 +613,17 @@ export const useSessionsStore = defineStore('sessions', {
     },
 
     setTurn(sessionId: string, turn: AgentSession['turn']) {
+      if (turn) {
+        this.sessionTurns[sessionId] = turn
+      }
       this.sessions = this.sessions.map((entry) =>
         entry.id === sessionId ? { ...entry, turn } : entry,
       )
+      for (const pId in this.sessionsByProject) {
+        this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>
+          entry.id === sessionId ? { ...entry, turn } : entry,
+        )
+      }
     },
 
     // consumeFirstMessageFailure returns and clears the failed-first-message
@@ -740,7 +794,15 @@ export const useSessionsStore = defineStore('sessions', {
       const auth = useAuthStore()
       try {
         const updated = await continueProjectSession(projectId, sessionId, auth.csrfToken)
+        if (updated?.turn) {
+          this.sessionTurns[sessionId] = updated.turn
+        }
         this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
+        for (const pId in this.sessionsByProject) {
+          this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>
+            entry.id === sessionId ? updated : entry,
+          )
+        }
         this.error = ''
         this.errorCode = ''
         return updated

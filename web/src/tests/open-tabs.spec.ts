@@ -312,5 +312,44 @@ describe('SessionTabs component', () => {
     const labels = wrapper.findAll('[data-test="open-tab"] .tab-label').map((node) => node.text())
     expect(labels).toEqual(['new', '构建部署', '设置'])
   })
+
+  it('renders running indicator for running sessions across multiple projects', () => {
+    const tabs: OpenTab[] = [
+      { kind: 'session', projectId: 1, sessionId: 'A1', title: '会话 A1' },
+      { kind: 'session', projectId: 1, sessionId: 'A2', title: '会话 A2' },
+      { kind: 'session', projectId: 2, sessionId: 'B1', title: '会话 B1' },
+      { kind: 'session', projectId: 2, sessionId: 'B2', title: '会话 B2' },
+    ]
+
+    // When A1, A2, B1, B2 are all in runningSessionIds, all of them display RunningIndicator
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'A1',
+        runningSessionIds: ['A1', 'A2', 'B1', 'B2'],
+      },
+    })
+
+    const renderedTabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(renderedTabs).toHaveLength(4)
+
+    // All 4 tabs should render running indicator
+    for (const tabNode of renderedTabs) {
+      expect(tabNode.findComponent({ name: 'RunningIndicator' }).exists()).toBe(true)
+    }
+
+    // When activeKey changes to B2, they still all render running indicator
+    const wrapperB2 = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'B2',
+        runningSessionIds: ['A1', 'A2', 'B1', 'B2'],
+      },
+    })
+    for (const tabNode of wrapperB2.findAll('[data-test="open-tab"]')) {
+      expect(tabNode.findComponent({ name: 'RunningIndicator' }).exists()).toBe(true)
+    }
+  })
 })
+
 

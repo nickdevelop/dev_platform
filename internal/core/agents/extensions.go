@@ -72,3 +72,10 @@ type AgentCommand struct {
 type CommandDiscoverer interface {
 	ListCommands(ctx context.Context, ref SessionRef) ([]AgentCommand, error)
 }
+
+// SessionTurnDetector is the optional extension for agent backends that can
+// actively check whether an agent-native session is running a turn.
+type SessionTurnDetector interface {
+	DetectTurn(ctx context.Context, ref SessionRef) (bool, error)
+}
+

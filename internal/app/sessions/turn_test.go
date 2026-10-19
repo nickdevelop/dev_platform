@@ -99,3 +99,44 @@ func TestTurnEndsOnlyOnATypedTurnBoundary(t *testing.T) {
 	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t2", agents.TurnStarted, ""))
 	waitForTurn(t, env.svc, env.projectID, session.ID, TurnRunning)
 }
+
+func TestContinueSessionAlignsTurnWhenAgentRunning(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-detect"}
+	outcome, err := env.svc.Create(ctx, env.projectID, agents.BackendPi, "detect-test", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := outcome.Session
+	if session.Turn != TurnIdle {
+		t.Fatalf("new session turn = %q, want idle", session.Turn)
+	}
+
+	// Underlying agent is running on the backend, but no TurnStarted event was emitted on the stream.
+	env.fake.detectTurnMap[session.NativeSessionID] = true
+
+	// Opening/continuing the session should detect the running state and align it.
+	continued, err := env.svc.Continue(ctx, env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Continue: %v", err)
+	}
+	if continued.Turn != TurnRunning {
+		t.Fatalf("continued session turn = %q, want %q", continued.Turn, TurnRunning)
+	}
+
+	// Subsequent Get reflects the aligned running state.
+	got, err := env.svc.Get(env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Turn != TurnRunning {
+		t.Fatalf("Get session turn = %q, want %q", got.Turn, TurnRunning)
+	}
+
+	// When agent turn ends on the stream, it transitions back to idle.
+	env.fake.emit(t, env.instanceID, turnFor(env.instanceID, session.NativeSessionID, "t1", agents.TurnEnded, agents.TurnCompleted))
+	waitForTurn(t, env.svc, env.projectID, session.ID, TurnIdle)
+}
+

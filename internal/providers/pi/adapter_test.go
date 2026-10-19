@@ -817,3 +817,55 @@ func TestAdapterConcurrentSendsShareSessionTitle(t *testing.T) {
 		t.Errorf("remembered title = %q, want 共享标题", got)
 	}
 }
+
+func TestPiDetectTurn(t *testing.T) {
+	sessionDir := t.TempDir()
+	adapter := newRPCAdapter(t, sessionDir, "")
+	ctx := context.Background()
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Before any child is running, DetectTurn should report false.
+	running, err := adapter.DetectTurn(ctx, *ref)
+	if err != nil {
+		t.Fatalf("DetectTurn: %v", err)
+	}
+	if running {
+		t.Errorf("DetectTurn before send = true, want false")
+	}
+
+	// Start a child and verify streaming detection.
+	instObj, err := adapter.getInstance(inst.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := instObj.ensureChild(ctx, ref.SessionID, func() (*rpcChild, error) {
+		return adapter.startRPCChild(instObj, ref.SessionID, "", "")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer child.kill()
+
+	child.setStreaming(true)
+	running, err = adapter.DetectTurn(ctx, *ref)
+	if err != nil {
+		t.Fatalf("DetectTurn streaming: %v", err)
+	}
+	if !running {
+		t.Errorf("DetectTurn with streaming child = false, want true")
+	}
+
+	child.setStreaming(false)
+	running, err = adapter.DetectTurn(ctx, *ref)
+	if err != nil {
+		t.Fatalf("DetectTurn idle child: %v", err)
+	}
+	if running {
+		t.Errorf("DetectTurn with idle child = true, want false")
+	}
+}
+

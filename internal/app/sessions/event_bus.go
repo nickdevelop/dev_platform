@@ -261,6 +261,14 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 	}
 
 	// 3. Build snapshot: turn state & interactions.
+	ref := agents.SessionRef{
+		InstanceID: row.InstanceID,
+		Backend:    agents.BackendID(row.Backend),
+		SessionID:  row.NativeSessionID,
+		Title:      row.Title,
+	}
+	m.service.alignTurnState(ctx, agents.BackendID(row.Backend), ref)
+
 	turnPhase := agents.TurnEnded
 	turnOutcome := agents.TurnCompleted
 	if m.service.turnTracker.Of(agents.BackendID(row.Backend), row.NativeSessionID) == TurnRunning {
@@ -273,12 +281,6 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 		Outcome: turnOutcome,
 	}
 
-	ref := agents.SessionRef{
-		InstanceID: row.InstanceID,
-		Backend:    agents.BackendID(row.Backend),
-		SessionID:  row.NativeSessionID,
-		Title:      row.Title,
-	}
 	interactions := m.getInteractionsSnapshot(ctx, ref)
 
 	return &SubscriptionSnapshot{

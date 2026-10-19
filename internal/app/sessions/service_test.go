@@ -97,6 +97,9 @@ type fakeAdapter struct {
 	// diagnostics is the canned startup report the adapter hands back when
 	// the service collects backend diagnostics.
 	diagnostics agents.BackendDiagnostics
+
+	detectTurnMap map[string]bool
+	detectTurnErr error
 }
 
 func newFakeAdapter() *fakeAdapter {
@@ -112,7 +115,8 @@ func newFakeAdapter() *fakeAdapter {
 			ToolConfirmation: false,
 			SessionHistory:   true,
 		},
-		subs: make(map[string]chan agents.NormalizedEvent),
+		subs:          make(map[string]chan agents.NormalizedEvent),
+		detectTurnMap: make(map[string]bool),
 	}
 }
 
@@ -244,6 +248,16 @@ func (f *fakeAdapter) ListHistory(_ context.Context, request agents.ListHistoryR
 	}
 	return f.historyResult, nil
 }
+
+func (f *fakeAdapter) DetectTurn(_ context.Context, ref agents.SessionRef) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.detectTurnErr != nil {
+		return false, f.detectTurnErr
+	}
+	return f.detectTurnMap[ref.SessionID], nil
+}
+
 
 func (f *fakeAdapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
 	f.mu.Lock()

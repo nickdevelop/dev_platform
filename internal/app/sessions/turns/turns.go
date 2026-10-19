@@ -141,3 +141,11 @@ func (t *Tracker) Forget(backend agents.BackendID, nativeSessionID string) {
 	delete(t.states, SessionKey{Backend: backend, NativeID: nativeSessionID})
 	delete(t.states, SessionKey{Backend: "", NativeID: nativeSessionID})
 }
+
+// Set manually aligns or overrides the tracked state of one native session.
+func (t *Tracker) Set(backend agents.BackendID, nativeSessionID string, state State) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.states[SessionKey{Backend: backend, NativeID: nativeSessionID}] = state
+}
+

@@ -601,3 +601,22 @@ func TestClientListMessages(t *testing.T) {
 		t.Errorf("assistant tool block = %+v, want the fixture tool call", tool)
 	}
 }
+
+func TestClientActiveSessions(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/session/active" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("content-type", "application/json")
+		io.WriteString(w, `{"data":{"ses_1":{"type":"running"},"ses_2":{"type":"running"}}}`)
+	})
+
+	active, err := client.ActiveSessions(context.Background())
+	if err != nil {
+		t.Fatalf("ActiveSessions: %v", err)
+	}
+	if !active["ses_1"] || !active["ses_2"] || active["ses_3"] {
+		t.Fatalf("unexpected active sessions: %v", active)
+	}
+}
+
