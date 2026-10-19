@@ -2,9 +2,7 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -20,7 +18,7 @@ type SessionLauncher interface {
 	Delete(projectID uint, sessionID string) error
 }
 
-// Service manages task lifecycles, flow advancement, scheduling and execution.
+// Service manages task lifecycles, execution dispatch, and scheduling.
 type Service struct {
 	repo     *Repository
 	sessions SessionLauncher
@@ -36,77 +34,91 @@ func NewService(repo *Repository, sessionLauncher SessionLauncher) *Service {
 
 // CreateTaskRequest carries arguments to create a task.
 type CreateTaskRequest struct {
-	Title       string           `json:"title"`
-	Description string           `json:"description"`
-	ProjectID   uint             `json:"projectId"`
-	Backend     agents.BackendID `json:"backend"`
-	Model       string           `json:"model"`
-	FlowType    FlowType         `json:"flowType"`
+	Title           string           `json:"title"`
+	Description     string           `json:"description"`
+	TaskType        TaskType         `json:"taskType"`
+	ProjectID       uint             `json:"projectId"`
+	Backend         agents.BackendID `json:"backend"`
+	Model           string           `json:"model"`
+	PromptTemplate  string           `json:"promptTemplate"`
+	ScheduleType    ScheduleType     `json:"scheduleType"`
+	ScheduledAt     *time.Time       `json:"scheduledAt"`
+	CronExpr        string           `json:"cronExpr"`
+	ScheduleEnabled bool             `json:"scheduleEnabled"`
 }
 
 // UpdateTaskRequest carries arguments to update task properties.
 type UpdateTaskRequest struct {
-	Title       *string           `json:"title"`
-	Description *string           `json:"description"`
-	ProjectID   *uint             `json:"projectId"`
-	Backend     *agents.BackendID `json:"backend"`
-	Model       *string           `json:"model"`
+	Title           *string           `json:"title"`
+	Description     *string           `json:"description"`
+	ProjectID       *uint             `json:"projectId"`
+	Backend         *agents.BackendID `json:"backend"`
+	Model           *string           `json:"model"`
+	PromptTemplate  *string           `json:"promptTemplate"`
+	ScheduleType    *ScheduleType     `json:"scheduleType"`
+	ScheduledAt     *time.Time        `json:"scheduledAt"`
+	CronExpr        *string           `json:"cronExpr"`
+	ScheduleEnabled *bool             `json:"scheduleEnabled"`
+	Status          *TaskStatus       `json:"status"`
 }
 
-// AdvanceStepRequest carries data to confirm and advance the step.
-type AdvanceStepRequest struct {
-	Confirmed       bool   `json:"confirmed"`
-	NextStep        *int   `json:"nextStep,omitempty"`
-	Notes           string `json:"notes,omitempty"`
-	DriverPrompt    string `json:"driverPrompt,omitempty"`
-	ExecutionPrompt string `json:"executionPrompt,omitempty"`
-}
-
-// ScheduleConfigRequest carries schedule configuration for a task.
-type ScheduleConfigRequest struct {
-	ScheduleType    ScheduleType `json:"scheduleType"`
-	ScheduledAt     *time.Time   `json:"scheduledAt"`
-	CronExpr        string       `json:"cronExpr"`
-	ScheduleEnabled bool         `json:"scheduleEnabled"`
-}
-
-// StepContextRecord stores notes and metadata for a step.
-type StepContextRecord struct {
-	StepIndex   int       `json:"stepIndex"`
-	Confirmed   bool      `json:"confirmed"`
-	Notes       string    `json:"notes,omitempty"`
-	ConfirmedAt time.Time `json:"confirmedAt,omitempty"`
-}
-
-// Create creates a new task in draft state at step 1.
+// Create creates a new task (session template).
 func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (Task, error) {
-	t := Task{
-		Title:        strings.TrimSpace(req.Title),
-		Description:  strings.TrimSpace(req.Description),
-		ProjectID:    req.ProjectID,
-		Backend:      req.Backend,
-		Model:        strings.TrimSpace(req.Model),
-		FlowType:     req.FlowType,
-		CurrentStep:  1,
-		StepStatus:   StepPending,
-		Status:       StatusDraft,
-		IsConfirmed:  false,
-		ScheduleType: ScheduleNone,
+	tt := req.TaskType
+	if tt == "" {
+		tt = TaskTypeStandard
+	}
+	st := req.ScheduleType
+	if st == "" {
+		st = ScheduleManual
 	}
 
-	if err := ValidateTaskCreation(t); err != nil {
+	t := Task{
+		Title:           strings.TrimSpace(req.Title),
+		Description:     strings.TrimSpace(req.Description),
+		TaskType:        tt,
+		ProjectID:       req.ProjectID,
+		Backend:         req.Backend,
+		Model:           strings.TrimSpace(req.Model),
+		PromptTemplate:  strings.TrimSpace(req.PromptTemplate),
+		ScheduleType:    st,
+		ScheduledAt:     req.ScheduledAt,
+		CronExpr:        strings.TrimSpace(req.CronExpr),
+		ScheduleEnabled: req.ScheduleEnabled,
+		LastRunStatus:   RunIdle,
+		Status:          StatusActive,
+	}
+
+	// Validate task with its executor
+	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo)
+	if err != nil {
 		return Task{}, err
+	}
+	if err := executor.Validate(t); err != nil {
+		return Task{}, err
+	}
+
+	// Validate scheduling settings
+	if err := ValidateScheduleConfig(t); err != nil {
+		return Task{}, err
+	}
+
+	if t.ScheduleEnabled && t.ScheduleType != ScheduleManual {
+		next, err := CalculateNextRun(t, time.Now().UTC())
+		if err != nil {
+			return Task{}, err
+		}
+		t.NextRunAt = next
 	}
 
 	return s.repo.Create(t)
 }
 
-// Get returns one task by ID. If the task is currently executing, it syncs
-// its status with the underlying agent session first.
+// Get returns one task by ID, syncing any running executions first.
 func (s *Service) Get(id uint) (Task, error) {
 	if s.sessions != nil {
 		t, err := s.repo.Get(id)
-		if err == nil && (t.Status == StatusExecuting || t.LastRunStatus == RunExecuting) {
+		if err == nil && t.LastRunStatus == RunExecuting {
 			if synced, err := s.SyncTaskStatus(context.Background(), id); err == nil {
 				return synced, nil
 			}
@@ -115,7 +127,7 @@ func (s *Service) Get(id uint) (Task, error) {
 	return s.repo.Get(id)
 }
 
-// List returns tasks matching the filter, syncing any executing tasks first.
+// List returns tasks matching the filter, syncing live runs first.
 func (s *Service) List(filter ListFilter) ([]Task, error) {
 	list, err := s.repo.List(filter)
 	if err != nil {
@@ -127,7 +139,7 @@ func (s *Service) List(filter ListFilter) ([]Task, error) {
 
 	hasExecuting := false
 	for _, t := range list {
-		if t.Status == StatusExecuting || t.LastRunStatus == RunExecuting {
+		if t.LastRunStatus == RunExecuting {
 			hasExecuting = true
 			_, _ = s.SyncTaskStatus(context.Background(), t.ID)
 		}
@@ -174,6 +186,38 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateTaskRequest) (T
 		}
 		t.Model = m
 	}
+	if req.PromptTemplate != nil {
+		t.PromptTemplate = strings.TrimSpace(*req.PromptTemplate)
+	}
+	if req.ScheduleType != nil {
+		t.ScheduleType = *req.ScheduleType
+	}
+	if req.ScheduledAt != nil {
+		t.ScheduledAt = req.ScheduledAt
+	}
+	if req.CronExpr != nil {
+		t.CronExpr = strings.TrimSpace(*req.CronExpr)
+	}
+	if req.ScheduleEnabled != nil {
+		t.ScheduleEnabled = *req.ScheduleEnabled
+	}
+	if req.Status != nil {
+		t.Status = *req.Status
+	}
+
+	if err := ValidateScheduleConfig(t); err != nil {
+		return Task{}, err
+	}
+
+	if t.ScheduleEnabled && t.ScheduleType != ScheduleManual {
+		next, err := CalculateNextRun(t, time.Now().UTC())
+		if err != nil {
+			return Task{}, err
+		}
+		t.NextRunAt = next
+	} else {
+		t.NextRunAt = nil
+	}
 
 	if err := s.repo.Update(t); err != nil {
 		return Task{}, err
@@ -189,12 +233,8 @@ func (s *Service) Delete(id uint) error {
 	}
 
 	// Collect session IDs created by this task
-	sessionIDs := make(map[string]bool)
-	if t.ActiveSessionID != "" {
-		sessionIDs[t.ActiveSessionID] = true
-	}
-
 	runs, _ := s.repo.ListRuns(id)
+	sessionIDs := make(map[string]bool)
 	for _, run := range runs {
 		if run.SessionID != "" {
 			sessionIDs[run.SessionID] = true
@@ -211,197 +251,7 @@ func (s *Service) Delete(id uint) error {
 	return s.repo.Delete(id)
 }
 
-// SaveExecutionPrompt saves the validated execution prompt for a transactional task,
-// advancing it to ready_for_execution state.
-func (s *Service) SaveExecutionPrompt(ctx context.Context, id uint, prompt string) (Task, error) {
-	t, err := s.repo.Get(id)
-	if err != nil {
-		return Task{}, err
-	}
-	if t.FlowType != FlowTransactional {
-		return Task{}, errors.New("tasks: execution prompt can only be set for transactional tasks")
-	}
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return Task{}, errors.New("tasks: execution prompt cannot be empty")
-	}
-
-	t.ExecutionPrompt = prompt
-	t.CurrentStep = 2
-	t.StepStatus = StepConfirmed
-	t.IsConfirmed = true
-	t.Status = StatusReadyForExecution
-
-	if err := s.repo.Update(t); err != nil {
-		return Task{}, err
-	}
-	return s.repo.Get(id)
-}
-
-// AdvanceStep confirms the current step and advances to the next step if requested.
-// For development tasks, when moving to a new step, it automatically delivers the stage
-// driver prompt to the active session so the Agent steps in immediately.
-func (s *Service) AdvanceStep(ctx context.Context, id uint, req AdvanceStepRequest) (Task, error) {
-	t, err := s.repo.Get(id)
-	if err != nil {
-		return Task{}, err
-	}
-
-	finalStep := FinalStepIndex(t.FlowType)
-
-	// Update step notes/data
-	var records []StepContextRecord
-	if t.StepsData != "" {
-		_ = json.Unmarshal([]byte(t.StepsData), &records)
-	}
-	records = append(records, StepContextRecord{
-		StepIndex:   t.CurrentStep,
-		Confirmed:   req.Confirmed,
-		Notes:       req.Notes,
-		ConfirmedAt: time.Now().UTC(),
-	})
-	encodedData, _ := json.Marshal(records)
-	t.StepsData = string(encodedData)
-
-	if req.Confirmed {
-		t.StepStatus = StepConfirmed
-	}
-
-	// For transactional task, if execution prompt is supplied on confirmation
-	if t.FlowType == FlowTransactional && req.ExecutionPrompt != "" {
-		t.ExecutionPrompt = strings.TrimSpace(req.ExecutionPrompt)
-	}
-
-	// Advance step
-	oldStep := t.CurrentStep
-	targetStep := t.CurrentStep
-	if req.NextStep != nil {
-		targetStep = *req.NextStep
-	} else if req.Confirmed && t.CurrentStep < finalStep {
-		targetStep = t.CurrentStep + 1
-	}
-
-	if targetStep < 1 || targetStep > finalStep {
-		return Task{}, ErrInvalidStep
-	}
-
-	if targetStep > t.CurrentStep && !req.Confirmed {
-		return Task{}, ErrStepNotConfirmed
-	}
-
-	t.CurrentStep = targetStep
-	stepChanged := targetStep != oldStep
-
-	if targetStep == finalStep && req.Confirmed {
-		t.IsConfirmed = true
-		t.Status = StatusReadyForExecution
-	} else if targetStep == finalStep {
-		// Just reached final step, waiting for final confirmation
-		t.Status = StatusInProgress
-	} else {
-		t.Status = StatusInProgress
-		t.IsConfirmed = false
-	}
-
-	// For development tasks, if step changed and session is active, invoke Agent with DriverPrompt
-	if t.FlowType == FlowDevelopment && stepChanged && t.ActiveSessionID != "" && s.sessions != nil {
-		stepDef, _ := GetStepDef(t.FlowType, targetStep)
-		driverText := strings.TrimSpace(req.DriverPrompt)
-		if driverText == "" {
-			driverText = fmt.Sprintf("【推进至第 %d 步：%s】\n%s", targetStep, stepDef.Name, stepDef.Prompt)
-		}
-		// Send prompt to existing active session so Agent intervenes in this step
-		if _, err := s.sessions.Send(ctx, t.ProjectID, t.ActiveSessionID, driverText, t.Model); err != nil {
-			return Task{}, fmt.Errorf("tasks: advance send driver prompt: %w", err)
-		}
-		t.StepStatus = StepInProgress
-	}
-
-	if err := s.repo.Update(t); err != nil {
-		return Task{}, err
-	}
-	return s.repo.Get(id)
-}
-
-// UpdateSchedule updates and validates scheduling settings for a task.
-func (s *Service) UpdateSchedule(ctx context.Context, id uint, req ScheduleConfigRequest) (Task, error) {
-	t, err := s.repo.Get(id)
-	if err != nil {
-		return Task{}, err
-	}
-
-	t.ScheduleType = req.ScheduleType
-	t.ScheduledAt = req.ScheduledAt
-	t.CronExpr = strings.TrimSpace(req.CronExpr)
-	t.ScheduleEnabled = req.ScheduleEnabled
-
-	if err := ValidateScheduleConfig(t); err != nil {
-		return Task{}, err
-	}
-
-	if t.ScheduleEnabled && t.ScheduleType != ScheduleNone {
-		next, err := CalculateNextRun(t, time.Now().UTC())
-		if err != nil {
-			return Task{}, err
-		}
-		t.NextRunAt = next
-	} else {
-		t.NextRunAt = nil
-	}
-
-	if err := s.repo.Update(t); err != nil {
-		return Task{}, err
-	}
-	return s.repo.Get(id)
-}
-
-// CreateSessionForTask creates an AgentSession for the task or returns the active one.
-func (s *Service) CreateSessionForTask(ctx context.Context, id uint) (Task, sessions.Session, error) {
-	t, err := s.repo.Get(id)
-	if err != nil {
-		return Task{}, sessions.Session{}, err
-	}
-
-	if s.sessions == nil {
-		return Task{}, sessions.Session{}, errors.New("tasks: session service not configured")
-	}
-
-	// If already has an active session, verify it
-	if t.ActiveSessionID != "" {
-		existing, err := s.sessions.Get(t.ProjectID, t.ActiveSessionID)
-		if err == nil {
-			return t, existing, nil
-		}
-	}
-
-	// Create new session with prompt for the current step
-	stepDef, _ := GetStepDef(t.FlowType, t.CurrentStep)
-	title := fmt.Sprintf("[%s] %s", stepDef.Name, t.Title)
-	initialPrompt := fmt.Sprintf("【%s】\n任务名称：%s\n任务描述：%s\n\n阶段指引：\n%s",
-		stepDef.Name, t.Title, t.Description, stepDef.Prompt)
-
-	outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, title, initialPrompt, t.Model)
-	if err != nil {
-		return Task{}, sessions.Session{}, fmt.Errorf("tasks: create session: %w", err)
-	}
-
-	t.ActiveSessionID = outcome.Session.ID
-	t.Status = StatusInProgress
-	t.StepStatus = StepInProgress
-
-	if err := s.repo.Update(t); err != nil {
-		return Task{}, sessions.Session{}, err
-	}
-
-	updated, _ := s.repo.Get(id)
-	return updated, outcome.Session, nil
-}
-
-// TriggerExecution executes the final step of the task.
-// For transactional tasks, it spawns a NEW independent AgentSession on each execution run.
-// For development tasks, it executes in the existing active session.
-// In both cases, the run is initially marked as "running" and the task status becomes "executing"
-// until the agent's turn completes or fails.
+// TriggerExecution executes the task using its configured executor strategy.
 func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...string) (TaskRun, error) {
 	t, err := s.repo.Get(id)
 	if err != nil {
@@ -413,120 +263,12 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 		trig = triggerType[0]
 	}
 
-	// Development task cannot be executed again once completed
-	if t.FlowType == FlowDevelopment && t.Status == StatusCompleted {
-		return TaskRun{}, ErrTaskAlreadyCompleted
-	}
-
-	// Gatekeeper check: must be final step and confirmed
-	if ok, checkErr := CanSchedule(t); !ok {
-		t.LastRunStatus = RunSkippedNotReady
-		now := time.Now().UTC()
-		t.LastRunAt = &now
-		if err := s.repo.Update(t); err != nil {
-			return TaskRun{}, fmt.Errorf("tasks: update task status: %w", err)
-		}
-		return TaskRun{}, checkErr
-	}
-
-	if s.sessions == nil {
-		return TaskRun{}, errors.New("tasks: session service not configured")
-	}
-
-	now := time.Now().UTC()
-	t.LastRunAt = &now
-
-	if t.FlowType == FlowTransactional {
-		// TRANSACTIONAL: Spawn a new independent session on every run!
-		execPrompt := t.ExecutionPrompt
-		if strings.TrimSpace(execPrompt) == "" {
-			finalStep := FinalStepIndex(t.FlowType)
-			stepDef, _ := GetStepDef(t.FlowType, finalStep)
-			execPrompt = fmt.Sprintf("【执行方案】\n任务：%s\n%s", t.Title, stepDef.Prompt)
-		}
-
-		sessTitle := fmt.Sprintf("[%s执行] %s", trig, t.Title)
-		outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, sessTitle, execPrompt, t.Model)
-		if err != nil {
-			t.LastRunStatus = RunFailed
-			t.Status = StatusFailed
-			_ = s.repo.Update(t)
-			return TaskRun{}, fmt.Errorf("tasks: execute create session: %w", err)
-		}
-
-		run := TaskRun{
-			TaskID:      t.ID,
-			SessionID:   outcome.Session.ID,
-			TriggerType: trig,
-			Status:      "running",
-			Prompt:      execPrompt,
-			TriggeredAt: now,
-		}
-		createdRun, err := s.repo.CreateRun(run)
-		if err != nil {
-			return TaskRun{}, fmt.Errorf("tasks: create run: %w", err)
-		}
-
-		if t.ActiveSessionID == "" {
-			t.ActiveSessionID = outcome.Session.ID
-		}
-		t.LastRunStatus = RunExecuting
-		t.Status = StatusExecuting
-		if err := s.repo.Update(t); err != nil {
-			return createdRun, fmt.Errorf("tasks: update task: %w", err)
-		}
-
-		return createdRun, nil
-	}
-
-	// DEVELOPMENT: Execute in existing active session
-	finalStep := FinalStepIndex(t.FlowType)
-	stepDef, _ := GetStepDef(t.FlowType, finalStep)
-	execPrompt := fmt.Sprintf("【自动执行 - %s】\n任务：%s\n前期所有需求分析、设计与计划已明确确认完毕，执行过程免打断。\n请严格按照已确认的执行方案开始自动执行：\n%s",
-		stepDef.Name, t.Title, stepDef.Prompt)
-
-	t.LastRunStatus = RunExecuting
-	t.Status = StatusExecuting
-
-	var sessionID = t.ActiveSessionID
-	if sessionID == "" {
-		outcome, err := s.sessions.Create(ctx, t.ProjectID, t.Backend, t.Title+" (执行)", execPrompt, t.Model)
-		if err != nil {
-			t.LastRunStatus = RunFailed
-			t.Status = StatusFailed
-			_ = s.repo.Update(t)
-			return TaskRun{}, fmt.Errorf("tasks: execute create session: %w", err)
-		}
-		sessionID = outcome.Session.ID
-		t.ActiveSessionID = sessionID
-	} else {
-		_, err := s.sessions.Send(ctx, t.ProjectID, sessionID, execPrompt, t.Model)
-		if err != nil {
-			t.LastRunStatus = RunFailed
-			t.Status = StatusFailed
-			_ = s.repo.Update(t)
-			return TaskRun{}, fmt.Errorf("tasks: execute send message: %w", err)
-		}
-	}
-
-	run := TaskRun{
-		TaskID:      t.ID,
-		SessionID:   sessionID,
-		TriggerType: trig,
-		Status:      "running",
-		Prompt:      execPrompt,
-		TriggeredAt: now,
-	}
-	createdRun, err := s.repo.CreateRun(run)
+	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo)
 	if err != nil {
-		return TaskRun{}, fmt.Errorf("tasks: create run: %w", err)
+		return TaskRun{}, err
 	}
 
-	if err := s.repo.Update(t); err != nil {
-		return createdRun, fmt.Errorf("tasks: update task: %w", err)
-	}
-
-	return createdRun, nil
+	return executor.Execute(ctx, t, trig)
 }
 
 // SyncTaskStatus checks the underlying session for any running runs and updates
@@ -598,20 +340,12 @@ func (s *Service) SyncTaskStatus(ctx context.Context, id uint) (Task, error) {
 			switch latest.Status {
 			case "success":
 				t.LastRunStatus = RunSuccess
-				if t.FlowType == FlowDevelopment {
-					t.Status = StatusCompleted
-					t.StepStatus = StepCompleted
-				} else {
-					t.Status = StatusReadyForExecution
-				}
 				_ = s.repo.Update(t)
 			case "failed":
 				t.LastRunStatus = RunFailed
-				t.Status = StatusFailed
 				_ = s.repo.Update(t)
 			case "running":
 				t.LastRunStatus = RunExecuting
-				t.Status = StatusExecuting
 				_ = s.repo.Update(t)
 			}
 		}
@@ -632,4 +366,3 @@ func (s *Service) ListRuns(ctx context.Context, taskID uint) ([]TaskRun, error) 
 func (s *Service) GetTaskSessionIDs(projectID uint) ([]string, error) {
 	return s.repo.GetTaskSessionIDs(projectID)
 }
-

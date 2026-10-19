@@ -10,7 +10,7 @@ import (
 	"devplatform/internal/core/agents"
 )
 
-// Repository manages persistence for tasks.
+// Repository manages persistence for tasks and runs.
 type Repository struct {
 	db *gorm.DB
 }
@@ -23,8 +23,9 @@ func NewRepository(db *gorm.DB) *Repository {
 // ListFilter carries filters for querying tasks.
 type ListFilter struct {
 	ProjectID *uint
-	FlowType  *FlowType
+	TaskType  *TaskType
 	Status    *TaskStatus
+	Keyword   string
 }
 
 func toDB(t Task) database.Task {
@@ -32,16 +33,11 @@ func toDB(t Task) database.Task {
 		ID:              t.ID,
 		Title:           t.Title,
 		Description:     t.Description,
+		TaskType:        string(t.TaskType),
 		ProjectID:       t.ProjectID,
 		Backend:         string(t.Backend),
 		Model:           t.Model,
-		FlowType:        string(t.FlowType),
-		CurrentStep:     t.CurrentStep,
-		StepStatus:      string(t.StepStatus),
-		Status:          string(t.Status),
-		IsConfirmed:     t.IsConfirmed,
-		StepsData:       t.StepsData,
-		ActiveSessionID: t.ActiveSessionID,
+		PromptTemplate:  t.PromptTemplate,
 		ScheduleType:    string(t.ScheduleType),
 		ScheduledAt:     t.ScheduledAt,
 		CronExpr:        t.CronExpr,
@@ -49,35 +45,43 @@ func toDB(t Task) database.Task {
 		LastRunAt:       t.LastRunAt,
 		NextRunAt:       t.NextRunAt,
 		LastRunStatus:   string(t.LastRunStatus),
-		ExecutionPrompt: t.ExecutionPrompt,
+		Status:          string(t.Status),
 		CreatedAt:       t.CreatedAt,
 		UpdatedAt:       t.UpdatedAt,
 	}
 }
 
 func fromDB(row database.Task) Task {
+	tt := TaskType(row.TaskType)
+	if tt == "" {
+		tt = TaskTypeStandard
+	}
+	st := ScheduleType(row.ScheduleType)
+	if st == "" {
+		st = ScheduleManual
+	}
+	status := TaskStatus(row.Status)
+	if status == "" {
+		status = StatusActive
+	}
+
 	return Task{
 		ID:              row.ID,
 		Title:           row.Title,
 		Description:     row.Description,
+		TaskType:        tt,
 		ProjectID:       row.ProjectID,
 		Backend:         agents.BackendID(row.Backend),
 		Model:           row.Model,
-		FlowType:        FlowType(row.FlowType),
-		CurrentStep:     row.CurrentStep,
-		StepStatus:      StepStatus(row.StepStatus),
-		Status:          TaskStatus(row.Status),
-		IsConfirmed:     row.IsConfirmed,
-		StepsData:       row.StepsData,
-		ActiveSessionID: row.ActiveSessionID,
-		ScheduleType:    ScheduleType(row.ScheduleType),
+		PromptTemplate:  row.PromptTemplate,
+		ScheduleType:    st,
 		ScheduledAt:     row.ScheduledAt,
 		CronExpr:        row.CronExpr,
 		ScheduleEnabled: row.ScheduleEnabled,
 		LastRunAt:       row.LastRunAt,
 		NextRunAt:       row.NextRunAt,
 		LastRunStatus:   RunStatus(row.LastRunStatus),
-		ExecutionPrompt: row.ExecutionPrompt,
+		Status:          status,
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
 	}
@@ -108,26 +112,21 @@ func (r *Repository) Get(id uint) (Task, error) {
 func (r *Repository) Update(t Task) error {
 	row := toDB(t)
 	res := r.db.Model(&database.Task{}).Where("id = ?", t.ID).Updates(map[string]any{
-		"title":             row.Title,
-		"description":       row.Description,
-		"project_id":        row.ProjectID,
-		"backend":           row.Backend,
-		"model":             row.Model,
-		"flow_type":         row.FlowType,
-		"current_step":      row.CurrentStep,
-		"step_status":       row.StepStatus,
-		"status":            row.Status,
-		"is_confirmed":      row.IsConfirmed,
-		"steps_data":        row.StepsData,
-		"active_session_id": row.ActiveSessionID,
-		"schedule_type":     row.ScheduleType,
-		"scheduled_at":      row.ScheduledAt,
-		"cron_expr":         row.CronExpr,
-		"schedule_enabled":  row.ScheduleEnabled,
-		"last_run_at":       row.LastRunAt,
-		"next_run_at":       row.NextRunAt,
-		"last_run_status":   row.LastRunStatus,
-		"execution_prompt":  row.ExecutionPrompt,
+		"title":            row.Title,
+		"description":      row.Description,
+		"task_type":        row.TaskType,
+		"project_id":       row.ProjectID,
+		"backend":          row.Backend,
+		"model":            row.Model,
+		"prompt_template":  row.PromptTemplate,
+		"schedule_type":    row.ScheduleType,
+		"scheduled_at":     row.ScheduledAt,
+		"cron_expr":        row.CronExpr,
+		"schedule_enabled": row.ScheduleEnabled,
+		"last_run_at":      row.LastRunAt,
+		"next_run_at":      row.NextRunAt,
+		"last_run_status":  row.LastRunStatus,
+		"status":           row.Status,
 	})
 	if res.Error != nil {
 		return res.Error
@@ -138,8 +137,9 @@ func (r *Repository) Update(t Task) error {
 	return nil
 }
 
-// Delete removes a task by ID.
+// Delete removes a task by ID and its runs.
 func (r *Repository) Delete(id uint) error {
+	_ = r.db.Delete(&database.TaskRun{}, "task_id = ?", id).Error
 	res := r.db.Delete(&database.Task{}, "id = ?", id)
 	if res.Error != nil {
 		return res.Error
@@ -153,14 +153,18 @@ func (r *Repository) Delete(id uint) error {
 // List queries tasks with optional filtering.
 func (r *Repository) List(filter ListFilter) ([]Task, error) {
 	query := r.db.Model(&database.Task{})
-	if filter.ProjectID != nil {
+	if filter.ProjectID != nil && *filter.ProjectID > 0 {
 		query = query.Where("project_id = ?", *filter.ProjectID)
 	}
-	if filter.FlowType != nil {
-		query = query.Where("flow_type = ?", string(*filter.FlowType))
+	if filter.TaskType != nil && *filter.TaskType != "" {
+		query = query.Where("task_type = ?", string(*filter.TaskType))
 	}
-	if filter.Status != nil {
+	if filter.Status != nil && *filter.Status != "" {
 		query = query.Where("status = ?", string(*filter.Status))
+	}
+	if filter.Keyword != "" {
+		keyword := "%" + filter.Keyword + "%"
+		query = query.Where("title LIKE ? OR description LIKE ?", keyword, keyword)
 	}
 
 	var rows []database.Task
@@ -218,7 +222,7 @@ func runFromDB(row database.TaskRun) TaskRun {
 	}
 }
 
-// CreateRun inserts one execution run.
+// CreateRun inserts a new TaskRun.
 func (r *Repository) CreateRun(run TaskRun) (TaskRun, error) {
 	row := runToDB(run)
 	if err := r.db.Create(&row).Error; err != nil {
@@ -227,7 +231,7 @@ func (r *Repository) CreateRun(run TaskRun) (TaskRun, error) {
 	return runFromDB(row), nil
 }
 
-// UpdateRun updates an existing execution run.
+// UpdateRun updates an existing TaskRun.
 func (r *Repository) UpdateRun(run TaskRun) error {
 	row := runToDB(run)
 	return r.db.Model(&database.TaskRun{}).Where("id = ?", run.ID).Updates(map[string]any{
@@ -237,10 +241,11 @@ func (r *Repository) UpdateRun(run TaskRun) error {
 	}).Error
 }
 
-// ListRuns returns all runs for a task in reverse chronological order.
+// ListRuns returns all runs for a task in descending order.
 func (r *Repository) ListRuns(taskID uint) ([]TaskRun, error) {
 	var rows []database.TaskRun
-	if err := r.db.Where("task_id = ?", taskID).Order("triggered_at desc").Find(&rows).Error; err != nil {
+	err := r.db.Where("task_id = ?", taskID).Order("id desc").Find(&rows).Error
+	if err != nil {
 		return nil, err
 	}
 	out := make([]TaskRun, len(rows))
@@ -250,50 +255,17 @@ func (r *Repository) ListRuns(taskID uint) ([]TaskRun, error) {
 	return out, nil
 }
 
-// GetTaskSessionIDs returns all session IDs generated by tasks in the given project (or all if projectID is 0).
+// GetTaskSessionIDs returns all session IDs created by tasks in the given project (or all if projectID is 0).
 func (r *Repository) GetTaskSessionIDs(projectID uint) ([]string, error) {
+	query := r.db.Model(&database.TaskRun{}).Select("task_runs.session_id").
+		Joins("JOIN tasks ON tasks.id = task_runs.task_id")
+	if projectID > 0 {
+		query = query.Where("tasks.project_id = ?", projectID)
+	}
+
 	var sessionIDs []string
-
-	// 1. active_session_id from tasks
-	tasksQuery := r.db.Model(&database.Task{}).Where("active_session_id != '' AND active_session_id IS NOT NULL")
-	if projectID > 0 {
-		tasksQuery = tasksQuery.Where("project_id = ?", projectID)
-	}
-	var activeIDs []string
-	if err := tasksQuery.Pluck("active_session_id", &activeIDs).Error; err != nil {
+	if err := query.Pluck("task_runs.session_id", &sessionIDs).Error; err != nil {
 		return nil, err
-	}
-
-	// 2. session_id from task_runs joined with tasks
-	runsQuery := r.db.Table("task_runs").
-		Select("task_runs.session_id").
-		Joins("JOIN tasks ON tasks.id = task_runs.task_id").
-		Where("task_runs.session_id != '' AND task_runs.session_id IS NOT NULL")
-	if projectID > 0 {
-		runsQuery = runsQuery.Where("tasks.project_id = ?", projectID)
-	}
-	var runIDs []string
-	if err := runsQuery.Pluck("task_runs.session_id", &runIDs).Error; err != nil {
-		return nil, err
-	}
-
-	seen := make(map[string]struct{}, len(activeIDs)+len(runIDs))
-	for _, id := range activeIDs {
-		if id != "" {
-			if _, exists := seen[id]; !exists {
-				seen[id] = struct{}{}
-				sessionIDs = append(sessionIDs, id)
-			}
-		}
-	}
-	for _, id := range runIDs {
-		if id != "" {
-			if _, exists := seen[id]; !exists {
-				seen[id] = struct{}{}
-				sessionIDs = append(sessionIDs, id)
-			}
-		}
 	}
 	return sessionIDs, nil
 }
-

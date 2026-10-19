@@ -27,26 +27,21 @@ func TestTaskHandlers(t *testing.T) {
 	svc := NewService(NewRepository(db), launcher)
 	engine := setupTestEngine(svc)
 
-	// 1. GET /api/tasks/flows
-	{
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("GET", "/api/tasks/flows", nil)
-		engine.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("flows code = %d, want %d", w.Code, http.StatusOK)
-		}
-	}
-
-	// 2. POST /api/tasks (Create)
+	// 1. POST /api/tasks (Create standard task)
 	var created Task
 	{
+		future := time.Now().Add(2 * time.Hour)
 		body, _ := json.Marshal(CreateTaskRequest{
-			Title:       "HTTP 任务测试",
-			Description: "测试用例",
-			ProjectID:   1,
-			Backend:     agents.BackendOpenCodeV2,
-			Model:       "claude-3-5-sonnet",
-			FlowType:    FlowTransactional,
+			Title:          "HTTP 任务测试",
+			Description:    "测试用例",
+			TaskType:       TaskTypeStandard,
+			ProjectID:      1,
+			Backend:        agents.BackendOpenCodeV2,
+			Model:          "claude-3-5-sonnet",
+			PromptTemplate: "请检查单元测试覆盖率并输出报告",
+			ScheduleType:   ScheduleOnce,
+			ScheduledAt:    &future,
+			ScheduleEnabled: true,
 		})
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/tasks", bytes.NewReader(body))
@@ -56,9 +51,12 @@ func TestTaskHandlers(t *testing.T) {
 			t.Fatalf("create task code = %d, want %d, body: %s", w.Code, http.StatusCreated, w.Body.String())
 		}
 		_ = json.Unmarshal(w.Body.Bytes(), &created)
+		if created.ID == 0 || created.PromptTemplate != "请检查单元测试覆盖率并输出报告" {
+			t.Fatalf("unexpected created task: %+v", created)
+		}
 	}
 
-	// 3. GET /api/tasks
+	// 2. GET /api/tasks (List)
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/api/tasks", nil)
@@ -68,63 +66,42 @@ func TestTaskHandlers(t *testing.T) {
 		}
 	}
 
-	// 4. PUT /api/tasks/:id/schedule (Should fail before final step)
+	// 3. GET /api/tasks/:id
 	{
-		future := time.Now().Add(1 * time.Hour)
-		body, _ := json.Marshal(ScheduleConfigRequest{
-			ScheduleType:    ScheduleOnce,
-			ScheduledAt:     &future,
-			ScheduleEnabled: true,
-		})
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("PUT", "/api/tasks/1/schedule", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
+		req, _ := http.NewRequest("GET", "/api/tasks/1", nil)
 		engine.ServeHTTP(w, req)
-		if w.Code != http.StatusConflict {
-			t.Fatalf("expected 409 conflict, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Fatalf("get task code = %d, want %d", w.Code, http.StatusOK)
 		}
 	}
 
-	// 5. POST /api/tasks/:id/advance (Advance to step 2 with confirmed = true)
+	// 4. PUT /api/tasks/:id (Update)
 	{
-		body, _ := json.Marshal(AdvanceStepRequest{
-			Confirmed: true,
-			Notes:     "确认完成",
+		newTitle := "更新后的任务标题"
+		body, _ := json.Marshal(UpdateTaskRequest{
+			Title: &newTitle,
 		})
 		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("POST", "/api/tasks/1/advance", bytes.NewReader(body))
+		req, _ := http.NewRequest("PUT", "/api/tasks/1", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		engine.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("advance task code = %d, want %d", w.Code, http.StatusOK)
+			t.Fatalf("update task code = %d, want %d", w.Code, http.StatusOK)
 		}
 	}
 
-	// 6. PUT /api/tasks/:id/execution-prompt
-	{
-		body, _ := json.Marshal(saveExecutionPromptRequest{
-			ExecutionPrompt: "执行方案：直接构建镜像并部署",
-		})
-		w := httptest.NewRecorder()
-		req, _ := http.NewRequest("PUT", "/api/tasks/1/execution-prompt", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		engine.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Fatalf("save execution prompt code = %d, want %d", w.Code, http.StatusOK)
-		}
-	}
-
-	// 7. POST /api/tasks/:id/trigger (Trigger execution)
+	// 5. POST /api/tasks/:id/trigger (Trigger manual execution)
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/tasks/1/trigger", nil)
 		engine.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("trigger code = %d, want %d", w.Code, http.StatusOK)
+			t.Fatalf("trigger execution code = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 		}
 	}
 
-	// 8. GET /api/tasks/:id/runs
+	// 6. GET /api/tasks/:id/runs (List runs)
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/api/tasks/1/runs", nil)
@@ -132,15 +109,32 @@ func TestTaskHandlers(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("list runs code = %d, want %d", w.Code, http.StatusOK)
 		}
+		var resp struct {
+			Runs []TaskRun `json:"runs"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		if len(resp.Runs) != 1 {
+			t.Fatalf("expected 1 run, got %d", len(resp.Runs))
+		}
 	}
 
-	// 9. GET /api/tasks/session-ids
+	// 7. GET /api/tasks/session-ids
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/api/tasks/session-ids?projectId=1", nil)
 		engine.ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("get session ids code = %d, want %d", w.Code, http.StatusOK)
+		}
+	}
+
+	// 8. DELETE /api/tasks/:id
+	{
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("DELETE", "/api/tasks/1", nil)
+		engine.ServeHTTP(w, req)
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("delete task code = %d, want %d", w.Code, http.StatusNoContent)
 		}
 	}
 }

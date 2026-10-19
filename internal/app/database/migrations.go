@@ -179,6 +179,25 @@ var migrationSteps = []migrationStep{
 	{version: 23, name: "create_prompts", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&Prompt{})
 	}},
+	{version: 24, name: "refactor_tasks_modular", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&Task{}) {
+			if !tx.Migrator().HasColumn(&Task{}, "task_type") {
+				if err := tx.Migrator().AddColumn(&Task{}, "task_type"); err != nil {
+					return err
+				}
+				_ = tx.Exec("UPDATE tasks SET task_type = 'standard' WHERE task_type IS NULL OR task_type = ''").Error
+			}
+			if !tx.Migrator().HasColumn(&Task{}, "prompt_template") {
+				if err := tx.Migrator().AddColumn(&Task{}, "prompt_template"); err != nil {
+					return err
+				}
+				if tx.Migrator().HasColumn(&Task{}, "execution_prompt") {
+					_ = tx.Exec("UPDATE tasks SET prompt_template = execution_prompt WHERE prompt_template IS NULL OR prompt_template = ''").Error
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

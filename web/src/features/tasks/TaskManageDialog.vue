@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { listBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
 import { describeApiError } from '../../api/client'
-import type { FlowType, Task } from '../../api/tasks'
+import type { ScheduleType, Task } from '../../api/tasks'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
@@ -26,7 +26,12 @@ const description = ref(props.task?.description ?? '')
 const selectedProjectId = ref<number>(props.task?.projectId ?? 0)
 const selectedBackend = ref<BackendId | ''>(props.task?.backend ?? '')
 const selectedModel = ref(props.task?.model ?? '')
-const selectedFlowType = ref<FlowType>(props.task?.flowType ?? 'transactional')
+const promptTemplate = ref(props.task?.promptTemplate ?? '')
+
+// Scheduling
+const scheduleType = ref<ScheduleType>(props.task?.scheduleType ?? 'manual')
+const scheduledAtDate = ref(props.task?.scheduledAt ? props.task.scheduledAt.slice(0, 16) : '')
+const cronExpr = ref(props.task?.cronExpr ?? '0 9 * * *')
 
 const models = ref<ModelInfo[]>([])
 const loadingModels = ref(false)
@@ -40,11 +45,7 @@ const selectableBackends = computed(() =>
 )
 
 onMounted(async () => {
-  await Promise.all([
-    projectsStore.load(),
-    agentsStore.loadBackends(),
-    tasksStore.loadFlowDefs(),
-  ])
+  await Promise.all([projectsStore.load(), agentsStore.loadBackends()])
 
   if (!isEditing.value) {
     if (selectedProjectId.value === 0 && projectsStore.projects.length > 0) {
@@ -101,6 +102,31 @@ async function submit() {
     errorMessage.value = '请选择或输入模型'
     return
   }
+  if (!promptTemplate.value.trim()) {
+    errorMessage.value = '请填写执行提示词模板'
+    return
+  }
+
+  let scheduledAt: string | undefined
+  let scheduleEnabled = false
+  let cron: string | undefined
+
+  if (scheduleType.value === 'once') {
+    if (!scheduledAtDate.value) {
+      errorMessage.value = '请设置定时执行时间'
+      return
+    }
+    const targetDate = new Date(scheduledAtDate.value)
+    scheduledAt = targetDate.toISOString()
+    scheduleEnabled = true
+  } else if (scheduleType.value === 'cron') {
+    if (!cronExpr.value.trim()) {
+      errorMessage.value = '请输入有效的 Cron 表达式'
+      return
+    }
+    cron = cronExpr.value.trim()
+    scheduleEnabled = true
+  }
 
   saving.value = true
   errorMessage.value = ''
@@ -114,21 +140,30 @@ async function submit() {
         projectId: selectedProjectId.value,
         backend: selectedBackend.value,
         model: selectedModel.value.trim(),
+        promptTemplate: promptTemplate.value.trim(),
+        scheduleType: scheduleType.value,
+        scheduledAt,
+        cronExpr: cron,
+        scheduleEnabled,
       })
     } else {
       savedTask = await tasksStore.createTask({
         title: title.value.trim(),
         description: description.value.trim(),
+        taskType: 'standard',
         projectId: selectedProjectId.value,
         backend: selectedBackend.value,
         model: selectedModel.value.trim(),
-        flowType: selectedFlowType.value,
+        promptTemplate: promptTemplate.value.trim(),
+        scheduleType: scheduleType.value,
+        scheduledAt,
+        cronExpr: cron,
+        scheduleEnabled,
       })
     }
     emit('saved', savedTask)
-    emit('close')
-  } catch (err) {
-    errorMessage.value = describeApiError(err)
+  } catch (err: any) {
+    errorMessage.value = describeApiError(err) || '保存失败'
   } finally {
     saving.value = false
   }
@@ -137,99 +172,147 @@ async function submit() {
 
 <template>
   <AppDialog
-    :title="isEditing ? '编辑任务' : '新建任务'"
+    :title="isEditing ? '编辑任务模板' : '新建任务模板'"
+    width="38rem"
     @close="emit('close')"
   >
-    <form class="dialog-form" @submit.prevent="submit">
-      <p v-if="errorMessage" class="dialog-error" role="alert">{{ errorMessage }}</p>
+    <form class="manage-form" @submit.prevent="submit">
+      <div class="field">
+        <label for="dlg-task-title">任务名称 <span class="required">*</span></label>
+        <input
+          id="dlg-task-title"
+          v-model="title"
+          type="text"
+          class="input"
+          placeholder="例如：每日生产服务健康巡检"
+          required
+        />
+      </div>
 
-      <label for="task-title">任务名称 <span class="required">*</span></label>
-      <input
-        id="task-title"
-        v-model="title"
-        type="text"
-        placeholder="简要概括任务目标"
-        required
-        autofocus
-      />
+      <div class="field">
+        <label for="dlg-task-desc">任务描述 (可选)</label>
+        <input
+          id="dlg-task-desc"
+          v-model="description"
+          type="text"
+          class="input"
+          placeholder="任务目标与简要说明"
+        />
+      </div>
 
-      <label for="task-desc">任务描述 / 需求说明</label>
-      <textarea
-        id="task-desc"
-        v-model="description"
-        rows="3"
-        placeholder="详细描述具体需求、业务背景或约束条件..."
-      ></textarea>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="task-project">关联项目 <span class="required">*</span></label>
-          <select id="task-project" v-model="selectedProjectId" required>
+      <div class="field-row">
+        <div class="field flex-1">
+          <label for="dlg-task-project">关联项目 <span class="required">*</span></label>
+          <select id="dlg-task-project" v-model="selectedProjectId" class="select" required>
+            <option :value="0" disabled>选择项目…</option>
             <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
               {{ p.name }}
             </option>
           </select>
         </div>
 
-        <div class="form-field">
-          <label for="task-backend">Agent 类型 <span class="required">*</span></label>
-          <select id="task-backend" v-model="selectedBackend" required>
-            <option v-for="b in selectableBackends" :key="b.backend" :value="b.backend">
+        <div class="field flex-1">
+          <label for="dlg-task-backend">Agent 后端 <span class="required">*</span></label>
+          <select id="dlg-task-backend" v-model="selectedBackend" class="select" required>
+            <option value="" disabled>选择 Agent…</option>
+            <option
+              v-for="b in selectableBackends"
+              :key="b.backend"
+              :value="b.backend"
+            >
               {{ b.label || b.backend }}
             </option>
           </select>
         </div>
       </div>
 
-      <label for="task-model">执行模型 <span class="required">*</span></label>
-      <select v-if="models.length > 0" id="task-model" v-model="selectedModel" :disabled="loadingModels" required>
-        <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name || m.id }}</option>
-      </select>
-      <input
-        v-else
-        id="task-model"
-        v-model="selectedModel"
-        type="text"
-        placeholder="请输入模型名称（如 openai/gpt-4o）"
-        :disabled="loadingModels"
-        required
-      />
-      <p v-if="loadingModels" class="hint">加载模型列表中...</p>
+      <div class="field">
+        <label for="dlg-task-model">模型 <span class="required">*</span></label>
+        <div class="model-row">
+          <select
+            v-if="models.length > 0"
+            id="dlg-task-model"
+            v-model="selectedModel"
+            class="select"
+            :disabled="loadingModels"
+          >
+            <option v-for="m in models" :key="m.id" :value="m.id">
+              {{ m.name || m.id }}
+            </option>
+          </select>
+          <input
+            v-else
+            id="dlg-task-model"
+            v-model="selectedModel"
+            type="text"
+            class="input"
+            placeholder="输入模型标识符，如 claude-3-5-sonnet"
+            :disabled="loadingModels"
+            required
+          />
+          <span v-if="loadingModels" class="loading-hint">加载模型中…</span>
+        </div>
+      </div>
 
-      <template v-if="!isEditing">
-        <span class="field-label">编排流程类型 <span class="required">*</span></span>
-        <div class="flow-options">
-          <label class="flow-card" :class="{ selected: selectedFlowType === 'transactional' }">
-            <input
-              type="radio"
-              v-model="selectedFlowType"
-              value="transactional"
-              name="flowType"
-            />
-            <span class="flow-info">
-              <span class="flow-name">事务型（2 步）</span>
-              <span class="flow-desc">1. 任务分析 ➔ 2. 任务执行。Agent 分析任务、消除歧义与不确定点，确认后每次新起独立会话执行。</span>
-            </span>
+      <div class="field">
+        <label for="dlg-task-prompt">执行提示词模板 <span class="required">*</span></label>
+        <textarea
+          id="dlg-task-prompt"
+          v-model="promptTemplate"
+          rows="4"
+          class="textarea"
+          placeholder="每次启动执行会话时发送给 Agent 的任务提示词模板…"
+          required
+        ></textarea>
+      </div>
+
+      <div class="field">
+        <label>执行方式选项</label>
+        <div class="schedule-radios">
+          <label class="radio-label">
+            <input v-model="scheduleType" type="radio" value="manual" />
+            手动执行
           </label>
-          <label class="flow-card" :class="{ selected: selectedFlowType === 'development' }">
-            <input
-              type="radio"
-              v-model="selectedFlowType"
-              value="development"
-              name="flowType"
-            />
-            <span class="flow-info">
-              <span class="flow-name">开发类（4 步）</span>
-              <span class="flow-desc">1. 需求分析 ➔ 2. 需求设计 ➔ 3. 制定计划 ➔ 4. 执行。制定计划时完成全项确认。</span>
-            </span>
+          <label class="radio-label">
+            <input v-model="scheduleType" type="radio" value="once" />
+            定时执行
+          </label>
+          <label class="radio-label">
+            <input v-model="scheduleType" type="radio" value="cron" />
+            周期执行 (Cron)
           </label>
         </div>
-      </template>
+      </div>
 
-      <div class="dialog-actions">
-        <button type="button" class="cancel" @click="emit('close')">取消</button>
-        <button type="submit" class="confirm" :disabled="saving">
-          {{ saving ? '保存中...' : isEditing ? '保存修改' : '立即创建' }}
+      <div v-if="scheduleType === 'once'" class="schedule-subfield">
+        <label for="dlg-task-time">触发时间点 <span class="required">*</span></label>
+        <input
+          id="dlg-task-time"
+          v-model="scheduledAtDate"
+          type="datetime-local"
+          class="input"
+          required
+        />
+      </div>
+
+      <div v-if="scheduleType === 'cron'" class="schedule-subfield">
+        <label for="dlg-task-cron">Cron 表达式 (分 时 日 月 周) <span class="required">*</span></label>
+        <input
+          id="dlg-task-cron"
+          v-model="cronExpr"
+          type="text"
+          class="input font-mono"
+          placeholder="0 9 * * *"
+          required
+        />
+      </div>
+
+      <p v-if="errorMessage" class="error-msg" role="alert">{{ errorMessage }}</p>
+
+      <div class="actions">
+        <button type="button" class="btn-cancel" @click="emit('close')">取消</button>
+        <button type="submit" class="btn-submit" :disabled="saving">
+          {{ saving ? '保存中…' : '保存' }}
         </button>
       </div>
     </form>
@@ -237,141 +320,127 @@ async function submit() {
 </template>
 
 <style scoped>
-/* The dialog body follows the project dialogs' conventions: labels at
-   --space-unit rhythm, controls at --control-height and --radius, and the same
-   cancel/confirm footer. AppDialog owns the frame. */
-.dialog-form {
+.manage-form {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.75);
+  gap: 1rem;
 }
 
-.dialog-form label,
-.field-label {
-  font-weight: 600;
-  margin-top: calc(var(--space-unit) * 0.5);
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
 }
 
-.field-label {
-  display: inline-block;
+.field label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--color-text);
 }
 
-.dialog-form input[type='text'],
-.dialog-form textarea,
-.dialog-form select {
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+.required {
+  color: #ef4444;
+}
+
+.field-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.input,
+.select,
+.textarea {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text);
-  font: inherit;
+  font-size: 0.88rem;
 }
 
-.dialog-form input[type='text'],
-.dialog-form select {
-  height: var(--control-height);
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #3b82f6);
 }
 
-.dialog-form textarea {
-  resize: vertical;
+.font-mono {
+  font-family: monospace;
 }
 
-.dialog-form .required {
-  color: var(--color-danger);
-}
-
-.hint {
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: calc(var(--space-unit) * 1.5);
-}
-
-.form-field {
+.model-row {
   display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.flow-options {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 1);
-}
-
-.flow-card {
-  display: flex;
-  align-items: flex-start;
-  gap: calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 1.667);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  cursor: pointer;
-}
-
-.flow-card.selected {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-}
-
-.flow-card input[type='radio'] {
-  margin-top: calc(var(--space-unit) * 0.5);
-}
-
-.flow-info {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.25);
-}
-
-.flow-name {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.flow-desc {
+.loading-hint {
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
 
-.dialog-error {
-  color: var(--color-danger);
+.schedule-radios {
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.35rem 0;
+}
+
+.radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.schedule-subfield {
+  padding: 0.75rem;
+  background: var(--color-surface-muted);
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+
+.error-msg {
+  font-size: 0.85rem;
+  color: #ef4444;
   margin: 0;
 }
 
-.dialog-actions {
+.actions {
   display: flex;
   justify-content: flex-end;
-  gap: calc(var(--space-unit) * 0.75);
-  margin-top: calc(var(--space-unit) * 1.5);
+  gap: 0.75rem;
+  margin-top: 0.5rem;
 }
 
-.dialog-actions button {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+.btn-cancel {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
   background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
-  font: inherit;
+  font-size: 0.88rem;
 }
 
-.dialog-actions .confirm {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
+.btn-submit {
+  padding: 0.45rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-primary, #3b82f6);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.88rem;
 }
 
-.dialog-actions .confirm:disabled {
-  background: var(--color-info-border);
-  border-color: var(--color-info-border);
-  cursor: default;
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

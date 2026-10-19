@@ -1,38 +1,28 @@
-// Store for Task Management and Orchestration Flows.
+// Store for Task Management and Execution.
 import { defineStore } from 'pinia'
 import { describeApiError, UnauthorizedError } from '../api/client'
 import {
-  advanceTaskStep,
   createTask,
-  createTaskSession,
   deleteTask,
-  getFlowDefs,
   getTask,
   listTaskRuns,
   listTasks,
-  saveExecutionPrompt,
   triggerTaskExecution,
   updateTask,
-  updateTaskSchedule,
-  type AdvanceStepPayload,
   type CreateTaskPayload,
-  type FlowDef,
-  type FlowType,
-  type ScheduleConfigPayload,
   type Task,
   type TaskRun,
   type TaskStatus,
+  type TaskType,
   type UpdateTaskPayload,
 } from '../api/tasks'
 import { useAuthStore } from './auth'
-import { useSessionsStore } from './sessions'
 import { tabKey, useOpenTabsStore } from './openTabs'
 
 export const useTasksStore = defineStore('tasks', {
   state: () => ({
     tasks: [] as Task[],
     currentTask: null as Task | null,
-    flowDefs: [] as FlowDef[],
     taskRuns: {} as Record<number, TaskRun[]>,
     loading: false,
     error: '',
@@ -41,27 +31,16 @@ export const useTasksStore = defineStore('tasks', {
   getters: {
     byId: (state) => (id: number): Task | undefined =>
       state.tasks.find((task) => task.id === id),
-    flowDefByType: (state) => (type: FlowType): FlowDef | undefined =>
-      state.flowDefs.find((f) => f.type === type),
     runsByTaskId: (state) => (taskId: number): TaskRun[] =>
       state.taskRuns[taskId] || [],
   },
 
   actions: {
-    async loadFlowDefs() {
-      if (this.flowDefs.length > 0) return
-      try {
-        this.flowDefs = await getFlowDefs()
-      } catch (error) {
-        if (error instanceof UnauthorizedError) return
-        console.error('Failed to load flow defs', error)
-      }
-    },
-
     async loadTasks(filter?: {
       projectId?: number
-      flowType?: FlowType
+      taskType?: TaskType
       status?: TaskStatus
+      keyword?: string
     }) {
       this.loading = true
       try {
@@ -80,7 +59,6 @@ export const useTasksStore = defineStore('tasks', {
       try {
         const task = await getTask(id)
         this.currentTask = task
-        // Update in list if present
         const idx = this.tasks.findIndex((t) => t.id === id)
         if (idx !== -1) {
           this.tasks[idx] = task
@@ -121,80 +99,26 @@ export const useTasksStore = defineStore('tasks', {
 
     async deleteTask(id: number) {
       const auth = useAuthStore()
-      const taskToDelete =
-        this.tasks.find((t) => t.id === id) ||
-        (this.currentTask?.id === id ? this.currentTask : null)
       await deleteTask(auth.csrfToken, id)
       this.tasks = this.tasks.filter((t) => t.id !== id)
+      delete this.taskRuns[id]
       if (this.currentTask?.id === id) {
         this.currentTask = null
       }
-      if (taskToDelete) {
-        const sessionsStore = useSessionsStore()
-        const openTabsStore = useOpenTabsStore()
-        if (taskToDelete.activeSessionId) {
-          const tab = openTabsStore.tabs.find(
-            (t) => t.kind === 'session' && t.sessionId === taskToDelete.activeSessionId,
-          )
-          if (tab) {
-            sessionsStore.unsubscribe(taskToDelete.activeSessionId)
-            openTabsStore.closeTabByKey(tabKey(tab))
-          }
-        }
-        void sessionsStore.loadSessions(taskToDelete.projectId)
-      }
+      const openTabs = useOpenTabsStore()
+      openTabs.closeTab(tabKey('task', id))
     },
 
-    async advanceStep(id: number, payload: AdvanceStepPayload) {
+    async triggerExecution(id: number, triggerType: 'manual' | 'once' | 'cron' = 'manual') {
       const auth = useAuthStore()
-      const task = await advanceTaskStep(auth.csrfToken, id, payload)
-      const idx = this.tasks.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        this.tasks[idx] = task
+      const res = await triggerTaskExecution(auth.csrfToken, id, triggerType)
+      if (res.run) {
+        const existingRuns = this.taskRuns[id] || []
+        this.taskRuns[id] = [res.run, ...existingRuns]
       }
-      if (this.currentTask?.id === id) {
-        this.currentTask = task
-      }
-      return task
-    },
-
-    async updateSchedule(id: number, payload: ScheduleConfigPayload) {
-      const auth = useAuthStore()
-      const task = await updateTaskSchedule(auth.csrfToken, id, payload)
-      const idx = this.tasks.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        this.tasks[idx] = task
-      }
-      if (this.currentTask?.id === id) {
-        this.currentTask = task
-      }
-      return task
-    },
-
-    async createSession(id: number) {
-      const auth = useAuthStore()
-      const res = await createTaskSession(auth.csrfToken, id)
-      const idx = this.tasks.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        this.tasks[idx] = res.task
-      }
-      if (this.currentTask?.id === id) {
-        this.currentTask = res.task
-      }
+      // Reload task to sync status
+      await this.loadTask(id)
       return res
-    },
-
-    async saveExecutionPrompt(id: number, prompt: string) {
-      const auth = useAuthStore()
-      const task = await saveExecutionPrompt(auth.csrfToken, id, prompt)
-      const idx = this.tasks.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        this.tasks[idx] = task
-      }
-      if (this.currentTask?.id === id) {
-        this.currentTask = task
-      }
-      return task
     },
 
     async loadTaskRuns(taskId: number) {
@@ -203,23 +127,10 @@ export const useTasksStore = defineStore('tasks', {
         this.taskRuns[taskId] = runs
         return runs
       } catch (error) {
+        if (error instanceof UnauthorizedError) return []
         console.error('Failed to load task runs', error)
         return []
       }
-    },
-
-    async triggerExecution(id: number, triggerType?: string) {
-      const auth = useAuthStore()
-      const res = await triggerTaskExecution(auth.csrfToken, id, triggerType)
-      const idx = this.tasks.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        this.tasks[idx] = res.task
-      }
-      if (this.currentTask?.id === id) {
-        this.currentTask = res.task
-      }
-      void this.loadTaskRuns(id)
-      return res
     },
   },
 })

@@ -5,7 +5,59 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/robfig/cron/v3"
 )
+
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+
+// CalculateNextRun computes the next run time after 'from' based on schedule settings.
+func CalculateNextRun(t Task, from time.Time) (*time.Time, error) {
+	switch t.ScheduleType {
+	case ScheduleOnce:
+		if t.ScheduledAt != nil && t.ScheduledAt.After(from) {
+			return t.ScheduledAt, nil
+		}
+		return nil, nil
+	case ScheduleCron:
+		if t.CronExpr == "" {
+			return nil, ErrInvalidCronExpr
+		}
+		sched, err := cronParser.Parse(t.CronExpr)
+		if err != nil {
+			return nil, ErrInvalidCronExpr
+		}
+		next := sched.Next(from)
+		if next.IsZero() {
+			return nil, nil
+		}
+		return &next, nil
+	default:
+		return nil, nil
+	}
+}
+
+// ValidateScheduleConfig validates scheduling settings for a task.
+func ValidateScheduleConfig(t Task) error {
+	if !t.ScheduleEnabled || t.ScheduleType == ScheduleManual || t.ScheduleType == "" {
+		return nil
+	}
+
+	switch t.ScheduleType {
+	case ScheduleOnce:
+		if t.ScheduledAt == nil || t.ScheduledAt.Before(time.Now()) {
+			return ErrInvalidScheduleTime
+		}
+	case ScheduleCron:
+		if t.CronExpr == "" {
+			return ErrInvalidCronExpr
+		}
+		if _, err := cronParser.Parse(t.CronExpr); err != nil {
+			return ErrInvalidCronExpr
+		}
+	}
+	return nil
+}
 
 // maxConcurrentTasks bounds how many tasks the scheduler may execute in parallel.
 const maxConcurrentTasks = 5
@@ -91,25 +143,6 @@ func (s *Scheduler) tick(now time.Time) {
 }
 
 func (s *Scheduler) dispatch(t Task, now time.Time) {
-	// Guard: check if the task is ready for execution (final step and confirmed)
-	if ok, err := CanSchedule(t); !ok {
-		log.Printf("scheduler: task %d skipped, not ready: %v", t.ID, err)
-		t.LastRunStatus = RunSkippedNotReady
-		t.LastRunAt = &now
-		if t.ScheduleType == ScheduleOnce {
-			t.ScheduleEnabled = false
-			t.NextRunAt = nil
-		} else if t.ScheduleType == ScheduleCron {
-			// Calculate next run so it doesn't get stuck in loop
-			next, _ := CalculateNextRun(t, now)
-			t.NextRunAt = next
-		}
-		if err := s.svc.repo.Update(t); err != nil {
-			log.Printf("scheduler: update skipped task %d failed: %v", t.ID, err)
-		}
-		return
-	}
-
 	log.Printf("scheduler: executing task %d (%s)...", t.ID, t.Title)
 	execCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

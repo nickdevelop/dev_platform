@@ -64,6 +64,12 @@ export function createAppRouter() {
             meta: { tasks: true, fullHeight: true },
           },
           {
+            path: 'tasks/new',
+            name: 'task-new',
+            component: TasksView,
+            meta: { tasks: true, fullHeight: true },
+          },
+          {
             path: 'tasks/:taskId',
             name: 'task-detail',
             component: TasksView,

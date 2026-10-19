@@ -1,49 +1,69 @@
-// Task status presentation shared by the task list column and the detail pane:
-// the badge class and the readable label for every task status, plus the filter
-// options, so both columns always agree on one rendering.
-import type { TaskStatus } from '../../api/tasks'
+// Task status and type helpers for UI display
+import type { RunStatus, ScheduleType, TaskStatus, TaskType } from '../../api/tasks'
 
-export const statusOptions: TaskStatus[] = [
-  'draft',
-  'in_progress',
-  'ready_for_execution',
-  'executing',
-  'completed',
-  'failed',
-]
-
-export function getStatusBadgeClass(status: TaskStatus): string {
-  switch (status) {
-    case 'ready_for_execution':
-      return 'badge-ready'
-    case 'executing':
-      return 'badge-executing'
-    case 'completed':
-      return 'badge-completed'
-    case 'failed':
-      return 'badge-failed'
-    case 'in_progress':
-      return 'badge-progress'
+export function getTaskTypeLabel(type: TaskType): string {
+  switch (type) {
+    case 'flow':
+      return '流程任务'
+    case 'standard':
     default:
-      return 'badge-draft'
+      return '普通任务'
   }
 }
 
-export function getStatusLabel(status: TaskStatus): string {
+export function getScheduleTypeLabel(type: ScheduleType): string {
+  switch (type) {
+    case 'once':
+      return '定时执行'
+    case 'cron':
+      return '周期执行'
+    case 'manual':
+    default:
+      return '手动执行'
+  }
+}
+
+export function getRunStatusBadgeClass(status?: RunStatus | string): string {
   switch (status) {
-    case 'draft':
-      return '草稿'
-    case 'in_progress':
-      return '进行中'
-    case 'ready_for_execution':
-      return '就绪待执行'
-    case 'executing':
-      return '执行中'
-    case 'completed':
-      return '已完成'
+    case 'running':
+      return 'badge-running'
+    case 'success':
+      return 'badge-success'
+    case 'failed':
+      return 'badge-failed'
+    default:
+      return 'badge-idle'
+  }
+}
+
+export function getRunStatusLabel(status?: RunStatus | string): string {
+  switch (status) {
+    case 'running':
+      return '运行中'
+    case 'success':
+      return '执行成功'
     case 'failed':
       return '执行失败'
     default:
-      return status
+      return '未执行'
+  }
+}
+
+export function formatDateTime(dateStr?: string): string {
+  if (!dateStr) return '-'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    return d.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    })
+  } catch {
+    return dateStr
   }
 }

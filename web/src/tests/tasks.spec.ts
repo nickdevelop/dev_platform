@@ -1,220 +1,150 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
-import type { FlowDef, Task } from '../api/tasks'
-import FlowStepper from '../features/tasks/FlowStepper.vue'
-import ScheduleConfigDialog from '../features/tasks/ScheduleConfigDialog.vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import type { Task, TaskRun } from '../api/tasks'
+import TaskCreatePanel from '../features/tasks/TaskCreatePanel.vue'
+import TaskDetailView from '../features/tasks/TaskDetailView.vue'
 
-describe('Tasks Module Tests', () => {
+describe('Tasks Module Unit Tests', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.restoreAllMocks()
+    localStorage.clear()
   })
 
-  it('flow stepper renders transactional flow with analysis step and execution prompt card', async () => {
-    const flowDef: FlowDef = {
-      type: 'transactional',
-      name: '事务型',
-      description: '事务型流程描述',
-      steps: [
-        {
-          index: 1,
-          key: 'analysis',
-          name: '任务分析',
-          description: 'Agent 分析任务、识别歧义与不确定点并输出执行计划',
-          prompt: '请分析任务需求，识别信息是否有歧义、不确定点与风险',
-          isFinal: false,
-        },
-        {
-          index: 2,
-          key: 'execute',
-          name: '任务执行',
-          description: '免打断执行任务',
-          prompt: '执行任务',
-          isFinal: true,
-        },
-      ],
-    }
+  it('TaskCreatePanel renders template inputs and execution mode choices', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = new URL(String(input), 'http://localhost').pathname
+        const body =
+          path === '/api/projects'
+            ? { projects: [{ id: 1, name: 'demo-proj', path: '/demo' }] }
+            : path === '/api/agent-backends'
+              ? {
+                  backends: [
+                    { backend: 'opencode_v2', label: 'OpenCode V2', enabled: true },
+                    { backend: 'pi', label: 'Pi Agent', enabled: true },
+                  ],
+                }
+              : path === '/api/prompts'
+                ? { prompts: [] }
+                : {}
+        return { status: 200, json: async () => body } as Response
+      }),
+    )
 
-    const task: Task = {
-      id: 1,
-      title: '事务测试任务',
-      description: '测试描述',
+    const wrapper = mount(TaskCreatePanel, {
+      props: {
+        initialProjectId: 1,
+      },
+    })
+    await flushPromises()
+
+    // 1. Task type selector: standard active, flow disabled
+    expect(wrapper.find('.task-type-selector').exists()).toBe(true)
+    expect(wrapper.text()).toContain('普通任务')
+    expect(wrapper.text()).toContain('流程任务')
+    expect(wrapper.find('.type-card.active .type-title').text()).toBe('普通任务')
+
+    // 2. Execution mode choices
+    const modeCards = wrapper.findAll('.mode-card')
+    expect(modeCards.length).toBe(3)
+    expect(wrapper.text()).toContain('手动执行')
+    expect(wrapper.text()).toContain('定时执行')
+    expect(wrapper.text()).toContain('周期执行')
+
+    // 3. Switch to cron shows cron config
+    await modeCards[2].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#cron-expr').exists()).toBe(true)
+  })
+
+  it('TaskDetailView renders session template, manual trigger, and task runs table', async () => {
+    const mockTask: Task = {
+      id: 10,
+      title: '生产环境巡检',
+      description: '日常定时巡检',
+      taskType: 'standard',
       projectId: 1,
       backend: 'opencode_v2',
       model: 'gpt-4o',
-      flowType: 'transactional',
-      currentStep: 1,
-      stepStatus: 'in_progress',
-      status: 'in_progress',
-      isConfirmed: false,
-      executionPrompt: '初始执行提示词',
-      stepsData: '',
-      activeSessionId: 'sess_1',
-      scheduleType: 'none',
-      scheduleEnabled: false,
-      createdAt: '2026-10-17T00:00:00Z',
-      updatedAt: '2026-10-17T00:00:00Z',
-    }
-
-    const wrapper = mount(FlowStepper, {
-      props: {
-        task,
-        flowDef,
-      },
-    })
-
-    // Stepper track has 2 steps with "任务分析" as step 1
-    expect(wrapper.findAll('.step-item')).toHaveLength(2)
-    expect(wrapper.text()).toContain('任务分析')
-    expect(wrapper.text()).toContain('任务执行')
-
-    // At step 1, confirmation notice must be visible and emphasize ambiguity identification
-    expect(wrapper.find('.confirmation-notice').exists()).toBe(true)
-    expect(wrapper.text()).toContain('在【任务分析】阶段，Agent 需分析任务需求，识别信息是否有歧义')
-
-    // Execution prompt box must be visible
-    expect(wrapper.find('.execution-prompt-box').exists()).toBe(true)
-    expect(wrapper.text()).toContain('提炼第二步执行提示词')
-
-    // Click save prompt emits savePrompt with text
-    await wrapper.find('.btn-save-prompt').trigger('click')
-    expect(wrapper.emitted('savePrompt')).toBeTruthy()
-    expect(wrapper.emitted('savePrompt')![0][0]).toBe('初始执行提示词')
-  })
-
-  it('flow stepper renders development flow and stage transition modal with agent invocation', async () => {
-    const flowDef: FlowDef = {
-      type: 'development',
-      name: '开发类',
-      description: '开发类流程描述',
-      steps: [
-        { index: 1, key: 'analysis', name: '需求分析', description: '', prompt: '分析需求', isFinal: false },
-        { index: 2, key: 'design', name: '需求设计', description: '', prompt: '设计方案', isFinal: false },
-        { index: 3, key: 'plan', name: '制定计划', description: '', prompt: '制定计划', isFinal: false },
-        { index: 4, key: 'execute', name: '执行', description: '', prompt: '执行代码', isFinal: true },
-      ],
-    }
-
-    const task: Task = {
-      id: 2,
-      title: '开发测试任务',
-      description: '开发类测试描述',
-      projectId: 1,
-      backend: 'pi',
-      model: 'claude-3-5-sonnet',
-      flowType: 'development',
-      currentStep: 1,
-      stepStatus: 'in_progress',
-      status: 'in_progress',
-      isConfirmed: false,
-      stepsData: '',
-      activeSessionId: 'sess_dev_1',
-      scheduleType: 'none',
-      scheduleEnabled: false,
-      createdAt: '2026-10-17T00:00:00Z',
-      updatedAt: '2026-10-17T00:00:00Z',
-    }
-
-    const wrapper = mount(FlowStepper, {
-      props: {
-        task,
-        flowDef,
-      },
-    })
-
-    expect(wrapper.findAll('.step-item')).toHaveLength(4)
-
-    // Click advance button opens stage transition modal
-    await wrapper.find('.btn-advance').trigger('click')
-    expect(wrapper.find('.stage-modal').exists()).toBe(true)
-    expect(wrapper.text()).toContain('确认推进至第 2 步：需求设计')
-
-    // Fill user supplement and click send
-    await wrapper.find('.supplement-textarea').setValue('请注意表结构规范')
-    await wrapper.find('.modal-actions .btn-primary').trigger('click')
-
-    expect(wrapper.emitted('advance')).toBeTruthy()
-    const payload = wrapper.emitted('advance')![0]
-    expect(payload[0]).toBe(true)
-    expect(payload[2]).toContain('请注意表结构规范')
-    expect(payload[2]).toContain('推进至第 2 步：需求设计')
-  })
-
-  it('schedule dialog gates scheduling when task is not at final step or unconfirmed', async () => {
-    const unreadyTask: Task = {
-      id: 3,
-      title: '未就绪任务',
-      description: '',
-      projectId: 1,
-      backend: 'opencode_v2',
-      model: 'gpt-4o',
-      flowType: 'transactional',
-      currentStep: 1,
-      stepStatus: 'in_progress',
-      status: 'in_progress',
-      isConfirmed: false,
-      stepsData: '',
-      activeSessionId: '',
-      scheduleType: 'none',
-      scheduleEnabled: false,
-      createdAt: '2026-10-17T00:00:00Z',
-      updatedAt: '2026-10-17T00:00:00Z',
-    }
-
-    const wrapper = mount(ScheduleConfigDialog, {
-      props: {
-        task: unreadyTask,
-      },
-    })
-
-    // Guard notice must be displayed
-    expect(wrapper.find('.guard-notice').exists()).toBe(true)
-    expect(wrapper.text()).toContain('未满足自动调度条件')
-
-    // Switch input must be disabled
-    const switchInput = wrapper.find('.switch-input')
-    expect((switchInput.element as HTMLInputElement).disabled).toBe(true)
-  })
-
-  it('schedule dialog allows scheduling when task is at final step and confirmed', async () => {
-    const readyTask: Task = {
-      id: 4,
-      title: '已就绪事务任务',
-      description: '',
-      projectId: 1,
-      backend: 'opencode_v2',
-      model: 'gpt-4o',
-      flowType: 'transactional',
-      currentStep: 2,
-      stepStatus: 'confirmed',
-      status: 'ready_for_execution',
-      isConfirmed: true,
-      executionPrompt: '可直接执行提示词',
-      stepsData: '',
-      activeSessionId: '',
+      promptTemplate: '请检查生产环境错误日志并汇总',
       scheduleType: 'cron',
-      cronExpr: '0 2 * * *',
+      cronExpr: '0 9 * * *',
       scheduleEnabled: true,
-      createdAt: '2026-10-17T00:00:00Z',
-      updatedAt: '2026-10-17T00:00:00Z',
+      lastRunStatus: 'success',
+      status: 'active',
+      createdAt: '2026-10-18T00:00:00Z',
+      updatedAt: '2026-10-18T00:00:00Z',
     }
 
-    const wrapper = mount(ScheduleConfigDialog, {
+    const mockRuns: TaskRun[] = [
+      {
+        id: 101,
+        taskId: 10,
+        sessionId: 'sess_task_101',
+        triggerType: 'manual',
+        status: 'success',
+        prompt: '请检查生产环境错误日志并汇总',
+        triggeredAt: '2026-10-19T09:00:00Z',
+        finishedAt: '2026-10-19T09:01:30Z',
+        createdAt: '2026-10-19T09:00:00Z',
+      },
+    ]
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = new URL(String(input), 'http://localhost').pathname
+        const body =
+          path === '/api/projects'
+            ? { projects: [{ id: 1, name: 'demo-proj', path: '/demo' }] }
+            : path === '/api/tasks/10'
+              ? mockTask
+              : path === '/api/tasks/10/runs'
+                ? { runs: mockRuns }
+                : {}
+        return { status: 200, json: async () => body } as Response
+      }),
+    )
+
+    const wrapper = mount(TaskDetailView, {
       props: {
-        task: readyTask,
+        taskId: 10,
+      },
+      global: {
+        stubs: {
+          TaskChatDialog: {
+            props: ['title', 'projectId', 'sessionId', 'backend', 'model'],
+            template: '<div data-test="task-chat-dialog" :data-session="sessionId">{{ title }}</div>',
+          },
+        },
       },
     })
+    await flushPromises()
 
-    // Guard notice should NOT be displayed
-    expect(wrapper.find('.guard-notice').exists()).toBe(false)
+    // Header info
+    expect(wrapper.find('.task-title').text()).toBe('生产环境巡检')
+    expect(wrapper.find('.btn-trigger').exists()).toBe(true)
 
-    // Switch input should be enabled and checked
-    const switchInput = wrapper.find('.switch-input')
-    expect((switchInput.element as HTMLInputElement).disabled).toBe(false)
-    expect((switchInput.element as HTMLInputElement).checked).toBe(true)
+    // Template overview
+    expect(wrapper.find('.template-content').text()).toBe('请检查生产环境错误日志并汇总')
 
-    // Cron options visible for transactional
-    expect(wrapper.text()).toContain('周期执行（Cron）')
+    // Runs Table
+    const table = wrapper.find('[data-test="task-runs-table"]')
+    expect(table.exists()).toBe(true)
+    expect(wrapper.findAll('[data-test="task-run-row"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('#101')
+    expect(wrapper.text()).toContain('手动触发')
+    expect(wrapper.text()).toContain('sess_task_101')
+
+    // Click "查看会话" button opens session modal with session id
+    await wrapper.find('[data-test="btn-view-session"]').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('[data-test="task-chat-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('data-session')).toBe('sess_task_101')
   })
 })
