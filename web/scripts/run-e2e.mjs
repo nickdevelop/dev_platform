@@ -212,21 +212,24 @@ try {
   await waitFor(`http://${apiAddr}/api/health`, 'platform server')
 
   // Run vite directly under node (not via npm) so SIGTERM reaches it and no
-  // dev-server process survives the harness.
+  // dev-server process survives the harness. The port defaults to 5173 and can
+  // be moved with E2E_VITE_PORT when another dev server wants that port — the
+  // Playwright config reads the same variable for its baseURL.
+  const vitePort = process.env.E2E_VITE_PORT ?? '5173'
   start(
     'vite',
     process.execPath,
     [
       path.join(webDir, 'node_modules', 'vite', 'bin', 'vite.js'),
       '--port',
-      '5173',
+      vitePort,
       '--strictPort',
       '--host',
       '127.0.0.1',
     ],
     { cwd: webDir, env: { ...process.env, E2E_API_PROXY: `http://${apiAddr}` } },
   )
-  await waitFor('http://127.0.0.1:5173/', 'vite dev server')
+  await waitFor(`http://127.0.0.1:${vitePort}/`, 'vite dev server')
 
   const playwrightArgs = process.argv.slice(2)
   const result = spawnSync('npx', ['playwright', 'test', ...playwrightArgs], {
