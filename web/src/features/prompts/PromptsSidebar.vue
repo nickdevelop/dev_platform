@@ -50,16 +50,17 @@ function onSaved(prompt: Prompt) {
   <div class="prompts-sidebar" aria-label="提示词列表">
     <div class="sidebar-head">
       <h2>提示词</h2>
-      <div class="head-actions">
-        <button
-          type="button"
-          class="new-prompt-btn"
-          data-test="new-prompt-btn"
-          @click="openCreateDialog"
-        >
-          新建
-        </button>
-      </div>
+    </div>
+
+    <div class="sidebar-actions">
+      <button
+        type="button"
+        class="new-prompt-btn"
+        data-test="new-prompt-btn"
+        @click="openCreateDialog"
+      >
+        + 新建提示词
+      </button>
     </div>
 
     <input
@@ -133,8 +134,8 @@ function onSaved(prompt: Prompt) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 28px;
   padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2);
-  border-bottom: 1px solid var(--color-border);
 }
 
 .sidebar-head h2 {
@@ -144,13 +145,23 @@ function onSaved(prompt: Prompt) {
   color: var(--color-text);
 }
 
+.sidebar-actions {
+  display: flex;
+  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.5) 0;
+}
+
 .new-prompt-btn {
-  padding: 4px 10px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
   background: var(--color-primary);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius, 4px);
   color: #fff;
   font-size: 0.8125rem;
+  font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s ease;
 }

@@ -335,6 +335,33 @@ describe('three-pane app shell', () => {
     expect(wrapper.find('[data-test="sidebar-backdrop"]').exists()).toBe(true)
   })
 
+  it('separates sidebar action buttons into a dedicated row to prevent overlap with dock controls', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const sidebar = wrapper.find('aside.sidebar')
+    expect(sidebar.exists()).toBe(true)
+
+    // Header has the title and is isolated from action buttons
+    const head = sidebar.find('.sidebar-head')
+    expect(head.find('h2').text()).toBe('项目')
+    expect(head.findAll('button')).toHaveLength(0)
+
+    // Actions sit in dedicated second row below the head
+    const actions = sidebar.find('.sidebar-actions')
+    expect(actions.exists()).toBe(true)
+    const registerBtn = actions.find('button.register')
+    const createBtn = actions.find('button.create')
+    expect(registerBtn.exists()).toBe(true)
+    expect(registerBtn.text()).toBe('注册')
+    expect(createBtn.exists()).toBe(true)
+    expect(createBtn.text()).toBe('新建')
+
+    // Dock controls are present and isolated from action buttons
+    const dockControls = sidebar.find('.sidebar-dock-controls')
+    expect(dockControls.exists()).toBe(true)
+    expect(dockControls.find('[data-test="sidebar-pin-btn"]').exists()).toBe(true)
+    expect(dockControls.find('[data-test="sidebar-collapse-btn"]').exists()).toBe(true)
+  })
+
   it('starts with the project column collapsed when the stored choice says so', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true }, () => {
       localStorage.setItem('dev-platform-sidebar-v1', 'collapsed')

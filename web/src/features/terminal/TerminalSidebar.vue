@@ -72,16 +72,17 @@ function onConnect(serverId: number) {
   <div class="terminal-sidebar" aria-label="服务器列表">
     <div class="sidebar-head">
       <h2>服务器</h2>
-      <div class="head-actions">
-        <button
-          type="button"
-          class="create-server-btn"
-          data-test="create-server-btn"
-          @click="openCreateDialog"
-        >
-          + 添加
-        </button>
-      </div>
+    </div>
+
+    <div class="sidebar-actions">
+      <button
+        type="button"
+        class="create-server-btn"
+        data-test="create-server-btn"
+        @click="openCreateDialog"
+      >
+        + 新增服务器
+      </button>
     </div>
 
     <input
@@ -247,7 +248,8 @@ function onConnect(serverId: number) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  min-height: 28px;
+  margin-bottom: 8px;
 }
 
 .sidebar-head h2 {
@@ -256,13 +258,22 @@ function onConnect(serverId: number) {
   margin: 0;
 }
 
+.sidebar-actions {
+  display: flex;
+  margin-bottom: 10px;
+}
+
 .create-server-btn {
-  padding: 4px 10px;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
   background: var(--color-primary, #2563eb);
   color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius, 6px);
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;

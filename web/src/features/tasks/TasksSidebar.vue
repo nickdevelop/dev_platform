@@ -80,16 +80,17 @@ function getProjectName(pid: number) {
   <div class="tasks-sidebar" aria-label="任务列表">
     <div class="sidebar-head">
       <h2>任务</h2>
-      <div class="head-actions">
-        <button
-          type="button"
-          class="new-task-btn"
-          data-test="btn-new-task"
-          @click="openCreateView"
-        >
-          + 新建
-        </button>
-      </div>
+    </div>
+
+    <div class="sidebar-actions">
+      <button
+        type="button"
+        class="new-task-btn"
+        data-test="btn-new-task"
+        @click="openCreateView"
+      >
+        + 新建
+      </button>
     </div>
 
     <input
@@ -174,9 +175,10 @@ function getProjectName(pid: number) {
 
 .sidebar-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-bottom: 0.5rem;
 }
 
 .sidebar-head h2 {
@@ -186,8 +188,17 @@ function getProjectName(pid: number) {
   margin: 0;
 }
 
+.sidebar-actions {
+  display: flex;
+  margin-bottom: 0.6rem;
+}
+
 .new-task-btn {
-  padding: 0.35rem 0.75rem;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.75rem;
   font-size: 0.85rem;
   font-weight: 600;
   background: var(--color-primary, #3b82f6);

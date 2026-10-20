@@ -88,7 +88,15 @@ describe('Prompts UI Components', () => {
     expect(wrapper.find('[data-test="prompt-card-2"]').exists()).toBe(true)
 
     // Open create dialog
-    await wrapper.find('[data-test="new-prompt-btn"]').trigger('click')
+    const head = wrapper.find('.sidebar-head')
+    expect(head.find('h2').text()).toBe('提示词')
+    expect(head.findAll('button')).toHaveLength(0)
+
+    const actions = wrapper.find('.sidebar-actions')
+    expect(actions.exists()).toBe(true)
+    const newBtn = actions.find('[data-test="new-prompt-btn"]')
+    expect(newBtn.exists()).toBe(true)
+    await newBtn.trigger('click')
     await flushPromises()
     expect(wrapper.findComponent(PromptManageDialog).exists()).toBe(true)
   })

@@ -121,4 +121,16 @@ describe('TasksSidebar Component', () => {
 
     expect(routerPush).toHaveBeenCalledWith({ name: 'task-detail', params: { taskId: 12 } })
   })
+
+  it('renders title and new task button in separated rows to avoid overlap with dock controls', async () => {
+    const wrapper = await mountSidebar([mockTask({ id: 1 })])
+
+    const head = wrapper.find('.sidebar-head')
+    expect(head.find('h2').text()).toBe('任务')
+    expect(head.findAll('button')).toHaveLength(0)
+
+    const actions = wrapper.find('.sidebar-actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.find('.new-task-btn').text()).toContain('新建')
+  })
 })

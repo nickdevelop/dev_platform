@@ -567,10 +567,10 @@ watch(
       <template v-else>
         <div class="sidebar-head">
           <h2>项目</h2>
-          <div class="head-actions">
-            <button type="button" class="register" @click="openManage('register')">注册</button>
-            <button type="button" class="create" @click="openManage('create')">新建</button>
-          </div>
+        </div>
+        <div class="sidebar-actions">
+          <button type="button" class="action-btn register" @click="openManage('register')">注册</button>
+          <button type="button" class="action-btn create" @click="openManage('create')">新建</button>
         </div>
         <input
           v-model="search"
@@ -781,18 +781,15 @@ watch(
   transition: transform 0.15s ease;
 }
 
-/* The dock controls (pin/collapse) float over the top-right corner of the
-   sidebar; their 60px footprint plus a margin sets the head's right inset so
-   head-actions buttons never slide underneath them. */
-:deep(.sidebar-head) {
-  padding-right: calc(var(--space-unit) * 11) !important;
-}
-
+/* The dock controls (pin/collapse) sit in the top-right corner of the
+   sidebar; the head leaves room on the right so long titles never slide
+   underneath them. Action buttons sit on their own dedicated row below. */
 .sidebar-head {
-  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 11) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
+  padding: calc(var(--space-unit) * 1.8) calc(var(--space-unit) * 11) calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 2.0);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  min-height: 28px;
 }
 
 .sidebar-head h2 {
@@ -800,18 +797,32 @@ watch(
   margin: 0;
 }
 
-.head-actions {
+.sidebar-actions {
   display: flex;
-  gap: calc(var(--space-unit) * 0.667);
+  gap: calc(var(--space-unit) * 1.0);
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
 }
 
-.head-actions button {
+.sidebar-actions .action-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--color-border-strong);
   background: var(--color-surface);
+  color: var(--color-text);
   border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 0.500) calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   cursor: pointer;
   font-size: 0.857rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.sidebar-actions .action-btn:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .search {
