@@ -22,6 +22,52 @@ let resizeObserver: ResizeObserver | null = null
 const isConnected = ref(false)
 const connectionError = ref<string | null>(null)
 
+// xterm measures the cell size once at open() and never re-measures when a
+// webfont swaps in: neither CharSizeService nor the DOM renderer's WidthCache
+// listen to document.fonts. The bundled faces use font-display: swap, so a
+// terminal mounted while they are still pending measures with the fallback
+// chain — in Chinese locales that ends at Noto Sans Mono CJK (advance 0.5em)
+// — while rows later paint with Google Sans Code (advance ~0.615em). Rows
+// then exceed their allotted cells and the renderer's per-row overflow:hidden
+// clips the tail glyphs (CJK halved, trailing words cut). Waiting for the
+// faces BEFORE open keeps measure and render on one set of metrics; a late
+// loadingdone event resyncs the renderer the same way for anything still
+// racing after open.
+const FONT_STACK = 'var(--font-mono, "SF Mono", Monaco, Consolas, "Liberation Mono", monospace)'
+
+let disposed = false
+
+async function waitForTerminalFonts(): Promise<void> {
+  try {
+    // Literal families: the stacks from --font-mono in style.css. Google Sans
+    // Code sizes the ASCII cells; Noto Sans SC paints glyphs that fall through
+    // it (CJK), so both must be resolved before the first measurement.
+    await document.fonts.load('13px "Google Sans Code"')
+    await document.fonts.load('13px "Noto Sans SC"', '汉字')
+    await document.fonts.ready
+  } catch {
+    // No font API (unusual browsers/jsdom): render on the fallback as before.
+  }
+}
+
+function resyncRendererMetrics(): void {
+  if (!term) return
+  // RenderService.handleDevicePixelRatioChange re-measures the cell size with
+  // the currently resolved fonts, clears the renderer's width cache, resets
+  // the default letter spacing and repaints every row — the full self-heal
+  // path xterm itself runs on DPR changes, applied here to font swaps. Fit
+  // afterwards so the grid adopts the real cell size, then tell the PTY.
+  const core = (term as unknown as { _core?: { _renderService?: { handleDevicePixelRatioChange?: () => void } } })._core
+  core?._renderService?.handleDevicePixelRatioChange?.()
+  handleFit()
+  sendResize()
+}
+
+function onFontLoadingDone(): void {
+  if (disposed || !term) return
+  resyncRendererMetrics()
+}
+
 function connect() {
   if (!containerRef.value) return
 
@@ -112,11 +158,19 @@ function cleanupWS() {
 
 onMounted(() => {
   if (!containerRef.value) return
+  void mountTerminal()
+})
+
+// Async because the webfont gate may yield: the PTY/connect flow only starts
+// once the fonts are resolved (see waitForTerminalFonts above).
+async function mountTerminal(): Promise<void> {
+  await waitForTerminalFonts()
+  if (disposed || !containerRef.value) return
 
   term = new Terminal({
     cursorBlink: true,
     fontSize: 13,
-    fontFamily: 'var(--font-mono, "SF Mono", Monaco, Consolas, "Liberation Mono", monospace)',
+    fontFamily: FONT_STACK,
     theme: {
       background: '#121316',
       foreground: '#e4e4e7',
@@ -161,6 +215,11 @@ onMounted(() => {
   })
   resizeObserver.observe(containerRef.value)
 
+  // Webfont faces can still resolve after open (page-local faces, user agent
+  // font changes): resync renderer metrics so clipped-glyph regressions from a
+  // swap never survive.
+  document.fonts?.addEventListener?.('loadingdone', onFontLoadingDone)
+
   connect()
 
   void nextTick(() => {
@@ -169,7 +228,7 @@ onMounted(() => {
       term?.focus()
     }
   })
-})
+}
 
 watch(
   () => props.active,
@@ -184,6 +243,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  disposed = true
+  document.fonts?.removeEventListener?.('loadingdone', onFontLoadingDone)
   if (resizeObserver && containerRef.value) {
     resizeObserver.unobserve(containerRef.value)
     resizeObserver.disconnect()
