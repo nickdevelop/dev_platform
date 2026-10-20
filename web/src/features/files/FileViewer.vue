@@ -6,10 +6,16 @@ import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
 import ArtifactImageView from './ArtifactImageView.vue'
 
-const props = defineProps<{
-  projectId: number
-  activePath?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    projectId: number
+    activePath?: string
+    hideTabs?: boolean
+  }>(),
+  {
+    hideTabs: false,
+  },
+)
 
 const emit = defineEmits<{
   select: [path: string]
@@ -64,8 +70,13 @@ function closeTab(path: string, event?: MouseEvent) {
 watch(
   () => props.activePath,
   (newPath) => {
-    if (newPath && newPath !== activeTabPath.value) {
-      openTab(newPath)
+    if (newPath) {
+      const cleanPath = newPath.replace(/\\/g, '/').replace(/^\/+/, '')
+      if (props.hideTabs) {
+        activeTabPath.value = cleanPath
+      } else if (cleanPath !== activeTabPath.value) {
+        openTab(newPath)
+      }
     }
   },
   { immediate: true },
@@ -106,7 +117,7 @@ const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() =>
 <template>
   <div class="file-viewer" data-test="file-viewer">
     <!-- Top tab strip -->
-    <div v-if="tabs.length > 0" class="tab-strip" data-test="viewer-tab-strip">
+    <div v-if="!props.hideTabs && tabs.length > 0" class="tab-strip" data-test="viewer-tab-strip">
       <div
         v-for="tab in tabs"
         :key="tab.path"

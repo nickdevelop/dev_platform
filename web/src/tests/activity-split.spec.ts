@@ -11,6 +11,9 @@ import { useAgentsStore } from '../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentSession, Capabilities } from '../api/sessions'
+import * as filesApi from '../api/files'
+import FileSidebar from '../features/files/FileSidebar.vue'
+import FileViewer from '../features/files/FileViewer.vue'
 
 function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
@@ -339,5 +342,190 @@ describe('activity pane floating button and in-tab popup', () => {
     await fab.trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
     expect(pane.find('.activity-title [data-test="activity-count"]').text()).toBe('2')
+  })
+})
+
+describe('three-column chat layout with preview tabs and file tree drawer', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+    localStorage.clear()
+    const agents = useAgentsStore()
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
+      { name: 'main.go', path: 'src/main.go', isDir: false },
+      { name: 'README.md', path: 'README.md', isDir: false },
+    ])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getFileContent').mockImplementation(async (_pid, path) => ({
+      path,
+      size: 100,
+      lines: 10,
+      mimeType: 'text/plain',
+      isBinary: false,
+      content: `content of ${path}`,
+    }))
+  })
+
+  afterEach(() => {
+    useSessionsStore().unsubscribeAll()
+    clearModelCache()
+    vi.unstubAllGlobals()
+  })
+
+  async function mountPanel() {
+    stubSessionList([session('sess-1')])
+    const wrapper = mount(SessionChatPanel, {
+      props: { projectId: 1, sessionId: 'sess-1' },
+      global: { plugins: [testRouter()] },
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('renders three columns: message column, preview column, and filetree drawer', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+
+    // 1st column: message area
+    expect(wrapper.find('.message-column').exists()).toBe(true)
+
+    // 2nd column: preview pane
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    expect(preview.exists()).toBe(true)
+
+    // Fixed first tab is "思考与工具"
+    const fixedTab = preview.find('[data-test="tab-activity"]')
+    expect(fixedTab.exists()).toBe(true)
+    expect(fixedTab.text()).toContain('思考与工具')
+    expect(fixedTab.classes()).toContain('is-active')
+
+    // 3rd column: file tree drawer (docked by default)
+    const filetree = wrapper.find('[data-test="filetree-drawer"]')
+    expect(filetree.exists()).toBe(true)
+    expect(filetree.classes()).toContain('filetree-docked')
+    expect(filetree.text()).toContain('工作区文件')
+  })
+
+  it('opens a file as a preview tab when selected in the file tree and auto-expands preview if collapsed', async () => {
+    // Start with preview collapsed
+    localStorage.setItem('dev-platform-activity-pane-v1', 'collapsed')
+    const wrapper = await mountPanel()
+
+    // Preview is initially collapsed
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+
+    // Select a file from file sidebar
+    const sidebar = wrapper.findComponent(FileSidebar)
+    expect(sidebar.exists()).toBe(true)
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+
+    // Preview pane should now be auto-expanded
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    expect(preview.exists()).toBe(true)
+
+    // A file tab should be created and activated
+    const fileTabs = preview.findAll('[data-test="tab-file"]')
+    expect(fileTabs.length).toBe(1)
+    expect(fileTabs[0].text()).toContain('main.go')
+    expect(fileTabs[0].classes()).toContain('is-active')
+
+    // FileViewer is mounted for the active file
+    const viewer = preview.findComponent(FileViewer)
+    expect(viewer.exists()).toBe(true)
+    expect(viewer.props('activePath')).toBe('src/main.go')
+  })
+
+  it('switches between 思考与工具 and file tabs, and handles closing file tabs with proper fallback', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+    const sidebar = wrapper.findComponent(FileSidebar)
+
+    // Open two files
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+    sidebar.vm.$emit('select', 'README.md')
+    await flushPromises()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    let fileTabs = preview.findAll('[data-test="tab-file"]')
+    expect(fileTabs.length).toBe(2)
+    expect(fileTabs[1].classes()).toContain('is-active') // README.md is active
+
+    // Switch back to 思考与工具
+    const fixedTab = preview.find('[data-test="tab-activity"]')
+    await fixedTab.trigger('click')
+    expect(fixedTab.classes()).toContain('is-active')
+    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+
+    // Switch to main.go tab
+    await fileTabs[0].trigger('click')
+    expect(fileTabs[0].classes()).toContain('is-active')
+
+    // Close main.go tab
+    const closeMainBtn = fileTabs[0].find('[data-test="close-file-tab"]')
+    await closeMainBtn.trigger('click')
+    await flushPromises()
+
+    // Remaining file tab is README.md and becomes active
+    fileTabs = preview.findAll('[data-test="tab-file"]')
+    expect(fileTabs.length).toBe(1)
+    expect(fileTabs[0].text()).toContain('README.md')
+    expect(fileTabs[0].classes()).toContain('is-active')
+
+    // Close README.md tab -> falls back to 思考与工具
+    const closeReadmeBtn = fileTabs[0].find('[data-test="close-file-tab"]')
+    await closeReadmeBtn.trigger('click')
+    await flushPromises()
+
+    expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
+    expect(fixedTab.classes()).toContain('is-active')
+    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+  })
+
+  it('supports file tree drawer pinning/unpinning, collapse and header toggle', async () => {
+    const wrapper = await mountPanel()
+
+    const drawer = wrapper.find('[data-test="filetree-drawer"]')
+    expect(drawer.exists()).toBe(true)
+    expect(drawer.classes()).toContain('filetree-docked')
+
+    // Toggle pin to unpinned (floating mode)
+    const pinBtn = drawer.find('[data-test="filetree-pin-btn"]')
+    await pinBtn.trigger('click')
+    await flushPromises()
+
+    expect(drawer.classes()).toContain('filetree-floating')
+    expect(wrapper.find('[data-test="filetree-backdrop"]').exists()).toBe(true)
+    expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('unpinned')
+
+    // Click backdrop to close floating drawer
+    await wrapper.find('[data-test="filetree-backdrop"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
+
+    // Header toggle button can re-open the file tree drawer
+    const toggleBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
+    await toggleBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(true)
+
+    // Pin again to dock
+    await wrapper.find('[data-test="filetree-pin-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-docked')
+    expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('pinned')
+
+    // Collapse drawer
+    const collapseBtn = wrapper.find('[data-test="filetree-collapse-btn"]')
+    await collapseBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
   })
 })
