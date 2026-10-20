@@ -13,6 +13,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: apiTarget,
+        ws: true,
         configure(proxy) {
           // The dev proxy buffers response headers until the first body byte,
           // which delays the browser's EventSource `open` event for long-lived
