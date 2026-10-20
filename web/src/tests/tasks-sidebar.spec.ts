@@ -75,7 +75,6 @@ describe('TasksSidebar Component', () => {
   it('renders the sidebar with search, filters, and task cards', async () => {
     const wrapper = await mountSidebar([mockTask({ id: 1 }), mockTask({ id: 2, title: '另一个任务' })])
 
-    expect(wrapper.find('.sidebar-head h2').text()).toBe('任务')
     expect(wrapper.find('.new-task-btn').text()).toContain('新建')
     expect(wrapper.find('.search-input').exists()).toBe(true)
     expect(wrapper.findAll('.filter-select')).toHaveLength(2)
@@ -122,15 +121,16 @@ describe('TasksSidebar Component', () => {
     expect(routerPush).toHaveBeenCalledWith({ name: 'task-detail', params: { taskId: 12 } })
   })
 
-  it('renders title and new task button in separated rows to avoid overlap with dock controls', async () => {
+  it('renders new task button in its own dedicated actions row below the shared title', async () => {
     const wrapper = await mountSidebar([mockTask({ id: 1 })])
 
-    const head = wrapper.find('.sidebar-head')
-    expect(head.find('h2').text()).toBe('任务')
-    expect(head.findAll('button')).toHaveLength(0)
+    // The shell owns the sidebar title; the component owns only the actions.
+    expect(wrapper.find('.sidebar-head').exists()).toBe(false)
+    expect(wrapper.find('h2').exists()).toBe(false)
 
     const actions = wrapper.find('.sidebar-actions')
     expect(actions.exists()).toBe(true)
+    expect(actions.findAll('button')).toHaveLength(1)
     expect(actions.find('.new-task-btn').text()).toContain('新建')
   })
 })

@@ -351,15 +351,50 @@ describe('three-pane app shell', () => {
     const registerBtn = actions.find('button.register')
     const createBtn = actions.find('button.create')
     expect(registerBtn.exists()).toBe(true)
-    expect(registerBtn.text()).toBe('注册')
+    expect(registerBtn.text()).toBe('注册项目')
     expect(createBtn.exists()).toBe(true)
-    expect(createBtn.text()).toBe('新建')
+    expect(createBtn.text()).toBe('新建项目')
 
     // Dock controls are present and isolated from action buttons
     const dockControls = sidebar.find('.sidebar-dock-controls')
     expect(dockControls.exists()).toBe(true)
     expect(dockControls.find('[data-test="sidebar-pin-btn"]').exists()).toBe(true)
     expect(dockControls.find('[data-test="sidebar-collapse-btn"]').exists()).toBe(true)
+  })
+
+  it('keeps one shared sidebar head whose title follows the active column', async () => {
+    // The shell owns the title row for every middle-column list, so all
+    // sidebars start at the same height with the same typography.
+    const { wrapper, router } = await setup('/', {
+      ProjectSettingsPanel: true,
+      TasksSidebar: { template: '<div class="tasks-nav-stub"></div>' },
+      PromptsSidebar: { template: '<div class="prompts-nav-stub"></div>' },
+      TerminalSidebar: { template: '<div class="terminal-nav-stub"></div>' },
+      SettingsNav: { template: '<div class="settings-nav-stub"></div>' },
+    })
+
+    const title = () => wrapper.find('aside.sidebar .sidebar-head h2').text()
+    expect(title()).toBe('项目')
+
+    await router.push('/tasks')
+    await flushPromises()
+    expect(title()).toBe('任务')
+
+    await router.push('/prompts')
+    await flushPromises()
+    expect(title()).toBe('提示词')
+
+    await router.push('/terminal')
+    await flushPromises()
+    expect(title()).toBe('服务器')
+
+    await router.push('/settings/appearance')
+    await flushPromises()
+    expect(title()).toBe('设置')
+
+    await router.push('/')
+    await flushPromises()
+    expect(title()).toBe('项目')
   })
 
   it('starts with the project column collapsed when the stored choice says so', async () => {

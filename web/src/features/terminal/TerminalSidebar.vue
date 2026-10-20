@@ -70,10 +70,6 @@ function onConnect(serverId: number) {
 
 <template>
   <div class="terminal-sidebar" aria-label="服务器列表">
-    <div class="sidebar-head">
-      <h2>服务器</h2>
-    </div>
-
     <div class="sidebar-actions">
       <button
         type="button"
@@ -237,29 +233,16 @@ function onConnect(serverId: number) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: calc(var(--space-unit, 8px) * 1.5);
+  padding: 0 calc(var(--space-unit, 8px) * 1.5) calc(var(--space-unit, 8px) * 1.5);
   box-sizing: border-box;
   background: var(--color-surface, #1e1e24);
   color: var(--color-text, #fff);
   overflow-y: auto;
 }
 
-.sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 8px;
-}
-
-.sidebar-head h2 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0;
-}
-
 .sidebar-actions {
   display: flex;
+  padding-top: calc(var(--space-unit) * 1.8);
   margin-bottom: 10px;
 }
 

@@ -70,7 +70,6 @@ describe('TerminalSidebar Component', () => {
   it('renders server list with localhost and remote server', async () => {
     const { wrapper } = await mountSidebar(true)
 
-    expect(wrapper.find('h2').text()).toBe('服务器')
     expect(wrapper.text()).toContain('本机 (Localhost)')
     expect(wrapper.text()).toContain('测试服务器')
     expect(wrapper.find('.local-badge').text()).toBe('本机')
@@ -111,17 +110,16 @@ describe('TerminalSidebar Component', () => {
     expect(wrapper.find('.server-form').exists()).toBe(true)
   })
 
-  it('renders header title and action button in separated rows to avoid overlap with dock controls', async () => {
+  it('renders add-server action button in its own dedicated actions row below the shared title', async () => {
     const { wrapper } = await mountSidebar(true)
 
-    const head = wrapper.find('.sidebar-head')
-    expect(head.find('h2').text()).toBe('服务器')
-    expect(head.findAll('button')).toHaveLength(0)
+    // The shell owns the sidebar title; the component owns only the actions.
+    expect(wrapper.find('.sidebar-head').exists()).toBe(false)
+    expect(wrapper.find('h2').exists()).toBe(false)
 
     const actions = wrapper.find('.sidebar-actions')
     expect(actions.exists()).toBe(true)
-    const createBtn = actions.find('.create-server-btn')
-    expect(createBtn.exists()).toBe(true)
-    expect(createBtn.text()).toContain('新增')
+    expect(actions.findAll('button')).toHaveLength(1)
+    expect(actions.find('.create-server-btn').text()).toContain('新增')
   })
 })

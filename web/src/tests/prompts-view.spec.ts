@@ -87,13 +87,13 @@ describe('Prompts UI Components', () => {
     expect(wrapper.findAll('.prompt-card')).toHaveLength(1)
     expect(wrapper.find('[data-test="prompt-card-2"]').exists()).toBe(true)
 
-    // Open create dialog
-    const head = wrapper.find('.sidebar-head')
-    expect(head.find('h2').text()).toBe('提示词')
-    expect(head.findAll('button')).toHaveLength(0)
+    // Open create dialog via the dedicated actions row below the shared title
+    expect(wrapper.find('.sidebar-head').exists()).toBe(false)
+    expect(wrapper.find('h2').exists()).toBe(false)
 
     const actions = wrapper.find('.sidebar-actions')
     expect(actions.exists()).toBe(true)
+    expect(actions.findAll('button')).toHaveLength(1)
     const newBtn = actions.find('[data-test="new-prompt-btn"]')
     expect(newBtn.exists()).toBe(true)
     await newBtn.trigger('click')

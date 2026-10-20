@@ -78,10 +78,6 @@ function getProjectName(pid: number) {
 
 <template>
   <div class="tasks-sidebar" aria-label="任务列表">
-    <div class="sidebar-head">
-      <h2>任务</h2>
-    </div>
-
     <div class="sidebar-actions">
       <button
         type="button"
@@ -167,29 +163,15 @@ function getProjectName(pid: number) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 1rem;
+  padding: 0 1rem 1rem;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   overflow: hidden;
 }
 
-.sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  margin-bottom: 0.5rem;
-}
-
-.sidebar-head h2 {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin: 0;
-}
-
 .sidebar-actions {
   display: flex;
+  padding-top: calc(var(--space-unit, 6px) * 1.8);
   margin-bottom: 0.6rem;
 }
 

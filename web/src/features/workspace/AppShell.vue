@@ -242,6 +242,19 @@ const columnLabel = computed(() =>
           ? '服务器列表'
           : '项目导航',
 )
+// The sidebar's top row (title + dock controls) is owned by the shell, so
+// whichever column content mounts below the same head always starts aligned.
+const columnTitle = computed(() =>
+  settingsMode.value
+    ? '设置'
+    : tasksMode.value
+      ? '任务'
+      : promptsMode.value
+        ? '提示词'
+        : terminalMode.value
+          ? '服务器'
+          : '项目',
+)
 
 onMounted(async () => {
   // The backend catalog facts (labels, order, service support) are read by
@@ -558,6 +571,10 @@ watch(
         </button>
       </div>
 
+      <div class="sidebar-head">
+        <h2>{{ columnTitle }}</h2>
+      </div>
+
       <!-- The middle column carries whichever list the open menu owns: the
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
       <TasksSidebar v-if="tasksMode" />
@@ -565,12 +582,9 @@ watch(
       <TerminalSidebar v-else-if="terminalMode" />
       <SettingsNav v-else-if="settingsMode" />
       <template v-else>
-        <div class="sidebar-head">
-          <h2>项目</h2>
-        </div>
         <div class="sidebar-actions">
-          <button type="button" class="action-btn register" @click="openManage('register')">注册</button>
-          <button type="button" class="action-btn create" @click="openManage('create')">新建</button>
+          <button type="button" class="action-btn register" @click="openManage('register')">注册项目</button>
+          <button type="button" class="action-btn create" @click="openManage('create')">新建项目</button>
         </div>
         <input
           v-model="search"

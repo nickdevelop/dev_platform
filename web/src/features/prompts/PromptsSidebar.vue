@@ -48,10 +48,6 @@ function onSaved(prompt: Prompt) {
 
 <template>
   <div class="prompts-sidebar" aria-label="提示词列表">
-    <div class="sidebar-head">
-      <h2>提示词</h2>
-    </div>
-
     <div class="sidebar-actions">
       <button
         type="button"
@@ -130,24 +126,9 @@ function onSaved(prompt: Prompt) {
   background: var(--color-surface);
 }
 
-.sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2);
-}
-
-.sidebar-head h2 {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--color-text);
-}
-
 .sidebar-actions {
   display: flex;
-  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.5) 0;
+  padding: calc(var(--space-unit) * 1.8) calc(var(--space-unit) * 2) 0;
 }
 
 .new-prompt-btn {

@@ -14,9 +14,6 @@ const links = [
 
 <template>
   <nav class="settings-nav" data-test="settings-nav" aria-label="设置分类">
-    <div class="sidebar-head">
-      <h2>设置</h2>
-    </div>
     <div class="settings-links">
       <RouterLink v-for="link in links" :key="link.name" :to="{ name: link.name }" class="settings-link">
         {{ link.label }}
@@ -31,15 +28,7 @@ const links = [
   flex-direction: column;
   min-height: 0;
   flex: 1;
-}
-
-.sidebar-head {
-  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 1.333);
-}
-
-.sidebar-head h2 {
-  font-size: 1.071rem;
-  margin: 0;
+  padding-top: calc(var(--space-unit) * 1.0);
 }
 
 .settings-links {
