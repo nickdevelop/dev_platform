@@ -2,7 +2,7 @@
 // Model management section: model services (OpenAI-compatible endpoints) and
 // their models, with manual add, list-from-service, per-model edit/disable, and
 // a connectivity test. API keys are write-only: the form shows whether a key is
-// stored and clears it when the field is left empty on save.
+// stored, and an empty key field on save keeps the stored key untouched.
 import { onMounted, reactive, ref } from 'vue'
 import { useModelsStore } from '../../stores/models'
 import type { ModelDto, RemoteModel, ServiceDto } from '../../api/models'
@@ -143,7 +143,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       <input
         v-model="serviceForm.apiKey"
         type="password"
-        placeholder="API Key（留空将清除已保存的 Key）"
+        placeholder="API Key（留空保留已保存的 Key，填写新值则替换）"
       />
       <label class="inline"><input v-model="serviceForm.enabled" type="checkbox" /> 启用</label>
       <div class="actions">

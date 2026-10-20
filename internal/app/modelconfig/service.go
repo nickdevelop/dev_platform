@@ -63,7 +63,7 @@ type ModelDTO struct {
 }
 
 // ServiceInput is the caller-supplied service fields. On create APIKey is
-// optional; on update an empty APIKey clears the stored key and a non-empty one
+// optional; on update an empty APIKey keeps the stored key and a non-empty one
 // replaces it.
 type ServiceInput struct {
 	Name    string
@@ -147,7 +147,7 @@ func (s *Service) Create(input ServiceInput) (ServiceDTO, error) {
 }
 
 // Update replaces a service's fields and applies the API key rule: a non-empty
-// key replaces the stored one, an empty key clears it.
+// key replaces the stored one, an empty key keeps it.
 func (s *Service) Update(id uint, input ServiceInput) (ServiceDTO, error) {
 	name, baseURL, err := validateServiceInput(input)
 	if err != nil {
@@ -158,8 +158,11 @@ func (s *Service) Update(id uint, input ServiceInput) (ServiceDTO, error) {
 		return ServiceDTO{}, err
 	}
 
+	// An unset key keeps the stored one (the edit form sends an empty key
+	// whenever the user left the field blank), so the reference only changes
+	// when a replacement key is supplied.
 	oldRef := row.SecretRef
-	newRef := ""
+	newRef := oldRef
 	if input.APIKey != "" {
 		ref, err := s.storeKey(input.APIKey)
 		if err != nil {

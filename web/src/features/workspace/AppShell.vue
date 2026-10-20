@@ -781,12 +781,15 @@ watch(
   transition: transform 0.15s ease;
 }
 
+/* The dock controls (pin/collapse) float over the top-right corner of the
+   sidebar; their 60px footprint plus a margin sets the head's right inset so
+   head-actions buttons never slide underneath them. */
 :deep(.sidebar-head) {
-  padding-right: calc(var(--space-unit) * 8.5) !important;
+  padding-right: calc(var(--space-unit) * 11) !important;
 }
 
 .sidebar-head {
-  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 8.5) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
+  padding: calc(var(--space-unit) * 2.333) calc(var(--space-unit) * 11) calc(var(--space-unit) * 1.333) calc(var(--space-unit) * 2.333);
   display: flex;
   justify-content: space-between;
   align-items: center;

@@ -99,7 +99,7 @@ func TestCreateServiceWithAndWithoutKey(t *testing.T) {
 	}
 }
 
-func TestUpdateServiceReplacesAndClearsKey(t *testing.T) {
+func TestUpdateServiceReplacesAndKeepsKey(t *testing.T) {
 	svc, store := newService(t)
 
 	created, err := svc.Create(ServiceInput{Name: "svc", BaseURL: "https://a.example/v1", APIKey: "old-key", Enabled: true})
@@ -122,15 +122,20 @@ func TestUpdateServiceReplacesAndClearsKey(t *testing.T) {
 		t.Errorf("new secret = %q, want new-key", store.values[replaced.SecretRef])
 	}
 
-	cleared, err := svc.Update(created.ID, ServiceInput{Name: "svc", BaseURL: "https://a.example/v1", APIKey: "", Enabled: true})
+	kept, err := svc.Update(created.ID, ServiceInput{Name: "svc", BaseURL: "https://a.example/v1", APIKey: "", Enabled: true})
 	if err != nil {
-		t.Fatalf("Update clear: %v", err)
+		t.Fatalf("Update keep: %v", err)
 	}
-	if cleared.HasKey || cleared.SecretRef != "" {
-		t.Errorf("cleared service = %+v, want no key", cleared)
+	if !kept.HasKey || kept.SecretRef == "" || kept.SecretRef != replaced.SecretRef {
+		t.Errorf("kept service = %+v, want the stored key reference %q preserved", kept, replaced.SecretRef)
 	}
-	if len(store.values) != 0 {
-		t.Errorf("secret store = %v, want empty after clear", store.values)
+	if store.values[kept.SecretRef] != "new-key" {
+		t.Errorf("stored secret = %q, want new-key to survive a blank-key update", store.values[kept.SecretRef])
+	}
+
+	key, err := svc.ResolveKey(created.ID)
+	if err != nil || key != "new-key" {
+		t.Errorf("ResolveKey = %q, %v; want new-key", key, err)
 	}
 }
 

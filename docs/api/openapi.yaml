@@ -2389,7 +2389,7 @@ paths:
     put:
       summary: Update a model service
       description: >-
-        An empty apiKey clears the stored key; a non-empty one replaces it.
+        An empty apiKey keeps the stored key; a non-empty one replaces it.
       operationId: updateModelService
       security:
         - cookieAuth: []
@@ -4321,7 +4321,7 @@ components:
           type: string
         apiKey:
           type: string
-          description: Write-only. Empty clears the stored key.
+          description: Write-only. Empty keeps the stored key; a non-empty value replaces it.
         enabled:
           type: boolean
       additionalProperties: false
