@@ -33,6 +33,7 @@ import (
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/deepseek"
 	"devplatform/internal/providers/opencode"
 	"devplatform/internal/providers/pi"
 	platformhttp "devplatform/internal/transport/http"
@@ -270,7 +271,7 @@ func runServer(args []string) error {
 	// The catalog is built from the adapter packages' own descriptors before
 	// anything reads backend facts, so settings, diagnostics and the API all
 	// describe the same backends.
-	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor)
+	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor, deepseek.Descriptor)
 	if err != nil {
 		return fmt.Errorf("build backend catalog: %w", err)
 	}
@@ -314,6 +315,12 @@ func runServer(args []string) error {
 		ServiceDirectory: dataDir,
 	})); err != nil {
 		return fmt.Errorf("register opencode adapter: %w", err)
+	}
+	if err := registry.Register(agents.BackendDeepSeek, deepseek.New(deepseek.Options{
+		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendDeepSeek) },
+		WorkDir:           dataDir,
+	})); err != nil {
+		return fmt.Errorf("register deepseek adapter: %w", err)
 	}
 	if err := checkBackendWiring(registry, catalog); err != nil {
 		return err

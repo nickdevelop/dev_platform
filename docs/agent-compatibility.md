@@ -28,6 +28,7 @@ listed as provisional below.
 | --- | --- | --- | --- |
 | `opencode-v2` | **2.0.24** | `[2.0.0, 3.0.0)` | One binary provides both the CLI and the v2 API server, so the CLI version is also the API version. |
 | `pi` | **1.1.0** | `[1.0.0, 2.0.0)` | RPC (`--mode rpc`) only; long-lived per-session child process. |
+| `deepseek` | **0.2.1-rc.2** | `[0.2.0, 1.0.0)` | Shared Host daemon (`dsh --profile web --port 0 --no-open`) via Typert HTTP & WebSocket Remote RPC. |
 
 Diagnostics classify a detected version as follows:
 
@@ -42,21 +43,21 @@ Diagnostics classify a detected version as follows:
 A capability the backend does not declare is **visibly false**; the workbench
 must never expose a control for a capability a backend did not declare.
 
-| Capability | `opencode-v2` | `pi` |
-| --- | --- | --- |
-| `streaming` | ✅ — `session.text.delta` normalized into incremental message events. Verified against the mock v2 server. | ✅ — RPC stdout JSONL `text_delta` provider events. Verified against the RPC stub. |
-| `sessionDiscovery` | ❌ — Removed completely per requirement. Returns unsupported capability. | ✅ — bounded scan of pi's on-disk JSONL session files for the instance directory. Verified. |
-| `sessionContinue` | ✅ — `GET /api/session/{id}` re-attach. Verified. | ✅ — the next prompt re-uses `--session-id`. Verified at the adapter level; end-to-end transcript continuity is **provisional** (see below). |
-| `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — RPC closes the session child's stdin for an orderly shutdown, bounded then backed by a process-group kill. Verified. |
+| Capability | `opencode-v2` | `pi` | `deepseek` |
+| --- | --- | --- | --- |
+| `streaming` | ✅ — `session.text.delta` normalized into incremental message events. Verified against the mock v2 server. | ✅ — RPC stdout JSONL `text_delta` provider events. Verified against the RPC stub. | ✅ — `session/follow` streaming `text-delta` and `reasoning-delta` chunks. Verified. |
+| `sessionDiscovery` | ❌ — Removed completely per requirement. Returns unsupported capability. | ✅ — bounded scan of pi's on-disk JSONL session files for the instance directory. Verified. | ✅ — `session/list` filtered by instance working directory. Verified. |
+| `sessionContinue` | ✅ — `GET /api/session/{id}` re-attach. Verified. | ✅ — the next prompt re-uses `--session-id`. Verified at the adapter level; end-to-end transcript continuity is **provisional** (see below). | ✅ — `session/projections` re-attach. Verified. |
+| `stop` | ✅ — drops the platform's reference to its instance; the machine-wide `opencode serve --service` itself is never stopped here (see *Machine-level service* below). | ✅ — RPC closes the session child's stdin for an orderly shutdown, bounded then backed by a process-group kill. Verified. | ✅ — drops platform instance reference and releases shared host lease; shared host reclaims process after idle timeout. Verified. |
 
 `stop` gates instance stop only (`POST /api/projects/{id}/instances/{instanceId}/stop`).
 The session stop route (`POST …/sessions/{sessionId}/stop`) is gated by `interrupt`
 instead; see *Turns, stop and interaction events* below.
-| `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through, and `set_model` command switches model; real model resolution is **provisional**. |
-| `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake stub. |
-| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. |
-| `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript, mapping `model_change` to message models. Verified. |
-| `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. |
+| `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through, and `set_model` command switches model; real model resolution is **provisional**. | ✅ — `session/modelCatalog` and per-session `session/selectModel`. Verified. |
+| `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake stub. | ✅ — `tool/call`, `tool/result`, `tool/ptc-dispatch` normalized into tool call/result events. Verified. |
+| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. | ✅ — pending approvals arrive via `$events` and answered through `$events/result` (`agents.PermissionReplier`). Verified. |
+| `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript, mapping `model_change` to message models. Verified. | ✅ — `session/page` and `session/projections` read back and normalized. Verified. |
+| `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. | ❌ — no untouched event stream is exposed. |
 
 `rawEvents` gates only that proxy. A backend that does not declare it gets
 `unsupported_capability` on the raw-events route, and the workbench never
@@ -78,19 +79,31 @@ The pi adapter operates strictly in RPC mode (`pi --mode rpc`):
 Operator-supplied pi extensions can be added with the `PI_EXTENSIONS`
 environment variable (comma-separated paths).
 
+### deepseek transport (Shared Host mode)
+
+The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 --no-open`):
+
+- **Process model**: one shared `dsh` process across instances and projects, reference-counted by leases and reclaimed after 10 idle minutes.
+- **Multi-project isolation**: sessions specify their project root via `cwd` on `session/create`; tool execution operates within the session's working directory.
+- **Protocol**: Typert JSON-RPC over HTTP POST `/api/<method>` and WebSocket `/api/remote.mux` with token authentication.
+- **Events**: WebSocket `session/follow` streams streaming chunks (`text-delta`, `reasoning-delta`), structured events (`turn/start`, `turn/end`, `tool/call`, `tool/result`), and token usage.
+- **Interrupt**: `session/cancel` RPC method.
+- **Stop**: drops logical instance reference; shared host shuts down gracefully when all instances are idle.
+- **Tool confirmation**: pending permissions and forms arrive via `$events` and are replied through `$events/result` (`agents.PermissionReplier`).
+
 ## Turns, stop and interaction events
 
 Every backend reports turn boundaries and pending interactions through the
 contract's typed events, never through its native names. The session layer
 reads only those events; the adapter owns the translation.
 
-| Contract event | `opencode-v2` source | `pi` source |
-| --- | --- | --- |
-| `turn` started | `session.execution.started` | `agent_start` (both transports) |
-| `turn` ended `completed` | `session.execution.succeeded` | `agent_end`, or `agent_settled` when not aborted; whichever arrives first closes the turn, the other is a no-op |
-| `turn` ended `cancelled` | `session.execution.interrupted` | `agent_settled` with `aborted` set (RPC `abort` only marks a run that is open), or the CLI process killed by interrupt |
-| `turn` ended `failed` | `session.execution.failed`, then an `error` event | CLI process exiting while its turn is still open, then the error event; RPC child exiting with an open run |
-| `interaction` requested / resolved | `permission.asked` / `permission.replied`; `form.created` / `form.replied` / `form.cancelled` | RPC `extension_ui_request` `confirm` / the reply, or a drain when the child is killed |
+| Contract event | `opencode-v2` source | `pi` source | `deepseek` source |
+| --- | --- | --- | --- |
+| `turn` started | `session.execution.started` | `agent_start` (both transports) | `turn/start` |
+| `turn` ended `completed` | `session.execution.succeeded` | `agent_end`, or `agent_settled` when not aborted; whichever arrives first closes the turn, the other is a no-op | `turn/end` with `reason.kind == "completed"` or `"max-tokens"` |
+| `turn` ended `cancelled` | `session.execution.interrupted` | `agent_settled` with `aborted` set (RPC `abort` only marks a run that is open), or the CLI process killed by interrupt | `turn/end` with `reason.kind == "aborted"` or `"cancelled"` |
+| `turn` ended `failed` | `session.execution.failed`, then an `error` event | CLI process exiting while its turn is still open, then the error event; RPC child exiting with an open run | `turn/end` with `reason.kind == "error"`, then `EventError` |
+| `interaction` requested / resolved | `permission.asked` / `permission.replied`; `form.created` / `form.replied` / `form.cancelled` | RPC `extension_ui_request` `confirm` / the reply, or a drain when the child is killed | `$events` waterfall frame / `$events/result` RPC |
 
 Rules the session layer enforces:
 

@@ -52,12 +52,14 @@ const (
 	BackendOpenCodeV2 BackendID = "opencode-v2"
 	// BackendPi is the pi backend, driven through its CLI.
 	BackendPi BackendID = "pi"
+	// BackendDeepSeek is the deepseek-harness backend, driven through its dsh runtime.
+	BackendDeepSeek BackendID = "deepseek"
 )
 
 // Valid reports whether the backend id is one the platform knows.
 func (b BackendID) Valid() bool {
 	switch b {
-	case BackendOpenCodeV2, BackendPi:
+	case BackendOpenCodeV2, BackendPi, BackendDeepSeek:
 		return true
 	default:
 		return false

@@ -15,6 +15,7 @@ func TestSessionsDoesNotImportBackendPackages(t *testing.T) {
 	forbidden := []string{
 		"devplatform/internal/providers/opencode",
 		"devplatform/internal/providers/pi",
+		"devplatform/internal/providers/deepseek",
 	}
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -45,7 +46,7 @@ func TestSessionsDoesNotImportBackendPackages(t *testing.T) {
 // identifiers: they learn about a backend from the catalog and the registry,
 // never from a literal. The composition root is the one place that names them.
 func TestGenericPackagesNameNoBackend(t *testing.T) {
-	forbidden := []string{"BackendOpenCodeV2", "BackendPi", `"opencode-v2"`, `"pi"`}
+	forbidden := []string{"BackendOpenCodeV2", "BackendPi", "BackendDeepSeek", `"opencode-v2"`, `"pi"`, `"deepseek"`}
 	for _, dir := range []string{".", "../settings", "../../transport/http"} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {

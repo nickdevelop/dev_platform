@@ -12,7 +12,7 @@
 | 同构：机器级 agent 服务 | `internal/app/agentservices` | 服务的探测、运维员触发的启停、启动门控 | 否，只依赖 `internal/core/agents` 契约与适配器注册表 |
 | 契约（core） | `internal/core/agents`（`contracts.go`、`extensions.go`、`descriptor.go`、`registry.go`、`service.go`） | 能力声明、标准事件、扩展接口、后端描述符 | 仅在 `BackendID` 常量定义处 |
 | OS 抽象（core） | `internal/core/platform`（接口 + `unix/windows/fake/policy`） | OS 差异端口与平台无关策略 | 否 |
-| 异构：适配器（providers） | `internal/providers/opencode`、`internal/providers/pi` | 与具体 CLI 或服务协议打交道，导出 `Descriptor` | 是（本包即为该后端） |
+| 异构：适配器（providers） | `internal/providers/opencode`、`internal/providers/pi`、`internal/providers/deepseek` | 与具体 CLI 或服务协议打交道，导出 `Descriptor` | 是（本包即为该后端） |
 | 组合根 | `cmd/platform/main.go` | 注册适配器、构建 catalog、校验两者一致 | 是 |
 | 异构：前端展示 | `web/src/stores/agents.ts` 与各组件 | 从后端列表读取标签、排序、能力 | 否（组件内不写后端 ID） |
 
