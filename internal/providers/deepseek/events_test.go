@@ -92,12 +92,19 @@ func TestEventNormalization(t *testing.T) {
 		t.Fatalf("tool/result mismatch: %+v", evs)
 	}
 
-	// 6. token usage (assistant/message)
+	// 6. token usage and content (assistant/message)
 	evs = norm.NormalizeFrame([]byte(`{
 		"type": "event",
 		"event": {
 			"type": "assistant/message",
 			"data": {
+				"message": {
+					"role": "assistant",
+					"content": [
+						{"type": "reasoning", "text": "Analyzing the codebase..."},
+						{"type": "text", "text": "Here is the result."}
+					]
+				},
 				"usage": {
 					"inputTokens": 100,
 					"outputTokens": 50,
@@ -107,10 +114,19 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 1 || evs[0].Type != agents.EventLifecycle || evs[0].Lifecycle.Usage == nil {
-		t.Fatalf("usage mismatch: %+v", evs)
+	if len(evs) != 3 {
+		t.Fatalf("assistant/message expected 3 events (thinking, message, lifecycle), got %d: %+v", len(evs), evs)
 	}
-	u := evs[0].Lifecycle.Usage
+	if evs[0].Type != agents.EventThinking || evs[0].Thinking.Text != "Analyzing the codebase..." {
+		t.Errorf("thinking event mismatch: %+v", evs[0])
+	}
+	if evs[1].Type != agents.EventMessage || evs[1].Message.Role != "assistant" || evs[1].Message.Text != "Here is the result." {
+		t.Errorf("assistant message event mismatch: %+v", evs[1])
+	}
+	if evs[2].Type != agents.EventLifecycle || evs[2].Lifecycle.Usage == nil {
+		t.Fatalf("usage mismatch: %+v", evs[2])
+	}
+	u := evs[2].Lifecycle.Usage
 	if u.Input != 100 || u.Output != 50 || u.CacheRead != 20 || u.CacheWrite != 5 {
 		t.Errorf("usage values mismatch: %+v", u)
 	}

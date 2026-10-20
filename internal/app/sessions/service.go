@@ -633,6 +633,14 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	}
 	updated, err := adapter.ContinueSession(ctx, ref)
 	if err != nil {
+		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+			inst = newInst
+			row.InstanceID = inst.ID
+			ref.InstanceID = inst.ID
+			updated, err = adapter.ContinueSession(ctx, ref)
+		}
+	}
+	if err != nil {
 		return Session{}, fmt.Errorf("%w: continue session: %w", ErrBackendFailed, err)
 	}
 	if updated == nil {
@@ -699,6 +707,20 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 		Directory: inst.Directory,
 		SessionID: row.NativeSessionID,
 	})
+	if err != nil {
+		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+			inst = newInst
+			row.InstanceID = inst.ID
+			if dbRow, getErr := s.store.GetByID(row.ID); getErr == nil {
+				dbRow.InstanceID = inst.ID
+				_ = s.store.Update(dbRow)
+			}
+			result, err = reader.ListHistory(ctx, agents.ListHistoryRequest{
+				Directory: inst.Directory,
+				SessionID: row.NativeSessionID,
+			})
+		}
+	}
 	if err != nil {
 		return History{}, fmt.Errorf("%w: read session history: %w", ErrBackendFailed, err)
 	}

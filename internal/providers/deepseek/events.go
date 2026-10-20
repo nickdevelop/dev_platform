@@ -118,7 +118,43 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			}
 
 		case "assistant/message", "assistant/attempt":
-			// Token usage report
+			// 1. Content blocks (reasoning and text)
+			if msg, ok := evData["message"].(map[string]any); ok && msg != nil {
+				if contentArr, ok := msg["content"].([]any); ok {
+					for _, block := range contentArr {
+						if bMap, ok := block.(map[string]any); ok {
+							bType, _ := bMap["type"].(string)
+							bText, _ := bMap["text"].(string)
+							if bType == "reasoning" && bText != "" {
+								events = append(events, n.newEvent(now, agents.EventThinking, &agents.NormalizedEvent{
+									Thinking: &agents.ThinkingPayload{
+										Text:  bText,
+										Final: true,
+									},
+								}))
+							} else if (bType == "text" || bType == "") && bText != "" {
+								events = append(events, n.newEvent(now, agents.EventMessage, &agents.NormalizedEvent{
+									Message: &agents.MessagePayload{
+										Role:  "assistant",
+										Text:  bText,
+										Final: true,
+									},
+								}))
+							}
+						}
+					}
+				} else if strContent, ok := msg["content"].(string); ok && strContent != "" {
+					events = append(events, n.newEvent(now, agents.EventMessage, &agents.NormalizedEvent{
+						Message: &agents.MessagePayload{
+							Role:  "assistant",
+							Text:  strContent,
+							Final: true,
+						},
+					}))
+				}
+			}
+
+			// 2. Token usage report
 			if usageMap, ok := evData["usage"].(map[string]any); ok {
 				inputTokens := intValue(usageMap["inputTokens"])
 				outputTokens := intValue(usageMap["outputTokens"])
