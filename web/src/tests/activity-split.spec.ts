@@ -438,6 +438,8 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     const viewer = preview.findComponent(FileViewer)
     expect(viewer.exists()).toBe(true)
     expect(viewer.props('activePath')).toBe('src/main.go')
+    await vi.waitFor(() => expect(viewer.find('.empty-state').exists()).toBe(false))
+    expect(viewer.text()).toContain('content of src/main.go')
   })
 
   it('switches between 思考与工具 and file tabs, and handles closing file tabs with proper fallback', async () => {
@@ -485,6 +487,39 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
     expect(fixedTab.classes()).toContain('is-active')
     expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+  })
+
+  it('scrolls activity pane to bottom when switching back to 思考与工具 tab', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+    const sessionsStore = useSessionsStore()
+
+    // Add activity entries
+    sessionsStore.messages['sess-1'] = [
+      { id: 't1', kind: 'thinking', role: 'assistant', text: 'thinking 1', streaming: false },
+      { id: 'c1', kind: 'tool_call', role: 'assistant', text: 'tool 1', name: 'read', callId: '1', streaming: false },
+      { id: 't2', kind: 'thinking', role: 'assistant', text: 'thinking 2', streaming: false },
+    ]
+    await flushPromises()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    const activityScrollEl = preview.find('[data-test="activity-scroll"]').element as HTMLElement
+    Object.defineProperty(activityScrollEl, 'scrollHeight', { configurable: true, writable: true, value: 800 })
+    Object.defineProperty(activityScrollEl, 'clientHeight', { configurable: true, writable: true, value: 300 })
+
+    const sidebar = wrapper.findComponent(FileSidebar)
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+
+    // Simulate scroll offset changed while away
+    activityScrollEl.scrollTop = 0
+
+    // Switch back to 思考与工具
+    const fixedTab = preview.find('[data-test="tab-activity"]')
+    await fixedTab.trigger('click')
+    await flushPromises()
+
+    expect(activityScrollEl.scrollTop).toBe(800)
   })
 
   it('supports file tree drawer pinning/unpinning, collapse and header toggle', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { getDirectory, isExternalUrl, resolveRelativePath } from '../features/files/pathUtils'
 import FileTree from '../features/files/FileTree.vue'
 import FileSidebar from '../features/files/FileSidebar.vue'
@@ -289,5 +289,36 @@ describe('FileViewer.vue', () => {
     const closeBtns = wrapper.findAll('.tab-close-btn')
     await closeBtns[0].trigger('click')
     expect(wrapper.findAll('.viewer-tab').length).toBe(2)
+  })
+
+  it('renders file content in hideTabs mode without tab strip and handles empty state properly', async () => {
+    vi.spyOn(filesApi, 'getFileContent').mockImplementation(async (_pid, path) => ({
+      path,
+      size: 100,
+      lines: 3,
+      mimeType: 'text/markdown',
+      isBinary: false,
+      content: '# Documentation\nContent here',
+    }))
+
+    const wrapper = mount(FileViewer, {
+      props: {
+        projectId: 1,
+        activePath: 'docs/guide.md',
+        hideTabs: true,
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.findComponent(MarkdownArtifactView).exists()).toBe(true))
+    // In hideTabs mode, top tab strip should not exist
+    expect(wrapper.find('[data-test="viewer-tab-strip"]').exists()).toBe(false)
+    // Empty state must NOT be rendered when activePath is provided and content is loaded
+    expect(wrapper.find('.empty-state').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Documentation')
+
+    // When activePath is cleared, it should show empty state
+    await wrapper.setProps({ activePath: '' })
+    await flushPromises()
+    expect(wrapper.find('.empty-state').exists()).toBe(true)
   })
 })

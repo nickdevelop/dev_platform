@@ -77,32 +77,48 @@ watch(
       } else if (cleanPath !== activeTabPath.value) {
         openTab(newPath)
       }
+    } else if (props.hideTabs) {
+      activeTabPath.value = ''
+      fileData.value = null
     }
   },
   { immediate: true },
 )
 
+async function loadCurrentFile() {
+  const projId = props.projectId
+  const currentPath = activeTabPath.value
+  if (!projId || !currentPath) {
+    fileData.value = null
+    return
+  }
+  loading.value = true
+  error.value = ''
+  try {
+    const data = await getFileContent(projId, currentPath)
+    fileData.value = data
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '读取文件失败'
+    fileData.value = null
+  } finally {
+    loading.value = false
+  }
+}
+
 watch(
   [() => props.projectId, activeTabPath],
-  async ([projId, currentPath]) => {
-    if (!projId || !currentPath) {
-      fileData.value = null
-      return
-    }
-    loading.value = true
-    error.value = ''
-    try {
-      const data = await getFileContent(projId, currentPath)
-      fileData.value = data
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : '读取文件失败'
-      fileData.value = null
-    } finally {
-      loading.value = false
-    }
+  () => {
+    void loadCurrentFile()
   },
   { immediate: true },
 )
+
+const isEmpty = computed(() => {
+  if (props.hideTabs) {
+    return !activeTabPath.value
+  }
+  return tabs.value.length === 0
+})
 
 const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() => {
   if (!activeTabPath.value) return 'code'
@@ -142,7 +158,7 @@ const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() =>
     <!-- Main viewer body -->
     <div class="viewer-body">
       <!-- Empty state -->
-      <div v-if="tabs.length === 0" class="empty-state">
+      <div v-if="isEmpty" class="empty-state">
         <span class="empty-icon">📁</span>
         <p class="empty-text">在左侧文件树中点击文件进行查看</p>
       </div>
@@ -158,7 +174,7 @@ const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() =>
         <button
           type="button"
           class="retry-btn"
-          @click="openTab(activeTabPath)"
+          @click="loadCurrentFile"
         >
           重试
         </button>

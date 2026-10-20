@@ -68,6 +68,9 @@ const activePreviewTab = ref<string>('activity')
 
 function selectPreviewTab(tabKey: string) {
   activePreviewTab.value = tabKey
+  if (tabKey === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
 }
 
 function openFileInPreview(filePath: string) {
@@ -99,6 +102,7 @@ function closeFileTab(path: string, event?: MouseEvent) {
       activePreviewTab.value = openFileTabs.value[nextIdx].path
     } else {
       activePreviewTab.value = 'activity'
+      scrollActivityToBottomReliably(false)
     }
   }
 }
@@ -405,10 +409,10 @@ const activityScroll = ref<HTMLElement | null>(null)
 // Whether the activity pane is collapsed (persisted in localStorage).
 // Defaults to collapsed, presenting a floating FAB that opens an in-tab drawer.
 const pane = useActivityPane(() => {
-  // Expanding returns to the newest activity when the pane was following it.
-  activityPinned.value = true
-  showJumpActivity.value = false
-  void nextTick(() => scrollActivityToBottom(false))
+  // Expanding returns to the newest activity when the pane is showing activity.
+  if (activePreviewTab.value === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
 })
 const {
   previewCollapsed,
@@ -525,6 +529,25 @@ const showJumpToLatest = logFollow.showJump
 const pinnedToBottom = logFollow.pinned
 const showJumpActivity = activityFollow.showJump
 const activityPinned = activityFollow.pinned
+
+function scrollActivityToBottomReliably(smooth = false) {
+  activityPinned.value = true
+  showJumpActivity.value = false
+  void nextTick(() => {
+    scrollActivityToBottom(smooth)
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        scrollActivityToBottom(smooth)
+      })
+    }
+  })
+}
+
+watch(activePreviewTab, (newTab) => {
+  if (newTab === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
+})
 
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
@@ -656,7 +679,7 @@ async function open() {
     // history.
     await nextTick()
     scrollToBottom(false)
-    scrollActivityToBottom(false)
+    scrollActivityToBottomReliably(false)
   } finally {
     preparing.value = false
   }
@@ -1111,7 +1134,10 @@ async function removeSession() {
 
           <div class="preview-content">
             <!-- Content 1: 思考与工具 -->
-            <template v-if="activePreviewTab === 'activity'">
+            <div
+              v-show="activePreviewTab === 'activity'"
+              class="activity-pane-view"
+            >
               <div
                 class="activity-scroll"
                 data-test="activity-scroll"
@@ -1135,19 +1161,20 @@ async function removeSession() {
               >
                 ↓ 最新活动
               </button>
-            </template>
+            </div>
 
             <!-- Content 2: 文件预览 -->
-            <template v-else>
-              <div class="preview-file-viewer">
-                <FileViewer
-                  :project-id="props.projectId"
-                  :active-path="activePreviewTab"
-                  :hide-tabs="true"
-                  @select="openFileInPreview"
-                />
-              </div>
-            </template>
+            <div
+              v-show="activePreviewTab !== 'activity'"
+              class="preview-file-viewer"
+            >
+              <FileViewer
+                :project-id="props.projectId"
+                :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
+                :hide-tabs="true"
+                @select="openFileInPreview"
+              />
+            </div>
           </div>
         </aside>
 
@@ -1453,6 +1480,16 @@ async function removeSession() {
 .preview-content {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.activity-pane-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
