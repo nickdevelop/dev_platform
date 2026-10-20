@@ -220,18 +220,49 @@ onBeforeUnmount(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-.xterm-container {
-  flex: 1;
-  width: 100%;
-  height: 100%;
+  /* The inset lives here, NOT on .xterm-container: FitAddon measures the .xterm
+     element and its container but only subtracts the .xterm element's own padding
+     — container padding would inflate the proposed cols/rows so the fitted grid
+     spills under the viewport scrollbar and past the bottom edge. Measuring a
+     padding-free box keeps the last column clear of the scrollbar. */
   padding: 8px 12px;
   box-sizing: border-box;
 }
 
+.xterm-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .xterm-container :deep(.xterm) {
   height: 100%;
+}
+
+/* Theme xterm's built-in viewport scrollbar: a slim translucent thumb over a
+   transparent track reads as a floating overlay instead of the wide, opaque
+   native scrollbar that parked on top of the shell output. */
+.xterm-container :deep(.xterm-viewport) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.xterm-container :deep(.xterm-viewport)::-webkit-scrollbar {
+  width: 8px;
+}
+
+.xterm-container :deep(.xterm-viewport)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.xterm-container :deep(.xterm-viewport)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+
+.xterm-container :deep(.xterm-viewport)::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .terminal-bar {
