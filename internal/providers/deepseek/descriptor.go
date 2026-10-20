@@ -6,7 +6,7 @@ import "devplatform/internal/core/agents"
 // platform's settings, diagnostics and UI present for it.
 var Descriptor = agents.BackendDescriptor{
 	ID:               agents.BackendDeepSeek,
-	Label:            "DeepSeek Harness",
+	Label:            "DeepSeek",
 	Binary:           "dsh",
 	DefaultEnabled:   true,
 	Order:            3,
@@ -14,4 +14,5 @@ var Descriptor = agents.BackendDescriptor{
 	Minimum:          "0.2.0",
 	Maximum:          "1.0.0",
 	ServiceSupported: false,
+	Tone:             "info",
 }

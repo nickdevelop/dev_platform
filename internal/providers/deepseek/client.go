@@ -93,8 +93,8 @@ func ExchangeLaunchToken(ctx context.Context, launchURL string) (endpoint string
 
 	endpoint = fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 
-	// In dsh, GET /connect?token=<token>&interactions=none exchanges the token for API cookies
-	connectURL := fmt.Sprintf("%s/connect?token=%s&interactions=none", endpoint, url.QueryEscape(token))
+	// In dsh, GET /connect?token=<token>&interactions=answer exchanges the token for API cookies
+	connectURL := fmt.Sprintf("%s/connect?token=%s&interactions=answer", endpoint, url.QueryEscape(token))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, connectURL, nil)
 	if err != nil {
@@ -360,8 +360,10 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 	cancel := func() {
 		cancelOnce.Do(func() {
 			c.subscribersMu.Lock()
-			delete(c.subscribers, streamID)
-			close(ch)
+			if _, exists := c.subscribers[streamID]; exists {
+				delete(c.subscribers, streamID)
+				close(ch)
+			}
 			c.subscribersMu.Unlock()
 
 			if !c.closed.Load() && c.wsConn != nil {

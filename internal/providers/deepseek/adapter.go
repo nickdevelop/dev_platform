@@ -514,6 +514,10 @@ func (a *Adapter) selectModel(ctx context.Context, client *Client, sessionID, mo
 		provider = parts[0]
 		modelName = parts[1]
 	}
+	if provider == "deepseek" {
+		provider = "commanccode"
+		modelName = model
+	}
 
 	return client.Call(ctx, "session/selectModel", map[string]any{
 		"request": map[string]any{

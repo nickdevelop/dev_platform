@@ -10,7 +10,7 @@ import (
 // range documented in docs/agent-compatibility.md.
 func TestDescriptorMatchesCompatibilityMatrix(t *testing.T) {
 	d := Descriptor
-	if d.ID != agents.BackendDeepSeek || d.Binary != "dsh" || d.Label != "DeepSeek Harness" {
+	if d.ID != agents.BackendDeepSeek || d.Binary != "dsh" || d.Label != "DeepSeek" || d.Tone != "info" {
 		t.Fatalf("identity = %+v", d)
 	}
 	if d.Tested != "0.2.1-rc.2" || d.Minimum != "0.2.0" || d.Maximum != "1.0.0" {

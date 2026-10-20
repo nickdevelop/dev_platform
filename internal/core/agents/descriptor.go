@@ -43,6 +43,9 @@ type BackendDescriptor struct {
 	// (for example pi's "cli" and "rpc"). Empty means the backend has a
 	// single transport and no mode control is shown.
 	Modes []string
+	// Tone is an optional visual tone preference for backend tags in the UI
+	// (such as "info", "warning", "primary", or "neutral").
+	Tone string
 }
 
 // Catalog is the immutable set of backend descriptors the platform knows. It

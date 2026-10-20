@@ -98,6 +98,14 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			}))
 
 		case "user/message":
+			// Only real user input (source.kind == "user") is admitted as a chat message.
+			// System-injected contexts (e.g. source.kind == "runtime-context", "skill-catalog",
+			// "time-context") are LLM prompt contexts and must not appear in the visible chat transcript.
+			if src, ok := evData["source"].(map[string]any); ok {
+				if kind, _ := src["kind"].(string); kind != "" && kind != "user" {
+					break
+				}
+			}
 			content := extractText(evData["content"])
 			if content != "" {
 				events = append(events, n.newEvent(now, agents.EventMessage, &agents.NormalizedEvent{

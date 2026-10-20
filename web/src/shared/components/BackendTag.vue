@@ -15,6 +15,8 @@ const agents = useAgentsStore()
 const label = computed(() => agents.backendLabel(props.backend))
 
 const tone = computed(() => {
+  const declaredTone = agents.backendTone(props.backend)
+  if (declaredTone) return `tone-${declaredTone}`
   const index = agents.orderedBackends.findIndex((entry) => entry.backend === props.backend)
   if (index === 0) return 'tone-primary'
   if (index === 1) return 'tone-secondary'
@@ -34,7 +36,8 @@ const tone = computed(() => {
   white-space: nowrap;
 }
 
-.tag.tone-primary {
+.tag.tone-primary,
+.tag.tone-info {
   background: var(--color-info-soft);
   color: var(--color-info);
 }

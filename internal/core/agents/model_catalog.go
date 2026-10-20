@@ -353,19 +353,24 @@ func (c *ModelCatalog) claim(entry *modelEntry) (*modelCall, bool) {
 func (c *ModelCatalog) fetchWith(entry *modelEntry, fetch ModelFetcher, call *modelCall, base context.Context) {
 	ctx, cancel := context.WithTimeout(base, c.fetchTimeout)
 	defer cancel()
-	models, err := fetch(ctx)
 
-	entry.mu.Lock()
-	if err == nil {
-		entry.models, entry.fetchedAt = cloneModels(models), c.now()
-		entry.err, entry.errAt = nil, time.Time{}
-	} else {
-		entry.err, entry.errAt = err, c.now()
-	}
-	entry.inflight = nil
-	entry.mu.Unlock()
-	call.err = err
-	close(call.done)
+	var models []ModelInfo
+	var err error
+	defer func() {
+		entry.mu.Lock()
+		if err == nil && models != nil {
+			entry.models, entry.fetchedAt = cloneModels(models), c.now()
+			entry.err, entry.errAt = nil, time.Time{}
+		} else {
+			entry.err, entry.errAt = err, c.now()
+		}
+		entry.inflight = nil
+		entry.mu.Unlock()
+		call.err = err
+		close(call.done)
+	}()
+
+	models, err = fetch(ctx)
 }
 
 // entry returns the key's entry, creating it on first use.

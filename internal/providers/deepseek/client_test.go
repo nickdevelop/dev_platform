@@ -19,6 +19,10 @@ var upgrader = websocket.Upgrader{
 func TestExchangeLaunchToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/connect" && r.URL.Query().Get("token") == "secret123" {
+			if r.URL.Query().Get("interactions") != "answer" {
+				http.Error(w, "missing or invalid interactions param", http.StatusBadRequest)
+				return
+			}
 			http.SetCookie(w, &http.Cookie{
 				Name:  "dsh-auth-test",
 				Value: "cookie-value-abc",
@@ -155,4 +159,69 @@ func TestClientMuxAndSubscribe(t *testing.T) {
 	}
 
 	_ = streamID
+}
+
+func TestCancelAfterStreamErrorDoesNotPanic(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/remote.mux" {
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+
+			for {
+				var msg wsClientMessage
+				if err := conn.ReadJSON(&msg); err != nil {
+					return
+				}
+				if msg.Type == "open" && msg.Endpoint == "$events" {
+					_ = conn.WriteJSON(wsServerMessage{
+						Type:     "item",
+						StreamID: msg.StreamID,
+						Value:    json.RawMessage(`{"type": "ready", "clientId": "client-test"}`),
+					})
+				} else if msg.Type == "open" && msg.Endpoint == "test/error-stream" {
+					// Simulate server sending an error frame on the stream
+					_ = conn.WriteJSON(wsServerMessage{
+						Type:     "error",
+						StreamID: msg.StreamID,
+						Error: &RPCError{
+							Code:    "test/failed",
+							Message: "stream failed",
+						},
+					})
+				}
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "auth=cookie")
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := client.ConnectMux(ctx); err != nil {
+		t.Fatalf("ConnectMux failed: %v", err)
+	}
+
+	_, ch, cancelStream, err := client.Subscribe(ctx, "test/error-stream", map[string]any{})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	// Wait for ch to close due to error frame
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected channel to close on error")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for stream channel closure")
+	}
+
+	// Calling cancelStream() after stream is closed must not panic!
+	cancelStream()
 }

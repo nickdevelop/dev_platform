@@ -157,5 +157,61 @@ func TestEventNormalization(t *testing.T) {
 		}
 	}
 
+	// 10. Filter out system-injected context user/messages (e.g. runtime-context, skill-catalog, time-context)
+	systemContextFrames := [][]byte{
+		[]byte(`{
+			"type": "event",
+			"event": {
+				"type": "user/message",
+				"data": {
+					"source": {"kind": "runtime-context"},
+					"content": "Current runtime context snapshot"
+				}
+			}
+		}`),
+		[]byte(`{
+			"type": "event",
+			"event": {
+				"type": "user/message",
+				"data": {
+					"source": {"kind": "skill-catalog"},
+					"content": "<system-reminder>Available skills</system-reminder>"
+				}
+			}
+		}`),
+		[]byte(`{
+			"type": "event",
+			"event": {
+				"type": "user/message",
+				"data": {
+					"source": {"kind": "time-context"},
+					"content": "Time sampled while preparing turn 1"
+				}
+			}
+		}`),
+	}
+	for idx, frame := range systemContextFrames {
+		ignored := norm.NormalizeFrame(frame)
+		if len(ignored) != 0 {
+			t.Errorf("system context frame %d should be ignored, got %+v", idx, ignored)
+		}
+	}
+
+	// 11. Allow genuine user message with source.kind == "user"
+	genuineUserFrame := []byte(`{
+		"type": "event",
+		"event": {
+			"type": "user/message",
+			"data": {
+				"source": {"kind": "user", "rpcId": "req-123"},
+				"content": "Real user prompt"
+			}
+		}
+	}`)
+	userEvs := norm.NormalizeFrame(genuineUserFrame)
+	if len(userEvs) != 1 || userEvs[0].Type != agents.EventMessage || userEvs[0].Message.Text != "Real user prompt" {
+		t.Fatalf("genuine user frame failed: %+v", userEvs)
+	}
+
 	_ = json.Marshal
 }

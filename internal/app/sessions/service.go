@@ -139,6 +139,8 @@ type BackendCapabilities struct {
 	// ServiceSupported reports whether the backend runs a machine-level
 	// service the operator can start and stop.
 	ServiceSupported bool `json:"serviceSupported"`
+	// Tone is an optional visual tone preference for backend tags in the UI.
+	Tone string `json:"tone,omitempty"`
 }
 
 // InstanceService is the subset of the instance lifecycle the session layer
@@ -317,6 +319,7 @@ func (s *Service) Backends() []BackendCapabilities {
 			entry.Label = descriptor.Label
 			entry.Order = descriptor.Order
 			entry.ServiceSupported = descriptor.ServiceSupported
+			entry.Tone = descriptor.Tone
 		}
 		out = append(out, entry)
 	}

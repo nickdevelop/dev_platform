@@ -60,6 +60,26 @@ describe('BackendTag', () => {
     expect(wrapper.text()).toBe('Pi Agent')
   })
 
+  it('uses declared tone when the backend specifies one', async () => {
+    const agents = useAgentsStore()
+    agents.backends = [
+      ...backendFixtures(),
+      {
+        backend: 'deepseek',
+        capabilities: backendFixtures()[0].capabilities,
+        enabled: true,
+        label: 'DeepSeek',
+        order: 3,
+        serviceSupported: false,
+        tone: 'info',
+      },
+    ]
+    const wrapper = mount(BackendTag, { props: { backend: 'deepseek' }, global: { plugins: [pinia] } })
+    await flushPromises()
+    expect(wrapper.text()).toBe('DeepSeek')
+    expect(wrapper.classes()).toContain('tone-info')
+  })
+
   it('never names an unknown backend after another one', async () => {
     const agents = useAgentsStore()
     agents.backends = backendFixtures()

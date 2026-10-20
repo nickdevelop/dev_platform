@@ -61,6 +61,11 @@ export const useAgentsStore = defineStore('agents', {
       return (backend: BackendId | string): string =>
         this.backendFor(backend)?.label || String(backend)
     },
+    // Display visual tone preference for a backend tag.
+    backendTone() {
+      return (backend: BackendId | string): string =>
+        this.backendFor(backend)?.tone || ''
+    },
     // Backends in the catalog's presentation order.
     orderedBackends: (state) =>
       [...state.backends].sort((a, b) => a.order - b.order),

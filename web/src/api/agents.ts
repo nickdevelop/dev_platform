@@ -45,6 +45,8 @@ export interface AgentBackend {
   // Whether the backend runs a machine-level service the operator can start
   // and stop.
   serviceSupported: boolean
+  // Optional visual tone preference from the backend descriptor (e.g. "info", "warning", "primary").
+  tone?: string
 }
 
 // Mirrors #/components/schemas/AgentBackendList.
