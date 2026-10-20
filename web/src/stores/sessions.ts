@@ -477,6 +477,32 @@ export const useSessionsStore = defineStore('sessions', {
         }
         this.historyTruncated[sessionId] = history.truncated
         this.historyLoaded[sessionId] = true
+
+        let latestTimestamp = ''
+        for (const ev of history.events) {
+          if (ev.timestamp) {
+            if (!latestTimestamp || new Date(ev.timestamp).getTime() > new Date(latestTimestamp).getTime()) {
+              latestTimestamp = ev.timestamp
+            }
+          }
+        }
+        if (latestTimestamp) {
+          const session = this.sessionById(sessionId)
+          if (session) {
+            const currentMs = session.updatedAt ? new Date(session.updatedAt).getTime() : 0
+            const latestMs = new Date(latestTimestamp).getTime()
+            if (!isNaN(latestMs) && latestMs > 0 && (!currentMs || Math.abs(currentMs - latestMs) > 1000)) {
+              this.sessions = this.sessions.map((entry) =>
+                entry.id === sessionId ? { ...entry, updatedAt: latestTimestamp } : entry,
+              )
+              for (const pId in this.sessionsByProject) {
+                this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>
+                  entry.id === sessionId ? { ...entry, updatedAt: latestTimestamp } : entry,
+                )
+              }
+            }
+          }
+        }
       } catch (error) {
         if (error instanceof UnauthorizedError) return
         this.historyError[sessionId] = describeApiError(error)
@@ -781,6 +807,14 @@ export const useSessionsStore = defineStore('sessions', {
           body,
           auth.csrfToken,
         )
+        if (updated) {
+          this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
+          for (const pId in this.sessionsByProject) {
+            this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>
+              entry.id === sessionId ? updated : entry,
+            )
+          }
+        }
         this.error = ''
         return updated
       } catch (error) {

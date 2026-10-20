@@ -106,11 +106,19 @@ func (r *Store) UpdateOnContinue(row database.AgentSession) error {
 	})
 }
 
-// UpdateStatus updates only the status and updated-at columns of one row.
-func (r *Store) UpdateStatus(id, status string, at time.Time) error {
+// UpdateStatus updates only the status column of one row, preserving its updated_at timestamp.
+func (r *Store) UpdateStatus(id, status string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
-			Updates(map[string]any{"status": status, "updated_at": at}).Error
+			UpdateColumn("status", status).Error
+	})
+}
+
+// TouchUpdatedAt updates only the updated_at column of one row.
+func (r *Store) TouchUpdatedAt(id string, at time.Time) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
+			UpdateColumn("updated_at", at).Error
 	})
 }
 

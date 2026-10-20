@@ -1178,20 +1178,6 @@ async function removeSession() {
           </div>
         </aside>
 
-        <!-- Floating FAB when Preview Pane is collapsed -->
-        <button
-          v-if="previewCollapsed"
-          type="button"
-          class="activity-fab"
-          data-test="activity-expand"
-          data-test-narrow="activity-expand-narrow"
-          :aria-label="`展开活动（共 ${activityCount} 条）`"
-          @click="setPreviewCollapsed(false)"
-        >
-          <span class="fab-label">活动</span>
-          <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
-        </button>
-
         <!-- Column 3: File Tree Drawer (Docked or Floating) -->
         <aside
           v-if="isFileTreeVisible"
@@ -1501,34 +1487,6 @@ async function removeSession() {
   min-height: 0;
   height: 100%;
   overflow: hidden;
-}
-
-.activity-fab {
-  position: absolute;
-  right: 1rem;
-  bottom: 5.5rem;
-  z-index: 15;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 0.85rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.activity-fab:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.2);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
 }
 
 /* Third Column: File Tree Drawer */

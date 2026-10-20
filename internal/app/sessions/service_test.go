@@ -742,6 +742,47 @@ func TestContinueLeavesTheActivityTimestampAlone(t *testing.T) {
 	}
 }
 
+// TestReconcilePreservesLastInteractionTime verifies status changes during
+// listing reconciliation or stream disconnects do not overwrite updated_at.
+func TestReconcilePreservesLastInteractionTime(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-reconcile-time")
+
+	past := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	if err := env.db.Model(&database.AgentSession{}).Where("id = ?", session.ID).
+		Update("updated_at", past).Error; err != nil {
+		t.Fatalf("age session: %v", err)
+	}
+
+	// Stop instance so the session is reconciled to disconnected.
+	if err := env.db.Model(&database.AgentInstance{}).Where("id = ?", env.instanceID).
+		Update("status", string(agents.InstanceStopped)).Error; err != nil {
+		t.Fatalf("stop instance: %v", err)
+	}
+
+	list, err := env.svc.List(env.projectID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("List returned %d sessions, want 1", len(list))
+	}
+	if list[0].Status != SessionDisconnected {
+		t.Errorf("session status = %v, want disconnected", list[0].Status)
+	}
+	if !list[0].UpdatedAt.Equal(past) {
+		t.Errorf("reconciled session updated_at = %v, want preserved %v", list[0].UpdatedAt, past)
+	}
+
+	var row database.AgentSession
+	if err := env.db.First(&row, "id = ?", session.ID).Error; err != nil {
+		t.Fatalf("load row: %v", err)
+	}
+	if !row.UpdatedAt.Equal(past) {
+		t.Errorf("persisted updated_at = %v, want %v", row.UpdatedAt, past)
+	}
+}
+
 // TestProjectScopingRejectsCrossProjectAccess verifies every session operation
 // validates that the session belongs to the authorized project.
 func TestProjectScopingRejectsCrossProjectAccess(t *testing.T) {

@@ -267,33 +267,33 @@ describe('activity pane floating button and in-tab popup', () => {
     return wrapper
   }
 
-  it('defaults to collapsed with a floating FAB and a full-width message area', async () => {
+  it('defaults to collapsed with a header preview button and a full-width message area', async () => {
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="conversation-scroll"]').exists()).toBe(true)
     // The message composer is in the message column.
     expect(wrapper.find('.message-column form.send').exists()).toBe(true)
-    // The activity pane is hidden by default and represented by a floating button.
+    // The activity pane is hidden by default and represented by a header preview button.
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    const fab = wrapper.find('[data-test="activity-expand"]')
-    expect(fab.exists()).toBe(true)
-    expect(fab.text()).toContain('活动')
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
+    expect(toggleBtn.text()).toContain('预览')
   })
 
-  it('opens in-tab popup on floating button click and persists expanded choice', async () => {
+  it('opens in-tab popup on preview button click and persists expanded choice', async () => {
     const wrapper = await mountPanel()
-    const fab = wrapper.find('[data-test="activity-expand"]')
-    expect(fab.exists()).toBe(true)
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
 
-    await fab.trigger('click')
+    await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(false)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
-  it('collapses back to floating button on hide click and persists collapsed choice', async () => {
+  it('collapses back to preview button on hide click and persists collapsed choice', async () => {
     const wrapper = await mountPanel()
-    await wrapper.find('[data-test="activity-expand"]').trigger('click')
+    await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
 
     const hideBtn = wrapper.find('[data-test="activity-hide"]')
@@ -301,7 +301,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await hideBtn.trigger('click')
 
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
   })
 
@@ -309,22 +309,22 @@ describe('activity pane floating button and in-tab popup', () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(false)
   })
 
   it('closes the open popup when Escape key is pressed', async () => {
     const wrapper = await mountPanel()
-    await wrapper.find('[data-test="activity-expand"]').trigger('click')
+    await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
 
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
   })
 
-  it('displays activity count badge on floating button and popup title', async () => {
+  it('displays activity count badge on header preview button and popup title', async () => {
     const sessionsStore = useSessionsStore()
     const wrapper = await mountPanel()
 
@@ -336,10 +336,10 @@ describe('activity pane floating button and in-tab popup', () => {
     ]
     await flushPromises()
 
-    const fab = wrapper.find('[data-test="activity-expand"]')
-    expect(fab.find('[data-test="activity-count"]').text()).toBe('2')
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    expect(toggleBtn.find('.mini-count').text()).toBe('2')
 
-    await fab.trigger('click')
+    await toggleBtn.trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
     expect(pane.find('.activity-title [data-test="activity-count"]').text()).toBe('2')
   })
@@ -416,7 +416,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
 
     // Preview is initially collapsed
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="activity-expand"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
 
     // Select a file from file sidebar
     const sidebar = wrapper.findComponent(FileSidebar)

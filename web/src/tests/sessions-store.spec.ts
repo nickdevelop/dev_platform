@@ -862,6 +862,64 @@ describe('sessions store user echo dedupe', () => {
 
     expect(userEntries(sessions)).toHaveLength(2)
   })
+
+  it('updates session and sessionsByProject with the fresh updatedAt returned by sendMessage', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    const oldSession = session('s1', 1, { updatedAt: '2026-10-09T00:00:00Z' })
+    sessions.sessions = [oldSession]
+    sessions.sessionsByProject[1] = [oldSession]
+    useAuthStore().csrfToken = 'token'
+
+    const freshTime = '2026-10-20T15:30:00Z'
+    stubRoutes({
+      '/messages': {
+        ...oldSession,
+        updatedAt: freshTime,
+      },
+    })
+
+    await sessions.sendMessage(1, 's1', 'hello world')
+
+    expect(sessions.sessionById('s1')?.updatedAt).toBe(freshTime)
+    expect(sessions.sessionsByProject[1][0].updatedAt).toBe(freshTime)
+  })
+
+  it('aligns session updatedAt from the latest timestamp in loaded history', async () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    const oldSession = session('s1', 1, { updatedAt: '2026-10-09T00:00:00Z' })
+    sessions.sessions = [oldSession]
+    sessions.sessionsByProject[1] = [oldSession]
+
+    const latestMessageTime = '2026-10-20T16:00:00Z'
+    stubRoutes({
+      '/history': {
+        events: [
+          historyEvent({
+            instanceId: 'inst-1',
+            type: 'message',
+            sequence: 1,
+            timestamp: '2026-10-20T15:00:00Z',
+            message: { role: 'user', text: 'hi', final: true },
+          }),
+          historyEvent({
+            instanceId: 'inst-1',
+            type: 'message',
+            sequence: 2,
+            timestamp: latestMessageTime,
+            message: { role: 'assistant', text: 'hello!', final: true },
+          }),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    expect(sessions.sessionById('s1')?.updatedAt).toBe(latestMessageTime)
+    expect(sessions.sessionsByProject[1][0].updatedAt).toBe(latestMessageTime)
+  })
 })
 
 // The interrupt action answers from the session row as it stood when the

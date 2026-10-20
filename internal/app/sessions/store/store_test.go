@@ -44,9 +44,23 @@ func TestStoreRoundTripsAnIndexRow(t *testing.T) {
 		t.Fatalf("List = (%d rows, %v), want 1", len(rows), err)
 	}
 
-	if err := s.UpdateStatus("p1", "running", time.Now().UTC()); err != nil {
+	if err := s.UpdateStatus("p1", "running"); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
+	updated, err := s.GetByID("p1")
+	if err != nil || updated.Status != "running" {
+		t.Fatalf("GetByID after UpdateStatus = (%+v, %v), want running", updated, err)
+	}
+
+	touchTime := time.Date(2026, 10, 20, 15, 0, 0, 0, time.UTC)
+	if err := s.TouchUpdatedAt("p1", touchTime); err != nil {
+		t.Fatalf("TouchUpdatedAt: %v", err)
+	}
+	touched, err := s.GetByID("p1")
+	if err != nil || !touched.UpdatedAt.Equal(touchTime) {
+		t.Fatalf("GetByID after TouchUpdatedAt = (%+v, %v), want %v", touched, err, touchTime)
+	}
+
 	if err := s.Delete("p1"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}

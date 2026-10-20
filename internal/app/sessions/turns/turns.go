@@ -9,6 +9,7 @@ package turns
 import (
 	"context"
 	"sync"
+	"time"
 
 	"devplatform/internal/core/agents"
 )
@@ -45,7 +46,8 @@ type RunningSession struct {
 // Tracker records the turn state of every native session of every instance it
 // watches. It is safe for concurrent use.
 type Tracker struct {
-	subscriber Subscriber
+	subscriber  Subscriber
+	onTurnEnded func(backend agents.BackendID, nativeSessionID string, timestamp time.Time)
 
 	// mu guards watching and states. states maps (backend, nativeSessionID)
 	// to the session's current turn state; instanceKeys tracks which sessions
@@ -55,6 +57,13 @@ type Tracker struct {
 	states       map[SessionKey]State
 	instanceKeys map[string]map[SessionKey]bool
 	keyInstance  map[SessionKey]string
+}
+
+// SetOnTurnEnded registers a callback invoked when a turn settles to idle.
+func (t *Tracker) SetOnTurnEnded(fn func(backend agents.BackendID, nativeSessionID string, timestamp time.Time)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onTurnEnded = fn
 }
 
 // NewTracker builds a tracker that subscribes through the given stream source.
@@ -118,7 +127,11 @@ func (t *Tracker) track(instanceID string, events <-chan agents.NormalizedEvent)
 			t.instanceKeys[instanceID] = make(map[SessionKey]bool)
 		}
 		t.instanceKeys[instanceID][key] = true
+		cb := t.onTurnEnded
 		t.mu.Unlock()
+		if state == Idle && cb != nil {
+			cb(ev.Backend, ev.SessionID, ev.Timestamp)
+		}
 	}
 	t.mu.Lock()
 	delete(t.watching, instanceID)

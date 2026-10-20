@@ -173,7 +173,8 @@ type StoreRepository interface {
 	List(projectID uint) ([]database.AgentSession, error)
 	Update(row database.AgentSession) error
 	UpdateOnContinue(row database.AgentSession) error
-	UpdateStatus(id, status string, at time.Time) error
+	UpdateStatus(id, status string) error
+	TouchUpdatedAt(id string, at time.Time) error
 	Delete(id string) error
 }
 
@@ -231,6 +232,9 @@ func NewServiceWithStore(st StoreRepository, registry *agents.Registry, instance
 		turnTracker:       turns.NewTracker(instanceService),
 		reconcileInterval: defaultReconcileInterval,
 	}
+	s.turnTracker.SetOnTurnEnded(func(backend agents.BackendID, nativeSessionID string, timestamp time.Time) {
+		s.TouchInteraction(backend, nativeSessionID, timestamp)
+	})
 	s.eventBus = NewEventBusManager(s)
 	for _, opt := range opts {
 		opt(s)
@@ -706,7 +710,32 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 		}
 		events = append(events, event)
 	}
+
+	if len(events) > 0 {
+		var lastTime time.Time
+		for i := len(events) - 1; i >= 0; i-- {
+			if !events[i].Timestamp.IsZero() {
+				lastTime = events[i].Timestamp
+				break
+			}
+		}
+		if !lastTime.IsZero() && (row.UpdatedAt.IsZero() || row.UpdatedAt.Before(lastTime) || row.UpdatedAt.Sub(lastTime) > 5*time.Minute) {
+			_ = s.store.TouchUpdatedAt(row.ID, lastTime)
+		}
+	}
 	return History{Events: events, Truncated: result.Truncated}, nil
+}
+
+// TouchInteraction updates a native session's last interaction time to at.
+func (s *Service) TouchInteraction(backend agents.BackendID, nativeSessionID string, at time.Time) {
+	if at.IsZero() {
+		at = s.now()
+	}
+	row, err := s.store.GetByNative(0, string(backend), nativeSessionID)
+	if err != nil {
+		return
+	}
+	_ = s.store.TouchUpdatedAt(row.ID, at)
 }
 
 func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (Session, error) {
@@ -840,12 +869,10 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 			return Session{}, fmt.Errorf("%w: stop session: %w", ErrBackendFailed, err)
 		}
 	}
-	now := s.now()
-	if err := s.store.UpdateStatus(row.ID, string(SessionStopped), now); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(SessionStopped)); err != nil {
 		return Session{}, err
 	}
 	row.Status = string(SessionStopped)
-	row.UpdatedAt = now
 	return s.sessionFromModel(row), nil
 }
 
@@ -1190,6 +1217,7 @@ func (s *Service) reconcileRunningTurns() {
 			isRunning, detectErr := detector.DetectTurn(ctx, ref)
 			if detectErr == nil && !isRunning {
 				s.turnTracker.Set(item.Backend, item.NativeID, TurnIdle)
+				s.TouchInteraction(item.Backend, item.NativeID, s.now())
 				if s.eventBus != nil {
 					s.eventBus.BroadcastTurnEnded(item.NativeID)
 				}
@@ -1228,7 +1256,7 @@ func (s *Service) markDisconnected(row database.AgentSession) {
 	if row.Status != string(SessionActive) {
 		return
 	}
-	if err := s.store.UpdateStatus(row.ID, string(SessionDisconnected), s.now()); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(SessionDisconnected)); err != nil {
 		return
 	}
 }
@@ -1266,13 +1294,11 @@ func (s *Service) setStatus(row database.AgentSession, status SessionStatus) dat
 	if row.Status == string(status) {
 		return row
 	}
-	now := s.now()
-	if err := s.store.UpdateStatus(row.ID, string(status), now); err != nil {
+	if err := s.store.UpdateStatus(row.ID, string(status)); err != nil {
 		// Best effort: the in-memory status is still returned so the caller
 		// sees the reconciled state even if the write failed.
 	}
 	row.Status = string(status)
-	row.UpdatedAt = now
 	return row
 }
 
