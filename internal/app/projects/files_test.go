@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -270,6 +271,110 @@ func TestReadFileContent_TextAndBinary(t *testing.T) {
 	}
 	if !binResp.IsBinary || binResp.Content != "" {
 		t.Errorf("expected binary file to have IsBinary=true and empty Content, got: %+v", binResp)
+	}
+}
+
+func TestReadFileContent_UTF8BoundaryTruncation(t *testing.T) {
+	svc, id, dir := setupTestProject(t)
+	ctx := context.Background()
+
+	// Construct a file where the 512th byte lands exactly on the first byte of a 3-byte UTF-8 character.
+	// 511 ASCII bytes + "测试服务器列表\n"
+	prefix := bytes.Repeat([]byte("a"), 511)
+	chinese := []byte("测试服务器列表\n")
+	fullContent := append(prefix, chinese...)
+
+	testPath := filepath.Join(dir, "truncated.md")
+	if err := os.WriteFile(testPath, fullContent, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	resp, err := svc.ReadFileContent(ctx, id, "truncated.md")
+	if err != nil {
+		t.Fatalf("ReadFileContent(truncated.md): %v", err)
+	}
+	if resp.IsBinary {
+		t.Errorf("expected truncated UTF-8 markdown file to have IsBinary=false, got true")
+	}
+	if resp.Content != string(fullContent) {
+		t.Errorf("expected full content, got len=%d, want len=%d", len(resp.Content), len(fullContent))
+	}
+
+	// Test real servers.md content if the file exists on the host
+	if realData, err := os.ReadFile("/data/operate/serversoper/servers.md"); err == nil {
+		serversPath := filepath.Join(dir, "servers.md")
+		if err := os.WriteFile(serversPath, realData, 0o644); err != nil {
+			t.Fatalf("WriteFile servers.md: %v", err)
+		}
+
+		serversResp, err := svc.ReadFileContent(ctx, id, "servers.md")
+		if err != nil {
+			t.Fatalf("ReadFileContent(servers.md): %v", err)
+		}
+		if serversResp.IsBinary {
+			t.Errorf("servers.md was incorrectly flagged as binary")
+		}
+		if len(serversResp.Content) != len(realData) {
+			t.Errorf("expected full content for servers.md, got len=%d, want len=%d", len(serversResp.Content), len(realData))
+		}
+	}
+}
+
+func TestTrimTrailingIncompleteUTF8(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []byte
+		expected []byte
+	}{
+		{
+			name:     "empty",
+			input:    []byte{},
+			expected: []byte{},
+		},
+		{
+			name:     "ascii only",
+			input:    []byte("hello world"),
+			expected: []byte("hello world"),
+		},
+		{
+			name:     "complete utf8 3-byte",
+			input:    []byte("hello测试"),
+			expected: []byte("hello测试"),
+		},
+		{
+			name:     "truncated 3-byte at 1st byte",
+			input:    append([]byte("hello"), []byte("测")[:1]...),
+			expected: []byte("hello"),
+		},
+		{
+			name:     "truncated 3-byte at 2nd byte",
+			input:    append([]byte("hello"), []byte("测")[:2]...),
+			expected: []byte("hello"),
+		},
+		{
+			name:     "truncated 4-byte emoji at 1st byte",
+			input:    append([]byte("hello"), []byte("😀")[:1]...),
+			expected: []byte("hello"),
+		},
+		{
+			name:     "truncated 4-byte emoji at 3rd byte",
+			input:    append([]byte("hello"), []byte("😀")[:3]...),
+			expected: []byte("hello"),
+		},
+		{
+			name:     "complete 4-byte emoji",
+			input:    []byte("hello😀"),
+			expected: []byte("hello😀"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := trimTrailingIncompleteUTF8(tt.input)
+			if !bytes.Equal(got, tt.expected) {
+				t.Errorf("trimTrailingIncompleteUTF8(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
 	}
 }
 

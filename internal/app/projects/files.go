@@ -399,7 +399,7 @@ func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath s
 	header = header[:n]
 
 	mimeType := http.DetectContentType(header)
-	isBinary := isBinaryContent(header, mimeType)
+	isBinary := isBinaryContent(header, mimeType, relPath)
 
 	res := &FileContentResponse{
 		Path:     filepath.ToSlash(relPath),
@@ -473,7 +473,90 @@ func (s *Service) ReadFileRaw(ctx context.Context, projectID uint, relPath strin
 	return f, mimeType, info.Size(), nil
 }
 
-func isBinaryContent(header []byte, mimeType string) bool {
+// trimTrailingIncompleteUTF8 strips at most 3 trailing bytes from b if they
+// represent an incomplete leading sequence of a multi-byte UTF-8 rune.
+// This prevents false negatives when a fixed-size header buffer truncates a character.
+func trimTrailingIncompleteUTF8(b []byte) []byte {
+	n := len(b)
+	if n == 0 {
+		return b
+	}
+
+	for i := 1; i <= 3 && i <= n; i++ {
+		lead := b[n-i]
+		// Check if this byte is the leading byte of a multi-byte sequence (not 10xxxxxx)
+		if lead&0xC0 != 0x80 {
+			var expectedLen int
+			if lead&0xE0 == 0xC0 {
+				expectedLen = 2
+			} else if lead&0xF0 == 0xE0 {
+				expectedLen = 3
+			} else if lead&0xF8 == 0xF0 {
+				expectedLen = 4
+			} else {
+				break
+			}
+
+			if i < expectedLen {
+				// Verify all trailing bytes are valid continuation bytes (10xxxxxx)
+				validContinuation := true
+				for j := n - i + 1; j < n; j++ {
+					if b[j]&0xC0 != 0x80 {
+						validContinuation = false
+						break
+					}
+				}
+				if validContinuation {
+					return b[:n-i]
+				}
+			}
+			break
+		}
+	}
+	return b
+}
+
+var textExtensions = map[string]bool{
+	".txt":      true,
+	".md":       true,
+	".markdown": true,
+	".json":     true,
+	".yaml":     true,
+	".yml":      true,
+	".toml":     true,
+	".xml":      true,
+	".html":     true,
+	".htm":      true,
+	".css":      true,
+	".scss":     true,
+	".less":     true,
+	".js":       true,
+	".jsx":      true,
+	".ts":       true,
+	".tsx":      true,
+	".go":       true,
+	".py":       true,
+	".rs":       true,
+	".c":        true,
+	".cpp":      true,
+	".h":        true,
+	".hpp":      true,
+	".java":     true,
+	".kt":       true,
+	".sh":       true,
+	".bash":     true,
+	".zsh":      true,
+	".sql":      true,
+	".ini":      true,
+	".cfg":      true,
+	".conf":     true,
+	".env":      true,
+	".log":      true,
+	".csv":      true,
+	".svg":      true,
+}
+
+func isBinaryContent(header []byte, mimeType string, filename ...string) bool {
 	if bytes.IndexByte(header, 0) != -1 {
 		return true
 	}
@@ -483,8 +566,25 @@ func isBinaryContent(header []byte, mimeType string) bool {
 	if strings.HasPrefix(mimeType, "video/") || strings.HasPrefix(mimeType, "audio/") {
 		return true
 	}
-	if mimeType == "application/octet-stream" || mimeType == "application/pdf" || mimeType == "application/zip" {
+	if mimeType == "application/pdf" || mimeType == "application/zip" {
 		return true
 	}
-	return !utf8.Valid(header)
+
+	trimmed := trimTrailingIncompleteUTF8(header)
+	if utf8.Valid(trimmed) {
+		return false
+	}
+
+	if len(filename) > 0 && filename[0] != "" {
+		ext := strings.ToLower(filepath.Ext(filename[0]))
+		if textExtensions[ext] {
+			return false
+		}
+	}
+
+	if strings.HasPrefix(mimeType, "text/") {
+		return false
+	}
+
+	return true
 }
