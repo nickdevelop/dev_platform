@@ -119,6 +119,9 @@ export const useSessionsStore = defineStore('sessions', {
     // (opencode step finish). It overrides message anchors because it arrives
     // after the turn's messages. Cleared with the session.
     lifecycleUsage: {} as Record<string, MessageUsage>,
+    // Dynamic context limits per session, reported by the backend (e.g. from
+    // projections or context events). Cleared with the session.
+    sessionContextLimits: {} as Record<string, number>,
     loading: false,
     error: '',
     // The code of the last API failure, so a view can act on a specific
@@ -350,6 +353,7 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.autoModels[sessionId]
       delete this.creationModels[sessionId]
       delete this.lifecycleUsage[sessionId]
+      delete this.sessionContextLimits[sessionId]
       delete this.sessionTurns[sessionId]
       for (const pId in this.sessionsByProject) {
         this.sessionsByProject[pId] = this.sessionsByProject[pId].filter(
@@ -605,6 +609,9 @@ export const useSessionsStore = defineStore('sessions', {
       // after the turn's messages, so it overrides any message anchor.
       if (event.lifecycle?.usage) {
         this.lifecycleUsage[sessionId] = event.lifecycle.usage
+      }
+      if (event.lifecycle?.contextLimit && event.lifecycle.contextLimit > 0) {
+        this.sessionContextLimits[sessionId] = event.lifecycle.contextLimit
       }
       if (state === 'stopped') {
         this.setStatus(sessionId, 'stopped')

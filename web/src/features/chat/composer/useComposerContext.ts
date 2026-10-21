@@ -143,11 +143,19 @@ export function useComposerContext(options: ComposerContextOptions) {
     // appeared or changed.
     refreshModelLimit()
   }
+  const effectiveLimit = computed(() => {
+    const sessionLimit = sessions.sessionContextLimits[options.sessionId.value]
+    if (typeof sessionLimit === 'number' && sessionLimit > 0) {
+      return sessionLimit
+    }
+    return modelLimit.value
+  })
+
   const contextUsage = computed(() =>
     computeContextUsage(
       options.activeMessages.value,
       sessions.lifecycleUsage[options.sessionId.value],
-      modelLimit.value,
+      effectiveLimit.value,
     ),
   )
   const showContextLine = computed(
@@ -188,7 +196,7 @@ export function useComposerContext(options: ComposerContextOptions) {
     branchLabel,
     branchTitle,
     copyDirectory,
-    modelLimit,
+    modelLimit: effectiveLimit,
     refreshModelLimit,
     onModelStatus,
     contextUsage,

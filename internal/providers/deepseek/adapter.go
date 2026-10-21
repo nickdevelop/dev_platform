@@ -573,10 +573,14 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 		defer cancelControl()
 
 		// Stream multiplexer loop
-		activeFollows := make(map[string]func())
+		type followHandle struct {
+			cancel     func()
+			normalizer *SessionEventNormalizer
+		}
+		activeFollows := make(map[string]followHandle)
 		defer func() {
-			for _, cancel := range activeFollows {
-				cancel()
+			for _, h := range activeFollows {
+				h.cancel()
 			}
 		}()
 
@@ -597,7 +601,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 			if fErr != nil {
 				return
 			}
-			activeFollows[sessionID] = cancelFollow
+			activeFollows[sessionID] = followHandle{cancel: cancelFollow, normalizer: normalizer}
 
 			go func() {
 				for frameBytes := range followCh {
@@ -624,10 +628,24 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				var ctrl struct {
 					Type      string `json:"type"`
 					SessionID string `json:"sessionId"`
+					Key       string `json:"key"`
+					Value     any    `json:"value"`
 				}
 				if err := json.Unmarshal(controlMsg, &ctrl); err == nil {
 					if ctrl.SessionID != "" {
 						followSession(ctrl.SessionID)
+					}
+					if ctrl.Type == "projection" && ctrl.SessionID != "" {
+						if h, exists := activeFollows[ctrl.SessionID]; exists {
+							evs := h.normalizer.NormalizeProjection(ctrl.Key, ctrl.Value)
+							for _, ev := range evs {
+								select {
+								case outCh <- ev:
+								case <-ctx.Done():
+									return
+								}
+							}
+						}
 					}
 				}
 			}

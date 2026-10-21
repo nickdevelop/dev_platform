@@ -229,5 +229,112 @@ func TestEventNormalization(t *testing.T) {
 		t.Fatalf("genuine user frame failed: %+v", userEvs)
 	}
 
+	// 12. Snapshot frame with contextPressure and tokenUsage projections
+	snapshotFrame := []byte(`{
+		"type": "snapshot",
+		"projections": {
+			"asOfSeq": 42,
+			"values": {
+				"contextPressure": {
+					"pressureTokens": 48213,
+					"projectedTokens": 49800,
+					"contextWindow": 131072
+				},
+				"tokenUsage": {
+					"uncachedInputTokens": 320000,
+					"outputTokens": 41000,
+					"cacheReadTokens": 1200000,
+					"cacheWriteTokens": 150000
+				}
+			}
+		}
+	}`)
+	snapEvs := norm.NormalizeFrame(snapshotFrame)
+	if len(snapEvs) != 1 || snapEvs[0].Type != agents.EventLifecycle {
+		t.Fatalf("snapshot frame failed: %+v", snapEvs)
+	}
+	lc := snapEvs[0].Lifecycle
+	if lc.State != "context_anchor" {
+		t.Errorf("lifecycle state = %s, want context_anchor", lc.State)
+	}
+	if lc.ContextLimit == nil || *lc.ContextLimit != 131072 {
+		t.Errorf("ContextLimit = %v, want 131072", lc.ContextLimit)
+	}
+	if lc.Usage == nil || lc.Usage.Input != 320000 || lc.Usage.Output != 41000 {
+		t.Errorf("Usage mismatch: %+v", lc.Usage)
+	}
+
+	// 13. request/context durable event
+	reqContextFrame := []byte(`{
+		"type": "event",
+		"event": {
+			"type": "request/context",
+			"data": {
+				"provider": "deepseek-official",
+				"model": "deepseek-v4-flash",
+				"contextWindow": 128000
+			}
+		}
+	}`)
+	rcEvs := norm.NormalizeFrame(reqContextFrame)
+	if len(rcEvs) != 1 || rcEvs[0].Type != agents.EventLifecycle {
+		t.Fatalf("request/context event failed: %+v", rcEvs)
+	}
+	if rcEvs[0].Lifecycle.ContextLimit == nil || *rcEvs[0].Lifecycle.ContextLimit != 128000 {
+		t.Errorf("ContextLimit = %v, want 128000", rcEvs[0].Lifecycle.ContextLimit)
+	}
+
+	// 14. assistant/message carries reasoningTokens and sets Usage on final message
+	msgWithReasoning := []byte(`{
+		"type": "event",
+		"event": {
+			"type": "assistant/message",
+			"data": {
+				"message": {
+					"role": "assistant",
+					"content": [
+						{"type": "text", "text": "Answer"}
+					]
+				},
+				"usage": {
+					"inputTokens": 200,
+					"outputTokens": 80,
+					"reasoningTokens": 45,
+					"cacheReadTokens": 100,
+					"cacheWriteTokens": 0
+				}
+			}
+		}
+	}`)
+	msgEvs := norm.NormalizeFrame(msgWithReasoning)
+	if len(msgEvs) != 2 {
+		t.Fatalf("msgWithReasoning expected 2 events (message, lifecycle), got %d: %+v", len(msgEvs), msgEvs)
+	}
+	if msgEvs[0].Message.Usage == nil || msgEvs[0].Message.Usage.Reasoning != 45 {
+		t.Errorf("Message.Usage reasoning mismatch: %+v", msgEvs[0].Message.Usage)
+	}
+	if msgEvs[1].Lifecycle.Usage == nil || msgEvs[1].Lifecycle.Usage.Reasoning != 45 {
+		t.Errorf("Lifecycle.Usage reasoning mismatch: %+v", msgEvs[1].Lifecycle.Usage)
+	}
+	// Inherited current contextWindow from previous request/context
+	if msgEvs[1].Lifecycle.ContextLimit == nil || *msgEvs[1].Lifecycle.ContextLimit != 128000 {
+		t.Errorf("Lifecycle.ContextLimit = %v, want 128000", msgEvs[1].Lifecycle.ContextLimit)
+	}
+
+	// 15. NormalizeProjection method
+	projEvs := norm.NormalizeProjection("contextPressure", map[string]any{
+		"contextWindow":  65536,
+		"pressureTokens": 1234,
+	})
+	if len(projEvs) != 1 || projEvs[0].Type != agents.EventLifecycle {
+		t.Fatalf("NormalizeProjection failed: %+v", projEvs)
+	}
+	if projEvs[0].Lifecycle.ContextLimit == nil || *projEvs[0].Lifecycle.ContextLimit != 65536 {
+		t.Errorf("ContextLimit = %v, want 65536", projEvs[0].Lifecycle.ContextLimit)
+	}
+	if projEvs[0].Lifecycle.Usage == nil || projEvs[0].Lifecycle.Usage.Input != 1234 {
+		t.Errorf("Usage = %v, want Input: 1234", projEvs[0].Lifecycle.Usage)
+	}
+
 	_ = json.Marshal
 }

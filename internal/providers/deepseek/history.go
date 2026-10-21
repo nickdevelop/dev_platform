@@ -26,6 +26,19 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	// 1. Get session projection to find the latest sequence number (asOfSeq)
 	var projResult struct {
 		AsOfSeq int `json:"asOfSeq"`
+		Values  struct {
+			ContextPressure *struct {
+				ContextWindow   int `json:"contextWindow"`
+				PressureTokens  int `json:"pressureTokens"`
+				ProjectedTokens int `json:"projectedTokens"`
+			} `json:"contextPressure"`
+			TokenUsage *struct {
+				UncachedInputTokens int `json:"uncachedInputTokens"`
+				OutputTokens        int `json:"outputTokens"`
+				CacheReadTokens     int `json:"cacheReadTokens"`
+				CacheWriteTokens    int `json:"cacheWriteTokens"`
+			} `json:"tokenUsage"`
+		} `json:"values"`
 	}
 	err = client.Call(ctx, "session/projections", map[string]any{
 		"request": map[string]any{
@@ -92,10 +105,11 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 				}
 				frameBytes, _ := json.Marshal(frame)
 				evs := normalizer.NormalizeFrame(frameBytes)
-				// History replay carries transcript events only (message, thinking, tool_call, tool_result)
+				// History replay carries transcript events and context/usage anchors
 				for _, ev := range evs {
 					if ev.Type == agents.EventMessage || ev.Type == agents.EventThinking ||
-						ev.Type == agents.EventToolCall || ev.Type == agents.EventToolResult {
+						ev.Type == agents.EventToolCall || ev.Type == agents.EventToolResult ||
+						(ev.Type == agents.EventLifecycle && (ev.Lifecycle.Usage != nil || ev.Lifecycle.ContextLimit != nil)) {
 						collectedEvents = append(collectedEvents, ev)
 						if len(collectedEvents) >= agents.MaxHistoryEvents {
 							truncated = true
@@ -121,6 +135,49 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 			beforeSeq = &firstSeq.Seq
 		} else {
 			break
+		}
+	}
+
+	// 3. If projections carry context/usage anchor and none was in history, attach an anchor event
+	var initialLimit *int
+	var initialUsage *agents.MessageUsage
+	if cp := projResult.Values.ContextPressure; cp != nil {
+		if cp.ContextWindow > 0 {
+			w := cp.ContextWindow
+			initialLimit = &w
+		}
+		if cp.PressureTokens > 0 {
+			initialUsage = &agents.MessageUsage{Input: cp.PressureTokens}
+		}
+	}
+	if tu := projResult.Values.TokenUsage; tu != nil {
+		u := &agents.MessageUsage{
+			Input:      tu.UncachedInputTokens,
+			Output:     tu.OutputTokens,
+			CacheRead:  tu.CacheReadTokens,
+			CacheWrite: tu.CacheWriteTokens,
+		}
+		if u.Total() > 0 {
+			initialUsage = u
+		}
+	}
+	if initialLimit != nil || initialUsage != nil {
+		hasAnchor := false
+		for _, ev := range collectedEvents {
+			if ev.Type == agents.EventLifecycle && (ev.Lifecycle.ContextLimit != nil || ev.Lifecycle.Usage != nil) {
+				hasAnchor = true
+				break
+			}
+		}
+		if !hasAnchor && len(collectedEvents) < agents.MaxHistoryEvents {
+			collectedEvents = append(collectedEvents, agents.NormalizedEvent{
+				Type: agents.EventLifecycle,
+				Lifecycle: &agents.LifecycleEvent{
+					State:        "context_anchor",
+					Usage:        initialUsage,
+					ContextLimit: initialLimit,
+				},
+			})
 		}
 	}
 

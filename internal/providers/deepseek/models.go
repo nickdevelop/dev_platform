@@ -75,6 +75,8 @@ func DecodeModelCatalog(catalog *RawModelCatalog) []agents.ModelInfo {
 			if m.ContextWindow > 0 {
 				cw := m.ContextWindow
 				contextLimit = &cw
+			} else if cw := resolveDefaultContextWindow(provider, m.ID); cw > 0 {
+				contextLimit = &cw
 			}
 
 			out = append(out, agents.ModelInfo{
@@ -88,6 +90,25 @@ func DecodeModelCatalog(catalog *RawModelCatalog) []agents.ModelInfo {
 		}
 	}
 	return out
+}
+
+// resolveDefaultContextWindow derives a sensible context window limit in tokens
+// when dsh's session/modelCatalog does not advertise one.
+func resolveDefaultContextWindow(provider, modelID string) int {
+	lower := strings.ToLower(modelID)
+	switch {
+	case strings.Contains(lower, "1m") || strings.Contains(lower, "vision"):
+		return 1000000
+	case strings.Contains(lower, "32k"):
+		return 32000
+	case strings.Contains(lower, "64k"):
+		return 64000
+	case strings.Contains(lower, "200k") || strings.Contains(lower, "256k"):
+		return 200000
+	default:
+		// DeepSeek standard default context window (128K tokens)
+		return 128000
+	}
 }
 
 // FetchModels queries session/modelCatalog from the given client.

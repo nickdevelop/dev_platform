@@ -1105,6 +1105,62 @@ describe('SessionChatPanel conversation layout', () => {
     expect(line.attributes('title')).toContain('↓2.0k')
   })
 
+  it('shows context usage with dynamically reported session contextLimit when model catalog limit is absent', async () => {
+    const history = {
+      events: [
+        {
+          sequence: 1,
+          type: 'message',
+          message: { role: 'assistant', text: 'hi', final: true, usage: { input: 8000, output: 2000 } },
+        },
+      ],
+      truncated: false,
+    }
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/git-info')) return { status: 200, json: async () => ({ isGit: false }) } as Response
+      if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+      if (url.endsWith('/continue')) {
+        return { status: 200, json: async () => session('sess-1') } as Response
+      }
+      return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    useAgentsStore().instances = [instance('running')]
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // Model in catalog has NO contextLimit (like unadvertised dsh modelCatalog)
+    rememberModels(1, 'opencode-v2', [{ id: 'mock/model-unadvertised', name: 'Model Unadvertised', provider: 'mock' }])
+    const sessionsStore = useSessionsStore()
+    sessionsStore.setAutoModel('sess-1', 'mock/model-unadvertised')
+    await flushPromises()
+
+    // Without a limit, context-usage meter is not visible
+    expect(wrapper.find('[data-test="context-usage"]').exists()).toBe(false)
+
+    // Backend reports dynamic contextLimit via lifecycle event (e.g. from contextPressure projection or request/context)
+    sessionsStore.applyLifecycle('sess-1', {
+      sequence: 2,
+      timestamp: new Date().toISOString(),
+      backend: 'deepseek',
+      instanceId: 'inst-1',
+      sessionId: 'sess-1',
+      type: 'lifecycle',
+      lifecycle: {
+        state: 'context_window',
+        contextLimit: 100000,
+      },
+    })
+    await flushPromises()
+
+    // Now context-usage meter appears with 10% (10000 / 100000)
+    const line = wrapper.find('[data-test="context-usage"]')
+    expect(line.exists()).toBe(true)
+    expect(line.text()).toContain('10%')
+    expect(line.attributes('title')).toContain('10% · 10k / 100k')
+  })
+
   it('deletes the session after a confirmation and returns to the project', async () => {
     stubSessionList([session('sess-1')])
     const store = useSessionsStore()

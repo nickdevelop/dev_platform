@@ -73,11 +73,14 @@ func (t EventType) Valid() bool {
 // "text_started"); turn boundaries are EventTurn, never lifecycle. Detail
 // carries human-readable context. Usage, when set, reports the turn's token
 // usage (opencode's step finish); the workbench uses it as the freshest
-// context anchor.
+// context anchor. ContextLimit, when set, reports the active model's dynamic
+// context window in tokens (e.g. from session projections or context events);
+// the workbench uses it as a dynamic context capacity limit.
 type LifecycleEvent struct {
-	State  string        `json:"state"`
-	Detail string        `json:"detail,omitempty"`
-	Usage  *MessageUsage `json:"usage,omitempty"`
+	State        string        `json:"state"`
+	Detail       string        `json:"detail,omitempty"`
+	Usage        *MessageUsage `json:"usage,omitempty"`
+	ContextLimit *int          `json:"contextLimit,omitempty"`
 }
 
 // TurnPhase names the two boundaries of a turn.

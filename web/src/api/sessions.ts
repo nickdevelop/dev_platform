@@ -157,6 +157,9 @@ export interface LifecyclePayload {
   // Exact turn token usage from the backend (opencode step finish), used as
   // the freshest context anchor. Absent on every other lifecycle event.
   usage?: MessageUsage
+  // Dynamic context window in tokens reported by the backend (e.g. from session
+  // projections or context events).
+  contextLimit?: number
 }
 
 // Mirrors agents.TurnPayload: a turn boundary. The started and ended events of

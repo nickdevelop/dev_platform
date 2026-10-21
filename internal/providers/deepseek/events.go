@@ -11,10 +11,11 @@ import (
 
 // SessionEventNormalizer translates dsh session/follow frames and $events into platform NormalizedEvents.
 type SessionEventNormalizer struct {
-	instanceID    string
-	sessionID     string
-	currentTurnID string
-	sequence      uint64
+	instanceID           string
+	sessionID            string
+	currentTurnID        string
+	currentContextWindow *int
+	sequence             uint64
 }
 
 // NewSessionEventNormalizer creates a normalizer for a given instance and session.
@@ -38,6 +39,45 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 	var events []agents.NormalizedEvent
 
 	switch frameType {
+	case "snapshot":
+		// Handle opening snapshot projections: contextPressure and tokenUsage
+		if projMap, ok := raw["projections"].(map[string]any); ok {
+			values, _ := projMap["values"].(map[string]any)
+			if values != nil {
+				if cp, ok := values["contextPressure"].(map[string]any); ok {
+					if cw := intValue(cp["contextWindow"]); cw > 0 {
+						n.currentContextWindow = &cw
+					}
+				}
+				var usage *agents.MessageUsage
+				if tu, ok := values["tokenUsage"].(map[string]any); ok {
+					u := &agents.MessageUsage{
+						Input:      intValue(tu["uncachedInputTokens"]),
+						Output:     intValue(tu["outputTokens"]),
+						CacheRead:  intValue(tu["cacheReadTokens"]),
+						CacheWrite: intValue(tu["cacheWriteTokens"]),
+					}
+					if u.Total() > 0 {
+						usage = u
+					}
+				} else if cp, ok := values["contextPressure"].(map[string]any); ok {
+					pt := intValue(cp["pressureTokens"])
+					if pt > 0 {
+						usage = &agents.MessageUsage{Input: pt}
+					}
+				}
+				if n.currentContextWindow != nil || usage != nil {
+					events = append(events, n.newEvent(now, agents.EventLifecycle, &agents.NormalizedEvent{
+						Lifecycle: &agents.LifecycleEvent{
+							State:        "context_anchor",
+							Usage:        usage,
+							ContextLimit: n.currentContextWindow,
+						},
+					}))
+				}
+			}
+		}
+
 	case "assistant-stream":
 		// Handle streaming text chunks and reasoning deltas
 		frame, ok := raw["frame"].(map[string]any)
@@ -117,8 +157,37 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 				}))
 			}
 
+		case "request/context":
+			if cw := intValue(evData["contextWindow"]); cw > 0 {
+				n.currentContextWindow = &cw
+				events = append(events, n.newEvent(now, agents.EventLifecycle, &agents.NormalizedEvent{
+					Lifecycle: &agents.LifecycleEvent{
+						State:        "context_window",
+						ContextLimit: &cw,
+					},
+				}))
+			}
+
 		case "assistant/message", "assistant/attempt":
-			// 1. Content blocks (reasoning and text)
+			// 1. Token usage report
+			var usage *agents.MessageUsage
+			if usageMap, ok := evData["usage"].(map[string]any); ok {
+				inputTokens := intValue(usageMap["inputTokens"])
+				outputTokens := intValue(usageMap["outputTokens"])
+				cacheRead := intValue(usageMap["cacheReadTokens"])
+				cacheWrite := intValue(usageMap["cacheWriteTokens"])
+				reasoningTokens := intValue(usageMap["reasoningTokens"])
+
+				usage = &agents.MessageUsage{
+					Input:      inputTokens,
+					Output:     outputTokens,
+					Reasoning:  reasoningTokens,
+					CacheRead:  cacheRead,
+					CacheWrite: cacheWrite,
+				}
+			}
+
+			// 2. Content blocks (reasoning and text)
 			if msg, ok := evData["message"].(map[string]any); ok && msg != nil {
 				if contentArr, ok := msg["content"].([]any); ok {
 					for _, block := range contentArr {
@@ -138,6 +207,7 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 										Role:  "assistant",
 										Text:  bText,
 										Final: true,
+										Usage: usage,
 									},
 								}))
 							}
@@ -149,29 +219,18 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 							Role:  "assistant",
 							Text:  strContent,
 							Final: true,
+							Usage: usage,
 						},
 					}))
 				}
 			}
 
-			// 2. Token usage report
-			if usageMap, ok := evData["usage"].(map[string]any); ok {
-				inputTokens := intValue(usageMap["inputTokens"])
-				outputTokens := intValue(usageMap["outputTokens"])
-				cacheRead := intValue(usageMap["cacheReadTokens"])
-				cacheWrite := intValue(usageMap["cacheWriteTokens"])
-
-				usage := &agents.MessageUsage{
-					Input:      inputTokens,
-					Output:     outputTokens,
-					CacheRead:  cacheRead,
-					CacheWrite: cacheWrite,
-				}
-
+			if usage != nil {
 				events = append(events, n.newEvent(now, agents.EventLifecycle, &agents.NormalizedEvent{
 					Lifecycle: &agents.LifecycleEvent{
-						State: "step_finished",
-						Usage: usage,
+						State:        "step_finished",
+						Usage:        usage,
+						ContextLimit: n.currentContextWindow,
 					},
 				}))
 			}
@@ -317,4 +376,35 @@ func intValue(v any) int {
 		return i
 	}
 	return 0
+}
+
+// NormalizeProjection converts a projection update from session/control into zero or more NormalizedEvents.
+func (n *SessionEventNormalizer) NormalizeProjection(key string, val any) []agents.NormalizedEvent {
+	if key != "contextPressure" {
+		return nil
+	}
+	cp, ok := val.(map[string]any)
+	if !ok || cp == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	var events []agents.NormalizedEvent
+	if cw := intValue(cp["contextWindow"]); cw > 0 {
+		n.currentContextWindow = &cw
+	}
+	pt := intValue(cp["pressureTokens"])
+	var usage *agents.MessageUsage
+	if pt > 0 {
+		usage = &agents.MessageUsage{Input: pt}
+	}
+	if n.currentContextWindow != nil || usage != nil {
+		events = append(events, n.newEvent(now, agents.EventLifecycle, &agents.NormalizedEvent{
+			Lifecycle: &agents.LifecycleEvent{
+				State:        "context_pressure",
+				Usage:        usage,
+				ContextLimit: n.currentContextWindow,
+			},
+		}))
+	}
+	return events
 }
