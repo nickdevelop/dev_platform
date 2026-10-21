@@ -1399,4 +1399,36 @@ describe('SessionChatPanel scroll following', () => {
     await flushPromises()
     expect(freshWrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe('')
   })
+
+  it('safely persists draft on unmount and isolates completely when mounting different sessions', async () => {
+    stubSessionList([session('sess-alpha'), session('sess-beta')])
+
+    // 1. Mount session Alpha, type input, then unmount (e.g. user navigates away)
+    const wrapperAlpha = mountPanel('sess-alpha')
+    await flushPromises()
+
+    await wrapperAlpha.find<HTMLTextAreaElement>('#message-text').setValue('Work in progress on Alpha')
+    await flushPromises()
+
+    wrapperAlpha.unmount()
+
+    // 2. Mount session Beta (fresh instance)
+    const wrapperBeta = mountPanel('sess-beta')
+    await flushPromises()
+
+    // Input MUST be empty, never carrying Alpha's text
+    expect(wrapperBeta.find<HTMLTextAreaElement>('#message-text').element.value).toBe('')
+
+    // Type on Beta
+    await wrapperBeta.find<HTMLTextAreaElement>('#message-text').setValue('Beta command')
+    await flushPromises()
+    wrapperBeta.unmount()
+
+    // 3. Mount session Alpha again (fresh instance)
+    const wrapperAlphaAgain = mountPanel('sess-alpha')
+    await flushPromises()
+    expect(wrapperAlphaAgain.find<HTMLTextAreaElement>('#message-text').element.value).toBe(
+      'Work in progress on Alpha',
+    )
+  })
 })

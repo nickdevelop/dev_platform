@@ -111,4 +111,20 @@ describe('useDraftsStore', () => {
       expect(store.taskCreateDraft.projectId).toBeNull()
     })
   })
+
+  describe('newSessionDrafts per project isolation', () => {
+    it('isolates new-session draft across different projects', () => {
+      const store = useDraftsStore()
+      store.setNewSessionDraft({ messageText: 'Draft for Project 1' }, 1)
+      store.setNewSessionDraft({ messageText: 'Draft for Project 2' }, 2)
+
+      expect(store.getNewSessionDraft(1).messageText).toBe('Draft for Project 1')
+      expect(store.getNewSessionDraft(2).messageText).toBe('Draft for Project 2')
+      expect(store.getNewSessionDraft(3).messageText).toBe('')
+
+      store.clearNewSessionDraft(1)
+      expect(store.getNewSessionDraft(1).messageText).toBe('')
+      expect(store.getNewSessionDraft(2).messageText).toBe('Draft for Project 2')
+    })
+  })
 })

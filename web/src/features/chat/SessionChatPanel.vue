@@ -55,6 +55,9 @@ const interactions = useInteractionsStore()
 const draftsStore = useDraftsStore()
 const router = useRouter()
 
+let currentSessionId = props.sessionId
+let isRestoringDraft = false
+
 const initialSessionDraft = draftsStore.getSessionDraft(props.sessionId)
 
 interface OpenFileTab {
@@ -217,13 +220,17 @@ const attachedImages = ref<ImageAttachment[]>(
 )
 
 watch(messageText, (val) => {
-  draftsStore.setSessionDraft(props.sessionId, { messageText: val })
+  if (isRestoringDraft) return
+  if (!currentSessionId) return
+  draftsStore.setSessionDraft(currentSessionId, { messageText: val })
 })
 
 watch(
   attachedImages,
   (val) => {
-    draftsStore.setSessionDraft(props.sessionId, { attachedImages: val })
+    if (isRestoringDraft) return
+    if (!currentSessionId) return
+    draftsStore.setSessionDraft(currentSessionId, { attachedImages: val })
   },
   { deep: true },
 )
@@ -653,16 +660,22 @@ watch(() => [props.projectId, props.sessionId], open)
 watch(
   () => props.sessionId,
   (newSessionId, oldSessionId) => {
-    if (oldSessionId && oldSessionId !== newSessionId) {
-      draftsStore.setSessionDraft(oldSessionId, {
+    const prevId = oldSessionId || currentSessionId
+    if (prevId && prevId !== newSessionId) {
+      draftsStore.setSessionDraft(prevId, {
         messageText: messageText.value,
         attachedImages: attachedImages.value,
       })
     }
+    currentSessionId = newSessionId
     if (newSessionId) {
+      isRestoringDraft = true
       const draft = draftsStore.getSessionDraft(newSessionId)
       messageText.value = draft.messageText || ''
       attachedImages.value = Array.isArray(draft.attachedImages) ? [...draft.attachedImages] : []
+      void nextTick(() => {
+        isRestoringDraft = false
+      })
     }
     providerSlashSource.clearCache(newSessionId)
   },
@@ -688,6 +701,12 @@ onBeforeUnmount(() => {
   // sessions' streams. The session's own subscriptions stay open so returning
   // via a tab is instant; they are released when the tab closes or the session
   // is deleted.
+  if (currentSessionId && !isRestoringDraft) {
+    draftsStore.setSessionDraft(currentSessionId, {
+      messageText: messageText.value,
+      attachedImages: attachedImages.value,
+    })
+  }
 })
 // A finished turn may have switched branches (the agent commits) or consumed
 // context, so the workdir row refreshes exactly then instead of polling.

@@ -651,6 +651,7 @@ watch(
           <component
             :is="Component"
             v-if="Component"
+            :key="route.fullPath"
             @manage="openManage"
             @created="onCreated"
           />

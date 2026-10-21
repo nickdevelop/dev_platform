@@ -31,7 +31,13 @@ export interface TaskCreateDraft {
   customCronExpr: string
 }
 
-const NEW_SESSION_STORAGE_KEY = 'dev-platform-new-session-draft'
+interface PersistedNewSessionDrafts {
+  drafts: Record<string, NewSessionDraft>
+  lastProjectId: number | null
+}
+
+const NEW_SESSION_STORAGE_KEY = 'dev-platform-new-session-drafts-v2'
+const LEGACY_NEW_SESSION_STORAGE_KEY = 'dev-platform-new-session-draft'
 const SESSION_DRAFTS_STORAGE_KEY = 'dev-platform-session-drafts'
 const TASK_CREATE_STORAGE_KEY = 'dev-platform-task-create-draft'
 
@@ -62,8 +68,8 @@ function clearPersisted(key: string) {
   }
 }
 
-const defaultNewSessionDraft = (): NewSessionDraft => ({
-  projectId: null,
+const defaultNewSessionDraft = (projectId: number | null = null): NewSessionDraft => ({
+  projectId,
   backend: '',
   model: '',
   promptId: '',
@@ -86,38 +92,137 @@ const defaultTaskCreateDraft = (): TaskCreateDraft => ({
   customCronExpr: '0 9 * * *',
 })
 
+function draftKeyForProject(projectId?: number | null): string {
+  return projectId !== null && projectId !== undefined ? `p-${projectId}` : 'global'
+}
+
+function loadInitialNewSessionDrafts(): { drafts: Record<string, NewSessionDraft>; lastProjectId: number | null } {
+  const stored = loadPersistedJson<PersistedNewSessionDrafts | Record<string, NewSessionDraft> | null>(
+    NEW_SESSION_STORAGE_KEY,
+    null,
+  )
+  if (stored && typeof stored === 'object') {
+    if ('drafts' in stored && typeof (stored as PersistedNewSessionDrafts).drafts === 'object') {
+      const persisted = stored as PersistedNewSessionDrafts
+      return {
+        drafts: persisted.drafts ?? {},
+        lastProjectId: persisted.lastProjectId ?? null,
+      }
+    }
+    // If stored directly as record
+    return { drafts: stored as Record<string, NewSessionDraft>, lastProjectId: null }
+  }
+  // Fallback to legacy single draft if present
+  const legacy = loadPersistedJson<NewSessionDraft | null>(LEGACY_NEW_SESSION_STORAGE_KEY, null)
+  if (legacy && typeof legacy === 'object') {
+    const k = draftKeyForProject(legacy.projectId)
+    return {
+      drafts: { [k]: legacy },
+      lastProjectId: legacy.projectId ?? null,
+    }
+  }
+  return { drafts: {}, lastProjectId: null }
+}
+
 export const useDraftsStore = defineStore('drafts', {
-  state: () => ({
-    newSessionDraft: loadPersistedJson<NewSessionDraft>(
-      NEW_SESSION_STORAGE_KEY,
-      defaultNewSessionDraft(),
-    ),
-    sessionDrafts: loadPersistedJson<Record<string, SessionDraft>>(
-      SESSION_DRAFTS_STORAGE_KEY,
-      {},
-    ),
-    taskCreateDraft: loadPersistedJson<TaskCreateDraft>(
-      TASK_CREATE_STORAGE_KEY,
-      defaultTaskCreateDraft(),
-    ),
-  }),
+  state: () => {
+    const initialNewSession = loadInitialNewSessionDrafts()
+    return {
+      newSessionDrafts: initialNewSession.drafts,
+      lastNewSessionProjectId: initialNewSession.lastProjectId,
+      sessionDrafts: loadPersistedJson<Record<string, SessionDraft>>(
+        SESSION_DRAFTS_STORAGE_KEY,
+        {},
+      ),
+      taskCreateDraft: loadPersistedJson<TaskCreateDraft>(
+        TASK_CREATE_STORAGE_KEY,
+        defaultTaskCreateDraft(),
+      ),
+    }
+  },
+
+  getters: {
+    // Backward compatibility getter: returns the active/last edited new-session draft
+    newSessionDraft: (state): NewSessionDraft => {
+      if (state.lastNewSessionProjectId !== null && state.lastNewSessionProjectId !== undefined) {
+        const activeKey = draftKeyForProject(state.lastNewSessionProjectId)
+        if (state.newSessionDrafts[activeKey]) {
+          return state.newSessionDrafts[activeKey]
+        }
+      }
+      if (state.newSessionDrafts['global']) {
+        return state.newSessionDrafts['global']
+      }
+      // If any project draft exists, return the first one
+      const keys = Object.keys(state.newSessionDrafts)
+      if (keys.length > 0 && state.newSessionDrafts[keys[0]]) {
+        return state.newSessionDrafts[keys[0]]
+      }
+      return defaultNewSessionDraft(null)
+    },
+  },
 
   actions: {
-    // --- New Session Draft Actions ---
-    setNewSessionDraft(patch: Partial<NewSessionDraft>) {
-      this.newSessionDraft = {
-        ...this.newSessionDraft,
+    // --- New Session Draft Actions (Per-Project & Global) ---
+    getNewSessionDraft(projectId?: number | null): NewSessionDraft {
+      const key = draftKeyForProject(projectId)
+      return (
+        this.newSessionDrafts[key] ??
+        defaultNewSessionDraft(projectId ?? null)
+      )
+    },
+
+    setNewSessionDraft(patch: Partial<NewSessionDraft>, explicitProjectId?: number | null) {
+      const targetProjectId =
+        explicitProjectId !== undefined
+          ? explicitProjectId
+          : patch.projectId !== undefined
+            ? patch.projectId
+            : this.lastNewSessionProjectId
+
+      const key = draftKeyForProject(targetProjectId)
+      const current = this.getNewSessionDraft(targetProjectId)
+      const updated: NewSessionDraft = {
+        ...current,
         ...patch,
+        projectId: targetProjectId ?? null,
       }
-      persistJson(NEW_SESSION_STORAGE_KEY, this.newSessionDraft)
+
+      this.newSessionDrafts = {
+        ...this.newSessionDrafts,
+        [key]: updated,
+      }
+      if (targetProjectId !== null && targetProjectId !== undefined) {
+        this.lastNewSessionProjectId = targetProjectId
+      }
+
+      persistJson(NEW_SESSION_STORAGE_KEY, {
+        drafts: this.newSessionDrafts,
+        lastProjectId: this.lastNewSessionProjectId,
+      })
     },
 
-    clearNewSessionDraft() {
-      this.newSessionDraft = defaultNewSessionDraft()
-      clearPersisted(NEW_SESSION_STORAGE_KEY)
+    clearNewSessionDraft(projectId?: number | null) {
+      const targetProjectId =
+        projectId !== undefined ? projectId : this.lastNewSessionProjectId
+      const key = draftKeyForProject(targetProjectId)
+
+      if (this.newSessionDrafts[key]) {
+        const next = { ...this.newSessionDrafts }
+        delete next[key]
+        this.newSessionDrafts = next
+      }
+      if (this.lastNewSessionProjectId === targetProjectId || projectId === undefined) {
+        this.lastNewSessionProjectId = null
+      }
+
+      persistJson(NEW_SESSION_STORAGE_KEY, {
+        drafts: this.newSessionDrafts,
+        lastProjectId: this.lastNewSessionProjectId,
+      })
     },
 
-    // --- Existing Session Draft Actions ---
+    // --- Existing Session Draft Actions (Per-Session) ---
     getSessionDraft(sessionId: string): SessionDraft {
       return (
         this.sessionDrafts[sessionId] ?? {

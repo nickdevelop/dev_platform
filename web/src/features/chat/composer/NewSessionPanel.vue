@@ -41,14 +41,16 @@ const promptsStore = usePromptsStore()
 const draftsStore = useDraftsStore()
 const router = useRouter()
 
-const initialDraft = draftsStore.newSessionDraft
-
 const initialProjectId =
   props.projectId !== undefined && props.projectId !== null
     ? Number(props.projectId)
-    : initialDraft.projectId !== null && initialDraft.projectId !== undefined
-      ? Number(initialDraft.projectId)
+    : draftsStore.newSessionDraft.projectId !== null && draftsStore.newSessionDraft.projectId !== undefined
+      ? Number(draftsStore.newSessionDraft.projectId)
       : null
+
+const initialDraft = draftsStore.getNewSessionDraft(initialProjectId)
+
+let isRestoringDraft = false
 
 const selectedPromptId = ref<number | ''>(initialDraft.promptId ?? '')
 const selectedPrompt = computed(() =>
@@ -77,8 +79,47 @@ watch(
   { immediate: true },
 )
 
-watch(selectedProjectId, (newId) => {
-  draftsStore.setNewSessionDraft({ projectId: newId })
+const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
+const messageText = ref(initialDraft.messageText ?? '')
+const selectedModel = ref(initialDraft.model ?? '')
+const modelOk = ref(false)
+const creating = ref(false)
+const composerBox = ref<HTMLElement | null>(null)
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const toolNotice = ref('')
+
+watch(selectedProjectId, (newId, oldId) => {
+  if (oldId && oldId !== newId) {
+    draftsStore.setNewSessionDraft(
+      {
+        projectId: oldId,
+        backend: selectedBackend.value,
+        model: selectedModel.value,
+        promptId: selectedPromptId.value,
+        messageText: messageText.value,
+        attachedImages: attachedImages.value,
+      },
+      oldId,
+    )
+  }
+
+  if (newId) {
+    isRestoringDraft = true
+    const targetDraft = draftsStore.getNewSessionDraft(newId)
+    messageText.value = targetDraft.messageText || ''
+    const fallbackBackend =
+      targetDraft.backend ||
+      projectsStore.byId(Number(newId))?.defaultBackend ||
+      (selectableBackends.value.length > 0 ? selectableBackends.value[0].backend : '')
+    selectedBackend.value = fallbackBackend
+    selectedModel.value = targetDraft.model || ''
+    selectedPromptId.value = targetDraft.promptId || ''
+    attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
+    void nextTick(() => {
+      isRestoringDraft = false
+    })
+  }
+
   if (newId && Number(newId) !== Number(props.projectId)) {
     if (router && typeof router.replace === 'function') {
       void router.replace({
@@ -89,29 +130,24 @@ watch(selectedProjectId, (newId) => {
   }
 })
 
-const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
-const messageText = ref(initialDraft.messageText ?? '')
-const selectedModel = ref(initialDraft.model ?? '')
-const modelOk = ref(false)
-const creating = ref(false)
-const composerBox = ref<HTMLElement | null>(null)
-const textareaRef = ref<HTMLTextAreaElement | null>(null)
-const toolNotice = ref('')
-
 watch(messageText, (val) => {
-  draftsStore.setNewSessionDraft({ messageText: val })
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ messageText: val }, selectedProjectId.value)
 })
 
 watch(selectedBackend, (val) => {
-  draftsStore.setNewSessionDraft({ backend: val })
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ backend: val }, selectedProjectId.value)
 })
 
 watch(selectedModel, (val) => {
-  draftsStore.setNewSessionDraft({ model: val })
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ model: val }, selectedProjectId.value)
 })
 
 watch(selectedPromptId, (val) => {
-  draftsStore.setNewSessionDraft({ promptId: val })
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ promptId: val }, selectedProjectId.value)
 })
 
 const selectedCapabilities = computed(() =>
@@ -173,7 +209,8 @@ const attachedImages = ref<ImageAttachment[]>(
 watch(
   attachedImages,
   (val) => {
-    draftsStore.setNewSessionDraft({ attachedImages: val })
+    if (isRestoringDraft) return
+    draftsStore.setNewSessionDraft({ attachedImages: val }, selectedProjectId.value)
   },
   { deep: true },
 )
@@ -427,7 +464,7 @@ async function createSession() {
   })
   creating.value = false
   if (created) {
-    draftsStore.clearNewSessionDraft()
+    draftsStore.clearNewSessionDraft(targetProjectId)
     emit('created', created.id, targetProjectId)
   }
 }

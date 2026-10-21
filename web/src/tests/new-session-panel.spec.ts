@@ -526,4 +526,60 @@ describe('NewSessionPanel', () => {
 
     expect(freshWrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe('')
   })
+
+  it('isolates input text when switching between different projects in new session', async () => {
+    setActivePinia(createPinia())
+    const agents = useAgentsStore()
+    agents.backends = [
+      {
+        backend: 'opencode-v2',
+        capabilities: capabilities(),
+        label: 'OpenCode',
+        order: 1,
+        serviceSupported: true,
+      },
+    ]
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: '项目一', path: '/path/1', defaultBackend: 'opencode-v2' },
+      { id: 2, name: '项目二', path: '/path/2', defaultBackend: 'opencode-v2' },
+    ] as unknown as Project[]
+
+    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+    await flushPromises()
+
+    // 1. User types in Project 1
+    const textarea = wrapper.find<HTMLTextAreaElement>('#first-message')
+    await textarea.setValue('Task description specifically for Project 1')
+    await flushPromises()
+
+    // 2. User switches project selector to Project 2
+    const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
+    await select.setValue('2')
+    await flushPromises()
+
+    // Text must NOT be leaked/carried over to Project 2!
+    expect(wrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe('')
+
+    // 3. User types in Project 2
+    await wrapper.find<HTMLTextAreaElement>('#first-message').setValue('Task for Project 2')
+    await flushPromises()
+
+    // 4. User switches back to Project 1
+    await select.setValue('1')
+    await flushPromises()
+
+    // Project 1 text is accurately restored
+    expect(wrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe(
+      'Task description specifically for Project 1',
+    )
+
+    // 5. User switches back to Project 2
+    await select.setValue('2')
+    await flushPromises()
+    expect(wrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe(
+      'Task for Project 2',
+    )
+  })
 })
