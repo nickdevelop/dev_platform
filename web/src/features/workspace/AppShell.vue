@@ -18,6 +18,7 @@ import { useSessionsStore } from '../../stores/sessions'
 import { useOpenTabsStore, tabKey, type OpenTab } from '../../stores/openTabs'
 import { useSettingsStore } from '../../stores/settings'
 import { useTasksStore } from '../../stores/tasks'
+import { useDraftsStore } from '../../stores/drafts'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
@@ -38,6 +39,7 @@ const sessions = useSessionsStore()
 const openTabs = useOpenTabsStore()
 const settings = useSettingsStore()
 const tasksStore = useTasksStore()
+const drafts = useDraftsStore()
 
 const search = ref('')
 const ready = ref(false)
@@ -343,7 +345,12 @@ function selectTab(tab: OpenTab) {
     return
   }
   if (tab.kind === 'new-session') {
-    void router.push({ name: 'session-new-global' })
+    const draft = drafts.newSessionDraft
+    if (draft.projectId) {
+      void router.push({ name: 'session-new', params: { projectId: String(draft.projectId) } })
+    } else {
+      void router.push({ name: 'session-new-global' })
+    }
     return
   }
   if (tab.kind === 'session') {

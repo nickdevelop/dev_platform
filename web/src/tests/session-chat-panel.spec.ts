@@ -1325,4 +1325,78 @@ describe('SessionChatPanel scroll following', () => {
     expect(plusBtn.text()).toBe('+')
     expect(plusBtn.attributes('disabled')).toBeUndefined()
   })
+
+  it('isolates composer draft message per session and restores when switching back', async () => {
+    stubSessionList([session('sess-1'), session('sess-2')])
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    // 1. Type message into session 1
+    const textarea = wrapper.find<HTMLTextAreaElement>('#message-text')
+    await textarea.setValue('Unfinished thought for session 1')
+    await flushPromises()
+
+    // 2. Switch to session 2 (e.g. clicking another session tab)
+    await wrapper.setProps({ sessionId: 'sess-2' })
+    await flushPromises()
+
+    // Draft from session 1 must NOT leak into session 2
+    expect(wrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe('')
+
+    // 3. Type into session 2
+    await wrapper.find<HTMLTextAreaElement>('#message-text').setValue('Note for session 2')
+    await flushPromises()
+
+    // 4. Switch back to session 1
+    await wrapper.setProps({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    // Session 1 draft is accurately restored
+    expect(wrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe(
+      'Unfinished thought for session 1',
+    )
+
+    // 5. Switch back to session 2
+    await wrapper.setProps({ sessionId: 'sess-2' })
+    await flushPromises()
+
+    // Session 2 draft is accurately restored
+    expect(wrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe(
+      'Note for session 2',
+    )
+  })
+
+  it('clears session draft after message is sent successfully', async () => {
+    stubSessionList([session('sess-1')])
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/messages')) {
+        return { status: 200, json: async () => session('sess-1') } as Response
+      }
+      if (url.endsWith('/history')) {
+        return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+      }
+      if (url.endsWith('/continue')) {
+        return { status: 200, json: async () => session('sess-1') } as Response
+      }
+      return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    await wrapper.find<HTMLTextAreaElement>('#message-text').setValue('Ready to send')
+    await flushPromises()
+
+    await wrapper.find('form.send').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe('')
+
+    // Remount to verify draft was truly cleared in store
+    wrapper.unmount()
+    const freshWrapper = mountPanel('sess-1')
+    await flushPromises()
+    expect(freshWrapper.find<HTMLTextAreaElement>('#message-text').element.value).toBe('')
+  })
 })

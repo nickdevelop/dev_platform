@@ -441,4 +441,89 @@ describe('NewSessionPanel', () => {
     expect(select.element.value).toBe('')
     expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
   })
+
+  it('preserves user input and selected project across remounts via draftsStore (prevents resetting to first project)', async () => {
+    setActivePinia(createPinia())
+    const agents = useAgentsStore()
+    agents.backends = [
+      {
+        backend: 'opencode-v2',
+        capabilities: capabilities(),
+        label: 'OpenCode',
+        order: 1,
+        serviceSupported: true,
+      },
+    ]
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: '项目一（首个项目）', path: '/path/1', defaultBackend: 'opencode-v2' },
+      { id: 2, name: '项目二（用户目标项目）', path: '/path/2', defaultBackend: 'opencode-v2' },
+    ] as unknown as Project[]
+
+    // 1. First mount: user opens new session without projectId prop (global new session /sessions/new)
+    const wrapper1 = mount(NewSessionPanel, {})
+    await flushPromises()
+
+    const select1 = wrapper1.find<HTMLSelectElement>('[data-test="project-select"]')
+    // User switches project to project 2 (not project 1)
+    await select1.setValue('2')
+    // User types message
+    await wrapper1.find('#first-message').setValue('Important question for Project 2')
+    await flushPromises()
+
+    // 2. Simulate user switching to another session tab or another menu: wrapper1 unmounts
+    wrapper1.unmount()
+
+    // 3. User switches back to new session tab (/sessions/new): NewSessionPanel remounts
+    const wrapper2 = mount(NewSessionPanel, {})
+    await flushPromises()
+
+    const select2 = wrapper2.find<HTMLSelectElement>('[data-test="project-select"]')
+    const textarea2 = wrapper2.find<HTMLTextAreaElement>('#first-message')
+
+    // Crucial assertion: the project MUST remain Project 2, NOT reset to Project 1!
+    expect(select2.element.value).toBe('2')
+    // Crucial assertion: message text must be preserved!
+    expect(textarea2.element.value).toBe('Important question for Project 2')
+  })
+
+  it('clears draft after session is successfully created', async () => {
+    setActivePinia(createPinia())
+    const agents = useAgentsStore()
+    agents.backends = [
+      {
+        backend: 'opencode-v2',
+        capabilities: capabilities(),
+        label: 'OpenCode',
+        order: 1,
+        serviceSupported: true,
+      },
+    ]
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 2, name: '项目二', path: '/path/2', defaultBackend: 'opencode-v2' },
+    ] as unknown as Project[]
+    const sessions = useSessionsStore()
+    vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-created' } as never)
+
+    const wrapper = mount(NewSessionPanel, { props: { projectId: 2 } })
+    await flushPromises()
+
+    await wrapper.find('#first-message').setValue('Message to send')
+    await flushPromises()
+
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('created')).toBeTruthy()
+
+    // Now remount NewSessionPanel: draft should be empty
+    wrapper.unmount()
+    const freshWrapper = mount(NewSessionPanel, { props: { projectId: 2 } })
+    await flushPromises()
+
+    expect(freshWrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe('')
+  })
 })

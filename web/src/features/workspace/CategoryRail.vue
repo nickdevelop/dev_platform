@@ -13,6 +13,7 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { tabKey } from '../../stores/openTabs'
 import { useOpenTabsStore } from '../../stores/openTabs'
+import { useDraftsStore } from '../../stores/drafts'
 
 defineProps<{
   // Whether the middle project/task column is currently collapsed.
@@ -32,6 +33,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const openTabs = useOpenTabsStore()
+const draftsStore = useDraftsStore()
 
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The prompts routes declare `meta.prompts` or start with /prompts.
@@ -57,6 +59,10 @@ const projectDestination = computed(() => {
         : null) ?? workspaceTabs[workspaceTabs.length - 1]
 
     if (preferred.kind === 'new-session') {
+      const draft = draftsStore.newSessionDraft
+      if (draft.projectId) {
+        return { name: 'session-new', params: { projectId: String(draft.projectId) } }
+      }
       return { name: 'session-new-global' }
     }
     if (preferred.kind === 'project-settings') {

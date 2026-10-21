@@ -14,6 +14,7 @@ import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
 import { usePromptsStore } from '../../../stores/prompts'
+import { useDraftsStore } from '../../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import ModelSelect from './ModelSelect.vue'
@@ -37,9 +38,19 @@ const agents = useAgentsStore()
 const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
 const promptsStore = usePromptsStore()
+const draftsStore = useDraftsStore()
 const router = useRouter()
 
-const selectedPromptId = ref<number | ''>('')
+const initialDraft = draftsStore.newSessionDraft
+
+const initialProjectId =
+  props.projectId !== undefined && props.projectId !== null
+    ? Number(props.projectId)
+    : initialDraft.projectId !== null && initialDraft.projectId !== undefined
+      ? Number(initialDraft.projectId)
+      : null
+
+const selectedPromptId = ref<number | ''>(initialDraft.promptId ?? '')
 const selectedPrompt = computed(() =>
   selectedPromptId.value !== '' ? promptsStore.byId(Number(selectedPromptId.value)) ?? null : null,
 )
@@ -54,7 +65,7 @@ const textareaPlaceholder = computed(() => {
   return '描述会话，例如：帮我检查构建失败的原因… (输入 / 使用快捷命令，@ 引用文件或会话)'
 })
 
-const selectedProjectId = ref<number | null>(props.projectId ? Number(props.projectId) : null)
+const selectedProjectId = ref<number | null>(initialProjectId)
 
 watch(
   () => props.projectId,
@@ -67,6 +78,7 @@ watch(
 )
 
 watch(selectedProjectId, (newId) => {
+  draftsStore.setNewSessionDraft({ projectId: newId })
   if (newId && Number(newId) !== Number(props.projectId)) {
     if (router && typeof router.replace === 'function') {
       void router.replace({
@@ -77,14 +89,30 @@ watch(selectedProjectId, (newId) => {
   }
 })
 
-const selectedBackend = ref<BackendId | ''>('')
-const messageText = ref('')
-const selectedModel = ref('')
+const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
+const messageText = ref(initialDraft.messageText ?? '')
+const selectedModel = ref(initialDraft.model ?? '')
 const modelOk = ref(false)
 const creating = ref(false)
 const composerBox = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const toolNotice = ref('')
+
+watch(messageText, (val) => {
+  draftsStore.setNewSessionDraft({ messageText: val })
+})
+
+watch(selectedBackend, (val) => {
+  draftsStore.setNewSessionDraft({ backend: val })
+})
+
+watch(selectedModel, (val) => {
+  draftsStore.setNewSessionDraft({ model: val })
+})
+
+watch(selectedPromptId, (val) => {
+  draftsStore.setNewSessionDraft({ promptId: val })
+})
 
 const selectedCapabilities = computed(() =>
   selectedBackend.value === '' ? null : agents.capabilitiesFor(selectedBackend.value),
@@ -138,7 +166,17 @@ function onTextareaKeydown(event: KeyboardEvent) {
 }
 
 // Image and file attachment support
-const attachedImages = ref<ImageAttachment[]>([])
+const attachedImages = ref<ImageAttachment[]>(
+  Array.isArray(initialDraft.attachedImages) ? [...initialDraft.attachedImages] : [],
+)
+
+watch(
+  attachedImages,
+  (val) => {
+    draftsStore.setNewSessionDraft({ attachedImages: val })
+  },
+  { deep: true },
+)
 const previewModalImage = ref<ImageAttachment | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -388,7 +426,10 @@ async function createSession() {
     ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
   })
   creating.value = false
-  if (created) emit('created', created.id, targetProjectId)
+  if (created) {
+    draftsStore.clearNewSessionDraft()
+    emit('created', created.id, targetProjectId)
+  }
 }
 </script>
 

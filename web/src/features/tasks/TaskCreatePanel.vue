@@ -9,6 +9,7 @@ import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { usePromptsStore } from '../../stores/prompts'
 import { useTasksStore } from '../../stores/tasks'
+import { useDraftsStore } from '../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
 
 const props = defineProps<{
@@ -24,27 +25,65 @@ const agentsStore = useAgentsStore()
 const projectsStore = useProjectsStore()
 const promptsStore = usePromptsStore()
 const tasksStore = useTasksStore()
+const draftsStore = useDraftsStore()
+
+const draft = draftsStore.taskCreateDraft
 
 // Task Type: Standard (Session Template) is active; Flow is a visible extension point.
-const selectedTaskType = ref<TaskType>('standard')
+const selectedTaskType = ref<TaskType>(draft.taskType ?? 'standard')
 
 // Basic Task Info
-const title = ref('')
-const description = ref('')
+const title = ref(draft.title ?? '')
+const description = ref(draft.description ?? '')
 
 // Template / Session Info
-const selectedProjectId = ref<number | null>(props.initialProjectId ?? null)
-const selectedBackend = ref<BackendId | ''>('')
-const selectedModel = ref('')
+const selectedProjectId = ref<number | null>(
+  props.initialProjectId ?? (draft.projectId !== null && draft.projectId !== undefined ? Number(draft.projectId) : null),
+)
+const selectedBackend = ref<BackendId | ''>(draft.backend ?? '')
+const selectedModel = ref(draft.model ?? '')
 const modelOk = ref(false)
-const promptText = ref('')
-const selectedPromptId = ref<number | ''>('')
+const promptText = ref(draft.promptText ?? '')
+const selectedPromptId = ref<number | ''>(draft.promptId ?? '')
 
 // Execution Mode / Schedule Info
-const scheduleType = ref<ScheduleType>('manual')
-const scheduledAtDate = ref('')
-const cronShortcut = ref('custom')
-const customCronExpr = ref('0 9 * * *')
+const scheduleType = ref<ScheduleType>(draft.scheduleType ?? 'manual')
+const scheduledAtDate = ref(draft.scheduledAtDate ?? '')
+const cronShortcut = ref(draft.cronShortcut ?? 'custom')
+const customCronExpr = ref(draft.customCronExpr ?? '0 9 * * *')
+
+watch(
+  [
+    selectedTaskType,
+    title,
+    description,
+    selectedProjectId,
+    selectedBackend,
+    selectedModel,
+    promptText,
+    selectedPromptId,
+    scheduleType,
+    scheduledAtDate,
+    cronShortcut,
+    customCronExpr,
+  ],
+  () => {
+    draftsStore.setTaskCreateDraft({
+      taskType: selectedTaskType.value,
+      title: title.value,
+      description: description.value,
+      projectId: selectedProjectId.value,
+      backend: selectedBackend.value,
+      model: selectedModel.value,
+      promptText: promptText.value,
+      promptId: selectedPromptId.value,
+      scheduleType: scheduleType.value,
+      scheduledAtDate: scheduledAtDate.value,
+      cronShortcut: cronShortcut.value,
+      customCronExpr: customCronExpr.value,
+    })
+  },
+)
 
 const creating = ref(false)
 const errorMessage = ref('')
@@ -182,6 +221,7 @@ async function handleCreateTask() {
     })
 
     emit('created', created.id)
+    draftsStore.clearTaskCreateDraft()
   } catch (err: any) {
     errorMessage.value = err.message || '创建任务失败'
   } finally {

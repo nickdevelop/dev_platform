@@ -22,6 +22,7 @@ import { useComposerContext } from './composer/useComposerContext'
 import { useSessionInteractions } from './interactions/useSessionInteractions'
 import { useBottomFollow } from '../../shared/scrollFollow'
 import { useOpenTabsStore } from '../../stores/openTabs'
+import { useDraftsStore } from '../../stores/drafts'
 import type { GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
@@ -51,7 +52,10 @@ const props = defineProps<{ projectId: number; sessionId: string }>()
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const interactions = useInteractionsStore()
+const draftsStore = useDraftsStore()
 const router = useRouter()
+
+const initialSessionDraft = draftsStore.getSessionDraft(props.sessionId)
 
 interface OpenFileTab {
   path: string
@@ -125,7 +129,7 @@ const deleteError = ref('')
 // history replayed, so the pane says what it is waiting for instead of looking
 // like an empty conversation.
 const preparing = ref(false)
-const messageText = ref('')
+const messageText = ref(initialSessionDraft.messageText || '')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const textareaHeight = ref<number | null>(null)
 let isResizing = false
@@ -208,7 +212,22 @@ function onTextareaKeydown(event: KeyboardEvent) {
 }
 
 // Image attachments support
-const attachedImages = ref<ImageAttachment[]>([])
+const attachedImages = ref<ImageAttachment[]>(
+  Array.isArray(initialSessionDraft.attachedImages) ? [...initialSessionDraft.attachedImages] : [],
+)
+
+watch(messageText, (val) => {
+  draftsStore.setSessionDraft(props.sessionId, { messageText: val })
+})
+
+watch(
+  attachedImages,
+  (val) => {
+    draftsStore.setSessionDraft(props.sessionId, { attachedImages: val })
+  },
+  { deep: true },
+)
+
 const previewModalImage = ref<ImageAttachment | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -633,7 +652,18 @@ onMounted(open)
 watch(() => [props.projectId, props.sessionId], open)
 watch(
   () => props.sessionId,
-  (newSessionId) => {
+  (newSessionId, oldSessionId) => {
+    if (oldSessionId && oldSessionId !== newSessionId) {
+      draftsStore.setSessionDraft(oldSessionId, {
+        messageText: messageText.value,
+        attachedImages: attachedImages.value,
+      })
+    }
+    if (newSessionId) {
+      const draft = draftsStore.getSessionDraft(newSessionId)
+      messageText.value = draft.messageText || ''
+      attachedImages.value = Array.isArray(draft.attachedImages) ? [...draft.attachedImages] : []
+    }
     providerSlashSource.clearCache(newSessionId)
   },
 )
@@ -743,6 +773,7 @@ async function send() {
   if (updated) {
     messageText.value = ''
     attachedImages.value = []
+    draftsStore.clearSessionDraft(session.id)
     // Sending means "look here": the view returns to the turn just made even
     // when it had been parked mid-history.
     await nextTick()
@@ -827,6 +858,7 @@ async function removeSession() {
     return
   }
   confirmingDelete.value = false
+  draftsStore.clearSessionDraft(session.id)
   try {
     useOpenTabsStore().closeTab(session.id)
   } catch {
