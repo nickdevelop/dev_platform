@@ -77,14 +77,6 @@ func StartProcess(ctx context.Context, executable string, workDir string, env []
 		return nil, fmt.Errorf("open stderr pipe: %w", err)
 	}
 
-	cmd.Cancel = func() error {
-		if cmd.Process != nil {
-			return platform.New().Process().Terminate(cmd.Process.Pid)
-		}
-		return nil
-	}
-	cmd.WaitDelay = 2 * time.Second
-
 	if err := cmd.Start(); err != nil {
 		_ = stdinPipe.Close()
 		_ = stdoutPipe.Close()
