@@ -107,10 +107,9 @@ function interactionFrame(sequence: number, interaction: Record<string, unknown>
 
 // sessionStream returns the session's live stream: the most recently opened
 // one, since a reconnect replaces the earlier handle.
-function sessionStream(sessionId: string): FakeEventSource {
-  const matches = FakeEventSource.instances.filter((entry) => entry.url.includes(`/sessions/${sessionId}/`))
-  const source = matches[matches.length - 1]
-  if (!source) throw new Error(`no event stream opened for ${sessionId}`)
+function sessionStream(_sessionId?: string): FakeEventSource {
+  const source = FakeEventSource.instances[FakeEventSource.instances.length - 1]
+  if (!source) throw new Error('no event stream opened')
   return source
 }
 
@@ -121,13 +120,31 @@ function stubSessionList(
   list: AgentSession[],
   history: { events: unknown[]; truncated: boolean } = { events: [], truncated: false },
 ) {
-  const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
     if (url.endsWith('/continue')) {
       const id = url.split('/')[5]
       const found = list.find((entry) => entry.id === id) ?? list[0]
       return { status: 200, json: async () => found } as Response
+    }
+    if (url.includes('/events/') && url.includes('/subscriptions')) {
+      if (init?.method === 'DELETE') {
+        return { status: 200, json: async () => ({ success: true }) } as Response
+      }
+      const body = init?.body ? JSON.parse(String(init.body)) : {}
+      const targetId = body.sessionId || 'sess-1'
+      const foundSession = list.find((s) => s.id === targetId)
+      const turnPhase = foundSession?.turn === 'running' ? 'started' : 'ended'
+      return {
+        status: 200,
+        json: async () => ({
+          sessionId: targetId,
+          turn: { id: 'turn-1', phase: turnPhase, outcome: turnPhase === 'ended' ? 'completed' : '' },
+          interactions: { permissions: [], forms: [] },
+          resync: false,
+        }),
+      } as Response
     }
     return { status: 200, json: async () => ({ sessions: list }) } as Response
   })
@@ -214,7 +231,7 @@ describe('SessionChatPanel', () => {
 
     expect(fetchSpy).toHaveBeenCalled()
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(FakeEventSource.instances[0].url).toContain('/sessions/sess-1/')
+    expect(FakeEventSource.instances[0].url).toContain('/api/events/')
     expect(wrapper.text()).toContain('Title sess-1')
   })
 
@@ -604,9 +621,8 @@ describe('SessionChatPanel opencode approvals', () => {
     await wrapper.setProps({ sessionId: 'sess-2' })
     await flushPromises()
 
-    // Tabs keep both sessions live: the previous stream stays open for its tab.
-    expect(FakeEventSource.instances).toHaveLength(2)
-    expect(FakeEventSource.instances[1].url).toContain('/sessions/sess-2/')
+    // Multiplexed event bus: single EventSource connection serves both sessions.
+    expect(FakeEventSource.instances).toHaveLength(1)
     expect(wrapper.text()).not.toContain('OLD MESSAGE')
   })
 

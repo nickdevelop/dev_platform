@@ -5,15 +5,24 @@
 // data (features/chat/state) and this module owns the event consumption.
 
 import {
-  sessionEventsPath,
-  type AgentSession,
-  type ImageAttachment,
-  type InteractionPayload,
-  type InteractionSnapshot,
-  type MessageModel,
-  type MessageUsage,
-  type NormalizedEvent,
-  type TurnPayload,
+  clearAllResumePositions,
+  closeBus,
+  forgetSessionResumePosition,
+  getSubscribedSessionIds,
+  hasSubscribedSession,
+  resubscribeSessionOnBus,
+  subscribeSessionOnBus,
+  unsubscribeSessionFromBus,
+} from './EventBusClient'
+import type {
+  AgentSession,
+  ImageAttachment,
+  InteractionPayload,
+  InteractionSnapshot,
+  MessageModel,
+  MessageUsage,
+  NormalizedEvent,
+  TurnPayload,
 } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../state/sessionLog'
 import { entryFromEvent } from '../state/sessionLog'
@@ -52,148 +61,43 @@ export interface StreamStore {
   rebuildFromHistory: (projectId: number, sessionId: string) => Promise<void>
 }
 
-// Live EventSource handles are deliberately kept outside reactive state: they
-// are browser resources, not view data, and must not be proxied by Vue.
-const sources = new Map<string, EventSource>()
-
-// The id of the last SSE frame applied per session. The store re-dials with
-// it (as a query parameter the server turns into a resume position) so a
-// manually re-opened EventSource replays exactly what it missed; the
-// browser's own reconnects carry the id as the Last-Event-ID header.
-const lastEventIds = new Map<string, string>()
-
-// A dropped EventSource is not always re-established by the browser: when the
-// process behind a session dies, it fires one error and then sits in CONNECTING
-// without dialling again — measured over 24s with nothing reaching the server.
-// The store therefore re-dials once. `repairs` holds the pending attempt, and
-// `repaired` marks a session that already used its one attempt, so a service an
-// operator stopped on purpose is not reached for on a loop.
-const stallMs = 3000
-const repairs = new Map<string, ReturnType<typeof setTimeout>>()
-const repaired = new Set<string>()
-
-export function clearStreamRepair(sessionId: string) {
-  const timer = repairs.get(sessionId)
-  if (timer) clearTimeout(timer)
-  repairs.delete(sessionId)
+export function clearStreamRepair(_sessionId: string) {
+  // Bus manages connection health centrally at the window level
 }
 
 export function hasOpenStream(sessionId: string): boolean {
-  return sources.has(sessionId)
+  return hasSubscribedSession(sessionId)
 }
 
 // forgetResumePosition drops the resume marker when the log itself is rebuilt
 // (a deleted or re-replayed session): the next dial starts from the top.
 export function forgetResumePosition(sessionId: string) {
-  lastEventIds.delete(sessionId)
+  forgetSessionResumePosition(sessionId)
 }
 
 export function clearResumePositions() {
-  lastEventIds.clear()
+  clearAllResumePositions()
 }
 
 export function openStreamIds(): string[] {
-  return [...sources.keys()]
+  return getSubscribedSessionIds()
 }
 
-// subscribeSession opens (or re-opens) a session's normalized event stream. A
-// second call for the same session is a no-op, so a view re-render never opens
-// a duplicate stream. A stream that has reported an error is the exception:
-// after a drop the browser may sit in CONNECTING forever without dialling
-// again — observed when the process behind a session dies — so the session
-// would stay at 正在重连 for the rest of the session.
-export function subscribeSession(store: StreamStore, projectId: number, sessionId: string) {
-  const existing = sources.get(sessionId)
-  if (existing) {
-    if (store.streamStatus[sessionId] !== 'reconnecting') return
-    existing.close()
-    sources.delete(sessionId)
-  }
-  store.streamStatus[sessionId] = 'connecting'
-  const source = new EventSource(sessionEventsPath(projectId, sessionId, lastEventIds.get(sessionId)))
-  sources.set(sessionId, source)
-
-  source.onopen = () => {
-    clearStreamRepair(sessionId)
-    repaired.delete(sessionId)
-    store.streamStatus[sessionId] = 'open'
-    void store.repairDanglingEntries(projectId, sessionId)
-  }
-  source.onerror = () => {
-    if (source.readyState === EventSource.CLOSED) {
-      store.streamStatus[sessionId] = 'error'
-      sources.delete(sessionId)
-    } else {
-      store.streamStatus[sessionId] = 'reconnecting'
-      // One repair, no more. The browser may simply stop dialling, and a
-      // conversation that went quiet with the user watching it has no other
-      // way back; but an operator who stopped a service on purpose must not
-      // find the platform reaching for it on a loop, so a second stall is
-      // the user's decision, made with the reconnect button.
-      if (repaired.has(sessionId) || repairs.has(sessionId)) return
-      repairs.set(
-        sessionId,
-        setTimeout(() => {
-          repairs.delete(sessionId)
-          if (store.streamStatus[sessionId] !== 'reconnecting') return
-          repaired.add(sessionId)
-          store.subscribe(projectId, sessionId)
-        }, stallMs),
-      )
-    }
-  }
-  for (const type of [
-    'lifecycle',
-    'message',
-    'thinking',
-    'tool_call',
-    'tool_result',
-    'error',
-    'turn',
-    'interaction',
-    'unknown',
-  ]) {
-    source.addEventListener(type, (event) => {
-      const frame = event as MessageEvent
-      // Remember the frame's position so a later manual re-dial resumes
-      // from it; the browser's own reconnects carry it automatically.
-      if (frame.lastEventId) lastEventIds.set(sessionId, frame.lastEventId)
-      consumeEventFrame(store, sessionId, frame.data)
-    })
-  }
-  // A stream opens with the session's pending interactions. It is the
-  // authoritative set at the join point, so it replaces what the client holds
-  // and carries no position in the sequence.
-  source.addEventListener('interactions', (event) => {
-    const frame = event as MessageEvent
-    try {
-      store.applyInteractionSnapshot(sessionId, JSON.parse(frame.data) as InteractionSnapshot)
-    } catch {
-      // A malformed snapshot leaves the current set; live events keep it fresh.
-    }
-  })
-  // The server sends this when a resumed stream could not cover the
-  // client's gap (its replay buffer evicted the events or the stream was
-  // recreated since): the log on screen may be missing its middle, so it
-  // is rebuilt from history while the live stream keeps flowing.
-  source.addEventListener('resync', () => {
-    void store.rebuildFromHistory(projectId, sessionId)
-  })
+// subscribeSession delegates to the multiplexed event bus.
+export function subscribeSession(store: StreamStore, projectId: number, sessionId: string, csrfToken?: string) {
+  return subscribeSessionOnBus(store, projectId, sessionId, csrfToken)
 }
 
-export function closeSessionStream(store: StreamStore, sessionId: string) {
-  const source = sources.get(sessionId)
-  clearStreamRepair(sessionId)
-  repaired.delete(sessionId)
-  if (source) {
-    source.close()
-    sources.delete(sessionId)
-  }
-  store.streamStatus[sessionId] = 'idle'
+export function resubscribeSession(store: StreamStore, projectId: number, sessionId: string, csrfToken?: string) {
+  return resubscribeSessionOnBus(store, projectId, sessionId, csrfToken)
+}
+
+export function closeSessionStream(store: StreamStore, sessionId: string, csrfToken?: string) {
+  return unsubscribeSessionFromBus(store, sessionId, csrfToken)
 }
 
 export function closeAllSessionStreams(store: StreamStore) {
-  for (const sessionId of openStreamIds()) closeSessionStream(store, sessionId)
+  closeBus(store)
 }
 
 // consumeEventFrame applies one normalized event to its owning session.

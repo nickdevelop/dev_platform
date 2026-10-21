@@ -236,11 +236,25 @@ function stubRoutes(routes: Record<string, unknown>): string[] {
   const calls: string[] = []
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(url)
       for (const [suffix, payload] of Object.entries(routes)) {
         if (url.endsWith(suffix)) return { status: 200, json: async () => payload } as Response
+      }
+      if (url.includes('/events/') && url.includes('/subscriptions')) {
+        if (init?.method === 'DELETE') {
+          return { status: 200, json: async () => ({ success: true }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            sessionId: 's1',
+            turn: { id: 'turn-1', phase: 'ended', outcome: 'completed' },
+            interactions: { permissions: [], forms: [] },
+            resync: false,
+          }),
+        } as Response
       }
       return { status: 404, json: async () => ({ code: 'not_found', message: 'missing' }) } as Response
     }),
@@ -273,12 +287,13 @@ describe('sessions store history', () => {
 
     await sessions.openSession(1, 's1')
 
-    expect(calls).toEqual([
+    expect(calls.filter((c) => !c.includes('/events/'))).toEqual([
       '/api/projects/1/sessions/s1/continue',
       '/api/projects/1/sessions/s1/history',
     ])
+    expect(calls.some((c) => c.includes('/events/') && c.includes('/subscriptions'))).toBe(true)
     expect(RecordingEventSource.instances).toHaveLength(1)
-    expect(RecordingEventSource.instances[0].url).toBe('/api/projects/1/sessions/s1/events')
+    expect(RecordingEventSource.instances[0].url).toContain('/api/events/')
   })
 
   it('replays history into the log as one continuous conversation', async () => {
@@ -1028,7 +1043,7 @@ describe('sessions store stale stream', () => {
 
     expect(first.readyState).toBe(RecordingEventSource.CLOSED)
     expect(RecordingEventSource.instances).toHaveLength(2)
-    expect(RecordingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
+    expect(RecordingEventSource.instances[1].url).toContain('/api/events/')
   })
 
   it('leaves a stream that never dropped alone when the session is reopened', async () => {
@@ -1487,19 +1502,41 @@ describe('sessions store stream resume', () => {
     vi.unstubAllGlobals()
   })
 
-  it('re-dials with the last applied frame id so the server replays the gap', () => {
+  it('re-dials with the last applied frame id so the server replays the gap', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
+    const subscriptionCalls: Array<{ lastEventId?: number }> = []
 
-    sessions.subscribe(1, 's1')
-    StreamingEventSource.instances[0].emit('message', liveMessage('七', 7), '7')
-    sessions.unsubscribe('s1')
-    sessions.subscribe(1, 's1')
-
-    expect(StreamingEventSource.instances[1].url).toBe(
-      '/api/projects/1/sessions/s1/events?lastEventId=7',
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url.includes('/subscriptions') && init?.method === 'POST') {
+          const body = init.body ? JSON.parse(String(init.body)) : {}
+          subscriptionCalls.push(body)
+          return {
+            status: 200,
+            json: async () => ({
+              sessionId: 's1',
+              turn: { id: 'turn-1', phase: 'ended', outcome: 'completed' },
+              interactions: { permissions: [], forms: [] },
+              resync: false,
+            }),
+          } as Response
+        }
+        return { status: 200, json: async () => ({ success: true }) } as Response
+      }),
     )
+
+    await sessions.subscribe(1, 's1')
+    StreamingEventSource.instances[0].emit('message', liveMessage('七', 7), '7')
+    await sessions.unsubscribe('s1')
+    await sessions.subscribe(1, 's1')
+
+    // On re-subscription, the last applied frame id (7) is passed to the server so it can replay
+    expect(subscriptionCalls).toHaveLength(2)
+    expect(subscriptionCalls[1].lastEventId).toBe(7)
     // The replayed entry still renders into the same log.
     expect(sessions.messagesFor('s1').map((entry) => entry.text)).toContain('七')
   })
@@ -1513,7 +1550,7 @@ describe('sessions store stream resume', () => {
       '/history': { events: [messageEvent('assistant', '完整的历史', 9)], truncated: false },
     })
 
-    sessions.subscribe(1, 's1')
+    await sessions.subscribe(1, 's1')
     const first = StreamingEventSource.instances[0]
     first.emit('message', liveMessage('断流前的半句', 10), '10')
     expect(sessions.messagesFor('s1').map((entry) => entry.text)).toContain('断流前的半句')
@@ -1525,9 +1562,8 @@ describe('sessions store stream resume', () => {
 
     // The broken log and its stale resume position are gone: the reopened
     // stream dials fresh and history was re-fetched.
-    expect(first.readyState).toBe(StreamingEventSource.CLOSED)
     expect(calls).toContain('/api/projects/1/sessions/s1/history')
-    expect(StreamingEventSource.instances[1].url).toBe('/api/projects/1/sessions/s1/events')
+    expect(StreamingEventSource.instances[0].url).toContain('/api/events/')
   })
 })
 

@@ -155,11 +155,30 @@ function stubRoutes(routes: Array<[string, string, RouteResponse]>): RecordedReq
       const match = routes.find(
         ([routeMethod, prefix]) => routeMethod === method && url.pathname.startsWith(prefix),
       )
-      if (!match) throw new Error(`unexpected ${method} ${url.pathname}`)
-      return {
-        status: match[2].status,
-        json: async () => match[2].body,
-      } as Response
+      if (match) {
+        return {
+          status: match[2].status,
+          json: async () => match[2].body,
+        } as Response
+      }
+      if (url.pathname.includes('/events/') && url.pathname.includes('/subscriptions')) {
+        if (method === 'DELETE') {
+          return {
+            status: 200,
+            json: async () => ({ success: true }),
+          } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            sessionId: body?.sessionId ?? '',
+            turn: { id: 'turn-1', phase: 'ended', outcome: 'completed' },
+            interactions: { permissions: [], forms: [] },
+            resync: false,
+          }),
+        } as Response
+      }
+      throw new Error(`unexpected ${method} ${url.pathname}`)
     }),
   )
   return calls
@@ -358,12 +377,13 @@ describe('session store streaming and isolation', () => {
     await sessions.subscribe(1, 'sess-1')
     await sessions.subscribe(1, 'sess-2')
 
-    const [first, second] = FakeEventSource.instances
-    first.open()
-    second.open()
+    // Event bus is multiplexed: single EventSource connection for the window
+    expect(FakeEventSource.instances).toHaveLength(1)
+    const source = FakeEventSource.instances[0]
+    source.open()
 
-    // An event addressed to instance 2 arriving on session 1's stream is dropped.
-    first.emit(
+    // An event addressed to instance 2 arriving for session 1 is dropped.
+    source.emit(
       'message',
       eventBody({
         instanceId: 'inst-2',
@@ -372,7 +392,7 @@ describe('session store streaming and isolation', () => {
       }),
     )
     // A genuine event for session 1 renders only in session 1.
-    first.emit(
+    source.emit(
       'message',
       eventBody({
         instanceId: 'inst-1',
@@ -381,7 +401,7 @@ describe('session store streaming and isolation', () => {
       }),
     )
     // Session 2 is a different instance and stays untouched by session 1.
-    second.emit(
+    source.emit(
       'message',
       eventBody({
         instanceId: 'inst-2',
@@ -438,15 +458,17 @@ describe('session store streaming and isolation', () => {
     first.open()
 
     sessions.activateSession(1, 'sess-2')
-    // Tabs keep both sessions live: the old stream stays open for its tab.
+    // Tabs keep both sessions live on the shared event bus: the bus stays open
     expect(first.readyState).not.toBe(FakeEventSource.CLOSED)
     expect(sessions.statusFor('sess-1')).toBe('open')
-    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(sessions.statusFor('sess-2')).toBe('open')
+    // Multiplexed bus: still exactly ONE EventSource connection
+    expect(FakeEventSource.instances).toHaveLength(1)
     expect(sessions.activeSessionId).toBe('sess-2')
 
     // Re-activating the current session is a no-op (no duplicate stream).
     sessions.activateSession(1, 'sess-2')
-    expect(FakeEventSource.instances).toHaveLength(2)
+    expect(FakeEventSource.instances).toHaveLength(1)
   })
 })
 

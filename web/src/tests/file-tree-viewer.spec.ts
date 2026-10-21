@@ -146,7 +146,7 @@ describe('FileTree.vue', () => {
     })
 
     // Click to expand
-    wrapper.vm.toggleExpand('pkg')
+    ;(wrapper.vm as any).toggleExpand('pkg')
 
     return wrapper.vm.$nextTick(() => {
       expect(wrapper.find('[data-test="tree-node-loading"]').exists()).toBe(true)

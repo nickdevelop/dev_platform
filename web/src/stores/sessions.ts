@@ -46,6 +46,7 @@ import {
   forgetResumePosition,
   hasOpenStream,
   openStreamIds,
+  resubscribeSession,
   subscribeSession,
 } from '../features/chat/execution/SessionEventStream'
 import {
@@ -367,8 +368,9 @@ export const useSessionsStore = defineStore('sessions', {
 
     // The stream machinery lives in ../features/chat/execution/SessionEventStream.ts;
     // these actions are thin delegations so the store's public API is unchanged.
-    subscribe(projectId: number, sessionId: string) {
-      subscribeSession(this, projectId, sessionId)
+    async subscribe(projectId: number, sessionId: string) {
+      const auth = useAuthStore()
+      return subscribeSession(this, projectId, sessionId, auth.csrfToken)
     },
 
     // rebuildFromHistory replays a session's transcript after a resync. It
@@ -379,7 +381,7 @@ export const useSessionsStore = defineStore('sessions', {
     // turn state, so a session that settled during the gap settles here.
     async rebuildFromHistory(projectId: number, sessionId: string) {
       if (!hasOpenStream(sessionId)) return
-      this.unsubscribe(sessionId)
+      await this.unsubscribe(sessionId)
       this.messages[sessionId] = []
       this.historyLoaded[sessionId] = false
       this.historyTailGuard[sessionId] = false
@@ -393,19 +395,20 @@ export const useSessionsStore = defineStore('sessions', {
     // deleted. Re-activating the same session is a no-op.
     // activateSession is the low-level subscription switch; callers opening a
     // session use openSession so the replay always lands before the stream.
-    activateSession(projectId: number, sessionId: string) {
+    async activateSession(projectId: number, sessionId: string) {
       this.activeSessionId = sessionId
-      this.subscribe(projectId, sessionId)
+      return this.subscribe(projectId, sessionId)
     },
 
     // Re-opens a stream after a terminal error, keeping the message log.
-    resubscribe(projectId: number, sessionId: string) {
-      closeSessionStream(this, sessionId)
-      this.subscribe(projectId, sessionId)
+    async resubscribe(projectId: number, sessionId: string) {
+      const auth = useAuthStore()
+      return resubscribeSession(this, projectId, sessionId, auth.csrfToken)
     },
 
-    unsubscribe(sessionId: string) {
-      closeSessionStream(this, sessionId)
+    async unsubscribe(sessionId: string) {
+      const auth = useAuthStore()
+      return closeSessionStream(this, sessionId, auth.csrfToken)
     },
 
     unsubscribeAll() {
