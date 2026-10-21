@@ -54,7 +54,26 @@ type Adapter struct {
 
 	mu          sync.Mutex
 	instances   map[string]*instanceState
-	subscribers map[string]map[chan agents.NormalizedEvent]struct{}
+	subscribers map[string]map[*subscription]struct{}
+}
+
+type subscription struct {
+	ch     chan agents.NormalizedEvent
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func newSubscription(ch chan agents.NormalizedEvent, cancel context.CancelFunc) *subscription {
+	return &subscription{ch: ch, cancel: cancel}
+}
+
+func (s *subscription) close() {
+	s.once.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		close(s.ch)
+	})
 }
 
 type instanceState struct {
@@ -87,7 +106,7 @@ func New(opts Options) *Adapter {
 		host:              host,
 		permissions:       NewPermissionsManager(),
 		instances:         make(map[string]*instanceState),
-		subscribers:       make(map[string]map[chan agents.NormalizedEvent]struct{}),
+		subscribers:       make(map[string]map[*subscription]struct{}),
 	}
 }
 
@@ -241,6 +260,38 @@ func truncate(s string) string {
 	return s
 }
 
+func (a *Adapter) ensureInstance(instanceID string) (*instanceState, error) {
+	if instanceID == "" {
+		return nil, fmt.Errorf("%w: instance id is empty", agents.ErrInvalidInstance)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	inst, exists := a.instances[instanceID]
+	if exists {
+		return inst, nil
+	}
+
+	// If this instance ID conforms to dsh instance ID format (inst-dsh-...),
+	// auto-admit it so that valid instances surviving platform restarts remain valid.
+	if strings.HasPrefix(instanceID, "inst-dsh-") {
+		now := time.Now().UTC()
+		inst = &instanceState{
+			id:        instanceID,
+			directory: a.host.workDir,
+			createdAt: now,
+			updatedAt: now,
+		}
+		a.instances[instanceID] = inst
+		if _, ok := a.subscribers[instanceID]; !ok {
+			a.subscribers[instanceID] = make(map[*subscription]struct{})
+		}
+		return inst, nil
+	}
+
+	return nil, fmt.Errorf("%w: instance %q not found", agents.ErrInvalidInstance, instanceID)
+}
+
 // StartInstance starts a logical instance scoped to the requested working directory.
 func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanceRequest) (*agents.Instance, error) {
 	if request.Directory == "" {
@@ -266,7 +317,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 
 	a.mu.Lock()
 	a.instances[id] = inst
-	a.subscribers[id] = make(map[chan agents.NormalizedEvent]struct{})
+	a.subscribers[id] = make(map[*subscription]struct{})
 	a.mu.Unlock()
 
 	return &agents.Instance{
@@ -283,8 +334,8 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 // StopInstance stops the instance record and closes active subscriptions.
 func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	a.mu.Lock()
-	inst, exists := a.instances[instanceID]
-	if !exists {
+	_, exists := a.instances[instanceID]
+	if !exists && !strings.HasPrefix(instanceID, "inst-dsh-") {
 		a.mu.Unlock()
 		return fmt.Errorf("%w: instance %q not found", agents.ErrInvalidInstance, instanceID)
 	}
@@ -293,21 +344,18 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	delete(a.subscribers, instanceID)
 	a.mu.Unlock()
 
-	for ch := range subs {
-		close(ch)
+	for sub := range subs {
+		sub.close()
 	}
 
-	_ = inst
 	return nil
 }
 
 // ListSessions returns existing native sessions whose cwd matches the instance directory.
 func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents.SessionRef, error) {
-	a.mu.Lock()
-	inst, exists := a.instances[instanceID]
-	a.mu.Unlock()
-	if !exists {
-		return nil, fmt.Errorf("%w: instance %q not found", agents.ErrInvalidInstance, instanceID)
+	inst, err := a.ensureInstance(instanceID)
+	if err != nil {
+		return nil, err
 	}
 
 	proc, release, err := a.host.Acquire(ctx)
@@ -363,11 +411,9 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 
 // CreateSession creates a new agent-native session in dsh.
 func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
-	a.mu.Lock()
-	inst, exists := a.instances[instanceID]
-	a.mu.Unlock()
-	if !exists {
-		return nil, fmt.Errorf("%w: instance %q not found", agents.ErrInvalidInstance, instanceID)
+	inst, err := a.ensureInstance(instanceID)
+	if err != nil {
+		return nil, err
 	}
 
 	proc, release, err := a.host.Acquire(ctx)
@@ -530,23 +576,30 @@ func (a *Adapter) selectModel(ctx context.Context, client *Client, sessionID, mo
 
 // Subscribe returns a channel delivering normalized events for the given instance.
 func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
-	a.mu.Lock()
-	_, exists := a.instances[instanceID]
-	if !exists {
-		a.mu.Unlock()
-		return nil, fmt.Errorf("%w: instance %q not found", agents.ErrInvalidInstance, instanceID)
+	_, err := a.ensureInstance(instanceID)
+	if err != nil {
+		return nil, err
 	}
 
 	outCh := make(chan agents.NormalizedEvent, 100)
-	a.subscribers[instanceID][outCh] = struct{}{}
+	subCtx, cancel := context.WithCancel(ctx)
+	sub := newSubscription(outCh, cancel)
+
+	a.mu.Lock()
+	if _, ok := a.subscribers[instanceID]; !ok {
+		a.subscribers[instanceID] = make(map[*subscription]struct{})
+	}
+	a.subscribers[instanceID][sub] = struct{}{}
 	a.mu.Unlock()
 
 	proc, release, err := a.host.Acquire(ctx)
 	if err != nil {
 		a.mu.Lock()
-		delete(a.subscribers[instanceID], outCh)
-		close(outCh)
+		if subs, ok := a.subscribers[instanceID]; ok {
+			delete(subs, sub)
+		}
 		a.mu.Unlock()
+		sub.close()
 		return nil, err
 	}
 
@@ -559,18 +612,17 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 		defer func() {
 			a.mu.Lock()
 			if subs, ok := a.subscribers[instanceID]; ok {
-				delete(subs, outCh)
+				delete(subs, sub)
 			}
-			close(outCh)
 			a.mu.Unlock()
+			sub.close()
 		}()
 
 		// Subscribe to session/control
-		_, controlCh, cancelControl, err := client.Subscribe(ctx, "session/control", map[string]any{})
-		if err != nil {
-			return
+		_, controlCh, cancelControl, err := client.Subscribe(subCtx, "session/control", map[string]any{})
+		if err == nil {
+			defer cancelControl()
 		}
-		defer cancelControl()
 
 		// Stream multiplexer loop
 		type followHandle struct {
@@ -589,7 +641,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				return
 			}
 			normalizer := NewSessionEventNormalizer(instanceID, sessionID)
-			_, followCh, cancelFollow, fErr := client.Subscribe(ctx, "session/follow", map[string]any{
+			_, followCh, cancelFollow, fErr := client.Subscribe(subCtx, "session/follow", map[string]any{
 				"request": map[string]any{
 					"address": map[string]any{
 						"kind":      "session",
@@ -609,7 +661,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 					for _, ev := range evs {
 						select {
 						case outCh <- ev:
-						case <-ctx.Done():
+						case <-subCtx.Done():
 							return
 						}
 					}
@@ -617,12 +669,29 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 			}()
 		}
 
+		// Proactively follow existing native sessions in this working directory
+		var listRes struct {
+			Items []struct {
+				SessionID string `json:"sessionId"`
+				Blank     bool   `json:"blank"`
+			} `json:"items"`
+		}
+		if err := client.Call(subCtx, "session/list", map[string]any{"_request": map[string]any{}}, &listRes); err == nil {
+			for _, item := range listRes.Items {
+				if item.SessionID != "" && !item.Blank {
+					followSession(item.SessionID)
+				}
+			}
+		}
+
 		for {
 			select {
-			case <-ctx.Done():
+			case <-subCtx.Done():
 				return
 			case controlMsg, ok := <-controlCh:
 				if !ok {
+					// Control stream ended; keep the instance subscription alive until context cancels
+					<-subCtx.Done()
 					return
 				}
 				var ctrl struct {
@@ -641,7 +710,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 							for _, ev := range evs {
 								select {
 								case outCh <- ev:
-								case <-ctx.Done():
+								case <-subCtx.Done():
 									return
 								}
 							}

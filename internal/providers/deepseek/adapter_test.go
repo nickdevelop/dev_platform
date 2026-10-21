@@ -500,3 +500,57 @@ func TestAdapterPermissionsAndCommands(t *testing.T) {
 		t.Errorf("models = %+v, want deepseek/deepseek-chat", models)
 	}
 }
+
+func TestAdapterAutoAdmitAndSafeSubscriptionClose(t *testing.T) {
+	server, client := newMockDSHServer(t)
+	defer server.Close()
+	defer client.Close()
+
+	adapter := New(Options{
+		ProcessLauncher: func(ctx context.Context) (*Process, error) {
+			return &Process{
+				client:   client,
+				exitDone: make(chan struct{}),
+			}, nil
+		},
+	})
+
+	ctx := context.Background()
+	// An instance ID that was not created in memory (e.g. surviving platform restart)
+	restartedInstanceID := "inst-dsh-restarted-999"
+
+	// 1. CreateSession must auto-admit the instance and succeed rather than failing with ErrInvalidInstance
+	created, err := adapter.CreateSession(ctx, restartedInstanceID, agents.CreateSessionOptions{
+		Title: "Surviving Session",
+		Model: "deepseek/deepseek-chat",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession on surviving instance failed: %v", err)
+	}
+	if created.SessionID != "ses-created-123" {
+		t.Errorf("created SessionID = %s, want ses-created-123", created.SessionID)
+	}
+
+	// 2. Subscribe on surviving instance must also auto-admit and establish channel
+	subCtx, cancelSub := context.WithCancel(ctx)
+	eventsCh, err := adapter.Subscribe(subCtx, restartedInstanceID)
+	if err != nil {
+		t.Fatalf("Subscribe on surviving instance failed: %v", err)
+	}
+	if eventsCh == nil {
+		t.Fatal("Subscribe returned nil channel")
+	}
+
+	// 3. StopInstance and cancelSub concurrently must NOT cause double-close panic
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = adapter.StopInstance(ctx, restartedInstanceID)
+		cancelSub()
+	}()
+	<-done
+
+	// Verify channel is closed properly and drained
+	for range eventsCh {
+	}
+}

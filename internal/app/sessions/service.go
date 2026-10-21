@@ -457,6 +457,12 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	}
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
 	if err != nil {
+		if newInst, startErr := s.instances.Start(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+			inst = newInst
+			ref, err = adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
+		}
+	}
+	if err != nil {
 		return CreateOutcome{}, fmt.Errorf("%w: create session: %w", ErrBackendFailed, err)
 	}
 	if ref == nil {

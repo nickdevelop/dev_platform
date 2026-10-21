@@ -57,6 +57,7 @@ type fakeAdapter struct {
 	createRef  *agents.SessionRef
 	createErr  error
 	createOpts []agents.CreateSessionOptions
+	createFn   func(instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error)
 
 	listRefs  []agents.SessionRef
 	listErr   error
@@ -189,6 +190,9 @@ func (f *fakeAdapter) CreateSession(_ context.Context, instanceID string, option
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.createOpts = append(f.createOpts, options)
+	if f.createFn != nil {
+		return f.createFn(instanceID, options)
+	}
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
@@ -551,6 +555,40 @@ func TestCreateReportsStartFailureWithoutIndexing(t *testing.T) {
 	}
 	if got := sessionCount(t, env.db); got != 0 {
 		t.Errorf("session count = %d, want 0 after a failed start", got)
+	}
+}
+
+// TestCreateAutoRecoversStaleInstance verifies that when CreateSession fails on
+// an existing instance (e.g. instance invalidated after server restart), Create
+// starts a fresh instance and successfully creates the session.
+func TestCreateAutoRecoversStaleInstance(t *testing.T) {
+	env := newTestEnv(t)
+	attempts := 0
+	env.fake.mu.Lock()
+	env.fake.createFn = func(instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
+		attempts++
+		if attempts == 1 {
+			// First attempt on the stale instance fails with ErrInvalidInstance
+			return nil, agents.ErrInvalidInstance
+		}
+		return &agents.SessionRef{
+			InstanceID: instanceID,
+			Backend:    agents.BackendPi,
+			SessionID:  "native-recovered",
+			Title:      options.Title,
+		}, nil
+	}
+	env.fake.mu.Unlock()
+
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "Recovered Title", "", "")
+	if err != nil {
+		t.Fatalf("Create should have auto-recovered stale instance, got error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 CreateSession attempts (stale failed, fresh succeeded), got %d", attempts)
+	}
+	if created.Session.NativeSessionID != "native-recovered" {
+		t.Errorf("NativeSessionID = %q, want native-recovered", created.Session.NativeSessionID)
 	}
 }
 
