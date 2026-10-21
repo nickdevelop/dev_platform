@@ -5,8 +5,11 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 const ACTIVITY_STORAGE_KEY = 'dev-platform-activity-pane-v1'
+const PREVIEW_WIDTH_STORAGE_KEY = 'dev-platform-preview-width-v1'
 const FILETREE_PINNED_STORAGE_KEY = 'dev-platform-chat-filetree-pinned-v1'
 const FILETREE_COLLAPSED_STORAGE_KEY = 'dev-platform-chat-filetree-collapsed-v1'
+const DEFAULT_PREVIEW_WIDTH = 460
+const MIN_PREVIEW_WIDTH = 320
 
 export function useActivityPane(onExpand?: () => void) {
   // Preview pane collapse state (persisted as activity-pane for compatibility)
@@ -31,6 +34,30 @@ export function useActivityPane(onExpand?: () => void) {
     }
     if (!collapsed && onExpand) {
       onExpand()
+    }
+  }
+
+  // Preview pane width (persisted in localStorage)
+  const previewWidth = ref(DEFAULT_PREVIEW_WIDTH)
+  try {
+    const storedWidth = localStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY)
+    if (storedWidth !== null) {
+      const parsed = parseInt(storedWidth, 10)
+      if (!isNaN(parsed) && parsed >= MIN_PREVIEW_WIDTH) {
+        previewWidth.value = parsed
+      }
+    }
+  } catch {
+    previewWidth.value = DEFAULT_PREVIEW_WIDTH
+  }
+
+  function setPreviewWidth(width: number) {
+    const clamped = Math.max(MIN_PREVIEW_WIDTH, Math.round(width))
+    previewWidth.value = clamped
+    try {
+      localStorage.setItem(PREVIEW_WIDTH_STORAGE_KEY, String(clamped))
+    } catch {
+      // Persistence is best-effort only.
     }
   }
 
@@ -149,6 +176,8 @@ export function useActivityPane(onExpand?: () => void) {
     // Preview pane (with activityCollapsed alias for test compatibility)
     previewCollapsed,
     setPreviewCollapsed,
+    previewWidth,
+    setPreviewWidth,
     activityCollapsed: previewCollapsed,
     setActivityCollapsed: setPreviewCollapsed,
 

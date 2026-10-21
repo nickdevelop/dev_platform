@@ -417,6 +417,8 @@ const pane = useActivityPane(() => {
 const {
   previewCollapsed,
   setPreviewCollapsed,
+  previewWidth,
+  setPreviewWidth,
   activityCollapsed,
   setActivityCollapsed,
   fileTreePinned,
@@ -432,6 +434,42 @@ const {
   openFloatingFileTree,
   closeFloatingFileTree,
 } = pane
+
+const isPreviewResizing = ref(false)
+let previewStartX = 0
+let previewStartWidth = 0
+
+function onPreviewResizerMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  isPreviewResizing.value = true
+  previewStartX = e.clientX
+  previewStartWidth = previewWidth.value
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMouseMove = (ev: MouseEvent) => {
+    if (!isPreviewResizing.value) return
+    const delta = previewStartX - ev.clientX
+    const maxWidth = Math.max(400, Math.min(window.innerWidth * 0.7, window.innerWidth - 360))
+    const newWidth = Math.round(Math.max(320, Math.min(maxWidth, previewStartWidth + delta)))
+    previewWidth.value = newWidth
+  }
+
+  const onMouseUp = () => {
+    if (!isPreviewResizing.value) return
+    isPreviewResizing.value = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    setPreviewWidth(previewWidth.value)
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
 
 watch(
   () => [props.projectId, props.sessionId],
@@ -1069,10 +1107,20 @@ async function removeSession() {
         <aside
           v-if="!previewCollapsed"
           class="preview-pane activity-pane"
+          :class="{ 'is-resizing': isPreviewResizing }"
+          :style="{ width: `${previewWidth}px`, flex: `0 0 ${previewWidth}px` }"
           aria-label="预览面板"
           data-test="activity-pane"
           data-test-preview="preview-pane"
         >
+          <div
+            class="preview-resizer"
+            data-test="preview-resizer"
+            title="拖拽调整预览栏宽度"
+            @mousedown="onPreviewResizerMouseDown"
+          >
+            <span class="preview-resizer-line"></span>
+          </div>
           <header class="preview-head activity-head">
             <div class="preview-tabs-list" role="tablist">
               <!-- Tab 0: Fixed 思考与工具 -->
@@ -1332,9 +1380,8 @@ async function removeSession() {
 
 /* Second Column: Preview Pane (Tab Panel) */
 .preview-pane {
-  flex: 0 0 460px;
   min-width: 320px;
-  max-width: 48vw;
+  max-width: 80vw;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1348,17 +1395,58 @@ async function removeSession() {
   transition: width 0.18s ease;
 }
 
+.preview-pane.is-resizing {
+  transition: none !important;
+}
+
+.preview-resizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.preview-resizer:hover,
+.preview-pane.is-resizing .preview-resizer {
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.15));
+}
+
+.preview-resizer-line {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--color-border-strong, #cbd5e1);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+
+.preview-resizer:hover .preview-resizer-line,
+.preview-pane.is-resizing .preview-resizer-line {
+  background: var(--color-primary, #3b82f6);
+  height: 36px;
+}
+
 @media (max-width: 900px) {
   .preview-pane {
     position: absolute;
     top: 0;
     right: 0;
     bottom: 0;
-    width: min(32rem, 90vw);
+    width: min(32rem, 90vw) !important;
     max-width: 90vw;
     z-index: 25;
     box-shadow: -4px 0 24px rgba(15, 23, 42, 0.16);
     animation: activitySlideIn 0.18s ease-out;
+  }
+
+  .preview-resizer {
+    display: none;
   }
 }
 

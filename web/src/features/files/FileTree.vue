@@ -18,6 +18,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   select: [path: string]
   dragstart: [event: DragEvent, path: string]
+  loadChildren: [node: FileTreeNode]
 }>()
 
 const expanded = ref<Set<string>>(new Set())
@@ -38,7 +39,14 @@ function toggleExpand(path: string) {
 
 function onNodeClick(node: FileTreeNode) {
   if (node.isDir) {
-    toggleExpand(node.path)
+    if (!isExpanded(node.path)) {
+      if (!node.loaded && (!node.children || node.children.length === 0)) {
+        emit('loadChildren', node)
+      }
+      toggleExpand(node.path)
+    } else {
+      toggleExpand(node.path)
+    }
   } else {
     emit('select', node.path)
   }
@@ -114,14 +122,34 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
         </span>
       </div>
 
+      <div
+        v-if="node.isDir && isExpanded(node.path) && node.loading"
+        class="tree-state-row"
+        :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
+        data-test="tree-node-loading"
+      >
+        <span class="tree-loading-spinner" aria-hidden="true">↻</span>
+        <span class="tree-state-text">加载中…</span>
+      </div>
+
+      <div
+        v-else-if="node.isDir && isExpanded(node.path) && node.loaded && (!node.children || node.children.length === 0)"
+        class="tree-state-row"
+        :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
+        data-test="tree-node-empty"
+      >
+        <span class="tree-state-text muted">（空文件夹）</span>
+      </div>
+
       <FileTree
-        v-if="node.isDir && isExpanded(node.path) && node.children && node.children.length > 0"
+        v-else-if="node.isDir && isExpanded(node.path) && node.children && node.children.length > 0"
         :nodes="node.children"
         :active-path="props.activePath"
         :git-changes-map="props.gitChangesMap"
         :level="props.level + 1"
         @select="(p) => emit('select', p)"
         @dragstart="(e, p) => emit('dragstart', e, p)"
+        @load-children="(n) => emit('loadChildren', n)"
       />
     </li>
   </ul>
@@ -218,6 +246,37 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
   color: #b91c1c;
   background-color: #fee2e2;
   text-decoration: line-through;
+}
+
+.tree-state-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #64748b);
+  user-select: none;
+}
+
+.tree-loading-spinner {
+  display: inline-block;
+  animation: treeSpin 1s linear infinite;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+@keyframes treeSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tree-state-text.muted {
+  color: var(--color-text-muted, #94a3b8);
+  font-style: italic;
 }
 
 .git-renamed {

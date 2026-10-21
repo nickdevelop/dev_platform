@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { getFileTree, getGitStatus } from '../../api/files'
+import { searchProjectFiles } from '../../api/projects'
 import type { FileTreeNode, GitFileChangeStatus, GitStatusItem } from './types'
 import FileTree from './FileTree.vue'
 
@@ -20,6 +21,9 @@ const error = ref('')
 const treeNodes = ref<FileTreeNode[]>([])
 const gitChanges = ref<GitStatusItem[]>([])
 const searchQuery = ref('')
+const searchResults = ref<Array<{ path: string; isDir: boolean }>>([])
+const searchLoading = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 const gitChangesMap = computed(() => {
   const map = new Map<string, GitFileChangeStatus>()
@@ -49,35 +53,47 @@ async function refresh() {
   }
 }
 
+async function onLoadChildren(node: FileTreeNode) {
+  if (node.loading || node.loaded) return
+  node.loading = true
+  try {
+    const children = await getFileTree(props.projectId, node.path)
+    node.children = children
+    node.loaded = true
+  } catch (err) {
+    console.error('Failed to load sub-directory files:', err)
+  } finally {
+    node.loading = false
+  }
+}
+
 watch(() => props.projectId, () => {
   void refresh()
 }, { immediate: true })
 
-// Filtered tree nodes by search query
-function filterNodes(nodes: FileTreeNode[], query: string): FileTreeNode[] {
-  if (!query) return nodes
-  const res: FileTreeNode[] = []
-  for (const node of nodes) {
-    if (node.isDir) {
-      const filteredChildren = filterNodes(node.children || [], query)
-      if (filteredChildren.length > 0 || node.name.toLowerCase().includes(query)) {
-        res.push({
-          ...node,
-          children: filteredChildren,
-        })
+watch(searchQuery, (newQuery) => {
+  const q = newQuery.trim()
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q) {
+    searchResults.value = []
+    searchLoading.value = false
+    return
+  }
+  searchLoading.value = true
+  searchTimer = setTimeout(async () => {
+    try {
+      const resp = await searchProjectFiles(props.projectId, q, 50)
+      if (searchQuery.value.trim() === q) {
+        searchResults.value = resp.files || []
       }
-    } else {
-      if (node.name.toLowerCase().includes(query) || node.path.toLowerCase().includes(query)) {
-        res.push(node)
+    } catch {
+      searchResults.value = []
+    } finally {
+      if (searchQuery.value.trim() === q) {
+        searchLoading.value = false
       }
     }
-  }
-  return res
-}
-
-const displayTreeNodes = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  return filterNodes(treeNodes.value, q)
+  }, 150)
 })
 
 const displayChanges = computed(() => {
@@ -207,16 +223,42 @@ function getChangeStatusLabel(status: GitFileChangeStatus): { text: string; labe
 
       <!-- All files view -->
       <div v-else class="tree-container">
-        <div v-if="displayTreeNodes.length === 0" class="state-message">
-          {{ searchQuery ? '未找到匹配的文件' : '工作区为空' }}
+        <!-- Search query mode: show flat search results across workspace -->
+        <div v-if="searchQuery">
+          <div v-if="searchLoading" class="state-message">
+            正在搜索工作区文件…
+          </div>
+          <div v-else-if="searchResults.length === 0" class="state-message">
+            未找到匹配的文件
+          </div>
+          <ul v-else class="changes-ul">
+            <li
+              v-for="item in searchResults"
+              :key="item.path"
+              class="change-item"
+              :class="{ 'is-active': props.activePath === item.path }"
+              :draggable="!item.isDir"
+              @click="item.isDir ? undefined : onSelectFile(item.path)"
+              @dragstart="item.isDir ? undefined : onDragStart($event, item.path)"
+            >
+              <span class="search-file-icon" aria-hidden="true">{{ item.isDir ? '📁' : '📄' }}</span>
+              <span class="change-file-name" :title="item.path">{{ item.path }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Normal tree mode: lazy loaded directory tree -->
+        <div v-else-if="treeNodes.length === 0" class="state-message">
+          工作区为空
         </div>
         <FileTree
           v-else
-          :nodes="displayTreeNodes"
+          :nodes="treeNodes"
           :active-path="props.activePath"
           :git-changes-map="gitChangesMap"
           @select="onSelectFile"
           @dragstart="onDragStart"
+          @load-children="onLoadChildren"
         />
       </div>
     </div>
@@ -435,5 +477,11 @@ function getChangeStatusLabel(status: GitFileChangeStatus): { text: string; labe
 .git-renamed {
   color: #4338ca;
   background-color: #e0e7ff;
+}
+
+.search-file-icon {
+  margin-right: 6px;
+  font-size: 0.9rem;
+  line-height: 1;
 }
 </style>

@@ -6,6 +6,8 @@ export interface FileTreeNode {
   isDir: boolean
   size?: number
   children?: FileTreeNode[]
+  loading?: boolean
+  loaded?: boolean
 }
 
 export interface FileContentResponse {

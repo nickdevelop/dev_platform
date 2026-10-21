@@ -455,6 +455,31 @@ func TestHandleFileTreeAndContentRoutes(t *testing.T) {
 	if w.Body.String() != "# Hello" {
 		t.Fatalf("expected raw body '# Hello', got %q", w.Body.String())
 	}
+
+	// Shallow tree with path query
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/tree?path=src", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	var srcTreeResp struct {
+		Tree []FileTreeNode `json:"tree"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &srcTreeResp); err != nil {
+		t.Fatalf("unmarshal src tree: %v", err)
+	}
+	if len(srcTreeResp.Tree) == 0 || srcTreeResp.Tree[0].Name != "utils" {
+		t.Fatalf("expected direct child 'utils', got %+v", srcTreeResp.Tree)
+	}
+
+	// Path escape on tree route
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/tree?path=../outside", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for tree path escape", w.Code)
+	}
 }
 
 func TestGitStatus(t *testing.T) {

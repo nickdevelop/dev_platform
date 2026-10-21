@@ -107,9 +107,91 @@ describe('FileTree.vue', () => {
     expect(badge.text()).toBe('M')
     expect(badge.classes()).toContain('git-modified')
   })
+
+  it('triggers loadChildren event when expanding an unloaded directory', async () => {
+    const lazyNodes: FileTreeNode[] = [
+      {
+        name: 'pkg',
+        path: 'pkg',
+        isDir: true,
+      },
+    ]
+
+    const wrapper = mount(FileTree, {
+      props: {
+        nodes: lazyNodes,
+      },
+    })
+
+    const dirRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('pkg'))
+    await dirRow?.trigger('click')
+
+    expect(wrapper.emitted('loadChildren')?.[0]).toEqual([lazyNodes[0]])
+  })
+
+  it('shows loading state when directory node is marked as loading', () => {
+    const loadingNodes: FileTreeNode[] = [
+      {
+        name: 'pkg',
+        path: 'pkg',
+        isDir: true,
+        loading: true,
+      },
+    ]
+
+    const wrapper = mount(FileTree, {
+      props: {
+        nodes: loadingNodes,
+      },
+    })
+
+    // Click to expand
+    wrapper.vm.toggleExpand('pkg')
+
+    return wrapper.vm.$nextTick(() => {
+      expect(wrapper.find('[data-test="tree-node-loading"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('加载中…')
+    })
+  })
 })
 
 describe('FileSidebar.vue', () => {
+  it('loads children on demand when a directory is expanded in lazy loading mode', async () => {
+    const getFileTreeSpy = vi.spyOn(filesApi, 'getFileTree').mockImplementation(async (_pid, path) => {
+      if (!path) {
+        return [
+          { name: 'src', path: 'src', isDir: true },
+          { name: 'README.md', path: 'README.md', isDir: false },
+        ]
+      }
+      if (path === 'src') {
+        return [
+          { name: 'index.ts', path: 'src/index.ts', isDir: false },
+        ]
+      }
+      return []
+    })
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('src'))
+    expect(wrapper.text()).not.toContain('index.ts')
+
+    // Find the FileTree component and emit loadChildren
+    const tree = wrapper.findComponent(FileTree)
+    expect(tree.exists()).toBe(true)
+
+    // Trigger expand on src
+    const srcRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('src'))
+    await srcRow?.trigger('click')
+    await flushPromises()
+
+    expect(getFileTreeSpy).toHaveBeenCalledWith(1, 'src')
+    expect(wrapper.text()).toContain('index.ts')
+  })
   it('switches between changes and all files tabs', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
       { name: 'app.vue', path: 'app.vue', isDir: false },

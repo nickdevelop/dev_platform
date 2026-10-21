@@ -11,8 +11,9 @@ interface GitStatusResponse {
   changes: GitStatusItem[]
 }
 
-export async function getFileTree(projectId: number): Promise<FileTreeNode[]> {
-  const resp = await apiRequest<FileTreeResponse>('GET', `/projects/${projectId}/files/tree`)
+export async function getFileTree(projectId: number, path?: string): Promise<FileTreeNode[]> {
+  const query = path ? `?path=${encodeURIComponent(path)}` : ''
+  const resp = await apiRequest<FileTreeResponse>('GET', `/projects/${projectId}/files/tree${query}`)
   return resp.tree || []
 }
 

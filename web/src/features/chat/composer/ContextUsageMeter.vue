@@ -104,7 +104,9 @@ const tooltipText = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.18rem 0.45rem;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 0.5rem;
   border-radius: 6px;
   background: var(--color-surface-muted, #f1f5f9);
   border: 1px solid var(--color-border, #e2e8f0);

@@ -273,16 +273,33 @@ func projectID(c *gin.Context) (uint, bool) {
 	return uint(id), true
 }
 
-// handleFileTree returns the multi-level directory tree of the project workspace.
+// handleFileTree returns the directory tree of the project workspace.
+// By default or with ?path=<dir>, it returns direct children for lazy loading.
+// Pass ?all=true or ?recursive=true to retrieve the full recursive tree.
 func (s *Service) handleFileTree(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
 		return
 	}
-	tree, err := s.GetFileTree(c.Request.Context(), id)
+
+	if c.Query("all") == "true" || c.Query("recursive") == "true" {
+		tree, err := s.GetFileTree(c.Request.Context(), id)
+		if err != nil {
+			respondServiceError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"tree": tree})
+		return
+	}
+
+	subPath := c.Query("path")
+	tree, err := s.GetFileTreeShallow(c.Request.Context(), id, subPath)
 	if err != nil {
 		respondServiceError(c, err)
 		return
+	}
+	if tree == nil {
+		tree = []FileTreeNode{}
 	}
 	c.JSON(http.StatusOK, gin.H{"tree": tree})
 }

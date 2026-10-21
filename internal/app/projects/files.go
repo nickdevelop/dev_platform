@@ -372,6 +372,182 @@ func buildTreeFromPaths(paths []string) []FileTreeNode {
 	return convert(root)
 }
 
+// resolveProjectSafeDir ensures the requested directory path is inside the project workspace
+// and does not escape via traversal (..) or symlinks. An empty relPath represents the project root.
+func (s *Service) resolveProjectSafeDir(projectID uint, relPath string) (string, string, error) {
+	if strings.ContainsRune(relPath, 0) {
+		return "", "", ErrInvalidTarget
+	}
+
+	proj, err := s.repo.Get(projectID)
+	if err != nil {
+		return "", "", err
+	}
+
+	rootDir := proj.Path
+	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
+	cleanRel = strings.TrimPrefix(cleanRel, "/")
+
+	if cleanRel == "." || cleanRel == "" {
+		return rootDir, rootDir, nil
+	}
+
+	if cleanRel == ".." || strings.HasPrefix(cleanRel, "../") || strings.Contains(cleanRel, "/../") {
+		return "", "", ErrPathEscaped
+	}
+
+	fullPath := filepath.Join(rootDir, filepath.FromSlash(cleanRel))
+
+	relCheck, err := filepath.Rel(rootDir, fullPath)
+	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
+		return "", "", ErrPathEscaped
+	}
+
+	fi, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", ErrFileNotFound
+		}
+		return "", "", err
+	}
+	if !fi.IsDir() {
+		return "", "", ErrInvalidTarget
+	}
+
+	canonical, err := filepath.EvalSymlinks(fullPath)
+	if err == nil {
+		canRel, err := filepath.Rel(rootDir, canonical)
+		if err != nil || canRel == ".." || strings.HasPrefix(canRel, ".."+string(filepath.Separator)) {
+			return "", "", ErrPathEscaped
+		}
+	}
+
+	return rootDir, fullPath, nil
+}
+
+// checkGitIgnored checks which directory entries under relDir are ignored by git in rootDir.
+func (s *Service) checkGitIgnored(ctx context.Context, rootDir string, relDir string, entries []fs.DirEntry) map[string]bool {
+	var pathsToCheck []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		target := name
+		if relDir != "" {
+			target = filepath.ToSlash(filepath.Join(relDir, name))
+		}
+		if entry.IsDir() {
+			target += "/"
+		}
+		pathsToCheck = append(pathsToCheck, target)
+	}
+
+	if len(pathsToCheck) == 0 {
+		return nil
+	}
+
+	args := append([]string{"check-ignore", "--"}, pathsToCheck...)
+	out, err := gitOutputLimit(ctx, rootDir, 1<<20, args...)
+	if err != nil && out == "" {
+		return nil
+	}
+
+	ignored := make(map[string]bool)
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		line := filepath.ToSlash(strings.TrimSpace(scanner.Text()))
+		line = strings.TrimSuffix(line, "/")
+		if line == "" {
+			continue
+		}
+		base := filepath.Base(line)
+		ignored[base] = true
+	}
+	return ignored
+}
+
+// GetFileTreeShallow returns only the direct children (files and subdirectories) of the given subPath
+// without recursively expanding deeper directories. This powers lazy loading of workspace file trees.
+func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPath string) ([]FileTreeNode, error) {
+	rootDir, targetDir, err := s.resolveProjectSafeDir(projectID, subPath)
+	if err != nil {
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		return nil, err
+	}
+
+	relDir, err := filepath.Rel(rootDir, targetDir)
+	if err != nil || relDir == "." {
+		relDir = ""
+	}
+
+	var ignoredMap map[string]bool
+	if s.isGitDir(ctx, rootDir) && len(entries) > 0 {
+		ignoredMap = s.checkGitIgnored(ctx, rootDir, relDir, entries)
+	}
+
+	var dirs []FileTreeNode
+	var files []FileTreeNode
+
+	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if ignoredMap != nil && ignoredMap[name] {
+			continue
+		}
+
+		childRel := name
+		if relDir != "" {
+			childRel = filepath.ToSlash(filepath.Join(relDir, name))
+		}
+
+		isDir := entry.IsDir()
+		var size int64
+		if !isDir {
+			if info, err := entry.Info(); err == nil {
+				size = info.Size()
+			}
+		}
+
+		node := FileTreeNode{
+			Name:  name,
+			Path:  childRel,
+			IsDir: isDir,
+			Size:  size,
+		}
+
+		if isDir {
+			dirs = append(dirs, node)
+		} else {
+			files = append(files, node)
+		}
+	}
+
+	sortNodes := func(list []FileTreeNode) {
+		sort.Slice(list, func(i, j int) bool {
+			lowerI := strings.ToLower(list[i].Name)
+			lowerJ := strings.ToLower(list[j].Name)
+			if lowerI == lowerJ {
+				return list[i].Name < list[j].Name
+			}
+			return lowerI < lowerJ
+		})
+	}
+	sortNodes(dirs)
+	sortNodes(files)
+
+	return append(dirs, files...), nil
+}
+
 // ReadFileContent safely reads a file's content and returns its inspection metadata.
 func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath string) (*FileContentResponse, error) {
 	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath)

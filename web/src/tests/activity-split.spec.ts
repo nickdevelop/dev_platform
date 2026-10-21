@@ -563,4 +563,28 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     await flushPromises()
     expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
   })
+
+  it('supports resizing preview pane width via resizer handle and persists width', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    localStorage.setItem('dev-platform-preview-width-v1', '460')
+    const wrapper = await mountPanel()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    expect(preview.exists()).toBe(true)
+    const resizer = preview.find('[data-test="preview-resizer"]')
+    expect(resizer.exists()).toBe(true)
+
+    // Trigger mousedown on resizer
+    await resizer.trigger('mousedown', { button: 0, clientX: 500 })
+
+    // Simulate drag mousemove (clientX from 500 to 450 -> delta = 50px wider)
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 450 }))
+    await flushPromises()
+
+    // Trigger mouseup
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    await flushPromises()
+
+    expect(localStorage.getItem('dev-platform-preview-width-v1')).toBe('510')
+  })
 })
