@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const defaultIdleTimeout = 10 * time.Minute
+const defaultIdleTimeout = 30 * time.Minute
 
 // SharedHost manages a single shared dsh process across all instances and projects,
 // reference counting active leases and reclaiming the process after an idle period.

@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -72,5 +73,36 @@ func TestRegistryAdaptersAreIndependent(t *testing.T) {
 	}
 	if got, _ := registry.Get(BackendOpenCodeV2); got != AgentAdapter(opencode) {
 		t.Error("Get(opencode-v2) returned the wrong adapter")
+	}
+}
+
+type closerAdapter struct {
+	stubAdapter
+	closed bool
+}
+
+func (c *closerAdapter) Close(_ context.Context) error {
+	c.closed = true
+	return nil
+}
+
+func TestRegistryClose(t *testing.T) {
+	registry := NewRegistry()
+	normal := &stubAdapter{}
+	withCloser := &closerAdapter{}
+
+	if err := registry.Register(BackendPi, normal); err != nil {
+		t.Fatalf("Register normal: %v", err)
+	}
+	if err := registry.Register(BackendDeepSeek, withCloser); err != nil {
+		t.Fatalf("Register closer: %v", err)
+	}
+
+	if err := registry.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	if !withCloser.closed {
+		t.Errorf("closerAdapter.closed = false, want true")
 	}
 }

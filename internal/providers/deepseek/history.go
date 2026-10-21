@@ -67,6 +67,9 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	const pageSize = 100
 	var collectedEvents []agents.NormalizedEvent
 	normalizer := NewSessionEventNormalizer("", "")
+	if m := a.sessionModel(request.SessionID); m != nil {
+		normalizer.SetCurrentModel(m)
+	}
 
 	var beforeSeq *int
 	truncated := false

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"devplatform/internal/core/platform"
 )
 
 var launchURLRegex = regexp.MustCompile(`dsh web:\s+(https?://127\.0\.0\.1:\d+/\?token=[A-Za-z0-9_%.-]+)`)
@@ -43,12 +45,18 @@ func StartProcess(ctx context.Context, executable string, workDir string, env []
 	startupCtx, cancelStartup := context.WithTimeout(ctx, startupTimeout)
 	defer cancelStartup()
 
+	reapOrphanDshProcesses()
+
 	cmd := exec.Command(executable, "--profile", "web", "--port", "0", "--no-open")
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
 	if len(env) > 0 {
 		cmd.Env = env
+	}
+
+	if err := platform.New().Process().Configure(cmd); err != nil {
+		return nil, fmt.Errorf("configure dsh process: %w", err)
 	}
 
 	stdinPipe, err := cmd.StdinPipe()
@@ -69,11 +77,25 @@ func StartProcess(ctx context.Context, executable string, workDir string, env []
 		return nil, fmt.Errorf("open stderr pipe: %w", err)
 	}
 
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			return platform.New().Process().Terminate(cmd.Process.Pid)
+		}
+		return nil
+	}
+	cmd.WaitDelay = 2 * time.Second
+
 	if err := cmd.Start(); err != nil {
 		_ = stdinPipe.Close()
 		_ = stdoutPipe.Close()
 		_ = stderrPipe.Close()
 		return nil, fmt.Errorf("start dsh process: %w", err)
+	}
+
+	if err := platform.New().Process().Attach(cmd.Process); err != nil {
+		_ = platform.New().Process().Terminate(cmd.Process.Pid)
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("supervise dsh process: %w", err)
 	}
 
 	proc := &Process{
@@ -200,7 +222,7 @@ func (p *Process) Shutdown(ctx context.Context) error {
 
 		// 2. Escalate to process kill if not exited
 		if p.cmd != nil && p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
+			_ = platform.New().Process().Terminate(p.cmd.Process.Pid)
 		}
 
 		select {

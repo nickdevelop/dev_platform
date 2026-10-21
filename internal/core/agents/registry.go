@@ -8,6 +8,7 @@
 package agents
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -88,4 +89,27 @@ func (r *Registry) Backends() []BackendID {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	return ids
+}
+
+// Close stops all registered adapters that implement BackendCloser.
+func (r *Registry) Close(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	adapters := make([]AgentAdapter, 0, len(r.adapters))
+	for _, a := range r.adapters {
+		adapters = append(adapters, a)
+	}
+	r.mu.RUnlock()
+
+	var firstErr error
+	for _, a := range adapters {
+		if closer, ok := a.(BackendCloser); ok {
+			if err := closer.Close(ctx); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }

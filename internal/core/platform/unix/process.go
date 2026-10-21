@@ -18,7 +18,11 @@ type Process struct{}
 // Configure makes the child the leader of a new process group so a stop can
 // signal the whole tree (children may spawn helper processes).
 func (Process) Configure(cmd *exec.Cmd) error {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	setPdeathsig(cmd)
 	return nil
 }
 

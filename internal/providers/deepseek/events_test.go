@@ -320,8 +320,31 @@ func TestEventNormalization(t *testing.T) {
 	if msgEvs[1].Lifecycle.ContextLimit == nil || *msgEvs[1].Lifecycle.ContextLimit != 128000 {
 		t.Errorf("Lifecycle.ContextLimit = %v, want 128000", msgEvs[1].Lifecycle.ContextLimit)
 	}
+	// Model should be stamped from request/context onto assistant message
+	if msgEvs[0].Message.Model == nil || msgEvs[0].Message.Model.ID != "deepseek-official/deepseek-v4-flash" || msgEvs[0].Message.Model.Provider != "deepseek-official" {
+		t.Errorf("Message.Model mismatch: %+v, want ID: deepseek-official/deepseek-v4-flash", msgEvs[0].Message.Model)
+	}
 
-	// 15. NormalizeProjection method
+	// 15. assistant-stream chunk carries the current model
+	streamChunkFrame := []byte(`{
+		"type": "assistant-stream",
+		"frame": {
+			"type": "chunk",
+			"chunk": {
+				"type": "text-delta",
+				"text": "streamed reply"
+			}
+		}
+	}`)
+	streamEvs := norm.NormalizeFrame(streamChunkFrame)
+	if len(streamEvs) != 1 || streamEvs[0].Type != agents.EventMessage || streamEvs[0].Message == nil {
+		t.Fatalf("assistant-stream failed: %+v", streamEvs)
+	}
+	if streamEvs[0].Message.Model == nil || streamEvs[0].Message.Model.ID != "deepseek-official/deepseek-v4-flash" {
+		t.Errorf("assistant-stream model = %+v, want deepseek-official/deepseek-v4-flash", streamEvs[0].Message.Model)
+	}
+
+	// 16. NormalizeProjection method
 	projEvs := norm.NormalizeProjection("contextPressure", map[string]any{
 		"contextWindow":  65536,
 		"pressureTokens": 1234,

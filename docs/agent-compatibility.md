@@ -83,7 +83,7 @@ environment variable (comma-separated paths).
 
 The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 --no-open`):
 
-- **Process model**: one shared `dsh` process across instances and projects, reference-counted by leases and reclaimed after 10 idle minutes.
+- **Process model**: one shared `dsh` process across instances and projects, reference-counted by leases and reclaimed after 30 idle minutes.
 - **Multi-project isolation**: sessions specify their project root via `cwd` on `session/create`; tool execution operates within the session's working directory.
 - **Protocol**: Typert JSON-RPC over HTTP POST `/api/<method>` and WebSocket `/api/remote.mux` with token authentication.
 - **Events**: WebSocket `session/follow` streams streaming chunks (`text-delta`, `reasoning-delta`), structured events (`turn/start`, `turn/end`, `tool/call`, `tool/result`), and token usage.
@@ -201,21 +201,21 @@ separator where the replay ends.
 Each assistant message also names the model that produced it (`MessagePayload.Model`,
 in the platform's `provider/model` form with the variant alongside). A replay
 uses the model recorded on the message itself (or the `model_change` record for
-pi), so a conversation that switched models mid-session replays accurately per
+pi, or the `request/context` record for deepseek), so a conversation that switched models mid-session replays accurately per
 message; a live assistant event is stamped by the adapter with the session's
 current active model (tracked from session create/continue and refreshed on
-switch) for both opencode and pi.
+switch) across opencode, pi, and deepseek.
 
 Because the read is scoped by working directory and agent-native session id
 rather than by an instance, a session whose instance has stopped — or whose
 platform was restarted — still replays.
 
-| | `opencode-v2` | `pi` |
-| --- | --- | --- |
-| Source | `GET /api/session/{id}/message` | the session's JSONL transcript (`<session dir>/<directory slug>/<timestamp>_<id>.jsonl`, version 3) |
-| Reasoning | `reasoning` blocks and the `session.reasoning.*` events become `thinking` events | `thinking` blocks and the `thinking_*` events become `thinking` events |
-| Skipped | `idle` and `model-switched` entries | the `system` record and `thinking_level_change` (`model_change` is parsed to annotate assistant models) |
-| Tool activity | a `tool` block becomes a call/result pair (`state.input`, `state.output`, `state.status != "completed"` marks an error) | a `toolCall` block becomes the call; the `toolResult` record's `toolCallId`/`isError` link its result |
+| | `opencode-v2` | `pi` | `deepseek` |
+| --- | --- | --- | --- |
+| Source | `GET /api/session/{id}/message` | the session's JSONL transcript (`<session dir>/<directory slug>/<timestamp>_<id>.jsonl`, version 3) | `session/page` event stream via Typert RPC |
+| Reasoning | `reasoning` blocks and the `session.reasoning.*` events become `thinking` events | `thinking` blocks and the `thinking_*` events become `thinking` events | `reasoning` blocks and `reasoning-delta` chunks become `thinking` events |
+| Skipped | `idle` and `model-switched` entries | the `system` record and `thinking_level_change` (`model_change` is parsed to annotate assistant models) | system injected contexts (e.g. `source.kind != "user"`) (`request/context` is parsed to annotate assistant models) |
+| Tool activity | a `tool` block becomes a call/result pair (`state.input`, `state.output`, `state.status != "completed"` marks an error) | a `toolCall` block becomes the call; the `toolResult` record's `toolCallId`/`isError` link its result | `tool/call` and `tool/ptc-dispatch-start` become calls; `tool/result` and `tool/ptc-dispatch` link results |
 
 Reasoning is a first-class event kind rather than something the platform drops:
 both backends expose it live (`session.reasoning.started/delta/ended` for

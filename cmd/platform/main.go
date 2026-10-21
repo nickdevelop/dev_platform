@@ -426,6 +426,9 @@ func runServer(args []string) error {
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("graceful shutdown failed: %w", err)
 		}
+		if err := registry.Close(shutdownCtx); err != nil {
+			log.Printf("registry close: %v", err)
+		}
 	}
 	return nil
 }

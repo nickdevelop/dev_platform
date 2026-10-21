@@ -386,6 +386,13 @@ type AgentAdapter interface {
 	Interrupt(ctx context.Context, ref SessionRef) error
 }
 
+// BackendCloser is an optional interface implemented by adapters that manage
+// background host processes (e.g. shared daemons) and need to release them
+// when the platform shuts down.
+type BackendCloser interface {
+	Close(ctx context.Context) error
+}
+
 // HistoryResult is the outcome of a history read: the session's prior events,
 // oldest first, and whether an older part of the transcript was left out. The
 // reader that bounded the read reports it, because only it knows whether

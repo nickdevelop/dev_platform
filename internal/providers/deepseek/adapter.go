@@ -22,6 +22,7 @@ var (
 	_ agents.PermissionReplier   = (*Adapter)(nil)
 	_ agents.CommandDiscoverer   = (*Adapter)(nil)
 	_ agents.Diagnostician       = (*Adapter)(nil)
+	_ agents.BackendCloser       = (*Adapter)(nil)
 )
 
 // Options configures the deepseek adapter.
@@ -52,9 +53,10 @@ type Adapter struct {
 	host              *SharedHost
 	permissions       *PermissionsManager
 
-	mu          sync.Mutex
-	instances   map[string]*instanceState
-	subscribers map[string]map[*subscription]struct{}
+	mu            sync.Mutex
+	instances     map[string]*instanceState
+	subscribers   map[string]map[*subscription]struct{}
+	sessionModels map[string]agents.MessageModel
 }
 
 type subscription struct {
@@ -107,7 +109,41 @@ func New(opts Options) *Adapter {
 		permissions:       NewPermissionsManager(),
 		instances:         make(map[string]*instanceState),
 		subscribers:       make(map[string]map[*subscription]struct{}),
+		sessionModels:     make(map[string]agents.MessageModel),
 	}
+}
+
+func (a *Adapter) setSessionModel(sessionID string, model string) {
+	if sessionID == "" || model == "" {
+		return
+	}
+	parts := strings.SplitN(model, "/", 2)
+	provider := "deepseek"
+	modelName := model
+	if len(parts) == 2 {
+		provider = parts[0]
+		modelName = parts[1]
+	}
+	modelID := model
+	if !strings.HasPrefix(modelID, provider+"/") {
+		modelID = provider + "/" + modelName
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.sessionModels[sessionID] = agents.MessageModel{
+		ID:       modelID,
+		Provider: provider,
+	}
+}
+
+func (a *Adapter) sessionModel(sessionID string) *agents.MessageModel {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if m, ok := a.sessionModels[sessionID]; ok {
+		copy := m
+		return &copy
+	}
+	return nil
 }
 
 func (a *Adapter) execPath() string {
@@ -441,6 +477,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 	// Select model if requested
 	if options.Model != "" {
 		_ = a.selectModel(ctx, client, sessionID, options.Model)
+		a.setSessionModel(sessionID, options.Model)
 	}
 
 	// Rename session if title requested
@@ -515,6 +552,7 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		if err := a.selectModel(ctx, client, ref.SessionID, message.Model); err != nil {
 			return fmt.Errorf("select model before prompt: %w", err)
 		}
+		a.setSessionModel(ref.SessionID, message.Model)
 	}
 
 	var contentBlocks []any
@@ -526,9 +564,9 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	}
 	for _, img := range message.Images {
 		contentBlocks = append(contentBlocks, map[string]any{
-			"type":      "image",
-			"data":      img.Data,
-			"mimeType":  img.MediaType,
+			"type":     "image",
+			"data":     img.Data,
+			"mimeType": img.MediaType,
 		})
 	}
 
@@ -641,6 +679,9 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				return
 			}
 			normalizer := NewSessionEventNormalizer(instanceID, sessionID)
+			if m := a.sessionModel(sessionID); m != nil {
+				normalizer.SetCurrentModel(m)
+			}
 			_, followCh, cancelFollow, fErr := client.Subscribe(subCtx, "session/follow", map[string]any{
 				"request": map[string]any{
 					"address": map[string]any{
@@ -784,6 +825,11 @@ func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, 
 		}
 	}
 	return false, nil
+}
+
+// Close stops the shared host and reclaims the running dsh process on platform shutdown.
+func (a *Adapter) Close(ctx context.Context) error {
+	return a.host.Stop(ctx)
 }
 
 func newRandomID() string {

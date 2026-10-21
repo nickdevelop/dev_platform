@@ -15,6 +15,7 @@ type SessionEventNormalizer struct {
 	sessionID            string
 	currentTurnID        string
 	currentContextWindow *int
+	currentModel         *agents.MessageModel
 	sequence             uint64
 }
 
@@ -24,6 +25,25 @@ func NewSessionEventNormalizer(instanceID, sessionID string) *SessionEventNormal
 		instanceID: instanceID,
 		sessionID:  sessionID,
 	}
+}
+
+// SetCurrentModel configures the active model for subsequent events.
+func (n *SessionEventNormalizer) SetCurrentModel(m *agents.MessageModel) {
+	if m == nil {
+		n.currentModel = nil
+		return
+	}
+	copy := *m
+	n.currentModel = &copy
+}
+
+// CurrentModel returns the currently recorded model, or nil when none is known.
+func (n *SessionEventNormalizer) CurrentModel() *agents.MessageModel {
+	if n.currentModel == nil {
+		return nil
+	}
+	copy := *n.currentModel
+	return &copy
 }
 
 // NormalizeFrame parses one incoming JSON frame from session/follow into zero or more NormalizedEvents.
@@ -99,6 +119,7 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 						Role:  "assistant",
 						Text:  text,
 						Final: false,
+						Model: n.CurrentModel(),
 					},
 				}))
 			} else if chunkType == "reasoning-delta" && text != "" {
@@ -167,6 +188,23 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 					},
 				}))
 			}
+			model, _ := evData["model"].(string)
+			provider, _ := evData["provider"].(string)
+			variant, _ := evData["variant"].(string)
+			if variant == "" {
+				variant, _ = evData["reasoningEffort"].(string)
+			}
+			if model != "" {
+				modelID := model
+				if provider != "" && !strings.HasPrefix(modelID, provider+"/") {
+					modelID = provider + "/" + model
+				}
+				n.currentModel = &agents.MessageModel{
+					ID:       modelID,
+					Provider: provider,
+					Variant:  variant,
+				}
+			}
 
 		case "assistant/message", "assistant/attempt":
 			// 1. Token usage report
@@ -184,6 +222,24 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 					Reasoning:  reasoningTokens,
 					CacheRead:  cacheRead,
 					CacheWrite: cacheWrite,
+				}
+			}
+
+			msgModel := n.CurrentModel()
+			if m, ok := evData["model"].(string); ok && m != "" {
+				p, _ := evData["provider"].(string)
+				mID := m
+				if p != "" && !strings.HasPrefix(mID, p+"/") {
+					mID = p + "/" + m
+				}
+				v, _ := evData["variant"].(string)
+				if v == "" {
+					v, _ = evData["reasoningEffort"].(string)
+				}
+				msgModel = &agents.MessageModel{
+					ID:       mID,
+					Provider: p,
+					Variant:  v,
 				}
 			}
 
@@ -208,6 +264,7 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 										Text:  bText,
 										Final: true,
 										Usage: usage,
+										Model: msgModel,
 									},
 								}))
 							}
@@ -220,6 +277,7 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 							Text:  strContent,
 							Final: true,
 							Usage: usage,
+							Model: msgModel,
 						},
 					}))
 				}

@@ -554,3 +554,188 @@ func TestAdapterAutoAdmitAndSafeSubscriptionClose(t *testing.T) {
 	for range eventsCh {
 	}
 }
+
+func TestSharedHostDefaultIdleTimeout(t *testing.T) {
+	host := NewSharedHost(SharedHostOptions{})
+	if host.idleTimeout != 30*time.Minute {
+		t.Errorf("host.idleTimeout = %v, want 30m0s", host.idleTimeout)
+	}
+}
+
+func TestAdapterSessionModelTrackingAndHistory(t *testing.T) {
+	server, client := newMockDSHServer(t)
+	defer server.Close()
+	defer client.Close()
+
+	adapter := New(Options{
+		ProcessLauncher: func(ctx context.Context) (*Process, error) {
+			return &Process{
+				client:   client,
+				exitDone: make(chan struct{}),
+			}, nil
+		},
+	})
+
+	ctx := context.Background()
+	instID := "inst-dsh-test-model"
+
+	// 1. CreateSession sets the session model
+	created, err := adapter.CreateSession(ctx, instID, agents.CreateSessionOptions{
+		Model: "deepseek/deepseek-chat",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession failed: %v", err)
+	}
+
+	model := adapter.sessionModel(created.SessionID)
+	if model == nil {
+		t.Fatalf("sessionModel(%q) = nil, want deepseek/deepseek-chat", created.SessionID)
+	}
+	if model.ID != "deepseek/deepseek-chat" || model.Provider != "deepseek" {
+		t.Errorf("sessionModel = %+v, want ID: deepseek/deepseek-chat, Provider: deepseek", model)
+	}
+
+	// 2. SendMessage with new model updates the session model
+	err = adapter.SendMessage(ctx, *created, agents.SendMessageRequest{
+		Text:  "switch to reasoner",
+		Model: "deepseek/deepseek-reasoner",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	updatedModel := adapter.sessionModel(created.SessionID)
+	if updatedModel == nil || updatedModel.ID != "deepseek/deepseek-reasoner" {
+		t.Errorf("updated sessionModel = %+v, want deepseek/deepseek-reasoner", updatedModel)
+	}
+
+	// 3. ListHistory stamps model from request/context onto assistant messages
+	histServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var req rpcRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		method := r.URL.Path[len("/api/"):]
+
+		var val any
+		switch method {
+		case "session/projections":
+			val = map[string]any{
+				"asOfSeq": 10,
+				"values":  map[string]any{},
+			}
+		case "session/page":
+			val = map[string]any{
+				"records": []any{
+					map[string]any{
+						"type": "event",
+						"event": map[string]any{
+							"seq":  1,
+							"type": "request/context",
+							"data": map[string]any{
+								"provider":      "deepseek",
+								"model":         "deepseek-chat",
+								"contextWindow": 128000,
+							},
+						},
+					},
+					map[string]any{
+						"type": "event",
+						"event": map[string]any{
+							"seq":  2,
+							"type": "assistant/message",
+							"data": map[string]any{
+								"message": map[string]any{
+									"role":    "assistant",
+									"content": "Hello world from deepseek",
+								},
+							},
+						},
+					},
+				},
+				"hasMore": false,
+			}
+		}
+		respBytes, _ := json.Marshal(rpcResponse{
+			Type:  "server-response",
+			RPCID: req.RPCID,
+			Result: rpcResult{
+				OK:    true,
+				Value: mustJSON(val),
+			},
+		})
+		w.Write(respBytes)
+	}))
+	defer histServer.Close()
+
+	histClient := NewClient(histServer.URL, "auth=test")
+	defer histClient.Close()
+
+	histAdapter := New(Options{
+		ProcessLauncher: func(ctx context.Context) (*Process, error) {
+			return &Process{
+				client:   histClient,
+				exitDone: make(chan struct{}),
+			}, nil
+		},
+	})
+
+	histRes, err := histAdapter.ListHistory(ctx, agents.ListHistoryRequest{
+		Directory: "/data/projects/project1",
+		SessionID: "ses-test-hist-model",
+	})
+	if err != nil {
+		t.Fatalf("ListHistory failed: %v", err)
+	}
+
+	foundAssistant := false
+	for _, ev := range histRes.Events {
+		if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" {
+			foundAssistant = true
+			if ev.Message.Model == nil {
+				t.Fatalf("assistant message Model is nil in ListHistory")
+			}
+			if ev.Message.Model.ID != "deepseek/deepseek-chat" || ev.Message.Model.Provider != "deepseek" {
+				t.Errorf("assistant message Model = %+v, want deepseek/deepseek-chat", ev.Message.Model)
+			}
+		}
+	}
+	if !foundAssistant {
+		t.Error("assistant message not found in ListHistory result")
+	}
+}
+
+func TestAdapterClose(t *testing.T) {
+	exitDone := make(chan struct{})
+	adapter := New(Options{
+		ProcessLauncher: func(ctx context.Context) (*Process, error) {
+			proc := &Process{
+				exitDone: exitDone,
+			}
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				close(exitDone)
+			}()
+			return proc, nil
+		},
+	})
+
+	// Acquire to start process
+	_, release, err := adapter.host.Acquire(context.Background())
+	if err != nil {
+		t.Fatalf("Acquire failed: %v", err)
+	}
+	release()
+
+	// Verify Close releases the host
+	if err := adapter.Close(context.Background()); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	adapter.mu.Lock()
+	stopped := adapter.host.proc == nil
+	adapter.mu.Unlock()
+
+	if !stopped {
+		t.Error("host.proc must be nil after Close")
+	}
+}
