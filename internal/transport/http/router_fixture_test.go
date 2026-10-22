@@ -105,6 +105,35 @@ func loginClient(t *testing.T, client *http.Client, base string) string {
 	if loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
 	}
+
+	// Login rotates the CSRF token, so the pre-login value is dead. Re-read the
+	// session the way a browser does and hand back the token the cookie now
+	// holds; using the old one would make every later mutation answer 403.
+	return fetchSessionToken(t, client, base)
+}
+
+// fetchSessionToken reads the CSRF token the client's cookie jar currently
+// holds, issuing the session request that keeps it in sync.
+func fetchSessionToken(t *testing.T, client *http.Client, base string) string {
+	t.Helper()
+
+	resp, err := client.Get(base + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET session: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET session status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	var session struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
+		t.Fatalf("decode session body: %v", err)
+	}
+	if session.CSRFToken == "" {
+		t.Fatal("session endpoint returned an empty CSRF token")
+	}
 	return session.CSRFToken
 }
 

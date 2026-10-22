@@ -303,6 +303,10 @@ func TestMutationWithoutCSRFTokenIsRejected(t *testing.T) {
 		t.Errorf("mutation without CSRF status = %d, want %d", missing.StatusCode, http.StatusForbidden)
 	}
 
+	// A successful login rotates the token, so the pre-login value is dead and
+	// the authenticated client must use the one the cookie now holds.
+	csrf = fetchCSRF(t, client, base)
+
 	ok := postJSON(t, client, base+"/api/protected/mutate", csrf, `{}`)
 	ok.Body.Close()
 	if ok.StatusCode != http.StatusOK {
@@ -511,6 +515,9 @@ func TestLoginThrottleSuccessDoesNotClearOtherReservations(t *testing.T) {
 		t.Fatalf("held failing request status = %d, want %d", got, http.StatusUnauthorized)
 	}
 
+	// The success rotated the CSRF token; further attempts use the new one.
+	csrf = fetchCSRF(t, client, base)
+
 	// One slot is still consumed by the held failure, so of two further
 	// failures exactly one is admitted and the other is throttled.
 	first := postJSON(t, client, base+"/api/auth/login", csrf, loginPayload("wrong"))
@@ -619,5 +626,64 @@ func TestSessionIDsAreRandom(t *testing.T) {
 	}
 	if len(first.ID) < 32 {
 		t.Errorf("session ID length = %d, want >= 32", len(first.ID))
+	}
+}
+
+// TestLoginAndLogoutRotateCSRFToken pins the rotation contract: the token that
+// authorised a login (or a logout) is invalid afterwards, and the client must
+// use the one the response and the cookie now carry. A token that survives an
+// identity change could be replayed by anyone who observed it.
+func TestLoginAndLogoutRotateCSRFToken(t *testing.T) {
+	svc := newService(t)
+	client, base := newClient(t, newRouter(svc))
+
+	anonymousToken := fetchCSRF(t, client, base)
+
+	login := postJSON(t, client, base+"/api/auth/login", anonymousToken, loginPayload(testPassword))
+	defer login.Body.Close()
+	if login.StatusCode != http.StatusOK {
+		t.Fatalf("login status = %d, want %d", login.StatusCode, http.StatusOK)
+	}
+	var loginBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(login.Body).Decode(&loginBody); err != nil {
+		t.Fatalf("decode login body: %v", err)
+	}
+	if loginBody.CSRFToken == "" || loginBody.CSRFToken == anonymousToken {
+		t.Fatalf("login token = %q, want a fresh token distinct from %q", loginBody.CSRFToken, anonymousToken)
+	}
+
+	stale := postJSON(t, client, base+"/api/protected/mutate", anonymousToken, `{}`)
+	stale.Body.Close()
+	if stale.StatusCode != http.StatusForbidden {
+		t.Errorf("mutation with the pre-login token status = %d, want %d", stale.StatusCode, http.StatusForbidden)
+	}
+
+	current := postJSON(t, client, base+"/api/protected/mutate", loginBody.CSRFToken, `{}`)
+	current.Body.Close()
+	if current.StatusCode != http.StatusOK {
+		t.Errorf("mutation with the login token status = %d, want %d", current.StatusCode, http.StatusOK)
+	}
+
+	logout := postJSON(t, client, base+"/api/auth/logout", loginBody.CSRFToken, `{}`)
+	defer logout.Body.Close()
+	if logout.StatusCode != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", logout.StatusCode, http.StatusOK)
+	}
+	var logoutBody struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(logout.Body).Decode(&logoutBody); err != nil {
+		t.Fatalf("decode logout body: %v", err)
+	}
+	if logoutBody.CSRFToken == "" || logoutBody.CSRFToken == loginBody.CSRFToken {
+		t.Fatalf("logout token = %q, want a fresh token distinct from %q", logoutBody.CSRFToken, loginBody.CSRFToken)
+	}
+
+	replayed := postJSON(t, client, base+"/api/protected/mutate", loginBody.CSRFToken, `{}`)
+	replayed.Body.Close()
+	if replayed.StatusCode != http.StatusForbidden {
+		t.Errorf("mutation with the pre-logout token status = %d, want %d", replayed.StatusCode, http.StatusForbidden)
 	}
 }

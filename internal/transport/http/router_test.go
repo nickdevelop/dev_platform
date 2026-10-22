@@ -74,36 +74,8 @@ func newAuthedClient(t *testing.T) (*http.Client, string, string) {
 	client := &http.Client{Jar: jar}
 	base := server.URL
 
-	resp, err := client.Get(base + "/api/auth/session")
-	if err != nil {
-		t.Fatalf("GET session: %v", err)
-	}
-	var session struct {
-		CSRFToken string `json:"csrfToken"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-		t.Fatalf("decode session body: %v", err)
-	}
-	resp.Body.Close()
-	if session.CSRFToken == "" {
-		t.Fatal("session endpoint returned an empty CSRF token")
-	}
-
-	req, err := http.NewRequest(http.MethodPost, base+"/api/auth/login", strings.NewReader(`{"password":"correct horse battery staple"}`))
-	if err != nil {
-		t.Fatalf("build login request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(auth.CSRFHeaderName, session.CSRFToken)
-	loginResp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
-	}
-	return client, base, session.CSRFToken
+	csrf := loginClient(t, client, base)
+	return client, base, csrf
 }
 
 // postJSON sends an authenticated JSON request with the CSRF token.
@@ -437,32 +409,7 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	client := &http.Client{Jar: jar}
 	base := server.URL
 
-	resp, err := client.Get(base + "/api/auth/session")
-	if err != nil {
-		t.Fatalf("GET session: %v", err)
-	}
-	var session struct {
-		CSRFToken string `json:"csrfToken"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&session); err != nil {
-		t.Fatalf("decode session body: %v", err)
-	}
-	resp.Body.Close()
-
-	loginReq, err := http.NewRequest(http.MethodPost, base+"/api/auth/login", strings.NewReader(`{"password":"correct horse battery staple"}`))
-	if err != nil {
-		t.Fatalf("build login request: %v", err)
-	}
-	loginReq.Header.Set("Content-Type", "application/json")
-	loginReq.Header.Set(auth.CSRFHeaderName, session.CSRFToken)
-	loginResp, err := client.Do(loginReq)
-	if err != nil {
-		t.Fatalf("POST login: %v", err)
-	}
-	loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("login status = %d, want %d", loginResp.StatusCode, http.StatusOK)
-	}
+	csrf := loginClient(t, client, base)
 
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -472,7 +419,7 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	if err := os.Mkdir(projectDir, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
-	register := postJSON(t, client, base, "/api/projects", session.CSRFToken, map[string]string{"path": projectDir})
+	register := postJSON(t, client, base, "/api/projects", csrf, map[string]string{"path": projectDir})
 	if register.StatusCode != http.StatusCreated {
 		t.Fatalf("register status = %d, want %d", register.StatusCode, http.StatusCreated)
 	}
@@ -482,7 +429,7 @@ func newInstancesClient(t *testing.T) (*http.Client, string, string, uint, strin
 	}
 	register.Body.Close()
 
-	return client, base, session.CSRFToken, created.ID, projectDir
+	return client, base, csrf, created.ID, projectDir
 }
 
 // TestRouterServesProjectInstancesBehindSessionAndCSRF verifies the instance

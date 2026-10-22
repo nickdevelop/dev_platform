@@ -31,7 +31,9 @@ const minMutatingRoutes = 40
 // covered automatically instead of depending on someone remembering to add a
 // case for it.
 func TestEveryMutatingRouteEnforcesCSRF(t *testing.T) {
-	fixture := newRouterFixture(t)
+	// The route table is the fixture's; the client used for the assertions is
+	// created per route below.
+	routes := newRouterFixture(t).router.Routes()
 
 	// One request per mutating route would otherwise emit an access-log line
 	// and, for handlers whose service was built with nil collaborators, a
@@ -44,7 +46,7 @@ func TestEveryMutatingRouteEnforcesCSRF(t *testing.T) {
 	t.Cleanup(func() { gin.DefaultErrorWriter = defaultErrorWriter })
 
 	covered := 0
-	for _, route := range fixture.router.Routes() {
+	for _, route := range routes {
 		if isSafeMethod(route.Method) || strings.Contains(route.Path, "/*") {
 			continue
 		}
@@ -53,6 +55,11 @@ func TestEveryMutatingRouteEnforcesCSRF(t *testing.T) {
 		assertPathParams(t, path)
 
 		t.Run(describeRoute(route.Method, route.Path), func(t *testing.T) {
+			// A fresh session per route: the auth routes change the session
+			// identity (login and logout both rotate the token), so a shared
+			// client would poison every assertion that follows them.
+			fixture := newRouterFixture(t)
+
 			status, code, err := matrixRequest(fixture, route.Method, path, "")
 			if err != nil {
 				t.Fatalf("request without CSRF token: %v", err)

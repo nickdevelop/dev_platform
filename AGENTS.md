@@ -16,6 +16,10 @@
 - 禁止：`core → providers`、`app/features → providers`、通用层出现后端 ID 字面量（守卫测试执行）。
 - 前端组件按 feature 归位；provider 中性的可复用控件与工具放 `web/src/shared/`；chat 的执行机制在
   `features/chat/execution/`、状态模型在 `features/chat/state/`、渲染模型在 `features/chat/rendering/`。
+- **前端 API 调用只能经 `web/src/api/client.ts` 的 `get()` / `mutate()`**：读用 `get`，写用 `mutate`；
+  不得直接 `fetch(`、不得手写 `X-CSRF-Token`、不得把 `csrfToken` 作为函数参数透传（token 由传输层
+  从 auth store 注入并自动刷新，见 `docs/adr/0001-csrf-in-the-transport.md`）。`web/src/tests/csrf-coverage.spec.ts`
+  会在源码层拦截上述写法，`internal/transport/http/csrf_matrix_guard_test.go` 会遍历全部非安全路由校验 CSRF。
 - 新增 agent 后端步骤：契约包加 `BackendID` → `internal/providers/<name>` 实现 `AgentAdapter` 并导出
   `Descriptor` → 组合根注册 → 更新 `docs/agent-compatibility.md`。前端零改动。
 

@@ -99,6 +99,17 @@ Filter slow or stuck operations by their `latency=` value, e.g.
 logged — never the query string, request body, or headers — so tokens and
 secrets cannot leak into logs (see Secret redaction below).
 
+A request refused by the CSRF middleware carries an extra marker:
+
+```
+http access method=POST path=/api/projects status=403 latency=0.1ms ip=10.0.0.7 csrf=rejected
+```
+
+A steady stream of these from one address means a client is not echoing the
+token (a script that forgot the header, or a page whose CSRF cookie expired).
+The web UI attaches the header itself and recovers once automatically, so
+`csrf=rejected` from a browser is normally followed by a successful retry.
+
 ### One instance per data directory
 
 A single-instance lock (an advisory `flock` on `<data-dir>/platform.lock`)
@@ -222,6 +233,10 @@ curl -s -b cookies.txt -c cookies.txt -X POST "$BASE/api/auth/login" \
   -d "{\"password\":\"$PASSWORD\"}"
 unset PASSWORD
 
+# 2b. Login rotates the CSRF token: re-read it from the cookie jar before
+# the next mutation, otherwise every later write answers 403.
+CSRF=$(awk '$6=="platform_csrf"{print $7}' cookies.txt)
+
 # 3. Register an existing project directory by absolute path.
 curl -s -b cookies.txt -X POST "$BASE/api/projects" \
   -H 'Content-Type: application/json' -H "X-CSRF-Token: $CSRF" \
@@ -272,7 +287,9 @@ Security properties that hold on any bind address:
   mutations) requires a session; only `/api/health` and the login/session
   endpoints are public.
 - Mutating requests require the double-submit CSRF token issued with the
-  session.
+  session. The web UI's HTTP transport attaches it to every write (no call
+  site passes it) and refreshes it once when a token has expired; login and
+  logout rotate it.
 - The login endpoint is throttled per client address and always answers
   generically (it never reveals whether a password is configured).
 - No proxy headers (`X-Forwarded-*`) are trusted; client addressing uses
@@ -364,7 +381,14 @@ restricted, and avoid redirecting logs to world-readable files.
 - **"web UI assets not found"** at `/`: the configured web directory has no
   built `index.html`. Run `make web-build`, or point `-web-dir` at an
   existing build.
-- **Login returns 403 `invalid_csrf_token`**: the client dropped the CSRF
-  cookie or header; reload the page so the app fetches a session first.
+- **A request returns 403 `invalid_csrf_token`**: the `X-CSRF-Token` header
+  did not match the `platform_csrf` cookie. In the browser this cannot happen
+  by accident: the transport attaches the header and refreshes the token once
+  on a rejection. Check, in order: (a) the request came from a script and the
+  token was not re-read after login, which rotates it — see the
+  copy-paste walkthrough; (b) the page has been open longer than the session
+  TTL, so the cookie expired — reload it; (c) the request bypassed the
+  transport (`fetch` directly) and sent no header. Every rejection is logged
+  with `csrf=rejected`.
 - **`single-instance locking requires a Unix platform`**: the binary was
   launched outside Linux/WSL; run it under Linux or WSL.

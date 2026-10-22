@@ -52,11 +52,27 @@ func (s *Service) nextCSRFToken(c *gin.Context) string {
 	if token, err := c.Cookie(CSRFCookieName); err == nil && token != "" {
 		return token
 	}
+	return s.issueCSRFToken(c)
+}
+
+// issueCSRFToken always mints a new token and sets it as the cookie, discarding
+// whatever the request presented. Login and logout use it to rotate the token
+// at the two points where the session identity changes, so a token observed
+// before that change cannot be replayed after it.
+func (s *Service) issueCSRFToken(c *gin.Context) string {
 	token, err := newCSRFToken()
 	if err != nil {
 		// Fail closed: without a token the client cannot pass CSRF checks.
 		return ""
 	}
+	s.setCSRFCookie(c, token)
+	return token
+}
+
+// setCSRFCookie writes the double-submit cookie. It is not HttpOnly by design:
+// the same-origin app echoes the value in X-CSRF-Token (through the transport,
+// see web/src/api/client.ts).
+func (s *Service) setCSRFCookie(c *gin.Context, token string) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    token,
@@ -65,7 +81,6 @@ func (s *Service) nextCSRFToken(c *gin.Context) string {
 		Expires:  s.now().UTC().Add(s.sessionTTL),
 		MaxAge:   maxAgeSeconds(s.sessionTTL),
 	})
-	return token
 }
 
 // maxAgeSeconds converts a cookie lifetime to a positive Max-Age in seconds.

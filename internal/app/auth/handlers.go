@@ -180,7 +180,9 @@ func (s *Service) handleLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, sessionResponse{
 		Authenticated: true,
 		ExpiresAt:     &expires,
-		CSRFToken:     s.nextCSRFToken(c),
+		// Rotate: the pre-login token was handed to an unauthenticated caller,
+		// so the authenticated session gets a token of its own.
+		CSRFToken: s.issueCSRFToken(c),
 	})
 }
 
@@ -218,7 +220,9 @@ func (s *Service) handleLogout(c *gin.Context) {
 		}
 	}
 	clearSessionCookie(c)
-	c.JSON(http.StatusOK, sessionResponse{Authenticated: false, CSRFToken: s.nextCSRFToken(c)})
+	// Rotate as well: the token that authorised the logout must not stay valid
+	// for the anonymous session that follows.
+	c.JSON(http.StatusOK, sessionResponse{Authenticated: false, CSRFToken: s.issueCSRFToken(c)})
 }
 
 // clientKey derives the throttle key from the connection's remote address.
