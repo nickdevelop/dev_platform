@@ -23,15 +23,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/sessions", s.handleList)
 	r.POST("/projects/:id/sessions", s.handleCreate)
 
-	// Discovery is project-level: the caller names the backend and the platform
-	// picks (or starts) the instance that serves it, so no user-visible
-	// instance id is needed.
-	r.GET("/projects/:id/sessions/discover", s.handleDiscoverProject)
-
-	// Discovery is instance-scoped: the adapter needs to know which instance
-	// (and therefore which working directory) to ask.
-	r.GET("/projects/:id/instances/:instanceId/sessions", s.handleDiscover)
-
 	r.POST("/projects/:id/sessions/:sessionId/continue", s.handleContinue)
 	r.POST("/projects/:id/sessions/:sessionId/messages", s.handleSend)
 	r.POST("/projects/:id/sessions/:sessionId/stop", s.handleStop)
@@ -97,6 +88,7 @@ func respondServiceError(c *gin.Context, err error) {
 // sessionListResponse is the JSON body of GET /api/projects/{id}/sessions.
 type sessionListResponse struct {
 	Sessions []Session `json:"sessions"`
+	Total    int       `json:"total"`
 }
 
 // backendListResponse is the JSON body of GET /api/agent-backends.
@@ -181,10 +173,33 @@ func (s *Service) handleDiagnostics(c *gin.Context) {
 	c.JSON(http.StatusOK, backendDiagnosticsResponse{Diagnostics: report})
 }
 
-// handleList returns the project's indexed sessions.
+// handleList returns the project's indexed sessions. It optionally supports
+// pagination via ?limit=N&offset=M and turn state filtering via ?turn=running.
 func (s *Service) handleList(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
+		return
+	}
+	if turnParam := c.Query("turn"); turnParam != "" {
+		list, err := s.ListByTurn(id, TurnState(turnParam))
+		if err != nil {
+			respondServiceError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, sessionListResponse{Sessions: list, Total: len(list)})
+		return
+	}
+	limitStr := c.Query("limit")
+	offsetStr := c.Query("offset")
+	if limitStr != "" {
+		limit, _ := strconv.Atoi(limitStr)
+		offset, _ := strconv.Atoi(offsetStr)
+		list, total, err := s.ListPaged(id, limit, offset)
+		if err != nil {
+			respondServiceError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, sessionListResponse{Sessions: list, Total: total})
 		return
 	}
 	list, err := s.List(id)
@@ -192,7 +207,7 @@ func (s *Service) handleList(c *gin.Context) {
 		respondServiceError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
+	c.JSON(http.StatusOK, sessionListResponse{Sessions: list, Total: len(list)})
 }
 
 // handleCreate starts a new session for the requested backend in the project,
@@ -221,25 +236,6 @@ func (s *Service) handleCreate(c *gin.Context) {
 	c.JSON(http.StatusCreated, createSessionResponse{Session: outcome.Session, MessageError: outcome.MessageError})
 }
 
-// handleDiscover lists and indexes an instance's native sessions.
-func (s *Service) handleDiscover(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	instanceID := c.Param("instanceId")
-	if instanceID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	list, err := s.Discover(c.Request.Context(), id, instanceID)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
-}
-
 // handleInterrupt ends the session's current turn. The operation is idempotent.
 func (s *Service) handleInterrupt(c *gin.Context) {
 	id, ok := projectID(c)
@@ -257,27 +253,6 @@ func (s *Service) handleInterrupt(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, session)
-}
-
-// handleContinue re-attaches to an indexed native session.
-// handleDiscoverProject indexes a project backend's native sessions, starting
-// an instance when none is running.
-func (s *Service) handleDiscoverProject(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	backend := agents.BackendID(c.Query("backend"))
-	if backend == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-	list, err := s.DiscoverProject(c.Request.Context(), id, backend)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, sessionListResponse{Sessions: list})
 }
 
 // handleHistory serves one session's replayed prior turns. History is an

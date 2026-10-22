@@ -921,6 +921,80 @@ func TestStartRejectsPlatformDisabledAgent(t *testing.T) {
 	}
 }
 
+// TestPruneDeadInstances verifies old stopped instances are pruned while recent ones are kept.
+func TestPruneDeadInstances(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t)
+
+	var stoppedIDs []string
+	for i := 0; i < 7; i++ {
+		inst, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+		if err != nil {
+			t.Fatalf("Start %d: %v", i, err)
+		}
+		if _, err := svc.Stop(context.Background(), inst.ID); err != nil {
+			t.Fatalf("Stop %d: %v", i, err)
+		}
+		stoppedIDs = append(stoppedIDs, inst.ID)
+	}
+
+	// List automatically prunes dead instances beyond the latest 5.
+	list, err := svc.List(projectID)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 5 {
+		t.Fatalf("List returned %d instances, want 5 after prune", len(list))
+	}
+	// The 5 kept should be the most recently created ones.
+	expectedKept := stoppedIDs[2:]
+	for i, inst := range list {
+		if inst.ID != expectedKept[i] {
+			t.Errorf("list[%d] = %s, want %s", i, inst.ID, expectedKept[i])
+		}
+	}
+}
+
+// TestListFilteredByStatus verifies status filtering for instances.
+func TestListFilteredByStatus(t *testing.T) {
+	svc, _, projectID, _, _ := newTestService(t)
+
+	live, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start live: %v", err)
+	}
+	stopped, err := svc.Start(context.Background(), projectID, agents.BackendPi)
+	if err != nil {
+		t.Fatalf("Start stopped: %v", err)
+	}
+	if _, err := svc.Stop(context.Background(), stopped.ID); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+
+	liveList, err := svc.ListFiltered(projectID, "live")
+	if err != nil {
+		t.Fatalf("ListFiltered live: %v", err)
+	}
+	if len(liveList) != 1 || liveList[0].ID != live.ID {
+		t.Errorf("liveList = %+v, want only [%s]", liveList, live.ID)
+	}
+
+	runningList, err := svc.ListFiltered(projectID, "running")
+	if err != nil {
+		t.Fatalf("ListFiltered running: %v", err)
+	}
+	if len(runningList) != 1 || runningList[0].ID != live.ID {
+		t.Errorf("runningList = %+v, want only [%s]", runningList, live.ID)
+	}
+
+	stoppedList, err := svc.ListFiltered(projectID, "stopped")
+	if err != nil {
+		t.Fatalf("ListFiltered stopped: %v", err)
+	}
+	if len(stoppedList) != 1 || stoppedList[0].ID != stopped.ID {
+		t.Errorf("stoppedList = %+v, want only [%s]", stoppedList, stopped.ID)
+	}
+}
+
 func (f *fakeAdapter) Capabilities() agents.Capabilities {
 	f.mu.Lock()
 	defer f.mu.Unlock()

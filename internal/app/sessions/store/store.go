@@ -71,6 +71,25 @@ func (r *Store) List(projectID uint) ([]database.AgentSession, error) {
 	return rows, nil
 }
 
+// ListPaged returns a page of a project's sessions, ordered by updated_at DESC, created_at DESC, id DESC.
+// If limit <= 0, it returns all sessions.
+// It returns (rows, total, error).
+func (r *Store) ListPaged(projectID uint, limit, offset int) ([]database.AgentSession, int, error) {
+	var total int64
+	if err := r.db.Model(&database.AgentSession{}).Where("project_id = ?", projectID).Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("sessions: count project %d: %w", projectID, err)
+	}
+	query := r.db.Where("project_id = ?", projectID).Order("updated_at DESC, created_at DESC, id DESC")
+	if limit > 0 {
+		query = query.Limit(limit).Offset(offset)
+	}
+	var rows []database.AgentSession
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, 0, fmt.Errorf("sessions: list paged project %d: %w", projectID, err)
+	}
+	return rows, int(total), nil
+}
+
 // ListByInstance returns every indexed session of one instance.
 func (r *Store) ListByInstance(instanceID string) ([]database.AgentSession, error) {
 	var rows []database.AgentSession

@@ -37,6 +37,13 @@ export interface AgentSession {
 // Mirrors #/components/schemas/AgentSessionList.
 export interface AgentSessionList {
   sessions: AgentSession[]
+  total?: number
+}
+
+export interface ListSessionsOptions {
+  limit?: number
+  offset?: number
+  turn?: string
 }
 
 // Mirrors #/components/schemas/CreateAgentSessionRequest. The backend selects
@@ -217,8 +224,23 @@ export interface SessionHistory {
 }
 
 // GET /api/projects/{id}/sessions
-export function listProjectSessions(projectId: number): Promise<AgentSessionList> {
-  return apiRequest<AgentSessionList>('GET', `/projects/${projectId}/sessions`)
+export function listProjectSessions(
+  projectId: number,
+  options?: ListSessionsOptions,
+): Promise<AgentSessionList> {
+  const params = new URLSearchParams()
+  if (options?.limit !== undefined && options.limit > 0) {
+    params.set('limit', String(options.limit))
+  }
+  if (options?.offset !== undefined && options.offset > 0) {
+    params.set('offset', String(options.offset))
+  }
+  if (options?.turn !== undefined && options.turn !== '') {
+    params.set('turn', options.turn)
+  }
+  const qs = params.toString()
+  const query = qs ? `?${qs}` : ''
+  return apiRequest<AgentSessionList>('GET', `/projects/${projectId}/sessions${query}`)
 }
 
 // POST /api/projects/{id}/sessions
@@ -231,30 +253,6 @@ export function createProjectSession(
     body,
     csrfToken,
   })
-}
-
-// GET /api/projects/{id}/instances/{instanceId}/sessions
-export function discoverProjectInstanceSessions(
-  projectId: number,
-  instanceId: string,
-): Promise<AgentSessionList> {
-  return apiRequest<AgentSessionList>(
-    'GET',
-    `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/sessions`,
-  )
-}
-
-// GET /api/projects/{id}/sessions/discover?backend={backend}
-// Discovery is project-level: the caller names the backend and the server picks
-// or starts the instance that serves it.
-export function discoverProjectSessions(
-  projectId: number,
-  backend: BackendId,
-): Promise<AgentSessionList> {
-  return apiRequest<AgentSessionList>(
-    'GET',
-    `/projects/${projectId}/sessions/discover?backend=${encodeURIComponent(backend)}`,
-  )
 }
 
 // GET /api/projects/{id}/sessions/{sessionId}/history

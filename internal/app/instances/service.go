@@ -258,9 +258,21 @@ func (s *Service) recordStartFailure(projectID uint, backend agents.BackendID, d
 	return inst, fmt.Errorf("%w: %w", ErrStartFailed, cause)
 }
 
-// List returns the project's instances in creation order.
+// List returns the project's instances in creation order, pruning old dead instances.
 func (s *Service) List(projectID uint) ([]Instance, error) {
+	_ = s.repo.PruneDead(projectID, 5)
 	return s.repo.List(projectID)
+}
+
+// ListFiltered returns the project's instances matching the filter (e.g. "live", "running").
+func (s *Service) ListFiltered(projectID uint, filter string) ([]Instance, error) {
+	_ = s.repo.PruneDead(projectID, 5)
+	return s.repo.ListFiltered(projectID, filter)
+}
+
+// PruneDead removes old stopped or failed instances for the project, keeping only the most recent keepLast records.
+func (s *Service) PruneDead(projectID uint, keepLast int) error {
+	return s.repo.PruneDead(projectID, keepLast)
 }
 
 // Get returns the instance with the given id.

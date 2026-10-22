@@ -148,43 +148,15 @@ describe('ProjectSettingsPanel', () => {
     expect(wrapper.find('[data-test="project-service-down"]').exists()).toBe(false)
   })
 
-  it('asks for discovery from the project page without picking an instance', async () => {
+  it('never shows backend toggle switches on project page', async () => {
     const agents = useAgentsStore()
     agents.backends = [
-      { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false },
-    ]
-    const sessions = useSessionsStore()
-    const discover = vi.spyOn(sessions, 'discoverProjectSessions').mockResolvedValue([] as never)
-
-    const wrapper = mountPanel()
-    await flushPromises()
-
-    const button = wrapper.find('[data-test="discover-sessions"]')
-    expect(button.exists()).toBe(true)
-    await button.trigger('click')
-    await flushPromises()
-    expect(discover).toHaveBeenCalledWith(1, 'pi')
-  })
-
-  it('offers no discovery action when the selected backend cannot discover sessions', async () => {
-    const agents = useAgentsStore()
-    agents.backends = [{ backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: false }), label: 'Pi Agent', order: 2, serviceSupported: false }]
-
-    const wrapper = mountPanel()
-    await flushPromises()
-    expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
-  })
-
-  it('disables discovery when the selected backend is disabled platform-wide', async () => {
-    const agents = useAgentsStore()
-    agents.backends = [
-      { backend: 'pi', capabilities: noCapabilities({ sessionDiscovery: true }), label: 'Pi Agent', order: 2, serviceSupported: false, enabled: false },
+      { backend: 'pi', capabilities: noCapabilities(), label: 'Pi Agent', order: 2, serviceSupported: false, enabled: false },
     ]
 
     const wrapper = mountPanel()
     await flushPromises()
 
-    expect(wrapper.find('[data-test="discover-sessions"]').attributes('disabled')).toBeDefined()
     // The project page no longer carries its own enable/disable switches.
     expect(wrapper.find('[data-test^="backend-toggle-"]').exists()).toBe(false)
   })

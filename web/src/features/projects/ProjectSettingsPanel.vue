@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Project settings, opened as a workbench tab: project facts, the project's
-// Agent backends, session discovery and the danger-zone actions. The
-// manage actions are handed up so the shell owns the single manage dialog.
+// Agent backends and the danger-zone actions. The manage actions are handed up
+// so the shell owns the single manage dialog.
 //
 // Instances are deliberately absent. They are how a backend serves the
 // workbench, not something the user operates; what a user can act on is the
@@ -9,11 +9,9 @@
 // panel only points there when the service is down.
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { BackendId } from '../../api/agents'
 import type { Project } from '../../api/projects'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
-import { useSessionsStore } from '../../stores/sessions'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 
 const props = defineProps<{ projectId: number }>()
@@ -24,22 +22,15 @@ const emit = defineEmits<{
 
 const projectsStore = useProjectsStore()
 const agents = useAgentsStore()
-const sessions = useSessionsStore()
 
 const project = computed(() => projectsStore.byId(props.projectId) ?? null)
-const selectedBackend = ref<BackendId | ''>('')
-const scanning = ref(false)
 const actionError = ref('')
-const discoverNotice = ref('')
 
 onMounted(load)
 watch(() => props.projectId, load)
 
 async function load() {
   await agents.loadBackends()
-  if (selectedBackend.value === '' && agents.backends.length > 0) {
-    selectedBackend.value = agents.backends[0].backend
-  }
   await Promise.all([
     agents.loadDiagnostics(),
     // One look per service-backed backend, on open, so the notice below tells
@@ -49,48 +40,20 @@ async function load() {
   ])
 }
 
-// serviceDown is the one backend state a project cannot work around: when the
-// selected backend's machine-level service is down, no session of that backend
-// can start here. The panel says so and points at the only page that can
-// change it.
-const serviceDown = computed(() => {
-  if (selectedBackend.value === '' || !agents.backendFor(selectedBackend.value)?.serviceSupported) {
-    return false
+// serviceDown reports if any service-backed backend needed by the platform is down.
+const downService = computed(() => {
+  for (const entry of agents.serviceBackends) {
+    const status = agents.services[entry.backend]
+    if (status !== undefined && status !== null && status.state !== 'running') {
+      return entry
+    }
   }
-  const status = agents.services[selectedBackend.value]
-  return status !== undefined && status !== null && status.state !== 'running'
+  return null
 })
 
-// The service's name in the operator's words, e.g. "opencode service".
-const serviceName = computed(() => `${agents.backendLabel(selectedBackend.value).toLowerCase()} service`)
-
-async function scan() {
-  if (selectedBackend.value === '' || scanning.value) return
-  scanning.value = true
-  actionError.value = ''
-  discoverNotice.value = ''
-  // Discovery is project-level: the server starts or reuses the instance that
-  // serves the backend, so the page never asks the user to pick one.
-  const found = await sessions.discoverProjectSessions(props.projectId, selectedBackend.value)
-  if (found === null) {
-    actionError.value = sessions.error
-  } else {
-    discoverNotice.value = `已发现 ${found.length} 个原生会话。`
-  }
-  scanning.value = false
-}
-
-// The scan control is disabled when the selected backend is disabled
-// platform-wide, so the UI never offers an action the server will refuse.
-const selectedBackendEnabled = computed(
-  () => selectedBackend.value === '' || agents.backendEnabledFor(selectedBackend.value),
-)
-
-// sessionDiscovery is a backend capability; a backend without it has no scan.
-const canScan = computed(
-  () =>
-    selectedBackend.value !== '' &&
-    agents.capabilitiesFor(selectedBackend.value)?.sessionDiscovery === true,
+const serviceDown = computed(() => downService.value !== null)
+const serviceName = computed(() =>
+  downService.value ? `${agents.backendLabel(downService.value.backend).toLowerCase()} service` : '',
 )
 
 function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
@@ -127,32 +90,6 @@ function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
     </p>
 
     <BackendDiagnostics :diagnostics="agents.diagnostics" />
-
-    <section class="scan-sessions" aria-label="扫描原生会话">
-      <h2>扫描原生会话</h2>
-      <div class="scan-controls">
-        <label for="backend-select">Agent 后端</label>
-        <select id="backend-select" v-model="selectedBackend">
-          <option v-for="backend in agents.backends" :key="backend.backend" :value="backend.backend">
-            {{ backend.backend }}
-          </option>
-        </select>
-        <button
-          v-if="canScan"
-          type="button"
-          class="scan"
-          data-test="discover-sessions"
-          :disabled="scanning || !selectedBackendEnabled"
-          @click="scan"
-        >
-          扫描发现原生会话
-        </button>
-      </div>
-      <p class="hint">扫描会把 Agent 原生保存的会话登记为会话。</p>
-    </section>
-
-    <p v-if="scanning" class="loading">扫描中…</p>
-    <p v-if="discoverNotice" class="discover-notice" role="status">{{ discoverNotice }}</p>
   </section>
 </template>
 
@@ -187,9 +124,7 @@ function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
   flex-wrap: wrap;
 }
 
-.actions button,
-.scan-controls select,
-.scan-controls button {
+.actions button {
   padding: 0.35rem 0.7rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
@@ -208,28 +143,8 @@ function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
   border-color: var(--color-border-strong);
 }
 
-.scan-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.scan-controls .hint,
-.hint {
-  flex-basis: 100%;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  margin: 0;
-}
-
 .page-error {
   color: var(--color-danger);
-}
-
-.discover-notice {
-  color: var(--color-success);
-  font-size: 0.9rem;
 }
 
 .diagnostics-error {

@@ -29,7 +29,15 @@ func TestSendAndInterruptAreGenericRoutes(t *testing.T) {
 		}
 	}
 
-	for _, suffix := range []string{"prompt", "interrupt"} {
+	for _, suffix := range []string{"permission", "form"} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, generic+suffix, nil))
+		if rec.Code == http.StatusNotFound && !strings.Contains(rec.Body.String(), "session_not_found") {
+			t.Errorf("generic %s interaction route is not registered: %d %s", suffix, rec.Code, rec.Body.String())
+		}
+	}
+
+	for _, suffix := range []string{"prompt", "interrupt", "permission", "form"} {
 		path := fmt.Sprintf("/projects/%d/opencode/sessions/missing/%s", env.projectID, suffix)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`)))

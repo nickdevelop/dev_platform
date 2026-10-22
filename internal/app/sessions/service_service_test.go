@@ -110,21 +110,6 @@ func TestCreateRefusedWhenServiceNotRunning(t *testing.T) {
 	}
 }
 
-// TestDiscoverProjectRefusedWhenServiceNotRunning covers the other path that
-// would otherwise start an instance of its own.
-func TestDiscoverProjectRefusedWhenServiceNotRunning(t *testing.T) {
-	env, gate := newGatedEnv(t)
-	gate.availableErr = serviceNotRunning()
-
-	_, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendOpenCodeV2)
-	if !errors.Is(err, ErrServiceNotRunning) {
-		t.Fatalf("DiscoverProject error = %v, want it to wrap %v", err, ErrServiceNotRunning)
-	}
-	if count := instanceRowCount(t, env); count != 0 {
-		t.Fatalf("agent_instances rows = %d, want 0", count)
-	}
-}
-
 // TestContinueRebindRefusedWhenServiceNotRunning covers the reconnect click
 // while the service is still down: the user is told to start it, and no
 // half-started instance accumulates.

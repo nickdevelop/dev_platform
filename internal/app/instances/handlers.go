@@ -78,13 +78,20 @@ type instanceListResponse struct {
 	Instances []Instance `json:"instances"`
 }
 
-// handleList returns the project's agent instances.
+// handleList returns the project's agent instances, optionally filtered by status (e.g. ?status=live).
 func (s *Service) handleList(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
 		return
 	}
-	list, err := s.List(id)
+	status := c.Query("status")
+	var list []Instance
+	var err error
+	if status != "" {
+		list, err = s.ListFiltered(id, status)
+	} else {
+		list, err = s.List(id)
+	}
 	if err != nil {
 		respondServiceError(c, err)
 		return

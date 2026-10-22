@@ -173,6 +173,7 @@ type StoreRepository interface {
 	GetByID(id string) (database.AgentSession, error)
 	GetByNative(projectID uint, backend, nativeID string) (database.AgentSession, error)
 	List(projectID uint) ([]database.AgentSession, error)
+	ListPaged(projectID uint, limit, offset int) ([]database.AgentSession, int, error)
 	Update(row database.AgentSession) error
 	UpdateOnContinue(row database.AgentSession) error
 	UpdateStatus(id, status string) error
@@ -366,6 +367,51 @@ func (s *Service) List(projectID uint) ([]Session, error) {
 	return out, nil
 }
 
+// ListPaged returns a paged slice of a project's sessions, ordered by
+// recent activity (updated_at DESC), alongside the total count.
+// When limit <= 0, all sessions are returned.
+func (s *Service) ListPaged(projectID uint, limit, offset int) ([]Session, int, error) {
+	rows, total, err := s.store.ListPaged(projectID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	index, err := s.instanceIndex(projectID)
+	if err != nil {
+		out := make([]Session, 0, len(rows))
+		for _, row := range rows {
+			row = s.reconcile(row)
+			out = append(out, s.sessionFromModel(row))
+		}
+		return out, total, nil
+	}
+	for _, inst := range index {
+		if instanceRunnable(inst) {
+			s.turnTracker.Ensure(inst.ID)
+		}
+	}
+	out := make([]Session, 0, len(rows))
+	for _, row := range rows {
+		row = s.reconcileIndexed(row, index)
+		out = append(out, s.sessionFromModel(row))
+	}
+	return out, total, nil
+}
+
+// ListByTurn returns the sessions of a project that match the requested turn state.
+func (s *Service) ListByTurn(projectID uint, turn TurnState) ([]Session, error) {
+	all, err := s.List(projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Session, 0)
+	for _, entry := range all {
+		if entry.Turn == turn {
+			out = append(out, entry)
+		}
+	}
+	return out, nil
+}
+
 // instanceIndex returns a project's instances keyed by id, loaded in one query
 // so a session list does not issue one Get per row (finding: reconcile N+1).
 func (s *Service) instanceIndex(projectID uint) (map[string]instances.Instance, error) {
@@ -538,62 +584,6 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 // exactly once, returning the indexed references. Malformed, misattributed or
 // unknown-project metadata is skipped so nothing is attached to the wrong
 // project.
-// DiscoverProject indexes the agent-native sessions of a project's backend,
-// starting an instance when none is running. It is the project-level entry
-// point for discovery: the caller names a backend, and which instance serves it
-// is the platform's business rather than something the user has to pick.
-func (s *Service) DiscoverProject(ctx context.Context, projectID uint, backend agents.BackendID) ([]Session, error) {
-	if s.agentDisabled(backend) {
-		return nil, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
-	}
-	if _, err := s.adapter(backend); err != nil {
-		return nil, err
-	}
-	if !s.capabilities(backend).SessionDiscovery {
-		return nil, fmt.Errorf("%w: session discovery", ErrUnsupportedCapability)
-	}
-	inst, err := s.instanceForBackend(ctx, projectID, backend)
-	if err != nil {
-		return nil, err
-	}
-	return s.Discover(ctx, projectID, inst.ID)
-}
-
-func (s *Service) Discover(ctx context.Context, projectID uint, instanceID string) ([]Session, error) {
-	inst, err := s.scopedInstance(projectID, instanceID)
-	if err != nil {
-		return nil, err
-	}
-	if !instanceRunnable(inst) {
-		return nil, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
-	}
-	if !s.capabilities(inst.Backend).SessionDiscovery {
-		return nil, fmt.Errorf("%w: session discovery", ErrUnsupportedCapability)
-	}
-	adapter, err := s.adapter(inst.Backend)
-	if err != nil {
-		return nil, err
-	}
-	refs, err := adapter.ListSessions(ctx, instanceID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: list sessions: %w", ErrBackendFailed, err)
-	}
-	out := make([]Session, 0, len(refs))
-	for _, ref := range refs {
-		if err := validateRef(&ref, inst); err != nil {
-			// Native metadata that does not belong to this instance/backend
-			// is never attached (and never to another project).
-			continue
-		}
-		row, err := s.upsertRef(projectID, inst, ref)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, s.sessionFromModel(row))
-	}
-	return out, nil
-}
-
 // Continue re-attaches to an indexed native session and makes it usable
 // again. A session whose instance is gone — the state a platform restart
 // leaves behind — is rebound onto a freshly started instance in the same
@@ -1349,42 +1339,6 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 		return Session{}, err
 	}
 	return s.sessionFromModel(row), nil
-}
-
-// upsertRef indexes a discovered native session, updating its title in place
-// when it already has an index row. Title precedence: an explicit agent name
-// wins over whatever the platform holds; a preview never overwrites a title,
-// it only fills an empty one.
-func (s *Service) upsertRef(projectID uint, inst instances.Instance, ref agents.SessionRef) (database.AgentSession, error) {
-	existing, err := s.store.GetByNative(projectID, string(inst.Backend), ref.SessionID)
-	if err == nil {
-		if existing.InstanceID != inst.ID {
-			existing.InstanceID = inst.ID
-			existing.Status = string(SessionActive)
-		}
-		if ref.Title != "" && ref.Title != existing.Title {
-			existing.Title = ref.Title
-			existing.UpdatedAt = s.now()
-		} else if existing.Title == "" && ref.Preview != "" {
-			existing.Title = ref.Preview
-			existing.UpdatedAt = s.now()
-		}
-		if err := s.store.Update(existing); err != nil {
-			return database.AgentSession{}, err
-		}
-		return existing, nil
-	}
-	if !errors.Is(err, ErrSessionNotFound) {
-		return database.AgentSession{}, err
-	}
-	row, err := s.newSessionRow(projectID, inst, ref, SessionActive)
-	if err != nil {
-		return database.AgentSession{}, err
-	}
-	if err := s.store.Create(row); err != nil {
-		return database.AgentSession{}, err
-	}
-	return row, nil
 }
 
 // newSessionRow builds a fresh index row for a native session.

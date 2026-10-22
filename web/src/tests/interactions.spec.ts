@@ -1,7 +1,7 @@
 // Unit tests for the pending-interaction store: requested and resolved events
 // from the session stream project onto pending state, the stream's snapshot
-// replaces it, and replies hit the /opencode prefix with the desktop decision
-// values.
+// replaces it, and replies hit the generic session interaction routes with
+// the desktop decision values.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInteractionsStore } from '../stores/interactions'
@@ -119,9 +119,9 @@ describe('interactions store', () => {
     expect(store.error).toContain('过期')
   })
 
-  it('builds the raw events path under the opencode prefix', () => {
+  it('builds the raw events path under the session path', () => {
     expect(interactionsApi.rawEventsPath(7, 'sess-1')).toBe(
-      '/api/projects/7/opencode/sessions/sess-1/raw-events',
+      '/api/projects/7/sessions/sess-1/raw-events',
     )
   })
 })

@@ -51,16 +51,22 @@ function isExpanded(projectId: number): boolean {
 // Per-project session cache: each expanded project loads its own list, so lists
 // never clobber each other like a single shared store list would.
 const sessionsByProject = ref<Record<number, AgentSession[]>>({})
+const totalByProject = ref<Record<number, number>>({})
 const loadFailed = ref<Record<number, boolean>>({})
 const taskSessionIds = ref<Set<string>>(new Set())
 
 async function loadProject(projectId: number) {
   try {
+    const limit = visibleCountFor(projectId)
     const [list, taskIds] = await Promise.all([
-      listProjectSessions(projectId),
+      listProjectSessions(projectId, { limit }),
       listTaskSessionIds(projectId).catch(() => []),
     ])
     sessionsByProject.value = { ...sessionsByProject.value, [projectId]: list.sessions }
+    totalByProject.value = {
+      ...totalByProject.value,
+      [projectId]: list.total !== undefined ? list.total : list.sessions.length,
+    }
     loadFailed.value = { ...loadFailed.value, [projectId]: false }
     if (taskIds && taskIds.length > 0) {
       const next = new Set(taskSessionIds.value)
@@ -136,7 +142,8 @@ function visibleSessionsFor(projectId: number): AgentSession[] {
 }
 
 function hasMoreSessions(projectId: number): boolean {
-  return filteredFor(projectId).length > visibleSessionsFor(projectId).length
+  const total = totalByProject.value[projectId] ?? filteredFor(projectId).length
+  return visibleSessionsFor(projectId).length < total
 }
 
 function showMoreSessions(projectId: number) {
@@ -144,6 +151,7 @@ function showMoreSessions(projectId: number) {
     ...visibleCountByProject.value,
     [projectId]: visibleCountFor(projectId) + PAGE_SIZE,
   }
+  void loadProject(projectId)
 }
 
 const visibleProjects = computed(() => {
@@ -200,6 +208,7 @@ watch(storeTurns, () => {
 // Sessions whose turn is running get no SSE events in the tree, so the tree polls
 // every expanded project that has any running session. It stops for a project as
 // soon as its list reports none, and entirely on unmount.
+// Polling requests only the visible page size rather than the full session index.
 function projectHasRunning(projectId: number): boolean {
   return sessionsFor(projectId).some((entry) => entry.turn === 'running')
 }

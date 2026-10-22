@@ -16,7 +16,9 @@ type Repository interface {
 	Create(inst Instance) error
 	Get(instanceID string) (Instance, error)
 	List(projectID uint) ([]Instance, error)
+	ListFiltered(projectID uint, filter string) ([]Instance, error)
 	ListLive() ([]Instance, error)
+	PruneDead(projectID uint, keepLast int) error
 	UpdateStatus(instanceID string, status agents.InstanceStatus, errText string, updatedAt time.Time) error
 }
 
@@ -58,8 +60,26 @@ func (r *gormRepository) Get(instanceID string) (Instance, error) {
 }
 
 func (r *gormRepository) List(projectID uint) ([]Instance, error) {
+	return r.ListFiltered(projectID, "")
+}
+
+func (r *gormRepository) ListFiltered(projectID uint, filter string) ([]Instance, error) {
+	query := r.db.Model(&database.AgentInstance{})
+	if projectID > 0 {
+		query = query.Where("project_id = ?", projectID)
+	}
+	switch filter {
+	case "live":
+		query = query.Where("status IN ?", []string{string(agents.InstanceStarting), string(agents.InstanceRunning)})
+	case "running":
+		query = query.Where("status = ?", string(agents.InstanceRunning))
+	case "stopped":
+		query = query.Where("status = ?", string(agents.InstanceStopped))
+	case "failed":
+		query = query.Where("status = ?", string(agents.InstanceFailed))
+	}
 	var rows []database.AgentInstance
-	if err := r.db.Where("project_id = ?", projectID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
+	if err := query.Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("instances: list project %d: %w", projectID, err)
 	}
 	out := make([]Instance, 0, len(rows))
@@ -70,16 +90,30 @@ func (r *gormRepository) List(projectID uint) ([]Instance, error) {
 }
 
 func (r *gormRepository) ListLive() ([]Instance, error) {
-	var rows []database.AgentInstance
-	if err := r.db.Where("status IN ?", []string{string(agents.InstanceStarting), string(agents.InstanceRunning)}).
-		Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("instances: list live: %w", err)
+	return r.ListFiltered(0, "live")
+}
+
+func (r *gormRepository) PruneDead(projectID uint, keepLast int) error {
+	if keepLast <= 0 {
+		keepLast = 5
 	}
-	out := make([]Instance, 0, len(rows))
-	for _, row := range rows {
-		out = append(out, instanceFromModel(row))
+	var deadIDs []string
+	query := r.db.Model(&database.AgentInstance{}).
+		Where("status IN ?", []string{string(agents.InstanceStopped), string(agents.InstanceFailed)})
+	if projectID > 0 {
+		query = query.Where("project_id = ?", projectID)
 	}
-	return out, nil
+	err := query.Order("created_at DESC, id DESC").Pluck("id", &deadIDs).Error
+	if err != nil {
+		return fmt.Errorf("instances: prune dead ids: %w", err)
+	}
+	if len(deadIDs) <= keepLast {
+		return nil
+	}
+	toDelete := deadIDs[keepLast:]
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Where("id IN ?", toDelete).Delete(&database.AgentInstance{}).Error
+	})
 }
 
 func (r *gormRepository) UpdateStatus(instanceID string, status agents.InstanceStatus, errText string, updatedAt time.Time) error {

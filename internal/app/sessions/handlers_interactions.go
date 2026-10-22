@@ -11,11 +11,11 @@ import (
 // tool approval, question forms and the raw event stream. Sending messages and
 // interrupting a turn are generic and live in RegisterRoutes.
 func (s *Service) RegisterInteractionRoutes(r gin.IRouter) {
-	r.GET("/projects/:id/opencode/sessions/:sessionId/permission", s.handlePermissionList)
-	r.POST("/projects/:id/opencode/sessions/:sessionId/permission/:requestId/reply", s.handlePermissionReply)
-	r.GET("/projects/:id/opencode/sessions/:sessionId/form", s.handleFormList)
-	r.POST("/projects/:id/opencode/sessions/:sessionId/form/:formId/reply", s.handleFormReply)
-	r.GET("/projects/:id/opencode/sessions/:sessionId/raw-events", s.handleRawEvents)
+	r.GET("/projects/:id/sessions/:sessionId/permission", s.handlePermissionList)
+	r.POST("/projects/:id/sessions/:sessionId/permission/:requestId/reply", s.handlePermissionReply)
+	r.GET("/projects/:id/sessions/:sessionId/form", s.handleFormList)
+	r.POST("/projects/:id/sessions/:sessionId/form/:formId/reply", s.handleFormReply)
+	r.GET("/projects/:id/sessions/:sessionId/raw-events", s.handleRawEvents)
 }
 
 type permissionListResponse struct {

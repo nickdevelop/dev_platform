@@ -47,11 +47,11 @@
 - 会话层（`internal/app/sessions`）不得出现后端原生轮次事件名。守卫测试 `TestSessionsDoesNotNameNativeTurnEvents` 禁止这 9 个名字（`execution_started/succeeded/interrupted/failed`、`agent_start/agent_end/agent_settled`、`turn_start/turn_end`），轮次状态只能消费契约的 `EventTurn`。原生名到契约事件的翻译属于适配器职责。
 - 会话级 Stop 只停止本会话：门控 `Interrupt` 能力，运行中的轮次先经适配器 `Interrupt`，成功后才把本会话标记为 `stopped`。它不得调用 `instances.Stop`，也不得改动实例或兄弟会话。停止实例是另一条路径（`POST /projects/{id}/instances/{instanceId}/stop`），门控 `Stop` 能力。
 
-## 已知的剩余耦合（有意保留）
+## 已消除与剩余的耦合
 
 | 位置 | 说明 | 处理 |
 | --- | --- | --- |
-| `/opencode/` 交互子路由的 URL 前缀（权限/表单/raw-events） | 处理方式为能力门控，但 URL 历史上按 opencode 命名 | 保持对外 URL 不变；如需更名须同步 openapi.yaml、e2e 与外部脚本，安排在 API 版本变更时 |
+| 交互子路由的 URL 前缀（权限/表单/raw-events） | 历史遗留的 `/opencode/` URL 前缀已彻底移除，变更为中性路由 `/projects/{id}/sessions/{sessionId}/...` | 已完成中性化更名 |
 | 项目级后端开关 `AgentBackendConfig` | 已随第 2 项移除（迁移 v18 删表），后端启用只剩平台设置一处 | 已完成 |
-| `/opencode/` 原始事件端点（`/raw-events`）与前端 `api/interactions.ts` 的 `rawEventsPath` | 与 claudian 对齐时的偏差：原始流保留为调试通道，待处理交互已改走归一化流，前端交互不再订阅原始流 | 保留端点与 `rawEvents` 能力标志；仅供后端专属调试视图使用，通用交互路径不依赖它 |
+| 原始事件端点（`/raw-events`）与前端 `api/interactions.ts` 的 `rawEventsPath` | 原始流保留为调试通道，待处理交互已改走归一化流，前端交互不再订阅原始流 | 保留端点与 `rawEvents` 能力标志；仅供后端专属调试视图使用，通用交互路径不依赖它 |
 | 机器级服务的界面文案 | 文案中的"opencode service"由 `label` 小写生成，保持了原有字符串 | 新增带服务的后端时文案自动生成 |

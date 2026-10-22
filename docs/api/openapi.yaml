@@ -1040,7 +1040,8 @@ paths:
       description: >-
         Returns the project's session index entries, reconciled against the
         current instance lifecycle so a session whose instance has stopped is
-        reported disconnected rather than usable.
+        reported disconnected rather than usable. Supports pagination via
+        limit and offset, and filtering by turn state.
       operationId: listProjectSessions
       security:
         - cookieAuth: []
@@ -1052,6 +1053,26 @@ paths:
           schema:
             type: integer
             format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of sessions to return.
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          description: Number of sessions to skip.
+          schema:
+            type: integer
+            minimum: 0
+        - name: turn
+          in: query
+          required: false
+          description: Filter sessions by turn state (e.g. running).
+          schema:
+            type: string
       responses:
         '200':
           description: The project's indexed sessions.
@@ -1131,121 +1152,6 @@ paths:
           description: >-
             The backend adapter failed to start an instance or to create the
             session.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/instances/{instanceId}/sessions:
-    get:
-      summary: Discover an instance's native sessions
-      description: >-
-        Lists the agent-native sessions the backend reports for the instance and
-        indexes each valid one. Discovery requires the backend to declare
-        sessionDiscovery; malformed or misattributed native metadata is ignored.
-      operationId: discoverProjectInstanceSessions
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the owning project.
-          schema:
-            type: integer
-            format: int64
-        - name: instanceId
-          in: path
-          required: true
-          description: Durable identifier of the instance to query.
-          schema:
-            type: string
-      responses:
-        '200':
-          description: The instance's discovered, indexed sessions.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentSessionList'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: No such instance in this project.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: The instance is not running or does not support discovery.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '502':
-          description: The backend adapter failed to list sessions.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/sessions/discover:
-    get:
-      summary: Index a project backend's native sessions
-      description: >-
-        Lists the agent-native sessions the backend knows for the project's
-        working directory and merges them into the platform index, starting an
-        instance when none is running. The caller names a backend rather than
-        an instance, because which instance serves the backend is the
-        platform's business.
-      operationId: discoverProjectSessions
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the owning project.
-          schema:
-            type: integer
-            format: int64
-        - name: backend
-          in: query
-          required: true
-          description: Backend whose native sessions are indexed.
-          schema:
-            type: string
-            enum:
-              - opencode-v2
-              - pi
-      responses:
-        '200':
-          description: The project's indexed sessions after discovery.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AgentSessionList'
-        '400':
-          description: Malformed path or an unknown backend.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: No such project.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: >-
-            The backend is disabled platform-wide, or does not declare
-            session discovery support.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '502':
-          description: The backend adapter failed to start or to list sessions.
           content:
             application/json:
               schema:
@@ -1870,7 +1776,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /projects/{id}/opencode/sessions/{sessionId}/permission:
+  /projects/{id}/sessions/{sessionId}/permission:
     get:
       summary: List pending permission requests for the session (capability-gated)
       operationId: listPermissionRequests
@@ -1909,7 +1815,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/opencode/sessions/{sessionId}/permission/{requestId}/reply:
+  /projects/{id}/sessions/{sessionId}/permission/{requestId}/reply:
     post:
       summary: Reply to a pending permission request
       description: Decision is once, always or reject (Permission.Reply).
@@ -1970,7 +1876,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/opencode/sessions/{sessionId}/form:
+  /projects/{id}/sessions/{sessionId}/form:
     get:
       summary: List pending forms for the session (capability-gated)
       operationId: listForms
@@ -2003,7 +1909,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/opencode/sessions/{sessionId}/form/{formId}/reply:
+  /projects/{id}/sessions/{sessionId}/form/{formId}/reply:
     post:
       summary: Reply to a pending form
       operationId: replyForm
@@ -2062,7 +1968,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /projects/{id}/opencode/sessions/{sessionId}/raw-events:
+  /projects/{id}/sessions/{sessionId}/raw-events:
     get:
       summary: Proxy the shared sidecar's raw SSE bytes
       description: >-
@@ -3946,6 +3852,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AgentSession'
+        total:
+          type: integer
+          description: Total number of sessions in the project.
       additionalProperties: false
     AgentSessionHistory:
       type: object

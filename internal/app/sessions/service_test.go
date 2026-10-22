@@ -667,44 +667,6 @@ func TestCreateResolvesDuplicateNativeSessionRace(t *testing.T) {
 	}
 }
 
-// TestDiscoverIndexesNativeSessionsAndSkipsMalformed verifies discovery maps
-// valid native sessions into the index exactly once and never attaches
-// malformed or misattributed native metadata to the project.
-func TestDiscoverIndexesNativeSessionsAndSkipsMalformed(t *testing.T) {
-	env := newTestEnv(t)
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n1", Title: "one"},
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "", Title: "malformed"},
-		{InstanceID: "some-other-instance", Backend: agents.BackendPi, SessionID: "n2", Title: "misattributed"},
-		{InstanceID: env.instanceID, Backend: agents.BackendOpenCodeV2, SessionID: "n3", Title: "wrong backend"},
-	}
-	env.fake.mu.Unlock()
-
-	first, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	if len(first) != 1 {
-		t.Fatalf("Discover returned %d sessions, want 1 (malformed skipped)", len(first))
-	}
-	if first[0].NativeSessionID != "n1" || first[0].Title != "one" || first[0].Status != SessionActive {
-		t.Errorf("discovered session = %+v, want native n1 title one active", first[0])
-	}
-
-	// Discovery is idempotent: the same native session keeps its platform id.
-	second, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("second Discover: %v", err)
-	}
-	if len(second) != 1 || second[0].ID != first[0].ID {
-		t.Errorf("second Discover = %+v, want the same platform id %q", second, first[0].ID)
-	}
-	if got := sessionCount(t, env.db); got != 1 {
-		t.Errorf("session count = %d, want 1 after two discoveries", got)
-	}
-}
-
 // TestStaleSessionReflectsInstanceLifecycle verifies a session whose instance
 // has stopped is reported disconnected, and continue/send refuse with a clear
 // not-running error instead of pretending the session is usable.
@@ -840,9 +802,6 @@ func TestProjectScopingRejectsCrossProjectAccess(t *testing.T) {
 	if _, err := env.svc.Stop(context.Background(), otherProject, session.ID); !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("Stop cross-project error = %v, want ErrSessionNotFound", err)
 	}
-	if _, err := env.svc.Discover(context.Background(), otherProject, env.instanceID); !errors.Is(err, instances.ErrInstanceNotFound) {
-		t.Errorf("Discover cross-project error = %v, want ErrInstanceNotFound", err)
-	}
 }
 
 // TestSendAndContinueUseNativeMapping verifies send and continue hand the
@@ -896,9 +855,6 @@ func TestUnsupportedCapabilitiesAreRejected(t *testing.T) {
 
 	session := createNativeSession(t, env, "native-1")
 
-	if _, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID); !errors.Is(err, ErrUnsupportedCapability) {
-		t.Errorf("Discover error = %v, want ErrUnsupportedCapability", err)
-	}
 	if _, err := env.svc.Continue(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrUnsupportedCapability) {
 		t.Errorf("Continue error = %v, want ErrUnsupportedCapability", err)
 	}
@@ -1111,21 +1067,6 @@ func TestDeleteRemovesOnlyThePlatformIndex(t *testing.T) {
 	}
 	if got := sessionCount(t, env.db); got != 0 {
 		t.Errorf("session count after delete = %d, want 0", got)
-	}
-
-	// The native session still exists on the agent side: discovery indexes it
-	// again, which is expected for an index-only delete.
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-delete", Title: "native-delete"},
-	}
-	env.fake.mu.Unlock()
-	list, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("Discover after delete: %v", err)
-	}
-	if len(list) != 1 || list[0].NativeSessionID != "native-delete" {
-		t.Errorf("Discover after delete = %+v, want the native session re-indexed", list)
 	}
 }
 
@@ -1664,67 +1605,6 @@ func TestContinueIsIdempotentWhenInstanceRuns(t *testing.T) {
 	}
 }
 
-// TestDiscoveryOnReplacementInstanceUpdatesHostWithoutDuplication pins that
-// session identity is (project_id, backend, native_session_id): when a new
-// instance discovers an existing native session, it updates the host instance
-// in-place rather than creating a duplicate row, and rebind/merge logic is
-// unnecessary.
-func TestDiscoveryOnReplacementInstanceUpdatesHostWithoutDuplication(t *testing.T) {
-	env := newTestEnv(t)
-	session := createNativeSession(t, env, "native-dup")
-	stopEnvInstance(t, env)
-
-	// A replacement instance starts in the same project.
-	replacement, err := env.instances.Start(context.Background(), env.projectID, agents.BackendPi)
-	if err != nil {
-		t.Fatalf("start replacement instance: %v", err)
-	}
-
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{Backend: agents.BackendPi, SessionID: "native-dup", Title: "native-dup"},
-	}
-	env.fake.listBindInstance = true
-	env.fake.mu.Unlock()
-
-	// Discovery on the replacement instance finds the existing native session and
-	// updates its host instance without duplicating rows.
-	discovered, err := env.svc.Discover(context.Background(), env.projectID, replacement.ID)
-	if err != nil {
-		t.Fatalf("Discover on replacement: %v", err)
-	}
-	if len(discovered) != 1 {
-		t.Fatalf("discovered count = %d, want 1", len(discovered))
-	}
-	if discovered[0].ID != session.ID {
-		t.Errorf("discovered session id = %q, want original %q", discovered[0].ID, session.ID)
-	}
-	if discovered[0].InstanceID != replacement.ID {
-		t.Errorf("InstanceID = %q, want replacement %q", discovered[0].InstanceID, replacement.ID)
-	}
-	if got := sessionCount(t, env.db); got != 1 {
-		t.Errorf("session count = %d, want 1 (no duplicate row)", got)
-	}
-
-	continued, err := env.svc.Continue(context.Background(), env.projectID, session.ID)
-	if err != nil {
-		t.Fatalf("Continue: %v", err)
-	}
-	if continued.ID != session.ID {
-		t.Errorf("continued session id = %q, want %q", continued.ID, session.ID)
-	}
-	if continued.InstanceID != replacement.ID {
-		t.Errorf("InstanceID = %q, want %q", continued.InstanceID, replacement.ID)
-	}
-	var rows []database.AgentSession
-	if err := env.db.Where("native_session_id = ?", "native-dup").Find(&rows).Error; err != nil {
-		t.Fatalf("load rows: %v", err)
-	}
-	if len(rows) != 1 || rows[0].ID != session.ID {
-		t.Errorf("native-session rows = %+v, want only original %q", rows, session.ID)
-	}
-}
-
 // TestContinueRejectsOtherProject pins project scoping.
 func TestContinueRejectsOtherProject(t *testing.T) {
 	env := newTestEnv(t)
@@ -1733,77 +1613,6 @@ func TestContinueRejectsOtherProject(t *testing.T) {
 
 	if _, err := env.svc.Continue(context.Background(), other, session.ID); !errors.Is(err, ErrSessionNotFound) {
 		t.Errorf("Continue through another project error = %v, want ErrSessionNotFound", err)
-	}
-}
-
-// TestDiscoverProjectUsesRunnableInstance pins the project-level scan: the
-// caller names a backend, and the platform picks the instance that serves it.
-func TestDiscoverProjectUsesRunnableInstance(t *testing.T) {
-	env := newTestEnv(t)
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-project", Title: "found"},
-	}
-	env.fake.mu.Unlock()
-	before := env.fake.startCount()
-
-	found, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
-	if err != nil {
-		t.Fatalf("DiscoverProject: %v", err)
-	}
-	if len(found) != 1 || found[0].NativeSessionID != "n-project" {
-		t.Fatalf("DiscoverProject = %+v, want the native session n-project", found)
-	}
-	if got := env.fake.startCount(); got != before {
-		t.Errorf("StartInstance calls = %d, want %d (the running instance is reused)", got, before)
-	}
-
-	// Re-scanning keeps the platform id instead of indexing a duplicate.
-	again, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
-	if err != nil {
-		t.Fatalf("second DiscoverProject: %v", err)
-	}
-	if len(again) != 1 || again[0].ID != found[0].ID {
-		t.Errorf("second DiscoverProject = %+v, want the same platform id %q", again, found[0].ID)
-	}
-	if got := sessionCount(t, env.db); got != 1 {
-		t.Errorf("session count = %d, want 1", got)
-	}
-}
-
-// TestDiscoverProjectStartsInstanceWhenNeeded pins that scanning a backend with
-// no running instance brings one up instead of failing.
-func TestDiscoverProjectStartsInstanceWhenNeeded(t *testing.T) {
-	env := newTestEnv(t)
-	stopEnvInstance(t, env)
-	before := env.fake.startCount()
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-late", Title: "late"},
-	}
-	env.fake.listBindInstance = true
-	env.fake.mu.Unlock()
-
-	found, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendPi)
-	if err != nil {
-		t.Fatalf("DiscoverProject: %v", err)
-	}
-	if got := env.fake.startCount(); got != before+1 {
-		t.Errorf("StartInstance calls = %d, want %d (one auto-start)", got, before+1)
-	}
-	if len(found) != 1 {
-		t.Fatalf("DiscoverProject = %+v, want the discovered session", found)
-	}
-}
-
-// TestDiscoverProjectRejectsUnknownBackend pins the error mapping for a
-// backend the platform does not know.
-func TestDiscoverProjectRejectsUnknownBackend(t *testing.T) {
-	env := newTestEnv(t)
-
-	_, err := env.svc.DiscoverProject(context.Background(), env.projectID, agents.BackendID("nope"))
-	if !errors.Is(err, instances.ErrUnknownBackend) {
-		t.Errorf("DiscoverProject error = %v, want ErrUnknownBackend", err)
 	}
 }
 
@@ -1881,77 +1690,6 @@ func TestSendKeepsExistingTitle(t *testing.T) {
 	defer env.fake.mu.Unlock()
 	if len(env.fake.sentRefs) != 1 || env.fake.sentRefs[0].Title != "native-t2" {
 		t.Errorf("adapter sentRefs = %+v, want the existing title", env.fake.sentRefs)
-	}
-}
-
-// TestDiscoverPreviewFillsOnlyEmptyTitles verifies a preview-derived title
-// indexes new rows and revives empty ones, but never overwrites a title.
-func TestDiscoverPreviewFillsOnlyEmptyTitles(t *testing.T) {
-	env := newTestEnv(t)
-
-	// An existing titled row and an existing empty-title row.
-	titled := createNativeSession(t, env, "n-keep")
-	env.fake.mu.Lock()
-	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-empty"}
-	env.fake.mu.Unlock()
-	createdBlank, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	blank := createdBlank.Session
-
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-keep", Preview: "新预览"},
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-empty", Preview: "预览"},
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-new", Preview: "预览新"},
-	}
-	env.fake.mu.Unlock()
-
-	sessions, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	titles := map[string]string{}
-	for _, s := range sessions {
-		titles[s.NativeSessionID] = s.Title
-	}
-	if titles["n-keep"] != titled.Title {
-		t.Errorf("n-keep title = %q, want %q unchanged", titles["n-keep"], titled.Title)
-	}
-	if titles["n-empty"] != "预览" {
-		t.Errorf("n-empty title = %q, want the preview 预览", titles["n-empty"])
-	}
-	if titles["n-new"] != "预览新" {
-		t.Errorf("n-new title = %q, want preview 预览新 on the fresh row", titles["n-new"])
-	}
-	_ = blank
-}
-
-// TestDiscoverExplicitTitleStillWins verifies an agent-side explicit name
-// keeps overwriting a stale platform title.
-func TestDiscoverExplicitTitleStillWins(t *testing.T) {
-	env := newTestEnv(t)
-	env.fake.mu.Lock()
-	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "旧名"}
-	env.fake.mu.Unlock()
-	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "旧名", "", "")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	session := created.Session
-	env.fake.mu.Lock()
-	env.fake.listRefs = []agents.SessionRef{
-		{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "n-named", Title: "显式名", Preview: "预览"},
-	}
-	env.fake.mu.Unlock()
-
-	sessions, err := env.svc.Discover(context.Background(), env.projectID, env.instanceID)
-	if err != nil {
-		t.Fatalf("Discover: %v", err)
-	}
-	if len(sessions) != 1 || sessions[0].Title != "显式名" {
-		t.Errorf("Discover = %+v, want title 显式名 for session %s", sessions, session.ID)
 	}
 }
 
@@ -2080,4 +1818,78 @@ func TestBackendsCarryCatalogMetadata(t *testing.T) {
 	if got := env.svc.Backends()[0]; got.Label != string(agents.BackendPi) {
 		t.Fatalf("label without catalog = %q, want the raw id", got.Label)
 	}
+}
+
+// TestListSessionsPaginationAndFiltering verifies pagination and turn filtering on the list endpoint.
+func TestListSessionsPaginationAndFiltering(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env := newTestEnv(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	// Create 3 sessions
+	s1 := createNativeSession(t, env, "native-p1")
+	s2 := createNativeSession(t, env, "native-p2")
+	s3 := createNativeSession(t, env, "native-p3")
+
+	// 1. Full list without limit
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions", env.projectID), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("full list code = %d", rec.Code)
+	}
+	var fullResp sessionListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &fullResp); err != nil {
+		t.Fatalf("unmarshal full list: %v", err)
+	}
+	if len(fullResp.Sessions) != 3 || fullResp.Total != 3 {
+		t.Fatalf("full list count = %d, total = %d, want 3", len(fullResp.Sessions), fullResp.Total)
+	}
+
+	// 2. Pagination with limit=2, offset=0
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions?limit=2&offset=0", env.projectID), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page 1 list code = %d", rec.Code)
+	}
+	var pageResp sessionListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &pageResp); err != nil {
+		t.Fatalf("unmarshal page list: %v", err)
+	}
+	if len(pageResp.Sessions) != 2 || pageResp.Total != 3 {
+		t.Fatalf("page 1 count = %d, total = %d, want 2 and 3", len(pageResp.Sessions), pageResp.Total)
+	}
+
+	// 3. Pagination with limit=2, offset=2 (next page)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions?limit=2&offset=2", env.projectID), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("page 2 list code = %d", rec.Code)
+	}
+	var page2Resp sessionListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &page2Resp); err != nil {
+		t.Fatalf("unmarshal page 2 list: %v", err)
+	}
+	if len(page2Resp.Sessions) != 1 || page2Resp.Total != 3 {
+		t.Fatalf("page 2 count = %d, total = %d, want 1 and 3", len(page2Resp.Sessions), page2Resp.Total)
+	}
+
+	// 4. Filter by turn=running
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions?turn=running", env.projectID), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("turn filter list code = %d", rec.Code)
+	}
+	var runningResp sessionListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &runningResp); err != nil {
+		t.Fatalf("unmarshal running list: %v", err)
+	}
+	// Initially none are running
+	if len(runningResp.Sessions) != 0 || runningResp.Total != 0 {
+		t.Fatalf("running count = %d, want 0", len(runningResp.Sessions))
+	}
+
+	_ = s1
+	_ = s2
+	_ = s3
 }

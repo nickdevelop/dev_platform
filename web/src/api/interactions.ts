@@ -1,8 +1,8 @@
-// opencode-specific interaction API calls under the /opencode prefix.
-// Generic management (list/create/delete/discover/history, legacy
-// messages/interrupt/events) stays in ./sessions; agent-specific dialogue
-// operations live here so /pi can diverge independently. DTOs mirror
-// docs/api/openapi.yaml (PermissionRequest/FormInfo) and stay JSON-stable.
+// Interaction API calls for capability-gated interactions.
+// Generic management (list/create/delete/history, legacy
+// messages/interrupt/events) stays in ./sessions; dialogue interaction
+// operations live here. DTOs mirror docs/api/openapi.yaml
+// (PermissionRequest/FormInfo) and stay JSON-stable.
 
 import { apiRequest } from './client'
 
@@ -34,18 +34,18 @@ interface FormListResponse {
   forms: FormInfo[]
 }
 
-// GET /api/projects/{id}/opencode/sessions/{sessionId}/permission
+// GET /api/projects/{id}/sessions/{sessionId}/permission
 export function listPermissionRequests(
   projectId: number,
   sessionId: string,
 ): Promise<PermissionListResponse> {
   return apiRequest<PermissionListResponse>(
     'GET',
-    `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/permission`,
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/permission`,
   )
 }
 
-// POST /api/projects/{id}/opencode/sessions/{sessionId}/permission/{requestId}/reply
+// POST /api/projects/{id}/sessions/{sessionId}/permission/{requestId}/reply
 export function replyPermissionRequest(
   projectId: number,
   sessionId: string,
@@ -55,20 +55,20 @@ export function replyPermissionRequest(
 ): Promise<void> {
   return apiRequest<void>(
     'POST',
-    `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/permission/${encodeURIComponent(requestId)}/reply`,
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/permission/${encodeURIComponent(requestId)}/reply`,
     { body, csrfToken },
   )
 }
 
-// GET /api/projects/{id}/opencode/sessions/{sessionId}/form
+// GET /api/projects/{id}/sessions/{sessionId}/form
 export function listFormInfos(projectId: number, sessionId: string): Promise<FormListResponse> {
   return apiRequest<FormListResponse>(
     'GET',
-    `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/form`,
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/form`,
   )
 }
 
-// POST /api/projects/{id}/opencode/sessions/{sessionId}/form/{formId}/reply
+// POST /api/projects/{id}/sessions/{sessionId}/form/{formId}/reply
 export function replyFormInfo(
   projectId: number,
   sessionId: string,
@@ -78,7 +78,7 @@ export function replyFormInfo(
 ): Promise<void> {
   return apiRequest<void>(
     'POST',
-    `/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/form/${encodeURIComponent(formId)}/reply`,
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/form/${encodeURIComponent(formId)}/reply`,
     { body, csrfToken },
   )
 }
@@ -87,5 +87,5 @@ export function replyFormInfo(
 // path for fetch+ReadableStream (EventSource cannot carry headers and the
 // platform relies on cookies). Bytes are the sidecar's OpenCodeEvent JSON.
 export function rawEventsPath(projectId: number, sessionId: string): string {
-  return `/api/projects/${projectId}/opencode/sessions/${encodeURIComponent(sessionId)}/raw-events`
+  return `/api/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/raw-events`
 }
