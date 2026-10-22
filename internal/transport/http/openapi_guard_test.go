@@ -9,18 +9,6 @@ import (
 	"testing"
 
 	"github.com/goccy/go-yaml"
-
-	"devplatform/internal/app/agentservices"
-	"devplatform/internal/app/auth"
-	"devplatform/internal/app/instances"
-	"devplatform/internal/app/modelconfig"
-	"devplatform/internal/app/projects"
-	"devplatform/internal/app/sessions"
-	"devplatform/internal/app/settings"
-	"devplatform/internal/app/tasks"
-	"devplatform/internal/app/terminal"
-	"devplatform/internal/core/agents"
-	"devplatform/internal/core/platform/fake"
 )
 
 // openAPIDoc captures the top-level paths mapping from openapi.yaml.
@@ -48,31 +36,9 @@ func TestAllRoutesDocumentedInOpenAPI(t *testing.T) {
 		t.Fatalf("parse openapi.yaml: %v", err)
 	}
 
-	db := openTestDB(t)
-	registry := agents.NewRegistry()
-	projSvc := projects.NewService(db)
-	instSvc := instances.NewService(db, registry, projSvc)
-	authSvc := auth.NewService(db)
-
-	catalog, _ := agents.NewCatalog(
-		agents.BackendDescriptor{ID: agents.BackendOpenCodeV2, Binary: "opencode", Order: 1},
-		agents.BackendDescriptor{ID: agents.BackendPi, Binary: "pi", Order: 2},
-	)
-	settingsSvc := settings.NewService(db, catalog)
-	tasksRepo := tasks.NewRepository(db)
-	tasksSvc := tasks.NewService(tasksRepo, nil)
-
-	router := NewRouter(Dependencies{
-		Auth:          authSvc,
-		Projects:      projSvc,
-		Settings:      settingsSvc,
-		Models:        modelconfig.NewService(db, nil),
-		Instances:     instSvc,
-		AgentServices: agentservices.NewService(nil),
-		Sessions:      sessions.NewService(db, registry, instSvc),
-		Tasks:         tasksSvc,
-		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
-	})
+	// The fixture mounts every service so the route table under test is the
+	// production one, not a hand-written subset that can drift.
+	router := newFullRouter(t)
 
 	paramRegex := regexp.MustCompile(`:([a-zA-Z0-9_]+)`)
 
