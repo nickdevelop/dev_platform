@@ -5,9 +5,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ModelSettings from '../features/settings/ModelSettings.vue'
 import { useAuthStore } from '../stores/auth'
-import { installTestCSRF } from './csrf-fixture'
+import { installTestCSRF, testCSRFToken } from './csrf-fixture'
 
-type Call = { method: string; path: string; body: any }
+type Call = { method: string; path: string; body: any; headers: Record<string, string> }
 
 const services = {
   services: [
@@ -45,7 +45,8 @@ function stubFetch(extra: Record<string, unknown> = {}) {
       const path = String(input).replace('/api', '')
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
-      calls.push({ method, path, body })
+      const headers = (init?.headers ?? {}) as Record<string, string>
+      calls.push({ method, path, body, headers })
       const key = `${method} ${path}`
       if (key in extra) return { status: 200, json: async () => extra[key] } as Response
       if (key === 'GET /model-services') return { status: 200, json: async () => services } as Response
@@ -81,6 +82,10 @@ describe('ModelSettings', () => {
 
     await wrapper.find('[data-fetch-models="1"]').trigger('click')
     await flushPromises()
+    // The probe is a POST: it must carry the CSRF header, which is what the
+    // user-visible 403 invalid_csrf_token used to be about.
+    const probe = calls.find((c) => c.method === 'POST' && c.path === '/model-services/fetch-models')
+    expect(probe?.headers['X-CSRF-Token']).toBe(testCSRFToken)
     const candidate = wrapper.find('[data-candidate="new-model"] input')
     expect(candidate.exists()).toBe(true)
     await candidate.setValue(true)
@@ -97,7 +102,9 @@ describe('ModelSettings', () => {
 
     await wrapper.find('[data-test-model="10"]').trigger('click')
     await flushPromises()
-    expect(calls.some((c) => c.method === 'POST' && c.path === '/models/test')).toBe(true)
+    const probe = calls.find((c) => c.method === 'POST' && c.path === '/models/test')
+    expect(probe).toBeDefined()
+    expect(probe?.headers['X-CSRF-Token']).toBe(testCSRFToken)
     expect(wrapper.text()).toContain('正常')
   })
 })
