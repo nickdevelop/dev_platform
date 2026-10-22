@@ -44,6 +44,18 @@ import { SessionMentionSource } from './composer/dropdown/sources/SessionMention
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
 import { getSessionHistory, type ImageAttachment, type ImageMediaType } from '../../api/sessions'
 import { detectBuiltInCommand } from './composer/builtInCommands'
+import {
+  type ApprovalMode,
+  getPersistedApprovalMode,
+  setPersistedApprovalMode,
+} from './interactions/autoApproval'
+import { useAutoApproval } from './interactions/useAutoApproval'
+import {
+  type SendShortcut,
+  getPersistedSendShortcut,
+  setPersistedSendShortcut,
+  shouldSubmitOnKeydown,
+} from './composer/sendShortcut'
 import FileSidebar from '../files/FileSidebar.vue'
 import FileViewer from '../files/FileViewer.vue'
 
@@ -206,18 +218,61 @@ function onCompositionEnd() {
   }
 }
 
+const approvalMode = ref<ApprovalMode>(
+  (initialSessionDraft.approvalMode as ApprovalMode | undefined) || getPersistedApprovalMode(),
+)
+const sendShortcut = ref<SendShortcut>(getPersistedSendShortcut())
+const sendMenuOpen = ref(false)
+
+function toggleSendMenu() {
+  sendMenuOpen.value = !sendMenuOpen.value
+}
+
+function setShortcut(shortcut: SendShortcut) {
+  sendShortcut.value = shortcut
+  setPersistedSendShortcut(shortcut)
+  sendMenuOpen.value = false
+}
+
+function onWindowClick(event: MouseEvent) {
+  if (!sendMenuOpen.value) return
+  const target = event.target as Element | null
+  if (target && !target.closest('.send-split-group')) {
+    sendMenuOpen.value = false
+  }
+}
+
 function onTextareaKeydown(event: KeyboardEvent) {
   if (dropdown.onKeydown(event)) return
-  if (event.key === 'Enter' && !event.shiftKey) {
+  if (shouldSubmitOnKeydown(event, sendShortcut.value)) {
     event.preventDefault()
     void onSubmit()
   }
 }
 
+const composerPlaceholder = computed(() => {
+  if (sendShortcut.value === 'ctrl-enter') {
+    return '向 Agent 发送消息… (Ctrl+Enter 发送，Enter 换行，输入 / 使用命令，@ 引用)'
+  }
+  return '向 Agent 发送消息… (Enter 发送，Shift+Enter 换行，输入 / 使用命令，@ 引用)'
+})
+
+const sendButtonTitle = computed(() => {
+  if (isRunning.value) return '停止'
+  return sendShortcut.value === 'ctrl-enter' ? '发送 (Ctrl+Enter)' : '发送 (Enter)'
+})
+
 // Image attachments support
 const attachedImages = ref<ImageAttachment[]>(
   Array.isArray(initialSessionDraft.attachedImages) ? [...initialSessionDraft.attachedImages] : [],
 )
+
+watch(approvalMode, (val) => {
+  setPersistedApprovalMode(val)
+  if (isRestoringDraft) return
+  if (!currentSessionId) return
+  draftsStore.setSessionDraft(currentSessionId, { approvalMode: val })
+})
 
 watch(messageText, (val) => {
   if (isRestoringDraft) return
@@ -655,7 +710,10 @@ const composerDisabled = computed(() => {
 // interaction layer's concern (see ./interactions/useSessionInteractions.ts);
 // the panel renders whatever that layer reports.
 
-onMounted(open)
+onMounted(() => {
+  window.addEventListener('click', onWindowClick)
+  void open()
+})
 watch(() => [props.projectId, props.sessionId], open)
 watch(
   () => props.sessionId,
@@ -665,6 +723,7 @@ watch(
       draftsStore.setSessionDraft(prevId, {
         messageText: messageText.value,
         attachedImages: attachedImages.value,
+        approvalMode: approvalMode.value,
       })
     }
     currentSessionId = newSessionId
@@ -673,6 +732,9 @@ watch(
       const draft = draftsStore.getSessionDraft(newSessionId)
       messageText.value = draft.messageText || ''
       attachedImages.value = Array.isArray(draft.attachedImages) ? [...draft.attachedImages] : []
+      if (draft.approvalMode) {
+        approvalMode.value = draft.approvalMode
+      }
       void nextTick(() => {
         isRestoringDraft = false
       })
@@ -696,7 +758,17 @@ const {
     void nextTick(() => scrollToBottom(false))
   },
 })
+
+useAutoApproval({
+  mode: approvalMode,
+  pendingToolCall,
+  pendingForms,
+  confirmTool: onConfirmTool,
+  answerForm: onAnswerForm,
+})
+
 onBeforeUnmount(() => {
+  window.removeEventListener('click', onWindowClick)
   // Tabs keep other sessions alive: unmounting this panel must not close other
   // sessions' streams. The session's own subscriptions stay open so returning
   // via a tab is instant; they are released when the tab closes or the session
@@ -705,6 +777,7 @@ onBeforeUnmount(() => {
     draftsStore.setSessionDraft(currentSessionId, {
       messageText: messageText.value,
       attachedImages: attachedImages.value,
+      approvalMode: approvalMode.value,
     })
   }
 })
@@ -1055,6 +1128,7 @@ async function removeSession() {
             v-if="pendingForms.length > 0"
             :forms="pendingForms"
             :busy="answeringForm"
+            :autopilot="approvalMode === 'autopilot'"
             @submit="(formId, answer) => onAnswerForm(formId, answer)"
           />
 
@@ -1091,7 +1165,7 @@ async function removeSession() {
                 v-model="messageText"
                 rows="2"
                 :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
-                placeholder="向 Agent 发送消息… (输入 / 使用快捷命令，@ 引用文件或会话)"
+                :placeholder="composerPlaceholder"
                 @input="onTextareaInput"
                 @keydown="onTextareaKeydown"
                 @paste="onPaste"
@@ -1128,7 +1202,7 @@ async function removeSession() {
                     v-model="selectedModel"
                     :project-id="props.projectId"
                     :backend="activeSession.backend"
-                    :model-selection="activeSession.capabilities.modelSelection"
+                    :model-selection="activeSession.capabilities?.modelSelection"
                     @status="onModelStatus"
                     @picked="onModelPicked"
                   />
@@ -1138,16 +1212,76 @@ async function removeSession() {
                   />
                 </div>
                 <div class="composer-actions">
-                  <button
-                    type="button"
-                    class="composer-action"
-                    :class="isRunning ? 'stop-button' : 'send-button'"
-                    :disabled="composerDisabled"
-                    :title="isRunning ? '停止' : '发送'"
-                    @click="onSubmit"
-                  >
-                    {{ composerLabel }}
-                  </button>
+                  <div class="approval-mode-wrapper">
+                    <select
+                      v-model="approvalMode"
+                      class="approval-mode-select"
+                      data-test="approval-mode-select"
+                      title="自动化执行与审批模式"
+                      aria-label="自动化执行与审批模式"
+                    >
+                      <option value="default">默认</option>
+                      <option value="auto-approve">自动审批</option>
+                      <option value="autopilot">托管</option>
+                    </select>
+                  </div>
+                  <div class="send-split-group" data-test="send-split-group">
+                    <button
+                      type="button"
+                      class="composer-action send-main-btn"
+                      :class="isRunning ? 'stop-button' : 'send-button'"
+                      :disabled="composerDisabled"
+                      :title="sendButtonTitle"
+                      data-test="composer-send-btn"
+                      @click="onSubmit"
+                    >
+                      {{ composerLabel }}
+                    </button>
+                    <button
+                      type="button"
+                      class="send-dropdown-trigger"
+                      :class="[
+                        isRunning ? 'stop-trigger' : 'send-trigger',
+                        { 'is-open': sendMenuOpen },
+                      ]"
+                      data-test="send-shortcut-toggle"
+                      aria-label="选择发送快捷键"
+                      title="选择发送快捷键"
+                      @click.stop="toggleSendMenu"
+                    >
+                      <svg class="dropdown-arrow" viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                        <path d="M7 10l5 5 5-5z" />
+                      </svg>
+                    </button>
+                    <div v-if="sendMenuOpen" class="send-dropdown-menu" data-test="send-shortcut-menu">
+                      <button
+                        type="button"
+                        class="send-menu-item"
+                        :class="{ selected: sendShortcut === 'enter' }"
+                        data-test="shortcut-enter"
+                        @click="setShortcut('enter')"
+                      >
+                        <span class="menu-check">{{ sendShortcut === 'enter' ? '✓' : '' }}</span>
+                        <div class="menu-content">
+                          <span class="menu-label">Enter 发送</span>
+                          <span class="menu-hint">Shift+Enter 换行</span>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        class="send-menu-item"
+                        :class="{ selected: sendShortcut === 'ctrl-enter' }"
+                        data-test="shortcut-ctrl-enter"
+                        @click="setShortcut('ctrl-enter')"
+                      >
+                        <span class="menu-check">{{ sendShortcut === 'ctrl-enter' ? '✓' : '' }}</span>
+                        <div class="menu-content">
+                          <span class="menu-label">Ctrl+Enter 发送</span>
+                          <span class="menu-hint">Enter 换行</span>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2172,6 +2306,132 @@ async function removeSession() {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.approval-mode-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.approval-mode-select {
+  height: 28px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.approval-mode-select:hover {
+  border-color: var(--color-primary);
+}
+
+.send-split-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.send-split-group .send-main-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.send-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 20px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.send-dropdown-trigger.send-trigger {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.send-dropdown-trigger.stop-trigger {
+  background: var(--color-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+  border-left: 1px solid var(--color-danger-border);
+}
+
+.send-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  min-width: 175px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.send-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.send-menu-item:hover {
+  background: var(--color-surface-muted);
+}
+
+.send-menu-item.selected {
+  font-weight: 600;
+}
+
+.menu-check {
+  width: 12px;
+  display: inline-block;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+}
+
+.menu-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-label {
+  font-size: 0.82rem;
+}
+
+.menu-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
 }
 
 .composer-action {

@@ -14,6 +14,7 @@ export interface NewSessionDraft {
 export interface SessionDraft {
   messageText: string
   attachedImages: ImageAttachment[]
+  approvalMode?: 'default' | 'auto-approve' | 'autopilot'
 }
 
 export interface TaskCreateDraft {

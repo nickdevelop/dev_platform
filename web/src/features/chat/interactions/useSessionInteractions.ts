@@ -32,7 +32,7 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
   // their confirm path still reports that no confirmation API exists.
   const pendingToolCall = computed<{ callId: string; name: string } | null>(() => {
     const session = options.activeSession.value
-    if (session?.capabilities.toolConfirmation) {
+    if (session?.capabilities?.toolConfirmation) {
       const approval = interactions.pendingApprovalFor(options.sessionId.value)
       return approval ? { callId: approval.requestId, name: approval.action } : null
     }
@@ -53,7 +53,7 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
   // an agent question blocks the turn forever with no way to answer.
   const pendingForms = computed(() => {
     const session = options.activeSession.value
-    if (!session?.capabilities.toolConfirmation) return []
+    if (!session?.capabilities?.toolConfirmation) return []
     return interactions.formsFor(options.sessionId.value)
   })
 
