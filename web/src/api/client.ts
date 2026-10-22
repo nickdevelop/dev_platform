@@ -33,45 +33,100 @@ export function setOnUnauthorized(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler
 }
 
-export interface RequestOptions {
-  body?: unknown
-  csrfToken?: string
-  // Set for endpoints whose 401 means "wrong password" rather than "session
-  // expired" (login), so the global expiry handling does not fire.
-  ignoreUnauthorized?: boolean
+// ---------------------------------------------------------------------------
+// CSRF transport
+//
+// The server enforces double-submit CSRF on every mutating request: the
+// X-CSRF-Token header must equal the platform_csrf cookie. Making each call
+// site pass the token is a contract that is silently broken the first time
+// someone forgets it, so the token is injected here, at the single HTTP exit.
+// get() and mutate() are the only entry points: a writer cannot forget the
+// header, and the method type stops a mutating verb from taking the read path.
+// ---------------------------------------------------------------------------
+
+export type MutatingMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+const mutatingMethods: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+function isMutating(method: string): boolean {
+  return mutatingMethods.has(method.toUpperCase())
 }
 
-export async function apiRequest<T>(
+// CSRFProvider is the session store seen from the transport: a read of the
+// current token plus a refresh that obtains a new one.
+export interface CSRFProvider {
+  get: () => string
+  refresh: () => Promise<string>
+}
+
+let csrfProvider: CSRFProvider | null = null
+
+// installCSRF wires the session store in as the token source. The composition
+// root calls this so this module never imports the store (which would invert
+// the layer dependency).
+export function installCSRF(provider: CSRFProvider): void {
+  csrfProvider = provider
+}
+
+function requireCSRFProvider(): CSRFProvider {
+  if (!csrfProvider) {
+    throw new Error('api client: installCSRF() must run before mutating requests')
+  }
+  return csrfProvider
+}
+
+// Only one refresh may be in flight: a burst of mutating calls holding a stale
+// token must not stampede the session endpoint.
+let refreshInFlight: Promise<string> | null = null
+
+function refreshCSRFToken(): Promise<string> {
+  const provider = requireCSRFProvider()
+  if (!refreshInFlight) {
+    refreshInFlight = provider.refresh().finally(() => {
+      refreshInFlight = null
+    })
+  }
+  return refreshInFlight
+}
+
+// ensureCSRFToken returns the token held by the store, bootstrapping it through
+// one session request on first use (the token is unknown before the app has
+// asked for the session).
+async function ensureCSRFToken(): Promise<string> {
+  const current = requireCSRFProvider().get()
+  if (current) return current
+  return refreshCSRFToken()
+}
+
+interface ExchangeResult {
+  status: number
+  payload: unknown
+}
+
+// exchange performs one request and reads the body exactly once, so a retried
+// request never has to reuse a consumed response.
+async function exchange(
   method: string,
   path: string,
-  options: RequestOptions = {},
-): Promise<T> {
+  body: unknown,
+  csrfToken: string,
+): Promise<ExchangeResult> {
   const headers: Record<string, string> = {}
-  if (options.body !== undefined) {
+  if (body !== undefined) {
     headers['Content-Type'] = 'application/json'
   }
-  if (options.csrfToken) {
-    headers['X-CSRF-Token'] = options.csrfToken
+  if (csrfToken !== '') {
+    headers['X-CSRF-Token'] = csrfToken
   }
 
   const response = await fetch(`/api${path}`, {
     method,
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  // A 401 on a normal call means the session expired: notify the global
-  // handler and report it as UnauthorizedError. A 401 on a login call
-  // (ignoreUnauthorized) instead means bad credentials, so fall through and
-  // map the server's error body (e.g. invalid_credentials) rather than
-  // reporting a session-expiry.
-  if (response.status === 401 && !options.ignoreUnauthorized) {
-    unauthorizedHandler?.()
-    throw new UnauthorizedError()
-  }
-
   if (response.status === 204) {
-    return undefined as T
+    return { status: 204, payload: undefined }
   }
 
   let payload: unknown = null
@@ -80,16 +135,7 @@ export async function apiRequest<T>(
   } catch {
     // A non-JSON body carries no error code; report it as unknown.
   }
-  const code = isErrorResponse(payload)
-    ? payload.error
-    : response.status === 401
-      ? 'unauthorized'
-      : 'unknown_error'
-
-  if (response.status < 200 || response.status >= 300) {
-    throw new ApiError(response.status, code)
-  }
-  return payload as T
+  return { status: response.status, payload }
 }
 
 function isErrorResponse(payload: unknown): payload is { error: string } {
@@ -98,6 +144,119 @@ function isErrorResponse(payload: unknown): payload is { error: string } {
     payload !== null &&
     typeof (payload as { error?: unknown }).error === 'string'
   )
+}
+
+const csrfRejectionCode = 'invalid_csrf_token'
+
+function isCSRFRejection(payload: unknown): boolean {
+  return isErrorResponse(payload) && payload.error === csrfRejectionCode
+}
+
+interface SendOptions {
+  body?: unknown
+  csrfToken?: string
+  // Set for endpoints whose 401 means "wrong password" rather than "session
+  // expired" (login), so the global expiry handling does not fire.
+  ignoreUnauthorized?: boolean
+  // managed marks the request as sent through get()/mutate(): the transport
+  // owns the CSRF token (bootstrap + one recovery attempt).
+  managed?: boolean
+}
+
+function unwrap<T>(result: ExchangeResult, options: SendOptions): T {
+  const { status, payload } = result
+
+  // A 401 on a normal call means the session expired: notify the global
+  // handler and report it as UnauthorizedError. A 401 on a login call
+  // (ignoreUnauthorized) instead means bad credentials, so fall through and
+  // map the server's error body (e.g. invalid_credentials) rather than
+  // reporting a session-expiry.
+  if (status === 401 && !options.ignoreUnauthorized) {
+    unauthorizedHandler?.()
+    throw new UnauthorizedError()
+  }
+
+  if (status >= 200 && status < 300) {
+    return payload as T
+  }
+
+  const code = isErrorResponse(payload)
+    ? payload.error
+    : status === 401
+      ? 'unauthorized'
+      : 'unknown_error'
+  throw new ApiError(status, code)
+}
+
+async function send<T>(method: string, path: string, options: SendOptions = {}): Promise<T> {
+  const mutating = isMutating(method)
+  let token = options.csrfToken ?? ''
+  if (mutating && options.managed && token === '') {
+    token = await ensureCSRFToken()
+  }
+
+  let result = await exchange(method, path, options.body, token)
+
+  // A stale token is a legitimate client state (cookie TTL, server restart, a
+  // second tab). Recover silently once and only for a CSRF rejection: no other
+  // 403 is ever retried.
+  if (mutating && options.managed && result.status === 403 && isCSRFRejection(result.payload)) {
+    token = await refreshCSRFToken()
+    result = await exchange(method, path, options.body, token)
+  }
+
+  return unwrap<T>(result, options)
+}
+
+// get sends a safe (read-only) request. RequireCSRF lets these through, so no
+// token is attached.
+export function get<T>(path: string): Promise<T> {
+  return send<T>('GET', path)
+}
+
+export interface MutateOptions {
+  // Set for endpoints whose 401 means "wrong password" rather than "session
+  // expired" (login).
+  ignoreUnauthorized?: boolean
+}
+
+// mutate sends a state-changing request and attaches the CSRF token. The method
+// type keeps read-only verbs off this path and mutating verbs off get().
+export function mutate<T>(
+  method: MutatingMethod,
+  path: string,
+  body?: unknown,
+  options: MutateOptions = {},
+): Promise<T> {
+  return send<T>(method, path, {
+    body,
+    ignoreUnauthorized: options.ignoreUnauthorized,
+    managed: true,
+  })
+}
+
+// RequestOptions is the transitional shape of apiRequest. The csrfToken field
+// is deprecated: call sites migrate to get()/mutate(), which obtain the token
+// from the session store instead of asking every caller to pass it.
+export interface RequestOptions {
+  body?: unknown
+  /** @deprecated use mutate(), which injects the token itself. */
+  csrfToken?: string
+  // Set for endpoints whose 401 means "wrong password" rather than "session
+  // expired" (login), so the global expiry handling does not fire.
+  ignoreUnauthorized?: boolean
+}
+
+/**
+ * @deprecated use get() or mutate(), which own the CSRF token. This entry point
+ * stays only until every API module is migrated.
+ */
+export function apiRequest<T>(
+  method: string,
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  return send<T>(method, path, options)
 }
 
 const errorMessages: Record<string, string> = {
