@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   UnauthorizedError,
-  apiRequest,
   describeApiError,
   get,
   installCSRF,
@@ -213,18 +212,6 @@ describe('mutate', () => {
     stubFetch([{ status: 204 }])
 
     await expect(mutate('DELETE', '/models/1')).resolves.toBeUndefined()
-  })
-})
-
-describe('apiRequest (transitional)', () => {
-  it('still sends an explicitly passed token and never injects one', async () => {
-    const { refresh } = installToken('token-1')
-    const calls = stubFetch([{ status: 200, body: {} }])
-
-    await apiRequest('POST', '/model-services', { body: { name: 's' }, csrfToken: 'explicit' })
-
-    expect(calls[0].headers['X-CSRF-Token']).toBe('explicit')
-    expect(refresh).not.toHaveBeenCalled()
   })
 })
 

@@ -49,7 +49,6 @@ function stubFetch(responses: unknown[]) {
 describe('agent service api and store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useAuthStore().$patch({ csrfToken: 'csrf-abc' })
     installTestCSRF('csrf-abc')
   })
 

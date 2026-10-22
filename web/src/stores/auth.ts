@@ -1,9 +1,13 @@
 // Pinia store for the shared-password session: whether the caller is
-// authenticated, when the session expires, and the CSRF token that mutating
-// API calls must echo in X-CSRF-Token.
+// authenticated, when the session expires, and the CSRF token the transport
+// echoes on mutating requests.
+//
+// The store is the token's single source of truth. It never hands the token to
+// a call site: api/client.ts reads it through the provider installed by the
+// composition root, so no request can be sent without it.
 
 import { defineStore } from 'pinia'
-import { apiRequest } from '../api/client'
+import { get, mutate } from '../api/client'
 
 // Mirrors docs/api/openapi.yaml #/components/schemas/SessionResponse.
 export interface SessionResponse {
@@ -33,28 +37,33 @@ export const useAuthStore = defineStore('auth', {
       await this.fetchSession()
     },
 
-    async fetchSession() {
-      const session = await apiRequest<SessionResponse>('GET', '/auth/session')
+    // fetchSession resolves the current session and returns the CSRF token so
+    // the transport can use it as its refresh callback.
+    async fetchSession(): Promise<string> {
+      const session = await get<SessionResponse>('/auth/session')
+      this.apply(session)
+      this.sessionChecked = true
+      return session.csrfToken
+    },
+
+    async login(password: string) {
+      // Login is CSRF protected, and mutate() bootstraps a token through one
+      // session request when the store has none, so no pre-fetch is needed
+      // here. A 401 means a wrong password, not an expired session, hence
+      // ignoreUnauthorized.
+      const session = await mutate<SessionResponse>(
+        'POST',
+        '/auth/login',
+        { password },
+        { ignoreUnauthorized: true },
+      )
       this.apply(session)
       this.sessionChecked = true
     },
 
-    async login(password: string) {
-      if (!this.csrfToken) {
-        // Login is CSRF-protected, so a token must be obtained first.
-        await this.fetchSession()
-      }
-      const session = await apiRequest<SessionResponse>('POST', '/auth/login', {
-        body: { password },
-        csrfToken: this.csrfToken,
-        ignoreUnauthorized: true,
-      })
-      this.apply(session)
-    },
-
     async logout() {
       try {
-        await apiRequest<SessionResponse>('POST', '/auth/logout', { csrfToken: this.csrfToken })
+        await mutate<SessionResponse>('POST', '/auth/logout')
       } finally {
         // The session is gone from the user's perspective even if the
         // request itself failed (e.g. it had already expired).

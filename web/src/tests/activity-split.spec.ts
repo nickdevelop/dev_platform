@@ -14,6 +14,7 @@ import type { AgentSession, Capabilities } from '../api/sessions'
 import * as filesApi from '../api/files'
 import FileSidebar from '../features/files/FileSidebar.vue'
 import FileViewer from '../features/files/FileViewer.vue'
+import { installTestCSRF } from './csrf-fixture'
 
 function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
@@ -86,6 +87,10 @@ function testRouter() {
     ],
   })
 }
+
+// The chat panel opens session streams in the background; the transport must
+// have a token source even when the test never sends a request itself.
+installTestCSRF()
 
 describe('split message/activity log', () => {
   it('shows only messages and errors in the message column', () => {

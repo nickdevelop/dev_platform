@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import App from '../App.vue'
 import { createAppRouter } from '../router'
 import { useAuthStore } from '../stores/auth'
-import { installTestCSRF } from './csrf-fixture'
+import { installStoreCSRF } from './csrf-fixture'
 
 // The stub answers fetch calls in strict request order: each stubbed route is
 // consumed exactly once, which lets a test script multi-step flows such as
@@ -76,10 +76,10 @@ const mountedWrappers: ReturnType<typeof mount>[] = []
 
 async function mountApp(routes: StubRoute[], path = '/') {
   const calls = stubApi(routes)
-  // The transport refuses to send a mutating request without a token source;
-  // the app installs the real one in main.ts, which these specs never run. The
-  // value matches the session stub below, as it does in production.
-  installTestCSRF('csrf-1')
+  // The transport refuses to send a mutating request without a token source.
+  // Wire it exactly like main.ts does: the token comes from the auth store, so
+  // login and logout are asserted against the token the stub session issued.
+  installStoreCSRF()
   const pinia = createPinia()
   setActivePinia(pinia)
   const router = createAppRouter()

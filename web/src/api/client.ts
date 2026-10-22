@@ -235,30 +235,6 @@ export function mutate<T>(
   })
 }
 
-// RequestOptions is the transitional shape of apiRequest. The csrfToken field
-// is deprecated: call sites migrate to get()/mutate(), which obtain the token
-// from the session store instead of asking every caller to pass it.
-export interface RequestOptions {
-  body?: unknown
-  /** @deprecated use mutate(), which injects the token itself. */
-  csrfToken?: string
-  // Set for endpoints whose 401 means "wrong password" rather than "session
-  // expired" (login), so the global expiry handling does not fire.
-  ignoreUnauthorized?: boolean
-}
-
-/**
- * @deprecated use get() or mutate(), which own the CSRF token. This entry point
- * stays only until every API module is migrated.
- */
-export function apiRequest<T>(
-  method: string,
-  path: string,
-  options: RequestOptions = {},
-): Promise<T> {
-  return send<T>(method, path, options)
-}
-
 const errorMessages: Record<string, string> = {
   invalid_request: '请求格式不正确。',
   invalid_credentials: '密码错误。',

@@ -28,7 +28,7 @@ function stubFetch(routes: Record<string, unknown> = {}) {
 function initStore() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useAuthStore().$patch({ authenticated: true, csrfToken: 'csrf-token' })
+  useAuthStore().$patch({ authenticated: true })
   return useTerminalStore()
 }
 

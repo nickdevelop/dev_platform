@@ -498,7 +498,6 @@ describe('stop semantics', () => {
       ['POST', '/api/projects/1/sessions/sess-1/stop', { status: 200, body: stopped }],
     ])
     const { sessions, auth } = setupStores()
-    auth.csrfToken = 'csrf-1'
     await sessions.loadSessions(1)
 
     await sessions.stopSession(1, 'sess-1')
@@ -549,7 +548,6 @@ describe('session chat and new session panels', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
 
     const { wrapper, auth } = await mountPanel(SessionChatPanel, { projectId: 1, sessionId: 'sess-pi' })
-    auth.csrfToken = 'csrf-1'
 
     // The open session's backend does not advertise modelSelection, so no model picker is shown.
     expect(wrapper.find('.model-select').exists()).toBe(false)

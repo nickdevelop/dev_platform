@@ -60,6 +60,31 @@ test('management APIs reject unauthenticated access and enforce CSRF', async ({ 
   expect(withCSRF.status(), await withCSRF.text()).toBe(200)
 })
 
+test('model service probes require the CSRF token', async ({ request }) => {
+  const csrf = await login(request)
+  // An unroutable port: the probe must fail on the upstream call, never on the
+  // security layer, so the assertion below is never satisfied by accident.
+  const probe = { baseUrl: 'http://127.0.0.1:9/v1', apiKey: 'unused' }
+
+  // Both probe endpoints are POSTs: without the double-submit header they are
+  // refused by the middleware, which is exactly the 403 an operator sees when
+  // a client forgets the token.
+  for (const path of ['/api/model-services/fetch-models', '/api/models/test']) {
+    const withoutToken = await request.post(path, { data: probe })
+    expect(withoutToken.status(), path).toBe(403)
+    expect((await withoutToken.json()).error, path).toBe('invalid_csrf_token')
+
+    const withToken = await request.post(path, {
+      data: probe,
+      headers: { 'X-CSRF-Token': csrf },
+    })
+    const body = await withToken.json()
+    expect(body.error, `${path} with CSRF`).not.toBe('invalid_csrf_token')
+    // The request got past the middleware and failed on the upstream dial.
+    expect(withToken.status(), `${path} with CSRF`).toBe(502)
+  }
+})
+
 test('malformed path inputs are rejected without touching the filesystem', async ({ request }) => {
   const csrf = await login(request)
   const headers = { 'X-CSRF-Token': csrf }

@@ -479,7 +479,6 @@ describe('sessions store delete', () => {
       streaming: false,
     })
     sessions.streamStatus['s1'] = 'open'
-    useAuthStore().csrfToken = 'csrf-1'
     const calls: Array<{ method?: string; url: string }> = []
     vi.stubGlobal(
       'fetch',
@@ -503,7 +502,6 @@ describe('sessions store delete', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
-    useAuthStore().csrfToken = 'csrf-1'
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({ status: 500, json: async () => ({ error: 'server_error' }) }) as Response),
@@ -821,7 +819,6 @@ describe('sessions store user echo dedupe', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
-    useAuthStore().csrfToken = 'token'
     stubSend()
 
     await sessions.sendMessage(1, 's1', 'hello pi')
@@ -834,7 +831,6 @@ describe('sessions store user echo dedupe', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
-    useAuthStore().csrfToken = 'token'
     stubSend()
 
     await sessions.sendMessage(1, 's1', 'hello pi')
@@ -853,7 +849,6 @@ describe('sessions store user echo dedupe', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
-    useAuthStore().csrfToken = 'token'
     stubSend()
 
     await sessions.sendMessage(1, 's1', 'again')
@@ -870,7 +865,6 @@ describe('sessions store user echo dedupe', () => {
     const oldSession = session('s1', 1, { updatedAt: '2026-10-09T00:00:00Z' })
     sessions.sessions = [oldSession]
     sessions.sessionsByProject[1] = [oldSession]
-    useAuthStore().csrfToken = 'token'
 
     const freshTime = '2026-10-20T15:30:00Z'
     stubRoutes({
@@ -953,7 +947,6 @@ describe('sessions store interrupt', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1, { turn: 'running' })]
-    useAuthStore().csrfToken = 'token'
 
     let settle!: (dto: AgentSession) => void
     const response = new Promise<AgentSession>((resolve) => {
@@ -979,7 +972,6 @@ describe('sessions store interrupt', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1, { turn: 'running' })]
-    useAuthStore().csrfToken = 'token'
     stubRoutes({ '/interrupt': session('s1', 1, { turn: 'idle' }) })
 
     await sessions.interrupt(1, 's1')
