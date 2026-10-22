@@ -57,16 +57,30 @@ type Adapter struct {
 	instances     map[string]*instanceState
 	subscribers   map[string]map[*subscription]struct{}
 	sessionModels map[string]agents.MessageModel
+	// sessionInstances maps a native session (including subagent sessions) to
+	// the platform instance that owns it; sessionParents maps a subagent
+	// session to its native parent, so interactions can be routed to the root
+	// conversation the workbench opened.
+	sessionInstances map[string]string
+	sessionParents   map[string]string
+
+	eventsMu        sync.Mutex
+	eventsClient    *Client
+	eventsOff       func()
+	eventsClosedOff func()
 }
 
 type subscription struct {
+	ctx    context.Context
 	ch     chan agents.NormalizedEvent
 	cancel context.CancelFunc
 	once   sync.Once
+	mu     sync.RWMutex
+	closed bool
 }
 
-func newSubscription(ch chan agents.NormalizedEvent, cancel context.CancelFunc) *subscription {
-	return &subscription{ch: ch, cancel: cancel}
+func newSubscription(ctx context.Context, ch chan agents.NormalizedEvent, cancel context.CancelFunc) *subscription {
+	return &subscription{ctx: ctx, ch: ch, cancel: cancel}
 }
 
 func (s *subscription) close() {
@@ -74,8 +88,27 @@ func (s *subscription) close() {
 		if s.cancel != nil {
 			s.cancel()
 		}
+		s.mu.Lock()
+		s.closed = true
 		close(s.ch)
+		s.mu.Unlock()
 	})
+}
+
+// send delivers one event to the subscriber. It reports false when the
+// subscription is closed; callers stop their producer loop in that case.
+func (s *subscription) send(event agents.NormalizedEvent) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return false
+	}
+	select {
+	case s.ch <- event:
+		return true
+	case <-s.ctx.Done():
+		return false
+	}
 }
 
 type instanceState struct {
@@ -110,6 +143,8 @@ func New(opts Options) *Adapter {
 		instances:         make(map[string]*instanceState),
 		subscribers:       make(map[string]map[*subscription]struct{}),
 		sessionModels:     make(map[string]agents.MessageModel),
+		sessionInstances:  make(map[string]string),
+		sessionParents:    make(map[string]string),
 	}
 }
 
@@ -153,6 +188,18 @@ func (a *Adapter) execPath() string {
 		}
 	}
 	return a.executable
+}
+
+// acquire leases the shared dsh host and ensures the current process's event
+// stream is bound to this adapter. A restarted host yields a new client, so
+// binding is idempotent per client but re-registers after a restart.
+func (a *Adapter) acquire(ctx context.Context) (*Process, func(), error) {
+	proc, release, err := a.host.Acquire(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	a.bindEvents(proc.Client())
+	return proc, release, nil
 }
 
 // Capabilities declares what deepseek supports.
@@ -335,7 +382,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	}
 
 	// Verify that shared host can start and accept connections
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("start deepseek instance: %w", err)
 	}
@@ -378,6 +425,11 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	delete(a.instances, instanceID)
 	subs := a.subscribers[instanceID]
 	delete(a.subscribers, instanceID)
+	for sessionID, owner := range a.sessionInstances {
+		if owner == instanceID {
+			delete(a.sessionInstances, sessionID)
+		}
+	}
 	a.mu.Unlock()
 
 	for sub := range subs {
@@ -394,7 +446,7 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 		return nil, err
 	}
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -404,10 +456,12 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 
 	var res struct {
 		Items []struct {
-			SessionID   string `json:"sessionId"`
-			CWD         string `json:"cwd"`
-			Blank       bool   `json:"blank"`
-			Projections *struct {
+			SessionID       string `json:"sessionId"`
+			CWD             string `json:"cwd"`
+			Blank           bool   `json:"blank"`
+			Origin          string `json:"origin"`
+			ParentSessionID string `json:"parentSessionId"`
+			Projections     *struct {
 				Values struct {
 					Title *string `json:"title"`
 				} `json:"values"`
@@ -426,6 +480,13 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 		}
 		// Match session working directory to instance directory
 		if inst.directory != "" && item.CWD != "" && item.CWD != inst.directory {
+			continue
+		}
+
+		// Record native ancestry even for subagent sessions: their interactions
+		// are routed to the root conversation the workbench opened.
+		a.recordSession(instanceID, item.SessionID, item.ParentSessionID)
+		if item.Origin == "subagent" {
 			continue
 		}
 
@@ -452,7 +513,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		return nil, err
 	}
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -473,6 +534,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 	}
 
 	sessionID := res.SessionID
+	a.recordSession(instanceID, sessionID, "")
 
 	// Select model if requested
 	if options.Model != "" {
@@ -501,8 +563,9 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
+	a.recordSession(ref.InstanceID, ref.SessionID, "")
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -539,8 +602,9 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if err := ref.Validate(); err != nil {
 		return err
 	}
+	a.recordSession(ref.InstanceID, ref.SessionID, "")
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return err
 	}
@@ -614,14 +678,14 @@ func (a *Adapter) selectModel(ctx context.Context, client *Client, sessionID, mo
 
 // Subscribe returns a channel delivering normalized events for the given instance.
 func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
-	_, err := a.ensureInstance(instanceID)
+	inst, err := a.ensureInstance(instanceID)
 	if err != nil {
 		return nil, err
 	}
 
 	outCh := make(chan agents.NormalizedEvent, 100)
 	subCtx, cancel := context.WithCancel(ctx)
-	sub := newSubscription(outCh, cancel)
+	sub := newSubscription(subCtx, outCh, cancel)
 
 	a.mu.Lock()
 	if _, ok := a.subscribers[instanceID]; !ok {
@@ -630,7 +694,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 	a.subscribers[instanceID][sub] = struct{}{}
 	a.mu.Unlock()
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		a.mu.Lock()
 		if subs, ok := a.subscribers[instanceID]; ok {
@@ -700,9 +764,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				for frameBytes := range followCh {
 					evs := normalizer.NormalizeFrame(frameBytes)
 					for _, ev := range evs {
-						select {
-						case outCh <- ev:
-						case <-subCtx.Done():
+						if !sub.send(ev) {
 							return
 						}
 					}
@@ -710,18 +772,37 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 			}()
 		}
 
-		// Proactively follow existing native sessions in this working directory
+		// Proactively follow existing native sessions in this working directory.
+		// The roster also tells us which native session belongs to this platform
+		// instance and which parent a subagent session has, so interaction
+		// requests can be routed back to the root conversation.
 		var listRes struct {
 			Items []struct {
-				SessionID string `json:"sessionId"`
-				Blank     bool   `json:"blank"`
+				SessionID       string `json:"sessionId"`
+				CWD             string `json:"cwd"`
+				Blank           bool   `json:"blank"`
+				Origin          string `json:"origin"`
+				ParentSessionID string `json:"parentSessionId"`
 			} `json:"items"`
 		}
 		if err := client.Call(subCtx, "session/list", map[string]any{"_request": map[string]any{}}, &listRes); err == nil {
 			for _, item := range listRes.Items {
-				if item.SessionID != "" && !item.Blank {
-					followSession(item.SessionID)
+				if item.SessionID == "" {
+					continue
 				}
+				a.recordSession(instanceID, item.SessionID, item.ParentSessionID)
+				if item.Blank {
+					continue
+				}
+				if inst.directory != "" && item.CWD != "" && item.CWD != inst.directory {
+					continue
+				}
+				// A subagent session needs its durable parent address; the root
+				// session's follow stream carries the interactions it surfaces.
+				if item.Origin == "subagent" {
+					continue
+				}
+				followSession(item.SessionID)
 			}
 		}
 
@@ -743,15 +824,14 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				}
 				if err := json.Unmarshal(controlMsg, &ctrl); err == nil {
 					if ctrl.SessionID != "" {
+						a.recordSession(instanceID, ctrl.SessionID, "")
 						followSession(ctrl.SessionID)
 					}
 					if ctrl.Type == "projection" && ctrl.SessionID != "" {
 						if h, exists := activeFollows[ctrl.SessionID]; exists {
 							evs := h.normalizer.NormalizeProjection(ctrl.Key, ctrl.Value)
 							for _, ev := range evs {
-								select {
-								case outCh <- ev:
-								case <-subCtx.Done():
+								if !sub.send(ev) {
 									return
 								}
 							}
@@ -771,7 +851,7 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 		return err
 	}
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return err
 	}
@@ -787,7 +867,7 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 
 // ListModels returns the model catalog offered by dsh.
 func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.ModelInfo, error) {
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -802,7 +882,7 @@ func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, 
 		return false, err
 	}
 
-	proc, release, err := a.host.Acquire(ctx)
+	proc, release, err := a.acquire(ctx)
 	if err != nil {
 		return false, err
 	}

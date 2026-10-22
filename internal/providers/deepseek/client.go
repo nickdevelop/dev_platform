@@ -72,9 +72,14 @@ type Client struct {
 	subscribers   map[string]chan json.RawMessage
 	subscribersMu sync.RWMutex
 
-	clientID string
-	done     chan struct{}
-	closed   atomic.Bool
+	listenersMu     sync.RWMutex
+	eventListeners  map[uint64]func(json.RawMessage)
+	closedListeners map[uint64]func()
+	listenerSeq     uint64
+
+	clientID  string
+	done      chan struct{}
+	closed    atomic.Bool
 	closeOnce sync.Once
 }
 
@@ -155,8 +160,74 @@ func NewClient(endpoint, cookie string) *Client {
 		httpClient: &http.Client{
 			Timeout: defaultRPCTimeout,
 		},
-		subscribers: make(map[string]chan json.RawMessage),
-		done:        make(chan struct{}),
+		subscribers:     make(map[string]chan json.RawMessage),
+		eventListeners:  make(map[uint64]func(json.RawMessage)),
+		closedListeners: make(map[uint64]func()),
+		done:            make(chan struct{}),
+	}
+}
+
+// OnEvent registers a listener for frames forwarded on the client's event
+// stream ($events). The returned function unregisters it.
+func (c *Client) OnEvent(listener func(json.RawMessage)) func() {
+	if listener == nil {
+		return func() {}
+	}
+	c.listenersMu.Lock()
+	c.listenerSeq++
+	id := c.listenerSeq
+	c.eventListeners[id] = listener
+	c.listenersMu.Unlock()
+
+	return func() {
+		c.listenersMu.Lock()
+		delete(c.eventListeners, id)
+		c.listenersMu.Unlock()
+	}
+}
+
+// OnEventClosed registers a listener for the end of the client's event
+// stream. The returned function unregisters it.
+func (c *Client) OnEventClosed(listener func()) func() {
+	if listener == nil {
+		return func() {}
+	}
+	c.listenersMu.Lock()
+	c.listenerSeq++
+	id := c.listenerSeq
+	c.closedListeners[id] = listener
+	c.listenersMu.Unlock()
+
+	return func() {
+		c.listenersMu.Lock()
+		delete(c.closedListeners, id)
+		c.listenersMu.Unlock()
+	}
+}
+
+func (c *Client) dispatchEvent(raw json.RawMessage) {
+	c.listenersMu.RLock()
+	listeners := make([]func(json.RawMessage), 0, len(c.eventListeners))
+	for _, listener := range c.eventListeners {
+		listeners = append(listeners, listener)
+	}
+	c.listenersMu.RUnlock()
+
+	for _, listener := range listeners {
+		listener(raw)
+	}
+}
+
+func (c *Client) dispatchEventClosed() {
+	c.listenersMu.RLock()
+	listeners := make([]func(), 0, len(c.closedListeners))
+	for _, listener := range c.closedListeners {
+		listeners = append(listeners, listener)
+	}
+	c.listenersMu.RUnlock()
+
+	for _, listener := range listeners {
+		listener()
 	}
 }
 
@@ -277,35 +348,23 @@ func (c *Client) ConnectMux(ctx context.Context) error {
 
 	go c.readLoop()
 
-	// Subscribe to $events to obtain ClientID and event readiness
+	// Subscribe to $events to obtain ClientID and receive forwarded interaction
+	// requests. The subscription stays open for the lifetime of the connection:
+	// dropping it would make dsh wait forever for a waterfall answer.
 	readyCh := make(chan string, 1)
 	errCh := make(chan error, 1)
 
-	eventsID, eventsCh, cancelEvents, err := c.Subscribe(ctx, "$events", map[string]any{})
+	_, eventsCh, cancelEvents, err := c.Subscribe(ctx, "$events", map[string]any{})
 	if err != nil {
 		conn.Close()
 		return fmt.Errorf("subscribe $events: %w", err)
 	}
 
-	go func() {
-		for item := range eventsCh {
-			var readyFrame struct {
-				Type     string `json:"type"`
-				ClientID string `json:"clientId"`
-			}
-			if err := json.Unmarshal(item, &readyFrame); err == nil && readyFrame.Type == "ready" {
-				readyCh <- readyFrame.ClientID
-				return
-			}
-		}
-		errCh <- errors.New("events stream closed without ready frame")
-	}()
+	go pumpEvents(eventsCh, readyCh, errCh, c)
 
 	select {
 	case id := <-readyCh:
 		c.clientID = id
-		// Keep events subscription active for the lifetime of this connection
-		_ = eventsID
 	case err := <-errCh:
 		cancelEvents()
 		c.Close()
@@ -321,6 +380,32 @@ func (c *Client) ConnectMux(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// pumpEvents consumes the $events stream for the lifetime of the connection.
+// The ready frame establishes the remote client identity; every later frame is
+// forwarded to the registered listeners.
+func pumpEvents(ch <-chan json.RawMessage, readyCh chan<- string, errCh chan<- error, c *Client) {
+	ready := false
+	for item := range ch {
+		if !ready {
+			var readyFrame struct {
+				Type     string `json:"type"`
+				ClientID string `json:"clientId"`
+			}
+			if err := json.Unmarshal(item, &readyFrame); err == nil && readyFrame.Type == "ready" && readyFrame.ClientID != "" {
+				ready = true
+				readyCh <- readyFrame.ClientID
+			}
+			continue
+		}
+		c.dispatchEvent(item)
+	}
+	if !ready {
+		errCh <- errors.New("events stream closed without ready frame")
+		return
+	}
+	c.dispatchEventClosed()
 }
 
 // Subscribe opens a remote stream over the WebSocket mux.
@@ -350,8 +435,10 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 
 	if err != nil {
 		c.subscribersMu.Lock()
-		delete(c.subscribers, streamID)
-		close(ch)
+		if current, exists := c.subscribers[streamID]; exists && current == ch {
+			delete(c.subscribers, streamID)
+			close(ch)
+		}
 		c.subscribersMu.Unlock()
 		return "", nil, nil, fmt.Errorf("write subscribe frame: %w", err)
 	}
@@ -396,8 +483,16 @@ func (c *Client) readLoop() {
 			continue
 		}
 
+		// Hold the read lock across the non-blocking send so a concurrent
+		// Close cannot close the channel underneath it.
 		c.subscribersMu.RLock()
 		ch, ok := c.subscribers[frame.StreamID]
+		if ok && ch != nil && frame.Type == "item" {
+			select {
+			case ch <- frame.Value:
+			default:
+			}
+		}
 		c.subscribersMu.RUnlock()
 
 		if !ok || ch == nil {
@@ -405,11 +500,6 @@ func (c *Client) readLoop() {
 		}
 
 		switch frame.Type {
-		case "item":
-			select {
-			case ch <- frame.Value:
-			default:
-			}
 		case "end", "error":
 			c.subscribersMu.Lock()
 			if activeCh, exists := c.subscribers[frame.StreamID]; exists {

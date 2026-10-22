@@ -55,7 +55,7 @@ The session stop route (`POST …/sessions/{sessionId}/stop`) is gated by `inter
 instead; see *Turns, stop and interaction events* below.
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through, and `set_model` command switches model; real model resolution is **provisional**. | ✅ — `session/modelCatalog` and per-session `session/selectModel`. Verified. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake stub. | ✅ — `tool/call`, `tool/result`, `tool/ptc-dispatch` normalized into tool call/result events. Verified. |
-| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. | ✅ — pending approvals arrive via `$events` and answered through `$events/result` (`agents.PermissionReplier`). Verified. |
+| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. | ✅ — `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events and replies travel back through `$events/result`. Verified against a mock dsh event stream; a live dsh round trip is **provisional** (see below). |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript, mapping `model_change` to message models. Verified. | ✅ — `session/page` and `session/projections` read back and normalized. Verified. |
 | `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. | ❌ — no untouched event stream is exposed. |
 
@@ -89,7 +89,7 @@ The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 -
 - **Events**: WebSocket `session/follow` streams streaming chunks (`text-delta`, `reasoning-delta`), structured events (`turn/start`, `turn/end`, `tool/call`, `tool/result`), and token usage.
 - **Interrupt**: `session/cancel` RPC method.
 - **Stop**: drops logical instance reference; shared host shuts down gracefully when all instances are idle.
-- **Tool confirmation**: pending permissions and forms arrive via `$events` and are replied through `$events/result` (`agents.PermissionReplier`).
+- **Tool confirmation**: `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events; answers and decisions are returned through `$events/result`. Pending interactions are also exposed through `ListPermissions` / `ListForms`, so a stream that opens after the request still shows the card.
 
 ## Turns, stop and interaction events
 
@@ -289,6 +289,11 @@ verification against a real model provider is outstanding:
    appears in discovery) is unverified.
 6. **pi model resolution** — `--model` patterns resolve only with provider
    catalogs/credentials configured.
+7. **deepseek human interactions end to end** — the adapter consumes dsh's
+   `$events` waterfall frames and replies through `$events/result`, verified
+   against a mock dsh event stream (question forms, approvals, cancellation and
+   stream closure). A live `ask_user_question` / approval round trip with a
+   configured model provider is outstanding.
 
 Everything not listed as provisional is covered by the Go test suite
 (`go test ./...`), the adapter unit tests with mock servers/CLIs, and the

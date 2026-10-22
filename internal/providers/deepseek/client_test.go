@@ -161,6 +161,82 @@ func TestClientMuxAndSubscribe(t *testing.T) {
 	_ = streamID
 }
 
+func TestClientDispatchesEventsAndClosure(t *testing.T) {
+	triggered := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/remote.mux" {
+			http.NotFound(w, r)
+			return
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		for {
+			var msg wsClientMessage
+			if err := conn.ReadJSON(&msg); err != nil {
+				return
+			}
+			if msg.Type != "open" || msg.Endpoint != "$events" {
+				continue
+			}
+			if err := conn.WriteJSON(wsServerMessage{
+				Type:     "item",
+				StreamID: msg.StreamID,
+				Value:    json.RawMessage(`{"type": "ready", "clientId": "client-events"}`),
+			}); err != nil {
+				return
+			}
+			go func(streamID string) {
+				<-triggered
+				_ = conn.WriteJSON(wsServerMessage{
+					Type:     "item",
+					StreamID: streamID,
+					Value:    json.RawMessage(`{"type":"waterfall","event":"user-questions/request","eventId":"evt-1"}`),
+				})
+				time.Sleep(20 * time.Millisecond)
+				_ = conn.Close()
+			}(msg.StreamID)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "auth=cookie")
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := client.ConnectMux(ctx); err != nil {
+		t.Fatalf("ConnectMux failed: %v", err)
+	}
+
+	events := make(chan string, 1)
+	offEvent := client.OnEvent(func(raw json.RawMessage) { events <- string(raw) })
+	defer offEvent()
+	closed := make(chan struct{}, 1)
+	offClosed := client.OnEventClosed(func() { closed <- struct{}{} })
+	defer offClosed()
+
+	close(triggered)
+
+	select {
+	case event := <-events:
+		if !strings.Contains(event, `"eventId":"evt-1"`) {
+			t.Errorf("event = %s, want the forwarded waterfall frame", event)
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for forwarded event")
+	}
+
+	select {
+	case <-closed:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for event stream closure")
+	}
+}
+
 func TestCancelAfterStreamErrorDoesNotPanic(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/remote.mux" {
