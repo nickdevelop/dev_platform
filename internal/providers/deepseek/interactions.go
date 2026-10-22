@@ -125,12 +125,12 @@ func (a *Adapter) handleClientEvent(client *Client, raw json.RawMessage) {
 		if frame.EventID == "" || frame.AgentID == "" {
 			return
 		}
-		sessionID, instanceID := a.rootAndInstance(frame.AgentID)
+		sessionID := a.rootSession(frame.AgentID)
 		switch frame.Event {
 		case "user-questions/request":
-			a.handleUserQuestions(instanceID, sessionID, frame.EventID, frame.Request)
+			a.handleUserQuestions(sessionID, frame.EventID, frame.Request)
 		case "approval/request":
-			a.handleApproval(instanceID, sessionID, frame.EventID, frame.Request)
+			a.handleApproval(sessionID, frame.EventID, frame.Request)
 		}
 	case "cancel":
 		if frame.EventID != "" {
@@ -148,22 +148,14 @@ func (a *Adapter) handleClientClosed(client *Client) {
 	}
 
 	for _, form := range a.permissions.ClearForms() {
-		a.emitInteraction(a.instanceForSession(form.info.SessionID), form.info.SessionID, agents.InteractionPayload{
-			ID:    form.info.ID,
-			Kind:  agents.InteractionForm,
-			Phase: agents.InteractionResolved,
-		})
+		a.emitResolved(form.info.SessionID, agents.InteractionForm, form.info.ID)
 	}
 	for _, permission := range a.permissions.ClearPermissions() {
-		a.emitInteraction(a.instanceForSession(permission.SessionID), permission.SessionID, agents.InteractionPayload{
-			ID:    permission.ID,
-			Kind:  agents.InteractionPermission,
-			Phase: agents.InteractionResolved,
-		})
+		a.emitResolved(permission.SessionID, agents.InteractionPermission, permission.ID)
 	}
 }
 
-func (a *Adapter) handleUserQuestions(instanceID, sessionID, eventID string, raw json.RawMessage) {
+func (a *Adapter) handleUserQuestions(sessionID, eventID string, raw json.RawMessage) {
 	var request dshQuestionRequest
 	if err := json.Unmarshal(raw, &request); err != nil || len(request.Questions) == 0 {
 		return
@@ -181,7 +173,7 @@ func (a *Adapter) handleUserQuestions(instanceID, sessionID, eventID string, raw
 		Fields:    encoded,
 	}
 	a.permissions.AddForm(info, request.Questions)
-	a.emitInteraction(instanceID, sessionID, agents.InteractionPayload{
+	a.emitInteraction(sessionID, agents.InteractionPayload{
 		ID:    eventID,
 		Kind:  agents.InteractionForm,
 		Phase: agents.InteractionRequested,
@@ -189,7 +181,7 @@ func (a *Adapter) handleUserQuestions(instanceID, sessionID, eventID string, raw
 	})
 }
 
-func (a *Adapter) handleApproval(instanceID, sessionID, eventID string, raw json.RawMessage) {
+func (a *Adapter) handleApproval(sessionID, eventID string, raw json.RawMessage) {
 	var request dshApprovalRequest
 	if err := json.Unmarshal(raw, &request); err != nil {
 		return
@@ -211,7 +203,7 @@ func (a *Adapter) handleApproval(instanceID, sessionID, eventID string, raw json
 		Message:   approvalMessage(request),
 	}
 	a.permissions.AddPermission(permission)
-	a.emitInteraction(instanceID, sessionID, agents.InteractionPayload{
+	a.emitInteraction(sessionID, agents.InteractionPayload{
 		ID:         eventID,
 		Kind:       agents.InteractionPermission,
 		Phase:      agents.InteractionRequested,
@@ -230,26 +222,48 @@ func (a *Adapter) cancelPendingInteraction(eventID string) {
 }
 
 func (a *Adapter) emitResolved(sessionID string, kind agents.InteractionKind, eventID string) {
-	a.emitInteraction(a.instanceForSession(sessionID), sessionID, agents.InteractionPayload{
+	a.emitInteraction(sessionID, agents.InteractionPayload{
 		ID:    eventID,
 		Kind:  kind,
 		Phase: agents.InteractionResolved,
 	})
 }
 
-func (a *Adapter) emitInteraction(instanceID, sessionID string, payload agents.InteractionPayload) {
+// emitInteraction fans a session-scoped interaction out to every subscribed
+// instance. The dsh host is shared by every project, so a native session is not
+// reliably owned by the instance whose stream carries the waterfall: deriving
+// an owner from host-wide discovery lets the most recent subscriber steal other
+// projects' sessions, and a misrouted interaction is dropped by the app's
+// per-session filter. Each instance therefore receives its own copy (with its
+// own InstanceID) and the app keeps only the copy for a session a client
+// actually subscribed; unrelated sessions filter it out by native session id.
+// Interactions are rare (one per question or approval), so the fan-out is
+// cheap.
+func (a *Adapter) emitInteraction(sessionID string, payload agents.InteractionPayload) {
 	if sessionID == "" {
 		return
 	}
-	event := agents.NormalizedEvent{
-		Backend:     agents.BackendDeepSeek,
-		InstanceID:  instanceID,
-		SessionID:   sessionID,
-		Timestamp:   time.Now().UTC(),
-		Type:        agents.EventInteraction,
-		Interaction: &payload,
+
+	a.mu.Lock()
+	targets := make([]string, 0, len(a.subscribers))
+	for instanceID, subs := range a.subscribers {
+		if len(subs) == 0 {
+			continue
+		}
+		targets = append(targets, instanceID)
 	}
-	a.deliver(instanceID, event)
+	a.mu.Unlock()
+
+	for _, instanceID := range targets {
+		a.deliver(instanceID, agents.NormalizedEvent{
+			Backend:     agents.BackendDeepSeek,
+			InstanceID:  instanceID,
+			SessionID:   sessionID,
+			Timestamp:   time.Now().UTC(),
+			Type:        agents.EventInteraction,
+			Interaction: &payload,
+		})
+	}
 }
 
 // deliver fans one adapter event out to an instance's subscribers. Interaction
@@ -270,25 +284,25 @@ func (a *Adapter) deliver(instanceID string, event agents.NormalizedEvent) {
 	}
 }
 
-// recordSession remembers which platform instance owns a native session and,
-// for subagent sessions, its native parent.
-func (a *Adapter) recordSession(instanceID, sessionID, parent string) {
-	if sessionID == "" {
+// recordParent remembers a subagent session's native parent. Ancestry is a
+// host-wide fact, not ownership: it is recorded for every session a listing
+// reports so an interaction raised through a child still resolves to the root
+// conversation a client subscribed. Interaction delivery does not depend on
+// instance ownership at all (see emitInteraction), because one dsh host serves
+// every project directory and host-wide discovery cannot assign sessions to
+// instances reliably.
+func (a *Adapter) recordParent(sessionID, parent string) {
+	if sessionID == "" || parent == "" {
 		return
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if instanceID != "" {
-		a.sessionInstances[sessionID] = instanceID
-	}
-	if parent != "" {
-		a.sessionParents[sessionID] = parent
-	}
+	a.sessionParents[sessionID] = parent
 }
 
-// rootAndInstance resolves a native agent id (a root session id or a subagent
-// session id) to the root conversation and the platform instance that owns it.
-func (a *Adapter) rootAndInstance(sessionID string) (string, string) {
+// rootSession resolves a native agent id (a root session id or a subagent
+// session id) to the root conversation that a client subscribes to.
+func (a *Adapter) rootSession(sessionID string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -296,31 +310,16 @@ func (a *Adapter) rootAndInstance(sessionID string) (string, string) {
 	current := sessionID
 	for current != "" {
 		if _, ok := seen[current]; ok {
-			break
+			return current
 		}
 		seen[current] = struct{}{}
 		parent := a.sessionParents[current]
 		if parent == "" {
-			break
+			return current
 		}
 		current = parent
 	}
-
-	if instanceID := a.sessionInstances[current]; instanceID != "" {
-		return current, instanceID
-	}
-	// The ancestry may be incomplete for a session discovered late; fall back
-	// to the id that is known to belong to an instance.
-	if instanceID := a.sessionInstances[sessionID]; instanceID != "" {
-		return sessionID, instanceID
-	}
-	return current, ""
-}
-
-func (a *Adapter) instanceForSession(sessionID string) string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.sessionInstances[sessionID]
+	return current
 }
 
 func buildFormFields(questions []dshQuestion) ([]formField, string) {

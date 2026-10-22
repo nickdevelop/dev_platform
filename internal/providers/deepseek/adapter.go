@@ -57,12 +57,11 @@ type Adapter struct {
 	instances     map[string]*instanceState
 	subscribers   map[string]map[*subscription]struct{}
 	sessionModels map[string]agents.MessageModel
-	// sessionInstances maps a native session (including subagent sessions) to
-	// the platform instance that owns it; sessionParents maps a subagent
-	// session to its native parent, so interactions can be routed to the root
-	// conversation the workbench opened.
-	sessionInstances map[string]string
-	sessionParents   map[string]string
+	// sessionParents maps a subagent session to its native parent, so an
+	// interaction it surfaces can be routed to the root conversation the
+	// workbench opened. Parentage is a host-wide fact, not an instance claim:
+	// the shared dsh host serves every project directory.
+	sessionParents map[string]string
 
 	eventsMu        sync.Mutex
 	eventsClient    *Client
@@ -143,7 +142,6 @@ func New(opts Options) *Adapter {
 		instances:         make(map[string]*instanceState),
 		subscribers:       make(map[string]map[*subscription]struct{}),
 		sessionModels:     make(map[string]agents.MessageModel),
-		sessionInstances:  make(map[string]string),
 		sessionParents:    make(map[string]string),
 	}
 }
@@ -425,11 +423,6 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	delete(a.instances, instanceID)
 	subs := a.subscribers[instanceID]
 	delete(a.subscribers, instanceID)
-	for sessionID, owner := range a.sessionInstances {
-		if owner == instanceID {
-			delete(a.sessionInstances, sessionID)
-		}
-	}
 	a.mu.Unlock()
 
 	for sub := range subs {
@@ -475,6 +468,12 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 
 	var refs []agents.SessionRef
 	for _, item := range res.Items {
+		if item.SessionID == "" {
+			continue
+		}
+		// Ancestry is a host-wide fact: record it before the directory filter
+		// so a subagent's interaction can still reach its root conversation.
+		a.recordParent(item.SessionID, item.ParentSessionID)
 		if item.Blank {
 			continue
 		}
@@ -483,9 +482,6 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 			continue
 		}
 
-		// Record native ancestry even for subagent sessions: their interactions
-		// are routed to the root conversation the workbench opened.
-		a.recordSession(instanceID, item.SessionID, item.ParentSessionID)
 		if item.Origin == "subagent" {
 			continue
 		}
@@ -534,7 +530,6 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 	}
 
 	sessionID := res.SessionID
-	a.recordSession(instanceID, sessionID, "")
 
 	// Select model if requested
 	if options.Model != "" {
@@ -563,7 +558,6 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
-	a.recordSession(ref.InstanceID, ref.SessionID, "")
 
 	proc, release, err := a.acquire(ctx)
 	if err != nil {
@@ -602,7 +596,6 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	if err := ref.Validate(); err != nil {
 		return err
 	}
-	a.recordSession(ref.InstanceID, ref.SessionID, "")
 
 	proc, release, err := a.acquire(ctx)
 	if err != nil {
@@ -773,9 +766,10 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 		}
 
 		// Proactively follow existing native sessions in this working directory.
-		// The roster also tells us which native session belongs to this platform
-		// instance and which parent a subagent session has, so interaction
-		// requests can be routed back to the root conversation.
+		// The roster also carries each subagent's native parent, which is what
+		// lets an interaction surface on the root conversation the workbench
+		// opened. The roster is host-wide, so it must never claim session
+		// ownership for this instance: every project shares one dsh host.
 		var listRes struct {
 			Items []struct {
 				SessionID       string `json:"sessionId"`
@@ -790,7 +784,10 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				if item.SessionID == "" {
 					continue
 				}
-				a.recordSession(instanceID, item.SessionID, item.ParentSessionID)
+				// Ancestry is host-wide: record it before any directory filter
+				// so a child surfaced through a follow stream still resolves to
+				// the root conversation.
+				a.recordParent(item.SessionID, item.ParentSessionID)
 				if item.Blank {
 					continue
 				}
@@ -824,7 +821,9 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 				}
 				if err := json.Unmarshal(controlMsg, &ctrl); err == nil {
 					if ctrl.SessionID != "" {
-						a.recordSession(instanceID, ctrl.SessionID, "")
+						// The control stream is host-wide, so a new session may
+						// belong to any project: follow it for its events, but do
+						// not claim it for this instance.
 						followSession(ctrl.SessionID)
 					}
 					if ctrl.Type == "projection" && ctrl.SessionID != "" {

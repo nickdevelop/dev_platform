@@ -90,6 +90,7 @@ The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 -
 - **Interrupt**: `session/cancel` RPC method.
 - **Stop**: drops logical instance reference; shared host shuts down gracefully when all instances are idle.
 - **Tool confirmation**: `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events; answers and decisions are returned through `$events/result`. Pending interactions are also exposed through `ListPermissions` / `ListForms`, so a stream that opens after the request still shows the card.
+- **Session addressing**: because one dsh host serves every project directory, `session/list` is host-wide and cannot assign a session to one platform instance. Question and approval events are therefore session-addressed: the adapter resolves the native agent id to the root conversation through the parent links the roster reports, and fans the event out to every subscribed instance. The session layer keeps only the copy whose native session id a client actually subscribed, so a session opened in one project is never stolen by another project's instance.
 
 ## Turns, stop and interaction events
 
@@ -121,6 +122,10 @@ Rules the session layer enforces:
   pending permissions and forms, written after any replayed frames and before live
   events. It is written only when `toolConfirmation` is declared. History replay
   carries transcript events only; turn and interaction events are never replayed.
+- Interaction cards are session-scoped. A backend that reports them resolves the
+  native agent id to the root conversation, and the session layer delivers the
+  event only to buses that subscribed that native session id; a card pending in
+  one project is never routed to another project's session.
 
 ## Machine-level service (`opencode-v2`)
 
@@ -292,8 +297,11 @@ verification against a real model provider is outstanding:
 7. **deepseek human interactions end to end** — the adapter consumes dsh's
    `$events` waterfall frames and replies through `$events/result`, verified
    against a mock dsh event stream (question forms, approvals, cancellation and
-   stream closure). A live `ask_user_question` / approval round trip with a
-   configured model provider is outstanding.
+   stream closure). A live dsh run also produced a `user-questions/request`
+   waterfall, registered the form, accepted the `$events/result` answer and
+   delivered the resolved interaction after the shared-host session-addressing
+   fix. A full workbench click-through (dialog rendered and answered in the
+   browser) is still outstanding.
 
 Everything not listed as provisional is covered by the Go test suite
 (`go test ./...`), the adapter unit tests with mock servers/CLIs, and the

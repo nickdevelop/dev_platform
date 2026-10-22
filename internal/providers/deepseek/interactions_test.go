@@ -24,14 +24,34 @@ type interactionMock struct {
 	client *Client
 	events chan map[string]any
 
-	mu    sync.Mutex
-	calls []recordedCall
+	// sessions is the host-wide session/list roster the mock reports; it
+	// defaults to one root session in /work/proj. createdSessions is returned
+	// by successive session/create calls.
+	sessions        []any
+	createdSessions []string
+
+	mu        sync.Mutex
+	calls     []recordedCall
+	createIdx int
 }
 
 func newInteractionMock(t *testing.T) *interactionMock {
 	t.Helper()
 
-	mock := &interactionMock{events: make(chan map[string]any, 16)}
+	mock := &interactionMock{
+		events: make(chan map[string]any, 16),
+		sessions: []any{
+			map[string]any{
+				"sessionId":      "ses-1",
+				"cwd":            "/work/proj",
+				"blank":          false,
+				"origin":         "root",
+				"running":        false,
+				"agentAvailable": true,
+			},
+		},
+		createdSessions: []string{"ses-1"},
+	}
 	mock.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/remote.mux" {
 			mock.serveWS(t, w, r)
@@ -119,22 +139,11 @@ func (m *interactionMock) serveRPC(w http.ResponseWriter, r *http.Request) {
 	var value any = map[string]any{"ok": true}
 	switch method {
 	case "session/list":
-		value = map[string]any{
-			"items": []any{
-				map[string]any{
-					"sessionId":      "ses-1",
-					"cwd":            "/work/proj",
-					"blank":          false,
-					"origin":         "root",
-					"running":        false,
-					"agentAvailable": true,
-				},
-			},
-		}
+		value = map[string]any{"items": m.sessionRoster()}
 	case "session/projections":
 		value = map[string]any{"values": map[string]any{"title": "Session"}}
 	case "session/create":
-		value = map[string]any{"sessionId": "ses-1"}
+		value = map[string]any{"sessionId": m.nextCreatedSession()}
 	}
 
 	resp, _ := json.Marshal(rpcResponse{
@@ -151,6 +160,66 @@ func (m *interactionMock) serveRPC(w http.ResponseWriter, r *http.Request) {
 
 func (m *interactionMock) push(event map[string]any) {
 	m.events <- event
+}
+
+// setSessions replaces the host-wide session/list roster the mock reports.
+func (m *interactionMock) setSessions(items []any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessions = items
+}
+
+// setCreatedSessions replaces the ids successive session/create calls return.
+func (m *interactionMock) setCreatedSessions(ids ...string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.createdSessions = ids
+	m.createIdx = 0
+}
+
+func (m *interactionMock) sessionRoster() []any {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]any(nil), m.sessions...)
+}
+
+func (m *interactionMock) nextCreatedSession() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.createdSessions) == 0 {
+		return "ses-1"
+	}
+	index := m.createIdx
+	if index >= len(m.createdSessions) {
+		index = len(m.createdSessions) - 1
+	}
+	m.createIdx++
+	return m.createdSessions[index]
+}
+
+// waitCalls blocks until the mock has recorded want calls of method. Subscribe
+// lists sessions from a background goroutine, so a regression test must know
+// the roster has been processed before it pushes an event.
+func (m *interactionMock) waitCalls(t *testing.T, method string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		m.mu.Lock()
+		count := 0
+		for _, call := range m.calls {
+			if call.method == method {
+				count++
+			}
+		}
+		m.mu.Unlock()
+		if count >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d %s calls (got %d)", want, method, count)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func (m *interactionMock) lastCall(method string) (any, bool) {
