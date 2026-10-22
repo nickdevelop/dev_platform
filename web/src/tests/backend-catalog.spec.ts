@@ -69,16 +69,16 @@ describe('BackendTag', () => {
     expect(wrapper.text()).toBe('Pi Agent')
   })
 
-  it('renders the declared brand colour as a solid tag with readable ink', async () => {
+  it('renders the declared brand colour as a soft-toned tag', async () => {
     const agents = useAgentsStore()
     agents.backends = backendFixtures()
     const wrapper = mount(BackendTag, { props: { backend: 'opencode-v2' }, global: { plugins: [pinia] } })
     await flushPromises()
     expect(wrapper.attributes('data-backend-color')).toBe('#10B981')
     expect(wrapper.classes()).toContain('has-color')
-    expect(wrapper.attributes('style')).toContain('background-color')
-    expect(wrapper.attributes('style')).toContain('rgb(16, 185, 129)')
-    expect(wrapper.attributes('style')).toContain('rgb(11, 13, 17)')
+    expect(wrapper.attributes('style')).toContain('--tag-base: #10B981')
+    // The chip keeps the original tag typography; only its hue is declared.
+    expect(wrapper.attributes('style')).not.toContain('background-color')
   })
 
   it('uses declared tone when the backend specifies one', async () => {

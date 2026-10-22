@@ -7,7 +7,6 @@
 import { computed } from 'vue'
 import type { BackendId } from '../../api/agents'
 import { useAgentsStore } from '../../stores/agents'
-import { contrastTextColor } from '../../shared/color'
 
 const props = defineProps<{ backend: BackendId }>()
 
@@ -26,13 +25,11 @@ const tone = computed(() => {
   return 'tone-neutral'
 })
 
-// A declared brand colour is rendered as a solid fill. Light brand colours
-// (emerald, orange) need dark ink while dark ones (navy) need white, so the
-// foreground is computed from luminance rather than fixed per backend.
-const tagStyle = computed(() =>
-  declaredColor.value
-    ? { backgroundColor: declaredColor.value, color: contrastTextColor(declaredColor.value) }
-    : undefined,
+// The descriptor supplies the exact brand hue. CSS mixes that hue into a soft
+// surface and keeps the text in the brand colour, matching the existing tag
+// style instead of turning the tag into a solid chip.
+const tagStyle = computed<Record<string, string>>(() =>
+  declaredColor.value ? { '--tag-base': declaredColor.value } : {},
 )
 </script>
 
@@ -69,9 +66,19 @@ const tagStyle = computed(() =>
   color: var(--color-text-muted, inherit);
 }
 
-/* The fill and ink come from the descriptor through an inline style; this rule
-   only marks the variant so the tone classes are not applied. */
+/* Soft brand tint plus brand-coloured text, the same shape as the tone tags.
+   On a dark palette the hue is mixed with the theme's text colour so a dark
+   navy (DeepSeek) stays readable without losing its identity. */
 .tag.has-color {
-  font-weight: 500;
+  --tag-base: var(--color-info);
+  --tag-color: var(--tag-base);
+  --tag-surface: color-mix(in srgb, var(--tag-base) 14%, var(--color-surface));
+  background: var(--tag-surface);
+  color: var(--tag-color);
+}
+
+:global([data-theme='dark'] .tag.has-color) {
+  --tag-color: color-mix(in srgb, var(--tag-base) 65%, var(--color-text));
+  --tag-surface: color-mix(in srgb, var(--tag-base) 18%, var(--color-surface));
 }
 </style>
