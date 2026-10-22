@@ -54,7 +54,7 @@ async function onTest() {
   errorMessage.value = ''
 
   try {
-    const res = await testServerConnection(authStore.csrfToken, {
+    const res = await testServerConnection({
       host: host.value.trim(),
       port: Number(port.value) || 22,
       username: username.value.trim(),
@@ -100,7 +100,7 @@ async function onSubmit() {
   try {
     let saved: TerminalServer
     if (isEditing.value && props.server) {
-      saved = await terminalStore.updateServer(authStore.csrfToken, props.server.id, {
+      saved = await terminalStore.updateServer(props.server.id, {
         name: name.value.trim(),
         host: host.value.trim(),
         port: Number(port.value) || 22,
@@ -109,7 +109,7 @@ async function onSubmit() {
         secret: secret.value ? secret.value : undefined,
       })
     } else {
-      saved = await terminalStore.createServer(authStore.csrfToken, {
+      saved = await terminalStore.createServer({
         name: name.value.trim(),
         host: host.value.trim(),
         port: Number(port.value) || 22,

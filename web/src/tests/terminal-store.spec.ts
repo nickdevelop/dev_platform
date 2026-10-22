@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useTerminalStore } from '../stores/terminal'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 
 type Call = { method: string; path: string; body: unknown; headers?: Record<string, string> }
 
@@ -30,6 +31,8 @@ function initStore() {
   useAuthStore().$patch({ authenticated: true, csrfToken: 'csrf-token' })
   return useTerminalStore()
 }
+
+installTestCSRF('csrf-token')
 
 describe('terminal store', () => {
   beforeEach(() => vi.restoreAllMocks())
@@ -109,7 +112,7 @@ describe('terminal store', () => {
       'DELETE /terminal/servers/2': { ok: true },
     })
     const store = initStore()
-    const created = await store.createServer('csrf-token', {
+    const created = await store.createServer({
       name: 'New Server',
       host: '10.0.0.5',
       port: 22,
@@ -120,7 +123,7 @@ describe('terminal store', () => {
     expect(created.id).toBe(2)
     expect(store.servers).toContainEqual(created)
 
-    await store.deleteServer('csrf-token', 2)
+    await store.deleteServer(2)
     expect(store.servers.find((s) => s.id === 2)).toBeUndefined()
   })
 })

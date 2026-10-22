@@ -78,7 +78,7 @@ export const useTasksStore = defineStore('tasks', {
 
     async createTask(payload: CreateTaskPayload) {
       const auth = useAuthStore()
-      const task = await createTask(auth.csrfToken, payload)
+      const task = await createTask(payload)
       this.tasks.unshift(task)
       this.currentTask = task
       return task
@@ -86,7 +86,7 @@ export const useTasksStore = defineStore('tasks', {
 
     async updateTask(id: number, payload: UpdateTaskPayload) {
       const auth = useAuthStore()
-      const task = await updateTask(auth.csrfToken, id, payload)
+      const task = await updateTask(id, payload)
       const idx = this.tasks.findIndex((t) => t.id === id)
       if (idx !== -1) {
         this.tasks[idx] = task
@@ -99,7 +99,7 @@ export const useTasksStore = defineStore('tasks', {
 
     async deleteTask(id: number) {
       const auth = useAuthStore()
-      await deleteTask(auth.csrfToken, id)
+      await deleteTask(id)
       this.tasks = this.tasks.filter((t) => t.id !== id)
       delete this.taskRuns[id]
       if (this.currentTask?.id === id) {
@@ -111,7 +111,7 @@ export const useTasksStore = defineStore('tasks', {
 
     async triggerExecution(id: number, triggerType: 'manual' | 'once' | 'cron' = 'manual') {
       const auth = useAuthStore()
-      const res = await triggerTaskExecution(auth.csrfToken, id, triggerType)
+      const res = await triggerTaskExecution(id, triggerType)
       if (res.run) {
         const existingRuns = this.taskRuns[id] || []
         this.taskRuns[id] = [res.run, ...existingRuns]

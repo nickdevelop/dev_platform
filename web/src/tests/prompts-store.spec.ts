@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePromptsStore } from '../stores/prompts'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 
 type Call = { method: string; path: string; body: unknown; headers?: Record<string, string> }
 
@@ -27,7 +28,8 @@ function stubFetch(routes: Record<string, unknown> = {}) {
 function initStore() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useAuthStore().$patch({ authenticated: true, csrfToken: 'csrf-token' })
+  useAuthStore().$patch({ authenticated: true })
+  installTestCSRF('csrf-token')
   return usePromptsStore()
 }
 

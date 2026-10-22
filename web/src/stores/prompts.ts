@@ -66,7 +66,7 @@ export const usePromptsStore = defineStore('prompts', {
       this.loading = true
       try {
         const auth = useAuthStore()
-        const prompt = await createPrompt(auth.csrfToken, payload)
+        const prompt = await createPrompt(payload)
         this.prompts.unshift(prompt)
         this.error = ''
         return prompt
@@ -83,7 +83,7 @@ export const usePromptsStore = defineStore('prompts', {
       this.loading = true
       try {
         const auth = useAuthStore()
-        const updated = await updatePrompt(auth.csrfToken, id, payload)
+        const updated = await updatePrompt(id, payload)
         const idx = this.prompts.findIndex((p) => p.id === id)
         if (idx !== -1) {
           this.prompts[idx] = updated
@@ -106,7 +106,7 @@ export const usePromptsStore = defineStore('prompts', {
       this.loading = true
       try {
         const auth = useAuthStore()
-        await deletePrompt(auth.csrfToken, id)
+        await deletePrompt(id)
         this.prompts = this.prompts.filter((p) => p.id !== id)
         if (this.currentPrompt?.id === id) {
           this.currentPrompt = null

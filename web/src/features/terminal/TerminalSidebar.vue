@@ -55,7 +55,7 @@ async function confirmDelete() {
   if (!deletingServer.value) return
   isDeleting.value = true
   try {
-    await terminalStore.deleteServer(authStore.csrfToken, deletingServer.value.id)
+    await terminalStore.deleteServer(deletingServer.value.id)
     deletingServer.value = null
   } finally {
     isDeleting.value = false

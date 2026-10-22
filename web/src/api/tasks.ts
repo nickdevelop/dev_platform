@@ -1,5 +1,5 @@
 // API client for Task Management and Execution.
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 import type { BackendId } from './sessions'
 
 export type TaskType = 'standard' | 'flow'
@@ -82,46 +82,41 @@ export async function listTasks(filter?: {
   if (filter?.keyword) params.set('keyword', filter.keyword)
 
   const query = params.toString() ? `?${params.toString()}` : ''
-  const res = await apiRequest<{ tasks: Task[] }>('GET', `/tasks${query}`)
+  const res = await get<{ tasks: Task[] }>(`/tasks${query}`)
   return res.tasks
 }
 
 export async function getTask(id: number): Promise<Task> {
-  return apiRequest<Task>('GET', `/tasks/${id}`)
+  return get<Task>(`/tasks/${id}`)
 }
 
-export async function createTask(csrfToken: string, payload: CreateTaskPayload): Promise<Task> {
-  return apiRequest<Task>('POST', '/tasks', { body: payload, csrfToken })
+export async function createTask(payload: CreateTaskPayload): Promise<Task> {
+  return mutate<Task>('POST', '/tasks', payload)
 }
 
-export async function updateTask(
-  csrfToken: string,
-  id: number,
-  payload: UpdateTaskPayload,
-): Promise<Task> {
-  return apiRequest<Task>('PUT', `/tasks/${id}`, { body: payload, csrfToken })
+export async function updateTask(id: number, payload: UpdateTaskPayload): Promise<Task> {
+  return mutate<Task>('PUT', `/tasks/${id}`, payload)
 }
 
-export async function deleteTask(csrfToken: string, id: number): Promise<void> {
-  await apiRequest<void>('DELETE', `/tasks/${id}`, { csrfToken })
+export async function deleteTask(id: number): Promise<void> {
+  await mutate<void>('DELETE', `/tasks/${id}`)
 }
 
 export async function triggerTaskExecution(
-  csrfToken: string,
   id: number,
   triggerType: 'manual' | 'once' | 'cron' = 'manual',
 ): Promise<{ run: TaskRun }> {
-  return apiRequest<{ run: TaskRun }>('POST', `/tasks/${id}/trigger`, { body: { triggerType }, csrfToken })
+  return mutate<{ run: TaskRun }>('POST', `/tasks/${id}/trigger`, { triggerType })
 }
 
 export async function listTaskRuns(id: number): Promise<TaskRun[]> {
-  const res = await apiRequest<{ runs: TaskRun[] }>('GET', `/tasks/${id}/runs`)
+  const res = await get<{ runs: TaskRun[] }>(`/tasks/${id}/runs`)
   return res.runs
 }
 
 export async function listTaskSessionIds(projectId?: number): Promise<string[]> {
   const query = projectId ? `?projectId=${projectId}` : ''
-  const res = await apiRequest<{ sessionIds: string[] }>('GET', `/tasks/session-ids${query}`)
+  const res = await get<{ sessionIds: string[] }>(`/tasks/session-ids${query}`)
   return res.sessionIds
 }
 

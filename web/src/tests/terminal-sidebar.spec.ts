@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import TerminalSidebar from '../features/terminal/TerminalSidebar.vue'
 import { useTerminalStore } from '../stores/terminal'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 
 describe('TerminalSidebar Component', () => {
   beforeEach(() => {
@@ -19,7 +20,8 @@ describe('TerminalSidebar Component', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
-    useAuthStore().$patch({ authenticated: true, csrfToken: 'test-csrf' })
+    useAuthStore().$patch({ authenticated: true })
+  installTestCSRF('test-csrf')
 
     vi.stubGlobal(
       'fetch',

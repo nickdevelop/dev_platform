@@ -140,18 +140,14 @@ export const useTerminalStore = defineStore('terminal', {
       }
     },
 
-    async createServer(csrfToken: string, payload: CreateServerPayload): Promise<TerminalServer> {
-      const created = await createTerminalServer(csrfToken, payload)
+    async createServer(payload: CreateServerPayload): Promise<TerminalServer> {
+      const created = await createTerminalServer(payload)
       this.servers.push(created)
       return created
     },
 
-    async updateServer(
-      csrfToken: string,
-      id: number,
-      payload: UpdateServerPayload,
-    ): Promise<TerminalServer> {
-      const updated = await updateTerminalServer(csrfToken, id, payload)
+    async updateServer(id: number, payload: UpdateServerPayload): Promise<TerminalServer> {
+      const updated = await updateTerminalServer(id, payload)
       const idx = this.servers.findIndex((s) => s.id === id)
       if (idx !== -1) {
         this.servers[idx] = updated
@@ -159,8 +155,8 @@ export const useTerminalStore = defineStore('terminal', {
       return updated
     },
 
-    async deleteServer(csrfToken: string, id: number): Promise<void> {
-      await deleteTerminalServer(csrfToken, id)
+    async deleteServer(id: number): Promise<void> {
+      await deleteTerminalServer(id)
       this.servers = this.servers.filter((s) => s.id !== id)
       if (this.activeServerId === id) {
         this.activeServerId = this.servers.length > 0 ? this.servers[0].id : null

@@ -1,5 +1,5 @@
 // API client for Terminal and Server Management.
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 
 export interface TerminalStatus {
   supported: boolean
@@ -48,50 +48,38 @@ export interface TestConnectionPayload {
 }
 
 export async function getTerminalStatus(): Promise<TerminalStatus> {
-  return apiRequest<TerminalStatus>('GET', '/terminal/status')
+  return get<TerminalStatus>('/terminal/status')
 }
 
 export async function listTerminalServers(): Promise<TerminalServer[]> {
-  return apiRequest<TerminalServer[]>('GET', '/terminal/servers')
+  return get<TerminalServer[]>('/terminal/servers')
 }
 
 export async function getTerminalServer(id: number): Promise<TerminalServer> {
-  return apiRequest<TerminalServer>('GET', `/terminal/servers/${id}`)
+  return get<TerminalServer>(`/terminal/servers/${id}`)
 }
 
 export async function createTerminalServer(
-  csrfToken: string,
   payload: CreateServerPayload,
 ): Promise<TerminalServer> {
-  return apiRequest<TerminalServer>('POST', '/terminal/servers', {
-    body: payload,
-    csrfToken,
-  })
+  return mutate<TerminalServer>('POST', '/terminal/servers', payload)
 }
 
 export async function updateTerminalServer(
-  csrfToken: string,
   id: number,
   payload: UpdateServerPayload,
 ): Promise<TerminalServer> {
-  return apiRequest<TerminalServer>('PUT', `/terminal/servers/${id}`, {
-    body: payload,
-    csrfToken,
-  })
+  return mutate<TerminalServer>('PUT', `/terminal/servers/${id}`, payload)
 }
 
-export async function deleteTerminalServer(csrfToken: string, id: number): Promise<void> {
-  await apiRequest<{ ok: boolean }>('DELETE', `/terminal/servers/${id}`, { csrfToken })
+export async function deleteTerminalServer(id: number): Promise<void> {
+  await mutate<{ ok: boolean }>('DELETE', `/terminal/servers/${id}`)
 }
 
 export async function testServerConnection(
-  csrfToken: string,
   payload: TestConnectionPayload,
 ): Promise<{ ok: boolean; message?: string }> {
-  return apiRequest<{ ok: boolean; message?: string }>('POST', '/terminal/servers/test', {
-    body: payload,
-    csrfToken,
-  })
+  return mutate<{ ok: boolean; message?: string }>('POST', '/terminal/servers/test', payload)
 }
 
 export function buildTerminalWSUrl(serverId: number, cols = 80, rows = 24): string {

@@ -6,6 +6,7 @@ import PromptsView from '../features/prompts/PromptsView.vue'
 import PromptManageDialog from '../features/prompts/PromptManageDialog.vue'
 import { usePromptsStore } from '../stores/prompts'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 
 const routeParams: Record<string, string> = {}
 const routerPush = vi.fn()
@@ -18,7 +19,8 @@ vi.mock('vue-router', () => ({
 describe('Prompts UI Components', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    useAuthStore().$patch({ authenticated: true, csrfToken: 'csrf-token' })
+    useAuthStore().$patch({ authenticated: true })
+  installTestCSRF('csrf-token')
     Object.keys(routeParams).forEach((k) => delete routeParams[k])
     routerPush.mockClear()
     vi.restoreAllMocks()
