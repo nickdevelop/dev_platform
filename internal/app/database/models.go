@@ -207,6 +207,49 @@ type ModelDef struct {
 	UpdatedAt     time.Time
 }
 
+// Chat is one platform-owned pure-chat conversation. It is deliberately
+// unrelated to projects, agent instances and agent sessions: a chat belongs
+// only to the platform and the model it was created with. ModelName is a
+// snapshot so history stays readable after a model definition is removed.
+// Table: chats.
+type Chat struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Title     string `gorm:"column:title;not null"`
+	ModelID   uint   `gorm:"column:model_id;not null"`
+	ModelName string `gorm:"column:model_name;not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time `gorm:"index:idx_chats_updated"`
+}
+
+// TableName pins the chat table name.
+func (Chat) TableName() string { return "chats" }
+
+// ChatMessage is one persisted message of a pure-chat conversation. Status is
+// the generation lifecycle of an assistant message: pending while the model
+// streams, then complete, failed or cancelled. Images and token counts are
+// stored as stable JSON/scalar columns so the API never depends on GORM
+// internals. Table: chat_messages.
+type ChatMessage struct {
+	ID           uint   `gorm:"primaryKey;column:id"`
+	ChatID       uint   `gorm:"column:chat_id;not null;index:idx_chat_messages_chat"`
+	Role         string `gorm:"column:role;not null"`
+	Content      string `gorm:"column:content"`
+	Reasoning    string `gorm:"column:reasoning"`
+	Images       string `gorm:"column:images"`
+	Status       string `gorm:"column:status;not null"`
+	ModelID      uint   `gorm:"column:model_id"`
+	ModelName    string `gorm:"column:model_name"`
+	ErrorCode    string `gorm:"column:error_code"`
+	ErrorMessage string `gorm:"column:error_message"`
+	InputTokens  int    `gorm:"column:input_tokens;not null;default:0"`
+	OutputTokens int    `gorm:"column:output_tokens;not null;default:0"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName pins the chat message table name.
+func (ChatMessage) TableName() string { return "chat_messages" }
+
 // Task is one managed task with template prompt, agent/model binding and scheduling.
 // Table: tasks.
 type Task struct {
@@ -294,6 +337,3 @@ type TerminalServer struct {
 
 // TableName pins the table name for TerminalServer.
 func (TerminalServer) TableName() string { return "terminal_servers" }
-
-
-

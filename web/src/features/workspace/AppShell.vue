@@ -27,6 +27,7 @@ import TasksSidebar from '../tasks/TasksSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
+import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
@@ -202,9 +203,16 @@ const tasksMode = computed(() => route.meta.tasks === true)
 const promptsMode = computed(() => route.meta.prompts === true)
 // The terminal center manages server terminals with their own list column and terminal workspace pane.
 const terminalMode = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
-// The project/workspace area is the default when neither settings, tasks, prompts nor terminal is open.
+// The pure-chat center manages global conversations with their own list column and chat pane.
+const chatMode = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
+// The project/workspace area is the default when no other center is open.
 const projectActive = computed(
-  () => !settingsMode.value && !tasksMode.value && !promptsMode.value && !terminalMode.value,
+  () =>
+    !settingsMode.value &&
+    !tasksMode.value &&
+    !promptsMode.value &&
+    !terminalMode.value &&
+    !chatMode.value,
 )
 
 // Tabs belong strictly to the project workspace: sessions, project settings, and
@@ -241,7 +249,9 @@ const columnLabel = computed(() =>
       : promptsMode.value
         ? '提示词列表'
         : terminalMode.value
-          ? '服务器列表'
+        ? '服务器列表'
+        : chatMode.value
+          ? '对话列表'
           : '项目导航',
 )
 // The sidebar's top row (title + dock controls) is owned by the shell, so
@@ -254,7 +264,9 @@ const columnTitle = computed(() =>
       : promptsMode.value
         ? '提示词'
         : terminalMode.value
-          ? '服务器'
+        ? '服务器'
+        : chatMode.value
+          ? 'Chat'
           : '项目',
 )
 
@@ -517,6 +529,7 @@ watch(
       'tasks-mode': tasksMode,
       'prompts-mode': promptsMode,
       'terminal-mode': terminalMode,
+      'chat-mode': chatMode,
       'sidebar-collapsed': !isDocked,
     }"
   >
@@ -587,6 +600,7 @@ watch(
       <TasksSidebar v-if="tasksMode" />
       <PromptsSidebar v-else-if="promptsMode" />
       <TerminalSidebar v-else-if="terminalMode" />
+      <ChatSidebar v-else-if="chatMode" />
       <SettingsNav v-else-if="settingsMode" />
       <template v-else>
         <div class="sidebar-actions">

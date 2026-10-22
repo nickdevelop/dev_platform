@@ -16,6 +16,7 @@ import LoginView from './views/LoginView.vue'
 import ProjectSettingsPanel from './features/projects/ProjectSettingsPanel.vue'
 import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
+import ChatPanel from './features/chat/pure/ChatPanel.vue'
 import SettingsView from './features/settings/SettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
@@ -46,6 +47,19 @@ export function createAppRouter() {
             name: 'project-settings',
             component: ProjectSettingsPanel,
             props: (route) => ({ projectId: Number(route.params.projectId) }),
+          },
+          {
+            path: 'chat',
+            name: 'chat',
+            component: ChatPanel,
+            meta: { chat: true, fullHeight: true },
+          },
+          {
+            path: 'chat/:chatId',
+            name: 'chat-detail',
+            component: ChatPanel,
+            meta: { chat: true, fullHeight: true },
+            props: (route) => ({ chatId: Number(route.params.chatId) }),
           },
           {
             path: 'settings',

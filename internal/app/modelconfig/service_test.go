@@ -267,3 +267,66 @@ func TestResolveKey(t *testing.T) {
 		t.Errorf("ResolveKey(plain) = %q, %v; want empty", key, err)
 	}
 }
+
+func TestResolveModel(t *testing.T) {
+	svc, store := newService(t)
+	service, err := svc.Create(ServiceInput{
+		Name: "openai", BaseURL: "https://api.example.com/v1", APIKey: "sk-secret", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Create service: %v", err)
+	}
+	model, err := svc.AddModel(service.ID, ModelInput{
+		ModelID: "gpt-test", Name: "GPT Test", SupportsText: true, SupportsImage: true, Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("AddModel: %v", err)
+	}
+
+	resolved, err := svc.ResolveModel(model.ID)
+	if err != nil {
+		t.Fatalf("ResolveModel: %v", err)
+	}
+	if resolved.ModelID != "gpt-test" || resolved.BaseURL != "https://api.example.com/v1" {
+		t.Errorf("resolved = %+v", resolved)
+	}
+	if resolved.APIKey != "sk-secret" {
+		t.Errorf("APIKey = %q, want the stored key", resolved.APIKey)
+	}
+	if !resolved.SupportsImage {
+		t.Error("SupportsImage = false, want true")
+	}
+	if store.values[service.SecretRef] != "sk-secret" {
+		t.Error("secret store did not hold the key")
+	}
+
+	// A disabled model is unavailable.
+	if _, err := svc.UpdateModel(model.ID, ModelInput{
+		ModelID: "gpt-test", Name: "GPT Test", SupportsText: true, Enabled: false,
+	}); err != nil {
+		t.Fatalf("disable model: %v", err)
+	}
+	if _, err := svc.ResolveModel(model.ID); !errors.Is(err, ErrModelUnavailable) {
+		t.Errorf("disabled model error = %v, want ErrModelUnavailable", err)
+	}
+
+	// A disabled service makes its models unavailable.
+	if _, err := svc.UpdateModel(model.ID, ModelInput{
+		ModelID: "gpt-test", Name: "GPT Test", SupportsText: true, Enabled: true,
+	}); err != nil {
+		t.Fatalf("re-enable model: %v", err)
+	}
+	if _, err := svc.Update(service.ID, ServiceInput{
+		Name: "openai", BaseURL: "https://api.example.com/v1", Enabled: false,
+	}); err != nil {
+		t.Fatalf("disable service: %v", err)
+	}
+	if _, err := svc.ResolveModel(model.ID); !errors.Is(err, ErrModelUnavailable) {
+		t.Errorf("disabled service error = %v, want ErrModelUnavailable", err)
+	}
+
+	// Unknown ids are reported as missing, not unavailable.
+	if _, err := svc.ResolveModel(99999); !errors.Is(err, ErrModelNotFound) {
+		t.Errorf("unknown model error = %v, want ErrModelNotFound", err)
+	}
+}

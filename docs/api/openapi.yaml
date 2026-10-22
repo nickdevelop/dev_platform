@@ -3228,6 +3228,290 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /chats:
+    get:
+      summary: List pure-chat conversations
+      description: Returns global conversations ordered by most recent activity.
+      operationId: listChats
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: The conversations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a conversation and send its first message
+      operationId: createChat
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCreateInput'
+      responses:
+        '201':
+          description: The created conversation; the answer streams over SSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /chats/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      summary: Read one pure-chat conversation
+      operationId: getChat
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Conversation not found.
+    put:
+      summary: Rename a conversation or change its model
+      operationId: updateChat
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatUpdateInput'
+      responses:
+        '200':
+          description: The updated conversation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Conversation not found.
+    delete:
+      summary: Delete a conversation and its messages
+      operationId: deleteChat
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Conversation not found.
+  /chats/{id}/messages:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: Send a message in a conversation
+      operationId: sendChatMessage
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatSendInput'
+      responses:
+        '202':
+          description: Accepted; the answer streams over SSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: A generation is already running.
+  /chats/{id}/stop:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: Stop the active generation
+      operationId: stopChat
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Generation stopped or already idle.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Conversation not found.
+  /chats/{id}/regenerate:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: Regenerate the last assistant answer
+      operationId: regenerateChat
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '202':
+          description: Accepted; the new answer streams over SSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: A generation is already running.
+  /chats/{id}/messages/{messageId}/edit:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: messageId
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    post:
+      summary: Edit a user message and resend it
+      description: Deletes the edited message and every later message before regenerating.
+      operationId: editChatMessage
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatEditInput'
+      responses:
+        '202':
+          description: Accepted; the new answer streams over SSE.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Chat'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Conversation or message not found.
+        '409':
+          description: A generation is already running.
+  /chats/{id}/events:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    get:
+      summary: Stream a conversation as Server-Sent Events
+      description: >-
+        Sends an initial snapshot, then delta, message_update, conversation,
+        turn and closed events. EventSource reconnects with the session cookie.
+      operationId: streamChat
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: SSE stream of chat events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Conversation not found.
+
 components:
   securitySchemes:
     cookieAuth:
@@ -4561,4 +4845,150 @@ components:
           type: string
         scheduleEnabled:
           type: boolean
+      additionalProperties: false
+    ChatImage:
+      type: object
+      required: [id, name, mediaType, data, size]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        mediaType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp, image/gif]
+        data:
+          type: string
+          description: Base64 image bytes without the data-URL prefix.
+        size:
+          type: integer
+    ChatUsage:
+      type: object
+      properties:
+        input:
+          type: integer
+        output:
+          type: integer
+    Chat:
+      type: object
+      required: [id, title, modelId, modelName, running, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        modelId:
+          type: integer
+          format: int64
+        modelName:
+          type: string
+        running:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChatList:
+      type: object
+      required: [chats, total]
+      properties:
+        chats:
+          type: array
+          items:
+            $ref: '#/components/schemas/Chat'
+        total:
+          type: integer
+    ChatMessage:
+      type: object
+      required: [id, chatId, role, text, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        chatId:
+          type: integer
+          format: int64
+        role:
+          type: string
+          enum: [user, assistant]
+        text:
+          type: string
+        reasoning:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatImage'
+        status:
+          type: string
+          enum: [pending, complete, failed, cancelled]
+        modelId:
+          type: integer
+          format: int64
+        modelName:
+          type: string
+        usage:
+          $ref: '#/components/schemas/ChatUsage'
+        errorCode:
+          type: string
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChatCreateInput:
+      type: object
+      required: [modelId]
+      properties:
+        modelId:
+          type: integer
+          format: int64
+        text:
+          type: string
+        images:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/ChatImage'
+      additionalProperties: false
+    ChatSendInput:
+      type: object
+      properties:
+        modelId:
+          type: integer
+          format: int64
+        text:
+          type: string
+        images:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/ChatImage'
+      additionalProperties: false
+    ChatEditInput:
+      type: object
+      properties:
+        text:
+          type: string
+        images:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/ChatImage'
+      additionalProperties: false
+    ChatUpdateInput:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        modelId:
+          type: integer
+          format: int64
       additionalProperties: false

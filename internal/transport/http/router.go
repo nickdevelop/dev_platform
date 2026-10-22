@@ -7,8 +7,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"devplatform/internal/app/agentservices"
-	"devplatform/internal/app/instances"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/chat"
+	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
@@ -22,6 +23,12 @@ import (
 // request DTOs are tiny JSON objects; a larger body is malformed or hostile
 // and is rejected before it can be buffered.
 const maxRequestBodyBytes = 1 << 20
+
+// maxChatRequestBodyBytes bounds the pure-chat write routes. A user message
+// may carry up to four 5 MiB images, which base64 expands to roughly 27 MiB;
+// 32 MiB leaves room for JSON framing without weakening the limit of every
+// other API route.
+const maxChatRequestBodyBytes = 32 << 20
 
 // limitRequestBody caps the request body a handler may read from. Reads past
 // the cap fail, so gin's binder reports the malformed request instead of the
@@ -73,6 +80,11 @@ type Dependencies struct {
 	Prompts *prompts.Service
 	// Terminal manages server connections and interactive terminal sessions.
 	Terminal *terminal.Service
+	// Chats manages global, non-agent conversations that call an
+	// OpenAI-compatible model service directly. When set together with Auth,
+	// the chat routes are served under /api/chats behind RequireSession and
+	// carry the larger image-message body limit.
+	Chats *chat.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -101,13 +113,18 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		// management route can accidentally omit it.
 		router.Use(auth.RequireCSRF())
 
-		api := router.Group("/api", limitRequestBody(maxRequestBodyBytes))
-		deps.Auth.RegisterRoutes(api)
+		api := router.Group("/api")
+
+		// Auth routes keep the standard body limit but are not session
+		// protected (login itself must be reachable without a session).
+		authRoutes := api.Group("", limitRequestBody(maxRequestBodyBytes))
+		deps.Auth.RegisterRoutes(authRoutes)
 
 		// Management routes share one session-protected group so no route
 		// can accidentally omit authentication (CSRF is installed globally
 		// above).
-		protected := api.Group("", auth.RequireSession(deps.Auth))
+		authenticated := api.Group("", auth.RequireSession(deps.Auth))
+		protected := authenticated.Group("", limitRequestBody(maxRequestBodyBytes))
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
 		}
@@ -135,6 +152,13 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Terminal != nil {
 			deps.Terminal.RegisterRoutes(protected)
+		}
+		if deps.Chats != nil {
+			// Chat messages may carry images; only this group gets the larger
+			// cap. It is still inside RequireSession and the global CSRF
+			// middleware.
+			chats := authenticated.Group("", limitRequestBody(maxChatRequestBodyBytes))
+			deps.Chats.RegisterRoutes(chats)
 		}
 	}
 

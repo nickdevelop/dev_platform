@@ -14,6 +14,7 @@ import (
 
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/chat"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
@@ -50,17 +51,20 @@ func newFullDependencies(t *testing.T) Dependencies {
 	}
 	settingsSvc := settings.NewService(db, catalog)
 	tasksSvc := tasks.NewService(tasks.NewRepository(db), nil)
+	modelsSvc := modelconfig.NewService(db, nil)
+	chatSvc := chat.NewService(db, modelsSvc)
 
 	return Dependencies{
 		Auth:          authSvc,
 		Projects:      projSvc,
 		Settings:      settingsSvc,
-		Models:        modelconfig.NewService(db, nil),
+		Models:        modelsSvc,
 		Instances:     instSvc,
 		AgentServices: agentservices.NewService(nil),
 		Sessions:      sessions.NewService(db, registry, instSvc),
 		Tasks:         tasksSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
+		Chats:         chatSvc,
 	}
 }
 

@@ -3,48 +3,10 @@
 // streaming block is located. Kept free of the store so every consumer (the
 // store's live path, history replay, the rendering feature) shares one model.
 
-import type {
-  AgentSession,
-  ImageAttachment,
-  MessageModel,
-  MessageUsage,
-  NormalizedEvent,
-} from '../../../api/sessions'
+import type { AgentSession, NormalizedEvent } from '../../../api/sessions'
+import type { ChatEntry } from './entry'
 
-// One rendered line in a session's log. Agent replies are rendered as sanitized
-// markdown in the view (see ../shared/markdown); every other kind is plain text.
-// A `thinking` line is the agent's reasoning, which the pane shows collapsed.
-// Replayed history and the live stream share this log directly: there is no
-// separator between them, so a resumed turn appends to the same blocks.
-export interface ChatEntry {
-  id: string
-  kind: 'message' | 'thinking' | 'tool_call' | 'tool_result' | 'error' | 'notice'
-  role: string
-  text: string
-  images?: ImageAttachment[]
-  streaming: boolean
-  // Timestamp of the entry, formatted as ISO string
-  timestamp?: string
-  // The model that produced an assistant message, when the backend reports
-  // one. Absent on user messages and on backends without per-message models.
-  model?: MessageModel
-  // Exact token usage of a final assistant message, when the backend reports
-  // it. The context line anchors on the newest such entry; streaming chunks
-  // never carry it.
-  usage?: MessageUsage
-  callId?: string
-  name?: string
-  // Tool calls carry the raw argument payload so the view can summarise it
-  // (name + representative argument) without the store knowing tool schemas.
-  input?: unknown
-  isError?: boolean
-  // Normalized edit summary for file tools (edit): the desktop-style
-  // badge/body render from this rather than parsing output text. Absent on
-  // non-edit tools, failed results without diffs, and old transcripts.
-  diff?: { file: string; patch?: string; additions: number; deletions: number }
-}
-
-export type StreamStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'error' | 'ended'
+export type { ChatEntry, StreamStatus } from './entry'
 
 let entryCounter = 0
 

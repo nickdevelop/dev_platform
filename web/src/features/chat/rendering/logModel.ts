@@ -4,8 +4,9 @@
 // mirrors the opencode desktop client's collapsible turn cards, and the
 // question/edit/shell primitives mirror its tool cards.
 
-import type { Capabilities, MessageModel } from '../../../api/sessions'
-import type { ChatEntry } from '../state/sessionLog'
+import type { Capabilities } from '../../../api/sessions'
+import type { MessageModel } from '../../../api/messageTypes'
+import type { ChatEntry } from '../state/entry'
 
 export type ResultLookup = (entry: ChatEntry) => ChatEntry | undefined
 
@@ -153,6 +154,20 @@ export function blocksForDisplay(blocks: RenderBlock[], display: string): Render
   }
   if (display === 'activity') {
     return blocks.filter((block) => block.kind === 'step')
+  }
+  if (display === 'chat') {
+    // Pure chat has no tools: keep messages, errors, notices and thinking
+    // groups, never a tool-only step card.
+    return blocks.filter((block) => {
+      if (block.kind === 'entry') {
+        return (
+          block.entry.kind === 'message' ||
+          block.entry.kind === 'error' ||
+          block.entry.kind === 'notice'
+        )
+      }
+      return block.entries.some((entry) => entry.kind === 'thinking')
+    })
   }
   return blocks
 }

@@ -10,6 +10,7 @@
 | 同构：项目管理 | `internal/app/projects`、`internal/app/paths` | 项目记录、目录的安全生命周期 | 否，不知道 agent 的存在 |
 | 同构：会话与实例编排 | `internal/app/sessions`（子包 `store` 会话索引、`turns` 轮次跟踪）、`internal/app/instances`、`internal/transport/http` | 会话索引、轮次状态、实例生命周期、SSE、路由 | 否，只依赖 `internal/core/agents` 契约 |
 | 同构：机器级 agent 服务 | `internal/app/agentservices` | 服务的探测、运维员触发的启停、启动门控 | 否，只依赖 `internal/core/agents` 契约与适配器注册表 |
+| 同构：纯 Chat | `internal/app/chat` | 全局、非 agent 的模型对话：对话/消息持久化、模型调用、SSE、标题 | 否，只依赖 `modelconfig` 的模型解析与 `core/textutil`；不得 import agent 契约、providers、projects、instances、sessions |
 | 契约（core） | `internal/core/agents`（`contracts.go`、`extensions.go`、`descriptor.go`、`registry.go`、`service.go`） | 能力声明、标准事件、扩展接口、后端描述符 | 仅在 `BackendID` 常量定义处 |
 | OS 抽象（core） | `internal/core/platform`（接口 + `unix/windows/fake/policy`） | OS 差异端口与平台无关策略 | 否 |
 | 异构：适配器（providers） | `internal/providers/opencode`、`internal/providers/pi`、`internal/providers/deepseek` | 与具体 CLI 或服务协议打交道，导出 `Descriptor` | 是（本包即为该后端） |
@@ -44,6 +45,7 @@
 - 不得在通用代码里补默认值。未知后端必须显式报错或返回 `none`，不得回退到某个已知后端。
 - 组件不得写死后端名称或服务名称。需要展示的事实从 `agents` store（`backendLabel`、`orderedBackends`、`serviceBackends`、`backendFor`）读取。
 - 只有组合根与适配器包能决定某个后端"存在"。业务路径不得启动、停止或替换 agent 的机器级服务（见 `docs/agent-compatibility.md`）。
+- 纯 Chat 不得复用 agent 会话层或实现成特殊 agent 后端。它只消费 `modelconfig.Service.ResolveModel` 返回的服务端模型信息，不把 API Key 放入 DTO、日志或错误文本。
 - 会话层（`internal/app/sessions`）不得出现后端原生轮次事件名。守卫测试 `TestSessionsDoesNotNameNativeTurnEvents` 禁止这 9 个名字（`execution_started/succeeded/interrupted/failed`、`agent_start/agent_end/agent_settled`、`turn_start/turn_end`），轮次状态只能消费契约的 `EventTurn`。原生名到契约事件的翻译属于适配器职责。
 - 会话级 Stop 只停止本会话：门控 `Interrupt` 能力，运行中的轮次先经适配器 `Interrupt`，成功后才把本会话标记为 `stopped`。它不得调用 `instances.Stop`，也不得改动实例或兄弟会话。停止实例是另一条路径（`POST /projects/{id}/instances/{instanceId}/stop`），门控 `Stop` 能力。
 

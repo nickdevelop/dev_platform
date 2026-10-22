@@ -43,7 +43,13 @@ import { ProviderSlashSource } from './composer/dropdown/sources/ProviderSlashSo
 import { WorkspaceFileSource } from './composer/dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './composer/dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
-import { getSessionHistory, type ImageAttachment, type ImageMediaType } from '../../api/sessions'
+import { getSessionHistory } from '../../api/sessions'
+import type { ImageAttachment } from '../../api/messageTypes'
+import {
+  VALID_IMAGE_TYPES,
+  imageAttachmentFromFile,
+  imageValidationError,
+} from './composer/imageFiles'
 import { detectBuiltInCommand } from './composer/builtInCommands'
 import {
   type ApprovalMode,
@@ -318,14 +324,7 @@ const currentModelSupportsImages = computed<boolean>(() => {
   )
 })
 
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
 const MAX_IMAGES_COUNT = 10
-const VALID_IMAGE_TYPES: Record<string, ImageMediaType> = {
-  'image/jpeg': 'image/jpeg',
-  'image/png': 'image/png',
-  'image/webp': 'image/webp',
-  'image/gif': 'image/gif',
-}
 
 function removeImage(id: string) {
   attachedImages.value = attachedImages.value.filter((img) => img.id !== id)
@@ -357,27 +356,13 @@ async function addImageFiles(files: FileList | File[]) {
       toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
       break
     }
-    const cleanType = (file.type || '').split(';')[0].trim().toLowerCase()
-    const mediaType = VALID_IMAGE_TYPES[cleanType]
-    if (!mediaType) {
-      toolNotice.value = `不支持的文件类型: ${file.name || '未命名图片'} (仅支持 PNG/JPEG/WebP/GIF)`
+    const validationError = imageValidationError(file)
+    if (validationError !== null) {
+      toolNotice.value = validationError
       continue
     }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toolNotice.value = `图片超过 5MB 限制: ${file.name || '未命名图片'}`
-      continue
-    }
-
     try {
-      const base64 = await readFileAsBase64(file)
-      const fileName = file.name || `image-${Date.now()}.png`
-      attachedImages.value.push({
-        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: fileName,
-        mediaType,
-        data: base64,
-        size: file.size,
-      })
+      attachedImages.value.push(await imageAttachmentFromFile(file))
     } catch {
       toolNotice.value = `读取图片失败: ${file.name || '未命名图片'}`
     }
@@ -414,19 +399,6 @@ async function handleUploadedFiles(files: FileList | File[]) {
       toolNotice.value = `读取文件失败: ${file.name}`
     }
   }
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      const commaIndex = result.indexOf(',')
-      resolve(commaIndex !== -1 ? result.slice(commaIndex + 1) : result)
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
 }
 
 function onFileInput(event: Event) {

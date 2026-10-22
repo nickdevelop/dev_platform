@@ -19,12 +19,29 @@ import (
 
 // Service errors, mapped to HTTP statuses by the handlers.
 var (
-	ErrServiceNotFound = errors.New("modelconfig: service not found")
-	ErrModelNotFound   = errors.New("modelconfig: model not found")
-	ErrInvalidService  = errors.New("modelconfig: invalid service")
-	ErrInvalidModel    = errors.New("modelconfig: invalid model")
-	ErrModelConflict   = errors.New("modelconfig: model already exists for this service")
+	ErrServiceNotFound  = errors.New("modelconfig: service not found")
+	ErrModelNotFound    = errors.New("modelconfig: model not found")
+	ErrInvalidService   = errors.New("modelconfig: invalid service")
+	ErrInvalidModel     = errors.New("modelconfig: invalid model")
+	ErrModelConflict    = errors.New("modelconfig: model already exists for this service")
+	ErrModelUnavailable = errors.New("modelconfig: model unavailable")
 )
+
+// ResolvedModel is the server-side view a model consumer needs to make a
+// completion request. APIKey is never serialized or exposed by the API: it is
+// read from the platform secret store at call time and only handed to the
+// in-process client.
+type ResolvedModel struct {
+	ID            uint
+	ServiceID     uint
+	ModelID       string
+	Name          string
+	BaseURL       string
+	APIKey        string
+	SupportsImage bool
+	ContextTokens int
+	OutputTokens  int
+}
 
 // SecretStore is the subset of the platform secret store modelconfig needs.
 // *secrets.Store implements it; tests inject an in-memory fake.
@@ -280,6 +297,51 @@ func (s *Service) ResolveKey(serviceID uint) (string, error) {
 		return "", fmt.Errorf("modelconfig: resolve key: %w", err)
 	}
 	return value, nil
+}
+
+// ResolveModel returns everything the server needs to call an enabled model:
+// its wire id, display name, service base URL and key. Disabled services,
+// disabled models and models without text input capability are rejected with
+// ErrModelUnavailable. The key is returned only for in-process use and must
+// never be included in an API DTO or a log line.
+func (s *Service) ResolveModel(id uint) (ResolvedModel, error) {
+	model, err := s.loadModel(id)
+	if err != nil {
+		return ResolvedModel{}, err
+	}
+	service, err := s.loadService(model.ServiceID)
+	if err != nil {
+		return ResolvedModel{}, err
+	}
+	if !service.Enabled || !model.Enabled || !model.SupportsText {
+		return ResolvedModel{}, fmt.Errorf("%w: model %d", ErrModelUnavailable, id)
+	}
+	if _, _, err := validateServiceInput(ServiceInput{Name: service.Name, BaseURL: service.BaseURL}); err != nil {
+		return ResolvedModel{}, fmt.Errorf("%w: service %d: %v", ErrModelUnavailable, service.ID, err)
+	}
+
+	key := ""
+	if service.SecretRef != "" {
+		if s.store == nil {
+			return ResolvedModel{}, fmt.Errorf("modelconfig: resolve key: secret store is not configured")
+		}
+		key, err = s.store.Get(context.Background(), service.SecretRef)
+		if err != nil {
+			return ResolvedModel{}, fmt.Errorf("modelconfig: resolve key: %w", err)
+		}
+	}
+
+	return ResolvedModel{
+		ID:            model.ID,
+		ServiceID:     service.ID,
+		ModelID:       model.ModelID,
+		Name:          model.Name,
+		BaseURL:       service.BaseURL,
+		APIKey:        key,
+		SupportsImage: model.SupportsImage,
+		ContextTokens: model.ContextTokens,
+		OutputTokens:  model.OutputTokens,
+	}, nil
 }
 
 // storeKey generates a reference and stores the value.

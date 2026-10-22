@@ -8,8 +8,10 @@
 import { get, mutate } from './client'
 import type { BackendId, Capabilities } from './agents'
 import type { FormInfo, PermissionRequest } from './interactions'
+import type { ImageAttachment, MessageModel, MessageUsage } from './messageTypes'
 
 export type { BackendId, Capabilities } from './agents'
+export type { ImageAttachment, ImageMediaType, MessageModel, MessageUsage } from './messageTypes'
 
 // Mirrors the AgentSession status enum.
 export type SessionStatus = 'active' | 'stopped' | 'disconnected'
@@ -66,16 +68,6 @@ export interface CreateSessionResult {
   messageError?: string
 }
 
-export type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
-
-export interface ImageAttachment {
-  id: string
-  name: string
-  mediaType: ImageMediaType
-  data: string
-  size: number
-}
-
 // Mirrors #/components/schemas/SendAgentSessionMessageRequest.
 export interface SendMessageBody {
   text: string
@@ -96,15 +88,6 @@ export type NormalizedEventType =
   | 'interaction'
   | 'unknown'
 
-// Mirrors agents.MessageModel: the model that produced one assistant message.
-// id is the provider-scoped "provider/model" form; variant is set when the
-// model ran a named variant.
-export interface MessageModel {
-  id: string
-  provider: string
-  variant?: string
-}
-
 export interface MessagePayload {
   role: string
   text: string
@@ -114,15 +97,6 @@ export interface MessagePayload {
   // Exact per-message token usage from the backend, present on final
   // assistant messages when the backend reports it. Never estimated.
   usage?: MessageUsage
-}
-
-// Mirrors agents.MessageUsage: exact backend-reported token usage.
-export interface MessageUsage {
-  input: number
-  output: number
-  reasoning?: number
-  cacheRead?: number
-  cacheWrite?: number
 }
 
 // Mirrors agents.ThinkingPayload: the agent's reasoning, or one streaming chunk

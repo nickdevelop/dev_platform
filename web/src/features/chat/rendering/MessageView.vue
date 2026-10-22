@@ -31,16 +31,27 @@ import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
 import ImagePreviewModal from './ImagePreviewModal.vue'
 import RunningIndicator from '../../../shared/components/RunningIndicator.vue'
-import type { Capabilities, ImageAttachment } from '../../../api/sessions'
-import type { ChatEntry, StreamStatus } from '../../../stores/sessions'
+import type { Capabilities } from '../../../api/sessions'
+import type { ImageAttachment } from '../../../api/messageTypes'
+import type { ChatEntry } from '../state/entry'
+import type { StreamStatus } from '../../../stores/sessions'
 import * as log from './logModel'
 
 const props = defineProps<{
   messages: ChatEntry[]
   capabilities?: Capabilities | null
   streamStatus?: StreamStatus
-  display?: 'all' | 'messages' | 'activity'
+  display?: 'all' | 'messages' | 'activity' | 'chat'
   running?: boolean
+  // Pure-chat message actions. Agent session panels leave these off.
+  canEditUserMessages?: boolean
+  canRegenerateEntryId?: string | null
+  logLabel?: string
+}>()
+
+const emit = defineEmits<{
+  edit: [entry: ChatEntry]
+  regenerate: [entry: ChatEntry]
 }>()
 
 // The whole render model — call/result joins, step groups, subagent facts and
@@ -162,6 +173,14 @@ function closeSubagent() {
 const copiedEntryId = ref<string | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
+async function editMessage(entry: ChatEntry) {
+  emit('edit', entry)
+}
+
+function regenerateMessage(entry: ChatEntry) {
+  emit('regenerate', entry)
+}
+
 async function copyMessage(entry: ChatEntry) {
   if (!entry.text) return
   const ok = await copyToClipboard(entry.text)
@@ -179,7 +198,7 @@ async function copyMessage(entry: ChatEntry) {
 <template>
   <div class="message-view">
     <p
-      v-if="displayMode !== 'activity' && (props.streamStatus === 'reconnecting' || props.streamStatus === 'error')"
+      v-if="displayMode !== 'activity' && displayMode !== 'chat' && (props.streamStatus === 'reconnecting' || props.streamStatus === 'error')"
       class="stream-status"
       role="status"
       aria-live="polite"
@@ -352,7 +371,7 @@ async function copyMessage(entry: ChatEntry) {
       class="entries"
       role="log"
       aria-live="polite"
-      aria-label="会话消息"
+      :aria-label="props.logLabel ?? '会话消息'"
     >
       <li v-for="block in displayedBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
         <template v-if="block.kind === 'entry'">
@@ -404,6 +423,16 @@ async function copyMessage(entry: ChatEntry) {
                   data-test="message-time"
                 >{{ formatMessageTime(block.entry.timestamp) }}</span>
                 <button
+                  v-if="props.canRegenerateEntryId && block.entry.id === props.canRegenerateEntryId && !block.entry.streaming"
+                  type="button"
+                  class="message-action-btn"
+                  data-test="message-regenerate-btn"
+                  title="重新生成这条回复"
+                  @click="regenerateMessage(block.entry)"
+                >
+                  重新生成
+                </button>
+                <button
                   type="button"
                   class="message-copy-btn"
                   :class="{ 'is-copied': copiedEntryId === block.entry.id }"
@@ -452,6 +481,16 @@ async function copyMessage(entry: ChatEntry) {
                 class="user-message-time"
                 data-test="user-message-time"
               >{{ formatMessageTime(block.entry.timestamp) }}</span>
+              <button
+                v-if="props.canEditUserMessages && !block.entry.streaming"
+                type="button"
+                class="message-action-btn user-edit-btn"
+                data-test="message-edit-btn"
+                title="编辑这条消息并重新发送"
+                @click="editMessage(block.entry)"
+              >
+                编辑
+              </button>
               <button
                 v-if="block.entry.text"
                 type="button"
@@ -522,12 +561,23 @@ async function copyMessage(entry: ChatEntry) {
             @toggle="onStepToggle(block.id, $event)"
           >
             <summary class="step-summary">
-              <span class="step-icon" aria-hidden="true">⚙️</span>
-              <span class="step-title">{{ stepSummary(block.entries) }}</span>
-              <span class="step-count">{{ block.entries.length }} 步</span>
+              <span class="step-icon" aria-hidden="true">{{ displayMode === 'chat' ? '🧠' : '⚙️' }}</span>
+              <span class="step-title">{{ displayMode === 'chat' ? '思考过程' : stepSummary(block.entries) }}</span>
+              <span v-if="displayMode !== 'chat'" class="step-count">{{ block.entries.length }} 步</span>
             </summary>
             <div class="step-body">
-              <template v-for="entry in block.entries" :key="entry.id">
+              <template v-if="displayMode === 'chat'">
+                <div
+                  v-for="entry in block.entries.filter((item) => item.kind === 'thinking')"
+                  :key="entry.id"
+                  class="chat-thinking"
+                  data-test="thinking"
+                >
+                  <p class="thinking-text">{{ entry.text }}</p>
+                  <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
+                </div>
+              </template>
+              <template v-else v-for="entry in block.entries" :key="entry.id">
                 <details
                   v-if="entry.kind === 'thinking'"
                   class="thinking"
@@ -819,6 +869,23 @@ async function copyMessage(entry: ChatEntry) {
   color: var(--color-success);
 }
 
+.message-action-btn {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.message-action-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
 .message-copy-btn .copy-icon {
   width: 0.85rem;
   height: 0.85rem;
@@ -1096,6 +1163,18 @@ async function copyMessage(entry: ChatEntry) {
   padding: 0.5rem 0.6rem;
   border-radius: 8px;
   background: var(--color-surface-muted);
+}
+
+.chat-thinking {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 0.35rem;
+}
+
+.chat-thinking .thinking-text {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .thinking-text {

@@ -141,6 +141,20 @@ func TestMigrateCreatesModelTables(t *testing.T) {
 	}
 }
 
+func TestMigrateCreatesChatTables(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	for _, model := range []any{&Chat{}, &ChatMessage{}} {
+		if !db.Migrator().HasTable(model) {
+			t.Errorf("table for %T does not exist after migration", model)
+		}
+	}
+	if !db.Migrator().HasIndex(&ChatMessage{}, "idx_chat_messages_chat") {
+		t.Error("chat_messages chat_id index is missing")
+	}
+}
+
 func TestMigrateDeduplicatesAgentSessions(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)

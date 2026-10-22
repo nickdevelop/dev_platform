@@ -20,6 +20,7 @@ import (
 
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/chat"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
@@ -344,6 +345,14 @@ func runServer(args []string) error {
 		return fmt.Errorf("open secret store: %w", err)
 	}
 	modelConfig := modelconfig.NewService(db, secretStore)
+	chatService := chat.NewService(db, modelConfig)
+	// Cancel in-flight generations before the database closes. Defers unwind
+	// LIFO, so this runs before the database close registered earlier.
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		chatService.Close(closeCtx)
+	}()
 
 	taskRepo := tasks.NewRepository(db)
 	taskService := tasks.NewService(taskRepo, sessionService)
@@ -381,6 +390,7 @@ func runServer(args []string) error {
 		Tasks:         taskService,
 		Prompts:       promptService,
 		Terminal:      terminalService,
+		Chats:         chatService,
 		WebDir:        webDir,
 	})
 

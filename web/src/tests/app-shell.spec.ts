@@ -11,6 +11,7 @@ import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
 import ProjectSettingsPanel from '../features/projects/ProjectSettingsPanel.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
+import ChatPanel from '../features/chat/pure/ChatPanel.vue'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { createAppRouter } from '../router'
 import { useAgentsStore } from '../stores/agents'
@@ -68,14 +69,26 @@ describe('three-pane app shell', () => {
     vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('shows the tree, the empty workspace and a disabled Chat category at /', async () => {
+  it('shows the tree, the empty workspace and an enabled Chat category at /', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
     expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
     expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)
-    const chat = wrapper.findAll('button').find((button) => button.text() === 'Chat')
-    expect(chat?.attributes('disabled')).toBeDefined()
+    const chat = wrapper.findAll('a').find((entry) => entry.text() === 'Chat')
+    expect(chat?.attributes('href')).toBe('/chat')
+    expect(chat?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens the pure chat area from the rail and passes a conversation id', async () => {
+    const { wrapper, router } = await setup('/chat/5', { ChatPanel: true, ChatSidebar: true })
+
+    expect(router.currentRoute.value.name).toBe('chat-detail')
+    expect(wrapper.findComponent(ChatPanel).props('chatId')).toBe(5)
+    const chat = wrapper.findAll('a').find((entry) => entry.text() === 'Chat')
+    expect(chat?.classes()).toContain('active')
+    // Chat is its own center: the workspace tab strip is not shown.
+    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 
   it('opens project settings as a tab at /projects/:projectId/settings', async () => {

@@ -38,13 +38,20 @@ const draftsStore = useDraftsStore()
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The prompts routes declare `meta.prompts` or start with /prompts.
 // The terminal routes declare `meta.terminal` or start with /terminal.
+// The pure-chat routes declare `meta.chat` or start with /chat.
 // The settings routes declare `meta.settings`.
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const promptsActive = computed(() => route.meta.prompts === true || route.path.startsWith('/prompts'))
 const terminalActive = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
+const chatActive = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
 const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(
-  () => !settingsActive.value && !tasksActive.value && !promptsActive.value && !terminalActive.value,
+  () =>
+    !settingsActive.value &&
+    !tasksActive.value &&
+    !promptsActive.value &&
+    !terminalActive.value &&
+    !chatActive.value,
 )
 
 const projectDestination = computed(() => {
@@ -99,6 +106,13 @@ function onPromptsClick(event: MouseEvent) {
 function onTerminalClick(event: MouseEvent) {
   emit('expandSidebar')
   if (terminalActive.value) {
+    event.preventDefault()
+  }
+}
+
+function onChatClick(event: MouseEvent) {
+  emit('expandSidebar')
+  if (chatActive.value) {
     event.preventDefault()
   }
 }
@@ -165,14 +179,21 @@ function onSettingsClick() {
       </svg>
       <span>终端</span>
     </RouterLink>
-    <button type="button" class="category reserved" title="Chat（预留）" disabled>
+    <RouterLink
+      class="category"
+      :class="{ active: chatActive }"
+      title="纯 Chat 对话"
+      :aria-current="chatActive ? 'page' : undefined"
+      :to="{ name: 'chat' }"
+      @click="onChatClick"
+    >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
         <path
           d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
         />
       </svg>
       <span>Chat</span>
-    </button>
+    </RouterLink>
     <div class="spacer"></div>
     <RouterLink
       class="footer-btn settings"

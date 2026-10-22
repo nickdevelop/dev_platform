@@ -201,6 +201,12 @@ var migrationSteps = []migrationStep{
 	{version: 25, name: "create_terminal_servers", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&TerminalServer{})
 	}},
+	{version: 26, name: "create_chats", run: func(tx *gorm.DB) error {
+		if err := tx.Migrator().CreateTable(&Chat{}); err != nil {
+			return err
+		}
+		return tx.Migrator().CreateTable(&ChatMessage{})
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the
