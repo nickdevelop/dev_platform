@@ -24,6 +24,12 @@ const (
 // csrfTokenBytes is the amount of entropy in a CSRF token.
 const csrfTokenBytes = 32
 
+// CSRFRejectedKey is the Gin context key RequireCSRF sets on a rejected
+// request. Middleware that runs before it (the access log) reads the flag to
+// record the rejection, which is how a client systematically dropping the
+// header becomes visible in the logs instead of only in a user's browser.
+const CSRFRejectedKey = "auth.csrf_rejected"
+
 // newCSRFToken returns a cryptographically random, URL-safe CSRF token.
 func newCSRFToken() (string, error) {
 	buf := make([]byte, csrfTokenBytes)
@@ -85,6 +91,7 @@ func RequireCSRF() gin.HandlerFunc {
 		cookie, err := c.Cookie(CSRFCookieName)
 		header := c.GetHeader(CSRFHeaderName)
 		if err != nil || cookie == "" || header == "" || !csrfTokensEqual(header, cookie) {
+			c.Set(CSRFRejectedKey, true)
 			abortWithError(c, http.StatusForbidden, "invalid_csrf_token")
 			return
 		}

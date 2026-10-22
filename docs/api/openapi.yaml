@@ -1639,6 +1639,7 @@ paths:
           description: Unique client event bus identifier.
           schema:
             type: string
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:
@@ -1715,6 +1716,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: '#/components/parameters/CSRFToken'
       responses:
         '200':
           description: Successfully unsubscribed.
@@ -3044,6 +3046,8 @@ paths:
         - Terminal
       security:
         - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:
@@ -3106,6 +3110,8 @@ paths:
         - Terminal
       security:
         - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:
@@ -3148,6 +3154,8 @@ paths:
         - Terminal
       security:
         - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
       responses:
         '200':
           description: Server deleted.
@@ -3165,6 +3173,8 @@ paths:
         - Terminal
       security:
         - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
         content:

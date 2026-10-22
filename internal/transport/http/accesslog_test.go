@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/app/auth"
 )
 
 // TestAccessLogRecordsMethodPathStatusAndLatency verifies one log line per
@@ -92,5 +94,47 @@ func TestNewRouterLogsEveryAccess(t *testing.T) {
 	}
 	if got := buf.String(); !strings.Contains(got, "path=/api/health") || !strings.Contains(got, "latency=") {
 		t.Errorf("router access log = %q, want health path with latency", got)
+	}
+}
+
+// TestAccessLogMarksCSRFRejections verifies a request refused by the CSRF
+// middleware is marked in the access line, so a client that systematically
+// drops the header is visible in the logs. A request that passes the same
+// middleware must not carry the marker.
+func TestAccessLogMarksCSRFRejections(t *testing.T) {
+	var buf bytes.Buffer
+	logger := log.New(&buf, "", 0)
+
+	router := gin.New()
+	router.Use(AccessLogWithLogger(logger), auth.RequireCSRF())
+	router.POST("/api/projects", func(c *gin.Context) { c.Status(http.StatusCreated) })
+
+	// No CSRF cookie and no header: the middleware rejects before the handler.
+	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	if line := buf.String(); !strings.Contains(line, "csrf=rejected") {
+		t.Errorf("access log = %q, want it to contain csrf=rejected", line)
+	}
+
+	// The same route with a matching cookie and header passes and is logged
+	// without the marker.
+	buf.Reset()
+	req = httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(`{}`))
+	req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: "token-value"})
+	req.Header.Set(auth.CSRFHeaderName, "token-value")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+	if line := buf.String(); strings.Contains(line, "csrf=rejected") {
+		t.Errorf("access log = %q, must not mark an accepted request", line)
 	}
 }

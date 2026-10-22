@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/app/auth"
 )
 
 // AccessLog returns the production access-log middleware that writes to the
@@ -39,7 +41,20 @@ func AccessLogWithLogger(logger *log.Logger) gin.HandlerFunc {
 
 		latency := time.Since(start)
 		status := c.Writer.Status()
-		logger.Printf("http access method=%s path=%s status=%d latency=%s ip=%s",
-			method, path, status, latency.String(), clientIP)
+		logger.Printf("http access method=%s path=%s status=%d latency=%s ip=%s%s",
+			method, path, status, latency.String(), clientIP, csrfRejectionField(c))
 	}
+}
+
+// csrfRejectionField appends a marker to the access line when the request was
+// refused by the CSRF middleware. A client that drops the double-submit header
+// shows up here as a stream of rejections, which is otherwise invisible: the
+// browser only reports a 403 to the user.
+func csrfRejectionField(c *gin.Context) string {
+	if rejected, ok := c.Get(auth.CSRFRejectedKey); ok {
+		if flag, isBool := rejected.(bool); isBool && flag {
+			return " csrf=rejected"
+		}
+	}
+	return ""
 }
