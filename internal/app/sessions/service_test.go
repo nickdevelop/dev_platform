@@ -1799,7 +1799,7 @@ func TestCreateWithoutTitleLeavesTitleEmpty(t *testing.T) {
 func TestBackendsCarryCatalogMetadata(t *testing.T) {
 	env := newTestEnv(t)
 	catalog, err := agents.NewCatalog(agents.BackendDescriptor{
-		ID: agents.BackendPi, Label: "Pi Agent", Binary: "pi", Order: 2, ServiceSupported: false,
+		ID: agents.BackendPi, Label: "Pi Agent", Binary: "pi", Order: 2, ServiceSupported: false, Color: "#F97316",
 	})
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)
@@ -1810,8 +1810,8 @@ func TestBackendsCarryCatalogMetadata(t *testing.T) {
 	if len(backends) != 1 {
 		t.Fatalf("Backends = %+v, want one", backends)
 	}
-	if got := backends[0]; got.Label != "Pi Agent" || got.Order != 2 || got.ServiceSupported {
-		t.Fatalf("metadata = %+v, want label Pi Agent, order 2, no service", got)
+	if got := backends[0]; got.Label != "Pi Agent" || got.Order != 2 || got.ServiceSupported || got.Color != "#F97316" {
+		t.Fatalf("metadata = %+v, want label Pi Agent, order 2, no service, color #F97316", got)
 	}
 
 	WithCatalog(nil)(env.svc)

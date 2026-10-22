@@ -141,6 +141,9 @@ type BackendCapabilities struct {
 	ServiceSupported bool `json:"serviceSupported"`
 	// Tone is an optional visual tone preference for backend tags in the UI.
 	Tone string `json:"tone,omitempty"`
+	// Color is an optional exact brand colour (#RRGGBB) for backend tags. It
+	// takes precedence over Tone when present.
+	Color string `json:"color,omitempty"`
 }
 
 // InstanceService is the subset of the instance lifecycle the session layer
@@ -321,6 +324,7 @@ func (s *Service) Backends() []BackendCapabilities {
 			entry.Order = descriptor.Order
 			entry.ServiceSupported = descriptor.ServiceSupported
 			entry.Tone = descriptor.Tone
+			entry.Color = descriptor.Color
 		}
 		out = append(out, entry)
 	}

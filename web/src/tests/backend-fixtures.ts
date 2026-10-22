@@ -25,6 +25,7 @@ export function backendFixtures(): AgentBackend[] {
       label: 'OpenCode',
       order: 1,
       serviceSupported: true,
+      color: '#10B981',
     },
     {
       backend: 'pi',
@@ -33,6 +34,7 @@ export function backendFixtures(): AgentBackend[] {
       label: 'Pi Agent',
       order: 2,
       serviceSupported: false,
+      color: '#F97316',
     },
   ]
 }

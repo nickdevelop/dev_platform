@@ -11,6 +11,8 @@ func TestCatalogRejectsInvalidEntries(t *testing.T) {
 		"empty binary": {{ID: BackendPi}},
 		"duplicate id": {{ID: BackendPi, Binary: "pi"}, {ID: BackendPi, Binary: "pi"}},
 		"empty id":     {{Binary: "x"}},
+		"bad color":    {{ID: BackendPi, Binary: "pi", Color: "red"}},
+		"css color":    {{ID: BackendPi, Binary: "pi", Color: "#fff; position: fixed"}},
 	}
 	for name, descriptors := range cases {
 		if _, err := NewCatalog(descriptors...); !errors.Is(err, ErrCatalogEntry) {
@@ -36,6 +38,16 @@ func TestCatalogLookupAndOrder(t *testing.T) {
 	}
 	if _, ok := catalog.Get(BackendID("ghost")); ok {
 		t.Fatal("Get on an unknown id must report false")
+	}
+}
+
+func TestCatalogAcceptsDeclaredBrandColor(t *testing.T) {
+	catalog, err := NewCatalog(BackendDescriptor{ID: BackendPi, Binary: "pi", Color: "#10B981"})
+	if err != nil {
+		t.Fatalf("NewCatalog: %v", err)
+	}
+	if d, _ := catalog.Get(BackendPi); d.Color != "#10B981" {
+		t.Fatalf("color = %q, want #10B981", d.Color)
 	}
 }
 

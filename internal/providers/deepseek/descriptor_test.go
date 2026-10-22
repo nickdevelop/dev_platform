@@ -13,6 +13,9 @@ func TestDescriptorMatchesCompatibilityMatrix(t *testing.T) {
 	if d.ID != agents.BackendDeepSeek || d.Binary != "dsh" || d.Label != "DeepSeek" || d.Tone != "info" {
 		t.Fatalf("identity = %+v", d)
 	}
+	if d.Color != "#1E40AF" {
+		t.Fatalf("color = %q, want #1E40AF", d.Color)
+	}
 	if d.Tested != "0.2.1-rc.2" || d.Minimum != "0.2.0" || d.Maximum != "1.0.0" {
 		t.Fatalf("version range = %+v, want tested 0.2.1-rc.2 in [0.2.0, 1.0.0)", d)
 	}

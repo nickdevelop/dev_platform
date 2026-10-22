@@ -15,4 +15,5 @@ var Descriptor = agents.BackendDescriptor{
 	Maximum:          "1.0.0",
 	ServiceSupported: false,
 	Tone:             "info",
+	Color:            "#1E40AF",
 }

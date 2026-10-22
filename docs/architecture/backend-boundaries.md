@@ -25,7 +25,7 @@
 - **交互事件 `EventInteraction`**：工具确认（`permission`）与问题表单（`form`）的请求与解决（`requested` 携带对应载荷，`resolved` 只带 id）。它是待处理交互的唯一通道，前端不再轮询，也不订阅原始事件。
 - **会话交互快照**：会话事件流在回放之后、实时事件之前写入一帧 `interactions`（无 id），内容为该会话当前待处理的权限与表单，客户端据此整体替换待处理集合。仅当后端声明 `toolConfirmation` 时写入。
 - **可选扩展接口**：`agents.PermissionReplier`（工具确认与表单）、`agents.RawEventOpener`（原始事件流）、`agents.HistoryReader`（历史）、`agents.ServiceController`（机器级服务）。适配器实现才可用，未实现时通用层返回 `ErrUnsupportedCapability`。
-- **后端描述符 `BackendDescriptor` 与 `Catalog`**：每个适配器包导出 `Descriptor`，包含显示名、可执行文件名、默认启用、展示顺序、测试版本范围、是否有机器级服务，以及可选的传输模式列表（如 pi 的 `cli`/`rpc`）。组合根用它们构建 catalog。
+- **后端描述符 `BackendDescriptor` 与 `Catalog`**：每个适配器包导出 `Descriptor`，包含显示名、可执行文件名、默认启用、展示顺序、测试版本范围、是否有机器级服务、可选的传输模式列表（如 pi 的 `cli`/`rpc`），以及可选的标签色调或品牌色（`Tone` / `Color`）。`Color` 必须是 `#RRGGBB` 并在 UI 中优先于 `Tone`，因此新增后端仍然只需描述符声明，前端不改代码。组合根用这些描述符构建 catalog。
 - **注册表 `Registry`**：适配器的显式注册点。组合根在启动时调用 `checkBackendWiring`，确认注册表与 catalog 描述的后端集合完全一致，否则启动失败。
 
 ## 新增一个后端的步骤

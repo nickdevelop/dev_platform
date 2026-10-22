@@ -20,6 +20,7 @@ import {
   type Capabilities,
 } from '../api/agents'
 import { describeApiError, UnauthorizedError } from '../api/client'
+import { isHexColor } from '../shared/color'
 import { useAuthStore } from './auth'
 
 export const useAgentsStore = defineStore('agents', {
@@ -65,6 +66,14 @@ export const useAgentsStore = defineStore('agents', {
     backendTone() {
       return (backend: BackendId | string): string =>
         this.backendFor(backend)?.tone || ''
+    },
+    // Exact brand colour declared by the backend descriptor, when it is a valid
+    // #RRGGBB value. An invalid or absent colour falls back to the tone classes.
+    backendColor() {
+      return (backend: BackendId | string): string => {
+        const color = this.backendFor(backend)?.color || ''
+        return isHexColor(color) ? color : ''
+      }
     },
     // Backends in the catalog's presentation order.
     orderedBackends: (state) =>

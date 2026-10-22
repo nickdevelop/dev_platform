@@ -167,12 +167,20 @@ describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    const select = wrapper.find<HTMLSelectElement>('[data-test="approval-mode-select"]')
-    expect(select.exists()).toBe(true)
-    expect(select.element.value).toBe('default')
+    const trigger = wrapper.find('[data-test="approval-mode-select"]')
+    expect(trigger.exists()).toBe(true)
+    expect(trigger.text()).toContain('默认')
 
-    const options = select.findAll('option')
-    expect(options.map((o) => o.text())).toEqual(['默认', '自动审批', '托管'])
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const options = wrapper.findAll('[data-test^="approval-mode-option-"]')
+    expect(options.map((option) => option.find('.approval-mode-option-name').text())).toEqual([
+      '默认',
+      '自动审批',
+      '托管',
+    ])
+    expect(options[0].attributes('aria-selected')).toBe('true')
   })
 
   it('automatically approves tool confirmation in auto-approve mode', async () => {
@@ -180,9 +188,10 @@ describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    // Switch to auto-approve
-    const select = wrapper.find<HTMLSelectElement>('[data-test="approval-mode-select"]')
-    await select.setValue('auto-approve')
+    // Switch to auto-approve through the picker menu.
+    await wrapper.find('[data-test="approval-mode-select"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="approval-mode-option-auto-approve"]').trigger('click')
     await flushPromises()
 
     // Simulate incoming permission request via stream
@@ -206,9 +215,10 @@ describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    // Switch to autopilot
-    const select = wrapper.find<HTMLSelectElement>('[data-test="approval-mode-select"]')
-    await select.setValue('autopilot')
+    // Switch to autopilot through the picker menu.
+    await wrapper.find('[data-test="approval-mode-select"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="approval-mode-option-autopilot"]').trigger('click')
     await flushPromises()
 
     // Simulate incoming form with recommended option and boolean confirmation

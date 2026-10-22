@@ -47,6 +47,9 @@ export interface AgentBackend {
   serviceSupported: boolean
   // Optional visual tone preference from the backend descriptor (e.g. "info", "warning", "primary").
   tone?: string
+  // Optional exact brand colour (#RRGGBB) from the backend descriptor. Takes
+  // precedence over tone.
+  color?: string
 }
 
 // Mirrors #/components/schemas/AgentBackendList.

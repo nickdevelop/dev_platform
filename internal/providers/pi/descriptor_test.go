@@ -12,6 +12,9 @@ func TestDescriptorMatchesCompatibilityMatrix(t *testing.T) {
 	if d.ID != agents.BackendPi || d.Binary != "pi" || d.Label != "Pi Agent" {
 		t.Fatalf("identity = %+v", d)
 	}
+	if d.Color != "#F97316" {
+		t.Fatalf("color = %q, want #F97316", d.Color)
+	}
 	if d.Tested != "1.1.0" || d.Minimum != "1.0.0" || d.Maximum != "2.0.0" {
 		t.Fatalf("version range = %+v, want tested 1.1.0 in [1.0.0, 2.0.0)", d)
 	}

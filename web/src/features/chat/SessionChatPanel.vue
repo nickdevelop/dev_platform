@@ -31,6 +31,7 @@ import BackendTag from '../../shared/components/BackendTag.vue'
 import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
+import ApprovalModeSelect from './composer/ApprovalModeSelect.vue'
 import ContextUsageMeter from './composer/ContextUsageMeter.vue'
 import ComposerImageTray from './composer/ComposerImageTray.vue'
 import ImagePreviewModal from './rendering/ImagePreviewModal.vue'
@@ -974,6 +975,18 @@ async function removeSession() {
           <BackendTag :backend="activeSession.backend" />
           <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
           <button
+            v-if="previewCollapsed"
+            type="button"
+            class="header-tool-btn preview-btn"
+            data-test="toggle-preview-btn"
+            title="展开预览面板"
+            aria-label="展开预览面板"
+            @click="setPreviewCollapsed(false)"
+          >
+            <span>预览</span>
+            <span v-if="activityCount > 0" class="mini-count">{{ activityCount }}</span>
+          </button>
+          <button
             type="button"
             class="header-tool-btn filetree-btn"
             :class="{ 'is-active': isFileTreeVisible }"
@@ -986,18 +999,6 @@ async function removeSession() {
               <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
             </svg>
             <span>文件树</span>
-          </button>
-          <button
-            v-if="previewCollapsed"
-            type="button"
-            class="header-tool-btn preview-btn"
-            data-test="toggle-preview-btn"
-            title="展开预览面板"
-            aria-label="展开预览面板"
-            @click="setPreviewCollapsed(false)"
-          >
-            <span>预览</span>
-            <span v-if="activityCount > 0" class="mini-count">{{ activityCount }}</span>
           </button>
           <button
             type="button"
@@ -1212,19 +1213,7 @@ async function removeSession() {
                   />
                 </div>
                 <div class="composer-actions">
-                  <div class="approval-mode-wrapper">
-                    <select
-                      v-model="approvalMode"
-                      class="approval-mode-select"
-                      data-test="approval-mode-select"
-                      title="自动化执行与审批模式"
-                      aria-label="自动化执行与审批模式"
-                    >
-                      <option value="default">默认</option>
-                      <option value="auto-approve">自动审批</option>
-                      <option value="autopilot">托管</option>
-                    </select>
-                  </div>
+                  <ApprovalModeSelect v-model="approvalMode" />
                   <div class="send-split-group" data-test="send-split-group">
                     <button
                       type="button"
@@ -2306,30 +2295,6 @@ async function removeSession() {
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-}
-
-.approval-mode-wrapper {
-  display: inline-flex;
-  align-items: center;
-}
-
-.approval-mode-select {
-  height: 28px;
-  padding: 0 0.5rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-  outline: none;
-  transition: border-color 0.15s ease;
-}
-
-.approval-mode-select:hover {
-  border-color: var(--color-primary);
 }
 
 .send-split-group {

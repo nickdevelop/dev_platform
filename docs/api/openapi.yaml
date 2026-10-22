@@ -3626,6 +3626,16 @@ components:
           description: >-
             Whether the backend runs a machine-level service the operator can
             start and stop.
+        tone:
+          type: string
+          description: >-
+            Optional visual tone preference for backend tags (for example info,
+            warning, primary or neutral). Used only when color is absent.
+        color:
+          type: string
+          description: >-
+            Optional exact brand colour (#RRGGBB) for backend tags. Takes
+            precedence over tone.
       additionalProperties: false
     AgentServiceStatusResponse:
       type: object

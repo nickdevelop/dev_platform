@@ -1,0 +1,91 @@
+/* Shared visual contract for the composer's compact pickers (model, approval
+   mode). Both components import this file through a scoped <style src> block,
+   so the trigger and popover stay identical without either feature owning the
+   other's styles. Feature-specific rules live beside each component. */
+
+.composer-select {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* A compact pill rather than a full-width dropdown: the composer is about
+   sending a message, and the current choice is a badge the user can open. */
+.composer-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 16rem;
+  height: 28px;
+  padding: 0 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composer-select-trigger:hover:not(:disabled),
+.composer-select-trigger.open {
+  border-color: var(--color-primary);
+  color: var(--color-primary-hover);
+}
+
+.composer-select-trigger:disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.composer-select-caret {
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+}
+
+.composer-select-menu {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 16rem;
+  max-width: min(24rem, 80vw);
+  max-height: 18rem;
+  padding: 0.35rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+  overflow: auto;
+}
+
+.composer-select-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-select-option:hover,
+.composer-select-option:focus-visible {
+  background: var(--color-surface-muted);
+  outline: none;
+}
+
+.composer-select-option.selected {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}

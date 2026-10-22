@@ -237,12 +237,12 @@ function onKeydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div v-if="props.modelSelection" ref="root" class="model-select" @keydown="onKeydown">
+  <div v-if="props.modelSelection" ref="root" class="model-select composer-select" @keydown="onKeydown">
     <p v-if="failed" class="model-error" role="alert">模型列表加载失败</p>
     <template v-else>
       <button
         type="button"
-        class="model-trigger"
+        class="model-trigger composer-select-trigger"
         :class="{ open }"
         :disabled="loading && models.length === 0"
         aria-haspopup="listbox"
@@ -255,10 +255,10 @@ function onKeydown(event: KeyboardEvent) {
         <span v-if="activeVariant" class="model-variant-badge" :title="`当前变种: ${activeVariant}`">
           {{ activeVariant }}
         </span>
-        <span class="model-trigger-caret" aria-hidden="true">▾</span>
+        <span class="model-trigger-caret composer-select-caret" aria-hidden="true">▾</span>
       </button>
 
-      <div v-if="open" class="model-menu" role="listbox" aria-label="模型列表" data-test="model-menu">
+      <div v-if="open" class="model-menu composer-select-menu" role="listbox" aria-label="模型列表" data-test="model-menu">
         <input
           v-if="showSearch"
           ref="searchInput"
@@ -272,7 +272,7 @@ function onKeydown(event: KeyboardEvent) {
           <li v-for="model in filtered" :key="model.id" class="model-item">
             <button
               type="button"
-              class="model-option"
+              class="model-option composer-select-option"
               :class="{ selected: model.id === parsedSelection.baseId && !activeVariant }"
               role="option"
               :aria-selected="model.id === parsedSelection.baseId && !activeVariant"
@@ -305,32 +305,9 @@ function onKeydown(event: KeyboardEvent) {
   </div>
 </template>
 
+<style scoped src="./composer-select.css"></style>
+
 <style scoped>
-.model-select {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-/* A compact pill rather than a full-width dropdown: the composer is about
-   sending a message, and the model name is a badge the user can open. */
-.model-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  max-width: 16rem;
-  height: 28px;
-  padding: 0 0.5rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
 .model-variant-badge {
   display: inline-flex;
   align-items: center;
@@ -343,44 +320,10 @@ function onKeydown(event: KeyboardEvent) {
   color: var(--color-primary, #2563eb);
 }
 
-.model-trigger:hover:not(:disabled),
-.model-trigger.open {
-  border-color: var(--color-primary);
-  color: var(--color-primary-hover);
-}
-
-.model-trigger:disabled {
-  color: var(--color-text-muted);
-  cursor: default;
-}
-
 .model-trigger-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.model-trigger-caret {
-  color: var(--color-text-muted);
-  font-size: 0.7rem;
-}
-
-.model-menu {
-  position: absolute;
-  bottom: calc(100% + 0.4rem);
-  left: 0;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  min-width: 16rem;
-  max-width: min(24rem, 80vw);
-  max-height: 18rem;
-  padding: 0.35rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 10px;
-  background: var(--color-surface);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
-  overflow: auto;
 }
 
 .model-search {
@@ -410,34 +353,6 @@ function onKeydown(event: KeyboardEvent) {
 .model-item {
   display: flex;
   flex-direction: column;
-}
-
-.model-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.1rem;
-  width: 100%;
-  padding: 0.35rem 0.5rem;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.85rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.model-option:hover,
-.model-option:focus-visible {
-  background: var(--color-surface-muted);
-  outline: none;
-}
-
-.model-option.selected {
-  background: var(--color-info-soft);
-  color: var(--color-info);
 }
 
 .model-variants {

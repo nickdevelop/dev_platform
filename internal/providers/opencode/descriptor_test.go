@@ -12,6 +12,9 @@ func TestDescriptorMatchesCompatibilityMatrix(t *testing.T) {
 	if d.ID != agents.BackendOpenCodeV2 || d.Binary != "opencode" || d.Label != "OpenCode" {
 		t.Fatalf("identity = %+v", d)
 	}
+	if d.Color != "#10B981" {
+		t.Fatalf("color = %q, want #10B981", d.Color)
+	}
 	if d.Tested != "2.0.24" || d.Minimum != "2.0.0" || d.Maximum != "3.0.0" {
 		t.Fatalf("version range = %+v, want tested 2.0.24 in [2.0.0, 3.0.0)", d)
 	}

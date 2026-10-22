@@ -277,6 +277,12 @@ describe('activity pane floating button and in-tab popup', () => {
     const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
     expect(toggleBtn.exists()).toBe(true)
     expect(toggleBtn.text()).toContain('预览')
+    // Preview comes before the file tree in the title row.
+    const headerTools = wrapper.findAll('.title-row .header-tool-btn')
+    expect(headerTools.map((button) => button.attributes('data-test'))).toEqual([
+      'toggle-preview-btn',
+      'toggle-filetree-btn',
+    ])
   })
 
   it('opens in-tab popup on preview button click and persists expanded choice', async () => {

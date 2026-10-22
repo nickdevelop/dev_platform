@@ -3,6 +3,7 @@ package agents
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 )
 
@@ -44,9 +45,19 @@ type BackendDescriptor struct {
 	// single transport and no mode control is shown.
 	Modes []string
 	// Tone is an optional visual tone preference for backend tags in the UI
-	// (such as "info", "warning", "primary", or "neutral").
+	// (such as "info", "warning", "primary", or "neutral"). It is the fallback
+	// when Color is empty.
 	Tone string
+	// Color is an optional exact brand colour (#RRGGBB) for backend tags. It
+	// takes precedence over Tone, so a backend can keep a precise identity
+	// colour without the UI hard-coding backend ids.
+	Color string
 }
+
+// brandColorPattern is the only colour syntax a descriptor may declare. Keeping
+// the value a plain hex literal means the UI can render it without parsing CSS
+// and the catalog rejects anything that could smuggle in other properties.
+var brandColorPattern = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // Catalog is the immutable set of backend descriptors the platform knows. It
 // is built once at the composition root and shared read-only.
@@ -66,6 +77,9 @@ func NewCatalog(descriptors ...BackendDescriptor) (*Catalog, error) {
 		}
 		if d.Binary == "" {
 			return nil, fmt.Errorf("%w: backend %q has no executable name", ErrCatalogEntry, d.ID)
+		}
+		if d.Color != "" && !brandColorPattern.MatchString(d.Color) {
+			return nil, fmt.Errorf("%w: backend %q has invalid colour %q", ErrCatalogEntry, d.ID, d.Color)
 		}
 		if _, exists := c.byID[d.ID]; exists {
 			return nil, fmt.Errorf("%w: duplicate backend %q", ErrCatalogEntry, d.ID)
