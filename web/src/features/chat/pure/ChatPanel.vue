@@ -427,9 +427,12 @@ function reconnect() {
 .pure-chat {
   display: flex;
   flex-direction: column;
+  padding: 0 1rem 1rem;
+  gap: 0.5rem;
   height: 100%;
   min-height: 0;
   position: relative;
+  box-sizing: border-box;
 }
 
 .pure-chat-header {
@@ -437,9 +440,8 @@ function reconnect() {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.6rem 1rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
   flex-shrink: 0;
 }
 
@@ -507,7 +509,8 @@ function reconnect() {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0.8rem 1rem;
+  overflow-x: hidden;
+  padding: 0;
 }
 
 .chat-welcome {

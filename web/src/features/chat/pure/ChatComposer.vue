@@ -42,6 +42,42 @@ const preview = ref<ImageAttachment | null>(null)
 const previewVisible = ref(false)
 const notice = ref('')
 
+const textareaHeight = ref<number | null>(null)
+let isResizing = false
+let startY = 0
+let startHeight = 0
+
+function onResizerMouseDown(e: MouseEvent) {
+  if (!textarea.value) return
+  isResizing = true
+  startY = e.clientY
+  startHeight = textarea.value.getBoundingClientRect().height
+  document.body.style.cursor = 'ns-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMouseMove = (ev: MouseEvent) => {
+    if (!isResizing) return
+    const delta = startY - ev.clientY
+    const newHeight = Math.max(36, Math.min(600, startHeight + delta))
+    textareaHeight.value = newHeight
+  }
+
+  const onMouseUp = () => {
+    isResizing = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+function resetComposerHeight() {
+  textareaHeight.value = null
+}
+
 const imageModeBlocked = computed(() => props.images.length > 0 && !props.supportsImage)
 const canSend = computed(
   () =>
@@ -70,6 +106,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function autosize() {
+  if (textareaHeight.value !== null) return
   const el = textarea.value
   if (!el) return
   el.style.height = 'auto'
@@ -177,12 +214,22 @@ function closePreview() {
       @dragover.prevent
       @drop.prevent="onDrop"
     >
+      <div
+        class="composer-resizer"
+        data-test="composer-resizer"
+        title="拖拽调整输入框高度，双击重置"
+        @mousedown="onResizerMouseDown"
+        @dblclick="resetComposerHeight"
+      >
+        <span class="resizer-handle"></span>
+      </div>
       <label class="sr-only" for="pure-chat-message">发送消息</label>
       <textarea
         id="pure-chat-message"
         ref="textarea"
         class="chat-composer-text"
-        rows="2"
+        rows="3"
+        :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
         :value="props.text"
         :placeholder="props.running ? '正在生成回复…' : '给 Chat 发送消息'"
         data-test="chat-input"
@@ -257,7 +304,31 @@ function closePreview() {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0 1rem 1rem;
+}
+
+.composer-resizer {
+  height: 10px;
+  margin-top: -0.25rem;
+  margin-bottom: 0.1rem;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.composer-resizer .resizer-handle {
+  width: 38px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-strong);
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.composer-resizer:hover .resizer-handle {
+  opacity: 1;
+  background: var(--color-primary);
 }
 
 .chat-edit-banner {
