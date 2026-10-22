@@ -7,6 +7,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AppearanceSettings from '../features/settings/AppearanceSettings.vue'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 import { useSettingsStore } from '../stores/settings'
 
 const defaultAppearance = {
@@ -40,7 +41,8 @@ async function mountSettings() {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore()
-  auth.$patch({ authenticated: true, csrfToken: 'csrf-1' })
+  auth.$patch({ authenticated: true })
+  installTestCSRF('csrf-1')
   const wrapper = mount(AppearanceSettings, { global: { plugins: [pinia] } })
   await flushPromises()
   return { wrapper }

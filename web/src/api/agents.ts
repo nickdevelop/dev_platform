@@ -6,7 +6,7 @@
 // backend supports: an omitted or false capability means the control must not
 // be shown.
 
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 
 // Mirrors #/components/schemas/AgentCapabilities. Every field is an explicit
 // boolean so a capability the backend lacks is visibly false.
@@ -152,75 +152,56 @@ export interface BackendModelList {
 
 // GET /api/agent-backends
 export function listAgentBackends(): Promise<AgentBackendList> {
-  return apiRequest<AgentBackendList>('GET', '/agent-backends')
+  return get<AgentBackendList>('/agent-backends')
 }
 
 // GET /api/agent-backends/diagnostics
 export function fetchAgentDiagnostics(): Promise<AgentDiagnosticsReport> {
-  return apiRequest<AgentDiagnosticsReport>('GET', '/agent-backends/diagnostics')
+  return get<AgentDiagnosticsReport>('/agent-backends/diagnostics')
 }
 
 // GET /api/agent-services/{backend}
 // Observes a backend's machine-level service. Only the platform settings page
 // calls it: no business path starts or stops a service, and none polls it.
 export function getServiceStatus(backend: BackendId): Promise<AgentServiceStatus> {
-  return apiRequest<AgentServiceStatusResponse>(
-    'GET',
-    `/agent-services/${encodeURIComponent(backend)}`,
-  ).then((response) => response.status)
+  return get<AgentServiceStatusResponse>(`/agent-services/${encodeURIComponent(backend)}`).then(
+    (response) => response.status,
+  )
 }
 
 // POST /api/agent-services/{backend}/start
-export function startAgentService(
-  backend: BackendId,
-  csrfToken: string,
-): Promise<AgentServiceStatus> {
-  return apiRequest<AgentServiceStatusResponse>(
+export function startAgentService(backend: BackendId): Promise<AgentServiceStatus> {
+  return mutate<AgentServiceStatusResponse>(
     'POST',
     `/agent-services/${encodeURIComponent(backend)}/start`,
-    { csrfToken },
   ).then((response) => response.status)
 }
 
 // POST /api/agent-services/{backend}/stop
-export function stopAgentService(
-  backend: BackendId,
-  csrfToken: string,
-): Promise<AgentServiceStatus> {
-  return apiRequest<AgentServiceStatusResponse>(
+export function stopAgentService(backend: BackendId): Promise<AgentServiceStatus> {
+  return mutate<AgentServiceStatusResponse>(
     'POST',
     `/agent-services/${encodeURIComponent(backend)}/stop`,
-    { csrfToken },
   ).then((response) => response.status)
 }
 
 // GET /api/projects/{id}/instances
 export function listProjectInstances(projectId: number): Promise<AgentInstanceList> {
-  return apiRequest<AgentInstanceList>('GET', `/projects/${projectId}/instances`)
+  return get<AgentInstanceList>(`/projects/${projectId}/instances`)
 }
 
 // POST /api/projects/{id}/instances
-export function startProjectInstance(
-  projectId: number,
-  backend: BackendId,
-  csrfToken: string,
-): Promise<AgentInstance> {
-  return apiRequest<AgentInstance>('POST', `/projects/${projectId}/instances`, {
-    body: { backend } satisfies StartAgentInstanceBody,
-    csrfToken,
-  })
+export function startProjectInstance(projectId: number, backend: BackendId): Promise<AgentInstance> {
+  return mutate<AgentInstance>('POST', `/projects/${projectId}/instances`, {
+    backend,
+  } satisfies StartAgentInstanceBody)
 }
 
 // POST /api/projects/{id}/instances/{instanceId}/stop
-export function stopProjectInstance(
-  projectId: number,
-  instanceId: string,
-  csrfToken: string,
-): Promise<AgentInstance> {
-  return apiRequest<AgentInstance>(
+export function stopProjectInstance(projectId: number, instanceId: string): Promise<AgentInstance> {
+  return mutate<AgentInstance>(
     'POST',
     `/projects/${projectId}/instances/${encodeURIComponent(instanceId)}/stop`,
-    { csrfToken },
   )
 }
 
@@ -235,8 +216,7 @@ export function listBackendModels(
   refresh = false,
 ): Promise<BackendModelList> {
   const query = refresh ? '?refresh=1' : ''
-  return apiRequest<BackendModelList>(
-    'GET',
+  return get<BackendModelList>(
     `/projects/${projectId}/agent-backends/${encodeURIComponent(backend)}/models${query}`,
   )
 }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAgentsStore } from '../stores/agents'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 import { ApiError, describeApiError } from '../api/client'
 import type { AgentServiceStatus } from '../api/agents'
 
@@ -49,6 +50,7 @@ describe('agent service api and store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     useAuthStore().$patch({ csrfToken: 'csrf-abc' })
+    installTestCSRF('csrf-abc')
   })
 
   afterEach(() => {

@@ -21,7 +21,6 @@ import {
 } from '../api/agents'
 import { describeApiError, UnauthorizedError } from '../api/client'
 import { isHexColor } from '../shared/color'
-import { useAuthStore } from './auth'
 
 export const useAgentsStore = defineStore('agents', {
   state: () => ({
@@ -141,9 +140,8 @@ export const useAgentsStore = defineStore('agents', {
     // Starts the service because the operator asked. A service that is already
     // running is refused by the backend and reported as-is.
     async startService(backend: BackendId): Promise<AgentServiceStatus | null> {
-      const auth = useAuthStore()
       try {
-        const status = await startAgentService(backend, auth.csrfToken)
+        const status = await startAgentService(backend)
         this.services = { ...this.services, [backend]: status }
         this.serviceError = ''
         return status
@@ -157,9 +155,8 @@ export const useAgentsStore = defineStore('agents', {
     // Stops the service because the operator asked, after confirming what that
     // costs the other clients of the same service.
     async stopService(backend: BackendId): Promise<AgentServiceStatus | null> {
-      const auth = useAuthStore()
       try {
-        const status = await stopAgentService(backend, auth.csrfToken)
+        const status = await stopAgentService(backend)
         this.services = { ...this.services, [backend]: status }
         this.serviceError = ''
         return status
@@ -193,9 +190,8 @@ export const useAgentsStore = defineStore('agents', {
     },
 
     async startInstance(projectId: number, backend: BackendId) {
-      const auth = useAuthStore()
       try {
-        const created = await startProjectInstance(projectId, backend, auth.csrfToken)
+        const created = await startProjectInstance(projectId, backend)
         this.instances = [...this.instances, created]
         this.error = ''
         return created
@@ -210,9 +206,8 @@ export const useAgentsStore = defineStore('agents', {
     },
 
     async stopInstance(projectId: number, instanceId: string) {
-      const auth = useAuthStore()
       try {
-        const stopped = await stopProjectInstance(projectId, instanceId, auth.csrfToken)
+        const stopped = await stopProjectInstance(projectId, instanceId)
         this.instances = this.instances.map((entry) =>
           entry.id === instanceId ? stopped : entry,
         )

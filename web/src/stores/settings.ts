@@ -18,7 +18,6 @@ import {
 } from '../api/settings'
 import { describeApiError, UnauthorizedError } from '../api/client'
 import { applyAppearance, CACHE_KEY } from '../theme/apply'
-import { useAuthStore } from './auth'
 
 function cacheAppearance(appearance: Appearance): void {
   try {
@@ -63,7 +62,7 @@ export const useSettingsStore = defineStore('settings', {
       const next = { ...this.appearance, ...patch }
       this.saving = true
       try {
-        const saved = await putAppearance(next, useAuthStore().csrfToken)
+        const saved = await putAppearance(next)
         this.appearance = saved
         applyAppearance(saved)
         cacheAppearance(saved)
@@ -94,7 +93,7 @@ export const useSettingsStore = defineStore('settings', {
 
     async setAgentEnabled(backend: string, enabled: boolean): Promise<void> {
       try {
-        await setAgentEnabled(backend, enabled, useAuthStore().csrfToken)
+        await setAgentEnabled(backend, enabled)
         await this.loadAgents()
       } catch (error) {
         if (error instanceof UnauthorizedError) return
@@ -104,7 +103,7 @@ export const useSettingsStore = defineStore('settings', {
 
     async setAgentPath(backend: string, path: string): Promise<boolean> {
       try {
-        await setAgentPath(backend, path, useAuthStore().csrfToken)
+        await setAgentPath(backend, path)
         await this.loadAgents()
         return true
       } catch (error) {
@@ -116,7 +115,7 @@ export const useSettingsStore = defineStore('settings', {
 
     async setAgentMode(backend: string, mode: string): Promise<boolean> {
       try {
-        await setAgentMode(backend, mode, useAuthStore().csrfToken)
+        await setAgentMode(backend, mode)
         await this.loadAgents()
         return true
       } catch (error) {
@@ -128,7 +127,7 @@ export const useSettingsStore = defineStore('settings', {
 
     async detectAgent(backend: string): Promise<AgentDetection | null> {
       try {
-        const detection = await detectAgent(backend, useAuthStore().csrfToken)
+        const detection = await detectAgent(backend)
         await this.loadAgents()
         return detection
       } catch (error) {

@@ -6,6 +6,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AgentSettings from '../features/settings/AgentSettings.vue'
 import { useAuthStore } from '../stores/auth'
+import { installTestCSRF } from './csrf-fixture'
 import { useAgentsStore } from '../stores/agents'
 import type { AgentServiceStatus } from '../api/agents'
 
@@ -61,7 +62,8 @@ function stubFetch(extra: Record<string, unknown> = {}) {
 async function mountView() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useAuthStore().$patch({ authenticated: true, csrfToken: 'csrf-1' })
+  useAuthStore().$patch({ authenticated: true })
+  installTestCSRF('csrf-1')
   const wrapper = mount(AgentSettings, { global: { plugins: [pinia] } })
   await flushPromises()
   return wrapper

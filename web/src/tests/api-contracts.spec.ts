@@ -112,30 +112,31 @@ describe('session history API contract', () => {
 
 describe('settings and model API contracts', () => {
   it('reads and writes appearance at /settings/appearance', async () => {
+    installTestCSRF()
     const calls = stubJson({})
 
     await getAppearance()
     expect(calls[0].url).toBe('/api/settings/appearance')
     expect(calls[0].init?.method).toBe('GET')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBeUndefined()
 
-    await putAppearance(
-      { theme: 'light', fontSize: 14, density: 'standard' },
-      'csrf-1',
-    )
+    await putAppearance({ theme: 'light', fontSize: 14, density: 'standard' })
     expect(calls[1].url).toBe('/api/settings/appearance')
     expect(calls[1].init?.method).toBe('PUT')
-    expect(headersOf(calls[1])['X-CSRF-Token']).toBe('csrf-1')
+    expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 
   it('lists agents and toggles platform enablement', async () => {
+    installTestCSRF()
     const calls = stubJson({})
 
     await listAgents()
     expect(calls[0].url).toBe('/api/agents')
 
-    await setAgentEnabled('pi', false, 'csrf-2')
+    await setAgentEnabled('pi', false)
     expect(calls[1].url).toBe('/api/agents/pi')
     expect(calls[1].init?.method).toBe('PUT')
+    expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
     expect(JSON.parse(String(calls[1].init?.body))).toEqual({ enabled: false })
   })
 

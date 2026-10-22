@@ -1,7 +1,7 @@
 // Appearance settings API calls. The Appearance DTO mirrors the server's
 // settings.Appearance and docs/api/openapi.yaml; the preset metadata lives in
 // theme/presets.ts so the client and the theme application share one type.
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 import type { Appearance } from '../theme/presets'
 
 export type { Appearance }
@@ -16,11 +16,11 @@ export const defaultAppearance: Appearance = {
 }
 
 export function getAppearance(): Promise<Appearance> {
-  return apiRequest<Appearance>('GET', '/settings/appearance')
+  return get<Appearance>('/settings/appearance')
 }
 
-export function putAppearance(appearance: Appearance, csrfToken: string): Promise<Appearance> {
-  return apiRequest<Appearance>('PUT', '/settings/appearance', { body: appearance, csrfToken })
+export function putAppearance(appearance: Appearance): Promise<Appearance> {
+  return mutate<Appearance>('PUT', '/settings/appearance', appearance)
 }
 
 // Agent management DTOs and calls. enabled gates new session creation; pathSource
@@ -53,36 +53,21 @@ export interface AgentDetection {
 }
 
 export function listAgents(): Promise<AgentList> {
-  return apiRequest<AgentList>('GET', '/agents')
+  return get<AgentList>('/agents')
 }
 
-export function setAgentEnabled(
-  backend: string,
-  enabled: boolean,
-  csrfToken: string,
-): Promise<AgentDto> {
-  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}`, {
-    body: { enabled },
-    csrfToken,
-  })
+export function setAgentEnabled(backend: string, enabled: boolean): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}`, { enabled })
 }
 
-export function setAgentPath(backend: string, path: string, csrfToken: string): Promise<AgentDto> {
-  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/path`, {
-    body: { path },
-    csrfToken,
-  })
+export function setAgentPath(backend: string, path: string): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/path`, { path })
 }
 
-export function setAgentMode(backend: string, mode: string, csrfToken: string): Promise<AgentDto> {
-  return apiRequest<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/mode`, {
-    body: { mode },
-    csrfToken,
-  })
+export function setAgentMode(backend: string, mode: string): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/mode`, { mode })
 }
 
-export function detectAgent(backend: string, csrfToken: string): Promise<AgentDetection> {
-  return apiRequest<AgentDetection>('POST', `/agents/${encodeURIComponent(backend)}/detect`, {
-    csrfToken,
-  })
+export function detectAgent(backend: string): Promise<AgentDetection> {
+  return mutate<AgentDetection>('POST', `/agents/${encodeURIComponent(backend)}/detect`)
 }
