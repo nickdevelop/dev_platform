@@ -20,7 +20,6 @@ import {
   type TestInput,
 } from '../api/models'
 import { describeApiError, UnauthorizedError } from '../api/client'
-import { useAuthStore } from './auth'
 
 export const useModelsStore = defineStore('models', {
   state: () => ({
@@ -51,8 +50,8 @@ export const useModelsStore = defineStore('models', {
     // saveService creates a service when id is omitted, otherwise updates it.
     async saveService(input: ServiceInput, id?: number): Promise<boolean> {
       try {
-        if (id === undefined) await createService(input, useAuthStore().csrfToken)
-        else await updateService(id, input, useAuthStore().csrfToken)
+        if (id === undefined) await createService(input)
+        else await updateService(id, input)
         await this.load()
         return true
       } catch (error) {
@@ -64,7 +63,7 @@ export const useModelsStore = defineStore('models', {
 
     async removeService(id: number): Promise<boolean> {
       try {
-        await deleteService(id, useAuthStore().csrfToken)
+        await deleteService(id)
         await this.load()
         return true
       } catch (error) {
@@ -76,7 +75,7 @@ export const useModelsStore = defineStore('models', {
 
     async addModelTo(serviceId: number, input: ModelInput): Promise<boolean> {
       try {
-        await addModel(serviceId, input, useAuthStore().csrfToken)
+        await addModel(serviceId, input)
         await this.load()
         return true
       } catch (error) {
@@ -88,7 +87,7 @@ export const useModelsStore = defineStore('models', {
 
     async saveModel(id: number, input: ModelInput): Promise<boolean> {
       try {
-        await updateModel(id, input, useAuthStore().csrfToken)
+        await updateModel(id, input)
         await this.load()
         return true
       } catch (error) {
@@ -100,7 +99,7 @@ export const useModelsStore = defineStore('models', {
 
     async removeModel(id: number): Promise<boolean> {
       try {
-        await deleteModel(id, useAuthStore().csrfToken)
+        await deleteModel(id)
         await this.load()
         return true
       } catch (error) {

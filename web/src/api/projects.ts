@@ -2,7 +2,7 @@
 // docs/api/openapi.yaml (schemas Project, ProjectList and the project request
 // bodies); they stay JSON-stable and independent of Go struct shapes.
 
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 
 // Mirrors #/components/schemas/Project.
 export interface Project {
@@ -17,61 +17,38 @@ export interface ProjectList {
 }
 
 export function listProjects(): Promise<ProjectList> {
-  return apiRequest<ProjectList>('GET', '/projects')
+  return get<ProjectList>('/projects')
 }
 
 // Mirrors #/components/schemas/RegisterProjectRequest.
-export function registerProject(path: string, csrfToken: string): Promise<Project> {
-  return apiRequest<Project>('POST', '/projects', { body: { path }, csrfToken })
+export function registerProject(path: string): Promise<Project> {
+  return mutate<Project>('POST', '/projects', { path })
 }
 
 // Mirrors #/components/schemas/CreateProjectRequest.
-export function createProject(parent: string, name: string, csrfToken: string): Promise<Project> {
-  return apiRequest<Project>('POST', '/projects/create', { body: { parent, name }, csrfToken })
+export function createProject(parent: string, name: string): Promise<Project> {
+  return mutate<Project>('POST', '/projects/create', { parent, name })
 }
 
 // Mirrors #/components/schemas/MoveProjectRequest.
-export function moveProject(
-  id: number,
-  path: string,
-  confirmName: string,
-  csrfToken: string,
-): Promise<Project> {
-  return apiRequest<Project>('POST', `/projects/${id}/move`, {
-    body: { path, confirmName },
-    csrfToken,
-  })
+export function moveProject(id: number, path: string, confirmName: string): Promise<Project> {
+  return mutate<Project>('POST', `/projects/${id}/move`, { path, confirmName })
 }
 
 // Mirrors #/components/schemas/RenameProjectRequest.
-export function renameProject(
-  id: number,
-  name: string,
-  confirmName: string,
-  csrfToken: string,
-): Promise<Project> {
-  return apiRequest<Project>('POST', `/projects/${id}/rename`, {
-    body: { name, confirmName },
-    csrfToken,
-  })
+export function renameProject(id: number, name: string, confirmName: string): Promise<Project> {
+  return mutate<Project>('POST', `/projects/${id}/rename`, { name, confirmName })
 }
 
 // Updates only the project's display name without touching the directory on disk.
-export function updateProjectName(
-  id: number,
-  name: string,
-  csrfToken: string,
-): Promise<Project> {
-  return apiRequest<Project>('POST', `/projects/${id}/name`, {
-    body: { name },
-    csrfToken,
-  })
+export function updateProjectName(id: number, name: string): Promise<Project> {
+  return mutate<Project>('POST', `/projects/${id}/name`, { name })
 }
 
 // Removes the project from the platform, stopping its live instances first; the
 // directory on disk is never touched.
-export function unregisterProject(id: number, csrfToken: string): Promise<void> {
-  return apiRequest<void>('POST', `/projects/${id}/unregister`, { csrfToken })
+export function unregisterProject(id: number): Promise<void> {
+  return mutate<void>('POST', `/projects/${id}/unregister`)
 }
 
 export interface FileItem {
@@ -92,5 +69,5 @@ export function searchProjectFiles(
   if (query) params.set('q', query)
   if (limit) params.set('limit', String(limit))
   const qs = params.toString() ? `?${params.toString()}` : ''
-  return apiRequest<ProjectFilesResponse>('GET', `/projects/${projectId}/files${qs}`)
+  return get<ProjectFilesResponse>(`/projects/${projectId}/files${qs}`)
 }

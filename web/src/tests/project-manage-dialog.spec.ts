@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
 import type { Project } from '../api/projects'
+import { installTestCSRF } from './csrf-fixture'
 
 const project: Project = { id: 7, name: 'alpha', path: '/workspace/alpha' } as Project
 
@@ -29,6 +30,7 @@ function confirmButton(wrapper: ReturnType<typeof mountDialog>) {
 describe('ProjectManageDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    installTestCSRF()
   })
 
   afterEach(() => {

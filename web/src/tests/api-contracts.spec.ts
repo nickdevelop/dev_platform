@@ -7,6 +7,7 @@ import { listBackendModels } from '../api/agents'
 import { getProjectGitInfo } from '../api/git'
 import { createService, fetchModels, testModel } from '../api/models'
 import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
+import { installTestCSRF, testCSRFToken } from './csrf-fixture'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -139,16 +140,24 @@ describe('settings and model API contracts', () => {
   })
 
   it('creates a service, fetches models and tests a model', async () => {
+    installTestCSRF()
     const calls = stubJson({})
 
-    await createService({ name: 's', baseUrl: 'https://x/v1', apiKey: 'k', enabled: true }, 'csrf-3')
+    await createService({ name: 's', baseUrl: 'https://x/v1', apiKey: 'k', enabled: true })
     expect(calls[0].url).toBe('/api/model-services')
     expect(calls[0].init?.method).toBe('POST')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
 
+    // Both probes are POSTs that the transport must sign: a regression here is
+    // exactly the 403 invalid_csrf_token this contract was added for.
     await fetchModels({ baseUrl: 'https://x/v1', apiKey: 'k' })
     expect(calls[1].url).toBe('/api/model-services/fetch-models')
+    expect(calls[1].init?.method).toBe('POST')
+    expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
 
     await testModel({ baseUrl: 'https://x/v1', modelId: 'm' })
     expect(calls[2].url).toBe('/api/models/test')
+    expect(calls[2].init?.method).toBe('POST')
+    expect(headersOf(calls[2])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 })

@@ -15,7 +15,6 @@ import {
   unregisterProject,
   type Project,
 } from '../../api/projects'
-import { useAuthStore } from '../../stores/auth'
 import AppDialog from '../../shared/components/AppDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
@@ -30,7 +29,6 @@ const emit = defineEmits<{
   submitted: [kind: DialogKind]
 }>()
 
-const auth = useAuthStore()
 
 const dialogError = ref('')
 const submitting = ref(false)
@@ -103,22 +101,22 @@ async function submit() {
   try {
     switch (kind) {
       case 'register':
-        await registerProject(pathInput.value.trim(), auth.csrfToken)
+        await registerProject(pathInput.value.trim())
         break
       case 'create':
-        await createProject(pathInput.value.trim(), nameInput.value.trim(), auth.csrfToken)
+        await createProject(pathInput.value.trim(), nameInput.value.trim())
         break
       case 'move':
-        await moveProject(project!.id, pathInput.value.trim(), confirmNameInput.value, auth.csrfToken)
+        await moveProject(project!.id, pathInput.value.trim(), confirmNameInput.value)
         break
       case 'rename':
-        await renameProject(project!.id, nameInput.value.trim(), confirmNameInput.value, auth.csrfToken)
+        await renameProject(project!.id, nameInput.value.trim(), confirmNameInput.value)
         break
       case 'rename-name':
-        await updateProjectName(project!.id, nameInput.value.trim(), auth.csrfToken)
+        await updateProjectName(project!.id, nameInput.value.trim())
         break
       case 'unregister':
-        await unregisterProject(project!.id, auth.csrfToken)
+        await unregisterProject(project!.id)
         break
     }
     emit('submitted', kind)

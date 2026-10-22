@@ -1,7 +1,7 @@
 // Model management API calls. DTOs mirror docs/api/openapi.yaml model schemas
 // and the server's modelconfig DTOs; the API key is write-only and never
 // returned (services expose hasKey and an opaque secretRef).
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 
 export interface ModelDto {
   id: number
@@ -70,50 +70,40 @@ export interface ModelTestResult {
 }
 
 export function listServices(): Promise<ServiceList> {
-  return apiRequest<ServiceList>('GET', '/model-services')
+  return get<ServiceList>('/model-services')
 }
 
-export function createService(input: ServiceInput, csrfToken: string): Promise<ServiceDto> {
-  return apiRequest<ServiceDto>('POST', '/model-services', { body: input, csrfToken })
+export function createService(input: ServiceInput): Promise<ServiceDto> {
+  return mutate<ServiceDto>('POST', '/model-services', input)
 }
 
-export function updateService(
-  id: number,
-  input: ServiceInput,
-  csrfToken: string,
-): Promise<ServiceDto> {
-  return apiRequest<ServiceDto>('PUT', `/model-services/${id}`, { body: input, csrfToken })
+export function updateService(id: number, input: ServiceInput): Promise<ServiceDto> {
+  return mutate<ServiceDto>('PUT', `/model-services/${id}`, input)
 }
 
-export function deleteService(id: number, csrfToken: string): Promise<void> {
-  return apiRequest<void>('DELETE', `/model-services/${id}`, { csrfToken })
+export function deleteService(id: number): Promise<void> {
+  return mutate<void>('DELETE', `/model-services/${id}`)
 }
 
-export function addModel(
-  serviceId: number,
-  input: ModelInput,
-  csrfToken: string,
-): Promise<ModelDto> {
-  return apiRequest<ModelDto>('POST', `/model-services/${serviceId}/models`, {
-    body: input,
-    csrfToken,
-  })
+export function addModel(serviceId: number, input: ModelInput): Promise<ModelDto> {
+  return mutate<ModelDto>('POST', `/model-services/${serviceId}/models`, input)
 }
 
-export function updateModel(id: number, input: ModelInput, csrfToken: string): Promise<ModelDto> {
-  return apiRequest<ModelDto>('PUT', `/models/${id}`, { body: input, csrfToken })
+export function updateModel(id: number, input: ModelInput): Promise<ModelDto> {
+  return mutate<ModelDto>('PUT', `/models/${id}`, input)
 }
 
-export function deleteModel(id: number, csrfToken: string): Promise<void> {
-  return apiRequest<void>('DELETE', `/models/${id}`, { csrfToken })
+export function deleteModel(id: number): Promise<void> {
+  return mutate<void>('DELETE', `/models/${id}`)
 }
 
+// fetchModels is a POST even though it reads: it carries the service URL and
+// key in the body and makes the server call the upstream /models endpoint.
+// mutate() is what guarantees the CSRF header on that call.
 export function fetchModels(input: ProbeInput): Promise<{ models: RemoteModel[] }> {
-  return apiRequest<{ models: RemoteModel[] }>('POST', '/model-services/fetch-models', {
-    body: input,
-  })
+  return mutate<{ models: RemoteModel[] }>('POST', '/model-services/fetch-models', input)
 }
 
 export function testModel(input: TestInput): Promise<ModelTestResult> {
-  return apiRequest<ModelTestResult>('POST', '/models/test', { body: input })
+  return mutate<ModelTestResult>('POST', '/models/test', input)
 }
