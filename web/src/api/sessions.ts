@@ -5,7 +5,7 @@
 // mirrors the backend's agents.NormalizedEvent JSON envelope; only the fields
 // the workbench renders are typed.
 
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 import type { BackendId, Capabilities } from './agents'
 import type { FormInfo, PermissionRequest } from './interactions'
 
@@ -240,19 +240,15 @@ export function listProjectSessions(
   }
   const qs = params.toString()
   const query = qs ? `?${qs}` : ''
-  return apiRequest<AgentSessionList>('GET', `/projects/${projectId}/sessions${query}`)
+  return get<AgentSessionList>(`/projects/${projectId}/sessions${query}`)
 }
 
 // POST /api/projects/{id}/sessions
 export function createProjectSession(
   projectId: number,
   body: CreateSessionBody,
-  csrfToken: string,
 ): Promise<CreateSessionResult> {
-  return apiRequest<CreateSessionResult>('POST', `/projects/${projectId}/sessions`, {
-    body,
-    csrfToken,
-  })
+  return mutate<CreateSessionResult>('POST', `/projects/${projectId}/sessions`, body)
 }
 
 // GET /api/projects/{id}/sessions/{sessionId}/history
@@ -260,8 +256,7 @@ export function getSessionHistory(
   projectId: number,
   sessionId: string,
 ): Promise<SessionHistory> {
-  return apiRequest<SessionHistory>(
-    'GET',
+  return get<SessionHistory>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/history`,
   )
 }
@@ -270,12 +265,10 @@ export function getSessionHistory(
 export function continueProjectSession(
   projectId: number,
   sessionId: string,
-  csrfToken: string,
 ): Promise<AgentSession> {
-  return apiRequest<AgentSession>(
+  return mutate<AgentSession>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/continue`,
-    { csrfToken },
   )
 }
 
@@ -284,12 +277,11 @@ export function sendProjectSessionMessage(
   projectId: number,
   sessionId: string,
   body: SendMessageBody,
-  csrfToken: string,
 ): Promise<AgentSession> {
-  return apiRequest<AgentSession>(
+  return mutate<AgentSession>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/messages`,
-    { body, csrfToken },
+    body,
   )
 }
 
@@ -297,12 +289,10 @@ export function sendProjectSessionMessage(
 export function stopProjectSession(
   projectId: number,
   sessionId: string,
-  csrfToken: string,
 ): Promise<AgentSession> {
-  return apiRequest<AgentSession>(
+  return mutate<AgentSession>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/stop`,
-    { csrfToken },
   )
 }
 
@@ -310,26 +300,19 @@ export function stopProjectSession(
 export function interruptProjectSession(
   projectId: number,
   sessionId: string,
-  csrfToken: string,
 ): Promise<AgentSession> {
-  return apiRequest<AgentSession>(
+  return mutate<AgentSession>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/interrupt`,
-    { csrfToken },
   )
 }
 
 // DELETE /api/projects/{id}/sessions/{sessionId}. Removes the platform's index
 // entry only; the agent-native session is not touched.
-export function deleteProjectSession(
-  projectId: number,
-  sessionId: string,
-  csrfToken: string,
-): Promise<void> {
-  return apiRequest<void>(
+export function deleteProjectSession(projectId: number, sessionId: string): Promise<void> {
+  return mutate<void>(
     'DELETE',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}`,
-    { csrfToken },
   )
 }
 
@@ -366,8 +349,7 @@ export function listSessionCommands(
   projectId: number,
   sessionId: string,
 ): Promise<SessionCommandsResponse> {
-  return apiRequest<SessionCommandsResponse>(
-    'GET',
+  return get<SessionCommandsResponse>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/commands`,
   )
 }

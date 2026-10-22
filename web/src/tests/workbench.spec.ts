@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/auth'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
+import { installTestCSRF } from './csrf-fixture'
 
 // A fully-false capability declaration: the workbench must expose no controls.
 function noCapabilities(overrides: Partial<Capabilities> = {}): Capabilities {
@@ -213,6 +214,10 @@ afterEach(() => {
   vi.restoreAllMocks()
   FakeEventSource.instances = []
 })
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('session list', () => {
   beforeEach(() => {

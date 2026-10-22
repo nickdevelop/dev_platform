@@ -36,9 +36,10 @@ function headersOf(call: Call): Record<string, string> {
 
 describe('session API contracts', () => {
   it('creates a session with { backend, title } and never sends instanceId', async () => {
+    installTestCSRF()
     const calls = stubJson({ id: 's1' })
 
-    await createProjectSession(7, { backend: 'pi', title: 'Hello' }, 'csrf-1')
+    await createProjectSession(7, { backend: 'pi', title: 'Hello' })
 
     expect(calls).toHaveLength(1)
     expect(calls[0].url).toBe('/api/projects/7/sessions')
@@ -46,17 +47,18 @@ describe('session API contracts', () => {
     const body = JSON.parse(String(calls[0].init?.body))
     expect(body).toEqual({ backend: 'pi', title: 'Hello' })
     expect(body).not.toHaveProperty('instanceId')
-    expect(headersOf(calls[0])['X-CSRF-Token']).toBe('csrf-1')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 
   it('interrupts a session through the interrupt route', async () => {
+    installTestCSRF()
     const calls = stubJson({ id: 's1', turn: 'idle' })
 
-    await interruptProjectSession(7, 'ses/1', 'csrf-2')
+    await interruptProjectSession(7, 'ses/1')
 
     expect(calls[0].url).toBe('/api/projects/7/sessions/ses%2F1/interrupt')
     expect(calls[0].init?.method).toBe('POST')
-    expect(headersOf(calls[0])['X-CSRF-Token']).toBe('csrf-2')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 })
 

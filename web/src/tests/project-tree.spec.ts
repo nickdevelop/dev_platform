@@ -12,6 +12,7 @@ import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import type { AgentSession, Capabilities } from '../api/sessions'
 import type { Project } from '../api/projects'
+import { installTestCSRF } from './csrf-fixture'
 
 function noCapabilities(): Capabilities {
   return {
@@ -89,6 +90,10 @@ function mountTree(props: {
   mounted.push(wrapper)
   return wrapper
 }
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('ProjectTree', () => {
   beforeEach(() => {

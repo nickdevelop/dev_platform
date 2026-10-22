@@ -33,7 +33,6 @@ import {
   type TurnPayload,
 } from '../api/sessions'
 import { ApiError, describeApiError, UnauthorizedError } from '../api/client'
-import { useAuthStore } from './auth'
 import { useInteractionsStore } from './interactions'
 import {
   clearResumePositions,
@@ -250,9 +249,8 @@ export const useSessionsStore = defineStore('sessions', {
     },
 
     async createSession(projectId: number, body: CreateSessionBody) {
-      const auth = useAuthStore()
       try {
-        const result = await createProjectSession(projectId, body, auth.csrfToken)
+        const result = await createProjectSession(projectId, body)
         const created = result.session
         this.sessions = [...this.sessions, created]
         this.revision++
@@ -292,9 +290,8 @@ export const useSessionsStore = defineStore('sessions', {
     // session's stream and drops its local state so nothing stale can render;
     // the agent-native transcript is untouched and may be rediscovered later.
     async deleteSession(projectId: number, sessionId: string): Promise<boolean> {
-      const auth = useAuthStore()
       try {
-        await deleteProjectSession(projectId, sessionId, auth.csrfToken)
+        await deleteProjectSession(projectId, sessionId)
       } catch (error) {
         if (error instanceof UnauthorizedError) return false
         this.error = describeApiError(error)
@@ -329,8 +326,7 @@ export const useSessionsStore = defineStore('sessions', {
     // The stream machinery lives in ../features/chat/execution/SessionEventStream.ts;
     // these actions are thin delegations so the store's public API is unchanged.
     async subscribe(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
-      return subscribeSession(this, projectId, sessionId, auth.csrfToken)
+      return subscribeSession(this, projectId, sessionId)
     },
 
     // rebuildFromHistory replays a session's transcript after a resync. It
@@ -362,13 +358,11 @@ export const useSessionsStore = defineStore('sessions', {
 
     // Re-opens a stream after a terminal error, keeping the message log.
     async resubscribe(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
-      return resubscribeSession(this, projectId, sessionId, auth.csrfToken)
+      return resubscribeSession(this, projectId, sessionId)
     },
 
     async unsubscribe(sessionId: string) {
-      const auth = useAuthStore()
-      return closeSessionStream(this, sessionId, auth.csrfToken)
+      return closeSessionStream(this, sessionId)
     },
 
     unsubscribeAll() {
@@ -377,13 +371,11 @@ export const useSessionsStore = defineStore('sessions', {
 
     // Multiplexed EventBus streaming: one long connection for the entire window
     async subscribeBus(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
-      return subscribeSessionOnBus(this, projectId, sessionId, auth.csrfToken)
+      return subscribeSessionOnBus(this, projectId, sessionId)
     },
 
     async unsubscribeBus(sessionId: string) {
-      const auth = useAuthStore()
-      return unsubscribeSessionFromBus(this, sessionId, auth.csrfToken)
+      return unsubscribeSessionFromBus(this, sessionId)
     },
 
     closeAllBus() {
@@ -750,7 +742,6 @@ export const useSessionsStore = defineStore('sessions', {
       model?: string,
       images?: ImageAttachment[],
     ) {
-      const auth = useAuthStore()
       const trimmed = text.trim()
       if (trimmed === '' && (!images || images.length === 0)) return null
       // Show the user's turn immediately; the stream echo is matched against
@@ -771,12 +762,7 @@ export const useSessionsStore = defineStore('sessions', {
         const body: SendMessageBody = { text: trimmed }
         if (model) body.model = model
         if (images && images.length > 0) body.images = images
-        const updated = await sendProjectSessionMessage(
-          projectId,
-          sessionId,
-          body,
-          auth.csrfToken,
-        )
+        const updated = await sendProjectSessionMessage(projectId, sessionId, body)
         if (updated) {
           this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
           for (const pId in this.sessionsByProject) {
@@ -795,9 +781,8 @@ export const useSessionsStore = defineStore('sessions', {
     },
 
     async continueSession(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
       try {
-        const updated = await continueProjectSession(projectId, sessionId, auth.csrfToken)
+        const updated = await continueProjectSession(projectId, sessionId)
         if (updated?.turn) {
           this.sessionTurns[sessionId] = updated.turn
         }
@@ -831,9 +816,8 @@ export const useSessionsStore = defineStore('sessions', {
     // turn and say it is still running. An interrupt can only end a turn, so a
     // turn the live stream has settled is never rewound.
     async interrupt(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
       try {
-        const interrupted = await interruptProjectSession(projectId, sessionId, auth.csrfToken)
+        const interrupted = await interruptProjectSession(projectId, sessionId)
         this.sessions = this.sessions.map((entry) =>
           entry.id === sessionId ? keepSettledTurn(entry, interrupted) : entry,
         )
@@ -850,9 +834,8 @@ export const useSessionsStore = defineStore('sessions', {
     // session is marked stopped. The instance and the session's siblings are
     // untouched, because each session has its own run.
     async stopSession(projectId: number, sessionId: string) {
-      const auth = useAuthStore()
       try {
-        const stopped = await stopProjectSession(projectId, sessionId, auth.csrfToken)
+        const stopped = await stopProjectSession(projectId, sessionId)
         this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? stopped : entry))
         this.error = ''
         return stopped

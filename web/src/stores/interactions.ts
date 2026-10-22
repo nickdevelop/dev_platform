@@ -14,7 +14,6 @@ import {
 } from '../api/interactions'
 import type { InteractionPayload, InteractionSnapshot } from '../api/sessions'
 import { describeApiError, UnauthorizedError, ApiError } from '../api/client'
-import { useAuthStore } from './auth'
 
 export const useInteractionsStore = defineStore('interactions', {
   state: () => ({
@@ -71,9 +70,8 @@ export const useInteractionsStore = defineStore('interactions', {
       requestId: string,
       decision: PermissionDecision,
     ): Promise<boolean> {
-      const auth = useAuthStore()
       try {
-        await replyPermissionRequest(projectId, sessionId, requestId, { decision }, auth.csrfToken)
+        await replyPermissionRequest(projectId, sessionId, requestId, { decision })
         this.permissions[sessionId] = (this.permissions[sessionId] ?? []).filter(
           (entry) => entry.id !== requestId,
         )
@@ -99,9 +97,8 @@ export const useInteractionsStore = defineStore('interactions', {
       formId: string,
       answer: Record<string, unknown>,
     ): Promise<boolean> {
-      const auth = useAuthStore()
       try {
-        await replyFormInfo(projectId, sessionId, formId, { answer }, auth.csrfToken)
+        await replyFormInfo(projectId, sessionId, formId, { answer })
         this.forms[sessionId] = (this.forms[sessionId] ?? []).filter((entry) => entry.id !== formId)
         this.error = ''
         return true

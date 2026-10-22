@@ -9,6 +9,7 @@ import { useSessionsStore } from '../stores/sessions'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
+import { installTestCSRF } from './csrf-fixture'
 
 function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
   return {
@@ -142,6 +143,10 @@ function mountPanel(sessionId: string) {
     global: { plugins: [testRouter()] },
   })
 }
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
   beforeEach(() => {

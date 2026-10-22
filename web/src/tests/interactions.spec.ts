@@ -6,6 +6,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useInteractionsStore } from '../stores/interactions'
 import * as interactionsApi from '../api/interactions'
+import { installTestCSRF } from './csrf-fixture'
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('interactions store', () => {
   beforeEach(() => {
@@ -100,7 +105,7 @@ describe('interactions store', () => {
     ]
     const ok = await store.replyPermission(1, 'sess-1', 'per_1', 'once')
     expect(ok).toBe(true)
-    expect(reply).toHaveBeenCalledWith(1, 'sess-1', 'per_1', { decision: 'once' }, expect.any(String))
+    expect(reply).toHaveBeenCalledWith(1, 'sess-1', 'per_1', { decision: 'once' })
     expect(store.permissionsFor('sess-1')).toHaveLength(0)
   })
 

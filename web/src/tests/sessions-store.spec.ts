@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useSessionsStore } from '../stores/sessions'
 import { useAuthStore } from '../stores/auth'
 import type { AgentSession, Capabilities } from '../api/sessions'
+import { installTestCSRF } from './csrf-fixture'
 
 function capabilities(): Capabilities {
   return {
@@ -59,6 +60,10 @@ function deferredLists() {
   )
   return pending
 }
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('sessions store project list', () => {
   beforeEach(() => {

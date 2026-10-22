@@ -10,6 +10,7 @@ import {
 } from '../features/chat/execution/EventBusClient'
 import type { StreamStore } from '../features/chat/execution/SessionEventStream'
 import type { SubscriptionSnapshot } from '../api/events'
+import { installTestCSRF } from './csrf-fixture'
 
 class MockEventSource {
   static instances: MockEventSource[] = []
@@ -76,6 +77,10 @@ function createMockStore(): StreamStore {
     rebuildFromHistory: vi.fn().mockResolvedValue(undefined),
   }
 }
+
+// The transport refuses mutating requests without a token source; the app
+// installs the real provider in main.ts, which these specs never run.
+installTestCSRF()
 
 describe('EventBusClient', () => {
   let store: StreamStore

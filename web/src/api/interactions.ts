@@ -4,7 +4,7 @@
 // operations live here. DTOs mirror docs/api/openapi.yaml
 // (PermissionRequest/FormInfo) and stay JSON-stable.
 
-import { apiRequest } from './client'
+import { get, mutate } from './client'
 
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
@@ -39,8 +39,7 @@ export function listPermissionRequests(
   projectId: number,
   sessionId: string,
 ): Promise<PermissionListResponse> {
-  return apiRequest<PermissionListResponse>(
-    'GET',
+  return get<PermissionListResponse>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/permission`,
   )
 }
@@ -51,19 +50,17 @@ export function replyPermissionRequest(
   sessionId: string,
   requestId: string,
   body: { decision: PermissionDecision; message?: string },
-  csrfToken: string,
 ): Promise<void> {
-  return apiRequest<void>(
+  return mutate<void>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/permission/${encodeURIComponent(requestId)}/reply`,
-    { body, csrfToken },
+    body,
   )
 }
 
 // GET /api/projects/{id}/sessions/{sessionId}/form
 export function listFormInfos(projectId: number, sessionId: string): Promise<FormListResponse> {
-  return apiRequest<FormListResponse>(
-    'GET',
+  return get<FormListResponse>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/form`,
   )
 }
@@ -74,12 +71,11 @@ export function replyFormInfo(
   sessionId: string,
   formId: string,
   body: { answer: Record<string, unknown> },
-  csrfToken: string,
 ): Promise<void> {
-  return apiRequest<void>(
+  return mutate<void>(
     'POST',
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/form/${encodeURIComponent(formId)}/reply`,
-    { body, csrfToken },
+    body,
   )
 }
 

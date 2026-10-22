@@ -84,16 +84,16 @@ export function openStreamIds(): string[] {
 }
 
 // subscribeSession delegates to the multiplexed event bus.
-export function subscribeSession(store: StreamStore, projectId: number, sessionId: string, csrfToken?: string) {
-  return subscribeSessionOnBus(store, projectId, sessionId, csrfToken)
+export function subscribeSession(store: StreamStore, projectId: number, sessionId: string) {
+  return subscribeSessionOnBus(store, projectId, sessionId)
 }
 
-export function resubscribeSession(store: StreamStore, projectId: number, sessionId: string, csrfToken?: string) {
-  return resubscribeSessionOnBus(store, projectId, sessionId, csrfToken)
+export function resubscribeSession(store: StreamStore, projectId: number, sessionId: string) {
+  return resubscribeSessionOnBus(store, projectId, sessionId)
 }
 
-export function closeSessionStream(store: StreamStore, sessionId: string, csrfToken?: string) {
-  return unsubscribeSessionFromBus(store, sessionId, csrfToken)
+export function closeSessionStream(store: StreamStore, sessionId: string) {
+  return unsubscribeSessionFromBus(store, sessionId)
 }
 
 export function closeAllSessionStreams(store: StreamStore) {

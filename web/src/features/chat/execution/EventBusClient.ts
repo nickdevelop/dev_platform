@@ -36,8 +36,10 @@ export function resetBusId() {
 let busSource: EventSource | null = null
 let currentBusStatus: StreamStatus = 'idle'
 
-// Map of subscribed sessions: sessionId -> { projectId, csrfToken }
-const subscribedSessions = new Map<string, { projectId: number; csrfToken?: string }>()
+// Map of subscribed sessions: sessionId -> projectId. The CSRF token is not
+// cached here any more: the transport reads the current one when a
+// subscription (re)connects, so a stale token can never be replayed.
+const subscribedSessions = new Map<string, { projectId: number }>()
 
 // Last event sequence applied per session
 const lastEventIds = new Map<string, string>()
@@ -65,7 +67,7 @@ export function clearAllResumePositions() {
 // resubscribeActiveSessions re-registers all active sessions after a bus reconnect.
 async function resubscribeActiveSessions(store: StreamStore) {
   const currentSubs = Array.from(subscribedSessions.entries())
-  for (const [sid, { projectId, csrfToken }] of currentSubs) {
+  for (const [sid, { projectId }] of currentSubs) {
     let lastEventIdNum: number | undefined
     const lastIdStr = lastEventIds.get(sid)
     if (lastIdStr) {
@@ -76,7 +78,7 @@ async function resubscribeActiveSessions(store: StreamStore) {
     }
     const id = getBusId()
     try {
-      const snapshot = await subscribeEventBusSession(id, projectId, sid, lastEventIdNum, csrfToken)
+      const snapshot = await subscribeEventBusSession(id, projectId, sid, lastEventIdNum)
       if (snapshot.turn) {
         store.applyTurn(sid, snapshot.turn)
       }
@@ -269,11 +271,10 @@ export async function subscribeSessionOnBus(
   store: StreamStore,
   projectId: number,
   sessionId: string,
-  csrfToken?: string,
 ): Promise<SubscriptionSnapshot> {
   ensureBusConnection(store)
 
-  subscribedSessions.set(sessionId, { projectId, csrfToken })
+  subscribedSessions.set(sessionId, { projectId })
   store.streamStatus[sessionId] = currentBusStatus === 'open' ? 'open' : 'connecting'
 
   let lastEventIdNum: number | undefined
@@ -286,7 +287,7 @@ export async function subscribeSessionOnBus(
   }
 
   const id = getBusId()
-  const snapshot = await subscribeEventBusSession(id, projectId, sessionId, lastEventIdNum, csrfToken)
+  const snapshot = await subscribeEventBusSession(id, projectId, sessionId, lastEventIdNum)
 
   // Apply the authoritative initial snapshot
   if (snapshot.turn) {
@@ -307,20 +308,18 @@ export async function resubscribeSessionOnBus(
   store: StreamStore,
   projectId: number,
   sessionId: string,
-  csrfToken?: string,
 ): Promise<SubscriptionSnapshot> {
   if (busSource && (busSource.readyState !== EventSource.OPEN || currentBusStatus === 'reconnecting')) {
     busSource.close()
     busSource = null
   }
-  return subscribeSessionOnBus(store, projectId, sessionId, csrfToken)
+  return subscribeSessionOnBus(store, projectId, sessionId)
 }
 
 // unsubscribeSessionFromBus removes a session from the bus.
 export async function unsubscribeSessionFromBus(
   store: StreamStore,
   sessionId: string,
-  csrfToken?: string,
 ): Promise<void> {
   if (!subscribedSessions.has(sessionId)) return
 
@@ -329,7 +328,7 @@ export async function unsubscribeSessionFromBus(
 
   const id = getBusId()
   try {
-    await unsubscribeEventBusSession(id, sessionId, csrfToken)
+    await unsubscribeEventBusSession(id, sessionId)
   } catch {
     // Non-fatal if already cleaned up on server
   }
