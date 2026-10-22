@@ -257,7 +257,7 @@ function closePreview() {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0 1rem 1rem;
 }
 
 .chat-edit-banner {
@@ -289,31 +289,41 @@ function closePreview() {
 }
 
 .chat-composer-box {
+  position: relative;
   border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--color-surface);
-  padding: 0.5rem 0.6rem 0.4rem;
+  padding: 0.45rem 0.65rem 0.4rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .chat-composer-box:focus-within {
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-info-soft);
 }
 
 .chat-composer-text {
   width: 100%;
-  min-height: 2.6rem;
-  max-height: 240px;
+  min-height: 2.2rem;
+  max-height: 12rem;
+  padding: 0.1rem 0;
   resize: none;
   border: none;
   outline: none;
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  line-height: 1.5;
+  font-size: 0.88rem;
+  line-height: 1.4;
   box-sizing: border-box;
+}
+
+.chat-composer-text::placeholder {
+  color: var(--color-text-muted);
 }
 
 .chat-composer-bar {
@@ -321,30 +331,45 @@ function closePreview() {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--color-border);
+  min-height: 28px;
 }
 
 .chat-composer-tools {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.45rem;
   min-width: 0;
 }
 
 .chat-attach-btn {
-  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 28px;
+  width: 28px;
+  padding: 0;
   border: 1px solid var(--color-border-strong);
-  border-radius: 50%;
+  border-radius: 6px;
   background: var(--color-surface-muted);
   color: var(--color-text);
-  font-size: 1rem;
+  font-size: 1.15rem;
+  font-weight: 500;
   line-height: 1;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-attach-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
 }
 
 .chat-attach-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .hidden-file-input {
@@ -352,24 +377,42 @@ function closePreview() {
 }
 
 .chat-send-btn {
-  min-width: 4.5rem;
-  height: 30px;
-  padding: 0 0.9rem;
-  border: none;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 3.5rem;
+  padding: 0 0.85rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 6px;
   background: var(--color-primary);
   color: var(--color-surface);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.chat-send-btn:hover:not(:disabled):not(.stop) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
 }
 
 .chat-send-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
+  cursor: default;
+  opacity: 0.7;
 }
 
 .chat-send-btn.stop {
-  background: var(--color-danger, #dc2626);
+  background: var(--color-surface);
+  border-color: var(--color-danger-border);
+  color: var(--color-danger);
+}
+
+.chat-send-btn.stop:hover:not(:disabled) {
+  background: var(--color-danger-soft);
 }
 </style>

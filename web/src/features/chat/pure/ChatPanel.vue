@@ -437,8 +437,10 @@ function reconnect() {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.55rem 0.9rem;
+  padding: 0.6rem 1rem;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
 }
 
 .pure-chat-title-row {
@@ -469,19 +471,36 @@ function reconnect() {
 }
 
 .header-action {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 0.65rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
   color: var(--color-text);
-  padding: 0.25rem 0.55rem;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.header-action:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .header-action.danger {
   color: var(--color-danger);
-  border-color: var(--color-danger-soft, var(--color-border));
+  border-color: var(--color-danger-border);
+}
+
+.header-action.danger:hover {
+  background: var(--color-danger-soft);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .pure-chat-scroll {
