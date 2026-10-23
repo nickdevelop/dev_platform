@@ -2,6 +2,7 @@ package agentmodels
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -78,6 +79,13 @@ func (s *Service) handleRefresh(c *gin.Context) {
 	}
 	list, err := s.Refresh(c.Request.Context(), backend)
 	if err != nil {
+		// The wire response stays a stable error code, but the server log keeps
+		// the adapter's reason: a backend that cannot even start and a backend
+		// that refused the catalog call would otherwise look identical in the
+		// access log.
+		if !errors.Is(err, ErrUnknownBackend) && !errors.Is(err, ErrUnsupportedCapability) {
+			log.Printf("agent models: refresh %s failed: %v", backend, agents.RedactSecrets(err.Error()))
+		}
 		respondServiceError(c, err)
 		return
 	}

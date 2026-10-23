@@ -100,7 +100,7 @@
 |---|---|---|
 | **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；管理 Sidecar 与本地服务探测；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
 | **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
-| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
+| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、30min 空闲回收）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
 
 ---
 
@@ -274,6 +274,8 @@ web/src/
 - **模型持久化**：`internal/app/agentmodels` 管理平台级模型快照。`agent_models` 保存每个 backend 的模型行，`agent_model_catalogs` 保存最后同步时间；唯一索引为 `(backend, model_id)`。
 - **读取**：`GET /api/agent-backends/{backend}/models` 只读数据库，不调用 Agent；Agent 离线时仍返回上次成功快照。从未刷新返回 `models: []` 与 `updatedAt: null`。
 - **手动刷新**：`POST /api/agent-backends/{backend}/models/refresh` 才调用适配器 `ListModels(ctx, "")`，并在事务内原子替换快照。刷新失败保留旧快照；空结果清空模型但更新同步时间。
+- **刷新失败可观测性**：HTTP 响应只给稳定错误码（`model_list_failed` / `service_not_running` / `unsupported_capability`），适配器返回的底层原因（例如 deepseek 共享宿主启动超时）在服务端日志以 `agent models: refresh <backend> failed: ...` 记录并做密钥脱敏；排障时先看这条日志，不要只看 access log 的 502。
+- **deepseek 宿主启动预算**：deepseek 的刷新会懒启动共享 `dsh` 宿主，启动超时默认 30s（`dsh` 自身打印 launch URL 实测 4.9~5.3s，因此不可下调到秒级；可用 `DEEPSEEK_STARTUP_TIMEOUT` 覆盖）。参见 `docs/agent-compatibility.md` 的 deepseek transport 小节。
 - **刷新策略**：无 TTL、无后台刷新、无轮询、无定时任务。只有运维员在 Agent 设置页点击“刷新”才会同步。空目录表示平台级/后端默认作用域，不考虑项目目录级模型配置。
 - **边界**：Agent 模型是 Agent 的只读快照，不是平台模型配置；平台「模型」设置中的 OpenAI 兼容模型服务保持独立。
 

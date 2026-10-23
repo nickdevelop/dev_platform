@@ -19,9 +19,34 @@ import (
 var launchURLRegex = regexp.MustCompile(`dsh web:\s+(https?://127\.0\.0\.1:\d+/\?token=[A-Za-z0-9_%.-]+)`)
 
 const (
-	defaultStartupTimeout = 3 * time.Second
-	gracefulExitTimeout   = 2 * time.Second
+	// defaultStartupTimeout bounds the whole dsh boot: spawning the child,
+	// reading its launch URL, exchanging the token and opening the mux. The
+	// boot is dominated by dsh itself printing the launch URL, measured at
+	// 4.9-5.3s for dsh 0.2.1-rc.2 on a warm cache, so a default under ~10s
+	// makes every backend call fail with a startup timeout. Tests and slow
+	// machines shorten it through DEEPSEEK_STARTUP_TIMEOUT instead of shrinking
+	// this production default.
+	defaultStartupTimeout = 30 * time.Second
+	// gracefulExitTimeout is how long Shutdown waits for dsh to leave on its
+	// own after stdin closes before escalating to a kill. dsh does not treat a
+	// closed stdin as an exit signal, so this is only a grace window.
+	gracefulExitTimeout = 2 * time.Second
 )
+
+// resolveStartupTimeout applies the DEEPSEEK_STARTUP_TIMEOUT override — the
+// operator escape hatch and the test harness's fail-fast knob — to the
+// configured timeout, falling back to the production default.
+func resolveStartupTimeout(configured time.Duration) time.Duration {
+	if override := os.Getenv("DEEPSEEK_STARTUP_TIMEOUT"); override != "" {
+		if d, err := time.ParseDuration(override); err == nil && d > 0 {
+			return d
+		}
+	}
+	if configured > 0 {
+		return configured
+	}
+	return defaultStartupTimeout
+}
 
 // Process represents one running `dsh --profile web` child process and its authenticated Typert client.
 type Process struct {
@@ -39,14 +64,7 @@ type Process struct {
 // StartProcess spawns `dsh --profile web --port 0 --no-open`, parses the launch URL from stdout,
 // authenticates, and connects the WebSocket mux client.
 func StartProcess(ctx context.Context, executable string, workDir string, env []string, startupTimeout time.Duration) (*Process, error) {
-	if envTimeout := os.Getenv("DEEPSEEK_STARTUP_TIMEOUT"); envTimeout != "" {
-		if d, err := time.ParseDuration(envTimeout); err == nil && d > 0 {
-			startupTimeout = d
-		}
-	}
-	if startupTimeout <= 0 {
-		startupTimeout = defaultStartupTimeout
-	}
+	startupTimeout = resolveStartupTimeout(startupTimeout)
 
 	startupCtx, cancelStartup := context.WithTimeout(ctx, startupTimeout)
 	defer cancelStartup()

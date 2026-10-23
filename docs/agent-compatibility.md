@@ -106,6 +106,8 @@ environment variable (comma-separated paths).
 The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 --no-open`):
 
 - **Process model**: one shared `dsh` process across instances and projects, reference-counted by leases and reclaimed after 30 idle minutes.
+- **Startup deadline**: booting the host (spawn, read the launch URL, exchange the token, bind the `$events` stream) is bounded by 30s. `dsh` itself is the cost — it needs 4.9-5.3s to print its launch URL, so the deadline must stay well above that; every call that needs the host (model refresh, instance start, prompts, history) fails with `model_list_failed` / `service_not_running` when it does not. `DEEPSEEK_STARTUP_TIMEOUT` overrides it for slow machines and test harnesses.
+- **Failure reporting**: a refresh that cannot read the catalog answers `502 model_list_failed` and the adapter's reason (startup timeout, refused RPC, malformed payload) goes to the server log, redacted — the access log alone only shows the status code.
 - **Multi-project isolation**: sessions specify their project root via `cwd` on `session/create`; tool execution operates within the session's working directory.
 - **Protocol**: Typert JSON-RPC over HTTP POST `/api/<method>` and WebSocket `/api/remote.mux` with token authentication.
 - **Events**: WebSocket `session/follow` streams streaming chunks (`text-delta`, `reasoning-delta`), structured events (`turn/start`, `turn/end`, `tool/call`, `tool/result`), and token usage.
