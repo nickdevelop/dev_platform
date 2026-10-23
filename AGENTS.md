@@ -1,5 +1,15 @@
 # dev_platform 开发约定
 
+## 项目全局理解与架构规范（PROJECT.md）
+
+本项目的完整架构全景、技术栈、核心业务流程（会话与类型化轮次、交互授权流、终端与 PTY、孤儿自愈机制）、传输层安全规范及质量门禁请参见：
+
+👉 [`PROJECT.md`](./PROJECT.md)
+
+**强制维护约定**：
+- 后续 AI 助手或开发人员在参与本项目时，**必须首先阅读并遵循 `PROJECT.md` 中的设计规范与架构约束**。
+- **后续需求的新增或变化时，若涉及架构、业务流程、依赖、配置或接口的调整，必须在修改代码的同时同步对 `PROJECT.md` 文件进行更新维护，确保代码实现与架构描述严格一致**。
+
 ## 本项目分层（claudian 五层同构）
 
 项目已按 claudian 的分层架构组织（对照 `docs/architecture/backend-boundaries.md` 与 `docs/architecture/claudian-refactor-plan.md`）：
