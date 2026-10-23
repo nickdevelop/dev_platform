@@ -366,3 +366,9 @@ func (s *Service) ListRuns(ctx context.Context, taskID uint) ([]TaskRun, error) 
 func (s *Service) GetTaskSessionIDs(projectID uint) ([]string, error) {
 	return s.repo.GetTaskSessionIDs(projectID)
 }
+
+// ReconcileOrphans marks any lingering 'running' task runs from a previous
+// platform process as 'interrupted'. It runs once during platform startup.
+func (s *Service) ReconcileOrphans(ctx context.Context) (int64, error) {
+	return s.repo.ReconcileOrphaned(time.Now().UTC())
+}

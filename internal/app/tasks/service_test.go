@@ -241,3 +241,83 @@ func TestScheduleValidationAndNextRun(t *testing.T) {
 		t.Fatalf("expected error for once schedule in past")
 	}
 }
+
+func TestTasksReconcileOrphans(t *testing.T) {
+	db := setupTestDB(t)
+	launcher := &fakeSessionLauncher{}
+	repo := NewRepository(db)
+	svc := NewService(repo, launcher)
+	ctx := context.Background()
+
+	task, err := svc.Create(ctx, CreateTaskRequest{
+		Title:          "Reconcile Test Task",
+		TaskType:       TaskTypeStandard,
+		ProjectID:      1,
+		Backend:        agents.BackendOpenCodeV2,
+		Model:          "gpt-4o",
+		PromptTemplate: "echo test",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	now := time.Now().UTC()
+	// Insert orphaned running run and completed run
+	runningRun := database.TaskRun{
+		TaskID:      task.ID,
+		SessionID:   "sess_orphan",
+		TriggerType: "manual",
+		Status:      "running",
+		Prompt:      "echo test",
+		TriggeredAt: now.Add(-10 * time.Minute),
+		CreatedAt:   now.Add(-10 * time.Minute),
+	}
+	if err := db.Create(&runningRun).Error; err != nil {
+		t.Fatalf("create running run: %v", err)
+	}
+
+	completedRun := database.TaskRun{
+		TaskID:      task.ID,
+		SessionID:   "sess_completed",
+		TriggerType: "manual",
+		Status:      "success",
+		Prompt:      "echo test",
+		TriggeredAt: now.Add(-20 * time.Minute),
+		FinishedAt:  &now,
+		CreatedAt:   now.Add(-20 * time.Minute),
+	}
+	if err := db.Create(&completedRun).Error; err != nil {
+		t.Fatalf("create completed run: %v", err)
+	}
+
+	reconciled, err := svc.ReconcileOrphans(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileOrphans: %v", err)
+	}
+	if reconciled != 1 {
+		t.Errorf("ReconcileOrphans returned %d, want 1", reconciled)
+	}
+
+	runs, err := repo.ListRuns(task.ID)
+	if err != nil {
+		t.Fatalf("list runs: %v", err)
+	}
+	for _, r := range runs {
+		if r.ID == runningRun.ID {
+			if r.Status != "interrupted" {
+				t.Errorf("run.Status = %q, want 'interrupted'", r.Status)
+			}
+			if r.Error != "interrupted by platform restart" {
+				t.Errorf("run.Error = %q, want 'interrupted by platform restart'", r.Error)
+			}
+			if r.FinishedAt == nil {
+				t.Errorf("run.FinishedAt is nil, want non-nil")
+			}
+		}
+		if r.ID == completedRun.ID {
+			if r.Status != "success" {
+				t.Errorf("completed run.Status = %q, want 'success'", r.Status)
+			}
+		}
+	}
+}

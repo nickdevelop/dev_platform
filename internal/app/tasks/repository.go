@@ -269,3 +269,15 @@ func (r *Repository) GetTaskSessionIDs(projectID uint) ([]string, error) {
 	}
 	return sessionIDs, nil
 }
+
+// ReconcileOrphaned marks lingering 'running' runs as 'interrupted'.
+func (r *Repository) ReconcileOrphaned(now time.Time) (int64, error) {
+	res := r.db.Model(&database.TaskRun{}).
+		Where("status = ?", "running").
+		Updates(map[string]any{
+			"status":      "interrupted",
+			"error":       "interrupted by platform restart",
+			"finished_at": &now,
+		})
+	return res.RowsAffected, res.Error
+}

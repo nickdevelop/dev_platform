@@ -498,6 +498,13 @@ func instanceFromModel(row database.AgentInstance) Instance {
 	}
 }
 
+// ReconcileOrphans marks any lingering 'starting' or 'running' instances from a
+// previous platform process as 'stopped'. It is intended to run once during
+// platform startup after database migrations.
+func (s *Service) ReconcileOrphans(ctx context.Context) (int64, error) {
+	return s.repo.ReconcileOrphaned(s.now())
+}
+
 // stream is the service's single upstream subscription for one instance. Its
 // subscribers each own an output channel; the upstream goroutine is the only
 // writer and the only closer of those channels. The replay ring records every

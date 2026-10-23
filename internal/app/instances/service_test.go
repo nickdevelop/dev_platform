@@ -1081,3 +1081,79 @@ func TestPlatformSwitchGatesNewWorkOnly(t *testing.T) {
 		t.Fatalf("Start after re-enabling: %v", err)
 	}
 }
+
+func TestReconcileOrphans(t *testing.T) {
+	svc, db, projectID, projectDir, _ := newTestService(t)
+	ctx := context.Background()
+
+	// Manually insert orphaned instances with starting and running statuses
+	now := time.Now().UTC()
+	orphans := []database.AgentInstance{
+		{
+			ID:        "orphan-starting",
+			ProjectID: projectID,
+			Backend:   string(agents.BackendPi),
+			Directory: projectDir,
+			Status:    string(agents.InstanceStarting),
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now.Add(-time.Hour),
+		},
+		{
+			ID:        "orphan-running",
+			ProjectID: projectID,
+			Backend:   string(agents.BackendPi),
+			Directory: projectDir,
+			Status:    string(agents.InstanceRunning),
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now.Add(-time.Hour),
+		},
+		{
+			ID:        "already-stopped",
+			ProjectID: projectID,
+			Backend:   string(agents.BackendPi),
+			Directory: projectDir,
+			Status:    string(agents.InstanceStopped),
+			CreatedAt: now.Add(-time.Hour),
+			UpdatedAt: now.Add(-time.Hour),
+		},
+	}
+	for _, inst := range orphans {
+		if err := db.Create(&inst).Error; err != nil {
+			t.Fatalf("seed instance: %v", err)
+		}
+	}
+
+	reconciled, err := svc.ReconcileOrphans(ctx)
+	if err != nil {
+		t.Fatalf("ReconcileOrphans: %v", err)
+	}
+	if reconciled != 2 {
+		t.Errorf("ReconcileOrphans returned %d, want 2", reconciled)
+	}
+
+	// Verify statuses are now stopped
+	for _, id := range []string{"orphan-starting", "orphan-running"} {
+		inst, err := svc.Get(id)
+		if err != nil {
+			t.Fatalf("Get(%s): %v", id, err)
+		}
+		if inst.Status != agents.InstanceStopped {
+			t.Errorf("inst(%s).Status = %q, want %q", id, inst.Status, agents.InstanceStopped)
+		}
+		if inst.Error != "interrupted by platform restart" {
+			t.Errorf("inst(%s).Error = %q, want 'interrupted by platform restart'", id, inst.Error)
+		}
+	}
+
+	// Already stopped record should remain unchanged
+	stoppedInst, err := svc.Get("already-stopped")
+	if err != nil {
+		t.Fatalf("Get(already-stopped): %v", err)
+	}
+	if stoppedInst.Status != agents.InstanceStopped {
+		t.Errorf("already-stopped Status = %q, want %q", stoppedInst.Status, agents.InstanceStopped)
+	}
+	if stoppedInst.Error != "" {
+		t.Errorf("already-stopped Error = %q, want empty", stoppedInst.Error)
+	}
+}

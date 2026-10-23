@@ -20,6 +20,7 @@ type Repository interface {
 	ListLive() ([]Instance, error)
 	PruneDead(projectID uint, keepLast int) error
 	UpdateStatus(instanceID string, status agents.InstanceStatus, errText string, updatedAt time.Time) error
+	ReconcileOrphaned(now time.Time) (int64, error)
 }
 
 type gormRepository struct {
@@ -121,4 +122,20 @@ func (r *gormRepository) UpdateStatus(instanceID string, status agents.InstanceS
 		return tx.Model(&database.AgentInstance{}).Where("id = ?", instanceID).
 			Updates(map[string]any{"status": string(status), "error": errText, "updated_at": updatedAt}).Error
 	})
+}
+
+func (r *gormRepository) ReconcileOrphaned(now time.Time) (int64, error) {
+	var count int64
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&database.AgentInstance{}).
+			Where("status IN ?", []string{string(agents.InstanceStarting), string(agents.InstanceRunning)}).
+			Updates(map[string]any{
+				"status":     string(agents.InstanceStopped),
+				"error":      "interrupted by platform restart",
+				"updated_at": now,
+			})
+		count = res.RowsAffected
+		return res.Error
+	})
+	return count, err
 }

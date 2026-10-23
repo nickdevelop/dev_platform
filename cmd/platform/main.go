@@ -356,6 +356,17 @@ func runServer(args []string) error {
 
 	taskRepo := tasks.NewRepository(db)
 	taskService := tasks.NewService(taskRepo, sessionService)
+
+	// Reconcile orphaned instances and tasks left in running states from a prior process.
+	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if n, err := instanceService.ReconcileOrphans(reconcileCtx); err == nil && n > 0 {
+		log.Printf("reconciled %d orphaned agent instance(s) from previous platform process", n)
+	}
+	if n, err := taskService.ReconcileOrphans(reconcileCtx); err == nil && n > 0 {
+		log.Printf("reconciled %d orphaned task run(s) from previous platform process", n)
+	}
+	reconcileCancel()
+
 	taskScheduler := tasks.NewScheduler(taskService, 10*time.Second)
 	taskScheduler.Start()
 	defer taskScheduler.Stop()
