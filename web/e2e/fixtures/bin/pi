@@ -1,41 +1,33 @@
 #!/usr/bin/env node
-// Fake `pi` coding agent for the end-to-end workbench test. It implements just
-// enough of pi's documented `--mode json` protocol to drive one prompt: a
-// session header, a streamed assistant reply in two text deltas, and the
-// closing message/agent records. It never touches the network or the
-// filesystem, so the platform's pi adapter can be exercised without the real
-// CLI installed.
+// Fake `pi` coding agent for the end-to-end workbench test. It supports both
+// `--mode rpc` (long-lived child process with stdin/stdout JSON-RPC protocol)
+// and legacy `--mode json` (one-shot prompt).
 //
-// Invoked as: pi --mode json [--session-id ID] [-- ...prompt]
-// It also answers `--version` (prints a version inside the adapter's tested
-// range) and fails on demand: a prompt containing __e2e_fail__ makes the
-// process write one stderr diagnostic and exit non-zero, which the e2e
-// failure spec uses to prove one backend's error never affects another.
+// Invoked as:
+//   pi --mode rpc [--session-id ID]
+//   pi --mode json [--session-id ID] [-- ...prompt]
+//   pi --version
+//   pi --list-models
 'use strict'
 
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import readline from 'node:readline'
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// sessionDir mirrors pi's own precedence: the platform sets
-// PI_CODING_AGENT_SESSION_DIR so the E2E run writes transcripts into its
-// scratch directory instead of the developer's real session folder.
 function sessionDir() {
   const override = process.env.PI_CODING_AGENT_SESSION_DIR
   if (override) return override
   return path.join(os.homedir(), '.pi', 'agent', 'sessions')
 }
 
-// sessionDirName mirrors the platform adapter's directory slug, so the file
-// this fake writes is the file the adapter reads back for history.
 function sessionDirName(directory) {
   const trimmed = directory.replace(/^[/\\]+/, '')
   return `--${trimmed.replace(/[/\\:]/g, '-')}--`
 }
 
-// transcriptPath is where one session's JSONL transcript lives.
 function transcriptPath(directory, sessionId) {
   const folder = path.join(sessionDir(), sessionDirName(directory))
   fs.mkdirSync(folder, { recursive: true })
@@ -43,7 +35,6 @@ function transcriptPath(directory, sessionId) {
   return path.join(folder, `${stamp}_${sessionId}.jsonl`)
 }
 
-// record appends one JSONL record, the format pi writes and the adapter reads.
 function record(stream, entry) {
   fs.appendFileSync(stream, `${JSON.stringify(entry)}\n`)
 }
@@ -57,37 +48,215 @@ function write(record) {
   process.stdout.write(`${JSON.stringify(record)}\n`)
 }
 
-// `--version` support for the platform's diagnostics probe.
+// `--version` support
 if (process.argv.includes('--version')) {
   process.stdout.write('1.1.0-mock\n')
   process.exit(0)
 }
 
-// `--list-models` support for the workbench's model picker. The platform parses
-// the header row and the provider/model columns.
+// `--list-models` support
 if (process.argv.includes('--list-models')) {
   process.stdout.write('provider model context max-out thinking images\n')
   process.stdout.write('pi pi-model 128k 8k no no\n')
   process.exit(0)
 }
 
-async function main() {
+async function runRPC() {
+  const sessionId = valueAfter('--session-id')
+  const cwd = process.cwd()
+  let currentModel = valueAfter('--model') || 'pi-model'
+  let isStreaming = false
+  const stream = transcriptPath(cwd, sessionId)
+  let initializedSession = false
+
+  function ensureTranscriptHeader() {
+    if (initializedSession) return
+    initializedSession = true
+    record(stream, {
+      type: 'session',
+      version: 3,
+      id: sessionId,
+      timestamp: new Date().toISOString(),
+      cwd,
+    })
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    terminal: false,
+  })
+
+  rl.on('line', async (line) => {
+    line = line.trim()
+    if (!line) return
+    let cmd
+    try {
+      cmd = JSON.parse(line)
+    } catch {
+      write({ id: '', type: 'response', command: 'parse', success: false, error: 'invalid json' })
+      return
+    }
+
+    const { id, type } = cmd
+    switch (type) {
+      case 'get_state':
+        write({
+          id,
+          type: 'response',
+          command: 'get_state',
+          success: true,
+          data: {
+            sessionId,
+            sessionFile: transcriptPath(cwd, sessionId),
+            isStreaming,
+            model: { id: currentModel, name: currentModel, provider: 'pi' },
+          },
+        })
+        break
+
+      case 'get_available_models':
+        write({
+          id,
+          type: 'response',
+          command: 'get_available_models',
+          success: true,
+          data: {
+            models: [
+              { id: 'pi-model', provider: 'pi', name: 'pi-model', contextWindow: 128000 },
+            ],
+          },
+        })
+        break
+
+      case 'set_model':
+        currentModel = cmd.modelId || currentModel
+        write({
+          id,
+          type: 'response',
+          command: 'set_model',
+          success: true,
+          data: { id: currentModel, provider: cmd.provider || 'pi', name: currentModel },
+        })
+        break
+
+      case 'set_session_name':
+        write({
+          id,
+          type: 'response',
+          command: 'set_session_name',
+          success: true,
+        })
+        break
+
+      case 'abort':
+        isStreaming = false
+        write({
+          id,
+          type: 'response',
+          command: 'abort',
+          success: true,
+        })
+        break
+
+      case 'prompt':
+        const prompt = cmd.message || ''
+        if (prompt.includes('__e2e_fail__')) {
+          process.stderr.write('provider unavailable: no credentials configured (fake failure)\n')
+          process.exit(1)
+        }
+
+        write({
+          id,
+          type: 'response',
+          command: 'prompt',
+          success: true,
+          data: { disposition: 'started' },
+        })
+
+        isStreaming = true
+        ensureTranscriptHeader()
+        record(stream, {
+          type: 'message',
+          id: `u-${Date.now()}`,
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: { role: 'user', content: [{ type: 'text', text: prompt }] },
+        })
+
+        write({ type: 'agent_start' })
+        write({ type: 'message_start', message: { role: 'user', content: prompt } })
+
+        const thinking = `thinking about: ${prompt}`
+        write({ type: 'message_update', assistantMessageEvent: { type: 'thinking_start', contentIndex: 0, partial: {} } })
+        const thinkingSplit = Math.ceil(thinking.length / 2)
+        for (const chunk of [thinking.slice(0, thinkingSplit), thinking.slice(thinkingSplit)]) {
+          await sleep(10)
+          write({
+            type: 'message_update',
+            assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: chunk, partial: {} },
+          })
+        }
+        write({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: thinking, partial: {} },
+        })
+
+        if (prompt.includes('__e2e_hold__')) {
+          return
+        }
+
+        const reply = `pi reply: ${prompt}`
+        const split = Math.ceil(reply.length / 2)
+        await sleep(15)
+        write({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', delta: reply.slice(0, split) },
+        })
+        await sleep(15)
+        write({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'text_delta', delta: reply.slice(split) },
+        })
+        write({
+          type: 'message_end',
+          message: { role: 'assistant', content: [{ type: 'text', text: reply }] },
+        })
+        write({ type: 'agent_end' })
+        isStreaming = false
+
+        record(stream, {
+          type: 'message',
+          id: `a-${Date.now()}`,
+          parentId: null,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking },
+              { type: 'text', text: reply },
+            ],
+          },
+        })
+        break
+
+      default:
+        write({ id, type: 'response', command: type, success: false, error: 'unknown command' })
+    }
+  })
+}
+
+async function runCLI() {
   const sessionId = valueAfter('--session-id')
   const separator = process.argv.indexOf('--')
   const prompt = separator >= 0 ? process.argv[separator + 1] ?? '' : ''
   const cwd = process.cwd()
   const reply = `pi reply: ${prompt}`
 
-  // On-demand failure used by agent-failures.spec.ts: a stderr diagnostic and
-  // a non-zero exit, like a provider the CLI cannot reach.
   if (prompt.includes('__e2e_fail__')) {
     process.stderr.write('provider unavailable: no credentials configured (fake failure)\n')
     process.exit(1)
   }
 
-  // Persist the transcript the way the real CLI does: a session header and the
-  // user turn up front, the assistant turn appended when it completes. The
-  // platform replays exactly this file when a task is reopened.
   const stream = transcriptPath(cwd, sessionId)
   record(stream, {
     type: 'session',
@@ -108,8 +277,6 @@ async function main() {
   write({ type: 'agent_start' })
   write({ type: 'message_start', message: { role: 'user', content: prompt } })
 
-  // Reasoning streams before the reply, as the real CLI does, and the same
-  // reasoning is written into the transcript so a replay shows it too.
   const thinking = `thinking about: ${prompt}`
   write({ type: 'message_update', assistantMessageEvent: { type: 'thinking_start', contentIndex: 0, partial: {} } })
   const thinkingSplit = Math.ceil(thinking.length / 2)
@@ -125,8 +292,6 @@ async function main() {
     assistantMessageEvent: { type: 'thinking_end', contentIndex: 0, content: thinking, partial: {} },
   })
 
-  // Hold the turn open until the platform interrupts (kills) this process, so
-  // the workbench's stop action can be observed deterministically.
   if (prompt.includes('__e2e_hold__')) {
     await new Promise(() => {})
   }
@@ -163,7 +328,16 @@ async function main() {
   })
 }
 
-main().catch((error) => {
-  process.stderr.write(`fake pi: ${error && error.stack ? error.stack : error}\n`)
-  process.exit(1)
-})
+const isRPC = process.argv.includes('--mode') && valueAfter('--mode') === 'rpc'
+
+if (isRPC) {
+  runRPC().catch((error) => {
+    process.stderr.write(`fake pi rpc: ${error && error.stack ? error.stack : error}\n`)
+    process.exit(1)
+  })
+} else {
+  runCLI().catch((error) => {
+    process.stderr.write(`fake pi cli: ${error && error.stack ? error.stack : error}\n`)
+    process.exit(1)
+  })
+}

@@ -49,7 +49,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   const openSettings = (name: string) => row(name).locator('.project-settings').click()
 
   // Register an existing directory.
-  await page.getByRole('button', { name: '注册', exact: true }).click()
+  await page.getByRole('button', { name: '注册项目', exact: true }).click()
   const registerDialog = page.getByRole('dialog')
   await registerDialog.getByLabel('目录的绝对路径').fill(join(workspaceRoot, 'alpha'))
   await registerDialog.getByRole('button', { name: '注册', exact: true }).click()
@@ -59,7 +59,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await expect(settings).toContainText(join(workspaceRoot, 'alpha'))
 
   // Create a brand-new project directory.
-  await page.getByRole('button', { name: '新建', exact: true }).click()
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('父目录的绝对路径').fill(workspaceRoot)
   await createDialog.getByLabel('项目目录名').fill('beta')
@@ -80,7 +80,7 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   const renameDialog = page.getByRole('dialog')
   await renameDialog.getByLabel('新目录名').fill('gamma')
   await renameDialog.getByLabel(/输入当前项目名/).fill('beta')
-  await renameDialog.getByRole('button', { name: '重命名', exact: true }).click()
+  await renameDialog.getByRole('button', { name: '重命名目录', exact: true }).click()
   const gammaItem = row('gamma')
   await expect(gammaItem).toBeVisible()
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(true)

@@ -5,7 +5,7 @@ import { defineConfig } from '@playwright/test'
 // Run via `npm run test:e2e`; the dev server port follows E2E_VITE_PORT so an
 // occupied 5173 does not wedge the whole run (that variable also drives the
 // harness's port choice in scripts/run-e2e.mjs).
-const VITE_PORT = process.env.E2E_VITE_PORT ?? '5173'
+const VITE_PORT = process.env.E2E_VITE_PORT ?? '15173'
 
 export default defineConfig({
   testDir: './e2e',

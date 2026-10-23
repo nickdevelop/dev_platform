@@ -112,11 +112,15 @@ test('a reply survives a page reload and continues in the same conversation', as
   await expect(replayed).toContainText('remember this turn', { timeout: 20_000 })
   await expect(replayed).toContainText('pi reply: remember this turn', { timeout: 20_000 })
 
-  // Reasoning is replayed as its own collapsed block, above the reply.
-  const piThinking = replayed.locator('[data-test="thinking"]')
-  await expect(piThinking).toHaveCount(1)
-  await expect(piThinking.locator('summary')).toContainText('Thinking')
-  await expect(piThinking).toContainText('thinking about: remember this turn')
+  // Reasoning is replayed in the activity pane, above the reply.
+  const expandBtn = replayed.locator('[data-test="toggle-preview-btn"]')
+  if (await expandBtn.isVisible()) {
+    await expandBtn.click()
+  }
+  const piThinking = replayed.locator('[data-test="activity-scroll"] [data-test="thinking"]')
+  await expect(piThinking).toHaveCount(2)
+  await expect(piThinking.last()).toContainText('Thinking')
+  await expect(piThinking.last()).toContainText('thinking about: remember this turn')
 
   // And the session is usable again: the replayed turn is not the end of the log.
   await send(page, 'and this one')
@@ -126,9 +130,13 @@ test('a reply survives a page reload and continues in the same conversation', as
   // included.
   const replayedOC = await openSessionTab(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
-  const ocThinking = replayedOC.locator('[data-test="thinking"]')
-  await expect(ocThinking.locator('summary')).toContainText('Thinking')
-  await expect(ocThinking).toContainText('internal reasoning is not conversation')
+  const ocExpandBtn = replayedOC.locator('[data-test="toggle-preview-btn"]')
+  if (await ocExpandBtn.isVisible()) {
+    await ocExpandBtn.click()
+  }
+  const ocThinking = replayedOC.locator('[data-test="activity-scroll"] [data-test="thinking"]')
+  await expect(ocThinking.last()).toContainText('Thinking')
+  await expect(ocThinking.last()).toContainText('internal reasoning is not conversation')
 })
 
 test('opening a session whose instance was stopped re-attaches it without any manual start', async ({

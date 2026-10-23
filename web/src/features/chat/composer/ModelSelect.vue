@@ -28,6 +28,7 @@ const emit = defineEmits<{
   // a deliberate choice from the picker's own first-model fallback.
   picked: [id: string]
   status: [ok: boolean]
+  failed: [failed: boolean]
 }>()
 
 const models = ref<ModelInfo[]>([])
@@ -87,6 +88,7 @@ async function refresh(surfaceFailure: boolean, force = false) {
     failed.value = false
     applyModels(list.models)
     rememberModels(props.projectId, props.backend, list.models)
+    emit('failed', false)
     emit('status', true)
     if (list.stale) scheduleStaleRetry()
   } catch {
@@ -94,6 +96,7 @@ async function refresh(surfaceFailure: boolean, force = false) {
     if (surfaceFailure) {
       models.value = []
       failed.value = true
+      emit('failed', true)
       emit('status', false)
     }
   } finally {

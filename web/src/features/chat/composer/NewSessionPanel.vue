@@ -9,7 +9,7 @@
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
@@ -40,13 +40,25 @@ const sessions = useSessionsStore()
 const promptsStore = usePromptsStore()
 const draftsStore = useDraftsStore()
 const router = useRouter()
+const route = useRoute()
+
+const resolveRouteProjectId = (): number | null => {
+  if (props.projectId !== undefined && props.projectId !== null) {
+    return Number(props.projectId)
+  }
+  const param = route?.params?.projectId
+  if (param !== undefined && param !== null && param !== '') {
+    const num = Number(param)
+    return isNaN(num) ? null : num
+  }
+  return null
+}
 
 const initialProjectId =
-  props.projectId !== undefined && props.projectId !== null
-    ? Number(props.projectId)
-    : draftsStore.newSessionDraft.projectId !== null && draftsStore.newSessionDraft.projectId !== undefined
-      ? Number(draftsStore.newSessionDraft.projectId)
-      : null
+  resolveRouteProjectId() ??
+  (draftsStore.newSessionDraft.projectId !== null && draftsStore.newSessionDraft.projectId !== undefined
+    ? Number(draftsStore.newSessionDraft.projectId)
+    : null)
 
 const initialDraft = draftsStore.getNewSessionDraft(initialProjectId)
 
@@ -70,19 +82,33 @@ const textareaPlaceholder = computed(() => {
 const selectedProjectId = ref<number | null>(initialProjectId)
 
 watch(
-  () => props.projectId,
-  (id) => {
-    if (id !== undefined && id !== null) {
-      selectedProjectId.value = Number(id)
+  () => [props.projectId, route?.params?.projectId],
+  ([propId, routeId]) => {
+    const candidate = propId ?? routeId
+    if (candidate !== undefined && candidate !== null && candidate !== '') {
+      const num = Number(candidate)
+      if (!isNaN(num)) {
+        selectedProjectId.value = num
+      }
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => projectsStore.projects,
+  (list) => {
+    if (selectedProjectId.value === null && Array.isArray(list) && list.length > 0) {
+      selectedProjectId.value = list[0].id
+    }
+  },
 )
 
 const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
 const messageText = ref(initialDraft.messageText ?? '')
 const selectedModel = ref(initialDraft.model ?? '')
 const modelOk = ref(false)
+const modelFailed = ref(false)
 const creating = ref(false)
 const composerBox = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -385,7 +411,9 @@ const hasContent = computed(
 const firstMessageReady = computed(() => {
   if (!hasContent.value) return true
   if (!selectedCapabilities.value?.modelSelection) return true
-  return modelOk.value && selectedModel.value !== ''
+  if (modelOk.value && selectedModel.value !== '') return true
+  if (modelFailed.value) return true
+  return false
 })
 
 // Only platform-enabled backends may be chosen for a new session. The server also
@@ -646,6 +674,7 @@ async function createSession() {
                 :backend="selectedBackend"
                 :model-selection="true"
                 @status="modelOk = $event"
+                @failed="modelFailed = $event"
               />
               <span class="composer-hint">Enter 创建 · Shift+Enter 换行</span>
             </div>

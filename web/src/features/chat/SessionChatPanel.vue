@@ -775,6 +775,8 @@ watch([() => activeSession.value?.backend, selectedModel], () => {
 async function open() {
   ready.value = false
   loadError.value = ''
+  sendError.value = ''
+  sessions.error = ''
   modelOk.value = true
   pinnedToBottom.value = true
   showJumpToLatest.value = false
@@ -1172,6 +1174,7 @@ async function removeSession() {
                   />
                   <ModelSelect
                     ref="modelPicker"
+                    :key="`${activeSession.backend}-${activeSession.id}`"
                     v-model="selectedModel"
                     :project-id="props.projectId"
                     :backend="activeSession.backend"

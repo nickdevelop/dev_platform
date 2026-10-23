@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"sync"
@@ -18,8 +19,8 @@ import (
 var launchURLRegex = regexp.MustCompile(`dsh web:\s+(https?://127\.0\.0\.1:\d+/\?token=[A-Za-z0-9_%.-]+)`)
 
 const (
-	defaultStartupTimeout = 30 * time.Second
-	gracefulExitTimeout   = 5 * time.Second
+	defaultStartupTimeout = 3 * time.Second
+	gracefulExitTimeout   = 2 * time.Second
 )
 
 // Process represents one running `dsh --profile web` child process and its authenticated Typert client.
@@ -38,6 +39,11 @@ type Process struct {
 // StartProcess spawns `dsh --profile web --port 0 --no-open`, parses the launch URL from stdout,
 // authenticates, and connects the WebSocket mux client.
 func StartProcess(ctx context.Context, executable string, workDir string, env []string, startupTimeout time.Duration) (*Process, error) {
+	if envTimeout := os.Getenv("DEEPSEEK_STARTUP_TIMEOUT"); envTimeout != "" {
+		if d, err := time.ParseDuration(envTimeout); err == nil && d > 0 {
+			startupTimeout = d
+		}
+	}
 	if startupTimeout <= 0 {
 		startupTimeout = defaultStartupTimeout
 	}

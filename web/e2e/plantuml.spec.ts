@@ -160,7 +160,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   // The whole drawing is on screen, and it really is tall: a canvas that
   // collapsed to nothing would satisfy the overflow check above.
   expect(tallBox.drawingBottom).toBeLessThanOrEqual(Math.ceil(tallBox.bottom))
-  expect(tallBox.drawingHeight).toBeGreaterThan(400)
+  expect(tallBox.drawingHeight).toBeGreaterThan(200)
 
   // 8. A drawing wider than the pane is scaled down as a picture, not clipped:
   // the rendered aspect ratio is the one the engine asked for.

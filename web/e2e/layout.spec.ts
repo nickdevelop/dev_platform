@@ -165,6 +165,11 @@ test('an activity card never adds a horizontal scroller to the activity pane', a
   await page.locator('#message-text').fill('step group please')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await expect(conversation).toContainText('opencode reply: step group please', { timeout: 20_000 })
+  // If preview pane was collapsed by default, open it so activity-scroll is mounted.
+  const expandBtn = conversation.locator('[data-test="toggle-preview-btn"]')
+  if (await expandBtn.isVisible()) {
+    await expandBtn.click()
+  }
   // The reply's reasoning lands in the flat activity list, which is the box
   // under test. Each turn contributes its own reasoning block, so the card under
   // test is the first one — the same element the geometry check below reads.
