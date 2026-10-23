@@ -4,8 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -21,13 +19,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/instances", s.handleList)
 	r.POST("/projects/:id/instances", s.handleStart)
 	r.POST("/projects/:id/instances/:instanceId/stop", s.handleStop)
-
-	// A backend's model catalog belongs to the backend and the project's
-	// directory, not to an instance: the workbench needs it while creating a
-	// session, when no instance exists yet. ?refresh=1 asks the backend now
-	// instead of accepting the cached snapshot.
-	r.GET("/projects/:id/agent-backends/:backend/models", s.handleBackendModels)
-
 }
 
 // errorResponse is the JSON error envelope for instance API failures.
@@ -57,8 +48,6 @@ func respondServiceError(c *gin.Context, err error) {
 		// The failed attempt is recorded and discoverable through the list
 		// route; the start request itself did not succeed.
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
-	case errors.Is(err, ErrUnsupportedCapability):
-		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, projects.ErrDirectoryMissing), errors.Is(err, projects.ErrNotDirectory):
 		respondError(c, http.StatusConflict, "project_directory_unavailable")
 	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, projects.ErrPathChanged):
@@ -153,40 +142,6 @@ func (s *Service) handleStop(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, instance)
-}
-
-// backendModelsResponse is the JSON body of
-// GET /api/projects/{id}/agent-backends/{backend}/models. UpdatedAt is when the
-// list came from the backend, and Stale says the answer is that older snapshot
-// with a fresher one already being fetched — the workbench shows the models it
-// was handed and does not wait.
-type backendModelsResponse struct {
-	Models    []agents.ModelInfo `json:"models"`
-	UpdatedAt time.Time          `json:"updatedAt"`
-	Stale     bool               `json:"stale"`
-}
-
-// handleBackendModels returns the models one backend offers to the project.
-func (s *Service) handleBackendModels(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	backend := agents.BackendID(c.Param("backend"))
-	if !backend.Valid() {
-		respondError(c, http.StatusBadRequest, "unknown_backend")
-		return
-	}
-	refresh := c.Query("refresh") == "1" || strings.EqualFold(c.Query("refresh"), "true")
-	list, err := s.BackendModels(c.Request.Context(), id, backend, refresh)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	if list.Models == nil {
-		list.Models = []agents.ModelInfo{}
-	}
-	c.JSON(http.StatusOK, backendModelsResponse{Models: list.Models, UpdatedAt: list.UpdatedAt, Stale: list.Stale})
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

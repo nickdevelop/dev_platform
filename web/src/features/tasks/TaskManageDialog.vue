@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { listBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
+import { listAgentBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
 import { describeApiError } from '../../api/client'
 import type { ScheduleType, Task } from '../../api/tasks'
 import { useAgentsStore } from '../../stores/agents'
@@ -60,13 +60,13 @@ onMounted(async () => {
 })
 
 async function loadModels() {
-  if (selectedProjectId.value === 0 || selectedBackend.value === '') {
+  if (selectedBackend.value === '') {
     models.value = []
     return
   }
   loadingModels.value = true
   try {
-    const list = await listBackendModels(selectedProjectId.value, selectedBackend.value)
+    const list = await listAgentBackendModels(selectedBackend.value)
     models.value = list.models
     if (
       models.value.length > 0 &&
@@ -81,7 +81,8 @@ async function loadModels() {
   }
 }
 
-watch([selectedProjectId, selectedBackend], () => {
+// The catalog is platform-wide, so only a backend change needs a reload.
+watch(selectedBackend, () => {
   void loadModels()
 })
 

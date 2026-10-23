@@ -812,55 +812,28 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
-  /projects/{id}/agent-backends/{backend}/models:
+  /agent-backends/{backend}/models:
     get:
-      summary: List the models a backend offers to a project
+      summary: Read the persisted model snapshot for an agent backend
       description: >-
-        Returns the models the backend offers as seen from the project's
-        authorized directory. The catalog belongs to the backend and the
-        directory, not to a running instance, so a project with no instance yet
-        still offers its models while a session is being created. The platform
-        caches the list per backend and directory and refreshes it behind the
-        response: updatedAt says when the backend was last asked, and stale says
-        the answer is an aged snapshot whose refresh is already running. Set
-        refresh to read the backend now. Requires the backend to declare
-        modelSelection. The id uses the same provider/model[#variant] form as
-        the message model override.
-      operationId: listProjectBackendModels
+        Returns the platform-wide model snapshot stored for the backend. This
+        read never contacts the agent: a stopped or unreachable backend still
+        serves its last successful refresh. updatedAt is null until the first
+        explicit refresh; an empty models array with a non-null updatedAt means
+        the backend reported no models. The id uses the same
+        provider/model[#variant] form as the message model override.
+      operationId: listAgentBackendModels
       security:
         - cookieAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the owning project.
-          schema:
-            type: integer
-            format: int64
-        - name: backend
-          in: path
-          required: true
-          description: Backend whose catalog is requested.
-          schema:
-            type: string
-            enum:
-              - opencode-v2
-              - pi
-        - name: refresh
-          in: query
-          required: false
-          description: >-
-            Set to 1 (or true) to read the backend now instead of accepting the
-            cached list. Any other value is ignored.
-          schema:
-            type: string
+        - $ref: '#/components/parameters/AgentBackend'
       responses:
         '200':
-          description: The models the backend offers, and how current they are.
+          description: The persisted model snapshot.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BackendModelList'
+                $ref: '#/components/schemas/AgentModelList'
         '400':
           description: The backend id is not a known backend.
           content:
@@ -869,22 +842,59 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: No such project.
+        '409':
+          description: >-
+            The backend does not declare model selection
+            (unsupported_capability).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /agent-backends/{backend}/models/refresh:
+    post:
+      summary: Refresh and persist an agent backend's model snapshot
+      description: >-
+        Asks the backend for its current model catalog and atomically replaces
+        the persisted snapshot. This is the only path that contacts the agent,
+        and it is always an operator action. When the backend fails (including a
+        stopped machine-level service), the previous snapshot is left untouched.
+        An empty result clears the snapshot but still updates updatedAt.
+      operationId: refreshAgentBackendModels
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The refreshed snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentModelList'
+        '400':
+          description: The backend id is not a known backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
         '409':
           description: >-
-            The backend does not declare model selection (unsupported_capability)
-            or its machine-level service is not running (service_not_running).
+            The backend does not declare model selection
+            (unsupported_capability) or its machine-level service is not
+            running (service_not_running).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
-          description: The backend adapter failed to list models.
+          description: The backend adapter failed to list models (model_list_failed).
           content:
             application/json:
               schema:
@@ -4311,12 +4321,14 @@ components:
           minimum: 1
           description: Context window in tokens, when the backend reports one.
       additionalProperties: false
-    BackendModelList:
+    AgentModelList:
       type: object
+      description: >-
+        A platform-wide, persisted snapshot of the models one agent backend
+        offers. It is refreshed only by an explicit operator action.
       required:
         - models
         - updatedAt
-        - stale
       properties:
         models:
           type: array
@@ -4325,12 +4337,11 @@ components:
         updatedAt:
           type: string
           format: date-time
-          description: When the backend was last asked for this list.
-        stale:
-          type: boolean
+          nullable: true
           description: >-
-            True when the answer is a cached snapshot the platform is
-            refreshing right now: show these models and expect a newer list.
+            When the snapshot was last written by a successful refresh. Null
+            means the backend has never been refreshed. An empty models array
+            with a non-null timestamp means the backend reported no models.
       additionalProperties: false
     CreateAgentSessionRequest:
       type: object

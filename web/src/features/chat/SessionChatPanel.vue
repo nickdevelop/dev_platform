@@ -305,7 +305,7 @@ const currentModelSupportsImages = computed<boolean>(() => {
   if (!session) return false
   const model = selectedModel.value
   if (!model) return false
-  const cached = cachedModels(props.projectId, session.backend)
+  const cached = cachedModels(session.backend)
   const base = model.split('#')[0]
   const found = cached?.find((entry) => entry.id === model || entry.id === base)
   if (found && typeof found.supportsImages === 'boolean') {
@@ -537,7 +537,7 @@ watch(
 // wheel that stops a hair short, still count as following the conversation.
 const FOLLOW_THRESHOLD_PX = 24
 // The picker, so a send the backend refused can ask it to re-read the catalog.
-const modelPicker = ref<{ reloadForces: () => Promise<void> } | null>(null)
+
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
@@ -847,11 +847,6 @@ async function send() {
     scrollToBottom(false)
   } else {
     sendError.value = sessions.error || '发送失败，请重试。'
-    // The backend may have dropped the model the list offered it. Re-reading
-    // the catalog costs the user nothing (the platform answers from its own
-    // cache while the refresh runs) and the retry then chooses from what the
-    // backend really runs.
-    if (model) void modelPicker.value?.reloadForces()
   }
   sending.value = false
 }
@@ -1173,10 +1168,8 @@ async function removeSession() {
                     @change="onFileInput"
                   />
                   <ModelSelect
-                    ref="modelPicker"
                     :key="`${activeSession.backend}-${activeSession.id}`"
                     v-model="selectedModel"
-                    :project-id="props.projectId"
                     :backend="activeSession.backend"
                     :model-selection="activeSession.capabilities?.modelSelection"
                     @status="onModelStatus"

@@ -224,6 +224,28 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 28, name: "create_agent_models", run: func(tx *gorm.DB) error {
+		// Agent model catalogs are persisted snapshots: the platform reads them
+		// without touching the backend and replaces them only on an explicit
+		// refresh. The metadata table is separate so an empty catalog still
+		// remembers when it was synced.
+		if !tx.Migrator().HasTable(&AgentModelCatalog{}) {
+			if err := tx.Migrator().CreateTable(&AgentModelCatalog{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&AgentModel{}) {
+			if err := tx.Migrator().CreateTable(&AgentModel{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasIndex(&AgentModel{}, "idx_agent_model_backend_model") {
+			if err := tx.Migrator().CreateIndex(&AgentModel{}, "idx_agent_model_backend_model"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

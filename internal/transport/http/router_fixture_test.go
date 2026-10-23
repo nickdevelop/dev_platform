@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
@@ -61,6 +62,7 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Models:        modelsSvc,
 		Instances:     instSvc,
 		AgentServices: agentservices.NewService(nil),
+		AgentModels:   agentmodels.NewService(db, registry),
 		Sessions:      sessions.NewService(db, registry, instSvc),
 		Tasks:         tasksSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),

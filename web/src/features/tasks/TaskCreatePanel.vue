@@ -2,7 +2,7 @@
 // Task Creation Panel: structured like NewSessionPanel with session template fields,
 // adding task type selection (standard vs flow placeholder) and execution mode configuration.
 import { computed, onMounted, ref, watch } from 'vue'
-import { listBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
+import type { BackendId } from '../../api/agents'
 import type { ScheduleType, TaskType } from '../../api/tasks'
 import ModelSelect from '../chat/composer/ModelSelect.vue'
 import { useAgentsStore } from '../../stores/agents'
@@ -352,8 +352,7 @@ async function handleCreateTask() {
             <div class="model-select-wrapper">
               <ModelSelect
                 v-model="selectedModel"
-                :key="`${selectedBackend}-${selectedProjectId}`"
-                :project-id="selectedProjectId ?? 0"
+                :key="selectedBackend"
                 :backend="selectedBackend"
                 :model-selection="true"
                 @status="modelOk = $event"

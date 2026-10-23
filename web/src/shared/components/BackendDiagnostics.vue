@@ -9,6 +9,9 @@ import type { BackendDiagnostics } from '../../api/agents'
 
 const props = defineProps<{
   diagnostics: BackendDiagnostics[]
+  // compact drops the page-level heading and outer margin so the panel can sit
+  // inside one agent card. The Agent settings page renders one entry per card.
+  compact?: boolean
 }>()
 
 const statusLabels: Record<string, string> = {
@@ -64,8 +67,8 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
 </script>
 
 <template>
-  <section class="diagnostics" aria-label="后端诊断">
-    <h2>后端诊断</h2>
+  <section class="diagnostics" :class="{ compact: props.compact }" aria-label="后端诊断">
+    <h2 v-if="!props.compact">后端诊断</h2>
     <ul class="backend-list">
       <li
         v-for="entry in props.diagnostics"
@@ -117,6 +120,10 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
 <style scoped>
 .diagnostics {
   margin: 1rem 0;
+}
+
+.diagnostics.compact {
+  margin: 0.5rem 0 0;
 }
 
 .diagnostics h2 {

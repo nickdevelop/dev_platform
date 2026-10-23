@@ -1,18 +1,41 @@
 <script setup lang="ts">
 // Agent management section: per-backend platform enablement, executable path
-// detection, a manual path fallback when auto-detection fails, and the
+// detection, a manual path fallback when auto-detection fails, the
 // machine-level service block — the one place in the platform that may start or
-// stop a third-party service, on an operator's explicit request.
-import { onMounted, reactive, ref } from 'vue'
+// stop a third-party service — persisted model catalogs with manual refresh,
+// and each backend's diagnostics. Backend diagnostics live here, not in project
+// settings: they describe the machine, not a project.
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useAgentsStore } from '../../stores/agents'
+import { describeApiError } from '../../api/client'
+import {
+  listAgentBackendModels,
+  refreshAgentBackendModels,
+  type AgentServiceStatus,
+  type ModelInfo,
+} from '../../api/agents'
 import type { AgentDetection } from '../../api/settings'
-import type { AgentServiceStatus } from '../../api/agents'
+import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
+import { rememberModels } from '../../shared/modelCache'
 
 const settings = useSettingsStore()
 const agents = useAgentsStore()
 const pathInputs = reactive<Record<string, string>>({})
 const detections = reactive<Record<string, AgentDetection | null>>({})
+
+// Persisted model snapshots, one per backend. A read never touches the agent;
+// only the refresh button asks the backend for its current catalog.
+const models = reactive<Record<string, ModelInfo[]>>({})
+const modelsUpdatedAt = reactive<Record<string, string | null>>({})
+const modelsLoading = reactive<Record<string, boolean>>({})
+const modelsError = reactive<Record<string, string>>({})
+
+const diagnosticsByBackend = computed(() => {
+  const byBackend = new Map<string, (typeof agents.diagnostics)[number]>()
+  for (const report of agents.diagnostics) byBackend.set(report.backend, report)
+  return byBackend
+})
 // The backend whose stop is awaiting confirmation, and nothing else. Stopping a
 // machine-wide service interrupts every client of it, so the click that opens
 // this confirmation is never the click that stops it.
@@ -21,11 +44,18 @@ const confirmStop = ref<string | null>(null)
 onMounted(async () => {
   void settings.loadAgents()
   await agents.loadBackends()
+  // Diagnostics are point-in-time and refetched on every visit; nothing polls.
+  void agents.loadDiagnostics()
   // One look per page load, and after that only when the operator presses the
   // button. The service is a third-party process: the platform does not poll it
   // and never acts on its state by itself.
   for (const entry of agents.serviceBackends) {
     void agents.detectService(entry.backend)
+  }
+  // Read the persisted snapshot only; the agent is not contacted until the
+  // operator presses refresh.
+  for (const entry of agents.orderedBackends) {
+    if (entry.capabilities?.modelSelection) void loadModels(entry.backend, false)
   }
 })
 
@@ -82,6 +112,61 @@ function stateLabel(backend: string): string {
   }
 }
 
+function supportsModels(backend: string): boolean {
+  return agents.backendFor(backend)?.capabilities.modelSelection === true
+}
+
+async function loadModels(backend: string, refresh: boolean) {
+  modelsLoading[backend] = true
+  try {
+    const list = refresh
+      ? await refreshAgentBackendModels(backend)
+      : await listAgentBackendModels(backend)
+    models[backend] = list.models
+    modelsUpdatedAt[backend] = list.updatedAt
+    rememberModels(backend, list.models)
+    modelsError[backend] = ''
+  } catch (error) {
+    modelsError[backend] = describeApiError(error)
+  } finally {
+    modelsLoading[backend] = false
+  }
+}
+
+function updatedAtLabel(backend: string): string {
+  const raw = modelsUpdatedAt[backend]
+  if (!raw) return '尚未同步模型'
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return '上次同步时间未知'
+  return `上次同步于 ${parsed.toLocaleString()}`
+}
+
+const diagnosticsStatusLabels: Record<string, string> = {
+  ok: '正常',
+  warning: '警告',
+  error: '错误',
+  unknown: '未知',
+}
+
+function diagnosticsFor(backend: string) {
+  const report = diagnosticsByBackend.value.get(backend)
+  return report ? [report] : []
+}
+
+function diagnosticsStatus(backend: string): string {
+  return diagnosticsByBackend.value.get(backend)?.status ?? 'unknown'
+}
+
+function diagnosticsStatusLabel(backend: string): string {
+  if (!diagnosticsByBackend.value.has(backend)) return '未检测'
+  return diagnosticsStatusLabels[diagnosticsStatus(backend)] ?? '未知'
+}
+
+function diagnosticsOpen(backend: string): boolean {
+  const status = diagnosticsStatus(backend)
+  return status === 'warning' || status === 'error'
+}
+
 function checkedAt(backend: string): string {
   const raw = serviceFor(backend)?.checkedAt
   if (!raw) return '未检测'
@@ -120,6 +205,7 @@ function cancelStop() {
     <p class="intro">启用后可在项目中选择并创建新会话。停用只禁止新建，已有会话继续可用。</p>
 
     <p v-if="settings.agentsError" class="error" role="alert">{{ settings.agentsError }}</p>
+    <p v-if="agents.diagnosticsError" class="error" role="alert">{{ agents.diagnosticsError }}</p>
 
     <article
       v-for="agent in settings.agents"
@@ -189,6 +275,42 @@ function cancelStop() {
         }}
       </p>
 
+      <div v-if="supportsModels(agent.backend)" class="models" :data-test="`agent-models-${agent.backend}`">
+        <div class="models-head">
+          <strong>模型</strong>
+          <button
+            type="button"
+            :data-test="`agent-models-refresh-${agent.backend}`"
+            :disabled="modelsLoading[agent.backend] === true"
+            @click="loadModels(agent.backend, true)"
+          >
+            刷新
+          </button>
+        </div>
+        <p v-if="modelsLoading[agent.backend]" class="models-line">正在读取…</p>
+        <p v-if="modelsError[agent.backend]" class="models-line bad" role="alert">
+          {{ modelsError[agent.backend] }}
+        </p>
+        <ul v-if="models[agent.backend]?.length" class="model-list">
+          <li
+            v-for="model in models[agent.backend]"
+            :key="model.id"
+            :data-agent-model="model.id"
+            class="model-item"
+          >
+            <span class="model-name">{{ model.name || model.id }}</span>
+            <span class="model-id">{{ model.id }}</span>
+            <span v-if="model.variants && model.variants.length" class="model-variants">
+              变体：{{ model.variants.join(' / ') }}
+            </span>
+          </li>
+        </ul>
+        <p v-else-if="!modelsLoading[agent.backend]" class="models-line">
+          尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
+        </p>
+        <p class="models-updated">{{ updatedAtLabel(agent.backend) }}</p>
+      </div>
+
       <div v-if="showsService(agent.backend)" class="service">
         <p class="service-state">
           service
@@ -246,6 +368,20 @@ function cancelStop() {
           </div>
         </div>
       </div>
+
+      <details
+        class="diagnostics"
+        :open="diagnosticsOpen(agent.backend)"
+        :data-test="`agent-diagnostics-${agent.backend}`"
+      >
+        <summary>
+          诊断
+          <span class="status-badge" :class="`status-${diagnosticsStatus(agent.backend)}`">
+            {{ diagnosticsStatusLabel(agent.backend) }}
+          </span>
+        </summary>
+        <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
+      </details>
     </article>
   </section>
 </template>
@@ -333,6 +469,98 @@ button {
 
 .detection.bad,
 .error {
+  color: var(--color-danger);
+}
+
+.models {
+  margin-top: calc(var(--space-unit) * 1.5);
+  padding-top: calc(var(--space-unit) * 1.5);
+  border-top: 1px solid var(--color-border);
+}
+
+.models-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-unit);
+}
+
+.model-list {
+  list-style: none;
+  margin: var(--space-unit) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.4);
+}
+
+.model-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(var(--space-unit) * 0.75);
+  font-size: 0.85rem;
+}
+
+.model-name {
+  color: var(--color-text);
+}
+
+.model-id {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.model-variants {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.models-line,
+.models-updated {
+  margin: var(--space-unit) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.models-line.bad {
+  color: var(--color-danger);
+}
+
+.diagnostics {
+  margin-top: calc(var(--space-unit) * 1.5);
+  padding-top: calc(var(--space-unit) * 1.5);
+  border-top: 1px solid var(--color-border);
+}
+
+.diagnostics summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-unit);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.status-badge {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  font-size: 0.75rem;
+}
+
+.status-ok {
+  border-color: var(--color-success-border);
+  color: var(--color-success);
+}
+
+.status-warning {
+  border-color: var(--color-warning-border);
+  color: var(--color-warning);
+}
+
+.status-error {
+  border-color: var(--color-danger-border);
   color: var(--color-danger);
 }
 

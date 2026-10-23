@@ -131,7 +131,7 @@ export function useComposerContext(options: ComposerContextOptions) {
       modelLimit.value = undefined
       return
     }
-    const cached = cachedModels(options.projectId.value, session.backend)
+    const cached = cachedModels(session.backend)
     const base = model.split('#')[0]
     const found = cached?.find((entry) => entry.id === model || entry.id === base)
     const limit = found?.contextLimit

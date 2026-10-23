@@ -743,7 +743,7 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(wrapper.find('button.send-button').attributes('disabled')).toBeDefined()
   })
 
-  it('re-reads the model list when the backend refuses the message', async () => {
+  it('reports a refused message without re-reading the model list', async () => {
     const modelRequests: string[] = []
     const models = [{ id: 'pi/a', name: 'Model A', provider: 'pi' }]
     const selectable = capabilities({ modelSelection: true })
@@ -755,7 +755,7 @@ describe('SessionChatPanel opencode approvals', () => {
           modelRequests.push(url)
           return {
             status: 200,
-            json: async () => ({ models, updatedAt: '2026-10-13T12:00:00Z', stale: false }),
+            json: async () => ({ models, updatedAt: '2026-10-13T12:00:00Z' }),
           } as Response
         }
         if (url.endsWith('/messages')) {
@@ -782,13 +782,10 @@ describe('SessionChatPanel opencode approvals', () => {
     await wrapper.find('form.send').trigger('submit')
     await flushPromises()
 
-    // A refusal can mean the backend no longer runs the model that list offered.
-    // The picker re-reads it past the platform cache, so the retry chooses from
-    // what the backend really runs instead of offering the same model again.
-    expect(modelRequests).toEqual([
-      '/api/projects/1/agent-backends/opencode-v2/models',
-      '/api/projects/1/agent-backends/opencode-v2/models?refresh=1',
-    ])
+    // A refusal is reported to the user. The platform never refreshes the
+    // catalog on its own: only the Agent settings refresh button can do that.
+    expect(wrapper.find('.send-error').exists()).toBe(true)
+    expect(modelRequests).toEqual(['/api/agent-backends/opencode-v2/models'])
   })
 
   it('keeps each session’s chosen model when switching sessions', async () => {
@@ -1114,7 +1111,7 @@ describe('SessionChatPanel conversation layout', () => {
     // choices, like a real project switch.
     const wrapper = mountPanel('sess-1')
     await flushPromises()
-    rememberModels(1, 'opencode-v2', [{ id: 'mock/model-a', name: 'Model A', provider: 'mock', contextLimit: 128000 }])
+    rememberModels('opencode-v2', [{ id: 'mock/model-a', name: 'Model A', provider: 'mock', contextLimit: 128000 }])
     useSessionsStore().setAutoModel('sess-1', 'mock/model-a')
     await flushPromises()
 
@@ -1152,7 +1149,7 @@ describe('SessionChatPanel conversation layout', () => {
     await flushPromises()
 
     // Model in catalog has NO contextLimit (like unadvertised dsh modelCatalog)
-    rememberModels(1, 'opencode-v2', [{ id: 'mock/model-unadvertised', name: 'Model Unadvertised', provider: 'mock' }])
+    rememberModels('opencode-v2', [{ id: 'mock/model-unadvertised', name: 'Model Unadvertised', provider: 'mock' }])
     const sessionsStore = useSessionsStore()
     sessionsStore.setAutoModel('sess-1', 'mock/model-unadvertised')
     await flushPromises()

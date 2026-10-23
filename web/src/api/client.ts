@@ -274,6 +274,8 @@ const errorMessages: Record<string, string> = {
   service_unsupported: '该 Agent 后端不需要单独启动 service。',
   instance_start_failed: 'Agent 实例启动失败，请查看诊断信息。',
   unknown_backend: '未知的 Agent 后端。',
+  model_list_failed: '读取 Agent 模型失败，请检查 Agent 状态后重试。',
+  unsupported_capability: '当前 Agent 不支持该操作。',
   directory_missing: '目录已不存在。',
   invalid_target: '目标路径不合法。',
   project_not_authorized: '项目路径已失效或不可访问，请刷新后重试。',

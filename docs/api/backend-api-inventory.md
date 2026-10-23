@@ -9,26 +9,26 @@
 
 | 指标 | 数值 | 说明 |
 |---|---:|---|
-| API 端点（operation） | **95** | 不含 SPA 静态路由 |
+| API 端点（operation） | **96** | 不含 SPA 静态路由 |
 | 唯一路径（path） | **77** | 多个方法共享同一路径 |
 | 一级分组 | **10** | 基础认证、项目、模型、Agent、会话、设置、任务、提示词、终端、纯 Chat |
-| HTTP 方法 | GET 41 / POST 35 / PUT 11 / DELETE 8 | 无 PATCH |
+| HTTP 方法 | GET 41 / POST 36 / PUT 11 / DELETE 8 | 无 PATCH |
 | 协议形态 | JSON 90 / 文件流 1 / SSE 4 / WebSocket 1 | |
 | 公开端点 | 2 | `GET /health`、`GET /auth/session` |
 | 仅 CSRF、不需会话 | 1 | `POST /auth/login` |
-| 需要会话 | 92 | 其中 51 个变更方法还需 CSRF |
-| OpenAPI 覆盖 | 77 paths / 95 operations | 数量与实现相等，但集合仍有 5 换 5 偏差（见第 6 节） |
+| 需要会话 | 93 | 其中 52 个变更方法还需 CSRF |
+| OpenAPI 覆盖 | 77 paths / 96 operations | 数量与实现相等，但集合仍有偏差（见第 6 节） |
 
 几个值得先说的结论：
 
 1. **接口面集中在一个同源 `/api` 下**，没有版本前缀；单用户局域网部署下这是合理取舍，但契约变更没有并行版本可用。
 2. **鉴权是"全局 CSRF + 分组会话"两层**：变更方法统一过双提交 CSRF，管理路由统一过会话校验，新增路由很难漏掉鉴权。
-3. **85 = 85 是巧合，不是一致**：OpenAPI 与 Gin 的方法数恰好相等，但文档多出 5 个未实现的任务端点，实现多出 5 个未文档化的提示词端点（第 6 节）。
+3. **OpenAPI 与 Gin 的集合仍有偏差**：文档与实现的方法数不再以巧合相等，差异见第 6 节。
 4. **会话域是绝对核心**：23 个端点（24%）围绕会话、事件流与工具审批；纯 Chat 另有一套独立的 SSE 快照流，不依赖 agent 能力门控。
 
 ## 2. 接口如何被组织
 
-路由不是散落在 `main.go`，而是由每个领域服务导出 `RegisterRoutes`，组合根通过 `Dependencies` 显式注入；`Dependencies` 中某个服务为 `nil` 时，该组路由整体不注册（测试常用）。生产装配在 `cmd/platform/main.go` 中把 10 个服务全部注入。
+路由不是散落在 `main.go`，而是由每个领域服务导出 `RegisterRoutes`，组合根通过 `Dependencies` 显式注入；`Dependencies` 中某个服务为 `nil` 时，该组路由整体不注册（测试常用）。生产装配在 `cmd/platform/main.go` 中把 12 个服务全部注入。
 
 ```plantuml
 @startuml
@@ -42,7 +42,7 @@ actor "浏览器 / Vue 工作台" as Web
 
 rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
 
-rectangle "领域服务 internal/app（94 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 4 · agentservices 3 · sessions 23\nsettings 7 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
+rectangle "领域服务 internal/app（95 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 23\nsettings 7 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
 
 rectangle "契约 internal/core/agents\nBackendID · Capabilities · AgentAdapter" as C
 rectangle "适配 internal/providers\nopencode · pi" as P
@@ -63,7 +63,7 @@ end note
 
 **读图要点**
 
-- 95 个端点中 94 个由 11 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
+- 96 个端点中 95 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
 - `sessions` 的 23 个端点包含 `agent-backends` 目录（2 个）与 `opencode` 交互（5 个），因此它同时依赖 `core/agents` 契约与 SQLite 索引。
 - `terminal` 的 WebSocket 不走 `core/agents`，只依赖 `core/platform` 的 PTY/SSH 能力。
 
@@ -167,14 +167,15 @@ end note
 | 26 | DELETE | `/models/{id}` | 删除模型 | 会话+CSRF | 204 |
 | 27 | POST | `/models/test` | 测试模型连通性 | 会话+CSRF | 200 / 502 |
 
-### 4.4 Agent 实例与机器级服务（7）
+### 4.4 Agent 实例、模型与机器级服务（8）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
 | 28 | GET | `/projects/{id}/instances` | 列出项目下的 Agent 实例 | 会话 | 200 |
 | 29 | POST | `/projects/{id}/instances` | 启动实例（拉起子进程/sidecar） | 会话+CSRF | 201 / 502 |
 | 30 | POST | `/projects/{id}/instances/{instanceId}/stop` | 停止实例 | 会话+CSRF | 200 |
-| 31 | GET | `/projects/{id}/agent-backends/{backend}/models` | 后端对该项目可用的模型（`?refresh=1` 强制刷新） | 会话 | 200 / 502 |
+| 31 | GET | `/agent-backends/{backend}/models` | 读取平台持久化的 Agent 模型快照（不调用 Agent） | 会话 | 200 |
+| 31a | POST | `/agent-backends/{backend}/models/refresh` | 调用 Agent 并原子替换模型快照 | 会话+CSRF | 200 / 409 / 502 |
 | 32 | GET | `/agent-services/{backend}` | 探测机器级服务状态 | 会话 | 200 |
 | 33 | POST | `/agent-services/{backend}/start` | 启动机器级服务 | 会话+CSRF | 200 |
 | 34 | POST | `/agent-services/{backend}/stop` | 停止机器级服务 | 会话+CSRF | 200 |
@@ -367,11 +368,11 @@ stop
 
 ## 6. 契约一致性核对
 
-`docs/api/openapi.yaml` 有 77 paths / 95 operations，Gin 也是 77 paths / 95 operations，但两者并非同一集合：
+`docs/api/openapi.yaml` 有 77 paths / 96 operations，Gin 也是 77 paths / 96 operations，但两者并非同一集合：
 
 ```plantuml
 @startuml
-title 图5 契约核对：95 = 95，但不是同一集合
+title 图5 契约核对：96 = 96，但不是同一集合
 
 skinparam defaultTextAlignment center
 skinparam rectangle {
@@ -380,9 +381,9 @@ skinparam rectangle {
 }
 left to right direction
 
-rectangle "docs/api/openapi.yaml\n77 paths · 95 operations" as DOC #FBE3E3
+rectangle "docs/api/openapi.yaml\n77 paths · 96 operations" as DOC #FBE3E3
 rectangle "交集\n90 operations\n\n已对齐" as BOTH #E3F4E3
-rectangle "Gin 路由表\n77 paths · 95 operations" as CODE #FFF3D6
+rectangle "Gin 路由表\n77 paths · 96 operations" as CODE #FFF3D6
 
 DOC --> BOTH : 文档独有 5
 BOTH --> CODE : 实现独有 5
@@ -445,6 +446,7 @@ BOTH --> CODE : 实现独有 5
 
 **附：统计口径复核**
 
-- 95 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 4 + agentservices 3 + sessions 23 + settings 7 + tasks 8 + prompts 5 + terminal 8 + chat 10。
-- 方法分布：GET 41 + POST 35 + PUT 11 + DELETE 8 = 95。
-- 路径分布：`/projects/*` 35、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 2、`/agent-backends/*` 2、`/health` 1。
+- 96 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 23 + settings 7 + tasks 8 + prompts 5 + terminal 8 + chat 10。
+- 方法分布：GET 41 + POST 36 + PUT 11 + DELETE 8 = 96。
+- 路径分布：`/projects/*` 34、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 2、`/agent-backends/*` 4、`/health` 1。
+- 2026-10-23 变更：项目级模型清单端点已移除；Agent 模型改为平台级持久化快照，读取使用 `GET /agent-backends/{backend}/models`，手动刷新使用 `POST /agent-backends/{backend}/models/refresh`（由新的 `agentmodels` 服务注册）。

@@ -93,10 +93,6 @@ type Service struct {
 	// means every backend is enabled.
 	platformEnabled func(agents.BackendID) bool
 
-	// modelCatalog serves each backend's model list from cache so opening a
-	// session never waits on a subprocess or a server round trip.
-	modelCatalog *agents.ModelCatalog
-
 	// mu guards streams, the per-instance upstream subscriptions.
 	mu      sync.Mutex
 	streams map[string]*stream
@@ -133,11 +129,10 @@ func NewServiceWithRepository(repo Repository, registry *agents.Registry, projec
 		repo:         repo,
 		registry:     registry,
 		projects:     projects,
-		newID:        randomID,
-		now:          func() time.Time { return time.Now().UTC() },
-		streams:      make(map[string]*stream),
-		stopGates:    make(map[string]*stopGate),
-		modelCatalog: agents.NewModelCatalog(agents.WithModelTTL(defaultModelTTL)),
+		newID:     randomID,
+		now:       func() time.Time { return time.Now().UTC() },
+		streams:   make(map[string]*stream),
+		stopGates: make(map[string]*stopGate),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -155,15 +150,6 @@ func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
 		if fn != nil {
 			s.platformEnabled = fn
 		}
-	}
-}
-
-// WithModelCatalogOptions rebuilds the model list cache with opts (freshness
-// window, clock). It exists for tests and for operators who want the workbench
-// to track a backend's catalog more closely than the default.
-func WithModelCatalogOptions(opts ...agents.ModelCatalogOption) Option {
-	return func(s *Service) {
-		s.modelCatalog = agents.NewModelCatalog(opts...)
 	}
 }
 

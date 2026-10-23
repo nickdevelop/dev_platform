@@ -9,6 +9,11 @@ const VITE_PORT = process.env.E2E_VITE_PORT ?? '15173'
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
+  // Every spec drives the same real backend, SQLite database and machine-wide
+  // opencode service. Some specs stop or start that service, so running files
+  // in parallel makes unrelated specs race against it. Keep the suite serial.
+  workers: 1,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: [['list']],

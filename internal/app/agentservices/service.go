@@ -5,8 +5,7 @@
 //
 // The package depends only on the agent contracts and the adapter registry. It
 // never starts a service from a business path: start and stop are reachable
-// only through the platform settings routes, and a change invalidates the
-// backend's cached model lists through the hook the composition root installs.
+// only through the platform settings routes.
 package agentservices
 
 import (
@@ -27,31 +26,15 @@ type Registry interface {
 	Get(id agents.BackendID) (agents.AgentAdapter, bool)
 }
 
-// Option configures a Service.
-type Option func(*Service)
-
-// WithChangeHook installs a function called after every start or stop attempt,
-// whatever its outcome. The composition root uses it to drop the backend's
-// cached model lists: a service that started or stopped can change what the
-// backend answers.
-func WithChangeHook(fn func(agents.BackendID)) Option {
-	return func(s *Service) { s.onChange = fn }
-}
-
 // Service controls the machine-level services of registered backends.
 type Service struct {
 	registry Registry
-	onChange func(agents.BackendID)
 	now      func() time.Time
 }
 
 // NewService builds the service facade over the adapter registry.
-func NewService(registry Registry, opts ...Option) *Service {
-	s := &Service{registry: registry, now: func() time.Time { return time.Now().UTC() }}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
+func NewService(registry Registry) *Service {
+	return &Service{registry: registry, now: func() time.Time { return time.Now().UTC() }}
 }
 
 // controller resolves the optional machine-service control of a backend. The
@@ -95,7 +78,6 @@ func (s *Service) Start(ctx context.Context, backend agents.BackendID) (agents.S
 		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
 	}
 	status, err := controller.StartService(ctx)
-	s.changed(backend)
 	return status, err
 }
 
@@ -110,7 +92,6 @@ func (s *Service) Stop(ctx context.Context, backend agents.BackendID) (agents.Se
 		return agents.ServiceStatus{}, fmt.Errorf("%w: %q", agents.ErrServiceUnsupported, backend)
 	}
 	status, err := controller.StopService(ctx)
-	s.changed(backend)
 	return status, err
 }
 
@@ -124,11 +105,4 @@ func (s *Service) Available(backend agents.BackendID) error {
 		return err
 	}
 	return controller.ServiceAvailable()
-}
-
-// changed runs the change hook, when one is installed.
-func (s *Service) changed(backend agents.BackendID) {
-	if s.onChange != nil {
-		s.onChange(backend)
-	}
 }

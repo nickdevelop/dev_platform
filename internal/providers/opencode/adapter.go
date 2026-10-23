@@ -2034,9 +2034,9 @@ func isMultimodalModel(modelID string) bool {
 
 // ListModels returns the models the machine-wide server offers for a working
 // directory, identified as provider/model with each variant listed under its
-// model. The shared service answers, so no instance has to exist: the workbench
-// chooses a model before it has an instance, and a platform restart does not
-// hide the catalog behind a stale instance record.
+// model. The platform calls it only for an explicit manual refresh and persists
+// the result. An empty directory is the platform-wide scope: the shared service
+// then uses its own default context, so no project has to be involved.
 func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

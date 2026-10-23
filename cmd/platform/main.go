@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
@@ -330,10 +331,10 @@ func runServer(args []string) error {
 	// Unregistering a project stops its live instances first; the instance
 	// service is built from the project service, so the link is set here.
 	projectService.SetInstanceStopper(instanceService)
+	agentModels := agentmodels.NewService(db, registry)
 	// Machine-level agent services are controlled here, not by the instance
-	// service. A start or stop invalidates the backend's cached model lists,
-	// and the session layer refuses new instances while a service is down.
-	agentServices := agentservices.NewService(registry, agentservices.WithChangeHook(instanceService.InvalidateModels))
+	// service. The session layer refuses new instances while a service is down.
+	agentServices := agentservices.NewService(registry)
 	sessionService := sessions.NewService(db, registry, instanceService,
 		sessions.WithServiceGate(agentServices),
 		sessions.WithPlatformEnabled(settingsService.Enabled),
@@ -397,6 +398,7 @@ func runServer(args []string) error {
 		Models:        modelConfig,
 		Instances:     instanceService,
 		AgentServices: agentServices,
+		AgentModels:   agentModels,
 		Sessions:      sessionService,
 		Tasks:         taskService,
 		Prompts:       promptService,

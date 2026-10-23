@@ -207,6 +207,37 @@ type ModelDef struct {
 	UpdatedAt     time.Time
 }
 
+// AgentModel is one persisted model offered by an agent backend. The row is a
+// read-only snapshot of what the backend reported on the last explicit refresh,
+// never a platform-owned model definition: the backend remains the owner and
+// the platform only caches its catalog so reads do not touch the backend.
+// Table: agent_models.
+type AgentModel struct {
+	ID             uint   `gorm:"primaryKey;column:id"`
+	Backend        string `gorm:"column:backend;not null;uniqueIndex:idx_agent_model_backend_model"`
+	ModelID        string `gorm:"column:model_id;not null;uniqueIndex:idx_agent_model_backend_model"`
+	Name           string `gorm:"column:name"`
+	Provider       string `gorm:"column:provider"`
+	Variants       string `gorm:"column:variants"`
+	ContextLimit   *int   `gorm:"column:context_limit"`
+	SupportsImages bool   `gorm:"column:supports_images;not null;default:false"`
+	SortOrder      int    `gorm:"column:sort_order;not null;default:0"`
+}
+
+// TableName pins the agent model table name.
+func (AgentModel) TableName() string { return "agent_models" }
+
+// AgentModelCatalog records when a backend's model snapshot was last synced.
+// It exists separately from AgentModel so an empty catalog still remembers its
+// sync time. Table: agent_model_catalogs.
+type AgentModelCatalog struct {
+	Backend  string    `gorm:"primaryKey;column:backend;not null"`
+	SyncedAt time.Time `gorm:"column:synced_at"`
+}
+
+// TableName pins the agent model catalog table name.
+func (AgentModelCatalog) TableName() string { return "agent_model_catalogs" }
+
 // ChatGroup is one platform-owned pure-chat conversation group.
 // It organizes conversations into logical categories, similar to projects for sessions.
 // Table: chat_groups.

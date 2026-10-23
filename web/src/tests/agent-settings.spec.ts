@@ -15,7 +15,7 @@ type Call = { method: string; path: string; body: any }
 function backendList() {
   const capabilities = (sessionHistory: boolean) => ({
     streaming: true, sessionDiscovery: false, sessionContinue: false, stop: true, interrupt: false,
-    modelSelection: false, toolCallEvents: false, toolConfirmation: false, sessionHistory, rawEvents: false,
+    modelSelection: true, toolCallEvents: false, toolConfirmation: false, sessionHistory, rawEvents: false,
   })
   return {
     backends: [
@@ -53,6 +53,12 @@ function stubFetch(extra: Record<string, unknown> = {}) {
       }
       if (key === 'GET /agents') return { status: 200, json: async () => agents } as Response
       if (key === 'GET /agent-backends') return { status: 200, json: async () => backendList() } as Response
+      if (key === 'GET /agent-backends/diagnostics') {
+        return { status: 200, json: async () => ({ diagnostics: [] }) } as Response
+      }
+      if (key.startsWith('GET /agent-backends/') && key.endsWith('/models')) {
+        return { status: 200, json: async () => ({ models: [], updatedAt: null }) } as Response
+      }
       return { status: 200, json: async () => ({}) } as Response
     }),
   )
@@ -103,6 +109,70 @@ describe('AgentSettings', () => {
 
     const put = calls.find((c) => c.method === 'PUT' && c.path === '/agents/opencode-v2')
     expect(put?.body).toMatchObject({ enabled: true })
+  })
+})
+
+describe('AgentSettings diagnostics and models', () => {
+  it('shows backend diagnostics on the agent page and not elsewhere', async () => {
+    const report = {
+      backend: 'opencode-v2',
+      status: 'warning',
+      version: '2.0.24',
+      testedVersion: '2.0.24',
+      checks: [{ kind: 'version', status: 'warning', message: 'version outside the tested range' }],
+      capabilities: {
+        streaming: true, sessionDiscovery: false, sessionContinue: true, stop: true, interrupt: true,
+        modelSelection: true, toolCallEvents: true, toolConfirmation: false, sessionHistory: false, rawEvents: false,
+      },
+    }
+    const calls = stubFetch({ 'GET /agent-backends/diagnostics': { diagnostics: [report] } })
+    const wrapper = await mountView()
+
+    expect(calls.some((c) => c.method === 'GET' && c.path === '/agent-backends/diagnostics')).toBe(true)
+    const details = wrapper.find('[data-test="agent-diagnostics-opencode-v2"]')
+    expect(details.exists()).toBe(true)
+    expect(details.text()).toContain('警告')
+    expect(details.attributes('open')).toBeDefined()
+    expect(details.text()).toContain('version outside the tested range')
+  })
+
+  it('reads the persisted model snapshot and only contacts the agent on refresh', async () => {
+    const calls = stubFetch({
+      'GET /agent-backends/opencode-v2/models': {
+        models: [{ id: 'acme/gpt', name: 'GPT', provider: 'acme' }],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+      'POST /agent-backends/opencode-v2/models/refresh': {
+        models: [
+          { id: 'acme/gpt', name: 'GPT', provider: 'acme' },
+          { id: 'acme/small', name: 'Small', provider: 'acme' },
+        ],
+        updatedAt: '2026-10-23T12:30:00Z',
+      },
+    })
+    const wrapper = await mountView()
+
+    const block = wrapper.find('[data-test="agent-models-opencode-v2"]')
+    expect(block.exists()).toBe(true)
+    expect(block.text()).toContain('GPT')
+    // Mount reads the persisted snapshot only.
+    expect(calls.filter((c) => c.method === 'POST' && c.path.includes('/models/refresh'))).toHaveLength(0)
+
+    await wrapper.find('[data-test="agent-models-refresh-opencode-v2"]').trigger('click')
+    await flushPromises()
+
+    expect(
+      calls.some((c) => c.method === 'POST' && c.path === '/agent-backends/opencode-v2/models/refresh'),
+    ).toBe(true)
+    expect(block.text()).toContain('Small')
+  })
+
+  it('explains that a backend has never been synced instead of asking it', async () => {
+    const calls = stubFetch()
+    const wrapper = await mountView()
+
+    expect(wrapper.find('[data-test="agent-models-pi"]').text()).toContain('尚未同步模型')
+    expect(calls.some((c) => c.method === 'POST' && c.path.includes('/models/refresh'))).toBe(false)
   })
 })
 

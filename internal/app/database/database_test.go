@@ -141,6 +141,20 @@ func TestMigrateCreatesModelTables(t *testing.T) {
 	}
 }
 
+func TestMigrateCreatesAgentModelTables(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	for _, model := range []any{&AgentModelCatalog{}, &AgentModel{}} {
+		if !db.Migrator().HasTable(model) {
+			t.Errorf("table for %T does not exist after migration", model)
+		}
+	}
+	if !db.Migrator().HasIndex(&AgentModel{}, "idx_agent_model_backend_model") {
+		t.Error("agent_models (backend, model_id) unique index is missing")
+	}
+}
+
 func TestMigrateCreatesChatTables(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)

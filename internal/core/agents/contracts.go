@@ -371,14 +371,17 @@ type AgentAdapter interface {
 	// ListModels returns the models the backend offers as seen from a working
 	// directory. Requires Capabilities.ModelSelection.
 	//
-	// The catalog is the backend's, not an instance's: opencode answers from
-	// its machine-wide service (which scopes the list to the directory), pi
-	// from its own configuration. A caller with no instance yet — the workbench
-	// offering a model for a session it has not created — must be able to ask,
-	// so an adapter must never require a running instance here. directory is an
-	// already-authorized platform path a backend may use to scope its list and
-	// must never re-derive from user input; a backend whose catalog ignores the
-	// directory simply does not read it.
+	// The platform calls this only for an explicit refresh and persists the
+	// result; normal reads never ask the backend. The catalog is the backend's,
+	// not an instance's: opencode answers from its machine-wide service, pi from
+	// its own configuration. A caller with no instance yet must be able to ask,
+	// so an adapter must never require a running instance here.
+	//
+	// directory is an already-authorized platform path a backend may use to
+	// scope its list and must never re-derive from user input. An empty
+	// directory means the platform-wide scope: the adapter must use its own
+	// default context rather than reject the call. A backend whose catalog
+	// ignores the directory simply does not read it.
 	ListModels(ctx context.Context, directory string) ([]ModelInfo, error)
 
 	// Interrupt ends the current turn of one session and leaves the instance

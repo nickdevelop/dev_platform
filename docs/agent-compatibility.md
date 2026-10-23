@@ -65,6 +65,28 @@ subscribes to it. Tool approval and question forms are not a separate flag:
 they travel on the optional `agents.PermissionReplier` extension, and the
 workbench shows them when `toolConfirmation` is declared.
 
+### Model catalog
+
+The model catalog is platform-wide, not project-scoped. The platform persists
+one snapshot per backend (`agent_models` plus `agent_model_catalogs`) and exposes
+two operations:
+
+| Operation | Behaviour |
+| --- | --- |
+| `GET /api/agent-backends/{backend}/models` | Reads the persisted snapshot only. It never contacts the backend, so a stopped or unreachable agent still serves its last successful refresh. `updatedAt` is `null` until the first refresh. |
+| `POST /api/agent-backends/{backend}/models/refresh` | Calls `ListModels` on the adapter, then atomically replaces the snapshot. A failed call leaves the previous snapshot untouched. |
+
+Only an operator's refresh triggers the adapter. There is no TTL, background
+revalidation or scheduled refresh. The adapter is called with an empty
+directory, meaning the platform-wide/default scope; opencode therefore answers
+from its machine-wide service without a `directory` query parameter, while pi
+and deepseek ignore the argument. Project-local agent configuration is not
+folded into this catalog.
+
+A backend that does not declare `modelSelection` answers `unsupported_capability`
+on both operations. A stopped machine-level service answers `service_not_running`
+on refresh; the persisted snapshot is still readable.
+
 ### pi transport (RPC mode)
 
 The pi adapter operates strictly in RPC mode (`pi --mode rpc`):
@@ -175,7 +197,9 @@ is not.
 `GET /api/agent-backends/diagnostics` (session-authenticated) returns one
 report per registered backend: the overall status (the worst check), the
 detected CLI version, the tested version, the individual checks and the
-capability declaration. Every message is actionable and **redacted** —
+capability declaration. The workbench displays it only in Platform Settings →
+Agent, inside each backend's collapsible diagnostics block; project settings no
+longer reads or renders diagnostics. Every message is actionable and **redacted** —
 credentials (passwords, tokens, key-value secrets) are masked before a
 diagnostic is built, and server startup output is bounded.
 

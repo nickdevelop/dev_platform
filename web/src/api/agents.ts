@@ -140,14 +140,13 @@ export interface ModelInfo {
   supportsImages?: boolean
 }
 
-// Mirrors #/components/schemas/BackendModelList: the models one backend offers
-// to a project, and how current the answer is. updatedAt is when the backend was
-// last asked; stale means that answer is a cached snapshot with a fresher read
-// already running — show these models now, and ask again shortly.
-export interface BackendModelList {
+// Mirrors #/components/schemas/AgentModelList: the platform-wide model snapshot
+// persisted for one backend. updatedAt is null when the backend has never been
+// refreshed; an empty models array with a non-null updatedAt means the backend
+// reported no models on its last refresh.
+export interface AgentModelList {
   models: ModelInfo[]
-  updatedAt: string
-  stale: boolean
+  updatedAt: string | null
 }
 
 // GET /api/agent-backends
@@ -205,18 +204,23 @@ export function stopProjectInstance(projectId: number, instanceId: string): Prom
   )
 }
 
-// GET /api/projects/{id}/agent-backends/{backend}/models
+// GET /api/agent-backends/{backend}/models
 //
-// The model catalog belongs to the backend and the project's directory, not to a
-// running instance, so a project that has no instance yet can still offer its
-// models. refresh asks the backend now instead of accepting the cached snapshot.
-export function listBackendModels(
-  projectId: number,
-  backend: BackendId,
-  refresh = false,
-): Promise<BackendModelList> {
-  const query = refresh ? '?refresh=1' : ''
-  return get<BackendModelList>(
-    `/projects/${projectId}/agent-backends/${encodeURIComponent(backend)}/models${query}`,
+// Reads the platform's persisted model snapshot for a backend. It never asks
+// the backend for its catalog: a stopped or unreachable agent still serves its
+// last successful refresh.
+export function listAgentBackendModels(backend: BackendId): Promise<AgentModelList> {
+  return get<AgentModelList>(`/agent-backends/${encodeURIComponent(backend)}/models`)
+}
+
+// POST /api/agent-backends/{backend}/models/refresh
+//
+// Asks the backend for its current catalog and replaces the persisted snapshot.
+// This is the only path that contacts the agent; it is always triggered by the
+// operator's refresh button.
+export function refreshAgentBackendModels(backend: BackendId): Promise<AgentModelList> {
+  return mutate<AgentModelList>(
+    'POST',
+    `/agent-backends/${encodeURIComponent(backend)}/models/refresh`,
   )
 }

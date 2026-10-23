@@ -91,16 +91,21 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   const projectId = await registerProject(request, csrf)
   await uiLogin(page)
 
-  // The diagnostics panel reports both backends with the versions their
+  // The platform Agent page reports both backends with the versions their
   // fixtures mimic, inside the tested ranges.
-  await page.goto(`/projects/${projectId}/settings`)
-  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
+  await page.goto('/settings/agents')
+  await expect(page.getByRole('heading', { name: 'Agent' })).toBeVisible()
   const piReport = page.locator('[data-backend-diagnostics="pi"]')
   const ocReport = page.locator('[data-backend-diagnostics="opencode-v2"]')
   await expect(piReport.locator('[data-diagnostics-status]')).toHaveText('正常')
   await expect(ocReport.locator('[data-diagnostics-status]')).toHaveText('正常')
   await expect(piReport).toContainText('1.1.0')
   await expect(ocReport).toContainText('2.0.24')
+
+  // Return to the registered project so its row is selected for the session
+  // helpers below.
+  await page.goto(`/projects/${projectId}/settings`)
+  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
 
   // One session per backend, created by choosing the agent and giving a first
   // message; the platform
@@ -131,7 +136,7 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
   // The diagnostics panel still reports both backends usable after the
   // failure: a failed turn is a session problem, not a broken backend.
-  await page.goto(`/projects/${projectId}/settings`)
+  await page.goto('/settings/agents')
   await expect(piReport.locator('[data-diagnostics-status]')).toHaveText('正常')
   await expect(ocReport.locator('[data-diagnostics-status]')).toHaveText('正常')
 })

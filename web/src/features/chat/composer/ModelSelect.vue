@@ -1,22 +1,21 @@
 <script setup lang="ts">
 // Model picker for the composer, laid out like the opencode desktop client: a
 // compact button shows the current model and opens a searchable list on click,
-// instead of an always-visible dropdown. A backend's model list is scoped to the
-// project, not to a running instance, so it is available here even when the
-// project has no instance yet — creating a session can offer a model.
+// instead of an always-visible dropdown. The platform persists one model
+// snapshot per backend, so the list is available without a project or a running
+// instance.
 //
-// The picker shows the last list seen for this project and backend the moment it
-// mounts, then asks the platform for it. The platform answers from its own cache
-// and refreshes behind the response, marking the answer stale; one short retry
-// then shows the freshly read list. A failed refresh with a cache present is
-// silent: the user already has models and sending stays enabled. With no cache,
-// a failure is reported and sending is gated so a free-text model is never used.
+// The picker shows the last list seen for this backend the moment it mounts,
+// then reads the platform's persisted snapshot. It never asks the agent for a
+// refresh: only the platform settings page can do that. A failed read with a
+// cache present is silent: the user already has models and sending stays
+// enabled. With no cache, a failure is reported and sending is gated so a
+// free-text model is never used.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { listBackendModels, type BackendId, type ModelInfo } from '../../../api/agents'
+import { listAgentBackendModels, type BackendId, type ModelInfo } from '../../../api/agents'
 import { cachedModels, rememberModels } from '../../../shared/modelCache'
 
 const props = defineProps<{
-  projectId: number
   backend: BackendId
   modelSelection: boolean
   modelValue: string
@@ -38,23 +37,6 @@ const failed = ref(false)
 // discarded, so switching sessions can never show the previous session's models.
 let requestToken = 0
 
-// A stale answer means the platform is re-reading the backend right now. One
-// short wait and a bounded number of retries show the new list on their own;
-// unbounded polling would turn a slow backend into a stream of requests.
-const STALE_RETRY_DELAY = 1200
-const STALE_RETRIES = 2
-let staleRetries = 0
-let staleTimer: ReturnType<typeof setTimeout> | undefined
-
-function scheduleStaleRetry() {
-  if (staleRetries >= STALE_RETRIES) return
-  staleRetries += 1
-  if (staleTimer !== undefined) clearTimeout(staleTimer)
-  staleTimer = setTimeout(() => {
-    void refresh(false)
-  }, STALE_RETRY_DELAY)
-}
-
 // Popover state. The list is rendered only while open, which is the point of
 // the redesign: the composer stays compact until the user asks for the models.
 const open = ref(false)
@@ -66,31 +48,29 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const SEARCH_THRESHOLD = 6
 
 // applyModels shows a list and keeps the selection valid: an unknown previous
-// value falls back to the first model.
+// value falls back to the first model, and an empty snapshot clears it so a
+// stale model is never sent to a backend that no longer offers it.
 function applyModels(list: ModelInfo[]) {
   models.value = list
   const current = props.modelValue
   const next = list.some((model) => model.id === current) ? current : (list[0]?.id ?? '')
-  if (next !== '' && next !== current) emit('update:modelValue', next)
+  if (next !== current) emit('update:modelValue', next)
 }
 
-// refresh loads the project's model list for this backend. surfaceFailure
-// distinguishes the first load (no cache: a failure is shown and gates sending)
-// from a background refresh (cache present: a failure is silent). force asks the
-// platform to read the backend now, which is what a caller does when the backend
-// has just refused a model the list offered.
-async function refresh(surfaceFailure: boolean, force = false) {
+// refresh loads the platform's persisted snapshot for this backend.
+// surfaceFailure distinguishes the first load (no cache: a failure is shown and
+// gates sending) from a background read (cache present: a failure is silent).
+async function refresh(surfaceFailure: boolean) {
   const token = ++requestToken
   loading.value = true
   try {
-    const list = await listBackendModels(props.projectId, props.backend, force)
+    const list = await listAgentBackendModels(props.backend)
     if (token !== requestToken) return
     failed.value = false
     applyModels(list.models)
-    rememberModels(props.projectId, props.backend, list.models)
+    rememberModels(props.backend, list.models)
     emit('failed', false)
     emit('status', true)
-    if (list.stale) scheduleStaleRetry()
   } catch {
     if (token !== requestToken) return
     if (surfaceFailure) {
@@ -106,12 +86,7 @@ async function refresh(surfaceFailure: boolean, force = false) {
 
 async function load() {
   if (!props.modelSelection) return
-  if (staleTimer !== undefined) {
-    clearTimeout(staleTimer)
-    staleTimer = undefined
-  }
-  staleRetries = 0
-  const cached = cachedModels(props.projectId, props.backend)
+  const cached = cachedModels(props.backend)
   if (cached && cached.length > 0) {
     applyModels(cached)
     emit('status', true)
@@ -121,29 +96,14 @@ async function load() {
   await refresh(true)
 }
 
-// reloadForces re-reads the backend through the platform cache. A parent calls
-// it after the backend rejected a model this list offered, so the next choice is
-// made from what the backend really runs.
-async function reloadForces() {
-  if (staleTimer !== undefined) {
-    clearTimeout(staleTimer)
-    staleTimer = undefined
-  }
-  staleRetries = 0
-  await refresh(true, true)
-}
-
-defineExpose({ reloadForces })
-
 onMounted(() => {
   document.addEventListener('mousedown', onDocumentClick)
   void load()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocumentClick)
-  if (staleTimer !== undefined) clearTimeout(staleTimer)
 })
-watch(() => [props.projectId, props.backend, props.modelSelection], load)
+watch(() => [props.backend, props.modelSelection], load)
 
 // When the parent has no selection for the current session (a session never opened
 // before), default to the first model so the picker is never left blank. A session
@@ -191,7 +151,8 @@ const selected = computed(() => {
 const selectedLabel = computed(() => {
   if (selected.value) return selected.value.name || selected.value.id
   if (props.modelValue !== '') return parsedSelection.value.baseId
-  return loading.value ? '加载模型…' : '选择模型'
+  if (loading.value) return '加载模型…'
+  return models.value.length === 0 ? '暂无模型' : '选择模型'
 })
 
 const activeVariant = computed(() => parsedSelection.value.variant)
@@ -302,7 +263,10 @@ function onKeydown(event: KeyboardEvent) {
             </div>
           </li>
         </ul>
-        <p v-if="filtered.length === 0" class="model-empty">没有匹配的模型</p>
+        <p v-if="models.length === 0" class="model-empty">
+          尚未同步模型，请在平台设置 → Agent 中刷新。
+        </p>
+        <p v-else-if="filtered.length === 0" class="model-empty">没有匹配的模型</p>
       </div>
     </template>
   </div>

@@ -10,6 +10,7 @@
 | 同构：项目管理 | `internal/app/projects`、`internal/app/paths` | 项目记录、目录的安全生命周期 | 否，不知道 agent 的存在 |
 | 同构：会话与实例编排 | `internal/app/sessions`（子包 `store` 会话索引、`turns` 轮次跟踪）、`internal/app/instances`、`internal/transport/http` | 会话索引、轮次状态、实例生命周期、SSE、路由 | 否，只依赖 `internal/core/agents` 契约 |
 | 同构：机器级 agent 服务 | `internal/app/agentservices` | 服务的探测、运维员触发的启停、启动门控 | 否，只依赖 `internal/core/agents` 契约与适配器注册表 |
+| 同构：Agent 模型快照 | `internal/app/agentmodels` | 平台级模型清单的持久化读取与运维员触发的手动刷新 | 否，只依赖 `internal/core/agents` 契约、适配器注册表与平台数据库 |
 | 同构：纯 Chat | `internal/app/chat` | 全局、非 agent 的模型对话：对话/消息持久化、模型调用、SSE、标题 | 否，只依赖 `modelconfig` 的模型解析与 `core/textutil`；不得 import agent 契约、providers、projects、instances、sessions |
 | 契约（core） | `internal/core/agents`（`contracts.go`、`extensions.go`、`descriptor.go`、`registry.go`、`service.go`） | 能力声明、标准事件、扩展接口、后端描述符 | 仅在 `BackendID` 常量定义处 |
 | OS 抽象（core） | `internal/core/platform`（接口 + `unix/windows/fake/policy`） | OS 差异端口与平台无关策略 | 否 |
@@ -57,3 +58,5 @@
 | 项目级后端开关 `AgentBackendConfig` | 已随第 2 项移除（迁移 v18 删表），后端启用只剩平台设置一处 | 已完成 |
 | 原始事件端点（`/raw-events`）与前端 `api/interactions.ts` 的 `rawEventsPath` | 原始流保留为调试通道，待处理交互已改走归一化流，前端交互不再订阅原始流 | 保留端点与 `rawEvents` 能力标志；仅供后端专属调试视图使用，通用交互路径不依赖它 |
 | 机器级服务的界面文案 | 文案中的"opencode service"由 `label` 小写生成，保持了原有字符串 | 新增带服务的后端时文案自动生成 |
+| 项目级模型清单 | `GET /projects/{id}/agent-backends/{backend}/models` 与项目目录绑定，模型缓存放在 `instances` | 已移除。模型清单改为 `internal/app/agentmodels` 的平台级持久化快照：GET 只读数据库，POST refresh 才调用 Agent |
+| 项目级后端诊断 | 项目设置展示后端诊断与 machine service 提示 | 已移除。诊断只在平台设置 → Agent 的每张 Agent 卡片内展示 |

@@ -3,7 +3,7 @@
 // wire format fails here rather than in an integration no test covers.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
-import { listBackendModels } from '../api/agents'
+import { listAgentBackendModels, refreshAgentBackendModels } from '../api/agents'
 import { getProjectGitInfo } from '../api/git'
 import { createService, fetchModels, testModel } from '../api/models'
 import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
@@ -63,27 +63,29 @@ describe('session API contracts', () => {
 })
 
 describe('agents API contracts', () => {
-  it('lists a backend models from the project backend models route', async () => {
+  it('reads the platform model snapshot from the backend models route', async () => {
     const calls = stubJson({
       models: [{ id: 'pi/gpt', name: 'gpt', provider: 'pi' }],
       updatedAt: '2026-10-13T12:00:00Z',
-      stale: false,
     })
 
-    const result = await listBackendModels(7, 'pi/1')
+    const result = await listAgentBackendModels('pi/1')
 
-    expect(calls[0].url).toBe('/api/projects/7/agent-backends/pi%2F1/models')
+    expect(calls[0].url).toBe('/api/agent-backends/pi%2F1/models')
     expect(calls[0].init?.method).toBe('GET')
     expect(result.models[0].id).toBe('pi/gpt')
-    expect(result.stale).toBe(false)
+    expect(result.updatedAt).toBe('2026-10-13T12:00:00Z')
   })
 
-  it('asks the backend models route for a forced refresh when told to', async () => {
-    const calls = stubJson({ models: [], updatedAt: '2026-10-13T12:00:00Z', stale: false })
+  it('refreshes the platform model snapshot through the POST route', async () => {
+    installTestCSRF()
+    const calls = stubJson({ models: [], updatedAt: '2026-10-13T12:00:00Z' })
 
-    await listBackendModels(7, 'pi', true)
+    await refreshAgentBackendModels('pi')
 
-    expect(calls[0].url).toBe('/api/projects/7/agent-backends/pi/models?refresh=1')
+    expect(calls[0].url).toBe('/api/agent-backends/pi/models/refresh')
+    expect(calls[0].init?.method).toBe('POST')
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 
   it('reads project git state from the project git-info route', async () => {

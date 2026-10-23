@@ -669,8 +669,7 @@ async function createSession() {
               <ModelSelect
                 v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
-                :key="`${selectedBackend}-${selectedProjectId}`"
-                :project-id="selectedProjectId ?? props.projectId ?? 0"
+                :key="selectedBackend"
                 :backend="selectedBackend"
                 :model-selection="true"
                 @status="modelOk = $event"

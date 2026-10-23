@@ -22,7 +22,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（v1~v18） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v28，含 Agent 模型快照表） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），组合式 API，严格类型安全 |
@@ -39,7 +39,7 @@
 ```
 ① 组合根     cmd/platform/（Go 程序入口）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
-③ 领域服务   internal/app/{sessions, instances, projects, chat, tasks, terminal, settings, auth, ...}
+③ 领域服务   internal/app/{sessions, instances, agentmodels, projects, chat, tasks, terminal, settings, auth, ...}
 ⑤ 异构适配   internal/providers/{opencode, pi, deepseek}（实现 core 契约，向组合根导出 Descriptor）
 传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）
 ② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
@@ -71,11 +71,12 @@
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。 | `handlers.go`（WebSocket 升级与同源拦截）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
-| **`agentservices/`** | 机器级 Agent 后台守护服务管理。负责机器级第三方后台服务（如 OpenCode service）的健康探测、运维手动启停与启动门控。 | `service.go`（探测与启停协调）、`handlers.go`（运维管理 API） | 仅在后台服务支持的后端生效；启停时触发模型缓存失效钩子。 |
+| **`agentservices/`** | 机器级 Agent 后台守护服务管理。负责机器级第三方后台服务（如 OpenCode service）的健康探测、运维手动启停与启动门控。 | `service.go`（探测与启停协调）、`handlers.go`（运维管理 API） | 仅在后台服务支持的后端生效；不承担模型缓存失效职责。 |
+| **`agentmodels/`** | 平台级 Agent 模型快照。持久化每个后端最近一次手动刷新的模型清单；默认读取数据库，不调用 Agent；刷新时调用适配器并原子替换快照。 | `service.go`（List/Refresh）、`repository.go`（快照读写）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（v1~v18 迁移链）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v28 迁移链，含 `agent_models` / `agent_model_catalogs`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -267,6 +268,17 @@ web/src/
 
 ---
 
+### 5. 平台级 Agent 诊断与模型快照流（Diagnostics & Model Snapshot）
+
+- **诊断归属**：`GET /api/agent-backends/diagnostics` 是平台级接口。前端只在「平台设置 → Agent」中展示：每张 Agent 卡片内提供可折叠诊断详情，`warning` / `error` 默认展开。项目设置不再读取诊断，也不再展示 machine service 提示。
+- **模型持久化**：`internal/app/agentmodels` 管理平台级模型快照。`agent_models` 保存每个 backend 的模型行，`agent_model_catalogs` 保存最后同步时间；唯一索引为 `(backend, model_id)`。
+- **读取**：`GET /api/agent-backends/{backend}/models` 只读数据库，不调用 Agent；Agent 离线时仍返回上次成功快照。从未刷新返回 `models: []` 与 `updatedAt: null`。
+- **手动刷新**：`POST /api/agent-backends/{backend}/models/refresh` 才调用适配器 `ListModels(ctx, "")`，并在事务内原子替换快照。刷新失败保留旧快照；空结果清空模型但更新同步时间。
+- **刷新策略**：无 TTL、无后台刷新、无轮询、无定时任务。只有运维员在 Agent 设置页点击“刷新”才会同步。空目录表示平台级/后端默认作用域，不考虑项目目录级模型配置。
+- **边界**：Agent 模型是 Agent 的只读快照，不是平台模型配置；平台「模型」设置中的 OpenAI 兼容模型服务保持独立。
+
+---
+
 ## 六、API 传输层与安全规范（ADR-0001）
 
 前端与后端的数据通信拥有严格的安全架构约束：
@@ -307,6 +319,8 @@ make e2e
 
 - **E2E 运行环境规范**：
   E2E 测试由 `web/scripts/run-e2e.mjs` 编排，默认使用 `E2E_VITE_PORT=15173` 独立端口，避免与开发者本机 5173 端口冲突；测试桩（`web/e2e/fixtures/bin/`）完整支持各后端的最新协议模式（如 Pi 的 `--mode rpc`）。
+- **E2E 模型快照**：`web/e2e/global-setup.ts` 在测试开始前通过真实 API 执行一次平台 Agent 模型刷新，把模型快照写入临时数据库。产品默认只读数据库，因此这一步是测试对“运维员手动刷新”的模拟，不是产品自动刷新。
+- **E2E 串行执行**：所有 spec 共享同一个后端、SQLite 数据库与机器级 opencode service，部分 spec 会停止/启动该 service，因此 `playwright.config.ts` 固定 `workers: 1`，避免跨文件竞态。
 
 ---
 
