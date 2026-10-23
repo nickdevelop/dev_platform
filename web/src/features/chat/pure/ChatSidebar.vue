@@ -73,6 +73,15 @@ onMounted(async () => {
   }
 })
 
+// The quick-assistant popover creates conversations outside this sidebar.
+// Reload when that surface reports a list change.
+watch(
+  () => chats.listNonce,
+  () => {
+    void chats.loadChats()
+  },
+)
+
 // Auto-expand group containing the active chat
 watch(
   () => activeId.value,
@@ -89,6 +98,15 @@ watch(
 
 function chatsForGroup(groupId: number): Chat[] {
   return chats.chats.filter((c) => (c.groupId ?? 0) === groupId)
+}
+
+function isSystemGroup(group: ChatGroup): boolean {
+  return (group.systemKey ?? '') !== ''
+}
+
+function isSystemChat(chat: Chat): boolean {
+  const group = chats.groups.find((entry) => entry.id === (chat.groupId ?? 0))
+  return group !== undefined && isSystemGroup(group)
 }
 
 const ungroupedChats = computed(() => {
@@ -232,10 +250,11 @@ function formatChatTime(isoString?: string): string {
             >
               <span class="caret">{{ isGroupExpanded(group.id) ? '▾' : '▸' }}</span>
               <span class="group-name" :title="group.name">{{ group.name }}</span>
+              <span v-if="isSystemGroup(group)" class="system-badge">固定</span>
               <span class="count">{{ chatsForGroup(group.id).length }}</span>
             </button>
 
-            <div class="group-controls">
+            <div v-if="!isSystemGroup(group)" class="group-controls">
               <button
                 type="button"
                 class="icon-btn"
@@ -291,6 +310,7 @@ function formatChatTime(isoString?: string): string {
                   <RunningIndicator v-if="chat.running" label="生成中" class="chat-item-running" />
                   <div class="item-actions">
                     <button
+                      v-if="!isSystemChat(chat)"
                       type="button"
                       class="mini-btn"
                       title="移动到其他分组"
@@ -553,6 +573,15 @@ function formatChatTime(isoString?: string): string {
   border-radius: 9999px;
   padding: 0 0.5em;
   font-weight: normal;
+  flex-shrink: 0;
+}
+
+.system-badge {
+  font-size: 0.68rem;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 9999px;
+  padding: 0 0.45em;
   flex-shrink: 0;
 }
 

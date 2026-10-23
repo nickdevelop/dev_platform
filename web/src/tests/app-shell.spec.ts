@@ -18,6 +18,7 @@ import { useAgentsStore } from '../stores/agents'
 import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
+import { useSettingsStore } from '../stores/settings'
 import type { Capabilities } from '../api/sessions'
 
 function capabilities(): Capabilities {
@@ -538,5 +539,22 @@ describe('three-pane app shell', () => {
     await router.push('/')
     await flushPromises()
     expect(wrapper.find('[data-test="sidebar-toggle"]').attributes('title')).toBe('展开项目导航')
+  })
+})
+
+describe('quick assistant launcher visibility', () => {
+  it('mounts the floating button only when the platform toggle is enabled', async () => {
+    const { wrapper, pinia } = await setup('/', { ProjectSettingsPanel: true })
+    const settings = useSettingsStore(pinia)
+
+    expect(wrapper.find('[data-test="quick-assistant-button"]').exists()).toBe(false)
+
+    settings.quickAssistant.enabled = true
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-button"]').exists()).toBe(true)
+
+    settings.quickAssistant.enabled = false
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-button"]').exists()).toBe(false)
   })
 })

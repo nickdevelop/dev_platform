@@ -112,3 +112,43 @@ func TestAppearanceHandlerPutRejectsInvalid(t *testing.T) {
 		t.Errorf("error code = %q, want invalid_appearance", envelope.Error)
 	}
 }
+
+func TestQuickAssistantHandlers(t *testing.T) {
+	router, _ := newAppearanceRouter(t)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/settings/quick-assistant", nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200", rec.Code)
+	}
+	var got QuickAssistant
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode GET body: %v", err)
+	}
+	if got.Enabled {
+		t.Errorf("GET body = %+v, want disabled default", got)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/settings/quick-assistant", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode PUT body: %v", err)
+	}
+	if !got.Enabled {
+		t.Errorf("PUT body = %+v, want enabled", got)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/settings/quick-assistant", strings.NewReader(`{`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid PUT status = %d, want 400", rec.Code)
+	}
+}

@@ -23,6 +23,22 @@ export function putAppearance(appearance: Appearance): Promise<Appearance> {
   return mutate<Appearance>('PUT', '/settings/appearance', appearance)
 }
 
+// QuickAssistant toggles the floating quick-assistant surface. It is a
+// platform feature switch stored separately from the visual appearance config.
+export interface QuickAssistantSettings {
+  enabled: boolean
+}
+
+export function getQuickAssistantSettings(): Promise<QuickAssistantSettings> {
+  return get<QuickAssistantSettings>('/settings/quick-assistant')
+}
+
+export function putQuickAssistantSettings(
+  settings: QuickAssistantSettings,
+): Promise<QuickAssistantSettings> {
+  return mutate<QuickAssistantSettings>('PUT', '/settings/quick-assistant', settings)
+}
+
 // Agent management DTOs and calls. enabled gates new session creation; pathSource
 // is auto when the executable was found on PATH, manual when the operator set a
 // path, none when neither applies.

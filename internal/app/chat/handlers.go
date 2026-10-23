@@ -69,6 +69,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusNotFound, "group_not_found")
 	case errors.Is(err, ErrInvalidGroupName):
 		respondError(c, http.StatusBadRequest, "invalid_group_name")
+	case errors.Is(err, ErrGroupLocked):
+		respondError(c, http.StatusConflict, "group_locked")
 	case errors.Is(err, ErrModelUnavailable),
 		errors.Is(err, modelconfig.ErrModelNotFound),
 		errors.Is(err, modelconfig.ErrModelUnavailable):
@@ -126,7 +128,21 @@ type chatListResponse struct {
 func (s *Service) handleList(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	chats, total, err := s.List(limit, offset)
+	var (
+		chats []Chat
+		total int
+		err   error
+	)
+	if rawGroup := c.Query("groupId"); rawGroup != "" {
+		groupID, parseErr := strconv.ParseUint(rawGroup, 10, 64)
+		if parseErr != nil || groupID == 0 {
+			respondError(c, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		chats, total, err = s.ListByGroup(uint(groupID), limit, offset)
+	} else {
+		chats, total, err = s.List(limit, offset)
+	}
 	if err != nil {
 		respondServiceError(c, err)
 		return

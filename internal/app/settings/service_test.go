@@ -138,3 +138,44 @@ func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}
 }
+
+func TestQuickAssistantDefaultsToDisabled(t *testing.T) {
+	svc := NewService(openTestDB(t), testCatalog(t))
+
+	got, err := svc.QuickAssistant()
+	if err != nil {
+		t.Fatalf("QuickAssistant: %v", err)
+	}
+	if got != (QuickAssistant{Enabled: false}) {
+		t.Errorf("QuickAssistant() = %+v, want disabled", got)
+	}
+}
+
+func TestSetQuickAssistantRoundTrips(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, testCatalog(t))
+
+	saved, err := svc.SetQuickAssistant(QuickAssistant{Enabled: true})
+	if err != nil {
+		t.Fatalf("SetQuickAssistant: %v", err)
+	}
+	if !saved.Enabled {
+		t.Errorf("SetQuickAssistant returned %+v, want enabled", saved)
+	}
+
+	got, err := NewService(db, testCatalog(t)).QuickAssistant()
+	if err != nil {
+		t.Fatalf("reloaded QuickAssistant: %v", err)
+	}
+	if !got.Enabled {
+		t.Errorf("reloaded QuickAssistant = %+v, want enabled", got)
+	}
+
+	var row database.Setting
+	if err := db.Where("key = ?", quickAssistantKey).First(&row).Error; err != nil {
+		t.Fatalf("load stored row: %v", err)
+	}
+	if row.Value != `{"enabled":true}` {
+		t.Errorf("stored value = %s, want {\"enabled\":true}", row.Value)
+	}
+}

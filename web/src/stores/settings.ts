@@ -7,14 +7,17 @@ import {
   defaultAppearance,
   detectAgent,
   getAppearance,
+  getQuickAssistantSettings,
   listAgents,
   putAppearance,
+  putQuickAssistantSettings,
   setAgentEnabled,
   setAgentMode,
   setAgentPath,
   type AgentDetection,
   type AgentDto,
   type Appearance,
+  type QuickAssistantSettings,
 } from '../api/settings'
 import { describeApiError, UnauthorizedError } from '../api/client'
 import { applyAppearance, CACHE_KEY } from '../theme/apply'
@@ -34,6 +37,10 @@ export const useSettingsStore = defineStore('settings', {
     loading: false,
     saving: false,
     error: '',
+    quickAssistant: { enabled: false } as QuickAssistantSettings,
+    quickAssistantLoading: false,
+    quickAssistantSaving: false,
+    quickAssistantError: '',
     agents: [] as AgentDto[],
     agentsLoading: false,
     agentsError: '',
@@ -74,6 +81,39 @@ export const useSettingsStore = defineStore('settings', {
         return false
       } finally {
         this.saving = false
+      }
+    },
+
+    async loadQuickAssistant() {
+      this.quickAssistantLoading = true
+      try {
+        const config = await getQuickAssistantSettings()
+        this.quickAssistant = config
+        this.quickAssistantError = ''
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.quickAssistantError = describeApiError(error)
+      } finally {
+        this.quickAssistantLoading = false
+      }
+    },
+
+    // saveQuickAssistantEnabled persists the toggle. On failure the previous
+    // value stays in state so the floating button's visibility cannot drift
+    // from the server's stored setting.
+    async saveQuickAssistantEnabled(enabled: boolean): Promise<boolean> {
+      this.quickAssistantSaving = true
+      try {
+        const saved = await putQuickAssistantSettings({ enabled })
+        this.quickAssistant = saved
+        this.quickAssistantError = ''
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.quickAssistantError = describeApiError(error)
+        return false
+      } finally {
+        this.quickAssistantSaving = false
       }
     },
 

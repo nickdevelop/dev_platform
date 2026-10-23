@@ -23,6 +23,16 @@ var (
 	ErrModelUnavailable   = errors.New("chat: model unavailable")
 	ErrGroupNotFound      = errors.New("chat: group not found")
 	ErrInvalidGroupName   = errors.New("chat: invalid group name")
+	ErrGroupLocked        = errors.New("chat: group is reserved and cannot be changed")
+)
+
+// SystemKeyQuickAssistant identifies the platform-owned quick-assistant group.
+// It is the only group the quick-assistant surface may create conversations in,
+// and the chat service rejects any attempt to move conversations into or out of
+// it or to rename/delete the group itself.
+const (
+	SystemKeyQuickAssistant = "quick-assistant"
+	QuickAssistantGroupName = "快捷助手"
 )
 
 // Message roles and statuses.
@@ -79,6 +89,7 @@ const (
 type ChatGroup struct {
 	ID        uint      `json:"id"`
 	Name      string    `json:"name"`
+	SystemKey string    `json:"systemKey,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

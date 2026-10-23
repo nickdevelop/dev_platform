@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,13 +17,16 @@ import (
 func TestChatGroupLifecycleAndCascade(t *testing.T) {
 	service, repo, _ := testService(t, nil)
 
-	// 1. List groups initially empty
+	// 1. List groups: the platform seeds the fixed quick-assistant group first.
 	groups, err := service.ListGroups()
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)
 	}
-	if len(groups) != 0 {
-		t.Fatalf("expected 0 groups, got %d", len(groups))
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 seeded group, got %d", len(groups))
+	}
+	if groups[0].SystemKey != SystemKeyQuickAssistant || groups[0].Name != QuickAssistantGroupName {
+		t.Fatalf("unexpected seeded group: %+v", groups[0])
 	}
 
 	// 2. Validation: empty name
@@ -157,19 +161,147 @@ func TestChatGroupHTTPHandlers(t *testing.T) {
 
 	// 3. Update group
 	body, _ = json.Marshal(map[string]any{"name": "HTTP 分组修改"})
-	req = httptest.NewRequest(http.MethodPut, "/api/chat-groups/1", bytes.NewReader(body))
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/chat-groups/%d", created.ID), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("PUT /api/chat-groups/1: %d, want 200: %s", w.Code, w.Body.String())
+		t.Fatalf("PUT /api/chat-groups/%d: %d, want 200: %s", created.ID, w.Code, w.Body.String())
 	}
 
 	// 4. Delete group
-	req = httptest.NewRequest(http.MethodDelete, "/api/chat-groups/1", nil)
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/chat-groups/%d", created.ID), nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("DELETE /api/chat-groups/1: %d, want 204", w.Code)
+		t.Fatalf("DELETE /api/chat-groups/%d: %d, want 204", created.ID, w.Code)
+	}
+}
+
+func TestQuickAssistantGroupIsLockedAndExclusive(t *testing.T) {
+	service, _, _ := testService(t, nil)
+
+	groups, err := service.ListGroups()
+	if err != nil {
+		t.Fatalf("ListGroups: %v", err)
+	}
+	var system ChatGroup
+	for _, group := range groups {
+		if group.SystemKey == SystemKeyQuickAssistant {
+			system = group
+			break
+		}
+	}
+	if system.ID == 0 {
+		t.Fatal("seeded quick-assistant group not found")
+	}
+
+	if _, err := service.UpdateGroup(system.ID, UpdateGroupInput{Name: "改名"}); !errors.Is(err, ErrGroupLocked) {
+		t.Fatalf("UpdateGroup on reserved group: got %v, want ErrGroupLocked", err)
+	}
+	if err := service.DeleteGroup(system.ID); !errors.Is(err, ErrGroupLocked) {
+		t.Fatalf("DeleteGroup on reserved group: got %v, want ErrGroupLocked", err)
+	}
+
+	normal, err := service.CreateGroup(CreateGroupInput{Name: "普通分组"})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	normalChat, err := service.Create(context.Background(), CreateInput{
+		GroupID: &normal.ID,
+		ModelID: 1,
+		Text:    "普通对话",
+	})
+	if err != nil {
+		t.Fatalf("Create normal chat: %v", err)
+	}
+	if _, err := service.Update(normalChat.ID, UpdateInput{GroupID: &system.ID}); !errors.Is(err, ErrGroupLocked) {
+		t.Fatalf("move into reserved group: got %v, want ErrGroupLocked", err)
+	}
+
+	quickChat, err := service.Create(context.Background(), CreateInput{
+		GroupID: &system.ID,
+		ModelID: 1,
+		Text:    "快捷助手对话",
+	})
+	if err != nil {
+		t.Fatalf("Create quick chat: %v", err)
+	}
+	if _, err := service.Update(quickChat.ID, UpdateInput{GroupID: &normal.ID}); !errors.Is(err, ErrGroupLocked) {
+		t.Fatalf("move out of reserved group: got %v, want ErrGroupLocked", err)
+	}
+	if _, err := service.Update(quickChat.ID, UpdateInput{GroupID: &system.ID}); err != nil {
+		t.Fatalf("no-op move inside reserved group: %v", err)
+	}
+
+	chats, total, err := service.ListByGroup(system.ID, 10, 0)
+	if err != nil {
+		t.Fatalf("ListByGroup: %v", err)
+	}
+	if total != 1 || len(chats) != 1 || chats[0].ID != quickChat.ID {
+		t.Fatalf("ListByGroup = %+v total=%d, want only chat %d", chats, total, quickChat.ID)
+	}
+}
+
+func TestChatListGroupFilterAndLockedHTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, _, _ := testService(t, nil)
+	r := gin.New()
+	service.RegisterRoutes(r.Group("/api"))
+
+	groups, err := service.ListGroups()
+	if err != nil {
+		t.Fatalf("ListGroups: %v", err)
+	}
+	system := groups[0]
+	if system.SystemKey != SystemKeyQuickAssistant {
+		t.Fatalf("first group is not the reserved one: %+v", system)
+	}
+
+	// The reserved group rejects rename and delete with 409.
+	body, _ := json.Marshal(map[string]any{"name": "cannot"})
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/chat-groups/%d", system.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("PUT reserved group: %d, want 409: %s", w.Code, w.Body.String())
+	}
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &envelope)
+	if envelope.Error != "group_locked" {
+		t.Fatalf("error = %q, want group_locked", envelope.Error)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/chat-groups/%d", system.ID), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("DELETE reserved group: %d, want 409", w.Code)
+	}
+
+	// A group filter returns only that group's chats.
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/chats?groupId=%d&limit=10", system.ID), nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/chats?groupId: %d, want 200: %s", w.Code, w.Body.String())
+	}
+	var listed chatListResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode chat list: %v", err)
+	}
+	if listed.Total != 0 || len(listed.Chats) != 0 {
+		t.Fatalf("empty reserved group returned %+v", listed)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/chats?groupId=abc", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid groupId: %d, want 400", w.Code)
 	}
 }

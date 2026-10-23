@@ -46,6 +46,9 @@ export const useChatsStore = defineStore('chats', {
     loading: false,
     listError: '',
     listRequest: 0,
+    // Bumped when another surface (the quick-assistant popover) creates or
+    // removes a chat. The chat sidebar watches it and reloads its list.
+    listNonce: 0,
     activeId: null as number | null,
     active: null as Chat | null,
     messages: {} as Record<number, ChatEntry[]>,
@@ -103,6 +106,12 @@ export const useChatsStore = defineStore('chats', {
       this.sendError = ''
       this.loadError = ''
       this.closedReason = ''
+    },
+
+    // invalidateList tells other mounted chat surfaces that the persisted
+    // conversation list changed outside this store.
+    invalidateList() {
+      this.listNonce++
     },
 
     async loadChats() {
@@ -204,7 +213,7 @@ export const useChatsStore = defineStore('chats', {
     },
 
     startNewChat(groupId?: number) {
-      closeChatStream()
+      closeChatStream(this)
       this.activeId = null
       this.active = null
       this.selectedGroupId = groupId !== undefined ? groupId : null
@@ -220,7 +229,7 @@ export const useChatsStore = defineStore('chats', {
         openChatStream(this, chatId)
         return
       }
-      closeChatStream()
+      closeChatStream(this)
       this.activeId = chatId
       this.active = null
       this.loadError = ''
@@ -241,7 +250,7 @@ export const useChatsStore = defineStore('chats', {
     },
 
     closeActive() {
-      closeChatStream()
+      closeChatStream(this)
       this.activeId = null
       this.active = null
     },
@@ -419,18 +428,14 @@ export const useChatsStore = defineStore('chats', {
       this.touch(chat)
     },
 
-    applyDelta(delta: ChatDelta) {
-      const chatId = this.activeId
-      if (chatId === null) return
+    applyDelta(chatId: number, delta: ChatDelta) {
       this.messages = {
         ...this.messages,
         [chatId]: applyDelta(this.messages[chatId] ?? [], delta),
       }
     },
 
-    applyMessageUpdate(message: ChatMessage) {
-      const chatId = this.activeId
-      if (chatId === null) return
+    applyMessageUpdate(chatId: number, message: ChatMessage) {
       this.messages = {
         ...this.messages,
         [chatId]: upsertMessage(this.messages[chatId] ?? [], message),
@@ -446,9 +451,7 @@ export const useChatsStore = defineStore('chats', {
       this.touch(chat)
     },
 
-    applyTurn(turn: ChatTurn) {
-      const chatId = this.activeId
-      if (chatId === null) return
+    applyTurn(chatId: number, turn: ChatTurn) {
       if (turn.phase === 'started') {
         this.running = { ...this.running, [chatId]: true }
         return
@@ -460,13 +463,12 @@ export const useChatsStore = defineStore('chats', {
       }
     },
 
-    handleClosed(reason: string) {
+    handleClosed(chatId: number, reason: string) {
       this.closedReason = reason
-      const chatId = this.activeId
-      if (chatId === null) return
       this.running = { ...this.running, [chatId]: false }
       if (reason !== 'deleted') return
       this.chats = this.chats.filter((chat) => chat.id !== chatId)
+      if (this.activeId !== chatId) return
       this.active = null
       this.activeId = null
     },

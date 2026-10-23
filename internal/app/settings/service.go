@@ -19,6 +19,11 @@ import (
 // appearanceKey is the settings-table key holding the appearance JSON.
 const appearanceKey = "appearance.config"
 
+// quickAssistantKey is the settings-table key holding the quick-assistant
+// feature toggle. It is kept apart from the visual appearance config so a
+// feature switch never rewrites theme preferences.
+const quickAssistantKey = "quick-assistant.config"
+
 // ErrInvalidAppearance reports an appearance value outside the allowed set.
 var ErrInvalidAppearance = errors.New("settings: invalid appearance")
 
@@ -42,6 +47,18 @@ func DefaultAppearance() Appearance {
 		PlantumlMode:      "local",
 		PlantumlServerURL: "https://www.plantuml.com/plantuml",
 	}
+}
+
+// QuickAssistant is the platform-wide gate for the floating quick-assistant
+// surface. It defaults to off so a fresh install does not show an unexplained
+// floating control.
+type QuickAssistant struct {
+	Enabled bool `json:"enabled"`
+}
+
+// DefaultQuickAssistant is the configuration used before the operator saves one.
+func DefaultQuickAssistant() QuickAssistant {
+	return QuickAssistant{Enabled: false}
 }
 
 // Allowed values. The frontend's presets mirror these lists.
@@ -139,4 +156,42 @@ func (s *Service) SetAppearance(appearance Appearance) (Appearance, error) {
 		return Appearance{}, err
 	}
 	return appearance, nil
+}
+
+// QuickAssistant returns the saved quick-assistant toggle, or the default
+// (disabled) when none is saved.
+func (s *Service) QuickAssistant() (QuickAssistant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loadQuickAssistant()
+}
+
+func (s *Service) loadQuickAssistant() (QuickAssistant, error) {
+	val, found, err := s.repo.Get(quickAssistantKey)
+	if err != nil {
+		return QuickAssistant{}, err
+	}
+	if !found {
+		return DefaultQuickAssistant(), nil
+	}
+	config := DefaultQuickAssistant()
+	if err := jsonUnmarshal(val, &config); err != nil {
+		return QuickAssistant{}, fmt.Errorf("settings: decode quick assistant: %w", err)
+	}
+	return config, nil
+}
+
+// SetQuickAssistant persists the feature toggle and returns the stored value.
+func (s *Service) SetQuickAssistant(config QuickAssistant) (QuickAssistant, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := jsonMarshal(config)
+	if err != nil {
+		return QuickAssistant{}, fmt.Errorf("settings: encode quick assistant: %w", err)
+	}
+	if err := s.repo.Set(quickAssistantKey, data); err != nil {
+		return QuickAssistant{}, err
+	}
+	return config, nil
 }

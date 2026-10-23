@@ -111,3 +111,45 @@ describe('pure chat sidebar', () => {
     expect(wrapper.text()).toContain('新建对话分组')
   })
 })
+
+describe('reserved quick-assistant group', () => {
+  it('marks the group fixed and hides rename, delete, create and move controls', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.includes('/api/chat-groups')) {
+          return {
+            status: 200,
+            json: async () => ({
+              groups: [
+                {
+                  id: 7,
+                  name: '快捷助手',
+                  systemKey: 'quick-assistant',
+                  createdAt: '2026-10-23T00:00:00Z',
+                  updatedAt: '2026-10-23T00:00:00Z',
+                },
+              ],
+            }),
+          } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            chats: [chat(3, '快捷对话', false, 7)],
+            total: 1,
+          }),
+        } as Response
+      }),
+    )
+
+    const { wrapper } = await mountSidebar('/chat')
+    expect(wrapper.text()).toContain('快捷助手')
+    expect(wrapper.text()).toContain('固定')
+    expect(wrapper.find('[aria-label="重命名分组「快捷助手」"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="删除分组「快捷助手」"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="在「快捷助手」中新建对话"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="移动到其他分组"]').exists()).toBe(false)
+  })
+})

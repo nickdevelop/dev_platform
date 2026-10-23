@@ -28,6 +28,7 @@ import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
+import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
@@ -279,6 +280,8 @@ onMounted(async () => {
   // The appearance is shared platform config: fetch it after auth and apply
   // it over the cached value painted before mount.
   void settings.loadAppearance()
+  // The quick-assistant button is gated by a platform feature toggle.
+  void settings.loadQuickAssistant()
   syncTabWithRoute()
 
   // Warm up sessions for open tabs restored from cache so their initial state is known
@@ -681,6 +684,8 @@ watch(
       @close="dialog = null"
       @submitted="onSubmitted"
     />
+
+    <QuickAssistantLauncher v-if="settings.quickAssistant.enabled" />
   </div>
 </template>
 

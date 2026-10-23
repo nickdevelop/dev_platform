@@ -13,6 +13,9 @@ export type ChatTurnOutcome = 'completed' | 'cancelled' | 'failed'
 export interface ChatGroup {
   id: number
   name: string
+  // systemKey marks a platform-reserved group (currently quick-assistant).
+  // Such a group cannot be renamed/deleted and chats cannot move in or out.
+  systemKey?: string
   createdAt: string
   updatedAt: string
 }
@@ -108,10 +111,11 @@ export type ChatEvent =
   | { chatId: number; timestamp: string; type: 'turn'; turn: ChatTurn }
   | { chatId: number; timestamp: string; type: 'closed'; reason: string }
 
-export function listChats(limit?: number, offset?: number): Promise<ChatList> {
+export function listChats(limit?: number, offset?: number, groupId?: number): Promise<ChatList> {
   const params = new URLSearchParams()
   if (limit !== undefined && limit > 0) params.set('limit', String(limit))
   if (offset !== undefined && offset > 0) params.set('offset', String(offset))
+  if (groupId !== undefined && groupId > 0) params.set('groupId', String(groupId))
   const query = params.toString()
   return get<ChatList>(`/chats${query ? `?${query}` : ''}`)
 }

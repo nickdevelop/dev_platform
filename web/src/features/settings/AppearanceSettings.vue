@@ -12,6 +12,7 @@ const settings = useSettingsStore()
 
 onMounted(() => {
   void settings.loadAppearance()
+  void settings.loadQuickAssistant()
 })
 
 function selectTheme(key: string) {
@@ -34,6 +35,12 @@ function selectPlantumlMode(mode: 'local' | 'online') {
 function updatePlantumlServerUrl(event: Event) {
   const value = (event.target as HTMLInputElement).value.trim()
   void settings.saveAppearance({ plantumlServerUrl: value })
+}
+
+async function toggleQuickAssistant(event: Event) {
+  const input = event.target as HTMLInputElement
+  const ok = await settings.saveQuickAssistantEnabled(input.checked)
+  if (!ok) input.checked = settings.quickAssistant.enabled
 }
 </script>
 
@@ -139,7 +146,28 @@ function updatePlantumlServerUrl(event: Event) {
       </div>
     </fieldset>
 
+    <fieldset class="group">
+      <legend>快捷助手</legend>
+      <label class="toggle-row">
+        <input
+          type="checkbox"
+          data-test="quick-assistant-toggle"
+          :checked="settings.quickAssistant.enabled"
+          :disabled="settings.quickAssistantSaving || settings.quickAssistantLoading"
+          @change="toggleQuickAssistant"
+        />
+        <span>显示快捷助手漂浮按钮</span>
+      </label>
+      <p class="field-hint">
+        开启后，平台主界面右上角会显示快捷助手按钮；关闭后按钮与弹窗立即隐藏。
+        快捷助手产生的对话统一保存在 Chat 的“快捷助手”固定分组。
+      </p>
+    </fieldset>
+
     <p v-if="settings.error" class="error" role="alert">{{ settings.error }}</p>
+    <p v-if="settings.quickAssistantError" class="error" role="alert">
+      {{ settings.quickAssistantError }}
+    </p>
   </section>
 </template>
 
@@ -243,5 +271,25 @@ function updatePlantumlServerUrl(event: Event) {
 .field-hint {
   font-size: 0.8rem;
   color: var(--color-text-muted);
+}
+
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 1.0);
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input[type='checkbox'] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.toggle-row input[type='checkbox']:disabled {
+  cursor: wait;
 }
 </style>

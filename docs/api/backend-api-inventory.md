@@ -1,6 +1,6 @@
 # 平台后端接口清单与分析
 
-> 生成日期：2026-10-21
+> 生成日期：2026-10-23
 > 范围：`cmd/platform` 组合根 + `internal/transport/http` 路由 + `internal/app/*` 领域服务
 > 口径：只统计 Gin 注册的 API 路由，不统计 SPA 静态兜底（`/*filepath`）与 `/assets/*`；表中路径省略统一的 `/api` 前缀
 > 数据来源：路由注册点静态扫描（`RegisterRoutes` / `RegisterInteractionRoutes`）与 `docs/api/openapi.yaml` 逐项比对
@@ -9,15 +9,15 @@
 
 | 指标 | 数值 | 说明 |
 |---|---:|---|
-| API 端点（operation） | **96** | 不含 SPA 静态路由 |
-| 唯一路径（path） | **77** | 多个方法共享同一路径 |
+| API 端点（operation） | **98** | 不含 SPA 静态路由 |
+| 唯一路径（path） | **78** | 多个方法共享同一路径 |
 | 一级分组 | **10** | 基础认证、项目、模型、Agent、会话、设置、任务、提示词、终端、纯 Chat |
-| HTTP 方法 | GET 41 / POST 36 / PUT 11 / DELETE 8 | 无 PATCH |
-| 协议形态 | JSON 90 / 文件流 1 / SSE 4 / WebSocket 1 | |
+| HTTP 方法 | GET 42 / POST 36 / PUT 12 / DELETE 8 | 无 PATCH |
+| 协议形态 | JSON 92 / 文件流 1 / SSE 4 / WebSocket 1 | |
 | 公开端点 | 2 | `GET /health`、`GET /auth/session` |
 | 仅 CSRF、不需会话 | 1 | `POST /auth/login` |
-| 需要会话 | 93 | 其中 52 个变更方法还需 CSRF |
-| OpenAPI 覆盖 | 77 paths / 96 operations | 数量与实现相等，但集合仍有偏差（见第 6 节） |
+| 需要会话 | 95 | 其中 53 个变更方法还需 CSRF |
+| OpenAPI 覆盖 | 78 paths / 98 operations | 数量与实现相等，但集合仍有偏差（见第 6 节） |
 
 几个值得先说的结论：
 
@@ -42,7 +42,7 @@ actor "浏览器 / Vue 工作台" as Web
 
 rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
 
-rectangle "领域服务 internal/app（95 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 23\nsettings 7 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
+rectangle "领域服务 internal/app（97 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 23\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
 
 rectangle "契约 internal/core/agents\nBackendID · Capabilities · AgentAdapter" as C
 rectangle "适配 internal/providers\nopencode · pi" as P
@@ -63,7 +63,7 @@ end note
 
 **读图要点**
 
-- 96 个端点中 95 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
+- 98 个端点中 97 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
 - `sessions` 的 23 个端点包含 `agent-backends` 目录（2 个）与 `opencode` 交互（5 个），因此它同时依赖 `core/agents` 契约与 SQLite 索引。
 - `terminal` 的 WebSocket 不走 `core/agents`，只依赖 `core/platform` 的 PTY/SSH 能力。
 
@@ -208,68 +208,70 @@ end note
 
 `GET .../events` 的续传位置先取 `Last-Event-ID` 头，再取 `?lastEventId=`；两者都没有或非法时按"新加入"处理（从 0 开始）。
 
-### 4.6 设置（7）
+### 4.6 设置（9）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
 | 58 | GET | `/settings/appearance` | 读取外观设置 | 会话 | 200 |
 | 59 | PUT | `/settings/appearance` | 更新外观设置 | 会话+CSRF | 200 |
-| 60 | GET | `/agents` | 列出 Agent 后端及启用状态 | 会话 | 200 |
-| 61 | PUT | `/agents/{backend}` | 启用/禁用后端 | 会话+CSRF | 200 |
-| 62 | PUT | `/agents/{backend}/path` | 设置或清除可执行文件路径 | 会话+CSRF | 200 |
-| 63 | PUT | `/agents/{backend}/mode` | 设置传输模式 | 会话+CSRF | 200 |
-| 64 | POST | `/agents/{backend}/detect` | 探测可执行文件 | 会话+CSRF | 200 |
+| 60 | GET | `/settings/quick-assistant` | 读取快捷助手开关 | 会话 | 200 |
+| 61 | PUT | `/settings/quick-assistant` | 更新快捷助手开关 | 会话+CSRF | 200 |
+| 62 | GET | `/agents` | 列出 Agent 后端及启用状态 | 会话 | 200 |
+| 63 | PUT | `/agents/{backend}` | 启用/禁用后端 | 会话+CSRF | 200 |
+| 64 | PUT | `/agents/{backend}/path` | 设置或清除可执行文件路径 | 会话+CSRF | 200 |
+| 65 | PUT | `/agents/{backend}/mode` | 设置传输模式 | 会话+CSRF | 200 |
+| 66 | POST | `/agents/{backend}/detect` | 探测可执行文件 | 会话+CSRF | 200 |
 
 ### 4.7 任务（8）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
-| 65 | GET | `/tasks` | 列出任务（会话模板） | 会话 | 200 |
-| 66 | POST | `/tasks` | 创建任务 | 会话+CSRF | 201 |
-| 67 | GET | `/tasks/session-ids` | 任务产生的会话 ID 列表（`?projectId=`） | 会话 | 200 |
-| 68 | GET | `/tasks/{id}` | 读取任务 | 会话 | 200 |
-| 69 | PUT | `/tasks/{id}` | 更新任务属性（含调度配置） | 会话+CSRF | 200 |
-| 70 | DELETE | `/tasks/{id}` | 删除任务 | 会话+CSRF | 204 |
-| 71 | GET | `/tasks/{id}/runs` | 列出执行历史 | 会话 | 200 |
-| 72 | POST | `/tasks/{id}/trigger` | 立即触发一次执行 | 会话+CSRF | 200 |
+| 67 | GET | `/tasks` | 列出任务（会话模板） | 会话 | 200 |
+| 68 | POST | `/tasks` | 创建任务 | 会话+CSRF | 201 |
+| 69 | GET | `/tasks/session-ids` | 任务产生的会话 ID 列表（`?projectId=`） | 会话 | 200 |
+| 70 | GET | `/tasks/{id}` | 读取任务 | 会话 | 200 |
+| 71 | PUT | `/tasks/{id}` | 更新任务属性（含调度配置） | 会话+CSRF | 200 |
+| 72 | DELETE | `/tasks/{id}` | 删除任务 | 会话+CSRF | 204 |
+| 73 | GET | `/tasks/{id}/runs` | 列出执行历史 | 会话 | 200 |
+| 74 | POST | `/tasks/{id}/trigger` | 立即触发一次执行 | 会话+CSRF | 200 |
 
 ### 4.8 提示词（5，未进入 OpenAPI）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
-| 73 | GET | `/prompts` | 列出提示词模板（支持 `?q=`） | 会话 | 200 |
-| 74 | POST | `/prompts` | 新建提示词模板 | 会话+CSRF | 201 |
-| 75 | GET | `/prompts/{id}` | 读取模板 | 会话 | 200 |
-| 76 | PUT | `/prompts/{id}` | 更新模板 | 会话+CSRF | 200 |
-| 77 | DELETE | `/prompts/{id}` | 删除模板 | 会话+CSRF | 200 |
+| 75 | GET | `/prompts` | 列出提示词模板（支持 `?q=`） | 会话 | 200 |
+| 76 | POST | `/prompts` | 新建提示词模板 | 会话+CSRF | 201 |
+| 77 | GET | `/prompts/{id}` | 读取模板 | 会话 | 200 |
+| 78 | PUT | `/prompts/{id}` | 更新模板 | 会话+CSRF | 200 |
+| 79 | DELETE | `/prompts/{id}` | 删除模板 | 会话+CSRF | 200 |
 
 ### 4.9 终端（8）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
-| 78 | GET | `/terminal/status` | 终端能力状态（PTY 是否可用） | 会话 | 200 |
-| 79 | GET | `/terminal/servers` | 列出终端服务器 | 会话 | 200 |
-| 80 | GET | `/terminal/servers/{id}` | 读取服务器详情 | 会话 | 200 |
-| 81 | POST | `/terminal/servers` | 登记第三方服务器（SSH） | 会话+CSRF | 201 |
-| 82 | PUT | `/terminal/servers/{id}` | 更新服务器（空 secret 保留原值） | 会话+CSRF | 200 |
-| 83 | DELETE | `/terminal/servers/{id}` | 删除服务器（本地项不可删） | 会话+CSRF | 200 |
-| 84 | POST | `/terminal/servers/test` | 测试 SSH 连通性 | 会话+CSRF | 200 |
-| 85 | GET | `/terminal/ws/{serverId}` | 交互式终端 WebSocket（`?cols=&rows=`；`serverId=0` 为本地 PTY） | 会话 | 101 |
+| 80 | GET | `/terminal/status` | 终端能力状态（PTY 是否可用） | 会话 | 200 |
+| 81 | GET | `/terminal/servers` | 列出终端服务器 | 会话 | 200 |
+| 82 | GET | `/terminal/servers/{id}` | 读取服务器详情 | 会话 | 200 |
+| 83 | POST | `/terminal/servers` | 登记第三方服务器（SSH） | 会话+CSRF | 201 |
+| 84 | PUT | `/terminal/servers/{id}` | 更新服务器（空 secret 保留原值） | 会话+CSRF | 200 |
+| 85 | DELETE | `/terminal/servers/{id}` | 删除服务器（本地项不可删） | 会话+CSRF | 200 |
+| 86 | POST | `/terminal/servers/test` | 测试 SSH 连通性 | 会话+CSRF | 200 |
+| 87 | GET | `/terminal/ws/{serverId}` | 交互式终端 WebSocket（`?cols=&rows=`；`serverId=0` 为本地 PTY） | 会话 | 101 |
 
 ### 4.10 纯 Chat（10）
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
-| 86 | GET | `/chats` | 全局对话列表（`limit`/`offset`） | 会话 | 200 |
-| 87 | POST | `/chats` | 创建对话并发送首条消息 | 会话+CSRF | 201 |
-| 88 | GET | `/chats/{id}` | 读取对话元数据 | 会话 | 200 |
-| 89 | PUT | `/chats/{id}` | 重命名或切换模型 | 会话+CSRF | 200 |
-| 90 | DELETE | `/chats/{id}` | 删除对话及其消息 | 会话+CSRF | 204 |
-| 91 | POST | `/chats/{id}/messages` | 发送消息，结果经 SSE 返回 | 会话+CSRF | 202 |
-| 92 | POST | `/chats/{id}/stop` | 停止当前生成 | 会话+CSRF | 204 |
-| 93 | POST | `/chats/{id}/regenerate` | 重新生成最后一条助手回复 | 会话+CSRF | 202 |
-| 94 | POST | `/chats/{id}/messages/{messageId}/edit` | 编辑用户消息并截断后续消息后重发 | 会话+CSRF | 202 |
-| 95 | GET | `/chats/{id}/events` | 对话 SSE：快照、增量、消息最终态、标题/轮次、关闭 | 会话 | 200 SSE |
+| 88 | GET | `/chats` | 全局对话列表（`limit`/`offset`/`groupId`） | 会话 | 200 |
+| 89 | POST | `/chats` | 创建对话并发送首条消息 | 会话+CSRF | 201 |
+| 90 | GET | `/chats/{id}` | 读取对话元数据 | 会话 | 200 |
+| 91 | PUT | `/chats/{id}` | 重命名或切换模型 | 会话+CSRF | 200 |
+| 92 | DELETE | `/chats/{id}` | 删除对话及其消息 | 会话+CSRF | 204 |
+| 93 | POST | `/chats/{id}/messages` | 发送消息，结果经 SSE 返回 | 会话+CSRF | 202 |
+| 94 | POST | `/chats/{id}/stop` | 停止当前生成 | 会话+CSRF | 204 |
+| 95 | POST | `/chats/{id}/regenerate` | 重新生成最后一条助手回复 | 会话+CSRF | 202 |
+| 96 | POST | `/chats/{id}/messages/{messageId}/edit` | 编辑用户消息并截断后续消息后重发 | 会话+CSRF | 202 |
+| 97 | GET | `/chats/{id}/events` | 对话 SSE：快照、增量、消息最终态、标题/轮次、关闭 | 会话 | 200 SSE |
 
 纯 Chat 的写路由单独挂载在 32 MiB 请求体分组下（其他 API 仍为 1 MiB），以容纳最多 4 张 5 MiB 图片的 base64 载荷；鉴权与 CSRF 仍由全局中间件统一执行。
 
@@ -368,11 +370,11 @@ stop
 
 ## 6. 契约一致性核对
 
-`docs/api/openapi.yaml` 有 77 paths / 96 operations，Gin 也是 77 paths / 96 operations，但两者并非同一集合：
+`docs/api/openapi.yaml` 有 78 paths / 98 operations，Gin 也是 78 paths / 98 operations，但两者并非同一集合：
 
 ```plantuml
 @startuml
-title 图5 契约核对：96 = 96，但不是同一集合
+title 图5 契约核对：98 = 98，但不是同一集合
 
 skinparam defaultTextAlignment center
 skinparam rectangle {
@@ -381,9 +383,9 @@ skinparam rectangle {
 }
 left to right direction
 
-rectangle "docs/api/openapi.yaml\n77 paths · 96 operations" as DOC #FBE3E3
-rectangle "交集\n90 operations\n\n已对齐" as BOTH #E3F4E3
-rectangle "Gin 路由表\n77 paths · 96 operations" as CODE #FFF3D6
+rectangle "docs/api/openapi.yaml\n78 paths · 98 operations" as DOC #FBE3E3
+rectangle "交集\n93 operations\n\n已对齐" as BOTH #E3F4E3
+rectangle "Gin 路由表\n78 paths · 98 operations" as CODE #FFF3D6
 
 DOC --> BOTH : 文档独有 5
 BOTH --> CODE : 实现独有 5
@@ -446,7 +448,8 @@ BOTH --> CODE : 实现独有 5
 
 **附：统计口径复核**
 
-- 96 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 23 + settings 7 + tasks 8 + prompts 5 + terminal 8 + chat 10。
-- 方法分布：GET 41 + POST 36 + PUT 11 + DELETE 8 = 96。
-- 路径分布：`/projects/*` 34、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 2、`/agent-backends/*` 4、`/health` 1。
+- 98 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 23 + settings 9 + tasks 8 + prompts 5 + terminal 8 + chat 10。
+- 方法分布：GET 42 + POST 36 + PUT 12 + DELETE 8 = 98。
+- 路径分布：`/projects/*` 34、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 4、`/agent-backends/*` 4、`/health` 1。
+- 2026-10-23 变更：新增 `GET/PUT /settings/quick-assistant` 快捷助手开关与 `GET /chats?groupId=` 分组过滤；Chat 增加“快捷助手”固定分组治理。
 - 2026-10-23 变更：项目级模型清单端点已移除；Agent 模型改为平台级持久化快照，读取使用 `GET /agent-backends/{backend}/models`，手动刷新使用 `POST /agent-backends/{backend}/models/refresh`（由新的 `agentmodels` 服务注册）。

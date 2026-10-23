@@ -139,10 +139,10 @@ describe('chats store stream mapping', () => {
         { id: 'msg:10', kind: 'message', role: 'assistant', text: '', streaming: true },
       ],
     }
-    chats.applyDelta({ messageId: 10, reasoning: 'why' })
+    chats.applyDelta(1, { messageId: 10, reasoning: 'why' })
     expect(chats.messagesFor(1).map((entry) => entry.text)).toEqual(['why', ''])
 
-    chats.applyDelta({ messageId: 10, text: 'Hello' })
+    chats.applyDelta(1, { messageId: 10, text: 'Hello' })
     expect(chats.messagesFor(1).map((entry) => entry.text)).toEqual(['why', 'Hello'])
     expect(chats.messagesFor(1)[1].streaming).toBe(true)
   })
@@ -152,6 +152,7 @@ describe('chats store stream mapping', () => {
     chats.activeId = 1
     chats.messages = { 1: [{ id: 'msg:10', kind: 'message', role: 'assistant', text: 'partial', streaming: true }] }
     chats.applyMessageUpdate(
+      1,
       message({ text: 'partial', status: 'failed', errorCode: 'upstream_error', error: '模型服务返回错误' }),
     )
     const entries = chats.messagesFor(1)
@@ -166,7 +167,7 @@ describe('chats store stream mapping', () => {
     const chats = useChatsStore()
     chats.activeId = 1
     chats.running = { 1: true }
-    chats.handleClosed('deleted')
+    chats.handleClosed(1, 'deleted')
     expect(chats.closedReason).toBe('deleted')
     expect(chats.runningFor(1)).toBe(false)
   })

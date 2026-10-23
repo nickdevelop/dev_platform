@@ -25,6 +25,13 @@ const props = defineProps<{
   supportsImage: boolean
   editing?: boolean
   modelFallbackLabel?: string
+  // compact hides the drag-to-resize handle and caps the textarea for a
+  // constrained surface such as the quick-assistant popover.
+  compact?: boolean
+  // inputId keeps label/for association unique when two composers are mounted
+  // at once (main Chat page + quick-assistant popover).
+  inputId?: string
+  placeholder?: string
 }>()
 
 const emit = defineEmits<{
@@ -79,6 +86,11 @@ function resetComposerHeight() {
 }
 
 const imageModeBlocked = computed(() => props.images.length > 0 && !props.supportsImage)
+const resolvedInputId = computed(() => props.inputId ?? 'pure-chat-message')
+const resolvedPlaceholder = computed(() =>
+  props.running ? '正在生成回复…' : props.placeholder ?? '给 Chat 发送消息',
+)
+const maxTextareaHeight = computed(() => (props.compact ? 120 : 240))
 const canSend = computed(
   () =>
     !props.running &&
@@ -110,7 +122,7 @@ function autosize() {
   const el = textarea.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 240)}px`
+  el.style.height = `${Math.min(el.scrollHeight, maxTextareaHeight.value)}px`
 }
 
 function onInput(event: Event) {
@@ -215,6 +227,7 @@ function closePreview() {
       @drop.prevent="onDrop"
     >
       <div
+        v-if="!props.compact"
         class="composer-resizer"
         data-test="composer-resizer"
         title="拖拽调整输入框高度，双击重置"
@@ -223,15 +236,15 @@ function closePreview() {
       >
         <span class="resizer-handle"></span>
       </div>
-      <label class="sr-only" for="pure-chat-message">发送消息</label>
+      <label class="sr-only" :for="resolvedInputId">发送消息</label>
       <textarea
-        id="pure-chat-message"
+        :id="resolvedInputId"
         ref="textarea"
         class="chat-composer-text"
-        rows="3"
+        :rows="props.compact ? 2 : 3"
         :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
         :value="props.text"
-        :placeholder="props.running ? '正在生成回复…' : '给 Chat 发送消息'"
+        :placeholder="resolvedPlaceholder"
         data-test="chat-input"
         @input="onInput"
         @keydown="onKeydown"

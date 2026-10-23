@@ -12,6 +12,7 @@
 2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
+5. **快捷助手**：可在平台设置中开启的右上角可拖拽漂浮入口，以 480×600 弹窗续接最近快捷对话或新建对话；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
 
 ---
 
@@ -22,7 +23,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v28，含 Agent 模型快照表） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v29，含 Agent 模型快照表与快捷助手固定分组） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），组合式 API，严格类型安全 |
@@ -66,7 +67,7 @@
 | **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史、文件树遍历。 | `service.go`（项目生命周期）、`files.go`（工作区文件树与内容读取）、`git.go` / `git_status.go`（Git CLI 操作集成） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
-| **`chat/`** | 纯模型非 Agent 直接对话系统。支持对话两级树形导航与分组、多轮消息持久化、多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全。 | `service.go`（对话与分组管理）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离。 |
+| **`chat/`** | 纯模型非 Agent 直接对话系统。支持对话两级树形导航与分组、多轮消息持久化、多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；内置“快捷助手”固定分组治理。 | `service.go`（对话与分组管理、固定分组锁定）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；固定分组不可改名/删除，对话不可移入或移出。 |
 | **`tasks/`** | 计划任务与自动化调度引擎。支持标准 Cron 表达式与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。 | `handlers.go`（WebSocket 升级与同源拦截）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
@@ -75,8 +76,8 @@
 | **`agentmodels/`** | 平台级 Agent 模型快照。持久化每个后端最近一次手动刷新的模型清单；默认读取数据库，不调用 Agent；刷新时调用适配器并原子替换快照。 | `service.go`（List/Refresh）、`repository.go`（快照读写）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
-| **`settings/`** | 平台全局偏好设置。管理外观主题、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v28 迁移链，含 `agent_models` / `agent_model_catalogs`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`settings/`** | 平台全局偏好设置。管理外观主题、快捷助手开关、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v29 迁移链，含 `agent_models` / `agent_model_catalogs` 与 `chat_groups.system_key`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -109,7 +110,7 @@
 ```
 web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
-  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, drafts, ...）
+  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
   ├── features/        ── 业务领域垂直拆分目录：
   │     ├── chat/      ── Agent 工作台（核心）
@@ -119,7 +120,8 @@ web/src/
   │     │     ├── pane/          ── 右侧活动面板（思考/工具/文件树）折叠与宽度拖拽
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
-  │     │     └── pure/          ── 独立纯 Chat 对话界面与树形两级导航
+  │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
+  │     │     └── quick/         ── 快捷助手漂浮按钮、480×600 弹窗与拖拽定位
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、项目设置、注册/创建项目弹窗
   │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
@@ -280,6 +282,33 @@ web/src/
 - **边界**：Agent 模型是 Agent 的只读快照，不是平台模型配置；平台「模型」设置中的 OpenAI 兼容模型服务保持独立。
 
 ---
+
+### 6. 快捷助手漂浮对话流（Quick Assistant Flow）
+
+```
+[ 设置 → 外观 → 开启“显示快捷助手漂浮按钮” ]
+                    │
+                    ▼
+1. 平台设置 (internal/app/settings)
+   - 读写 settings 表 quick-assistant.config，默认关闭
+   - GET/PUT /api/settings/quick-assistant
+                    │
+                    ▼
+2. 主框架 (web/src/features/workspace/AppShell.vue)
+   - 开关开启时挂载 QuickAssistantLauncher
+   - 按钮可拖拽，位置写入 localStorage，上下保留 50px
+                    │
+                    ▼
+3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)
+   - 以 480×600 打开最近一条快捷对话，或进入新对话
+   - 复用 MessageView / ChatComposer；独立 quickAssistant store
+                    │
+                    ▼
+4. 纯 Chat 领域 (internal/app/chat)
+   - 对话创建时指定 system_key=quick-assistant 的固定分组
+   - 固定分组不可改名/删除，对话不可移入或移出
+   - 主 Chat 页面与弹窗各自维护 SSE 流，互不关闭
+```
 
 ## 六、API 传输层与安全规范（ADR-0001）
 

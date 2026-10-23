@@ -25,6 +25,15 @@ function stubFetch(putStatus = 200) {
       const method = init?.method ?? 'GET'
       const body = init?.body ? JSON.parse(String(init.body)) : undefined
       calls.push({ method, path: url.replace('/api', ''), body })
+      if (url.endsWith('/settings/quick-assistant')) {
+        if (putStatus !== 200 && method === 'PUT') {
+          return { status: putStatus, json: async () => ({ error: 'server_error' }) } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({ enabled: method === 'PUT' ? (body as { enabled?: boolean })?.enabled === true : false }),
+        } as Response
+      }
       if (putStatus !== 200 && method === 'PUT') {
         return { status: putStatus, json: async () => ({ error: 'server_error' }) } as Response
       }
@@ -70,10 +79,40 @@ describe('AppearanceSettings', () => {
       '字号',
       '界面密度',
       'PlantUML 渲染模式',
+      '快捷助手',
     ])
     expect(wrapper.find('[data-font-size]').exists()).toBe(true)
     expect(wrapper.find('[data-font-select]').exists()).toBe(false)
     expect(wrapper.find('[data-custom-font]').exists()).toBe(false)
+  })
+
+  it('toggles the quick assistant feature through its own setting', async () => {
+    const calls = stubFetch()
+    const { wrapper } = await mountSettings()
+
+    const toggle = wrapper.find('[data-test="quick-assistant-toggle"]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    await flushPromises()
+
+    const put = calls.find((call) => call.path === '/settings/quick-assistant' && call.method === 'PUT')
+    expect(put?.body).toEqual({ enabled: true })
+    expect(useSettingsStore().quickAssistant.enabled).toBe(true)
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('reverts the quick assistant toggle when saving fails', async () => {
+    stubFetch(500)
+    const { wrapper } = await mountSettings()
+
+    const toggle = wrapper.find('[data-test="quick-assistant-toggle"]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    await flushPromises()
+
+    expect(useSettingsStore().quickAssistant.enabled).toBe(false)
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    expect(wrapper.text()).toContain('服务内部错误')
   })
 
   it('saves a theme change and applies it to the document', async () => {

@@ -21,6 +21,7 @@ type Repository interface {
 	DeleteGroup(id uint) error
 
 	ListChats(limit, offset int) ([]Chat, int, error)
+	ListChatsByGroup(groupID uint, limit, offset int) ([]Chat, int, error)
 	GetChat(id uint) (Chat, error)
 	CreateChat(chat *Chat, user, assistant *Message) error
 	UpdateChat(chat *Chat) error
@@ -48,6 +49,16 @@ func NewGORMRepository(db *gorm.DB) Repository {
 }
 
 func (r *gormRepository) ListChats(limit, offset int) ([]Chat, int, error) {
+	return r.listChats(nil, limit, offset)
+}
+
+func (r *gormRepository) ListChatsByGroup(groupID uint, limit, offset int) ([]Chat, int, error) {
+	return r.listChats(&groupID, limit, offset)
+}
+
+// listChats applies the shared paging bounds and, when groupID is set, restricts
+// the query to that conversation group. A nil groupID means every chat.
+func (r *gormRepository) listChats(groupID *uint, limit, offset int) ([]Chat, int, error) {
 	if limit <= 0 || limit > MaxListLimit {
 		limit = DefaultListLimit
 	}
@@ -55,12 +66,20 @@ func (r *gormRepository) ListChats(limit, offset int) ([]Chat, int, error) {
 		offset = 0
 	}
 
+	scope := func(db *gorm.DB) *gorm.DB {
+		if groupID != nil {
+			return db.Where("group_id = ?", *groupID)
+		}
+		return db
+	}
 	var total int64
-	if err := r.db.Model(&database.Chat{}).Count(&total).Error; err != nil {
+	if err := scope(r.db.Model(&database.Chat{})).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("chat: count chats: %w", err)
 	}
 	var rows []database.Chat
-	if err := r.db.Order("updated_at DESC, id DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+	if err := scope(r.db.Model(&database.Chat{})).
+		Order("updated_at DESC, id DESC").Limit(limit).Offset(offset).
+		Find(&rows).Error; err != nil {
 		return nil, 0, fmt.Errorf("chat: list chats: %w", err)
 	}
 	out := make([]Chat, 0, len(rows))
@@ -122,7 +141,9 @@ func (r *gormRepository) UpdateChat(chat *Chat) error {
 
 func (r *gormRepository) ListGroups() ([]ChatGroup, error) {
 	var rows []database.ChatGroup
-	if err := r.db.Order("id ASC").Find(&rows).Error; err != nil {
+	if err := r.db.
+		Order("CASE WHEN system_key IS NOT NULL AND system_key <> '' THEN 0 ELSE 1 END, id ASC").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("chat: list groups: %w", err)
 	}
 	out := make([]ChatGroup, 0, len(rows))
@@ -489,17 +510,26 @@ func usageOutput(usage *Usage) int {
 }
 
 func chatGroupFromRow(row database.ChatGroup) ChatGroup {
-	return ChatGroup{
+	group := ChatGroup{
 		ID:        row.ID,
 		Name:      row.Name,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}
+	if row.SystemKey != nil {
+		group.SystemKey = *row.SystemKey
+	}
+	return group
 }
 
 func chatGroupToRow(group ChatGroup) database.ChatGroup {
-	return database.ChatGroup{
+	row := database.ChatGroup{
 		ID:   group.ID,
 		Name: group.Name,
 	}
+	if group.SystemKey != "" {
+		key := group.SystemKey
+		row.SystemKey = &key
+	}
+	return row
 }

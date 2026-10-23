@@ -130,6 +130,22 @@ func (s *Service) List(limit, offset int) ([]Chat, int, error) {
 	return chats, total, nil
 }
 
+// ListByGroup returns conversations in one group ordered by most recent
+// activity. The group must exist; an unknown group is a 404, not an empty page.
+func (s *Service) ListByGroup(groupID uint, limit, offset int) ([]Chat, int, error) {
+	if _, err := s.repo.GetGroup(groupID); err != nil {
+		return nil, 0, err
+	}
+	chats, total, err := s.repo.ListChatsByGroup(groupID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i := range chats {
+		chats[i].Running = s.manager.running(chats[i].ID)
+	}
+	return chats, total, nil
+}
+
 // Get returns one conversation with its live running state.
 func (s *Service) Get(id uint) (Chat, error) {
 	chat, err := s.repo.GetChat(id)
@@ -284,12 +300,28 @@ func (s *Service) Update(chatID uint, input UpdateInput) (Chat, error) {
 		chat.ModelName = model.Name
 	}
 	if input.GroupID != nil {
-		if *input.GroupID != 0 {
-			if _, err := s.repo.GetGroup(*input.GroupID); err != nil {
-				return Chat{}, err
+		targetID := *input.GroupID
+		if targetID != chat.GroupID {
+			if chat.GroupID != 0 {
+				current, err := s.repo.GetGroup(chat.GroupID)
+				if err != nil {
+					return Chat{}, err
+				}
+				if current.SystemKey != "" {
+					return Chat{}, ErrGroupLocked
+				}
+			}
+			if targetID != 0 {
+				target, err := s.repo.GetGroup(targetID)
+				if err != nil {
+					return Chat{}, err
+				}
+				if target.SystemKey != "" {
+					return Chat{}, ErrGroupLocked
+				}
 			}
 		}
-		chat.GroupID = *input.GroupID
+		chat.GroupID = targetID
 	}
 	if err := s.repo.UpdateChat(&chat); err != nil {
 		return Chat{}, err
@@ -830,11 +862,15 @@ func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
 	return group, nil
 }
 
-// UpdateGroup renames an existing chat conversation group.
+// UpdateGroup renames an existing chat conversation group. Platform-reserved
+// groups cannot be renamed.
 func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error) {
 	group, err := s.repo.GetGroup(id)
 	if err != nil {
 		return ChatGroup{}, err
+	}
+	if group.SystemKey != "" {
+		return ChatGroup{}, ErrGroupLocked
 	}
 	name, err := normalizeGroupName(input.Name)
 	if err != nil {
@@ -847,10 +883,15 @@ func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error
 	return group, nil
 }
 
-// DeleteGroup removes a chat group and all chats inside it.
+// DeleteGroup removes a chat group and all chats inside it. Platform-reserved
+// groups cannot be deleted.
 func (s *Service) DeleteGroup(id uint) error {
-	if _, err := s.repo.GetGroup(id); err != nil {
+	group, err := s.repo.GetGroup(id)
+	if err != nil {
 		return err
+	}
+	if group.SystemKey != "" {
+		return ErrGroupLocked
 	}
 	chats, _, err := s.repo.ListChats(MaxListLimit, 0)
 	if err == nil {

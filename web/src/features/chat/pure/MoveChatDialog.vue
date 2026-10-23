@@ -42,7 +42,11 @@ async function onSubmit() {
         <span class="label-text">选择目标分组</span>
         <select v-model.number="selectedGroupId" class="select-input">
           <option :value="0">未分组</option>
-          <option v-for="group in chats.groups" :key="group.id" :value="group.id">
+          <option
+            v-for="group in chats.groups.filter((entry) => !entry.systemKey)"
+            :key="group.id"
+            :value="group.id"
+          >
             {{ group.name }}
           </option>
         </select>

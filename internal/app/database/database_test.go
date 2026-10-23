@@ -474,3 +474,28 @@ func TestDatabaseFileStaysUnderDataDir(t *testing.T) {
 		t.Errorf("project root contains entries after opening database elsewhere: %v", names)
 	}
 }
+
+func TestMigrateSeedsQuickAssistantChatGroup(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	var group ChatGroup
+	if err := db.Where("system_key = ?", "quick-assistant").First(&group).Error; err != nil {
+		t.Fatalf("load seeded quick-assistant group: %v", err)
+	}
+	if group.Name != "快捷助手" || group.SystemKey == nil || *group.SystemKey != "quick-assistant" {
+		t.Fatalf("seeded group = %+v, want quick-assistant/快捷助手", group)
+	}
+
+	// A second migration pass must not duplicate the seeded row.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("second Migrate: %v", err)
+	}
+	var count int64
+	if err := db.Model(&ChatGroup{}).Where("system_key = ?", "quick-assistant").Count(&count).Error; err != nil {
+		t.Fatalf("count seeded groups: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("quick-assistant group count = %d, want 1", count)
+	}
+}

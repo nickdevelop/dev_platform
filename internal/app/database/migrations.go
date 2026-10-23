@@ -246,6 +246,39 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 29, name: "add_quick_assistant_chat_group", run: func(tx *gorm.DB) error {
+		// Pure-chat groups gain a nullable reserved key. The "快捷助手" group
+		// is platform-owned: it is seeded once and then protected by the chat
+		// service from rename, delete and chat moves.
+		if !tx.Migrator().HasTable(&ChatGroup{}) {
+			if err := tx.Migrator().CreateTable(&ChatGroup{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn(&ChatGroup{}, "system_key") {
+			if err := tx.Migrator().AddColumn(&ChatGroup{}, "system_key"); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasIndex(&ChatGroup{}, "idx_chat_group_system_key") {
+			if err := tx.Migrator().CreateIndex(&ChatGroup{}, "idx_chat_group_system_key"); err != nil {
+				return err
+			}
+		}
+		var count int64
+		if err := tx.Model(&ChatGroup{}).
+			Where("system_key = ?", "quick-assistant").
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			key := "quick-assistant"
+			if err := tx.Create(&ChatGroup{Name: "快捷助手", SystemKey: &key}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

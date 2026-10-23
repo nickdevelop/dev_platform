@@ -14,6 +14,8 @@ import (
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/settings/appearance", s.handleGetAppearance)
 	r.PUT("/settings/appearance", s.handlePutAppearance)
+	r.GET("/settings/quick-assistant", s.handleGetQuickAssistant)
+	r.PUT("/settings/quick-assistant", s.handlePutQuickAssistant)
 	r.GET("/agents", s.handleListAgents)
 	r.PUT("/agents/:backend", s.handleSetAgentEnabled)
 	r.PUT("/agents/:backend/path", s.handleSetAgentPath)
@@ -52,6 +54,29 @@ func (s *Service) handlePutAppearance(c *gin.Context) {
 			respondError(c, http.StatusBadRequest, "invalid_appearance")
 			return
 		}
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, saved)
+}
+
+func (s *Service) handleGetQuickAssistant(c *gin.Context) {
+	config, err := s.QuickAssistant()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, config)
+}
+
+func (s *Service) handlePutQuickAssistant(c *gin.Context) {
+	var request QuickAssistant
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	saved, err := s.SetQuickAssistant(request)
+	if err != nil {
 		respondError(c, http.StatusInternalServerError, "server_error")
 		return
 	}

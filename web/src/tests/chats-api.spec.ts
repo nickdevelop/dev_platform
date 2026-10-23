@@ -55,6 +55,12 @@ describe('pure chat API contracts', () => {
     expect(headers(calls[1])['X-CSRF-Token']).toBeUndefined()
   })
 
+  it('filters the chat list by group', async () => {
+    const calls = stub({ chats: [], total: 0 })
+    await listChats(1, 0, 7)
+    expect(calls[0].url).toBe('/api/chats?limit=1&groupId=7')
+  })
+
   it('creates, updates and deletes a chat through mutate()', async () => {
     installTestCSRF()
     const calls = stub({ id: 1 })

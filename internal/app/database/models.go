@@ -242,8 +242,12 @@ func (AgentModelCatalog) TableName() string { return "agent_model_catalogs" }
 // It organizes conversations into logical categories, similar to projects for sessions.
 // Table: chat_groups.
 type ChatGroup struct {
-	ID        uint   `gorm:"primaryKey;column:id"`
-	Name      string `gorm:"column:name;not null"`
+	ID   uint   `gorm:"primaryKey;column:id"`
+	Name string `gorm:"column:name;not null"`
+	// SystemKey marks a platform-reserved group. It is NULL for ordinary
+	// user-created groups; the unique index relies on SQLite allowing multiple
+	// NULL values.
+	SystemKey *string `gorm:"column:system_key;size:64;uniqueIndex:idx_chat_group_system_key"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
