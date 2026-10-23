@@ -16,6 +16,14 @@ import (
 // platform router. The chat group also carries the larger body limit needed by
 // image messages (see transport/http/router.go).
 func (s *Service) RegisterRoutes(r gin.IRouter) {
+	groups := r.Group("/chat-groups")
+	{
+		groups.GET("", s.handleListGroups)
+		groups.POST("", s.handleCreateGroup)
+		groups.PUT("/:id", s.handleUpdateGroup)
+		groups.DELETE("/:id", s.handleDeleteGroup)
+	}
+
 	chats := r.Group("/chats")
 	{
 		chats.GET("", s.handleList)
@@ -57,6 +65,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_image")
 	case errors.Is(err, ErrUnsupportedImage):
 		respondError(c, http.StatusBadRequest, "unsupported_image")
+	case errors.Is(err, ErrGroupNotFound):
+		respondError(c, http.StatusNotFound, "group_not_found")
+	case errors.Is(err, ErrInvalidGroupName):
+		respondError(c, http.StatusBadRequest, "invalid_group_name")
 	case errors.Is(err, ErrModelUnavailable),
 		errors.Is(err, modelconfig.ErrModelNotFound),
 		errors.Is(err, modelconfig.ErrModelUnavailable):
@@ -75,6 +87,7 @@ type imageRequest struct {
 }
 
 type createRequest struct {
+	GroupID *uint          `json:"groupId"`
 	ModelID uint           `json:"modelId"`
 	Text    string         `json:"text"`
 	Images  []imageRequest `json:"images"`
@@ -94,6 +107,15 @@ type editRequest struct {
 type updateRequest struct {
 	Title   *string `json:"title"`
 	ModelID *uint   `json:"modelId"`
+	GroupID *uint   `json:"groupId"`
+}
+
+type groupRequest struct {
+	Name string `json:"name"`
+}
+
+type groupListResponse struct {
+	Groups []ChatGroup `json:"groups"`
 }
 
 type chatListResponse struct {
@@ -119,6 +141,7 @@ func (s *Service) handleCreate(c *gin.Context) {
 		return
 	}
 	chat, err := s.Create(c.Request.Context(), CreateInput{
+		GroupID: req.GroupID,
 		ModelID: req.ModelID,
 		Text:    req.Text,
 		Images:  imagesFromRequest(req.Images),
@@ -153,7 +176,11 @@ func (s *Service) handleUpdate(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	chat, err := s.Update(id, UpdateInput{Title: req.Title, ModelID: req.ModelID})
+	chat, err := s.Update(id, UpdateInput{
+		Title:   req.Title,
+		ModelID: req.ModelID,
+		GroupID: req.GroupID,
+	})
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -298,4 +325,66 @@ func imagesFromRequest(images []imageRequest) []ImageAttachment {
 		})
 	}
 	return out
+}
+
+func (s *Service) handleListGroups(c *gin.Context) {
+	groups, err := s.ListGroups()
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, groupListResponse{Groups: groups})
+}
+
+func (s *Service) handleCreateGroup(c *gin.Context) {
+	var req groupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	group, err := s.CreateGroup(CreateGroupInput{Name: req.Name})
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, group)
+}
+
+func (s *Service) handleUpdateGroup(c *gin.Context) {
+	id, ok := groupID(c)
+	if !ok {
+		return
+	}
+	var req groupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	group, err := s.UpdateGroup(id, UpdateGroupInput{Name: req.Name})
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, group)
+}
+
+func (s *Service) handleDeleteGroup(c *gin.Context) {
+	id, ok := groupID(c)
+	if !ok {
+		return
+	}
+	if err := s.DeleteGroup(id); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func groupID(c *gin.Context) (uint, bool) {
+	value, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || value == 0 {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return 0, false
+	}
+	return uint(value), true
 }

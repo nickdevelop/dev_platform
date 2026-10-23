@@ -207,6 +207,19 @@ type ModelDef struct {
 	UpdatedAt     time.Time
 }
 
+// ChatGroup is one platform-owned pure-chat conversation group.
+// It organizes conversations into logical categories, similar to projects for sessions.
+// Table: chat_groups.
+type ChatGroup struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Name      string `gorm:"column:name;not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName pins the chat group table name.
+func (ChatGroup) TableName() string { return "chat_groups" }
+
 // Chat is one platform-owned pure-chat conversation. It is deliberately
 // unrelated to projects, agent instances and agent sessions: a chat belongs
 // only to the platform and the model it was created with. ModelName is a
@@ -214,6 +227,7 @@ type ModelDef struct {
 // Table: chats.
 type Chat struct {
 	ID        uint   `gorm:"primaryKey;column:id"`
+	GroupID   uint   `gorm:"column:group_id;not null;default:0;index:idx_chats_group"`
 	Title     string `gorm:"column:title;not null"`
 	ModelID   uint   `gorm:"column:model_id;not null"`
 	ModelName string `gorm:"column:model_name;not null"`

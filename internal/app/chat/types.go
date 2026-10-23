@@ -21,6 +21,8 @@ var (
 	ErrInvalidImage       = errors.New("chat: invalid image")
 	ErrUnsupportedImage   = errors.New("chat: model does not support images")
 	ErrModelUnavailable   = errors.New("chat: model unavailable")
+	ErrGroupNotFound      = errors.New("chat: group not found")
+	ErrInvalidGroupName   = errors.New("chat: invalid group name")
 )
 
 // Message roles and statuses.
@@ -69,7 +71,17 @@ const (
 	MaxListLimit = 500
 	// MaxTitleRunes bounds a stored title.
 	MaxTitleRunes = 120
+	// MaxGroupNameRunes bounds a stored group name.
+	MaxGroupNameRunes = 60
 )
+
+// ChatGroup is the JSON-stable API representation of one pure-chat group.
+type ChatGroup struct {
+	ID        uint      `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
 
 // ImageAttachment is one user-supplied image in a stable wire shape. Data is
 // base64 without the data-URL prefix; media type and size are validated by the
@@ -93,6 +105,7 @@ type Usage struct {
 // derived from the in-process generation manager and is not persisted.
 type Chat struct {
 	ID        uint      `json:"id"`
+	GroupID   uint      `json:"groupId"`
 	Title     string    `json:"title"`
 	ModelID   uint      `json:"modelId"`
 	ModelName string    `json:"modelName"`
@@ -122,6 +135,7 @@ type Message struct {
 // CreateInput is the body of POST /chats: the conversation is created together
 // with its first user message.
 type CreateInput struct {
+	GroupID *uint
 	ModelID uint
 	Text    string
 	Images  []ImageAttachment
@@ -141,10 +155,21 @@ type EditInput struct {
 	Images []ImageAttachment
 }
 
-// UpdateInput is the body of PUT /chats/{id}; both fields are optional.
+// UpdateInput is the body of PUT /chats/{id}; all fields are optional.
 type UpdateInput struct {
 	Title   *string
 	ModelID *uint
+	GroupID *uint
+}
+
+// CreateGroupInput is the body of POST /chat-groups.
+type CreateGroupInput struct {
+	Name string
+}
+
+// UpdateGroupInput is the body of PUT /chat-groups/{id}.
+type UpdateGroupInput struct {
+	Name string
 }
 
 // Snapshot is the state a client needs to render a conversation from scratch.

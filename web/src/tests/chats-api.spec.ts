@@ -4,14 +4,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   chatEventsPath,
   createChat,
+  createChatGroup,
+  deleteChat,
+  deleteChatGroup,
   editChatMessage,
   getChat,
+  listChatGroups,
   listChats,
   regenerateChat,
   sendChatMessage,
   stopChat,
   updateChat,
-  deleteChat,
+  updateChatGroup,
 } from '../api/chats'
 import { installTestCSRF, testCSRFToken } from './csrf-fixture'
 
@@ -88,5 +92,25 @@ describe('pure chat API contracts', () => {
 
   it('exposes the same-origin SSE path', () => {
     expect(chatEventsPath(12)).toBe('/api/chats/12/events')
+  })
+
+  it('manages chat groups through get() and mutate()', async () => {
+    installTestCSRF()
+    const calls = stub({ groups: [] })
+    await listChatGroups()
+    await createChatGroup({ name: 'Group 1' })
+    await updateChatGroup(3, { name: 'Renamed' })
+    await deleteChatGroup(3)
+
+    expect(calls.map((call) => `${call.init?.method ?? 'GET'} ${call.url}`)).toEqual([
+      'GET /api/chat-groups',
+      'POST /api/chat-groups',
+      'PUT /api/chat-groups/3',
+      'DELETE /api/chat-groups/3',
+    ])
+    expect(headers(calls[0])['X-CSRF-Token']).toBeUndefined()
+    expect(headers(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
+    expect(headers(calls[2])['X-CSRF-Token']).toBe(testCSRFToken)
+    expect(headers(calls[3])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 })

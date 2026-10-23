@@ -14,6 +14,12 @@ import (
 // Repository persists chats and their messages. The interface is small and
 // transactional boundaries live here so the service never depends on GORM.
 type Repository interface {
+	ListGroups() ([]ChatGroup, error)
+	GetGroup(id uint) (ChatGroup, error)
+	CreateGroup(group *ChatGroup) error
+	UpdateGroup(group *ChatGroup) error
+	DeleteGroup(id uint) error
+
 	ListChats(limit, offset int) ([]Chat, int, error)
 	GetChat(id uint) (Chat, error)
 	CreateChat(chat *Chat, user, assistant *Message) error
@@ -98,6 +104,7 @@ func (r *gormRepository) CreateChat(chat *Chat, user, assistant *Message) error 
 func (r *gormRepository) UpdateChat(chat *Chat) error {
 	now := time.Now().UTC()
 	res := r.db.Model(&database.Chat{}).Where("id = ?", chat.ID).Updates(map[string]any{
+		"group_id":   chat.GroupID,
 		"title":      chat.Title,
 		"model_id":   chat.ModelID,
 		"model_name": chat.ModelName,
@@ -111,6 +118,81 @@ func (r *gormRepository) UpdateChat(chat *Chat) error {
 	}
 	chat.UpdatedAt = now
 	return nil
+}
+
+func (r *gormRepository) ListGroups() ([]ChatGroup, error) {
+	var rows []database.ChatGroup
+	if err := r.db.Order("id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("chat: list groups: %w", err)
+	}
+	out := make([]ChatGroup, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, chatGroupFromRow(row))
+	}
+	return out, nil
+}
+
+func (r *gormRepository) GetGroup(id uint) (ChatGroup, error) {
+	var row database.ChatGroup
+	if err := r.db.First(&row, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ChatGroup{}, ErrGroupNotFound
+		}
+		return ChatGroup{}, fmt.Errorf("chat: load group %d: %w", id, err)
+	}
+	return chatGroupFromRow(row), nil
+}
+
+func (r *gormRepository) CreateGroup(group *ChatGroup) error {
+	row := chatGroupToRow(*group)
+	if err := r.db.Create(&row).Error; err != nil {
+		return fmt.Errorf("chat: create group: %w", err)
+	}
+	group.ID = row.ID
+	group.CreatedAt = row.CreatedAt
+	group.UpdatedAt = row.UpdatedAt
+	return nil
+}
+
+func (r *gormRepository) UpdateGroup(group *ChatGroup) error {
+	now := time.Now().UTC()
+	res := r.db.Model(&database.ChatGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
+		"name":       group.Name,
+		"updated_at": now,
+	})
+	if res.Error != nil {
+		return fmt.Errorf("chat: update group %d: %w", group.ID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrGroupNotFound
+	}
+	group.UpdatedAt = now
+	return nil
+}
+
+func (r *gormRepository) DeleteGroup(id uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var chatIDs []uint
+		if err := tx.Model(&database.Chat{}).Where("group_id = ?", id).Pluck("id", &chatIDs).Error; err != nil {
+			return fmt.Errorf("chat: find chats for group %d: %w", id, err)
+		}
+		if len(chatIDs) > 0 {
+			if err := tx.Where("chat_id IN ?", chatIDs).Delete(&database.ChatMessage{}).Error; err != nil {
+				return fmt.Errorf("chat: delete messages for group chats: %w", err)
+			}
+			if err := tx.Where("id IN ?", chatIDs).Delete(&database.Chat{}).Error; err != nil {
+				return fmt.Errorf("chat: delete chats for group %d: %w", id, err)
+			}
+		}
+		res := tx.Delete(&database.ChatGroup{}, id)
+		if res.Error != nil {
+			return fmt.Errorf("chat: delete group %d: %w", id, res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return ErrGroupNotFound
+		}
+		return nil
+	})
 }
 
 // TouchChat updates only the activity timestamp. It is used when a generation
@@ -340,6 +422,7 @@ func messageFromRowChecked(row database.ChatMessage) (Message, error) {
 func chatFromRow(row database.Chat) Chat {
 	return Chat{
 		ID:        row.ID,
+		GroupID:   row.GroupID,
 		Title:     row.Title,
 		ModelID:   row.ModelID,
 		ModelName: row.ModelName,
@@ -351,6 +434,7 @@ func chatFromRow(row database.Chat) Chat {
 func chatToRow(chat Chat) database.Chat {
 	return database.Chat{
 		ID:        chat.ID,
+		GroupID:   chat.GroupID,
 		Title:     chat.Title,
 		ModelID:   chat.ModelID,
 		ModelName: chat.ModelName,
@@ -402,4 +486,20 @@ func usageOutput(usage *Usage) int {
 		return 0
 	}
 	return usage.Output
+}
+
+func chatGroupFromRow(row database.ChatGroup) ChatGroup {
+	return ChatGroup{
+		ID:        row.ID,
+		Name:      row.Name,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func chatGroupToRow(group ChatGroup) database.ChatGroup {
+	return database.ChatGroup{
+		ID:   group.ID,
+		Name: group.Name,
+	}
 }

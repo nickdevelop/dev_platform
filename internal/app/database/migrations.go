@@ -207,6 +207,23 @@ var migrationSteps = []migrationStep{
 		}
 		return tx.Migrator().CreateTable(&ChatMessage{})
 	}},
+	{version: 27, name: "create_chat_groups", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&ChatGroup{}) {
+			if err := tx.Migrator().CreateTable(&ChatGroup{}); err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable(&Chat{}) && !tx.Migrator().HasColumn(&Chat{}, "group_id") {
+			if err := tx.Migrator().AddColumn(&Chat{}, "group_id"); err != nil {
+				return err
+			}
+			_ = tx.Exec("UPDATE chats SET group_id = 0 WHERE group_id IS NULL").Error
+		}
+		if tx.Migrator().HasTable(&Chat{}) && !tx.Migrator().HasIndex(&Chat{}, "idx_chats_group") {
+			_ = tx.Migrator().CreateIndex(&Chat{}, "idx_chats_group")
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

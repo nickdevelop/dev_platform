@@ -6,8 +6,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ChatSidebar from '../features/chat/pure/ChatSidebar.vue'
 
-const chat = (id: number, title: string, running = false) => ({
+const chat = (id: number, title: string, running = false, groupId = 0) => ({
   id,
+  groupId,
   title,
   modelId: 1,
   modelName: 'Test Model',
@@ -36,13 +37,34 @@ async function mountSidebar(path = '/chat') {
 beforeEach(() => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({
-      status: 200,
-      json: async () => ({
-        chats: [chat(1, '第一个对话', true), chat(2, '购物清单')],
-        total: 2,
-      }),
-    })),
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/chat-groups')) {
+        return {
+          status: 200,
+          json: async () => ({
+            groups: [
+              {
+                id: 10,
+                name: '工作分组',
+                createdAt: '2026-10-22T00:00:00Z',
+                updatedAt: '2026-10-22T00:00:00Z',
+              },
+            ],
+          }),
+        } as Response
+      }
+      return {
+        status: 200,
+        json: async () => ({
+          chats: [
+            chat(1, '第一个对话', true, 10),
+            chat(2, '购物清单', false, 0),
+          ],
+          total: 2,
+        }),
+      } as Response
+    }),
   )
 })
 
@@ -76,5 +98,16 @@ describe('pure chat sidebar', () => {
     await wrapper.find('[data-test="chat-new-btn"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('chat')
+  })
+
+  it('renders groups, ungrouped section, and opens create group dialog', async () => {
+    const { wrapper } = await mountSidebar('/chat')
+    expect(wrapper.text()).toContain('工作分组')
+    expect(wrapper.text()).toContain('未分组对话')
+
+    // Open create group dialog
+    await wrapper.find('[data-test="chat-new-group-btn"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('新建对话分组')
   })
 })

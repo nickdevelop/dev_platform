@@ -10,8 +10,24 @@ export type ChatRole = 'user' | 'assistant'
 export type ChatMessageStatus = 'pending' | 'complete' | 'failed' | 'cancelled'
 export type ChatTurnOutcome = 'completed' | 'cancelled' | 'failed'
 
+export interface ChatGroup {
+  id: number
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatGroupList {
+  groups: ChatGroup[]
+}
+
+export interface ChatGroupInput {
+  name: string
+}
+
 export interface Chat {
   id: number
+  groupId?: number
   title: string
   modelId: number
   modelName: string
@@ -50,6 +66,7 @@ export interface ChatSnapshot {
 }
 
 export interface ChatCreateInput {
+  groupId?: number
   modelId: number
   text: string
   images?: ImageAttachment[]
@@ -67,6 +84,7 @@ export interface ChatEditInput {
 }
 
 export interface ChatUpdateInput {
+  groupId?: number
   title?: string
   modelId?: number
 }
@@ -143,4 +161,20 @@ export function editChatMessage(
 // authenticates the stream, exactly like the agent session event stream.
 export function chatEventsPath(id: number): string {
   return `/api/chats/${id}/events`
+}
+
+export function listChatGroups(): Promise<ChatGroupList> {
+  return get<ChatGroupList>('/chat-groups')
+}
+
+export function createChatGroup(input: ChatGroupInput): Promise<ChatGroup> {
+  return mutate<ChatGroup>('POST', '/chat-groups', input)
+}
+
+export function updateChatGroup(id: number, input: ChatGroupInput): Promise<ChatGroup> {
+  return mutate<ChatGroup>('PUT', `/chat-groups/${id}`, input)
+}
+
+export function deleteChatGroup(id: number): Promise<void> {
+  return mutate<void>('DELETE', `/chat-groups/${id}`)
 }

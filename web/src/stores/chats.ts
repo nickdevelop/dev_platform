@@ -5,16 +5,21 @@
 import { defineStore } from 'pinia'
 import {
   createChat,
+  createChatGroup,
   deleteChat,
+  deleteChatGroup,
   editChatMessage,
   getChat,
+  listChatGroups,
   listChats,
   regenerateChat,
   sendChatMessage,
   stopChat,
   updateChat,
+  updateChatGroup,
   type Chat,
   type ChatDelta,
+  type ChatGroup,
   type ChatMessage,
   type ChatSnapshot,
   type ChatTurn,
@@ -32,6 +37,10 @@ import { closeChatStream, openChatStream } from '../features/chat/pure/useChatSt
 
 export const useChatsStore = defineStore('chats', {
   state: () => ({
+    groups: [] as ChatGroup[],
+    groupsLoading: false,
+    groupsError: '',
+    selectedGroupId: null as number | null,
     chats: [] as Chat[],
     total: 0,
     loading: false,
@@ -56,6 +65,10 @@ export const useChatsStore = defineStore('chats', {
   }),
 
   getters: {
+    groupById: (state) => (id: number) => state.groups.find((g) => g.id === id),
+    chatsByGroup: (state) => (groupId: number) =>
+      state.chats.filter((c) => (c.groupId ?? 0) === groupId),
+    ungroupedChats: (state) => state.chats.filter((c) => !c.groupId || c.groupId === 0),
     messagesFor: (state) => (chatId: number) => state.messages[chatId] ?? [],
     runningFor: (state) => (chatId: number) => state.running[chatId] === true,
     statusFor: (state) => (chatId: number) => state.streamStatus[chatId] ?? 'idle',
@@ -114,10 +127,87 @@ export const useChatsStore = defineStore('chats', {
       }
     },
 
-    startNewChat() {
+    async loadGroups() {
+      this.groupsLoading = true
+      try {
+        const result = await listChatGroups()
+        this.groups = result.groups
+        this.groupsError = ''
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.groupsError = describeApiError(error)
+      } finally {
+        this.groupsLoading = false
+      }
+    },
+
+    async createGroup(name: string): Promise<ChatGroup | null> {
+      this.actionError = ''
+      try {
+        const created = await createChatGroup({ name })
+        this.groups.push(created)
+        return created
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return null
+        this.actionError = describeApiError(error)
+        return null
+      }
+    },
+
+    async renameGroup(id: number, name: string): Promise<boolean> {
+      this.actionError = ''
+      try {
+        const updated = await updateChatGroup(id, { name })
+        const idx = this.groups.findIndex((g) => g.id === id)
+        if (idx >= 0) this.groups[idx] = updated
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.actionError = describeApiError(error)
+        return false
+      }
+    },
+
+    async deleteGroup(id: number): Promise<boolean> {
+      this.actionError = ''
+      try {
+        await deleteChatGroup(id)
+        this.groups = this.groups.filter((g) => g.id !== id)
+        this.chats = this.chats.filter((c) => c.groupId !== id)
+        if (this.active?.groupId === id) {
+          this.activeId = null
+          this.active = null
+        }
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.actionError = describeApiError(error)
+        return false
+      }
+    },
+
+    async moveChatToGroup(chatId: number, groupId: number): Promise<boolean> {
+      this.actionError = ''
+      try {
+        const updated = await updateChat(chatId, { groupId })
+        const idx = this.chats.findIndex((c) => c.id === chatId)
+        if (idx >= 0) this.chats[idx] = updated
+        if (this.activeId === chatId) {
+          this.active = updated
+        }
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.actionError = describeApiError(error)
+        return false
+      }
+    },
+
+    startNewChat(groupId?: number) {
       closeChatStream()
       this.activeId = null
       this.active = null
+      this.selectedGroupId = groupId !== undefined ? groupId : null
       this.closedReason = ''
       this.loadError = ''
       this.sendError = ''
@@ -158,15 +248,27 @@ export const useChatsStore = defineStore('chats', {
 
     // createAndSend creates the conversation on its first send. The caller
     // navigates to the returned id; the SSE snapshot supplies the transcript.
-    async createAndSend(text: string, images: ImageAttachment[], modelId: number): Promise<Chat | null> {
+    async createAndSend(
+      text: string,
+      images: ImageAttachment[],
+      modelId: number,
+      groupId?: number,
+    ): Promise<Chat | null> {
       this.sendError = ''
       this.actionError = ''
       try {
-        const chat = await createChat({ modelId, text, images })
+        const targetGroupId =
+          groupId !== undefined
+            ? groupId
+            : this.selectedGroupId !== null
+              ? this.selectedGroupId
+              : undefined
+        const chat = await createChat({ modelId, text, images, groupId: targetGroupId })
         this.chats = [chat, ...this.chats.filter((entry) => entry.id !== chat.id)]
         this.activeId = chat.id
         this.active = chat
         this.running = { ...this.running, [chat.id]: true }
+        this.selectedGroupId = null
         return chat
       } catch (error) {
         if (error instanceof UnauthorizedError) return null

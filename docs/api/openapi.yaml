@@ -3228,6 +3228,101 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /chat-groups:
+    get:
+      summary: List pure-chat groups
+      description: Returns all pure-chat groups.
+      operationId: listChatGroups
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The groups.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGroupList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a pure-chat group
+      operationId: createChatGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatGroupInput'
+      responses:
+        '201':
+          description: The created group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /chat-groups/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+    put:
+      summary: Update a pure-chat group
+      operationId: updateChatGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatGroupInput'
+      responses:
+        '200':
+          description: The updated group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatGroup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Group not found.
+    delete:
+      summary: Delete a pure-chat group and its chats
+      operationId: deleteChatGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Group not found.
+
   /chats:
     get:
       summary: List pure-chat conversations
@@ -4869,11 +4964,43 @@ components:
           type: integer
         output:
           type: integer
+    ChatGroup:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ChatGroupList:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatGroup'
+    ChatGroupInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
     Chat:
       type: object
       required: [id, title, modelId, modelName, running, createdAt, updatedAt]
       properties:
         id:
+          type: integer
+          format: int64
+        groupId:
           type: integer
           format: int64
         title:
@@ -4946,6 +5073,9 @@ components:
       type: object
       required: [modelId]
       properties:
+        groupId:
+          type: integer
+          format: int64
         modelId:
           type: integer
           format: int64
@@ -4985,6 +5115,9 @@ components:
     ChatUpdateInput:
       type: object
       properties:
+        groupId:
+          type: integer
+          format: int64
         title:
           type: string
           maxLength: 120

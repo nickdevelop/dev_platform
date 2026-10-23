@@ -224,4 +224,55 @@ describe('chats store mutations', () => {
     const paths = calls(fetchSpy).map((call) => `${call.init?.method} ${call.url}`)
     expect(paths).toContain('DELETE /api/chats/1')
   })
+
+  it('manages groups and moves chats between groups', async () => {
+    const fetchSpy = stubFetch((url, init) => {
+      if (url === '/api/chat-groups' && (!init?.method || init.method === 'GET')) {
+        return { groups: [{ id: 10, name: '旧分组', createdAt: '2026-10-22T00:00:00Z', updatedAt: '2026-10-22T00:00:00Z' }] }
+      }
+      if (url === '/api/chat-groups' && init?.method === 'POST') {
+        return { id: 11, name: '新分组', createdAt: '2026-10-22T00:00:00Z', updatedAt: '2026-10-22T00:00:00Z' }
+      }
+      if (url === '/api/chat-groups/11' && init?.method === 'PUT') {
+        return { id: 11, name: '新分组改名', createdAt: '2026-10-22T00:00:00Z', updatedAt: '2026-10-22T00:00:00Z' }
+      }
+      if (url === '/api/chat-groups/11' && init?.method === 'DELETE') {
+        return undefined
+      }
+      if (url === '/api/chats/1' && init?.method === 'PUT') {
+        return chat({ id: 1, groupId: 11 })
+      }
+      return {}
+    })
+
+    const chats = useChatsStore()
+    chats.chats = [chat({ id: 1, groupId: 10 })]
+
+    // 1. loadGroups
+    await chats.loadGroups()
+    expect(chats.groups).toHaveLength(1)
+    expect(chats.groups[0].name).toBe('旧分组')
+
+    // 2. createGroup
+    const created = await chats.createGroup('新分组')
+    expect(created?.id).toBe(11)
+    expect(chats.groups).toHaveLength(2)
+
+    // 3. renameGroup
+    const renamed = await chats.renameGroup(11, '新分组改名')
+    expect(renamed).toBe(true)
+    expect(chats.groupById(11)?.name).toBe('新分组改名')
+
+    // 4. moveChatToGroup
+    const moved = await chats.moveChatToGroup(1, 11)
+    expect(moved).toBe(true)
+    expect(chats.chats[0].groupId).toBe(11)
+
+    // 5. deleteGroup
+    const deleted = await chats.deleteGroup(11)
+    expect(deleted).toBe(true)
+    expect(chats.groups.some((g) => g.id === 11)).toBe(false)
+    // Chats in this group should also be removed
+    expect(chats.chats.some((c) => c.groupId === 11)).toBe(false)
+  })
 })

@@ -155,8 +155,17 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 		return Chat{}, ErrUnsupportedImage
 	}
 
+	var groupID uint
+	if input.GroupID != nil && *input.GroupID != 0 {
+		if _, err := s.repo.GetGroup(*input.GroupID); err != nil {
+			return Chat{}, err
+		}
+		groupID = *input.GroupID
+	}
+
 	now := time.Now().UTC()
 	chat := Chat{
+		GroupID:   groupID,
 		Title:     fallbackTitle(text),
 		ModelID:   model.ID,
 		ModelName: model.Name,
@@ -273,6 +282,14 @@ func (s *Service) Update(chatID uint, input UpdateInput) (Chat, error) {
 		}
 		chat.ModelID = model.ID
 		chat.ModelName = model.Name
+	}
+	if input.GroupID != nil {
+		if *input.GroupID != 0 {
+			if _, err := s.repo.GetGroup(*input.GroupID); err != nil {
+				return Chat{}, err
+			}
+		}
+		chat.GroupID = *input.GroupID
 	}
 	if err := s.repo.UpdateChat(&chat); err != nil {
 		return Chat{}, err
@@ -780,4 +797,80 @@ func sanitizeGeneratedTitle(raw string) string {
 		return textutil.DeriveTitleLimit(line, 40)
 	}
 	return ""
+}
+
+func normalizeGroupName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" {
+		return "", ErrInvalidGroupName
+	}
+	if utf8.RuneCountInString(name) > MaxGroupNameRunes {
+		return "", ErrInvalidGroupName
+	}
+	return name, nil
+}
+
+// ListGroups returns all chat conversation groups.
+func (s *Service) ListGroups() ([]ChatGroup, error) {
+	return s.repo.ListGroups()
+}
+
+// CreateGroup creates a new chat conversation group with the given name.
+func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
+	name, err := normalizeGroupName(input.Name)
+	if err != nil {
+		return ChatGroup{}, err
+	}
+	group := ChatGroup{
+		Name: name,
+	}
+	if err := s.repo.CreateGroup(&group); err != nil {
+		return ChatGroup{}, err
+	}
+	return group, nil
+}
+
+// UpdateGroup renames an existing chat conversation group.
+func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error) {
+	group, err := s.repo.GetGroup(id)
+	if err != nil {
+		return ChatGroup{}, err
+	}
+	name, err := normalizeGroupName(input.Name)
+	if err != nil {
+		return ChatGroup{}, err
+	}
+	group.Name = name
+	if err := s.repo.UpdateGroup(&group); err != nil {
+		return ChatGroup{}, err
+	}
+	return group, nil
+}
+
+// DeleteGroup removes a chat group and all chats inside it.
+func (s *Service) DeleteGroup(id uint) error {
+	if _, err := s.repo.GetGroup(id); err != nil {
+		return err
+	}
+	chats, _, err := s.repo.ListChats(MaxListLimit, 0)
+	if err == nil {
+		for _, c := range chats {
+			if c.GroupID == id {
+				if run := s.manager.currentRun(c.ID); run != nil {
+					run.cancel()
+					waitCtx, cancel := context.WithTimeout(context.Background(), destroyWait)
+					s.manager.wait(run, waitCtx)
+					cancel()
+				}
+				s.manager.broadcast(c.ID, Event{
+					ChatID:    c.ID,
+					Timestamp: time.Now().UTC(),
+					Type:      EventClosed,
+					Reason:    "group_deleted",
+				})
+				s.manager.remove(c.ID)
+			}
+		}
+	}
+	return s.repo.DeleteGroup(id)
 }
