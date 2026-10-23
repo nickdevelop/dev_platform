@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"net/http"
 	"path/filepath"
 	"testing"
 
@@ -160,5 +161,73 @@ func TestServerCRUD(t *testing.T) {
 	}
 	if len(afterDelete) != 1 {
 		t.Fatalf("expected 1 server after delete, got %d", len(afterDelete))
+	}
+}
+
+func TestCheckSameOrigin(t *testing.T) {
+	cases := []struct {
+		name   string
+		origin string
+		host   string
+		want   bool
+	}{
+		{
+			name:   "empty origin allows non-browser clients",
+			origin: "",
+			host:   "localhost:8080",
+			want:   true,
+		},
+		{
+			name:   "matching origin and host",
+			origin: "http://localhost:8080",
+			host:   "localhost:8080",
+			want:   true,
+		},
+		{
+			name:   "matching origin https and host",
+			origin: "https://dev.example.com",
+			host:   "dev.example.com",
+			want:   true,
+		},
+		{
+			name:   "cross-site origin blocked",
+			origin: "http://evil.com",
+			host:   "localhost:8080",
+			want:   false,
+		},
+		{
+			name:   "subdomain cross-origin blocked",
+			origin: "http://attacker.example.com",
+			host:   "example.com",
+			want:   false,
+		},
+		{
+			name:   "port mismatch blocked",
+			origin: "http://localhost:9090",
+			host:   "localhost:8080",
+			want:   false,
+		},
+		{
+			name:   "malformed origin blocked",
+			origin: "://invalid-url",
+			host:   "localhost:8080",
+			want:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "/api/terminal/ws/0", nil)
+			if err != nil {
+				t.Fatalf("new request: %v", err)
+			}
+			req.Host = tc.host
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if got := checkSameOrigin(req); got != tc.want {
+				t.Errorf("checkSameOrigin(origin=%q, host=%q) = %v; want %v", tc.origin, tc.host, got, tc.want)
+			}
+		})
 	}
 }

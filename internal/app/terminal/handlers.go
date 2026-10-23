@@ -6,7 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,11 +18,23 @@ import (
 	"devplatform/internal/core/platform"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// Single-origin platform; CSRF and session cookie protect authenticated endpoints.
+// checkSameOrigin verifies that the WebSocket handshake Origin header (if present)
+// matches the request Host, preventing Cross-Site WebSocket Hijacking (CSWSH).
+func checkSameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Non-browser clients (e.g. testing tools, CLI) do not send Origin.
 		return true
-	},
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
+}
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin:     checkSameOrigin,
 	ReadBufferSize:  4096,
 	WriteBufferSize: 4096,
 }
