@@ -296,7 +296,7 @@ web/src/
                     ▼
 2. 主框架 (web/src/features/workspace/AppShell.vue)
    - 开关开启时挂载 QuickAssistantLauncher
-   - 按钮可拖拽，位置写入 localStorage，上下保留 50px
+   - 按钮可拖拽至视口任意位置（保留 12px 防误触边距），位置写入 localStorage
                     │
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)

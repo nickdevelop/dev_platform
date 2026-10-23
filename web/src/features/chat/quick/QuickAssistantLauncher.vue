@@ -84,7 +84,6 @@ watch(open, (value, previous) => {
           stroke-linejoin="round"
         />
       </svg>
-      <span>快捷助手</span>
     </button>
 
     <div
@@ -107,15 +106,14 @@ watch(open, (value, previous) => {
   z-index: 61;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.5rem 0.8rem;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
   border: 1px solid var(--color-primary);
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--color-primary);
   color: #fff;
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
   cursor: grab;
   user-select: none;
   touch-action: none;
@@ -134,8 +132,8 @@ watch(open, (value, previous) => {
 }
 
 .quick-assistant-icon {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
 }
 
 .quick-assistant-popover {

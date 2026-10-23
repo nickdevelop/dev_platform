@@ -1,13 +1,16 @@
 // Draggable position for the quick-assistant launcher. The button is fixed to
-// the viewport; the operator may move it anywhere while at least 50px of
-// vertical breathing room stays above and below. The position survives reloads
-// through localStorage. Panel placement is derived from the same coordinates so
-// the popover follows the button and stays inside the viewport.
+// the viewport and may be moved anywhere inside it, keeping only a small
+// edge margin so it stays clickable. The position survives reloads through
+// localStorage. Panel placement is derived from the same coordinates so the
+// popover follows the button and stays inside the viewport.
 
 import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 
 export const POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-position'
-export const BUTTON_VERTICAL_MARGIN = 50
+// The initial placement keeps the button 50px from the top and right edges.
+export const BUTTON_DEFAULT_OFFSET = 50
+// The drag area covers the whole viewport; this margin only prevents the
+// button from being pushed completely against an edge and becoming hard to grab.
 export const VIEWPORT_EDGE_MARGIN = 12
 export const PANEL_GAP = 12
 
@@ -33,10 +36,10 @@ function clamp(value: number, min: number, max: number): number {
 
 export function clampButtonPosition(point: Point, button: Size, viewport: Viewport): Point {
   const maxLeft = Math.max(VIEWPORT_EDGE_MARGIN, viewport.width - VIEWPORT_EDGE_MARGIN - button.width)
-  const maxTop = Math.max(BUTTON_VERTICAL_MARGIN, viewport.height - BUTTON_VERTICAL_MARGIN - button.height)
+  const maxTop = Math.max(VIEWPORT_EDGE_MARGIN, viewport.height - VIEWPORT_EDGE_MARGIN - button.height)
   return {
     left: clamp(point.left, VIEWPORT_EDGE_MARGIN, maxLeft),
-    top: clamp(point.top, BUTTON_VERTICAL_MARGIN, maxTop),
+    top: clamp(point.top, VIEWPORT_EDGE_MARGIN, maxTop),
   }
 }
 
@@ -131,8 +134,8 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
     const stored = readStoredPosition()
     position.value = clampButtonPosition(
       stored ?? {
-        left: viewport.value.width - BUTTON_VERTICAL_MARGIN - size.width,
-        top: BUTTON_VERTICAL_MARGIN,
+        left: viewport.value.width - BUTTON_DEFAULT_OFFSET - size.width,
+        top: BUTTON_DEFAULT_OFFSET,
       },
       size,
       viewport.value,
