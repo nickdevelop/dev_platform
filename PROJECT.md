@@ -1,6 +1,6 @@
 # dev_platform 项目架构与技术规范
 
-本文档是 `dev_platform` 项目的权威整体架构与实现设计描述。后续开发人员及 AI 助手在理解项目、新增需求或进行架构重构时，**必须以本文档为准**。当需求发生变化、新增业务功能或发生架构调整时，**必须同步更新维护本文档**。
+本文档是 `dev_platform` 项目的权威整体架构与实现设计描述。后续开发人员及 AI 助手在理解项目、检索功能代码、新增需求或进行架构重构时，**必须以本文档为准**。当需求发生变化、新增业务功能或发生架构调整时，**必须同步更新维护本文档**。
 
 ---
 
@@ -20,10 +20,10 @@
 | 层次 | 核心技术 / 依赖 | 架构职责与说明 |
 |---|---|---|
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
-| **HTTP 与网关** | Gin v1.11.0 | RESTful 路由、SSE（Server-Sent Events）长连接多路广播 |
-| **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 Origin 同源校验） |
+| **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
+| **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
 | **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（v1~v18） |
-| **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希 |
+| **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），组合式 API，严格类型安全 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
@@ -54,31 +54,220 @@
 
 ---
 
-## 四、核心业务流程与运行时机制
+## 四、模块职责划分与功能代码索引地图（核心导航罗盘）
 
-### 1. 会话与轮次生命周期（Turn Lifecycle）
-- 会话忙碌与流转状态**唯一来源于类型化轮次 `EventTurn`**（`started` / `ended`，结果为 `completed` / `cancelled` / `failed`）。
-- 消息发送流程：
-  `POST /api/projects/{id}/sessions/{sessionId}/messages` ──► `sessions.Service.Send` ──► 派发给后端 `AgentAdapter` ──► 适配器将原生生命周期事件翻译为标准 `EventTurn` ──► 多路复用事件总线 `event_bus.go` ──► 前端 `SessionEventStream.ts` 消费并更新 UI。
-- **会话级 Stop**：仅中断当前会话的轮次（调用适配器的 `Interrupt`），绝不影响项目实例或其他并发会话。
+本节是开发人员与 AI 快速定位功能代码、添加新功能的检索指南。修改代码时必须确保改动严格落在对应职责包内。
 
-### 2. 交互授权流（Interactions Flow）
-- 工具执行审批（Permission）与表单输入（Form）直接通过会话事件流（`interactions` 快照帧与 `EventInteraction` 事件）实时推送给前端。
-- 彻底废除前端轮询与侧信道流，前端处理后通过统一的 `mutate()` 接口应答适配器，恢复执行。
+### 1. 后端同构领域服务层（`internal/app/`）
+通用业务逻辑，**严禁硬编码任何特定后端 ID 或导入 `internal/providers/*`**。
 
-### 3. 终端与远程 Shell（Terminal Service）
-- 基于 WebSocket 协议与后端建立全双工管道，对接本地 PTY（Linux 下使用 PTY，Windows 下对接 ConPTY）或远程 SSH。
-- **安全防线**：在握手阶段强制执行严格的 RFC 6455 同源 Origin 校验（Host 严格比对），防范跨站 WebSocket 劫持（CSWSH / RCE）。
-
-### 4. 启动期状态自愈机制（Startup Reconciler）
-- 当服务因异常断电或强杀（SIGKILL）重启后，数据库迁移完成后会自动运行 `ReconcileOrphans`：
-  - 将数据库中处于 `running` / `starting` 的孤儿 Agent 实例自动标记为 `stopped`；
-  - 将处于 `running` 状态的孤儿定时任务执行记录自动标记为 `interrupted`；
-  - 杜绝前端页面出现假死或永久运行的异常脏状态。
+| 模块目录 | 核心职责与功能边界 | 关键入口与核心文件 | 协作与边界约束 |
+|---|---|---|---|
+| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
+| **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
+| **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史、文件树遍历。 | `service.go`（项目生命周期）、`files.go`（工作区文件树与内容读取）、`git.go` / `git_status.go`（Git CLI 操作集成） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
+| **`chat/`** | 纯模型非 Agent 直接对话系统。支持对话两级树形导航与分组、多轮消息持久化、多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全。 | `service.go`（对话与分组管理）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离。 |
+| **`tasks/`** | 计划任务与自动化调度引擎。支持标准 Cron 表达式与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
+| **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。 | `handlers.go`（WebSocket 升级与同源拦截）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
+| **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
+| **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
+| **`agentservices/`** | 机器级 Agent 后台守护服务管理。负责机器级第三方后台服务（如 OpenCode service）的健康探测、运维手动启停与启动门控。 | `service.go`（探测与启停协调）、`handlers.go`（运维管理 API） | 仅在后台服务支持的后端生效；启停时触发模型缓存失效钩子。 |
+| **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
+| **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
+| **`settings/`** | 平台全局偏好设置。管理外观主题、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（v1~v18 迁移链）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
+| **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
 ---
 
-## 五、API 传输层与安全规范（ADR-0001）
+### 2. 核心契约与抽象层（`internal/core/`）
+纯定义与中立策略，**禁止依赖任何业务层或异构适配层**。
+
+| 模块目录 | 核心职责与关键文件 |
+|---|---|
+| **`agents/`** | **Agent 统一核心契约**：<br>• `contracts.go`：`BackendID`、`AgentAdapter` 主接口、能力声明 `Capabilities`、标准消息/模型载荷。<br>• `events.go`：类型化轮次 `EventTurn`、标准交互事件 `EventInteraction`、流式增量事件。<br>• `extensions.go`：可选扩展接口（`PermissionReplier` 审批、`HistoryReader` 历史回放、`ServiceController` 机器服务、`RawEventOpener`）。<br>• `descriptor.go` & `registry.go`：后端元数据描述符、`Catalog` 目录树与全局适配器注册表。 |
+| **`platform/`** | **操作系统差异化抽象**：<br>• `platform.go`：统一导出 `Process`、`PTY`、`Terminal` 端口接口。<br>• `new_unix.go` / `new_windows.go`：Linux/Unix 与 Windows 的条件编译实现。<br>• 子包 `policy/`、`fake/`、`unix/`：跨平台路径策略、测试伪造平台实现。 |
+| **`textutil/`** | **通用文本工具**：<br>• `title.go`：依据首条消息智能截断与推导会话标题。 |
+
+---
+
+### 3. 异构适配层（`internal/providers/`）
+具体 Agent CLI 或服务协议的物理翻译官。向组合根导出 `Descriptor` 并实现 `AgentAdapter`。
+
+| 模块目录 | 适配模式与通信机制 | 职责说明 |
+|---|---|---|
+| **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；管理 Sidecar 与本地服务探测；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
+| **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
+| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
+
+---
+
+### 4. 前端应用架构（`web/src/`）
+
+```
+web/src/
+  ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
+  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, drafts, ...）
+  ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
+  ├── features/        ── 业务领域垂直拆分目录：
+  │     ├── chat/      ── Agent 工作台（核心）
+  │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令
+  │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护
+  │     │     ├── interactions/  ── 权限确认卡片、表单队列、审批事件派发
+  │     │     ├── pane/          ── 右侧活动面板（思考/工具/文件树）折叠与宽度拖拽
+  │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、logModel.ts 纯逻辑
+  │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
+  │     │     └── pure/          ── 独立纯 Chat 对话界面与树形两级导航
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue）、会话 Tab
+  │     ├── projects/  ── 项目树（ProjectTree.vue）、项目设置、注册/创建项目弹窗
+  │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
+  │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）
+  │     ├── tasks/     ── 定时任务管理、执行面板、任务专属对话弹窗（TasksView.vue）
+  │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue）
+  │     └── files/     ── 文件查看器、Markdown/PlantUML/图片 Artifact 预览
+  └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
+```
+
+---
+
+## 五、核心业务流程与端到端时序流转全景
+
+### 1. Agent 消息交互与多路事件驱动流（Message Turn Flow）
+
+```
+[ 用户在输入框按 Enter ]
+           │
+           ▼
+1. Web 前端 (SessionChatPanel.vue / send())
+   - 提取输入文本、图片附件与选中模型
+   - 调用 api/sessions.ts 的 sendProjectSessionMessage()
+           │
+           ▼ (HTTP POST 经 client.ts 自动注入 X-CSRF-Token 与 Session Cookie)
+2. 传输层 (router.go / RequireCSRF 中间件)
+   - 验证 Double-Submit CSRF 令牌一致性
+   - 路由分发至 sessions.handleSendMessage
+           │
+           ▼
+3. 会话领域服务 (internal/app/sessions/service.go)
+   - 检查会话归属，校验模型能力
+   - 标记当前会话为 TurnRunning
+   - 唤醒底层 instances.Service 确保适配器进程存活
+           │
+           ▼
+4. 异构适配层 (internal/providers/*)
+   - 将标准消息请求转化为后端专有命令 (如 pi 的 rpcCommandPrompt)
+   - 捕获后端原生输出 (stdout / WebSocket)
+   - 适配器将原生事件转化为标准 NormalizedEvent:
+       • EventTurn (started)
+       • EventMessage (text_delta, reasoning_delta)
+       • EventToolCall / EventToolResult
+       • EventTurn (ended, completed/failed/cancelled)
+           │
+           ▼
+5. 多路复用事件总线 (internal/app/sessions/event_bus.go)
+   - 将标准化事件广播至对应的 sessionID 订阅通道
+           │
+           ▼ (HTTP SSE 流持续推送)
+6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts)
+   - 消费 SSE 事件帧，更新 sessionLog 状态
+   - 驱动 MessageView.vue 与活动面板实时重绘
+   - 轮次结束时将会话状态恢复为 TurnIdle
+```
+
+---
+
+### 2. 人机协同工具授权闭环流（Interactions Flow）
+
+```
+[ Agent 执行高危操作：命令执行 / 文件修改 / 提问 ]
+                      │
+                      ▼
+1. 适配器层 (internal/providers/*)
+   - 捕获后端的审批请求，构造 agents.PermissionRequest
+   - 产生标准 EventInteraction (requested, 携带表单或权限载荷)
+                      │
+                      ▼
+2. 会话领域层 (internal/app/sessions/)
+   - 记录会话待处理交互项 (Interactions Snapshot)
+   - 经 event_bus 广播至 SSE 事件流
+                      │
+                      ▼
+3. 前端交互层 (features/chat/interactions/)
+   - 收到 interactions 帧，交互队列挂起当前轮次
+   - 在主界面弹出 Permission 审批卡片或 QuestionForm 表单
+                      │
+                      ▼
+[ 用户点击“允许执行”或提交表单 ]
+                      │
+                      ▼
+4. 传输与响应 (api/interactions.ts / mutate('POST'))
+   - 调用 POST /api/projects/{id}/sessions/{sid}/interactions/permission/reply
+   - 注入 CSRF 令牌发送审批结果 (once / always / reject)
+                      │
+                      ▼
+5. 适配器解除阻塞
+   - 适配器扩展接口 (PermissionReplier) 接收应答，通知 Agent 子进程恢复执行
+   - 产生 EventInteraction (resolved, 带 id)，前端关闭弹窗
+```
+
+---
+
+### 3. Web 终端交互与 PTY 全双工字符流（Terminal Flow）
+
+```
+[ 用户在左侧导航进入“终端”，选择本地终端或 SSH ]
+                         │
+                         ▼
+1. Web 前端 (features/terminal/XtermView.vue)
+   - 初始化 xterm.js 实例并挂载 FitAddon
+   - 发起 WebSocket 连接: ws://host/api/terminal/ws/{serverId}?cols=80&rows=24
+                         │
+                         ▼ (GET 请求带 Origin 与 Session Cookie)
+2. 传输与同源防护 (internal/app/terminal/handlers.go)
+   - 执行 checkSameOrigin 严格比对 Origin 与 Host 是否一致 (杜绝 CSWSH)
+   - 校验 SessionCookie 鉴权
+   - 协议升级为 WebSocket 连接 (Upgrader)
+                         │
+                         ▼
+3. 终端领域服务 (internal/app/terminal/service.go)
+   - 本地模式：调用 core/platform 分配伪终端 (PTY)，派生交互式 bash/sh 进程
+   - 远程模式：解密 secretStore 凭据，建立 SSH Client Session
+                         │
+                         ▼
+4. 双向全双工转发 Goroutines
+   - Goroutine A：循环读取 PTY 字符流 ──► 写入 WebSocket ──► xterm.js 屏幕刷新
+   - Goroutine B：循环读取 WebSocket 击键 ──► 写入 PTY 进程 stdin
+   - 窗口伸缩：前端 ResizeObserver 捕获尺寸 ──► 发送二进制帧 ──► 调用 PTY.Resize()
+```
+
+---
+
+### 4. 纯 Chat 通用大模型流式对话流（Pure Chat Flow）
+
+```
+[ 用户在“Chat”分类下新建或进入模型对话 ]
+                    │
+                    ▼
+1. Web 前端 (features/chat/pure/ChatPanel.vue)
+   - 选用 OpenAI 兼容的模型配置 (model_id)
+   - 发送文本及多张图片 (最大支持 32MiB 请求体)
+                    │
+                    ▼
+2. 后端纯 Chat 服务 (internal/app/chat/)
+   - 校验会话归属，存储用户消息记录
+   - 委托 modelconfig 解析模型服务地址与 API Key
+   - 调用 completer.go 发起带 context 的流式 HTTP 调用
+                    │
+                    ▼ (SSE 数据切分)
+3. 响应推送与标题自动推导
+   - stream.go 以 SSE 格式逐块推给前端并持久化 Assistant 消息
+   - 若对话无标题，触发 core/textutil/title.go 自动提炼标题并落库
+```
+
+---
+
+## 六、API 传输层与安全规范（ADR-0001）
 
 前端与后端的数据通信拥有严格的安全架构约束：
 1. **统一通信契约**：
@@ -92,7 +281,7 @@
 
 ---
 
-## 六、新增 Agent 后端标准步骤
+## 七、新增 Agent 后端标准步骤
 
 新增一个 Agent 后端无需改动任何前端代码，仅需以下 6 步：
 1. 在 `internal/core/agents/contracts.go` 中为 `BackendID` 增加常量定义，并添加到 `BackendID.Valid()` 白名单中。
@@ -104,9 +293,9 @@
 
 ---
 
-## 七、测试体系与验证规范
+## 八、测试体系与验证规范
 
-每次代码变更后，必须确保以下三道质量门禁全部通过：
+每次代码变更后，必须确保以下质量门禁全部通过：
 
 ```bash
 # 1. 运行核心集成检验（包含 vet、Go 全量单测、前端 Vitest 单测、前端类型检查、前端生产构建）
@@ -121,7 +310,7 @@ make e2e
 
 ---
 
-## 八、文档演进与维护约定（重要）
+## 九、文档演进与维护约定（重要）
 
 1. **同步更新约束**：
    后续当有新的功能需求、字段变动、安全策略或分层边界调整时，**必须在修改代码的同时同步更新维护本 `PROJECT.md` 文件**，严禁代码与架构文档脱节。
