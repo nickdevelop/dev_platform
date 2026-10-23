@@ -543,7 +543,8 @@ watch(
 
     <CategoryRail
       :sidebar-collapsed="!isSidebarVisible"
-      :sidebar-collapsible="!settingsMode"
+      :sidebar-collapsible="true"
+      :sidebar-title="columnTitle"
       @logout="logout"
       @toggle-sidebar="toggleSidebar"
       @expand-sidebar="onRailMenuClick"

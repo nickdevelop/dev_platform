@@ -520,4 +520,23 @@ describe('three-pane app shell', () => {
     // The workspace tab strip is isolated and not rendered in prompts mode.
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
+
+  it('renders sidebar toggle in settings center and reflects context title', async () => {
+    const { wrapper, router } = await setup('/settings/appearance')
+
+    // Sidebar toggle must be visible under settings center
+    const toggle = wrapper.find('[data-test="sidebar-toggle"]')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.attributes('title')).toBe('收起设置导航')
+
+    // Clicking it collapses the settings column
+    await toggle.trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(wrapper.find('[data-test="sidebar-toggle"]').attributes('title')).toBe('展开设置导航')
+
+    // Navigate to projects: toggle reflects project context
+    await router.push('/')
+    await flushPromises()
+    expect(wrapper.find('[data-test="sidebar-toggle"]').attributes('title')).toBe('展开项目导航')
+  })
 })

@@ -232,18 +232,18 @@ function onConnect(serverId: number) {
 .terminal-sidebar {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 0 calc(var(--space-unit, 8px) * 1.5) calc(var(--space-unit, 8px) * 1.5);
+  min-height: 0;
+  flex: 1;
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 2.0);
   box-sizing: border-box;
-  background: var(--color-surface, #1e1e24);
-  color: var(--color-text, #fff);
+  background: var(--color-surface);
+  color: var(--color-text);
   overflow-y: auto;
 }
 
 .sidebar-actions {
   display: flex;
-  padding-top: calc(var(--space-unit) * 1.8);
-  margin-bottom: 10px;
+  padding: 0 0 calc(var(--space-unit) * 1.333);
 }
 
 .create-server-btn {
@@ -251,12 +251,13 @@ function onConnect(serverId: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
-  background: var(--color-primary, #2563eb);
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: var(--radius, 6px);
-  font-size: 13px;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 0.857rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -268,19 +269,22 @@ function onConnect(serverId: number) {
 
 .search {
   width: 100%;
-  padding: 6px 10px;
-  background: var(--color-surface-muted, #272730);
-  border: 1px solid var(--color-border, #383844);
-  border-radius: 6px;
-  color: var(--color-text, #fff);
-  font-size: 13px;
+  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.857rem;
   box-sizing: border-box;
-  margin-bottom: 12px;
+  margin-bottom: calc(var(--space-unit) * 1.333);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
 .platform-warning {

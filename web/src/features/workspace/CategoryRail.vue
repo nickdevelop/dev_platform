@@ -15,11 +15,12 @@ import { tabKey } from '../../stores/openTabs'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
 
-defineProps<{
+const props = defineProps<{
   // Whether the middle project/task column is currently collapsed.
   sidebarCollapsed?: boolean
-  // The settings center has no project column, so the toggle is hidden there.
+  // Whether the middle column is collapsible from the rail toggle.
   sidebarCollapsible?: boolean
+  sidebarTitle?: string
 }>()
 
 const emit = defineEmits<{
@@ -120,6 +121,11 @@ function onChatClick(event: MouseEvent) {
 function onSettingsClick() {
   emit('expandSidebar')
 }
+
+const toggleTitle = computed(() => {
+  const name = props.sidebarTitle ? `${props.sidebarTitle}导航` : '侧边栏'
+  return props.sidebarCollapsed ? `展开${name}` : `收起${name}`
+})
 </script>
 
 <template>
@@ -223,8 +229,8 @@ function onSettingsClick() {
       type="button"
       class="footer-btn collapse"
       data-test="sidebar-toggle"
-      :title="sidebarCollapsed ? '展开项目导航' : '收起项目导航'"
-      :aria-label="sidebarCollapsed ? '展开项目导航' : '收起项目导航'"
+      :title="toggleTitle"
+      :aria-label="toggleTitle"
       :aria-expanded="(!sidebarCollapsed).toString()"
       @click="emit('toggleSidebar')"
     >

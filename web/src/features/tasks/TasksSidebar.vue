@@ -162,17 +162,17 @@ function getProjectName(pid: number) {
 .tasks-sidebar {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  padding: 0 1rem 1rem;
+  min-height: 0;
+  flex: 1;
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 2.0);
   background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .sidebar-actions {
   display: flex;
-  padding-top: calc(var(--space-unit, 6px) * 1.8);
-  margin-bottom: 0.6rem;
+  padding: 0 0 calc(var(--space-unit) * 1.333);
 }
 
 .new-task-btn {
@@ -180,13 +180,14 @@ function getProjectName(pid: number) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: var(--color-primary, #3b82f6);
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  font: inherit;
+  font-size: 0.857rem;
+  font-weight: 500;
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -197,33 +198,38 @@ function getProjectName(pid: number) {
 
 .search-input {
   width: 100%;
-  padding: 0.45rem 0.65rem;
-  margin-bottom: 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface-muted);
+  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
+  margin-bottom: calc(var(--space-unit) * 1.333);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
   color: var(--color-text);
-  font-size: 0.85rem;
+  font: inherit;
+  font-size: 0.857rem;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search-input:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
 .sidebar-filters {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
+  gap: calc(var(--space-unit) * 1.0);
+  margin-bottom: calc(var(--space-unit) * 1.333);
 }
 
 .filter-select {
   flex: 1;
-  padding: 0.35rem 0.5rem;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.0);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--color-surface);
   color: var(--color-text);
+  font: inherit;
   font-size: 0.8rem;
 }
 

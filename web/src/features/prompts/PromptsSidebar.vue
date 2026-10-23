@@ -121,14 +121,15 @@ function onSaved(prompt: Prompt) {
 .prompts-sidebar {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 0;
+  flex: 1;
   overflow: hidden;
   background: var(--color-surface);
 }
 
 .sidebar-actions {
   display: flex;
-  padding: calc(var(--space-unit) * 1.8) calc(var(--space-unit) * 2) 0;
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
 }
 
 .new-prompt-btn {
@@ -136,12 +137,13 @@ function onSaved(prompt: Prompt) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   background: var(--color-primary);
   border: none;
-  border-radius: var(--radius, 4px);
+  border-radius: var(--radius);
   color: #fff;
-  font-size: 0.8125rem;
+  font: inherit;
+  font-size: 0.857rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s ease;
@@ -152,18 +154,22 @@ function onSaved(prompt: Prompt) {
 }
 
 .search {
-  margin: calc(var(--space-unit) * 1.5);
-  padding: calc(var(--space-unit) * 1) calc(var(--space-unit) * 1.25);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-bg);
+  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
+  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
   color: var(--color-text);
-  font-size: 0.875rem;
+  font: inherit;
+  font-size: 0.857rem;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search:focus {
-  outline: none;
   border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
 .prompts-list {

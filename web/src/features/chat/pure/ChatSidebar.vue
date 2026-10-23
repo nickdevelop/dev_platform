@@ -443,9 +443,9 @@ function formatChatTime(isoString?: string): string {
   background: var(--color-surface);
   color: var(--color-text);
   border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 0.8);
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.857rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -460,13 +460,13 @@ function formatChatTime(isoString?: string): string {
 
 .search {
   margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 0.8) calc(var(--space-unit) * 1.2);
+  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 1rem;
   box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -506,7 +506,7 @@ function formatChatTime(isoString?: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 0.6);
+  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 0.667);
   border-radius: var(--radius);
   transition: background-color 0.15s ease;
 }
@@ -523,17 +523,17 @@ function formatChatTime(isoString?: string): string {
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   text-align: left;
   flex: 1;
   min-width: 0;
-  padding: 0;
+  padding: calc(var(--space-unit) * 0.667) 0;
 }
 
 .caret {
-  font-size: 0.8rem;
+  font-size: 0.857rem;
   color: var(--color-text-muted);
   width: 1em;
   text-align: center;
@@ -546,7 +546,7 @@ function formatChatTime(isoString?: string): string {
 }
 
 .count {
-  font-size: 0.75rem;
+  font-size: 0.857rem;
   color: var(--color-text-muted);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -573,9 +573,9 @@ function formatChatTime(isoString?: string): string {
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.929rem;
   cursor: pointer;
-  padding: calc(var(--space-unit) * 0.2) calc(var(--space-unit) * 0.4);
+  padding: calc(var(--space-unit) * 0.333) calc(var(--space-unit) * 0.5);
   border-radius: var(--radius);
   line-height: 1;
   transition: all 0.15s ease;
@@ -609,7 +609,7 @@ function formatChatTime(isoString?: string): string {
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--space-unit) * 0.5);
-  padding: calc(var(--space-unit) * 0.6) calc(var(--space-unit) * 0.8);
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -644,11 +644,11 @@ function formatChatTime(isoString?: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.857rem;
+  font-size: 0.929rem;
 }
 
 .chat-time {
-  font-size: 0.714rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
 }
 
@@ -676,9 +676,9 @@ function formatChatTime(isoString?: string): string {
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.78rem;
+  font-size: 0.857rem;
   cursor: pointer;
-  padding: 2px 4px;
+  padding: calc(var(--space-unit) * 0.333) calc(var(--space-unit) * 0.5);
   border-radius: var(--radius);
   line-height: 1;
   transition: all 0.15s ease;
