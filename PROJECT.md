@@ -127,7 +127,7 @@ web/src/
   │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
   │     │     └── quick/         ── 快捷助手漂浮按钮、480×600 弹窗与拖拽定位
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue）、会话 Tab
-  │     ├── projects/  ── 项目树（ProjectTree.vue）、项目设置、注册/创建项目弹窗
+  │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
   │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）
   │     ├── tasks/     ── 定时任务管理、执行面板、任务专属对话弹窗（TasksView.vue）

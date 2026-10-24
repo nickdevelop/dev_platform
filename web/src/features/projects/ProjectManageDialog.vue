@@ -45,7 +45,7 @@ const dialogTitle = computed(() => {
   const name = props.project?.name
   switch (props.kind) {
     case 'register':
-      return '注册已有项目目录'
+      return '打开已有项目目录'
     case 'create':
       return '新建项目目录'
     case 'move':
@@ -62,7 +62,7 @@ const dialogTitle = computed(() => {
 const confirmLabel = computed(() => {
   switch (props.kind) {
     case 'register':
-      return '注册'
+      return '打开'
     case 'create':
       return '创建'
     case 'move':

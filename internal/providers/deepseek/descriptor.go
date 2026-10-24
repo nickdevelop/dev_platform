@@ -7,6 +7,7 @@ import "devplatform/internal/core/agents"
 var Descriptor = agents.BackendDescriptor{
 	ID:               agents.BackendDeepSeek,
 	Label:            "DeepSeek",
+	ShortName:        "DS",
 	Binary:           "dsh",
 	DefaultEnabled:   true,
 	Order:            3,

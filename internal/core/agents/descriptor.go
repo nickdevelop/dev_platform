@@ -21,6 +21,9 @@ type BackendDescriptor struct {
 	ID BackendID
 	// Label is the display name, such as "OpenCode" or "Pi Agent".
 	Label string
+	// ShortName is an optional short logo identifier (e.g. "OC", "PI", "DS")
+	// for compact UI badges.
+	ShortName string
 	// Binary is the default executable name resolved from PATH.
 	Binary string
 	// ResolveExecutable resolves name to a runnable path on platforms where

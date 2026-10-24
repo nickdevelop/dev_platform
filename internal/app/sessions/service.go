@@ -134,6 +134,8 @@ type BackendCapabilities struct {
 	// Label is the backend's display name from the catalog; it falls back to
 	// the raw id when the catalog does not describe the backend.
 	Label string `json:"label"`
+	// ShortName is an optional short logo identifier from the descriptor.
+	ShortName string `json:"shortName,omitempty"`
 	// Order is the catalog's presentation order.
 	Order int `json:"order"`
 	// ServiceSupported reports whether the backend runs a machine-level
@@ -325,6 +327,7 @@ func (s *Service) Backends() []BackendCapabilities {
 			entry.ServiceSupported = descriptor.ServiceSupported
 			entry.Tone = descriptor.Tone
 			entry.Color = descriptor.Color
+			entry.ShortName = descriptor.ShortName
 		}
 		out = append(out, entry)
 	}

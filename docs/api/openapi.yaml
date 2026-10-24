@@ -4108,6 +4108,11 @@ components:
           description: >-
             Optional exact brand colour (#RRGGBB) for backend tags. Takes
             precedence over tone.
+        shortName:
+          type: string
+          description: >-
+            Optional short logo identifier (e.g. "OC", "PI", "DS") from the
+            backend descriptor.
       additionalProperties: false
     AgentServiceStatusResponse:
       type: object

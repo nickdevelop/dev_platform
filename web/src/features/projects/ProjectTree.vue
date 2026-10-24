@@ -12,8 +12,7 @@ import { listProjectSessions, type AgentSession } from '../../api/sessions'
 import { listTaskSessionIds } from '../../api/tasks'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
-import BackendTag from '../../shared/components/BackendTag.vue'
-import RunningIndicator from '../../shared/components/RunningIndicator.vue'
+import ProjectSessionItem from './ProjectSessionItem.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -154,6 +153,17 @@ function showMoreSessions(projectId: number) {
   void loadProject(projectId)
 }
 
+function canCollapseSessions(projectId: number): boolean {
+  return visibleCountFor(projectId) > PAGE_SIZE
+}
+
+function collapseSessions(projectId: number) {
+  visibleCountByProject.value = {
+    ...visibleCountByProject.value,
+    [projectId]: PAGE_SIZE,
+  }
+}
+
 const visibleProjects = computed(() => {
   if (query.value === '') return projectsStore.projects
   return projectsStore.projects.filter(
@@ -258,49 +268,6 @@ function retryProject(projectId: number) {
   void loadProject(projectId)
 }
 
-function formatSessionTime(isoString?: string): string {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (isNaN(date.getTime())) return ''
-
-  const now = new Date()
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-
-  if (isToday) {
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const seconds = String(date.getSeconds()).padStart(2, '0')
-    return `${hours}:${minutes}:${seconds}`
-  } else {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-}
-
-function formatFullTime(isoString?: string): string {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  if (isNaN(date.getTime())) return ''
-  return date.toLocaleString()
-}
-
-function sessionModelFull(session: AgentSession): string {
-  if (session.model) return session.model
-  return sessionsStore.modelFor(session.id)
-}
-
-function sessionModelLabel(session: AgentSession): string {
-  const full = sessionModelFull(session)
-  if (!full) return ''
-  const slash = full.lastIndexOf('/')
-  return slash >= 0 ? full.slice(slash + 1) : full
-}
-
 async function onDeleteSession(projectId: number, sessionId: string) {
   if (!window.confirm('确定要删除该会话吗？')) return
 
@@ -317,15 +284,10 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 </script>
 
 <template>
-  <ul class="project-tree space-y-1 p-2 text-sm select-none" aria-label="项目与会话">
+  <ul class="project-tree space-y-1 py-1 px-0.5 text-sm select-none" aria-label="项目与会话">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
       <div
-        class="project-row group flex items-center justify-between px-2 py-1.5 rounded transition-colors"
-        :class="[
-          project.id === props.activeProjectId
-            ? 'bg-platform-primary-soft text-platform-primary font-medium'
-            : 'text-platform-text hover:bg-platform-surface-muted',
-        ]"
+        class="project-row group flex items-center justify-between px-1.5 py-1.5 rounded transition-colors text-platform-text hover:bg-platform-surface-muted"
       >
         <button
           type="button"
@@ -335,9 +297,6 @@ async function onDeleteSession(projectId: number, sessionId: string) {
         >
           <span class="caret text-xs text-platform-text-muted w-3.5 inline-block text-center">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
           <span class="project-name truncate font-medium text-sm">{{ project.name }}</span>
-          <span v-if="isExpanded(project.id)" class="count px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-platform-surface-muted text-platform-text-muted border border-platform-border">
-            {{ sessionsFor(project.id).length }}
-          </span>
         </button>
 
         <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
@@ -362,74 +321,41 @@ async function onDeleteSession(projectId: number, sessionId: string) {
         </div>
       </div>
 
-      <ul v-if="isExpanded(project.id)" class="sessions ml-3.5 pl-2 border-l border-platform-border space-y-1 my-1">
+      <ul v-if="isExpanded(project.id)" class="sessions space-y-0.5 my-0.5">
         <li
           v-for="entry in visibleSessionsFor(project.id)"
           :key="entry.id"
-          class="session group/item"
+          class="session"
           :class="{ selected: entry.id === props.activeSessionId }"
         >
-          <div
-            class="session-open p-2 rounded cursor-pointer transition-colors border"
-            :class="[
-              entry.id === props.activeSessionId
-                ? 'bg-platform-surface-muted border-platform-primary shadow-[0_0_6px_var(--color-primary-soft,rgba(59,130,246,0.2))] font-medium text-platform-text'
-                : 'border-transparent hover:bg-platform-surface-muted hover:border-platform-border text-platform-text',
-            ]"
-            role="button"
-            tabindex="0"
-            :aria-label="entry.title || untitledLabel"
-            @click="emit('select-session', project.id, entry.id)"
-            @keydown.enter.prevent="emit('select-session', project.id, entry.id)"
-            @keydown.space.prevent="emit('select-session', project.id, entry.id)"
-          >
-            <div class="session-row-top flex items-center gap-1.5 mb-1">
-              <RunningIndicator v-if="isRunning(entry)" />
-              <span class="title truncate text-sm font-medium text-platform-text" :title="entry.title || untitledLabel">
-                {{ entry.title || untitledLabel }}
-              </span>
-            </div>
-            <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-platform-text-muted">
-              <div class="session-bottom-left flex items-center gap-1.5 shrink-0">
-                <BackendTag :backend="entry.backend" />
-                <span
-                  v-if="sessionModelLabel(entry)"
-                  class="session-model font-mono text-[10px] text-platform-text-muted max-w-[80px] truncate"
-                  :title="sessionModelFull(entry)"
-                  data-test="session-model"
-                >
-                  {{ sessionModelLabel(entry) }}
-                </span>
-              </div>
-              <div class="session-bottom-right flex items-center gap-1 shrink-0">
-                <span class="session-time font-mono text-[10px]" :title="formatFullTime(entry.updatedAt)">
-                  {{ formatSessionTime(entry.updatedAt) }}
-                </span>
-                <button
-                  type="button"
-                  class="session-delete opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-0.5 rounded transition-opacity"
-                  title="删除会话"
-                  aria-label="删除会话"
-                  data-test="delete-session-btn"
-                  @click.stop="onDeleteSession(project.id, entry.id)"
-                >
-                  <svg class="delete-icon w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
+          <ProjectSessionItem
+            :session="entry"
+            :is-selected="entry.id === props.activeSessionId"
+            @select="emit('select-session', project.id, $event)"
+            @delete="onDeleteSession(project.id, $event)"
+          />
         </li>
         <li v-if="loadFailed[project.id]" class="empty text-xs text-red-500 py-1">
           会话加载失败。<button type="button" class="load-more text-blue-600 underline ml-1" @click="retryProject(project.id)">重试</button>
         </li>
         <li v-else-if="sessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">该项目还没有会话。</li>
         <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">没有匹配的会话</li>
-        <li v-if="hasMoreSessions(project.id)" class="pt-1">
-          <button type="button" class="load-more w-full py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors" @click="showMoreSessions(project.id)">
+        <li v-if="hasMoreSessions(project.id) || canCollapseSessions(project.id)" class="pt-1 flex items-center gap-1.5">
+          <button
+            v-if="hasMoreSessions(project.id)"
+            type="button"
+            class="load-more flex-1 py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors"
+            @click="showMoreSessions(project.id)"
+          >
             更多
+          </button>
+          <button
+            v-if="canCollapseSessions(project.id)"
+            type="button"
+            class="collapse-sessions flex-1 py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors"
+            @click="collapseSessions(project.id)"
+          >
+            收起
           </button>
         </li>
       </ul>

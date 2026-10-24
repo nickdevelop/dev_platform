@@ -7,6 +7,7 @@ import "devplatform/internal/core/agents"
 var Descriptor = agents.BackendDescriptor{
 	ID:               agents.BackendPi,
 	Label:            "Pi Agent",
+	ShortName:        "PI",
 	Binary:           "pi",
 	DefaultEnabled:   true,
 	Order:            2,

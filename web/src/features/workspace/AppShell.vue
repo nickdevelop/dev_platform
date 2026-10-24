@@ -720,7 +720,7 @@ watch(
       <SettingsNav v-else-if="settingsMode" />
       <template v-else>
         <div class="sidebar-actions">
-          <button type="button" class="action-btn register" @click="openManage('register')">注册项目</button>
+          <button type="button" class="action-btn register" @click="openManage('register')">打开项目</button>
           <button type="button" class="action-btn create" @click="openManage('create')">新建项目</button>
         </div>
         <input
@@ -1033,7 +1033,8 @@ watch(
   box-sizing: border-box;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 2.000);
+  scrollbar-gutter: stable;
+  padding: calc(var(--space-unit) * 0.500) calc(var(--space-unit) * 0.500) calc(var(--space-unit) * 2.000);
   flex: 1;
 }
 

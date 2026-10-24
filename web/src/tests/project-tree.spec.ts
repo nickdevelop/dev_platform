@@ -137,10 +137,9 @@ describe('ProjectTree', () => {
 
     const running = wrapper.findAll('.session').find((item) => item.text().includes('Session A'))
     expect(running).toBeDefined()
-    const tag = running!.findComponent(BackendTag)
-    expect(tag.exists()).toBe(true)
-    expect(tag.props('backend')).toBe('opencode-v2')
-    expect(tag.text()).toBe('OpenCode')
+    const logo = running!.find('.agent-logo')
+    expect(logo.exists()).toBe(true)
+    expect(logo.text()).toBe('OC')
     expect(running!.find('[data-test="running-indicator"]').exists()).toBe(true)
     // The marker replaces the plain 运行中 text; the row announces it instead.
     expect(running!.text()).not.toContain('运行中')
@@ -290,13 +289,33 @@ describe('ProjectTree', () => {
 
     const more = wrapper.find('.load-more')
     expect(more.exists()).toBe(true)
+    expect(wrapper.find('.collapse-sessions').exists()).toBe(false)
+
     await more.trigger('click')
     expect(wrapper.findAll('.session').length).toBe(20)
     expect(wrapper.text()).not.toContain('Session 4')
+    expect(wrapper.find('.load-more').exists()).toBe(true)
+    expect(wrapper.find('.collapse-sessions').exists()).toBe(true)
 
+    // Collapses back to the default 10 sessions on demand
+    await wrapper.find('.collapse-sessions').trigger('click')
+    expect(wrapper.findAll('.session').length).toBe(10)
+    expect(wrapper.find('.collapse-sessions').exists()).toBe(false)
+    expect(wrapper.find('.load-more').exists()).toBe(true)
+
+    // Expand all pages
+    await wrapper.find('.load-more').trigger('click')
+    expect(wrapper.findAll('.session').length).toBe(20)
     await wrapper.find('.load-more').trigger('click')
     expect(wrapper.findAll('.session').length).toBe(25)
     expect(wrapper.find('.load-more').exists()).toBe(false)
+    expect(wrapper.find('.collapse-sessions').exists()).toBe(true)
+
+    // Collapse from the last page back to 10
+    await wrapper.find('.collapse-sessions').trigger('click')
+    expect(wrapper.findAll('.session').length).toBe(10)
+    expect(wrapper.find('.collapse-sessions').exists()).toBe(false)
+    expect(wrapper.find('.load-more').exists()).toBe(true)
   })
 
   it('paginates each expanded project independently', async () => {
@@ -454,14 +473,14 @@ describe('ProjectTree', () => {
     // First session: today -> HH:mm:ss
     const first = sessions[0]
     expect(first.find('.session-row-top .title').text()).toBe('Today Session')
-    expect(first.find('.session-row-bottom .session-bottom-left').text().toLowerCase()).toContain('opencode')
+    expect(first.find('.session-row-top .agent-logo').text()).toBe('OC')
     expect(first.find('.session-row-bottom .session-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}$/)
     expect(first.find('.session-delete').exists()).toBe(true)
 
     // Second session: yesterday -> YYYY-MM-DD
     const second = sessions[1]
     expect(second.find('.session-row-top .title').text()).toBe('Yesterday Session')
-    expect(second.find('.session-row-bottom .session-bottom-left').text().toLowerCase()).toContain('pi')
+    expect(second.find('.session-row-top .agent-logo').text()).toBe('PI')
     expect(second.find('.session-row-bottom .session-time').text()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
     // Click delete button

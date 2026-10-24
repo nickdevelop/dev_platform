@@ -534,7 +534,7 @@ async function createSession() {
               data-test="btn-register-project"
               @click="emit('manage', 'register', null)"
             >
-              注册已有目录
+              打开已有目录
             </button>
             <span class="divider">·</span>
             <button

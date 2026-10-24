@@ -61,6 +61,24 @@ export const useAgentsStore = defineStore('agents', {
       return (backend: BackendId | string): string =>
         this.backendFor(backend)?.label || String(backend)
     },
+    // Compact logo/short identifier (e.g. "OC", "PI", "DS") declared by descriptor,
+    // with a generic fallback derived from the label for unknown backends.
+    backendShortName() {
+      return (backend: BackendId | string): string => {
+        const declared = this.backendFor(backend)?.shortName
+        if (declared && declared.trim() !== '') return declared.trim()
+        const label = this.backendLabel(backend)
+        const words = label.trim().split(/\s+/)
+        if (words.length >= 2) {
+          return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase()
+        }
+        const uppers = label.replace(/[^A-Z]/g, '')
+        if (uppers.length >= 2) {
+          return uppers.slice(0, 2)
+        }
+        return label.slice(0, 2).toUpperCase()
+      }
+    },
     // Display visual tone preference for a backend tag.
     backendTone() {
       return (backend: BackendId | string): string =>

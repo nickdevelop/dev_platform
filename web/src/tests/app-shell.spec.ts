@@ -367,7 +367,7 @@ describe('three-pane app shell', () => {
     const registerBtn = actions.find('button.register')
     const createBtn = actions.find('button.create')
     expect(registerBtn.exists()).toBe(true)
-    expect(registerBtn.text()).toBe('注册项目')
+    expect(registerBtn.text()).toBe('打开项目')
     expect(createBtn.exists()).toBe(true)
     expect(createBtn.text()).toBe('新建项目')
 

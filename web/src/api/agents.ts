@@ -50,6 +50,8 @@ export interface AgentBackend {
   // Optional exact brand colour (#RRGGBB) from the backend descriptor. Takes
   // precedence over tone.
   color?: string
+  // Optional short logo identifier (e.g. "OC", "PI", "DS") from the descriptor.
+  shortName?: string
 }
 
 // Mirrors #/components/schemas/AgentBackendList.
