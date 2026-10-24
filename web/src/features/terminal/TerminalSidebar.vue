@@ -73,7 +73,7 @@ function onConnect(serverId: number) {
     <div class="sidebar-actions">
       <button
         type="button"
-        class="create-server-btn"
+        class="action-btn create-server-btn"
         data-test="create-server-btn"
         @click="openCreateDialog"
       >
@@ -114,15 +114,17 @@ function onConnect(serverId: number) {
               {{ terminalStore.isSupported ? '内置 PTY 终端 Shell' : '当前系统不支持' }}
             </div>
           </div>
-          <button
-            type="button"
-            class="btn-connect"
-            :disabled="!terminalStore.isSupported"
-            title="连接本机终端"
-            @click.stop="onConnect(0)"
-          >
-            连接
-          </button>
+          <div class="server-card-actions">
+            <button
+              type="button"
+              class="btn-connect"
+              :disabled="!terminalStore.isSupported"
+              title="连接本机终端"
+              @click.stop="onConnect(0)"
+            >
+              连接
+            </button>
+          </div>
         </div>
       </div>
 
@@ -234,50 +236,54 @@ function onConnect(serverId: number) {
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 2.0);
-  box-sizing: border-box;
-  background: var(--color-surface);
+  overflow: hidden;
   color: var(--color-text);
-  overflow-y: auto;
 }
 
 .sidebar-actions {
   display: flex;
-  padding: 0 0 calc(var(--space-unit) * 1.333);
+  gap: calc(var(--space-unit) * 1.0);
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
 }
 
+.action-btn,
 .create-server-btn {
+  flex: 1;
   width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
   border-radius: var(--radius);
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   font: inherit;
   font-size: 0.857rem;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
+.action-btn:hover,
 .create-server-btn:hover {
-  opacity: 0.9;
+  background: var(--color-surface-muted);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 .search {
-  width: 100%;
+  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
   padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
-  background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
+  background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 0.929rem;
   box-sizing: border-box;
-  margin-bottom: calc(var(--space-unit) * 1.333);
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -287,9 +293,13 @@ function onConnect(serverId: number) {
   box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
+.search::placeholder {
+  color: var(--color-text-muted);
+}
+
 .platform-warning {
+  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.0);
   padding: 8px 10px;
-  margin-bottom: 12px;
   background: rgba(234, 179, 8, 0.1);
   border: 1px solid rgba(234, 179, 8, 0.3);
   border-radius: var(--radius);
@@ -299,15 +309,19 @@ function onConnect(serverId: number) {
 }
 
 .server-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: calc(var(--space-unit) * 1.5);
 }
 
 .server-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: calc(var(--space-unit) * 0.5);
 }
 
 .section-title {
@@ -317,41 +331,55 @@ function onConnect(serverId: number) {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--color-text-muted);
-  text-transform: uppercase;
+  padding: 0 calc(var(--space-unit) * 0.5);
   letter-spacing: 0.5px;
 }
 
 .count-tag {
   background: var(--color-surface-muted);
-  padding: 1px 6px;
-  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  padding: 0 6px;
+  border-radius: 9999px;
   font-size: 0.7rem;
+  font-weight: normal;
+}
+
+.remote-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.5);
 }
 
 .server-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
+  gap: calc(var(--space-unit) * 0.5);
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  border: 1px solid transparent;
   border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  outline: none;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
 .server-card:hover {
-  background: var(--color-bg);
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
 }
 
 .server-card.active {
   border-color: var(--color-primary);
-  background: var(--color-primary-soft);
+  background: var(--color-surface-muted);
+  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  font-weight: 500;
 }
 
 .server-card.disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -360,7 +388,7 @@ function onConnect(serverId: number) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: calc(var(--space-unit) * 0.2);
 }
 
 .server-name-row {
@@ -409,13 +437,27 @@ function onConnect(serverId: number) {
   color: var(--color-accent);
 }
 
+.server-card-actions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.4);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.server-card:hover .server-card-actions,
+.server-card:focus-within .server-card-actions {
+  opacity: 1;
+}
+
 .btn-connect {
-  padding: 4px 10px;
+  padding: 3px 8px;
   background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: var(--radius);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -429,13 +471,6 @@ function onConnect(serverId: number) {
 .btn-connect:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.server-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
 }
 
 .btn-icon {
@@ -462,12 +497,12 @@ function onConnect(serverId: number) {
 }
 
 .action-icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 
 .empty-state {
-  padding: 16px 12px;
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0);
   text-align: center;
   background: var(--color-surface-muted);
   border: 1px dashed var(--color-border);
@@ -477,7 +512,7 @@ function onConnect(serverId: number) {
 .empty-tip {
   font-size: 0.8rem;
   color: var(--color-text-muted);
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
 }
 
 .btn-empty-add {

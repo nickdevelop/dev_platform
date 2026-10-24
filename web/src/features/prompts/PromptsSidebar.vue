@@ -51,7 +51,7 @@ function onSaved(prompt: Prompt) {
     <div class="sidebar-actions">
       <button
         type="button"
-        class="new-prompt-btn"
+        class="action-btn new-prompt-btn"
         data-test="new-prompt-btn"
         @click="openCreateDialog"
       >
@@ -124,33 +124,40 @@ function onSaved(prompt: Prompt) {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: var(--color-surface);
 }
 
 .sidebar-actions {
   display: flex;
+  gap: calc(var(--space-unit) * 1.0);
   padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
 }
 
+.action-btn,
 .new-prompt-btn {
+  flex: 1;
   width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
-  background: var(--color-primary);
-  border: none;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
   border-radius: var(--radius);
-  color: #fff;
+  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   font: inherit;
   font-size: 0.857rem;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
+.action-btn:hover,
 .new-prompt-btn:hover {
-  opacity: 0.9;
+  background: var(--color-surface-muted);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  opacity: 1;
 }
 
 .search {
@@ -161,7 +168,7 @@ function onSaved(prompt: Prompt) {
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 0.929rem;
   box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -172,42 +179,52 @@ function onSaved(prompt: Prompt) {
   box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
+.search::placeholder {
+  color: var(--color-text-muted);
+}
+
 .prompts-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.5);
+  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 1);
+  gap: calc(var(--space-unit) * 0.5);
 }
 
 .empty-state {
-  padding: calc(var(--space-unit) * 4) 0;
+  margin: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0);
   text-align: center;
   color: var(--color-text-muted);
-  font-size: 0.875rem;
+  font-size: 0.857rem;
 }
 
 .prompt-card {
-  padding: calc(var(--space-unit) * 1.25);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
   cursor: pointer;
+  outline: none;
   transition: all 0.15s ease;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: calc(var(--space-unit) * 0.3);
+  user-select: none;
 }
 
 .prompt-card:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-border);
   background: var(--color-surface-muted);
 }
 
 .prompt-card.active {
   border-color: var(--color-primary);
-  background: var(--color-primary-soft);
+  background: var(--color-surface-muted);
+  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  font-weight: 500;
 }
 
 .prompt-card-top {
@@ -219,7 +236,7 @@ function onSaved(prompt: Prompt) {
 
 .prompt-card-name {
   font-weight: 500;
-  font-size: 0.875rem;
+  font-size: 0.929rem;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -227,18 +244,19 @@ function onSaved(prompt: Prompt) {
 }
 
 .placeholder-tag {
-  font-size: 0.75rem;
-  padding: 1px 5px;
-  border-radius: 3px;
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
   flex-shrink: 0;
 }
 
 .prompt-card-desc,
 .prompt-card-preview {
   margin: 0;
-  font-size: 0.775rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;

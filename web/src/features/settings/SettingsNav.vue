@@ -28,32 +28,41 @@ const links = [
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  padding-top: calc(var(--space-unit) * 1.0);
+  overflow-y: auto;
+  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
 }
 
 .settings-links {
   display: flex;
   flex-direction: column;
   gap: calc(var(--space-unit) * 0.5);
-  padding: 0 calc(var(--space-unit) * 1.667);
 }
 
 .settings-link {
-  padding: calc(var(--space-unit) * 1.2) calc(var(--space-unit) * 2);
+  display: flex;
+  align-items: center;
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  color: var(--color-text-muted);
+  color: var(--color-text);
   text-decoration: none;
-  font-size: 1rem;
+  font-size: 0.929rem;
+  font-weight: normal;
+  transition: all 0.15s ease;
+  user-select: none;
 }
 
 .settings-link:hover {
+  border-color: var(--color-border);
   background: var(--color-surface-muted);
 }
 
 .settings-link.router-link-active {
+  border-color: var(--color-primary);
   background: var(--color-surface-muted);
+  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  font-weight: 500;
   color: var(--color-text);
-  font-weight: 600;
 }
 </style>
 

@@ -373,7 +373,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             class="session-open p-2 rounded cursor-pointer transition-colors border"
             :class="[
               entry.id === props.activeSessionId
-                ? 'bg-platform-surface border-platform-primary/40 shadow-sm text-platform-text'
+                ? 'bg-platform-surface-muted border-platform-primary shadow-[0_0_6px_var(--color-primary-soft,rgba(59,130,246,0.2))] font-medium text-platform-text'
                 : 'border-transparent hover:bg-platform-surface-muted hover:border-platform-border text-platform-text',
             ]"
             role="button"

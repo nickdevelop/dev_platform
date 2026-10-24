@@ -81,7 +81,7 @@ function getProjectName(pid: number) {
     <div class="sidebar-actions">
       <button
         type="button"
-        class="new-task-btn"
+        class="action-btn new-task-btn"
         data-test="btn-new-task"
         @click="openCreateView"
       >
@@ -92,7 +92,7 @@ function getProjectName(pid: number) {
     <input
       v-model="searchKeyword"
       type="search"
-      class="search-input"
+      class="search search-input"
       placeholder="搜索任务名称或描述"
       aria-label="搜索任务名称或描述"
     />
@@ -164,66 +164,79 @@ function getProjectName(pid: number) {
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 2.0);
-  background: var(--color-surface);
   overflow: hidden;
-  box-sizing: border-box;
 }
 
 .sidebar-actions {
   display: flex;
-  padding: 0 0 calc(var(--space-unit) * 1.333);
+  gap: calc(var(--space-unit) * 1.0);
+  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
 }
 
+.action-btn,
 .new-task-btn {
+  flex: 1;
   width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius);
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
   font: inherit;
   font-size: 0.857rem;
   font-weight: 500;
-  background: var(--color-primary);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
+.action-btn:hover,
 .new-task-btn:hover {
-  opacity: 0.9;
+  background: var(--color-surface-muted);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  opacity: 1;
 }
 
+.search,
 .search-input {
-  width: 100%;
+  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.0);
   padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
-  margin-bottom: calc(var(--space-unit) * 1.333);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 0.929rem;
   box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.search:focus,
 .search-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-info-soft);
 }
 
+.search::placeholder,
+.search-input::placeholder {
+  color: var(--color-text-muted);
+}
+
 .sidebar-filters {
   display: flex;
   gap: calc(var(--space-unit) * 1.0);
+  padding: 0 calc(var(--space-unit) * 2.0);
   margin-bottom: calc(var(--space-unit) * 1.333);
 }
 
 .filter-select {
   flex: 1;
+  min-width: 0;
   padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.0);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -231,54 +244,66 @@ function getProjectName(pid: number) {
   color: var(--color-text);
   font: inherit;
   font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.filter-select:focus {
+  border-color: var(--color-primary);
 }
 
 .task-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: calc(var(--space-unit) * 0.5);
 }
 
 .empty-list {
-  font-size: 0.85rem;
+  font-size: 0.857rem;
   color: var(--color-text-muted);
   text-align: center;
-  margin-top: 2rem;
+  margin: calc(var(--space-unit) * 2.0) 0;
 }
 
 .task-card {
-  padding: 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface-muted);
+  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
   cursor: pointer;
+  outline: none;
   transition: all 0.15s ease;
+  user-select: none;
 }
 
 .task-card:hover {
-  border-color: var(--color-primary, #3b82f6);
-  background: var(--color-surface);
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
 }
 
 .task-card.active {
-  border-color: var(--color-primary, #3b82f6);
-  background: var(--color-surface);
-  box-shadow: 0 0 0 1px var(--color-primary, #3b82f6);
+  border-color: var(--color-primary);
+  background: var(--color-surface-muted);
+  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  font-weight: 500;
 }
 
 .card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.4rem;
+  margin-bottom: calc(var(--space-unit) * 0.4);
 }
 
 .type-pill {
   font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.15rem 0.45rem;
+  padding: 0.12rem 0.45rem;
   border-radius: 4px;
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
@@ -292,7 +317,7 @@ function getProjectName(pid: number) {
 .status-badge {
   font-size: 0.72rem;
   font-weight: 500;
-  padding: 0.15rem 0.45rem;
+  padding: 0.12rem 0.45rem;
   border-radius: 4px;
 }
 
@@ -317,10 +342,10 @@ function getProjectName(pid: number) {
 }
 
 .card-title {
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: 0.929rem;
+  font-weight: 500;
   color: var(--color-text);
-  margin: 0 0 0.4rem 0;
+  margin: 0 0 calc(var(--space-unit) * 0.3) 0;
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -331,7 +356,7 @@ function getProjectName(pid: number) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
 }
 
@@ -339,7 +364,7 @@ function getProjectName(pid: number) {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.4rem;
+  margin-top: calc(var(--space-unit) * 0.3);
   font-size: 0.75rem;
   color: #8b5cf6;
 }
