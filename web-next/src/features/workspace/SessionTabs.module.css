@@ -1,0 +1,71 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 2.4rem;
+  padding: 4px calc(var(--space-unit) * 1.2);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.6);
+  max-width: 16rem;
+  padding: calc(var(--space-unit) * 0.7) calc(var(--space-unit) * 1.0);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab:hover {
+  background: var(--color-surface-muted);
+}
+
+.active {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.pin {
+  display: inline-flex;
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  opacity: 0.65;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.tab:hover .close,
+.tab:focus-within .close {
+  opacity: 1;
+}
+
+.close:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-danger);
+}

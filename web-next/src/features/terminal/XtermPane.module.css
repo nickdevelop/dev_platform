@@ -1,0 +1,15 @@
+.container {
+  flex: 1;
+  min-height: 0;
+  padding: calc(var(--space-unit) * 1);
+  background: #121316;
+  overflow: hidden;
+}
+
+.container :global(.xterm) {
+  height: 100%;
+}
+
+.container :global(.xterm-viewport) {
+  overflow-y: auto;
+}

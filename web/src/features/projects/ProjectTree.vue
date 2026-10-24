@@ -315,7 +315,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 <template>
   <ul class="project-tree" aria-label="项目与会话">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
-      <div class="project-row" :class="{ selected: project.id === props.activeProjectId }">
+      <div class="project-row" data-test="project-row" :data-project-id="project.id" :class="{ selected: project.id === props.activeProjectId }">
         <button
           type="button"
           class="project-toggle"
@@ -351,6 +351,8 @@ async function onDeleteSession(projectId: number, sessionId: string) {
           v-for="entry in visibleSessionsFor(project.id)"
           :key="entry.id"
           class="session"
+          data-test="session-row"
+          :data-session-id="entry.id"
           :class="{ selected: entry.id === props.activeSessionId }"
         >
           <div

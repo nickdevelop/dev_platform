@@ -1,0 +1,16 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.5);
+  max-width: 70rem;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.service {
+  background: var(--color-surface);
+}

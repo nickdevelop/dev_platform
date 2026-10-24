@@ -22,6 +22,7 @@ function onAuxClick(event: MouseEvent) {
 <template>
   <div
     class="terminal-tab-item"
+    data-test="terminal-tab"
     :class="{
       'is-active': active,
       [`status-${tab.status}`]: true,

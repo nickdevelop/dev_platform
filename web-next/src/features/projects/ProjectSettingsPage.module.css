@@ -1,0 +1,22 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 2);
+  padding: calc(var(--space-unit) * 3);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 2);
+  flex-wrap: wrap;
+}
+
+.header h2 {
+  margin: 0 0 calc(var(--space-unit) * 0.5);
+}
+
+.body {
+  max-width: 52rem;
+}

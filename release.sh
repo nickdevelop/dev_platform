@@ -67,15 +67,18 @@ resolve_version() {
   printf '%s' "$v" | sed 's#[^A-Za-z0-9._-]#-#g'
 }
 
-# build_web installs frontend dependencies when missing, then builds web/dist.
+# build_web installs React dependencies when missing, builds web-next/dist,
+# then copies it to web/dist, which is the directory the package ships.
 build_web() {
   require_cmd npm
-  if [ ! -d web/node_modules ]; then
-    log "install frontend dependencies"
-    (cd web && npm ci)
+  if [ ! -d web-next/node_modules ]; then
+    log "install React frontend dependencies"
+    (cd web-next && npm ci)
   fi
-  log "build frontend -> web/dist"
-  (cd web && npm run build)
+  log "build React frontend -> web/dist"
+  (cd web-next && npm run build)
+  rm -rf web/dist
+  cp -R web-next/dist web/dist
   [ -f web/dist/index.html ] || die "web/dist/index.html missing after frontend build"
 }
 

@@ -1,0 +1,39 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1);
+  margin: calc(var(--space-unit) * 1) calc(var(--space-unit) * 3);
+}
+
+.permissionBody {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.8);
+}
+
+.permissionBody p {
+  margin: 0;
+}
+
+.resources {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.4);
+  margin-bottom: calc(var(--space-unit) * 1.2);
+}
+
+.required {
+  color: var(--color-danger);
+}
+
+.description {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}

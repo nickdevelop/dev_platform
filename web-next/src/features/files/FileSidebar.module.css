@@ -1,0 +1,93 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.2);
+  min-height: 0;
+  padding: calc(var(--space-unit) * 1.5);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 0.8);
+}
+
+.tree {
+  min-height: 0;
+  overflow: auto;
+  background: transparent;
+}
+
+.nodeTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.7);
+  max-width: 100%;
+}
+
+.icon {
+  color: var(--color-text-muted);
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.change {
+  margin-inline-end: 0;
+  font-size: 0.65rem;
+  line-height: 1.2;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.8);
+  width: 100%;
+  padding: calc(var(--space-unit) * 0.7);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-align: left;
+  overflow: hidden;
+}
+
+.result:hover {
+  background: var(--color-surface-muted);
+}
+
+.result span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state {
+  display: flex;
+  justify-content: center;
+  padding: calc(var(--space-unit) * 3);
+}
+
+.empty {
+  margin: 0;
+  padding: calc(var(--space-unit) * 1);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}

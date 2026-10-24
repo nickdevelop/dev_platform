@@ -1,0 +1,27 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.5);
+  max-width: 70rem;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.diagnostics {
+  max-height: 60vh;
+  margin: 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+}

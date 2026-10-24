@@ -631,6 +631,7 @@ async function createSession() {
           <label class="composer-label" for="first-message">会话描述</label>
           <textarea
             id="first-message"
+            data-test="first-message-input"
             ref="textareaRef"
             v-model="messageText"
             rows="5"

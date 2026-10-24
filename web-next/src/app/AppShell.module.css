@@ -1,0 +1,132 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 2);
+  padding: calc(var(--space-unit) * 1.2) calc(var(--space-unit) * 2.5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 1.2);
+}
+
+.subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 1.5);
+}
+
+.devLink {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: calc(var(--space-unit) * 1.5);
+  padding: calc(var(--space-unit) * 2);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: auto;
+}
+
+.sidebarHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: calc(var(--space-unit) * 3);
+}
+
+.projectList {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.projectItem {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.3);
+  padding: calc(var(--space-unit) * 1.2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+}
+
+.projectName {
+  font-weight: 600;
+}
+
+.projectPath {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.paneBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    display: none;
+  }
+}
+
+.bodyChat {
+  grid-template-columns: minmax(0, 1fr);
+}

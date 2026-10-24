@@ -32,3 +32,7 @@ playwright-report/
 Thumbs.db
 .idea/
 .vscode/
+
+# React cutover backup (Vue build; rebuild with web-legacy-build instead)
+web/dist.legacy-vue-backup/
+web-next/.e2e-data/

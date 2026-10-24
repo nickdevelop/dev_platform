@@ -1,0 +1,74 @@
+/* P0 spike tokens. The production migration reuses web/src/fonts (vendored
+   Google Sans Code / Noto Sans SC); the spike keeps the same family names with
+   a system fallback so it does not duplicate 5MB of font files. */
+
+/* Global appearance tokens. The theme palette and density are projected onto
+   the document root by src/theme/apply.ts; the values here are the light /
+   standard defaults used for the pre-JS first paint and as fallbacks. */
+:root {
+  --color-bg: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+  --color-text: #1f2328;
+  --color-text-muted: #64748b;
+  --color-border: #e3e6eb;
+  --color-border-strong: #d0d5dd;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-soft: #e8effd;
+  --color-on-primary: #ffffff;
+  --color-danger: #b91c1c;
+  --color-danger-border: #fca5a5;
+  --color-danger-soft: #fee2e2;
+  --color-accent: #7c3aed;
+  --color-accent-soft: #f1e9fe;
+  --color-success: #15803d;
+  --color-success-soft: #ecfdf5;
+  --color-success-border: #86efac;
+  --color-warning: #92400e;
+  --color-warning-soft: #fffbeb;
+  --color-warning-border: #fcd34d;
+  --color-info: #0369a1;
+  --color-info-soft: #eff6ff;
+  --color-info-border: #93c5fd;
+  --rail-bg: #1e2330;
+  --rail-text: #aab2c5;
+  --rail-active: #3b4560;
+
+  /* The face is built in, not a setting: Google Sans Code is monospaced and
+     covers Latin text, digits and code, and Chinese falls through to Noto Sans
+     SC. Order is the mechanism — the browser takes the first family that has a
+     glyph for the character. */
+  --font-family: 'Google Sans Code', 'Noto Sans SC', sans-serif;
+  /* --font-mono is the family for code, paths and identifiers. The bundled face
+     is already monospaced, so it leads the stack; the system monospace families
+     stay as a fallback for glyphs the bundled face does not cover. */
+  --font-mono: 'Google Sans Code', 'Noto Sans SC', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size-base: 14px;
+
+  --space-unit: 6px;
+  --control-height: 34px;
+  --radius: 6px;
+}
+
+/* The shell owns the viewport: the document itself must never scroll, so each
+   pane manages its own overflow. Without this the body's default margin plus the
+   shell's viewport height produce a page-level scrollbar beside the conversation's
+   own scroller (the double scrollbar). */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+body {
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+}

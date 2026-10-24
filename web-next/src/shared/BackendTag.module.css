@@ -1,0 +1,23 @@
+.tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 9rem;
+  padding: 1px calc(var(--space-unit) * 0.8);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.neutral {
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.hasColor {
+  --tag-base: var(--color-info);
+  background: color-mix(in srgb, var(--tag-base) 14%, var(--color-surface));
+  color: var(--tag-base);
+}

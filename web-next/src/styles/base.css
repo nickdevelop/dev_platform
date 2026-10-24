@@ -1,0 +1,120 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+html {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+body {
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.p0-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.p0-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 2);
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 3);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.p0-subtitle {
+  margin-left: calc(var(--space-unit) * 1.5);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.p0-logout {
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  cursor: pointer;
+  padding: calc(var(--space-unit) * 0.7) calc(var(--space-unit) * 1.5);
+}
+
+.p0-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.p0-login {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 2);
+  max-width: 32rem;
+  margin: 10vh auto;
+  padding: calc(var(--space-unit) * 5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.p0-login form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.2);
+}
+
+.p0-login input {
+  height: var(--control-height);
+  padding: 0 calc(var(--space-unit) * 1.2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.p0-login button {
+  height: var(--control-height);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  cursor: pointer;
+}
+
+
+/* antd's darkAlgorithm derives its primary palette from the seed and exposes it
+   as a CSS variable on every `.platform` scope. The platform palette owns the
+   exact brand hue, so pin the base/hover pair to the same tokens the custom
+   components use. This is the one deliberate bridge between the two token
+   systems; all other values stay algorithm-derived. */
+#app .platform {
+  --ant-color-primary: var(--color-primary);
+  --ant-color-primary-hover: var(--color-primary-hover);
+  --ant-color-primary-active: var(--color-primary-hover);
+}
+
+/* antd App renders a wrapper div; the shell's height:100% needs a full-height parent. */
+#app > .ant-app {
+  height: 100%;
+}

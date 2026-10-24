@@ -1,0 +1,30 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--space-unit) * 2);
+  flex: 1;
+  min-height: 100%;
+  padding: calc(var(--space-unit) * 4);
+  overflow: auto;
+}
+
+.card {
+  width: min(46rem, 100%);
+  background: var(--color-surface);
+}
+
+.preview {
+  margin-bottom: calc(var(--space-unit) * 1.5);
+}
+
+.previewText {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.hint {
+  max-width: 46rem;
+}

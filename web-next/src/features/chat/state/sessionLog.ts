@@ -1,0 +1,131 @@
+// The session log's vocabulary and pure derivations, provider-neutral: what a
+// rendered log line is, how a normalized event becomes one, and how an open
+// streaming block is located. Kept free of the store so every consumer (the
+// store's live path, history replay, the rendering feature) shares one model.
+
+import type { AgentSession, NormalizedEvent } from '../../../api/sessions'
+import type { ChatEntry } from './entry'
+
+export type { ChatEntry, StreamStatus } from './entry'
+
+let entryCounter = 0
+
+export function nextEntryID(sessionId: string, sequence: number, kind: string): string {
+  entryCounter += 1
+  return `${sessionId}:${sequence}:${kind}:${entryCounter}`
+}
+
+// findOpenStreaming returns the most recent still-streaming entry of a kind
+// (and, for messages, of the same role), scanning past anything appended in
+// between. Backends interleave their streams — pi emits a thinking_delta in
+// the middle of a running text delta and closes the thinking block after text
+// resumed — so the open block, not the last list position, is what a delta
+// belongs to. Without this, interleaving fragments a block into several
+// entries and its terminator opens an empty one.
+export function findOpenStreaming(
+  list: ChatEntry[],
+  kind: ChatEntry['kind'],
+  role?: string,
+): ChatEntry | undefined {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i]
+    if (entry.kind === kind && entry.streaming && (role === undefined || entry.role === role)) {
+      return entry
+    }
+  }
+  return undefined
+}
+
+// keepSettledTurn merges an interrupt's response into the entry the live stream
+// may have settled first. The backend answers from the session row as it stood
+// when the interrupt was accepted; the stream reports the interruption as soon
+// as the agent stops. When the stream already settled the turn, the entry keeps
+// it settled — an interrupt can only end a turn, never restart one.
+export function keepSettledTurn(current: AgentSession, incoming: AgentSession): AgentSession {
+  if (current.turn !== 'running' && incoming.turn === 'running') {
+    return { ...incoming, turn: current.turn }
+  }
+  return incoming
+}
+
+export function firstChangedFile(metadata: unknown): ChatEntry['diff'] {
+  if (!metadata || typeof metadata !== 'object') return undefined
+  const files = (metadata as { files?: unknown }).files
+  if (!Array.isArray(files)) return undefined
+  for (const item of files) {
+    if (!item || typeof item !== 'object') continue
+    const file = item as Record<string, unknown>
+    if (typeof file.file !== 'string' || file.file === '') continue
+    if (typeof file.additions !== 'number' || typeof file.deletions !== 'number') continue
+    if (file.additions <= 0 && file.deletions <= 0) continue
+    if (typeof file.patch !== 'string' && file.patch !== undefined) continue
+    return {
+      file: file.file,
+      patch: typeof file.patch === 'string' ? file.patch : undefined,
+      additions: file.additions,
+      deletions: file.deletions,
+    }
+  }
+  return undefined
+}
+
+// entryFromEvent maps one non-message event to its log line, or null when the
+// event renders nothing (lifecycle events are handled separately because they
+// carry no log line of their own). Both the live path and the history replay
+// go through it, so a replayed tool call looks exactly like a live one.
+export function entryFromEvent(sessionId: string, event: NormalizedEvent): ChatEntry | null {
+  switch (event.type) {
+    case 'tool_call':
+      if (!event.toolCall) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'tool_call'),
+        kind: 'tool_call',
+        role: 'assistant',
+        text: event.toolCall.name,
+        streaming: false,
+        timestamp: event.timestamp,
+        callId: event.toolCall.callId,
+        name: event.toolCall.name,
+        input: event.toolCall.input,
+      }
+    case 'tool_result':
+      if (!event.toolResult) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'tool_result'),
+        kind: 'tool_result',
+        role: 'tool',
+        text: event.toolResult.output ?? '',
+        streaming: false,
+        timestamp: event.timestamp,
+        callId: event.toolResult.callId,
+        isError: event.toolResult.isError,
+        diff: firstChangedFile(event.toolResult.metadata),
+      }
+    case 'error':
+      if (!event.error) return null
+      return {
+        id: nextEntryID(sessionId, event.sequence, 'error'),
+        kind: 'error',
+        role: 'system',
+        text: event.error.message,
+        streaming: false,
+        timestamp: event.timestamp,
+      }
+    default:
+      return null
+  }
+}
+
+// sessionUsedModel returns the model a session actually ran, taken from its most
+// recent assistant message that reported one. '' when the transcript has no such
+// message yet — a brand-new session, or a backend that records no per-message
+// model (pi) — so callers can fall back to another default.
+export function sessionUsedModel(list: ChatEntry[]): string {
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i]
+    if (entry.kind === 'message' && entry.role === 'assistant' && entry.model?.id) {
+      return entry.model.id
+    }
+  }
+  return ''
+}

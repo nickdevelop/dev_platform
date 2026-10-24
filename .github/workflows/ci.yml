@@ -22,8 +22,29 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
-  # Frontend unit tests and typecheck run on Linux only.
+  # Frontend unit tests, lint, typecheck and production build (React).
   web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: web-next/package-lock.json
+      - run: npm ci
+        working-directory: web-next
+      - run: npm run typecheck
+        working-directory: web-next
+      - run: npm run lint
+        working-directory: web-next
+      - run: npm run test:run
+        working-directory: web-next
+      - run: npm run build
+        working-directory: web-next
+
+  # The Vue app stays buildable as the rollback path.
+  web-legacy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,15 +60,10 @@ jobs:
       - run: npm test -- --run
         working-directory: web
 
-  # End-to-end on both platforms. Informational until the 7 pre-existing
-  # Linux failures (unrelated to this plan; see the plan's Task 5.2 notes)
-  # are fixed: a red e2e does not block merges.
+  # End-to-end against the real Go server and pi fixture. The harness builds
+  # the server, starts Vite, and runs Playwright; it is blocking after cutover.
   e2e:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -55,16 +71,12 @@ jobs:
           go-version-file: go.mod
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.22.0
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: web-next/package-lock.json
       - run: npm ci
-        working-directory: web
+        working-directory: web-next
       - run: npx playwright install --with-deps chromium
-        if: runner.os == 'Linux'
-        working-directory: web
-      - run: npx playwright install chromium
-        if: runner.os == 'Windows'
-        working-directory: web
+        working-directory: web-next
       - run: npm run test:e2e
-        working-directory: web
+        working-directory: web-next

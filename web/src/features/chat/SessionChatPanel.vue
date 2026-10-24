@@ -1131,6 +1131,7 @@ async function removeSession() {
               <label class="composer-label" for="message-text">发送消息</label>
               <textarea
                 id="message-text"
+                data-test="message-input"
                 ref="textareaRef"
                 v-model="messageText"
                 rows="2"

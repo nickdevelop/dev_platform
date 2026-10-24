@@ -26,10 +26,10 @@
 | **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v29，含 Agent 模型快照表与快捷助手固定分组） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
-| **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），组合式 API，严格类型安全 |
-| **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
+| **前端工程** | React 19.3, antd 6.6, Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），函数组件 + Hooks，严格类型安全 |
+| **前端状态与路由** | Zustand 5.0, React Router 8.5 | 领域驱动的 Store 分层，路由级 lazy 分包 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (622 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (React 42 单测); Playwright E2E (3 关键链路) | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、全流程端到端自动化 |
 
 ---
 
@@ -38,12 +38,12 @@
 项目严格对齐 Claudian 的五层架构体系，将“与具体 Agent 无关的通用同构层”和“必须因后端而异的异构层”彻底解耦：
 
 ```
-① 组合根     cmd/platform/（Go 程序入口）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
+① 组合根     cmd/platform/（Go 程序入口）+ web-next/src/{main.tsx, app/router.tsx}（React 挂载）
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
 ③ 领域服务   internal/app/{sessions, instances, agentmodels, projects, chat, tasks, terminal, settings, auth, ...}
 ⑤ 异构适配   internal/providers/{opencode, pi, deepseek}（实现 core 契约，向组合根导出 Descriptor）
 传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）
-② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
+② 前端展示   web-next/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web-next/src/shared/
 ```
 
 ### 依赖方向与防腐规则（守卫强制执行）：
@@ -105,7 +105,9 @@
 
 ---
 
-### 4. 前端应用架构（`web/src/`）
+### 4. 前端应用架构（`web-next/src/`）
+
+> 生产前端已切换到 React；`web/` 仅保留 Vue 源码作为回滚路径。下列目录以 React 工程为准，Vue 同名 feature 仍可对照。
 
 ```
 web/src/
@@ -131,6 +133,8 @@ web/src/
   │     └── files/     ── 文件查看器、Markdown/PlantUML/图片 Artifact 预览
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```
+
+> **React 迁移（P0–P7 已切换）**：生产 `web/dist` 现由 `web-next/` 构建；`web/` 的 Vue 源码与 `web/dist.legacy-vue-backup` 是回滚路径。`make web-build` 构建 React 并复制到 `web/dist`；`make cutover-react` / `make rollback-react` 用于切换与恢复。进度见 [`p0`](./docs/architecture/react-migration-p0.md) … [`p7`](./docs/architecture/react-migration-p7.md)。
 
 ---
 
@@ -294,7 +298,7 @@ web/src/
    - GET/PUT /api/settings/quick-assistant
                     │
                     ▼
-2. 主框架 (web/src/features/workspace/AppShell.vue)
+2. 主框架 (web-next/src/app/AppShell.tsx)
    - 开关开启时挂载 QuickAssistantLauncher
    - 按钮可拖拽至视口任意位置（保留 12px 防误触边距），位置写入 localStorage
                     │
@@ -314,13 +318,13 @@ web/src/
 
 前端与后端的数据通信拥有严格的安全架构约束：
 1. **统一通信契约**：
-   前端所有 API 请求必须通过 `web/src/api/client.ts` 暴露的 `get()` 和 `mutate()` 发送：
+   前端所有 API 请求必须通过 `web-next/src/api/client.ts` 暴露的 `get()` 和 `mutate()` 发送：
    - 读操作使用 `get<T>(url)`；
    - 写操作（`POST`/`PUT`/`DELETE`/`PATCH`）统一使用 `mutate<T>(method, url, body)`。
 2. **CSRF 双提交令牌防御**：
    - 全局服务端在 `router.go` 挂载 `auth.RequireCSRF()` 中间件；
    - 令牌由传输层（`client.ts`）统一从 `auth` store 中拉取并自动轮转，禁止任何业务代码直接 `fetch`、手写 `X-CSRF-Token` 或将 `csrfToken` 作为函数参数传递；
-   - 前端守卫测试 `web/src/tests/csrf-coverage.spec.ts` 会在源码静态分析层面拦截违规调用；后端 `csrf_matrix_guard_test.go` 遍历所有非安全路由测试防御有效性。
+   - 前端守卫测试 `web-next/src/tests/csrf-coverage.spec.ts` 会在源码静态分析层面拦截违规调用；后端 `csrf_matrix_guard_test.go` 遍历所有非安全路由测试防御有效性。
 
 ---
 
@@ -349,9 +353,9 @@ make e2e
 ```
 
 - **E2E 运行环境规范**：
-  E2E 测试由 `web/scripts/run-e2e.mjs` 编排，默认使用 `E2E_VITE_PORT=15173` 独立端口，避免与开发者本机 5173 端口冲突；测试桩（`web/e2e/fixtures/bin/`）完整支持各后端的最新协议模式（如 Pi 的 `--mode rpc`）。
-- **E2E 模型快照**：`web/e2e/global-setup.ts` 在测试开始前通过真实 API 执行一次平台 Agent 模型刷新，把模型快照写入临时数据库。产品默认只读数据库，因此这一步是测试对“运维员手动刷新”的模拟，不是产品自动刷新。
-- **E2E 串行执行**：所有 spec 共享同一个后端、SQLite 数据库与机器级 opencode service，部分 spec 会停止/启动该 service，因此 `playwright.config.ts` 固定 `workers: 1`，避免跨文件竞态。
+  E2E 测试由 `web-next/scripts/run-e2e.mjs` 编排，默认使用 `E2E_VITE_PORT=15178` 独立端口，避免与开发者本机 5173 端口冲突；测试桩（`web-next/e2e/fixtures/bin/`）完整支持各后端的最新协议模式（如 Pi 的 `--mode rpc`）。
+- **E2E 模型快照**：React harness 当前不启动 machine-wide opencode service，也不执行全局模型刷新；迁移 spec 使用 pi fixture 覆盖登录/项目/设置/会话发送。
+- **E2E 串行执行**：`playwright.config.ts` 固定 `workers: 1`，避免共享后端/SQLite 的跨文件竞态。
 
 ---
 

@@ -1,0 +1,127 @@
+.page {
+  display: grid;
+  grid-template-columns: 18rem minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: calc(var(--space-unit) * 1);
+  padding: calc(var(--space-unit) * 1.5);
+  border-right: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.sidebarHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 0.8);
+}
+
+.chatList {
+  min-height: 0;
+  overflow: auto;
+}
+
+.group {
+  margin-bottom: calc(var(--space-unit) * 1);
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.6);
+  padding: calc(var(--space-unit) * 0.6);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.chatRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: calc(var(--space-unit) * 0.8);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.chatRow:hover {
+  background: var(--color-surface-muted);
+}
+
+.activeChat {
+  background: var(--color-primary-soft);
+}
+
+.chatTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatModel {
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--space-unit) * 1.5);
+  padding: calc(var(--space-unit) * 1.2) calc(var(--space-unit) * 2.5);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.8);
+  min-width: 0;
+}
+
+.titleRow h3 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert {
+  margin: calc(var(--space-unit) * 1) calc(var(--space-unit) * 2.5) 0;
+}
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    display: none;
+  }
+}

@@ -1,0 +1,124 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 1.4);
+  margin: 0;
+  padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 3);
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--space-unit) * 0.4);
+  max-width: 52rem;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.bubble {
+  padding: calc(var(--space-unit) * 1.4) calc(var(--space-unit) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.agent {
+  background: var(--color-surface);
+}
+
+.user {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary-soft);
+}
+
+.text {
+  white-space: pre-wrap;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown pre {
+  overflow: auto;
+  padding: calc(var(--space-unit) * 1.2);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+}
+
+.markdown code {
+  font-family: var(--font-mono);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.7);
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+}
+
+.images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space-unit) * 0.8);
+  margin-bottom: calc(var(--space-unit) * 1);
+}
+
+.images img {
+  max-width: 16rem;
+  max-height: 12rem;
+  border-radius: var(--radius);
+}
+
+.cursor {
+  color: var(--color-text-muted);
+}
+
+.thinking,
+.tool {
+  padding: calc(var(--space-unit) * 1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.thinking summary,
+.tool summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.thinking pre,
+.tool pre {
+  max-height: 20rem;
+  margin: calc(var(--space-unit) * 1) 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.running {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 8rem;
+  padding: calc(var(--space-unit) * 4);
+}

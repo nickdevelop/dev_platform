@@ -629,7 +629,7 @@ watch(
             <span>显示任务会话</span>
           </label>
         </div>
-        <div class="tree">
+        <div class="tree" data-test="project-tree-scroll">
           <ProjectTree
             :active-project-id="projectId"
             :active-session-id="sessionId"
@@ -644,7 +644,7 @@ watch(
       </template>
     </aside>
 
-    <section class="pane" :class="{ 'pane-full': fullHeightPane }">
+    <section class="pane" data-test="workspace-pane" :class="{ 'pane-full': fullHeightPane }">
       <SessionTabs
         v-if="projectActive && workspaceTabs.length > 0"
         :tabs="workspaceTabs"

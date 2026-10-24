@@ -94,6 +94,8 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
     <li v-for="node in props.nodes" :key="node.path" class="file-tree-item">
       <div
         class="file-tree-row"
+        data-test="file-tree-row"
+        :data-path="node.path"
         :class="{
           'is-active': props.activePath === node.path,
           'is-dir': node.isDir,

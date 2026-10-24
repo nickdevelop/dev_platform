@@ -1,0 +1,25 @@
+.p0-probe {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(var(--space-unit) * 1.5);
+  margin: 0;
+}
+
+.p0-probe div {
+  padding: calc(var(--space-unit) * 1.2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+}
+
+.p0-probe dt {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.p0-probe dd {
+  margin: calc(var(--space-unit) * 0.4) 0 0;
+  color: var(--color-text);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
