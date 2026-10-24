@@ -279,6 +279,42 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 30, name: "extend_chat_groups_as_assistants", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&ChatGroup{}) {
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "default_model_id") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "default_model_id"); err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "system_prompt") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "system_prompt"); err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "icon") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "icon"); err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "show_in_float") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "show_in_float"); err != nil {
+					return err
+				}
+			}
+			// 解锁现有固定组：清空 system_key，解除固定组限制
+			if tx.Migrator().HasColumn(&ChatGroup{}, "system_key") {
+				_ = tx.Exec("UPDATE chat_groups SET system_key = NULL").Error
+			}
+		}
+		if tx.Migrator().HasTable(&Chat{}) {
+			if !tx.Migrator().HasColumn(&Chat{}, "system_prompt") {
+				if err := tx.Migrator().AddColumn(&Chat{}, "system_prompt"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

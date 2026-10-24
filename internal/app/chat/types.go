@@ -85,13 +85,17 @@ const (
 	MaxGroupNameRunes = 60
 )
 
-// ChatGroup is the JSON-stable API representation of one pure-chat group.
+// ChatGroup is the JSON-stable API representation of one pure-chat group / assistant.
 type ChatGroup struct {
-	ID        uint      `json:"id"`
-	Name      string    `json:"name"`
-	SystemKey string    `json:"systemKey,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID             uint      `json:"id"`
+	Name           string    `json:"name"`
+	DefaultModelID uint      `json:"defaultModelId"`
+	SystemPrompt   string    `json:"systemPrompt"`
+	Icon           string    `json:"icon"`
+	ShowInFloat    bool      `json:"showInFloat"`
+	SystemKey      string    `json:"systemKey,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // ImageAttachment is one user-supplied image in a stable wire shape. Data is
@@ -115,14 +119,15 @@ type Usage struct {
 // Chat is the JSON-stable API representation of one conversation. Running is
 // derived from the in-process generation manager and is not persisted.
 type Chat struct {
-	ID        uint      `json:"id"`
-	GroupID   uint      `json:"groupId"`
-	Title     string    `json:"title"`
-	ModelID   uint      `json:"modelId"`
-	ModelName string    `json:"modelName"`
-	Running   bool      `json:"running"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID           uint      `json:"id"`
+	GroupID      uint      `json:"groupId"`
+	Title        string    `json:"title"`
+	ModelID      uint      `json:"modelId"`
+	ModelName    string    `json:"modelName"`
+	SystemPrompt string    `json:"-"`
+	Running      bool      `json:"running"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // Message is the JSON-stable API representation of one chat message.
@@ -175,12 +180,20 @@ type UpdateInput struct {
 
 // CreateGroupInput is the body of POST /chat-groups.
 type CreateGroupInput struct {
-	Name string
+	Name           string
+	DefaultModelID uint
+	SystemPrompt   string
+	Icon           string
+	ShowInFloat    bool
 }
 
 // UpdateGroupInput is the body of PUT /chat-groups/{id}.
 type UpdateGroupInput struct {
-	Name string
+	Name           string
+	DefaultModelID uint
+	SystemPrompt   string
+	Icon           string
+	ShowInFloat    bool
 }
 
 // Snapshot is the state a client needs to render a conversation from scratch.

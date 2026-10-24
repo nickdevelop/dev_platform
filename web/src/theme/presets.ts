@@ -221,3 +221,21 @@ export const densities: DensityPreset[] = [
   { key: 'standard', label: '标准', spaceUnit: '6px', controlHeight: '34px', radius: '6px' },
   { key: 'relaxed', label: '宽松', spaceUnit: '8px', controlHeight: '40px', radius: '8px' },
 ]
+
+export interface FontSizePreset {
+  key: 'small' | 'medium' | 'large'
+  label: string
+  value: number
+}
+
+export const fontSizes: FontSizePreset[] = [
+  { key: 'small', label: '小', value: 13 },
+  { key: 'medium', label: '中', value: 14 },
+  { key: 'large', label: '大', value: 16 },
+]
+
+export function resolveFontSizeKey(fontSize: number): 'small' | 'medium' | 'large' {
+  if (fontSize <= 13) return 'small'
+  if (fontSize >= 16) return 'large'
+  return 'medium'
+}

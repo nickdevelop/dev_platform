@@ -163,7 +163,25 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 	if err != nil {
 		return Chat{}, err
 	}
-	model, err := s.resolveModel(input.ModelID)
+
+	var (
+		groupID      uint
+		systemPrompt string
+		modelID      = input.ModelID
+	)
+	if input.GroupID != nil && *input.GroupID != 0 {
+		group, err := s.repo.GetGroup(*input.GroupID)
+		if err != nil {
+			return Chat{}, err
+		}
+		groupID = *input.GroupID
+		systemPrompt = group.SystemPrompt
+		if modelID == 0 && group.DefaultModelID != 0 {
+			modelID = group.DefaultModelID
+		}
+	}
+
+	model, err := s.resolveModel(modelID)
 	if err != nil {
 		return Chat{}, err
 	}
@@ -171,22 +189,15 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 		return Chat{}, ErrUnsupportedImage
 	}
 
-	var groupID uint
-	if input.GroupID != nil && *input.GroupID != 0 {
-		if _, err := s.repo.GetGroup(*input.GroupID); err != nil {
-			return Chat{}, err
-		}
-		groupID = *input.GroupID
-	}
-
 	now := time.Now().UTC()
 	chat := Chat{
-		GroupID:   groupID,
-		Title:     fallbackTitle(text),
-		ModelID:   model.ID,
-		ModelName: model.Name,
-		CreatedAt: now,
-		UpdatedAt: now,
+		GroupID:      groupID,
+		Title:        fallbackTitle(text),
+		ModelID:      model.ID,
+		ModelName:    model.Name,
+		SystemPrompt: systemPrompt,
+		CreatedAt:    now,
+		UpdatedAt:    now,
 	}
 	user := Message{
 		Role:      RoleUser,
@@ -301,24 +312,9 @@ func (s *Service) Update(chatID uint, input UpdateInput) (Chat, error) {
 	}
 	if input.GroupID != nil {
 		targetID := *input.GroupID
-		if targetID != chat.GroupID {
-			if chat.GroupID != 0 {
-				current, err := s.repo.GetGroup(chat.GroupID)
-				if err != nil {
-					return Chat{}, err
-				}
-				if current.SystemKey != "" {
-					return Chat{}, ErrGroupLocked
-				}
-			}
-			if targetID != 0 {
-				target, err := s.repo.GetGroup(targetID)
-				if err != nil {
-					return Chat{}, err
-				}
-				if target.SystemKey != "" {
-					return Chat{}, ErrGroupLocked
-				}
+		if targetID != chat.GroupID && targetID != 0 {
+			if _, err := s.repo.GetGroup(targetID); err != nil {
+				return Chat{}, err
 			}
 		}
 		chat.GroupID = targetID
@@ -607,11 +603,21 @@ func (s *Service) finishRun(run *runState, chat Chat, status, outcome, code, det
 }
 
 func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.ResolvedModel) (CompletionRequest, error) {
+	chat, err := s.repo.GetChat(chatID)
+	if err != nil {
+		return CompletionRequest{}, err
+	}
 	messages, err := s.repo.ListMessages(chatID)
 	if err != nil {
 		return CompletionRequest{}, err
 	}
-	out := make([]CompletionMessage, 0, len(messages))
+	out := make([]CompletionMessage, 0, len(messages)+1)
+	if strings.TrimSpace(chat.SystemPrompt) != "" {
+		out = append(out, CompletionMessage{
+			Role: "system",
+			Text: strings.TrimSpace(chat.SystemPrompt),
+		})
+	}
 	for _, message := range messages {
 		if message.ID == assistantID {
 			continue
@@ -847,14 +853,18 @@ func (s *Service) ListGroups() ([]ChatGroup, error) {
 	return s.repo.ListGroups()
 }
 
-// CreateGroup creates a new chat conversation group with the given name.
+// CreateGroup creates a new chat conversation group / assistant.
 func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
 	name, err := normalizeGroupName(input.Name)
 	if err != nil {
 		return ChatGroup{}, err
 	}
 	group := ChatGroup{
-		Name: name,
+		Name:           name,
+		DefaultModelID: input.DefaultModelID,
+		SystemPrompt:   input.SystemPrompt,
+		Icon:           input.Icon,
+		ShowInFloat:    input.ShowInFloat,
 	}
 	if err := s.repo.CreateGroup(&group); err != nil {
 		return ChatGroup{}, err
@@ -862,36 +872,31 @@ func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
 	return group, nil
 }
 
-// UpdateGroup renames an existing chat conversation group. Platform-reserved
-// groups cannot be renamed.
+// UpdateGroup updates an existing chat conversation group / assistant.
 func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error) {
 	group, err := s.repo.GetGroup(id)
 	if err != nil {
 		return ChatGroup{}, err
-	}
-	if group.SystemKey != "" {
-		return ChatGroup{}, ErrGroupLocked
 	}
 	name, err := normalizeGroupName(input.Name)
 	if err != nil {
 		return ChatGroup{}, err
 	}
 	group.Name = name
+	group.DefaultModelID = input.DefaultModelID
+	group.SystemPrompt = input.SystemPrompt
+	group.Icon = input.Icon
+	group.ShowInFloat = input.ShowInFloat
 	if err := s.repo.UpdateGroup(&group); err != nil {
 		return ChatGroup{}, err
 	}
 	return group, nil
 }
 
-// DeleteGroup removes a chat group and all chats inside it. Platform-reserved
-// groups cannot be deleted.
+// DeleteGroup removes a chat group / assistant and all chats inside it.
 func (s *Service) DeleteGroup(id uint) error {
-	group, err := s.repo.GetGroup(id)
-	if err != nil {
+	if _, err := s.repo.GetGroup(id); err != nil {
 		return err
-	}
-	if group.SystemKey != "" {
-		return ErrGroupLocked
 	}
 	chats, _, err := s.repo.ListChats(MaxListLimit, 0)
 	if err == nil {

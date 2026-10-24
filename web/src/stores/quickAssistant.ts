@@ -15,6 +15,7 @@ import {
   updateChat,
   type Chat,
   type ChatDelta,
+  type ChatGroup,
   type ChatMessage,
   type ChatSnapshot,
   type ChatTurn,
@@ -70,6 +71,7 @@ function streamFor(store: object): ChatStream {
 export const useQuickAssistantStore = defineStore('quickAssistant', {
   state: () => ({
     groupId: null as number | null,
+    currentAssistant: null as ChatGroup | null,
     chatId: null as number | null,
     chat: null as Chat | null,
     messages: [] as ChatEntry[],
@@ -99,16 +101,31 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
       this.closedReason = ''
     },
 
-    async ensureGroup(): Promise<number | null> {
+    async ensureGroup(targetGroupId?: number): Promise<number | null> {
+      if (targetGroupId !== undefined) {
+        this.groupId = targetGroupId
+      }
       if (this.groupId !== null) return this.groupId
       try {
         const { groups } = await listChatGroups()
-        const group = groups.find((entry) => entry.systemKey === QUICK_ASSISTANT_GROUP_KEY)
+        if (groups.length === 0) {
+          this.error = '尚未创建任何助手，请先在 Chat 页面新建助手。'
+          return null
+        }
+        // Prefer floating assistants, then quick-assistant, then first available
+        const group =
+          groups.find((entry) => entry.showInFloat) ??
+          groups.find((entry) => entry.systemKey === QUICK_ASSISTANT_GROUP_KEY) ??
+          groups[0]
         if (!group) {
-          this.error = '快捷助手分组不可用，请刷新页面或检查数据库迁移。'
+          this.error = '助手不可用，请刷新页面。'
           return null
         }
         this.groupId = group.id
+        this.currentAssistant = group
+        if (group.defaultModelId) {
+          this.modelId = group.defaultModelId
+        }
         return group.id
       } catch (error) {
         if (error instanceof UnauthorizedError) return null
@@ -117,14 +134,23 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
       }
     },
 
-    // openLatest loads the most recent quick-assistant conversation, or leaves
+    openAssistant(assistant: ChatGroup) {
+      this.groupId = assistant.id
+      this.currentAssistant = assistant
+      if (assistant.defaultModelId) {
+        this.modelId = assistant.defaultModelId
+      }
+      this.newChat()
+    },
+
+    // openLatest loads the most recent assistant conversation, or leaves
     // a blank draft when the group is empty.
-    async openLatest() {
+    async openLatest(targetGroupId?: number) {
       const request = ++this.requestId
       this.loading = true
       this.clearErrors()
       try {
-        const groupId = await this.ensureGroup()
+        const groupId = await this.ensureGroup(targetGroupId)
         if (request !== this.requestId) return
         if (groupId === null) return
         const { chats } = await listChats(1, 0, groupId)

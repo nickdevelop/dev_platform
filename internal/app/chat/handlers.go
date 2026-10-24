@@ -113,7 +113,11 @@ type updateRequest struct {
 }
 
 type groupRequest struct {
-	Name string `json:"name"`
+	Name           string `json:"name"`
+	DefaultModelID uint   `json:"defaultModelId"`
+	SystemPrompt   string `json:"systemPrompt"`
+	Icon           string `json:"icon"`
+	ShowInFloat    bool   `json:"showInFloat"`
 }
 
 type groupListResponse struct {
@@ -358,7 +362,13 @@ func (s *Service) handleCreateGroup(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	group, err := s.CreateGroup(CreateGroupInput{Name: req.Name})
+	group, err := s.CreateGroup(CreateGroupInput{
+		Name:           req.Name,
+		DefaultModelID: req.DefaultModelID,
+		SystemPrompt:   req.SystemPrompt,
+		Icon:           req.Icon,
+		ShowInFloat:    req.ShowInFloat,
+	})
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -376,7 +386,13 @@ func (s *Service) handleUpdateGroup(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	group, err := s.UpdateGroup(id, UpdateGroupInput{Name: req.Name})
+	group, err := s.UpdateGroup(id, UpdateGroupInput{
+		Name:           req.Name,
+		DefaultModelID: req.DefaultModelID,
+		SystemPrompt:   req.SystemPrompt,
+		Icon:           req.Icon,
+		ShowInFloat:    req.ShowInFloat,
+	})
 	if err != nil {
 		respondServiceError(c, err)
 		return

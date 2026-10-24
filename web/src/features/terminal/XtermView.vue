@@ -33,7 +33,7 @@ const connectionError = ref<string | null>(null)
 // faces BEFORE open keeps measure and render on one set of metrics; a late
 // loadingdone event resyncs the renderer the same way for anything still
 // racing after open.
-const FONT_STACK = 'var(--font-mono, "SF Mono", Monaco, Consolas, "Liberation Mono", monospace)'
+const FONT_STACK = 'var(--font-mono)'
 
 let disposed = false
 
@@ -335,10 +335,10 @@ onBeforeUnmount(() => {
   gap: 10px;
   background: rgba(30, 32, 38, 0.9);
   backdrop-filter: blur(4px);
-  border: 1px solid var(--color-border, #3f3f46);
+  border: 1px solid var(--color-border);
   padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
   color: #fbbf24;
   z-index: 10;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -349,12 +349,12 @@ onBeforeUnmount(() => {
 }
 
 .btn-reconnect {
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius);
   padding: 3px 8px;
-  font-size: 12px;
+  font-size: 0.8rem;
   cursor: pointer;
   transition: opacity 0.15s;
 }

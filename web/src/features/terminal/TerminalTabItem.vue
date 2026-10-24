@@ -59,10 +59,10 @@ function onAuxClick(event: MouseEvent) {
   gap: 8px;
   height: 36px;
   padding: 0 10px 0 12px;
-  background: var(--color-surface, #1e1e24);
-  color: var(--color-text-muted, #9ca3af);
-  border-right: 1px solid var(--color-border, #2d2e38);
-  font-size: 13px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  border-right: 1px solid var(--color-border);
+  font-size: 0.929rem;
   cursor: pointer;
   user-select: none;
   position: relative;
@@ -70,15 +70,15 @@ function onAuxClick(event: MouseEvent) {
 }
 
 .terminal-tab-item:hover {
-  background: var(--color-surface-muted, #262730);
-  color: var(--color-text, #fff);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
 }
 
 .terminal-tab-item.is-active {
-  background: var(--color-bg, #121316);
-  color: var(--color-text, #fff);
+  background: var(--color-bg);
+  color: var(--color-text);
   font-weight: 500;
-  border-bottom: 2px solid var(--color-primary, #3b82f6);
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .status-indicator {
@@ -111,8 +111,8 @@ function onAuxClick(event: MouseEvent) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 0.857rem;
 }
 
 .tab-close {

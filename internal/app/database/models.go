@@ -238,15 +238,19 @@ type AgentModelCatalog struct {
 // TableName pins the agent model catalog table name.
 func (AgentModelCatalog) TableName() string { return "agent_model_catalogs" }
 
-// ChatGroup is one platform-owned pure-chat conversation group.
-// It organizes conversations into logical categories, similar to projects for sessions.
+// ChatGroup is one platform-owned pure-chat conversation group / assistant.
+// It organizes conversations into logical categories and acts as an assistant
+// definition with its own default model, system prompt, icon and floating button presence.
 // Table: chat_groups.
 type ChatGroup struct {
-	ID   uint   `gorm:"primaryKey;column:id"`
-	Name string `gorm:"column:name;not null"`
-	// SystemKey marks a platform-reserved group. It is NULL for ordinary
-	// user-created groups; the unique index relies on SQLite allowing multiple
-	// NULL values.
+	ID             uint    `gorm:"primaryKey;column:id"`
+	Name           string  `gorm:"column:name;not null"`
+	DefaultModelID uint    `gorm:"column:default_model_id;not null;default:0"`
+	SystemPrompt   string  `gorm:"column:system_prompt;type:text"`
+	Icon           string  `gorm:"column:icon;size:32"`
+	ShowInFloat    bool    `gorm:"column:show_in_float;not null;default:false"`
+	// SystemKey was used for legacy platform-reserved groups. It is now kept
+	// nullable and unused as fixed groups are removed.
 	SystemKey *string `gorm:"column:system_key;size:64;uniqueIndex:idx_chat_group_system_key"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -261,13 +265,14 @@ func (ChatGroup) TableName() string { return "chat_groups" }
 // snapshot so history stays readable after a model definition is removed.
 // Table: chats.
 type Chat struct {
-	ID        uint   `gorm:"primaryKey;column:id"`
-	GroupID   uint   `gorm:"column:group_id;not null;default:0;index:idx_chats_group"`
-	Title     string `gorm:"column:title;not null"`
-	ModelID   uint   `gorm:"column:model_id;not null"`
-	ModelName string `gorm:"column:model_name;not null"`
-	CreatedAt time.Time
-	UpdatedAt time.Time `gorm:"index:idx_chats_updated"`
+	ID           uint   `gorm:"primaryKey;column:id"`
+	GroupID      uint   `gorm:"column:group_id;not null;default:0;index:idx_chats_group"`
+	Title        string `gorm:"column:title;not null"`
+	ModelID      uint   `gorm:"column:model_id;not null"`
+	ModelName    string `gorm:"column:model_name;not null"`
+	SystemPrompt string `gorm:"column:system_prompt;type:text"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time `gorm:"index:idx_chats_updated"`
 }
 
 // TableName pins the chat table name.

@@ -57,7 +57,24 @@ const streamBroken = computed(
   () => quick.streamStatus === 'reconnecting' || quick.streamStatus === 'error',
 )
 
+const currentAssistant = computed(() => quick.currentAssistant)
+const assistantName = computed(() => currentAssistant.value?.name || '快捷助手')
+const assistantIcon = computed(() => {
+  if (currentAssistant.value?.icon && currentAssistant.value.icon.trim()) {
+    return currentAssistant.value.icon.trim()
+  }
+  const trimmed = assistantName.value.trim()
+  return trimmed ? Array.from(trimmed)[0].toUpperCase() : '助'
+})
+
 function ensureModel() {
+  if (
+    currentAssistant.value?.defaultModelId &&
+    usableModels.value.some((model) => model.id === currentAssistant.value?.defaultModelId)
+  ) {
+    quick.modelId = currentAssistant.value.defaultModelId
+    return
+  }
   if (quick.modelId !== null && usableModels.value.some((model) => model.id === quick.modelId)) return
   // Keep a persisted conversation model when the model list simply has not
   // loaded (or failed to load); only fall back when choices are available.
@@ -154,8 +171,11 @@ function onKeydown(event: KeyboardEvent) {
   >
     <header class="quick-assistant-header">
       <div class="quick-assistant-heading">
-        <h2>快捷助手</h2>
-        <span class="quick-assistant-subtitle">对话保存在 Chat · 快捷助手</span>
+        <h2>
+          <span class="assistant-mini-badge">{{ assistantIcon }}</span>
+          {{ assistantName }}
+        </h2>
+        <span class="quick-assistant-subtitle">对话保存在 Chat · {{ assistantName }}</span>
       </div>
       <div class="quick-assistant-actions">
         <button
@@ -187,8 +207,8 @@ function onKeydown(event: KeyboardEvent) {
 
     <div ref="scroll" class="quick-assistant-scroll" data-test="quick-assistant-scroll" @scroll.passive="follow.onScroll">
       <div v-if="quick.chatId === null && !quick.loading" class="quick-assistant-welcome">
-        <h3>你好，我是快捷助手</h3>
-        <p>有什么可以帮你？对话会自动保存到 Chat 的“快捷助手”固定分组。</p>
+        <h3>你好，我是{{ assistantName }}</h3>
+        <p>有什么可以帮你？对话会自动保存到 Chat 中。</p>
         <p v-if="!hasModels" class="quick-assistant-warning">
           尚未配置可用模型，请先到「设置 → 模型」添加并启用模型。
         </p>
@@ -294,6 +314,23 @@ function onKeydown(event: KeyboardEvent) {
 .quick-assistant-heading h2 {
   margin: 0;
   font-size: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.assistant-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .quick-assistant-subtitle {

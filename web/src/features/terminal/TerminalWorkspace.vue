@@ -180,11 +180,11 @@ function onQuickConnectLocal() {
 .empty-card {
   max-width: 440px;
   text-align: center;
-  background: var(--color-surface, #1e1f27);
-  border: 1px solid var(--color-border, #2d2e38);
-  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
   padding: 36px 32px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .empty-icon {
@@ -193,9 +193,9 @@ function onQuickConnectLocal() {
   justify-content: center;
   width: 56px;
   height: 56px;
-  background: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
-  border-radius: 12px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  border-radius: var(--radius);
   margin-bottom: 16px;
 }
 
@@ -205,26 +205,26 @@ function onQuickConnectLocal() {
 }
 
 .empty-card h3 {
-  font-size: 18px;
+  font-size: 1.25rem;
   font-weight: 600;
   margin: 0 0 10px 0;
-  color: var(--color-text, #fff);
+  color: var(--color-text);
 }
 
 .empty-desc {
-  font-size: 14px;
-  color: var(--color-text-muted, #9ca3af);
+  font-size: 0.929rem;
+  color: var(--color-text-muted);
   line-height: 1.6;
   margin: 0 0 20px 0;
 }
 
 .platform-alert {
   padding: 10px 14px;
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.25);
-  border-radius: 6px;
-  font-size: 12px;
-  color: #facc15;
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+  color: var(--color-warning);
   line-height: 1.5;
   margin-bottom: 20px;
   text-align: left;
@@ -238,11 +238,11 @@ function onQuickConnectLocal() {
 
 .btn-primary-action {
   padding: 8px 20px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius);
+  font-size: 0.929rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;

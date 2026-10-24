@@ -93,9 +93,9 @@ describe('pure chat sidebar', () => {
     expect(router.currentRoute.value.params.chatId).toBe('2')
   })
 
-  it('starts a new chat from any chat route', async () => {
+  it('starts a new chat on assistant from any chat route', async () => {
     const { wrapper, router } = await mountSidebar('/chat/1')
-    await wrapper.find('[data-test="chat-new-btn"]').trigger('click')
+    await wrapper.find('[aria-label="在「工作分组」中新建对话"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.name).toBe('chat')
   })
@@ -105,15 +105,15 @@ describe('pure chat sidebar', () => {
     expect(wrapper.text()).toContain('工作分组')
     expect(wrapper.text()).toContain('未分组对话')
 
-    // Open create group dialog
+    // Open create assistant dialog
     await wrapper.find('[data-test="chat-new-group-btn"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('新建对话分组')
+    expect(wrapper.text()).toContain('新建助手')
   })
 })
 
-describe('reserved quick-assistant group', () => {
-  it('marks the group fixed and hides rename, delete, create and move controls', async () => {
+describe('assistant lifecycle and unlocked controls', () => {
+  it('does not mark the assistant fixed and exposes edit, delete and create controls', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -126,7 +126,6 @@ describe('reserved quick-assistant group', () => {
                 {
                   id: 7,
                   name: '快捷助手',
-                  systemKey: 'quick-assistant',
                   createdAt: '2026-10-23T00:00:00Z',
                   updatedAt: '2026-10-23T00:00:00Z',
                 },
@@ -146,10 +145,9 @@ describe('reserved quick-assistant group', () => {
 
     const { wrapper } = await mountSidebar('/chat')
     expect(wrapper.text()).toContain('快捷助手')
-    expect(wrapper.text()).toContain('固定')
-    expect(wrapper.find('[aria-label="重命名分组「快捷助手」"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="删除分组「快捷助手」"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="在「快捷助手」中新建对话"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="移动到其他分组"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('固定')
+    expect(wrapper.find('[aria-label="编辑助手「快捷助手」"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="删除助手「快捷助手」"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="在「快捷助手」中新建对话"]').exists()).toBe(true)
   })
 })

@@ -46,7 +46,7 @@ const sizeClasses = computed(() => {
       return 'h-10 text-base px-3.5'
     case 'md':
     default:
-      return 'h-[34px] text-sm px-2.5'
+      return 'h-[var(--control-height,34px)] text-sm px-2.5'
   }
 })
 
@@ -62,12 +62,12 @@ function handleClear() {
 
 <template>
   <div
-    class="relative inline-flex items-center text-slate-800 dark:text-slate-100"
+    class="relative inline-flex items-center text-platform-text"
     :class="[block ? 'w-full flex' : '']"
   >
     <div
       v-if="$slots.prefix"
-      class="absolute left-2.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500"
+      class="absolute left-2.5 flex items-center pointer-events-none text-platform-text-muted"
     >
       <slot name="prefix" />
     </div>
@@ -79,14 +79,14 @@ function handleClear() {
       :disabled="disabled"
       :readonly="readonly"
       v-bind="$attrs"
-      class="w-full rounded bg-white dark:bg-slate-900 border text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+      class="w-full rounded-[var(--radius,6px)] bg-platform-surface border text-platform-text placeholder-platform-text-muted outline-none transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
       :class="[
         sizeClasses,
         $slots.prefix ? 'pl-8' : '',
         $slots.suffix || clearable ? 'pr-8' : '',
         error
-          ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-          : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 focus:border-blue-500 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20',
+          ? 'border-platform-danger focus:border-platform-danger focus:ring-2 focus:ring-platform-danger/20'
+          : 'border-platform-border hover:border-platform-border-strong focus:border-platform-primary focus:ring-2 focus:ring-platform-primary/20',
       ]"
       @input="onInput"
       @change="$emit('change', $event)"
@@ -97,7 +97,7 @@ function handleClear() {
     <button
       v-if="clearable && !disabled && !readonly && modelValue !== ''"
       type="button"
-      class="absolute right-2 flex items-center justify-center w-4 h-4 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+      class="absolute right-2 flex items-center justify-center w-4 h-4 rounded-full text-platform-text-muted hover:text-platform-text"
       title="清空"
       aria-label="清空内容"
       @click="handleClear"

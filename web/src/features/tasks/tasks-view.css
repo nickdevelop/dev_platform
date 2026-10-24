@@ -34,8 +34,8 @@
 
 .sidebar-head h2 {
   margin: 0;
-  font-size: 1.15rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
   color: var(--color-text);
 }
 

@@ -323,8 +323,8 @@ async function onDeleteSession(projectId: number, sessionId: string) {
         class="project-row group flex items-center justify-between px-2 py-1.5 rounded transition-colors"
         :class="[
           project.id === props.activeProjectId
-            ? 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
-            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70',
+            ? 'bg-platform-primary-soft text-platform-primary font-medium'
+            : 'text-platform-text hover:bg-platform-surface-muted',
         ]"
       >
         <button
@@ -333,9 +333,9 @@ async function onDeleteSession(projectId: number, sessionId: string) {
           :aria-expanded="isExpanded(project.id)"
           @click.stop="onProjectClick(project.id)"
         >
-          <span class="caret text-xs text-slate-400 w-3.5 inline-block text-center">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
-          <span class="project-name truncate font-medium">{{ project.name }}</span>
-          <span v-if="isExpanded(project.id)" class="count px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+          <span class="caret text-xs text-platform-text-muted w-3.5 inline-block text-center">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
+          <span class="project-name truncate font-medium text-sm">{{ project.name }}</span>
+          <span v-if="isExpanded(project.id)" class="count px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-platform-surface-muted text-platform-text-muted border border-platform-border">
             {{ sessionsFor(project.id).length }}
           </span>
         </button>
@@ -343,7 +343,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
         <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
             type="button"
-            class="project-new-session w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 font-bold transition-colors"
+            class="project-new-session w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text font-bold transition-colors"
             :aria-label="`新建会话：${project.name}`"
             title="新建会话"
             @click.stop="emit('new-session', project.id)"
@@ -352,7 +352,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
           </button>
           <button
             type="button"
-            class="project-settings w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 text-xs transition-colors"
+            class="project-settings w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text text-xs transition-colors"
             :aria-label="`项目设置：${project.name}`"
             title="项目设置"
             @click.stop="emit('open-settings', project.id)"
@@ -362,7 +362,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
         </div>
       </div>
 
-      <ul v-if="isExpanded(project.id)" class="sessions ml-3.5 pl-2 border-l border-slate-200 dark:border-slate-800 space-y-1 my-1">
+      <ul v-if="isExpanded(project.id)" class="sessions ml-3.5 pl-2 border-l border-platform-border space-y-1 my-1">
         <li
           v-for="entry in visibleSessionsFor(project.id)"
           :key="entry.id"
@@ -373,8 +373,8 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             class="session-open p-2 rounded cursor-pointer transition-colors border"
             :class="[
               entry.id === props.activeSessionId
-                ? 'bg-white dark:bg-slate-800/90 border-blue-200 dark:border-blue-800/60 shadow-sm'
-                : 'border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/40 hover:border-slate-200/50 dark:hover:border-slate-700/50',
+                ? 'bg-platform-surface border-platform-primary/40 shadow-sm text-platform-text'
+                : 'border-transparent hover:bg-platform-surface-muted hover:border-platform-border text-platform-text',
             ]"
             role="button"
             tabindex="0"
@@ -385,16 +385,16 @@ async function onDeleteSession(projectId: number, sessionId: string) {
           >
             <div class="session-row-top flex items-center gap-1.5 mb-1">
               <RunningIndicator v-if="isRunning(entry)" />
-              <span class="title truncate text-xs font-medium text-slate-800 dark:text-slate-200" :title="entry.title || untitledLabel">
+              <span class="title truncate text-sm font-medium text-platform-text" :title="entry.title || untitledLabel">
                 {{ entry.title || untitledLabel }}
               </span>
             </div>
-            <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-slate-400">
+            <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-platform-text-muted">
               <div class="session-bottom-left flex items-center gap-1.5 shrink-0">
                 <BackendTag :backend="entry.backend" />
                 <span
                   v-if="sessionModelLabel(entry)"
-                  class="session-model font-mono text-[10px] text-slate-400 max-w-[80px] truncate"
+                  class="session-model font-mono text-[10px] text-platform-text-muted max-w-[80px] truncate"
                   :title="sessionModelFull(entry)"
                   data-test="session-model"
                 >

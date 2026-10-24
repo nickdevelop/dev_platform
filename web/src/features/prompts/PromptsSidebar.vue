@@ -227,8 +227,8 @@ function onSaved(prompt: Prompt) {
 }
 
 .placeholder-tag {
-  font-size: 0.6875rem;
-  padding: 1px 4px;
+  font-size: 0.75rem;
+  padding: 1px 5px;
   border-radius: 3px;
   background: var(--color-primary-soft);
   color: var(--color-primary);

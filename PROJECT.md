@@ -67,7 +67,7 @@
 | **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史、文件树遍历。 | `service.go`（项目生命周期）、`files.go`（工作区文件树与内容读取）、`git.go` / `git_status.go`（Git CLI 操作集成） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
-| **`chat/`** | 纯模型非 Agent 直接对话系统。支持对话两级树形导航与分组、多轮消息持久化、多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；内置“快捷助手”固定分组治理。 | `service.go`（对话与分组管理、固定分组锁定）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；固定分组不可改名/删除，对话不可移入或移出。 |
+| **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现。 |
 | **`tasks/`** | 计划任务与自动化调度引擎。支持标准 Cron 表达式与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。 | `handlers.go`（WebSocket 升级与同源拦截）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
@@ -77,7 +77,7 @@
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题、快捷助手开关、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v29 迁移链，含 `agent_models` / `agent_model_catalogs` 与 `chat_groups.system_key`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v30 迁移链，含 `agent_models` / `agent_model_catalogs` 与 `chat_groups` 助手扩展字段及 `chats.system_prompt`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -318,13 +318,14 @@ web/src/
                     │
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)
-   - 以 480×600 打开最近一条快捷对话，或进入新对话
-   - 复用 MessageView / ChatComposer；独立 quickAssistant store
+   - 以 480×600 打开所选助手的对话弹窗，或直接开启新对话
+   - 显示所选助手的名称、图标与专属模型，独立 quickAssistant store
                     │
                     ▼
 4. 纯 Chat 领域 (internal/app/chat)
-   - 对话创建时指定 system_key=quick-assistant 的固定分组
-   - 固定分组不可改名/删除，对话不可移入或移出
+   - 助手具备默认模型、系统提示词、自定义图标和浮窗配置
+   - 新建对话在指定助手下创建，系统提示词隐式注入模型上下文且不污染消息列表
+   - 彻底解除历史固定分组锁定限制，所有助手平级可管理
    - 主 Chat 页面与弹窗各自维护 SSE 流，互不关闭
 ```
 

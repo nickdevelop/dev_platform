@@ -5065,12 +5065,19 @@ components:
           format: int64
         name:
           type: string
+        defaultModelId:
+          type: integer
+          format: int64
+        systemPrompt:
+          type: string
+        icon:
+          type: string
+        showInFloat:
+          type: boolean
         systemKey:
           type: string
           description: >-
-            Marks a platform-reserved group. Currently quick-assistant; such a
-            group cannot be renamed or deleted and conversations cannot be
-            moved into or out of it.
+            Legacy platform-reserved key, now nullable and deprecated.
         createdAt:
           type: string
           format: date-time
@@ -5091,6 +5098,15 @@ components:
       properties:
         name:
           type: string
+        defaultModelId:
+          type: integer
+          format: int64
+        systemPrompt:
+          type: string
+        icon:
+          type: string
+        showInFloat:
+          type: boolean
     Chat:
       type: object
       required: [id, title, modelId, modelName, running, createdAt, updatedAt]

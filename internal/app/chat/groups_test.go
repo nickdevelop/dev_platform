@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +18,7 @@ import (
 func TestChatGroupLifecycleAndCascade(t *testing.T) {
 	service, repo, _ := testService(t, nil)
 
-	// 1. List groups: the platform seeds the fixed quick-assistant group first.
+	// 1. List groups: the platform seeds the initial quick-assistant group as an unlocked assistant.
 	groups, err := service.ListGroups()
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)
@@ -25,8 +26,8 @@ func TestChatGroupLifecycleAndCascade(t *testing.T) {
 	if len(groups) != 1 {
 		t.Fatalf("expected 1 seeded group, got %d", len(groups))
 	}
-	if groups[0].SystemKey != SystemKeyQuickAssistant || groups[0].Name != QuickAssistantGroupName {
-		t.Fatalf("unexpected seeded group: %+v", groups[0])
+	if groups[0].Name != QuickAssistantGroupName {
+		t.Fatalf("unexpected seeded group name: %s", groups[0].Name)
 	}
 
 	// 2. Validation: empty name
@@ -178,73 +179,107 @@ func TestChatGroupHTTPHandlers(t *testing.T) {
 	}
 }
 
-func TestQuickAssistantGroupIsLockedAndExclusive(t *testing.T) {
-	service, _, _ := testService(t, nil)
+func TestAssistantAttributesAndUnlocked(t *testing.T) {
+	fake := &fakeCompleter{}
+	service, repo, _ := testService(t, fake)
 
 	groups, err := service.ListGroups()
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)
 	}
-	var system ChatGroup
-	for _, group := range groups {
-		if group.SystemKey == SystemKeyQuickAssistant {
-			system = group
-			break
-		}
+	if len(groups) == 0 {
+		t.Fatal("expected at least one seeded group")
 	}
-	if system.ID == 0 {
-		t.Fatal("seeded quick-assistant group not found")
+	seeded := groups[0]
+
+	// 1. Fixed group is removed/unlocked: can be updated with full assistant attributes
+	updated, err := service.UpdateGroup(seeded.ID, UpdateGroupInput{
+		Name:           "智能编程助手",
+		DefaultModelID: 1,
+		SystemPrompt:   "你是一个资深架构师，请严谨回答问题。",
+		Icon:           "💻",
+		ShowInFloat:    true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateGroup: %v", err)
+	}
+	if updated.Name != "智能编程助手" || updated.DefaultModelID != 1 || updated.SystemPrompt != "你是一个资深架构师，请严谨回答问题。" || updated.Icon != "💻" || !updated.ShowInFloat {
+		t.Fatalf("unexpected updated assistant: %+v", updated)
 	}
 
-	if _, err := service.UpdateGroup(system.ID, UpdateGroupInput{Name: "改名"}); !errors.Is(err, ErrGroupLocked) {
-		t.Fatalf("UpdateGroup on reserved group: got %v, want ErrGroupLocked", err)
-	}
-	if err := service.DeleteGroup(system.ID); !errors.Is(err, ErrGroupLocked) {
-		t.Fatalf("DeleteGroup on reserved group: got %v, want ErrGroupLocked", err)
-	}
-
-	normal, err := service.CreateGroup(CreateGroupInput{Name: "普通分组"})
+	// 2. Create another assistant
+	other, err := service.CreateGroup(CreateGroupInput{
+		Name:           "文案小助手",
+		DefaultModelID: 1,
+		SystemPrompt:   "你是一个文案专家。",
+		Icon:           "✍️",
+		ShowInFloat:    false,
+	})
 	if err != nil {
 		t.Fatalf("CreateGroup: %v", err)
 	}
 
-	normalChat, err := service.Create(context.Background(), CreateInput{
-		GroupID: &normal.ID,
+	// 3. Create chat under assistant: system prompt must be injected into completion context, but not in visible messages
+	chat, err := service.Create(context.Background(), CreateInput{
+		GroupID: &updated.ID,
 		ModelID: 1,
-		Text:    "普通对话",
+		Text:    "请写一个快速排序算法",
 	})
 	if err != nil {
-		t.Fatalf("Create normal chat: %v", err)
+		t.Fatalf("Create chat under assistant: %v", err)
 	}
-	if _, err := service.Update(normalChat.ID, UpdateInput{GroupID: &system.ID}); !errors.Is(err, ErrGroupLocked) {
-		t.Fatalf("move into reserved group: got %v, want ErrGroupLocked", err)
-	}
-
-	quickChat, err := service.Create(context.Background(), CreateInput{
-		GroupID: &system.ID,
-		ModelID: 1,
-		Text:    "快捷助手对话",
-	})
-	if err != nil {
-		t.Fatalf("Create quick chat: %v", err)
-	}
-	if _, err := service.Update(quickChat.ID, UpdateInput{GroupID: &normal.ID}); !errors.Is(err, ErrGroupLocked) {
-		t.Fatalf("move out of reserved group: got %v, want ErrGroupLocked", err)
-	}
-	if _, err := service.Update(quickChat.ID, UpdateInput{GroupID: &system.ID}); err != nil {
-		t.Fatalf("no-op move inside reserved group: %v", err)
+	if chat.GroupID != updated.ID {
+		t.Fatalf("expected chat.GroupID = %d, got %d", updated.ID, chat.GroupID)
 	}
 
-	chats, total, err := service.ListByGroup(system.ID, 10, 0)
-	if err != nil {
-		t.Fatalf("ListByGroup: %v", err)
+	// Wait briefly for generation goroutine to start
+	time.Sleep(50 * time.Millisecond)
+
+	fake.mu.Lock()
+	reqCount := len(fake.requests)
+	var firstReq CompletionRequest
+	if reqCount > 0 {
+		firstReq = fake.requests[0]
 	}
-	if total != 1 || len(chats) != 1 || chats[0].ID != quickChat.ID {
-		t.Fatalf("ListByGroup = %+v total=%d, want only chat %d", chats, total, quickChat.ID)
+	fake.mu.Unlock()
+
+	if reqCount == 0 {
+		t.Fatal("expected at least 1 completion request")
+	}
+	if len(firstReq.Messages) < 2 {
+		t.Fatalf("expected at least 2 messages (system + user), got %d", len(firstReq.Messages))
+	}
+	if firstReq.Messages[0].Role != "system" || firstReq.Messages[0].Text != "你是一个资深架构师，请严谨回答问题。" {
+		t.Fatalf("unexpected first message in completion: %+v", firstReq.Messages[0])
+	}
+
+	// Verify visible messages in repo do NOT contain system message
+	messages, err := repo.ListMessages(chat.ID)
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			t.Fatalf("system prompt should not be visible in chat messages: %+v", msg)
+		}
+	}
+
+	// 4. Move chat between assistants is allowed without locked error
+	moved, err := service.Update(chat.ID, UpdateInput{GroupID: &other.ID})
+	if err != nil {
+		t.Fatalf("Update chat groupId between assistants: %v", err)
+	}
+	if moved.GroupID != other.ID {
+		t.Fatalf("expected moved.GroupID = %d, got %d", other.ID, moved.GroupID)
+	}
+
+	// 5. Delete assistant is allowed
+	if err := service.DeleteGroup(other.ID); err != nil {
+		t.Fatalf("DeleteGroup: %v", err)
 	}
 }
 
-func TestChatListGroupFilterAndLockedHTTP(t *testing.T) {
+func TestChatListGroupFilterHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, _ := testService(t, nil)
 	r := gin.New()
@@ -254,37 +289,31 @@ func TestChatListGroupFilterAndLockedHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListGroups: %v", err)
 	}
-	system := groups[0]
-	if system.SystemKey != SystemKeyQuickAssistant {
-		t.Fatalf("first group is not the reserved one: %+v", system)
-	}
+	seeded := groups[0]
 
-	// The reserved group rejects rename and delete with 409.
-	body, _ := json.Marshal(map[string]any{"name": "cannot"})
-	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/chat-groups/%d", system.ID), bytes.NewReader(body))
+	// Updating assistant via HTTP returns 200 with new attributes
+	body, _ := json.Marshal(map[string]any{
+		"name":           "更新助手名称",
+		"defaultModelId": 1,
+		"systemPrompt":   "系统提示词",
+		"icon":           "🤖",
+		"showInFloat":    true,
+	})
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/chat-groups/%d", seeded.ID), bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("PUT reserved group: %d, want 409: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT group: %d, want 200: %s", w.Code, w.Body.String())
 	}
-	var envelope struct {
-		Error string `json:"error"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &envelope)
-	if envelope.Error != "group_locked" {
-		t.Fatalf("error = %q, want group_locked", envelope.Error)
-	}
-
-	req = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/chat-groups/%d", system.ID), nil)
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("DELETE reserved group: %d, want 409", w.Code)
+	var resp ChatGroup
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Name != "更新助手名称" || resp.Icon != "🤖" || !resp.ShowInFloat {
+		t.Fatalf("unexpected group response: %+v", resp)
 	}
 
 	// A group filter returns only that group's chats.
-	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/chats?groupId=%d&limit=10", system.ID), nil)
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/chats?groupId=%d&limit=10", seeded.ID), nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -295,7 +324,7 @@ func TestChatListGroupFilterAndLockedHTTP(t *testing.T) {
 		t.Fatalf("decode chat list: %v", err)
 	}
 	if listed.Total != 0 || len(listed.Chats) != 0 {
-		t.Fatalf("empty reserved group returned %+v", listed)
+		t.Fatalf("empty group returned %+v", listed)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/chats?groupId=abc", nil)

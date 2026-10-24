@@ -176,7 +176,7 @@ describe('quick assistant launcher', () => {
     expect(wrapper.find('[data-test="quick-assistant-panel"]').exists()).toBe(false)
     const button = wrapper.find('[data-test="quick-assistant-button"]')
     expect(button.attributes('aria-expanded')).toBe('false')
-    expect(button.text()).toBe('')
+    expect(button.text()).toBe('快')
 
     await button.trigger('click')
     await flushPromises()

@@ -13,8 +13,10 @@ export type ChatTurnOutcome = 'completed' | 'cancelled' | 'failed'
 export interface ChatGroup {
   id: number
   name: string
-  // systemKey marks a platform-reserved group (currently quick-assistant).
-  // Such a group cannot be renamed/deleted and chats cannot move in or out.
+  defaultModelId?: number
+  systemPrompt?: string
+  icon?: string
+  showInFloat?: boolean
   systemKey?: string
   createdAt: string
   updatedAt: string
@@ -26,6 +28,10 @@ export interface ChatGroupList {
 
 export interface ChatGroupInput {
   name: string
+  defaultModelId?: number
+  systemPrompt?: string
+  icon?: string
+  showInFloat?: boolean
 }
 
 export interface Chat {

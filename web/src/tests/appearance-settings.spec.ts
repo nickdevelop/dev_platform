@@ -132,14 +132,15 @@ describe('AppearanceSettings', () => {
     const calls = stubFetch()
     const { wrapper } = await mountSettings()
 
-    await wrapper.find('[data-font-size]').setValue('18')
+    expect(wrapper.findAll('[data-font-size-option]')).toHaveLength(3)
+    await wrapper.find('[data-font-size-option="large"]').trigger('click')
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
     const keys = Object.keys(put?.body as object).sort()
     expect(keys).toEqual(expect.arrayContaining(['density', 'fontSize', 'theme']))
-    expect(put?.body).toMatchObject({ fontSize: 18 })
-    expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('18px')
+    expect(put?.body).toMatchObject({ fontSize: 16 })
+    expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('16px')
   })
 
   it('saves plantuml mode and server url changes', async () => {

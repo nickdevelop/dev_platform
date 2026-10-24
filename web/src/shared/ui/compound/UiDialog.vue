@@ -68,7 +68,7 @@ function onKeydown(event: KeyboardEvent) {
   >
     <div
       ref="panel"
-      class="relative bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded border border-slate-200 dark:border-slate-800 shadow-xl max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
+      class="relative bg-platform-surface text-platform-text rounded-[var(--radius,6px)] border border-platform-border shadow-xl max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
       :class="widthClass"
       role="dialog"
       aria-modal="true"
@@ -77,15 +77,15 @@ function onKeydown(event: KeyboardEvent) {
     >
       <div
         v-if="title || showClose"
-        class="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 shrink-0"
+        class="flex items-center justify-between px-5 py-3.5 border-b border-platform-border shrink-0"
       >
-        <h3 class="font-medium text-base text-slate-900 dark:text-slate-100 truncate">
+        <h3 class="font-medium text-base text-platform-text truncate">
           <slot name="title">{{ title }}</slot>
         </h3>
         <button
           v-if="showClose"
           type="button"
-          class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded transition-colors"
+          class="text-platform-text-muted hover:text-platform-text p-1 rounded transition-colors"
           title="关闭"
           aria-label="关闭对话框"
           @click="emit('close')"
@@ -100,7 +100,7 @@ function onKeydown(event: KeyboardEvent) {
 
       <div
         v-if="$slots.footer"
-        class="flex items-center justify-end gap-2.5 px-5 py-3 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-100 dark:border-slate-800 shrink-0"
+        class="flex items-center justify-end gap-2.5 px-5 py-3 bg-platform-surface-muted border-t border-platform-border shrink-0"
       >
         <slot name="footer" />
       </div>

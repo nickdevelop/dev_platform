@@ -92,6 +92,13 @@ const streamBanner = computed(() => {
 
 function ensureDraftModel() {
   if (props.chatId !== undefined) return
+  if (
+    chats.selectedGroup?.defaultModelId &&
+    usableModels.value.some((m) => m.id === chats.selectedGroup?.defaultModelId)
+  ) {
+    modelId.value = chats.selectedGroup.defaultModelId
+    return
+  }
   if (modelId.value !== null && usableModels.value.some((model) => model.id === modelId.value)) return
   const stored = chats.draftModelId
   if (stored !== null && usableModels.value.some((model) => model.id === stored)) {
@@ -107,7 +114,9 @@ async function bootstrap() {
   images.value = []
   minModelNotice.value = ''
   chats.clearErrors()
-  if (props.chatId === undefined) chats.startNewChat()
+  if (props.chatId === undefined && chats.selectedGroupId === null && chats.groups.length > 0) {
+    chats.selectedGroupId = chats.groups[0].id
+  }
   if (models.services.length === 0) await models.load()
   if (props.chatId === undefined) {
     ensureDraftModel()
@@ -213,7 +222,13 @@ async function submit() {
   }
 
   if (props.chatId === undefined) {
-    const chat = await chats.createAndSend(content, images.value, modelId.value)
+    const targetGroupId =
+      chats.selectedGroupId !== null
+        ? chats.selectedGroupId
+        : chats.groups[0]?.id !== undefined
+          ? chats.groups[0].id
+          : undefined
+    const chat = await chats.createAndSend(content, images.value, modelId.value, targetGroupId)
     if (!chat) return
     text.value = ''
     images.value = []
@@ -321,9 +336,9 @@ function reconnect() {
       >
         <div v-if="activeID === null" class="chat-welcome max-w-lg mx-auto mt-[12vh] text-center text-slate-500">
           <UiEmpty
-            title="开始新的对话"
-            description="选择一个模型，然后输入消息。对话会保存在平台中，刷新后可继续。"
-            icon="💬"
+            :title="chats.selectedGroup ? `与「${chats.selectedGroup.name}」开始新对话` : '开始新的对话'"
+            :description="chats.selectedGroup ? '输入消息即可开始交流，助手的系统提示词将自动注入到模型上下文中。' : '请从左侧选择一个助手发起对话。'"
+            :icon="chats.selectedGroup?.icon || '💬'"
           >
             <template v-if="!hasModels" #description>
               <p class="chat-welcome-warning text-xs text-amber-600 dark:text-amber-400">

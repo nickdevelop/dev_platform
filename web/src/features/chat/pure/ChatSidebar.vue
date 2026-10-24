@@ -100,13 +100,18 @@ function chatsForGroup(groupId: number): Chat[] {
   return chats.chats.filter((c) => (c.groupId ?? 0) === groupId)
 }
 
-function isSystemGroup(group: ChatGroup): boolean {
-  return (group.systemKey ?? '') !== ''
+function getAssistantIcon(group: ChatGroup): string {
+  if (group.icon && group.icon.trim()) return group.icon.trim()
+  const trimmed = group.name.trim()
+  return trimmed ? Array.from(trimmed)[0].toUpperCase() : '助'
 }
 
-function isSystemChat(chat: Chat): boolean {
-  const group = chats.groups.find((entry) => entry.id === (chat.groupId ?? 0))
-  return group !== undefined && isSystemGroup(group)
+function isSystemGroup(_group: ChatGroup): boolean {
+  return false
+}
+
+function isSystemChat(_chat: Chat): boolean {
+  return false
 }
 
 const ungroupedChats = computed(() => {
@@ -170,8 +175,8 @@ function openMoveChat(chat: Chat) {
 async function onDeleteGroup(group: ChatGroup) {
   const count = chatsForGroup(group.id).length
   const msg = count > 0
-    ? `确定要删除分组「${group.name}」吗？\n该分组下的 ${count} 个对话将一并删除！`
-    : `确定要删除分组「${group.name}」吗？`
+    ? `确定要删除助手「${group.name}」吗？\n该助手下的 ${count} 个对话将一并删除！`
+    : `确定要删除助手「${group.name}」吗？`
   if (!window.confirm(msg)) return
 
   const success = await chats.deleteGroup(group.id)
@@ -217,11 +222,8 @@ function formatChatTime(isoString?: string): string {
 <template>
   <div class="chat-sidebar">
     <div class="sidebar-actions">
-      <button type="button" class="action-btn new-chat-btn" data-test="chat-new-btn" @click="startNewChat()">
-        + 新对话
-      </button>
       <button type="button" class="action-btn new-group-btn" data-test="chat-new-group-btn" @click="openCreateGroup">
-        + 新建分组
+        + 新建助手
       </button>
     </div>
 
@@ -229,8 +231,8 @@ function formatChatTime(isoString?: string): string {
       v-model="search"
       type="search"
       class="search"
-      placeholder="搜索分组或对话"
-      aria-label="搜索分组或对话"
+      placeholder="搜索助手或对话"
+      aria-label="搜索助手或对话"
     />
 
     <p v-if="chats.listError || chats.groupsError" class="list-error" role="alert">
@@ -238,8 +240,8 @@ function formatChatTime(isoString?: string): string {
     </p>
 
     <div class="tree-container" data-test="chat-tree">
-      <!-- Chat Groups -->
-      <ul class="group-tree" aria-label="对话分组">
+      <!-- Chat Assistants -->
+      <ul class="group-tree" aria-label="助手列表">
         <li v-for="{ group, chats: groupChats } in visibleGroups" :key="group.id" class="group-item">
           <div class="group-row" :class="{ expanded: isGroupExpanded(group.id) }">
             <button
@@ -249,12 +251,12 @@ function formatChatTime(isoString?: string): string {
               @click.stop="toggleGroup(group.id)"
             >
               <span class="caret">{{ isGroupExpanded(group.id) ? '▾' : '▸' }}</span>
+              <span class="assistant-badge" :title="group.name">{{ getAssistantIcon(group) }}</span>
               <span class="group-name" :title="group.name">{{ group.name }}</span>
-              <span v-if="isSystemGroup(group)" class="system-badge">固定</span>
               <span class="count">{{ chatsForGroup(group.id).length }}</span>
             </button>
 
-            <div v-if="!isSystemGroup(group)" class="group-controls">
+            <div class="group-controls">
               <button
                 type="button"
                 class="icon-btn"
@@ -267,8 +269,8 @@ function formatChatTime(isoString?: string): string {
               <button
                 type="button"
                 class="icon-btn"
-                :aria-label="`重命名分组「${group.name}」`"
-                title="重命名分组"
+                :aria-label="`编辑助手「${group.name}」`"
+                title="编辑助手"
                 @click.stop="openRenameGroup(group)"
               >
                 ✎
@@ -276,8 +278,8 @@ function formatChatTime(isoString?: string): string {
               <button
                 type="button"
                 class="icon-btn danger"
-                :aria-label="`删除分组「${group.name}」`"
-                title="删除分组"
+                :aria-label="`删除助手「${group.name}」`"
+                title="删除助手"
                 @click.stop="onDeleteGroup(group)"
               >
                 🗑
@@ -285,7 +287,7 @@ function formatChatTime(isoString?: string): string {
             </div>
           </div>
 
-          <!-- Group Conversations -->
+          <!-- Assistant Conversations -->
           <ul v-if="isGroupExpanded(group.id)" class="chat-sublist">
             <li v-for="chat in groupChats" :key="chat.id" class="chat-subitem">
               <div
@@ -310,11 +312,10 @@ function formatChatTime(isoString?: string): string {
                   <RunningIndicator v-if="chat.running" label="生成中" class="chat-item-running" />
                   <div class="item-actions">
                     <button
-                      v-if="!isSystemChat(chat)"
                       type="button"
                       class="mini-btn"
-                      title="移动到其他分组"
-                      aria-label="移动到其他分组"
+                      title="移动到其他助手"
+                      aria-label="移动到其他助手"
                       @click.stop="openMoveChat(chat)"
                     >
                       ⇄
@@ -351,17 +352,6 @@ function formatChatTime(isoString?: string): string {
               <span class="group-name">未分组对话</span>
               <span class="count">{{ ungroupedChats.length }}</span>
             </button>
-            <div class="group-controls">
-              <button
-                type="button"
-                class="icon-btn"
-                title="新建未分组对话"
-                aria-label="新建未分组对话"
-                @click.stop="startNewChat(0)"
-              >
-                ＋
-              </button>
-            </div>
           </div>
 
           <ul v-if="query !== '' || expandedUngrouped" class="chat-sublist">
@@ -390,8 +380,8 @@ function formatChatTime(isoString?: string): string {
                     <button
                       type="button"
                       class="mini-btn"
-                      title="移动到分组"
-                      aria-label="移动到分组"
+                      title="移动到其他助手"
+                      aria-label="移动到其他助手"
                       @click.stop="openMoveChat(chat)"
                     >
                       ⇄
@@ -417,7 +407,7 @@ function formatChatTime(isoString?: string): string {
         v-if="!chats.loading && visibleGroups.length === 0 && visibleUngroupedChats.length === 0"
         class="empty"
       >
-        {{ query ? '没有匹配的分组或对话。' : '还没有对话，点击「+ 新对话」开始。' }}
+        {{ query ? '没有匹配的助手或对话。' : '还没有助手，点击「+ 新建助手」开始。' }}
       </p>
     </div>
 
@@ -574,6 +564,21 @@ function formatChatTime(isoString?: string): string {
   padding: 0 0.5em;
   font-weight: normal;
   flex-shrink: 0;
+}
+
+.assistant-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
+  color: var(--color-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  user-select: none;
 }
 
 .system-badge {

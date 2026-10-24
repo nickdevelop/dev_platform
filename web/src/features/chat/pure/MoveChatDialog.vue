@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import type { Chat } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
-import AppDialog from '../../../shared/components/AppDialog.vue'
+import { UiButton, UiDialog } from '../../../shared/ui'
 
 const props = defineProps<{
   chat: Chat
@@ -36,7 +36,7 @@ async function onSubmit() {
 </script>
 
 <template>
-  <AppDialog :title="`移动对话「${chat.title || '未命名对话'}」`" @close="emit('close')">
+  <UiDialog :title="`移动对话「${chat.title || '未命名对话'}」`" width-class="w-full max-w-md" @close="emit('close')">
     <form class="move-form" @submit.prevent="onSubmit">
       <label class="field">
         <span class="label-text">选择目标分组</span>
@@ -55,13 +55,13 @@ async function onSubmit() {
       <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 
       <div class="actions">
-        <button type="button" class="btn cancel" @click="emit('close')">取消</button>
-        <button type="submit" class="btn submit" :disabled="submitting">
+        <UiButton variant="secondary" type="button" @click="emit('close')">取消</UiButton>
+        <UiButton variant="primary" type="submit" :disabled="submitting">
           {{ submitting ? '移动中…' : '确认移动' }}
-        </button>
+        </UiButton>
       </div>
     </form>
-  </AppDialog>
+  </UiDialog>
 </template>
 
 <style scoped>

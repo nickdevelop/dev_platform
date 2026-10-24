@@ -475,27 +475,38 @@ func TestDatabaseFileStaysUnderDataDir(t *testing.T) {
 	}
 }
 
-func TestMigrateSeedsQuickAssistantChatGroup(t *testing.T) {
+func TestMigrateExtendsChatGroupsAsAssistants(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)
 
-	var group ChatGroup
-	if err := db.Where("system_key = ?", "quick-assistant").First(&group).Error; err != nil {
-		t.Fatalf("load seeded quick-assistant group: %v", err)
+	// Verify chat_groups table has assistant extension columns.
+	if !db.Migrator().HasColumn(&ChatGroup{}, "default_model_id") {
+		t.Error("chat_groups missing default_model_id column")
 	}
-	if group.Name != "快捷助手" || group.SystemKey == nil || *group.SystemKey != "quick-assistant" {
-		t.Fatalf("seeded group = %+v, want quick-assistant/快捷助手", group)
+	if !db.Migrator().HasColumn(&ChatGroup{}, "system_prompt") {
+		t.Error("chat_groups missing system_prompt column")
+	}
+	if !db.Migrator().HasColumn(&ChatGroup{}, "icon") {
+		t.Error("chat_groups missing icon column")
+	}
+	if !db.Migrator().HasColumn(&ChatGroup{}, "show_in_float") {
+		t.Error("chat_groups missing show_in_float column")
+	}
+	if !db.Migrator().HasColumn(&Chat{}, "system_prompt") {
+		t.Error("chats missing system_prompt column")
 	}
 
-	// A second migration pass must not duplicate the seeded row.
-	if err := Migrate(db); err != nil {
-		t.Fatalf("second Migrate: %v", err)
-	}
+	// Verify legacy fixed group has been unlocked (system_key cleared)
 	var count int64
 	if err := db.Model(&ChatGroup{}).Where("system_key = ?", "quick-assistant").Count(&count).Error; err != nil {
-		t.Fatalf("count seeded groups: %v", err)
+		t.Fatalf("count quick-assistant groups: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("quick-assistant group count = %d, want 1", count)
+	if count != 0 {
+		t.Fatalf("quick-assistant fixed group count = %d, want 0 (fixed group should be removed/unlocked)", count)
+	}
+
+	// A second migration pass must be idempotent.
+	if err := Migrate(db); err != nil {
+		t.Fatalf("second Migrate: %v", err)
 	}
 }

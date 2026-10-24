@@ -20,6 +20,7 @@ import {
   type Chat,
   type ChatDelta,
   type ChatGroup,
+  type ChatGroupInput,
   type ChatMessage,
   type ChatSnapshot,
   type ChatTurn,
@@ -68,6 +69,11 @@ export const useChatsStore = defineStore('chats', {
   }),
 
   getters: {
+    floatingAssistants: (state) => state.groups.filter((g) => g.showInFloat === true),
+    selectedGroup: (state) =>
+      state.selectedGroupId !== null
+        ? (state.groups.find((g) => g.id === state.selectedGroupId) ?? null)
+        : null,
     groupById: (state) => (id: number) => state.groups.find((g) => g.id === id),
     chatsByGroup: (state) => (groupId: number) =>
       state.chats.filter((c) => (c.groupId ?? 0) === groupId),
@@ -150,10 +156,11 @@ export const useChatsStore = defineStore('chats', {
       }
     },
 
-    async createGroup(name: string): Promise<ChatGroup | null> {
+    async createGroup(input: ChatGroupInput | string): Promise<ChatGroup | null> {
       this.actionError = ''
       try {
-        const created = await createChatGroup({ name })
+        const payload: ChatGroupInput = typeof input === 'string' ? { name: input } : input
+        const created = await createChatGroup(payload)
         this.groups.push(created)
         return created
       } catch (error) {
@@ -163,10 +170,10 @@ export const useChatsStore = defineStore('chats', {
       }
     },
 
-    async renameGroup(id: number, name: string): Promise<boolean> {
+    async updateGroup(id: number, input: ChatGroupInput): Promise<boolean> {
       this.actionError = ''
       try {
-        const updated = await updateChatGroup(id, { name })
+        const updated = await updateChatGroup(id, input)
         const idx = this.groups.findIndex((g) => g.id === id)
         if (idx >= 0) this.groups[idx] = updated
         return true
@@ -175,6 +182,17 @@ export const useChatsStore = defineStore('chats', {
         this.actionError = describeApiError(error)
         return false
       }
+    },
+
+    async renameGroup(id: number, name: string): Promise<boolean> {
+      const existing = this.groupById(id)
+      return this.updateGroup(id, {
+        name,
+        defaultModelId: existing?.defaultModelId,
+        systemPrompt: existing?.systemPrompt,
+        icon: existing?.icon,
+        showInFloat: existing?.showInFloat,
+      })
     },
 
     async deleteGroup(id: number): Promise<boolean> {
@@ -217,6 +235,12 @@ export const useChatsStore = defineStore('chats', {
       this.activeId = null
       this.active = null
       this.selectedGroupId = groupId !== undefined ? groupId : null
+      if (this.selectedGroupId !== null) {
+        const targetGroup = this.groups.find((g) => g.id === this.selectedGroupId)
+        if (targetGroup?.defaultModelId) {
+          this.draftModelId = targetGroup.defaultModelId
+        }
+      }
       this.closedReason = ''
       this.loadError = ''
       this.sendError = ''

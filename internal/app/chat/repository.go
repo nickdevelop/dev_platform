@@ -178,8 +178,12 @@ func (r *gormRepository) CreateGroup(group *ChatGroup) error {
 func (r *gormRepository) UpdateGroup(group *ChatGroup) error {
 	now := time.Now().UTC()
 	res := r.db.Model(&database.ChatGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
-		"name":       group.Name,
-		"updated_at": now,
+		"name":             group.Name,
+		"default_model_id": group.DefaultModelID,
+		"system_prompt":   group.SystemPrompt,
+		"icon":             group.Icon,
+		"show_in_float":    group.ShowInFloat,
+		"updated_at":       now,
 	})
 	if res.Error != nil {
 		return fmt.Errorf("chat: update group %d: %w", group.ID, res.Error)
@@ -442,23 +446,25 @@ func messageFromRowChecked(row database.ChatMessage) (Message, error) {
 
 func chatFromRow(row database.Chat) Chat {
 	return Chat{
-		ID:        row.ID,
-		GroupID:   row.GroupID,
-		Title:     row.Title,
-		ModelID:   row.ModelID,
-		ModelName: row.ModelName,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:           row.ID,
+		GroupID:      row.GroupID,
+		Title:        row.Title,
+		ModelID:      row.ModelID,
+		ModelName:    row.ModelName,
+		SystemPrompt: row.SystemPrompt,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
 	}
 }
 
 func chatToRow(chat Chat) database.Chat {
 	return database.Chat{
-		ID:        chat.ID,
-		GroupID:   chat.GroupID,
-		Title:     chat.Title,
-		ModelID:   chat.ModelID,
-		ModelName: chat.ModelName,
+		ID:           chat.ID,
+		GroupID:      chat.GroupID,
+		Title:        chat.Title,
+		ModelID:      chat.ModelID,
+		ModelName:    chat.ModelName,
+		SystemPrompt: chat.SystemPrompt,
 	}
 }
 
@@ -511,10 +517,14 @@ func usageOutput(usage *Usage) int {
 
 func chatGroupFromRow(row database.ChatGroup) ChatGroup {
 	group := ChatGroup{
-		ID:        row.ID,
-		Name:      row.Name,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:             row.ID,
+		Name:           row.Name,
+		DefaultModelID: row.DefaultModelID,
+		SystemPrompt:   row.SystemPrompt,
+		Icon:           row.Icon,
+		ShowInFloat:    row.ShowInFloat,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
 	}
 	if row.SystemKey != nil {
 		group.SystemKey = *row.SystemKey
@@ -524,8 +534,12 @@ func chatGroupFromRow(row database.ChatGroup) ChatGroup {
 
 func chatGroupToRow(group ChatGroup) database.ChatGroup {
 	row := database.ChatGroup{
-		ID:   group.ID,
-		Name: group.Name,
+		ID:             group.ID,
+		Name:           group.Name,
+		DefaultModelID: group.DefaultModelID,
+		SystemPrompt:   group.SystemPrompt,
+		Icon:           group.Icon,
+		ShowInFloat:    group.ShowInFloat,
 	}
 	if group.SystemKey != "" {
 		key := group.SystemKey

@@ -6,7 +6,7 @@
 // refresh.
 import { onMounted } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
-import { densities, themes } from '../../theme/presets'
+import { densities, fontSizes, resolveFontSizeKey, themes } from '../../theme/presets'
 import { UiAlert, UiInput } from '../../shared/ui'
 
 const settings = useSettingsStore()
@@ -20,9 +20,8 @@ function selectTheme(key: string) {
   if (settings.appearance.theme !== key) void settings.saveAppearance({ theme: key })
 }
 
-function updateFontSize(event: Event) {
-  const value = Number((event.target as HTMLInputElement).value)
-  if (Number.isFinite(value)) void settings.saveAppearance({ fontSize: value })
+function selectFontSize(value: number) {
+  if (settings.appearance.fontSize !== value) void settings.saveAppearance({ fontSize: value })
 }
 
 function selectDensity(key: string) {
@@ -79,19 +78,23 @@ async function toggleQuickAssistant(event: Event) {
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
       <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">字号</legend>
-      <label class="field flex flex-col gap-2 max-w-sm">
-        <span class="text-sm text-slate-700 dark:text-slate-300">字号（{{ settings.appearance.fontSize }}px）</span>
-        <input
-          type="range"
-          data-font-size
-          min="12"
-          max="20"
-          step="1"
-          class="accent-blue-600 cursor-pointer"
-          :value="settings.appearance.fontSize"
-          @change="updateFontSize"
-        />
-      </label>
+      <div class="font-size-row flex flex-wrap gap-3" data-font-size>
+        <button
+          v-for="opt in fontSizes"
+          :key="opt.key"
+          type="button"
+          class="font-size-option px-4 py-2 rounded border text-sm font-medium transition-colors select-none"
+          :class="[
+            resolveFontSizeKey(settings.appearance.fontSize) === opt.key
+              ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200',
+          ]"
+          :data-font-size-option="opt.key"
+          @click="selectFontSize(opt.value)"
+        >
+          {{ opt.label }}
+        </button>
+      </div>
     </fieldset>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">

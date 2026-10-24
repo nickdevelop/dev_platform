@@ -292,8 +292,8 @@ function onConnect(serverId: number) {
   margin-bottom: 12px;
   background: rgba(234, 179, 8, 0.1);
   border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
   color: #facc15;
   line-height: 1.4;
 }
@@ -314,18 +314,18 @@ function onConnect(serverId: number) {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .count-tag {
-  background: var(--color-surface-muted, #373842);
+  background: var(--color-surface-muted);
   padding: 1px 6px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 0.7rem;
 }
 
 .server-card {
@@ -333,21 +333,21 @@ function onConnect(serverId: number) {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  background: var(--color-surface-muted, #272832);
-  border: 1px solid var(--color-border, #3a3b48);
-  border-radius: 8px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
 
 .server-card:hover {
-  background: var(--color-bg, #2e2f3d);
-  border-color: var(--color-border-strong, #4f5062);
+  background: var(--color-bg);
+  border-color: var(--color-border-strong);
 }
 
 .server-card.active {
-  border-color: var(--color-primary, #3b82f6);
-  background: rgba(59, 130, 246, 0.08);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .server-card.disabled {
@@ -370,17 +370,17 @@ function onConnect(serverId: number) {
 }
 
 .server-name {
-  font-size: 13px;
+  font-size: 0.929rem;
   font-weight: 500;
-  color: var(--color-text, #fff);
+  color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .server-sub {
-  font-size: 11px;
-  color: var(--color-text-muted, #9ca3af);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
   overflow: hidden;
@@ -388,34 +388,34 @@ function onConnect(serverId: number) {
 }
 
 .badge {
-  font-size: 10px;
+  font-size: 0.7rem;
   padding: 1px 5px;
   border-radius: 4px;
   font-weight: 500;
 }
 
 .local-badge {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .badge.password {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .badge.key {
-  background: rgba(168, 85, 247, 0.15);
-  color: #c084fc;
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
 }
 
 .btn-connect {
   padding: 4px 10px;
-  background: var(--color-primary, #2563eb);
+  background: var(--color-primary);
   color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius);
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -441,10 +441,10 @@ function onConnect(serverId: number) {
 .btn-icon {
   background: transparent;
   border: none;
-  color: var(--color-text-muted, #9ca3af);
+  color: var(--color-text-muted);
   cursor: pointer;
   padding: 4px;
-  border-radius: 4px;
+  border-radius: var(--radius);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -452,13 +452,13 @@ function onConnect(serverId: number) {
 }
 
 .btn-icon:hover {
-  color: var(--color-text, #fff);
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .btn-icon.danger:hover {
-  color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .action-icon {
@@ -469,22 +469,22 @@ function onConnect(serverId: number) {
 .empty-state {
   padding: 16px 12px;
   text-align: center;
-  background: var(--color-surface-muted, #272832);
-  border: 1px dashed var(--color-border, #3a3b48);
-  border-radius: 8px;
+  background: var(--color-surface-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
 }
 
 .empty-tip {
-  font-size: 12px;
-  color: var(--color-text-muted, #9ca3af);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
   margin: 0 0 8px 0;
 }
 
 .btn-empty-add {
   background: transparent;
-  color: var(--color-primary, #3b82f6);
+  color: var(--color-primary);
   border: none;
-  font-size: 12px;
+  font-size: 0.8rem;
   cursor: pointer;
   padding: 0;
   text-decoration: underline;
@@ -501,24 +501,26 @@ function onConnect(serverId: number) {
 }
 
 .confirm-modal {
-  background: var(--color-surface, #20212a);
-  border: 1px solid var(--color-border, #3a3b48);
-  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
   padding: 20px;
   max-width: 360px;
   width: 90%;
-  color: #fff;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  color: var(--color-text);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
 }
 
 .confirm-modal h3 {
   margin: 0 0 10px 0;
-  font-size: 15px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
 }
 
 .confirm-modal p {
-  font-size: 13px;
-  color: var(--color-text-muted, #d1d5db);
+  font-size: 0.857rem;
+  color: var(--color-text-muted);
   line-height: 1.5;
   margin: 0 0 18px 0;
 }
@@ -532,20 +534,20 @@ function onConnect(serverId: number) {
 .btn-cancel {
   padding: 6px 12px;
   background: transparent;
-  color: var(--color-text-muted, #a1a1aa);
-  border: 1px solid var(--color-border, #3f3f46);
-  border-radius: 4px;
-  font-size: 13px;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.857rem;
   cursor: pointer;
 }
 
 .btn-danger {
   padding: 6px 14px;
-  background: #dc2626;
+  background: var(--color-danger);
   color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 13px;
+  border-radius: var(--radius);
+  font-size: 0.857rem;
   cursor: pointer;
 }
 
