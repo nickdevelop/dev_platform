@@ -51,22 +51,18 @@ const tooltipText = computed(() => {
   if (!props.usage) return ''
   const u = props.usage
   const usedText = `${u.estimated ? '~' : ''}${formatTokens(u.used)}`
-  const limitText = u.limit !== undefined ? ` / ${formatTokens(u.limit)}` : ''
-  let text = `${percentage.value}% · ${usedText}${limitText}`
-  if (props.contextDetail) {
-    text += ` (${props.contextDetail})`
+  const limitText = u.limit !== undefined ? formatTokens(u.limit) : ''
+  if (limitText) {
+    return `${usedText} / ${limitText} ${percentage.value}%`
   }
-  if (percentage.value >= 80) {
-    text += ' (接近上下文上限，可新建会话或输入 /compact 释放空间)'
-  }
-  return text
+  return `${usedText} ${percentage.value}%`
 })
 </script>
 
 <template>
   <div
     v-if="visible"
-    class="context-meter inline-flex items-center gap-1.5 h-7 px-2 rounded border transition-colors select-none text-xs leading-none cursor-default"
+    class="context-meter inline-flex items-center justify-center w-[28px] h-[28px] rounded-[6px] border transition-colors select-none text-xs leading-none cursor-default"
     :class="[
       isDanger
         ? 'danger bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'
@@ -108,6 +104,13 @@ const tooltipText = computed(() => {
         />
       </svg>
     </div>
-    <span class="meter-percent font-mono text-[11px] font-medium">{{ percentage }}%</span>
   </div>
 </template>
+
+<style scoped>
+.context-meter {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+}
+</style>

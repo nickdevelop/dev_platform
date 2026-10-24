@@ -13,7 +13,7 @@ describe('ContextUsageMeter', () => {
     expect(wrapper.find('.context-meter').exists()).toBe(false)
   })
 
-  it('renders 240-degree gauge and percentage for normal usage', () => {
+  it('renders 240-degree gauge and tooltip for normal usage', () => {
     const usage: ContextUsage = {
       used: 25000,
       limit: 100000,
@@ -33,9 +33,10 @@ describe('ContextUsageMeter', () => {
     expect(meter.exists()).toBe(true)
     expect(meter.classes()).not.toContain('warning')
     expect(meter.classes()).not.toContain('danger')
-    expect(meter.text()).toContain('25%')
-    expect(meter.attributes('title')).toContain('25% · 25k / 100k')
-    expect(meter.attributes('title')).toContain('↑20k ↓5k')
+    expect(meter.find('.meter-percent').exists()).toBe(false)
+    expect(meter.text()).toBe('')
+    expect(meter.attributes('title')).toBe('25k / 100k 25%')
+    expect(meter.attributes('title')).not.toContain('↑20k ↓5k')
 
     // SVG elements
     const svg = meter.find('svg')
@@ -60,7 +61,8 @@ describe('ContextUsageMeter', () => {
 
     const meter = wrapper.find('.context-meter')
     expect(meter.classes()).toContain('warning')
-    expect(meter.attributes('title')).toContain('接近上下文上限')
+    expect(meter.attributes('title')).toBe('85k / 100k 85%')
+    expect(meter.attributes('title')).not.toContain('接近上下文上限')
   })
 
   it('applies danger state when usage reaches 95%', () => {
@@ -78,5 +80,6 @@ describe('ContextUsageMeter', () => {
 
     const meter = wrapper.find('.context-meter')
     expect(meter.classes()).toContain('danger')
+    expect(meter.attributes('title')).toBe('96k / 100k 96%')
   })
 })

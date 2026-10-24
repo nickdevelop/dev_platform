@@ -1117,10 +1117,11 @@ describe('SessionChatPanel conversation layout', () => {
 
     const line = wrapper.find('[data-test="context-usage"]')
     expect(line.exists()).toBe(true)
-    expect(line.text()).toContain('8%')
-    expect(line.attributes('title')).toContain('8% · 10k / 128k')
-    expect(line.attributes('title')).toContain('↑8.0k')
-    expect(line.attributes('title')).toContain('↓2.0k')
+    expect(line.find('.meter-percent').exists()).toBe(false)
+    expect(line.text()).toBe('')
+    expect(line.attributes('title')).toBe('10k / 128k 8%')
+    expect(line.attributes('title')).not.toContain('↑8.0k')
+    expect(line.attributes('title')).not.toContain('↓2.0k')
   })
 
   it('shows context usage with dynamically reported session contextLimit when model catalog limit is absent', async () => {
@@ -1175,8 +1176,8 @@ describe('SessionChatPanel conversation layout', () => {
     // Now context-usage meter appears with 10% (10000 / 100000)
     const line = wrapper.find('[data-test="context-usage"]')
     expect(line.exists()).toBe(true)
-    expect(line.text()).toContain('10%')
-    expect(line.attributes('title')).toContain('10% · 10k / 100k')
+    expect(line.find('.meter-percent').exists()).toBe(false)
+    expect(line.attributes('title')).toBe('10k / 100k 10%')
   })
 
   it('deletes the session after a confirmation and returns to the project', async () => {
