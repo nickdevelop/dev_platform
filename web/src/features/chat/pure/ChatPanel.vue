@@ -10,7 +10,7 @@ import type { ChatEntry } from '../state/entry'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
 import { useBottomFollow } from '../../../shared/scrollFollow'
-import AppDialog from '../../../shared/components/AppDialog.vue'
+import { UiDialog, UiButton, UiInput, UiAlert, UiEmpty } from '../../../shared/ui'
 import MessageView from '../rendering/MessageView.vue'
 import ChatComposer from './ChatComposer.vue'
 import { reconnectChatStream } from './useChatStream'
@@ -124,9 +124,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  // The router replaces a keyed chat panel when switching conversations. If
-  // the next panel has already made its conversation active, leave that stream
-  // alone; only release the stream this panel actually owned.
   if (props.chatId === undefined) {
     if (chats.activeId === null) chats.closeActive()
     return
@@ -294,45 +291,51 @@ function reconnect() {
 </script>
 
 <template>
-  <section class="pure-chat" aria-label="Chat 对话" data-test="pure-chat">
-    <header v-if="activeID !== null && active" class="pure-chat-header">
-      <div class="pure-chat-title-row">
-        <h2 class="pure-chat-title">{{ active?.title || '未命名对话' }}</h2>
-        <span v-if="active?.modelName" class="pure-chat-model-name">{{ active.modelName }}</span>
+  <section class="pure-chat flex flex-col px-4 pb-4 gap-2 h-full min-h-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
+    <header v-if="activeID !== null && active" class="pure-chat-header flex items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
+      <div class="pure-chat-title-row flex items-baseline gap-2.5 min-w-0">
+        <h2 class="pure-chat-title m-0 text-base font-semibold truncate text-slate-800 dark:text-slate-100">{{ active?.title || '未命名对话' }}</h2>
+        <span v-if="active?.modelName" class="pure-chat-model-name text-xs text-slate-400 font-mono shrink-0">{{ active.modelName }}</span>
       </div>
-      <div class="pure-chat-header-actions">
-        <button type="button" class="header-action" data-test="chat-rename-btn" @click="openRename">
+      <div class="pure-chat-header-actions flex items-center gap-1.5 shrink-0">
+        <UiButton size="sm" variant="secondary" class="header-action" data-test="chat-rename-btn" @click="openRename">
           重命名
-        </button>
-        <button type="button" class="header-action danger" data-test="chat-delete-btn" @click="deleteOpen = true">
+        </UiButton>
+        <UiButton size="sm" variant="danger" class="header-action danger" data-test="chat-delete-btn" @click="deleteOpen = true">
           删除
-        </button>
+        </UiButton>
       </div>
     </header>
 
-    <p v-if="chats.loadError" class="pure-chat-error" role="alert" data-test="chat-load-error">
+    <UiAlert v-if="chats.loadError" variant="error" class="pure-chat-error" data-test="chat-load-error">
       {{ chats.loadError }}
-      <RouterLink :to="{ name: 'chat' }">返回对话列表</RouterLink>
-    </p>
+      <RouterLink :to="{ name: 'chat' }" class="text-blue-600 underline ml-2">返回对话列表</RouterLink>
+    </UiAlert>
 
     <template v-else>
       <div
-        class="pure-chat-scroll"
+        class="pure-chat-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
         data-test="chat-scroll"
         ref="scroll"
         @scroll.passive="onScroll"
       >
-        <div v-if="activeID === null" class="chat-welcome">
-          <h2>开始新的对话</h2>
-          <p>选择一个模型，然后输入消息。对话会保存在平台中，刷新后可继续。</p>
-          <p v-if="!hasModels" class="chat-welcome-warning">
-            尚未配置可用模型，请先到
-            <RouterLink :to="{ name: 'settings-models' }">设置 → 模型管理</RouterLink>
-            添加并启用模型。
-          </p>
+        <div v-if="activeID === null" class="chat-welcome max-w-lg mx-auto mt-[12vh] text-center text-slate-500">
+          <UiEmpty
+            title="开始新的对话"
+            description="选择一个模型，然后输入消息。对话会保存在平台中，刷新后可继续。"
+            icon="💬"
+          >
+            <template v-if="!hasModels" #description>
+              <p class="chat-welcome-warning text-xs text-amber-600 dark:text-amber-400">
+                尚未配置可用模型，请先到
+                <RouterLink :to="{ name: 'settings-models' }" class="underline font-medium">设置 → 模型管理</RouterLink>
+                添加并启用模型。
+              </p>
+            </template>
+          </UiEmpty>
         </div>
 
-        <p v-else-if="!active" class="history-note" role="status">正在加载对话…</p>
+        <p v-else-if="!active" class="history-note text-xs text-slate-400 p-3 text-center" role="status">正在加载对话…</p>
 
         <MessageView
           v-else
@@ -347,36 +350,48 @@ function reconnect() {
           @regenerate="regenerate"
         />
 
-        <p v-if="truncated" class="history-note" data-test="chat-truncated">
+        <p v-if="truncated" class="history-note text-xs text-slate-400 p-2 text-center" data-test="chat-truncated">
           仅显示最近的消息记录。
         </p>
 
-        <button
+        <UiButton
           v-if="streamBroken"
-          type="button"
-          class="reconnect-btn"
+          size="sm"
+          variant="secondary"
+          class="reconnect-btn mx-auto my-2 block"
           data-test="chat-reconnect"
           @click="reconnect"
         >
           重新连接事件流
-        </button>
+        </UiButton>
       </div>
 
-      <button v-if="jump" type="button" class="jump-latest" data-test="chat-jump-latest" @click="follow.scrollToBottom(true)">
+      <UiButton
+        v-if="jump"
+        size="sm"
+        variant="secondary"
+        class="jump-latest absolute right-4 bottom-32 z-10 shadow-md"
+        data-test="chat-jump-latest"
+        @click="follow.scrollToBottom(true)"
+      >
         ↓ 滚动到最新消息
-      </button>
+      </UiButton>
 
-      <p v-if="streamBanner" class="stream-banner" role="status" data-test="chat-stream-status">
+      <UiAlert v-if="streamBanner" variant="warning" class="stream-banner" role="status" data-test="chat-stream-status">
         {{ streamBanner }}
-      </p>
-      <p v-if="minModelNotice" class="chat-action-error" role="alert">{{ minModelNotice }}</p>
-      <p v-else-if="invalidModel" class="chat-action-error" role="alert">
+      </UiAlert>
+      <UiAlert v-if="minModelNotice" variant="error" class="chat-action-error">
+        {{ minModelNotice }}
+      </UiAlert>
+      <UiAlert v-else-if="invalidModel" variant="error" class="chat-action-error">
         当前模型不可用，请选择其他模型。
-      </p>
-      <p v-if="chats.actionError" class="chat-action-error" role="alert">{{ chats.actionError }}</p>
-      <p v-if="chats.sendError" class="chat-action-error" role="alert" data-test="chat-send-error">
+      </UiAlert>
+      <UiAlert v-if="chats.actionError" variant="error" class="chat-action-error">
+        {{ chats.actionError }}
+      </UiAlert>
+      <UiAlert v-if="chats.sendError" variant="error" class="chat-action-error" data-test="chat-send-error">
         {{ chats.sendError }}
-      </p>
+      </UiAlert>
 
       <ChatComposer
         :text="text"
@@ -397,226 +412,40 @@ function reconnect() {
       />
     </template>
 
-    <AppDialog v-if="renameOpen" title="重命名对话" @close="renameOpen = false">
-      <form class="chat-dialog-form" @submit.prevent="submitRename">
-        <p v-if="renameError" class="chat-dialog-error" role="alert">{{ renameError }}</p>
-        <label for="chat-title">标题</label>
-        <input id="chat-title" v-model="renameTitle" type="text" maxlength="120" autofocus data-test="chat-title-input" />
-        <div class="chat-dialog-actions">
-          <button type="button" class="secondary" @click="renameOpen = false">取消</button>
-          <button type="submit" class="primary">保存</button>
+    <UiDialog v-if="renameOpen" title="重命名对话" width-class="w-full max-w-md" @close="renameOpen = false">
+      <form class="chat-dialog-form space-y-4" @submit.prevent="submitRename">
+        <UiAlert v-if="renameError" variant="error" class="chat-dialog-error">
+          {{ renameError }}
+        </UiAlert>
+        <div class="space-y-1.5">
+          <label for="chat-title" class="text-xs font-semibold text-slate-700 dark:text-slate-300">标题</label>
+          <UiInput id="chat-title" v-model="renameTitle" maxlength="120" autofocus data-test="chat-title-input" block />
+        </div>
+        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <UiButton type="button" variant="secondary" class="secondary" @click="renameOpen = false">取消</UiButton>
+          <UiButton type="submit" variant="primary" class="primary">保存</UiButton>
         </div>
       </form>
-    </AppDialog>
+    </UiDialog>
 
-    <AppDialog v-if="deleteOpen" title="删除对话" @close="deleteOpen = false">
-      <div class="chat-dialog-form">
-        <p>删除后，该对话及其全部消息将从平台中移除，且无法恢复。</p>
-        <div class="chat-dialog-actions">
-          <button type="button" class="secondary" @click="deleteOpen = false">取消</button>
-          <button type="button" class="danger" :disabled="deleting" data-test="chat-delete-confirm" @click="confirmDelete">
+    <UiDialog v-if="deleteOpen" title="删除对话" width-class="w-full max-w-md" @close="deleteOpen = false">
+      <div class="chat-dialog-form space-y-4">
+        <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">删除后，该对话及其全部消息将从平台中移除，且无法恢复。</p>
+        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <UiButton type="button" variant="secondary" class="secondary" @click="deleteOpen = false">取消</UiButton>
+          <UiButton
+            type="button"
+            variant="danger"
+            class="danger"
+            :disabled="deleting"
+            :loading="deleting"
+            data-test="chat-delete-confirm"
+            @click="confirmDelete"
+          >
             {{ deleting ? '删除中…' : '删除' }}
-          </button>
+          </UiButton>
         </div>
       </div>
-    </AppDialog>
+    </UiDialog>
   </section>
 </template>
-
-<style scoped>
-.pure-chat {
-  display: flex;
-  flex-direction: column;
-  padding: 0 1rem 1rem;
-  gap: 0.5rem;
-  height: 100%;
-  min-height: 0;
-  position: relative;
-  box-sizing: border-box;
-}
-
-.pure-chat-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.pure-chat-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.pure-chat-title {
-  margin: 0;
-  font-size: 1rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pure-chat-model-name {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  flex-shrink: 0;
-}
-
-.pure-chat-header-actions {
-  display: flex;
-  gap: 0.35rem;
-  flex-shrink: 0;
-}
-
-.header-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  padding: 0 0.65rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.header-action:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.header-action.danger {
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
-}
-
-.header-action.danger:hover {
-  background: var(--color-danger-soft);
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-.pure-chat-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0;
-}
-
-.chat-welcome {
-  max-width: 34rem;
-  margin: 12vh auto 0;
-  text-align: center;
-  color: var(--color-text-muted);
-}
-
-.chat-welcome h2 {
-  color: var(--color-text);
-  margin-bottom: 0.4rem;
-}
-
-.chat-welcome-warning {
-  margin-top: 1rem;
-  color: var(--color-warning, #b45309);
-}
-
-.pure-chat-error,
-.chat-action-error,
-.stream-banner,
-.history-note {
-  margin: 0;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.82rem;
-}
-
-.pure-chat-error,
-.chat-action-error {
-  color: var(--color-danger);
-}
-
-.stream-banner,
-.history-note {
-  color: var(--color-text-muted);
-}
-
-.reconnect-btn,
-.jump-latest {
-  margin: 0.4rem auto;
-  display: block;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0.25rem 0.75rem;
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.jump-latest {
-  position: absolute;
-  right: 1rem;
-  bottom: 8.5rem;
-  z-index: 5;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
-}
-
-.chat-dialog-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.chat-dialog-form label {
-  font-size: 0.85rem;
-}
-
-.chat-dialog-form input {
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font: inherit;
-}
-
-.chat-dialog-error {
-  margin: 0;
-  color: var(--color-danger);
-  font-size: 0.82rem;
-}
-
-.chat-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.chat-dialog-actions button {
-  padding: 0.4rem 0.8rem;
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-  font: inherit;
-  cursor: pointer;
-}
-
-.chat-dialog-actions .primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-surface);
-}
-
-.chat-dialog-actions .danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
-}
-</style>

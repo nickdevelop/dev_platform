@@ -7,6 +7,7 @@
 import { onMounted } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { densities, themes } from '../../theme/presets'
+import { UiAlert, UiInput } from '../../shared/ui'
 
 const settings = useSettingsStore()
 
@@ -32,9 +33,8 @@ function selectPlantumlMode(mode: 'local' | 'online') {
   if (settings.appearance.plantumlMode !== mode) void settings.saveAppearance({ plantumlMode: mode })
 }
 
-function updatePlantumlServerUrl(event: Event) {
-  const value = (event.target as HTMLInputElement).value.trim()
-  void settings.saveAppearance({ plantumlServerUrl: value })
+function updatePlantumlServerUrl(value: string) {
+  void settings.saveAppearance({ plantumlServerUrl: value.trim() })
 }
 
 async function toggleQuickAssistant(event: Event) {
@@ -45,60 +45,68 @@ async function toggleQuickAssistant(event: Event) {
 </script>
 
 <template>
-  <section class="appearance" aria-label="外观设置">
-    <h1>外观</h1>
+  <section class="appearance max-w-3xl space-y-5" aria-label="外观设置">
+    <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">外观</h1>
 
-    <fieldset class="group">
-      <legend>主题配色</legend>
-      <div class="theme-grid">
+    <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">主题配色</legend>
+      <div class="theme-grid grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           v-for="theme in themes"
           :key="theme.key"
           type="button"
-          class="theme-option"
-          :class="{ active: settings.appearance.theme === theme.key }"
+          class="theme-option flex items-center gap-3 p-3 rounded border text-sm font-medium transition-colors select-none text-left"
+          :class="[
+            settings.appearance.theme === theme.key
+              ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200',
+          ]"
           :data-theme-option="theme.key"
           @click="selectTheme(theme.key)"
         >
           <span
-            class="swatch"
+            class="swatch inline-flex items-center justify-center w-8 h-8 rounded border font-bold text-sm shrink-0"
             :style="{
               background: theme.colors.bg,
               borderColor: theme.colors.borderStrong,
               color: theme.colors.text,
             }"
-            >Aa</span
-          >
-          {{ theme.label }}
+          >Aa</span>
+          <span class="truncate">{{ theme.label }}</span>
         </button>
       </div>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>字号</legend>
-      <label class="field">
-        <span>字号（{{ settings.appearance.fontSize }}px）</span>
+    <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">字号</legend>
+      <label class="field flex flex-col gap-2 max-w-sm">
+        <span class="text-sm text-slate-700 dark:text-slate-300">字号（{{ settings.appearance.fontSize }}px）</span>
         <input
           type="range"
           data-font-size
           min="12"
           max="20"
           step="1"
+          class="accent-blue-600 cursor-pointer"
           :value="settings.appearance.fontSize"
           @change="updateFontSize"
         />
       </label>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>界面密度</legend>
-      <div class="density-row">
+    <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">界面密度</legend>
+      <div class="density-row flex flex-wrap gap-3">
         <button
           v-for="density in densities"
           :key="density.key"
           type="button"
-          class="density-option"
-          :class="{ active: settings.appearance.density === density.key }"
+          class="density-option px-4 py-2 rounded border text-sm font-medium transition-colors select-none"
+          :class="[
+            settings.appearance.density === density.key
+              ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200',
+          ]"
           :data-density-option="density.key"
           @click="selectDensity(density.key)"
         >
@@ -107,13 +115,17 @@ async function toggleQuickAssistant(event: Event) {
       </div>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>PlantUML 渲染模式</legend>
-      <div class="density-row">
+    <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">PlantUML 渲染模式</legend>
+      <div class="density-row flex flex-wrap gap-3">
         <button
           type="button"
-          class="density-option"
-          :class="{ active: (settings.appearance.plantumlMode || 'local') === 'local' }"
+          class="density-option px-4 py-2 rounded border text-sm font-medium transition-colors select-none"
+          :class="[
+            (settings.appearance.plantumlMode || 'local') === 'local'
+              ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200',
+          ]"
           data-plantuml-mode="local"
           @click="selectPlantumlMode('local')"
         >
@@ -121,8 +133,12 @@ async function toggleQuickAssistant(event: Event) {
         </button>
         <button
           type="button"
-          class="density-option"
-          :class="{ active: settings.appearance.plantumlMode === 'online' }"
+          class="density-option px-4 py-2 rounded border text-sm font-medium transition-colors select-none"
+          :class="[
+            settings.appearance.plantumlMode === 'online'
+              ? 'border-blue-600 ring-1 ring-blue-600 bg-blue-50/30 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300'
+              : 'border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200',
+          ]"
           data-plantuml-mode="online"
           @click="selectPlantumlMode('online')"
         >
@@ -130,166 +146,46 @@ async function toggleQuickAssistant(event: Event) {
         </button>
       </div>
 
-      <div v-if="settings.appearance.plantumlMode === 'online'" class="plantuml-url-field">
-        <label class="field">
+      <div v-if="settings.appearance.plantumlMode === 'online'" class="plantuml-url-field pt-2 space-y-1.5">
+        <label class="field flex flex-col gap-1 text-sm text-slate-700 dark:text-slate-300">
           <span>服务器地址</span>
-          <input
-            type="text"
+          <UiInput
             data-plantuml-url
             class="plantuml-url-input"
             placeholder="https://www.plantuml.com/plantuml"
-            :value="settings.appearance.plantumlServerUrl || 'https://www.plantuml.com/plantuml'"
-            @change="updatePlantumlServerUrl"
+            :model-value="settings.appearance.plantumlServerUrl || 'https://www.plantuml.com/plantuml'"
+            block
+            @change="(e: Event) => updatePlantumlServerUrl((e.target as HTMLInputElement).value)"
           />
         </label>
-        <span class="field-hint">支持自建 PlantUML 服务地址，默认使用官方服务器。</span>
+        <span class="field-hint text-xs text-slate-400 dark:text-slate-500">支持自建 PlantUML 服务地址，默认使用官方服务器。</span>
       </div>
     </fieldset>
 
-    <fieldset class="group">
-      <legend>快捷助手</legend>
-      <label class="toggle-row">
+    <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">快捷助手</legend>
+      <label class="toggle-row inline-flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
         <input
           type="checkbox"
           data-test="quick-assistant-toggle"
+          class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer disabled:cursor-wait"
           :checked="settings.quickAssistant.enabled"
           :disabled="settings.quickAssistantSaving || settings.quickAssistantLoading"
           @change="toggleQuickAssistant"
         />
         <span>显示快捷助手漂浮按钮</span>
       </label>
-      <p class="field-hint">
+      <p class="field-hint text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
         开启后，平台主界面右上角会显示快捷助手按钮；关闭后按钮与弹窗立即隐藏。
         快捷助手产生的对话统一保存在 Chat 的“快捷助手”固定分组。
       </p>
     </fieldset>
 
-    <p v-if="settings.error" class="error" role="alert">{{ settings.error }}</p>
-    <p v-if="settings.quickAssistantError" class="error" role="alert">
+    <UiAlert v-if="settings.error" variant="error" class="error">
+      {{ settings.error }}
+    </UiAlert>
+    <UiAlert v-if="settings.quickAssistantError" variant="error" class="error">
       {{ settings.quickAssistantError }}
-    </p>
+    </UiAlert>
   </section>
 </template>
-
-<style scoped>
-.appearance h1 {
-  font-size: 1.25rem;
-  margin: 0 0 1rem;
-}
-
-.group {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 2);
-  margin: 0 0 calc(var(--space-unit) * 2);
-  background: var(--color-surface);
-}
-
-.group legend {
-  padding: 0 calc(var(--space-unit) * 0.5);
-  color: var(--color-text-muted);
-}
-
-.theme-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: calc(var(--space-unit) * 1.5);
-}
-
-.theme-option,
-.density-option {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 1.5);
-  padding: calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-}
-
-.theme-option.active,
-.density-option.active {
-  border-color: var(--color-primary);
-  box-shadow: inset 0 0 0 1px var(--color-primary);
-}
-
-.swatch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid;
-  border-radius: var(--radius);
-  font-weight: 600;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
-  margin-bottom: calc(var(--space-unit) * 1.5);
-}
-
-.density-row {
-  display: flex;
-  gap: calc(var(--space-unit) * 1.5);
-}
-
-.error {
-  color: var(--color-danger);
-  margin: 0;
-}
-
-.plantuml-url-field {
-  margin-top: calc(var(--space-unit) * 1.5);
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
-}
-
-.plantuml-url-input {
-  width: 100%;
-  padding: calc(var(--space-unit) * 1);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.9rem;
-  box-sizing: border-box;
-}
-
-.plantuml-url-input:focus {
-  border-color: var(--color-primary);
-  outline: none;
-}
-
-.field-hint {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.toggle-row {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 1.0);
-  font-size: 0.9rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.toggle-row input[type='checkbox'] {
-  width: 1rem;
-  height: 1rem;
-  cursor: pointer;
-  accent-color: var(--color-primary);
-}
-
-.toggle-row input[type='checkbox']:disabled {
-  cursor: wait;
-}
-</style>

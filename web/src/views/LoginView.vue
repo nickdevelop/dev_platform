@@ -5,6 +5,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { describeApiError } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+import { UiButton, UiInput, UiAlert } from '../shared/ui'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -30,68 +31,33 @@ async function submit() {
 </script>
 
 <template>
-  <main class="login">
-    <h1>AI 开发项目管理平台</h1>
-    <form class="login-form" @submit.prevent="submit">
-      <label for="login-password">平台密码</label>
-      <input
+  <main class="login max-w-xs mx-auto mt-[15vh] px-4 text-center">
+    <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-6 tracking-tight">AI 开发项目管理平台</h1>
+    <form class="login-form flex flex-col gap-3 text-left" @submit.prevent="submit">
+      <label for="login-password" class="text-sm font-semibold text-slate-700 dark:text-slate-300">平台密码</label>
+      <UiInput
         id="login-password"
         v-model="password"
         type="password"
         autocomplete="current-password"
         :disabled="submitting"
         required
+        block
+        placeholder="请输入平台密码"
       />
-      <button type="submit" :disabled="submitting || password === ''">登录</button>
-      <p v-if="errorMessage" class="login-error" role="alert">{{ errorMessage }}</p>
+      <UiButton
+        type="submit"
+        variant="primary"
+        block
+        :disabled="submitting || password === ''"
+        :loading="submitting"
+        class="mt-1"
+      >
+        登录
+      </UiButton>
+      <UiAlert v-if="errorMessage" variant="error" class="login-error mt-2">
+        {{ errorMessage }}
+      </UiAlert>
     </form>
   </main>
 </template>
-
-<style scoped>
-.login {
-  max-width: 20rem;
-  margin: 15vh auto 0;
-  padding: 0 1rem;
-  text-align: center;
-}
-
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-  text-align: left;
-}
-
-.login-form label {
-  font-weight: 600;
-}
-
-.login-form input {
-  padding: 0.5rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  font-size: 1rem;
-}
-
-.login-form button {
-  padding: 0.5rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-primary);
-  color: var(--color-surface);
-  font-size: 1rem;
-  cursor: pointer;
-}
-
-.login-form button:disabled {
-  background: var(--color-info-border);
-  cursor: default;
-}
-
-.login-error {
-  margin: 0;
-  color: var(--color-danger);
-}
-</style>

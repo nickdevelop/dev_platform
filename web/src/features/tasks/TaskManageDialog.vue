@@ -6,7 +6,7 @@ import type { ScheduleType, Task } from '../../api/tasks'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
-import AppDialog from '../../shared/components/AppDialog.vue'
+import { UiFormDialog, UiInput, UiSelect, UiTextarea } from '../../shared/ui'
 
 const props = defineProps<{
   task?: Task | null
@@ -172,276 +172,155 @@ async function submit() {
 </script>
 
 <template>
-  <AppDialog
+  <UiFormDialog
     :title="isEditing ? '编辑任务模板' : '新建任务模板'"
-    width="38rem"
+    width-class="w-full max-w-xl"
+    :confirm-label="saving ? '保存中…' : '保存'"
+    :confirm-loading="saving"
+    :error="errorMessage"
     @close="emit('close')"
+    @submit="submit"
   >
-    <form class="manage-form" @submit.prevent="submit">
-      <div class="field">
-        <label for="dlg-task-title">任务名称 <span class="required">*</span></label>
-        <input
-          id="dlg-task-title"
-          v-model="title"
-          type="text"
-          class="input"
-          placeholder="例如：每日生产服务健康巡检"
-          required
-        />
+    <div class="field flex flex-col gap-1.5">
+      <label for="dlg-task-title" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        任务名称 <span class="text-red-500">*</span>
+      </label>
+      <UiInput
+        id="dlg-task-title"
+        v-model="title"
+        placeholder="例如：每日生产服务健康巡检"
+        required
+        block
+      />
+    </div>
+
+    <div class="field flex flex-col gap-1.5">
+      <label for="dlg-task-desc" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        任务描述 (可选)
+      </label>
+      <UiInput
+        id="dlg-task-desc"
+        v-model="description"
+        placeholder="任务目标与简要说明"
+        block
+      />
+    </div>
+
+    <div class="field-row grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div class="field flex flex-col gap-1.5">
+        <label for="dlg-task-project" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+          关联项目 <span class="text-red-500">*</span>
+        </label>
+        <UiSelect id="dlg-task-project" v-model="selectedProjectId" block required>
+          <option :value="0" disabled>选择项目…</option>
+          <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
+            {{ p.name }}
+          </option>
+        </UiSelect>
       </div>
 
-      <div class="field">
-        <label for="dlg-task-desc">任务描述 (可选)</label>
-        <input
-          id="dlg-task-desc"
-          v-model="description"
-          type="text"
-          class="input"
-          placeholder="任务目标与简要说明"
-        />
-      </div>
-
-      <div class="field-row">
-        <div class="field flex-1">
-          <label for="dlg-task-project">关联项目 <span class="required">*</span></label>
-          <select id="dlg-task-project" v-model="selectedProjectId" class="select" required>
-            <option :value="0" disabled>选择项目…</option>
-            <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-              {{ p.name }}
-            </option>
-          </select>
-        </div>
-
-        <div class="field flex-1">
-          <label for="dlg-task-backend">Agent 后端 <span class="required">*</span></label>
-          <select id="dlg-task-backend" v-model="selectedBackend" class="select" required>
-            <option value="" disabled>选择 Agent…</option>
-            <option
-              v-for="b in selectableBackends"
-              :key="b.backend"
-              :value="b.backend"
-            >
-              {{ b.label || b.backend }}
-            </option>
-          </select>
-        </div>
-      </div>
-
-      <div class="field">
-        <label for="dlg-task-model">模型 <span class="required">*</span></label>
-        <div class="model-row">
-          <select
-            v-if="models.length > 0"
-            id="dlg-task-model"
-            v-model="selectedModel"
-            class="select"
-            :disabled="loadingModels"
+      <div class="field flex flex-col gap-1.5">
+        <label for="dlg-task-backend" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+          Agent 后端 <span class="text-red-500">*</span>
+        </label>
+        <UiSelect id="dlg-task-backend" v-model="selectedBackend" block required>
+          <option value="" disabled>选择 Agent…</option>
+          <option
+            v-for="b in selectableBackends"
+            :key="b.backend"
+            :value="b.backend"
           >
-            <option v-for="m in models" :key="m.id" :value="m.id">
-              {{ m.name || m.id }}
-            </option>
-          </select>
-          <input
-            v-else
-            id="dlg-task-model"
-            v-model="selectedModel"
-            type="text"
-            class="input"
-            placeholder="输入模型标识符，如 claude-3-5-sonnet"
-            :disabled="loadingModels"
-            required
-          />
-          <span v-if="loadingModels" class="loading-hint">加载模型中…</span>
-        </div>
+            {{ b.label || b.backend }}
+          </option>
+        </UiSelect>
       </div>
+    </div>
 
-      <div class="field">
-        <label for="dlg-task-prompt">执行提示词模板 <span class="required">*</span></label>
-        <textarea
-          id="dlg-task-prompt"
-          v-model="promptTemplate"
-          rows="4"
-          class="textarea"
-          placeholder="每次启动执行会话时发送给 Agent 的任务提示词模板…"
+    <div class="field flex flex-col gap-1.5">
+      <label for="dlg-task-model" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        模型 <span class="text-red-500">*</span>
+      </label>
+      <div class="model-row space-y-1">
+        <UiSelect
+          v-if="models.length > 0"
+          id="dlg-task-model"
+          v-model="selectedModel"
+          :disabled="loadingModels"
+          block
+        >
+          <option v-for="m in models" :key="m.id" :value="m.id">
+            {{ m.name || m.id }}
+          </option>
+        </UiSelect>
+        <UiInput
+          v-else
+          id="dlg-task-model"
+          v-model="selectedModel"
+          placeholder="输入模型标识符，如 claude-3-5-sonnet"
+          :disabled="loadingModels"
           required
-        ></textarea>
-      </div>
-
-      <div class="field">
-        <label>执行方式选项</label>
-        <div class="schedule-radios">
-          <label class="radio-label">
-            <input v-model="scheduleType" type="radio" value="manual" />
-            手动执行
-          </label>
-          <label class="radio-label">
-            <input v-model="scheduleType" type="radio" value="once" />
-            定时执行
-          </label>
-          <label class="radio-label">
-            <input v-model="scheduleType" type="radio" value="cron" />
-            周期执行 (Cron)
-          </label>
-        </div>
-      </div>
-
-      <div v-if="scheduleType === 'once'" class="schedule-subfield">
-        <label for="dlg-task-time">触发时间点 <span class="required">*</span></label>
-        <input
-          id="dlg-task-time"
-          v-model="scheduledAtDate"
-          type="datetime-local"
-          class="input"
-          required
+          block
         />
+        <span v-if="loadingModels" class="text-[11px] text-slate-400">加载模型中…</span>
       </div>
+    </div>
 
-      <div v-if="scheduleType === 'cron'" class="schedule-subfield">
-        <label for="dlg-task-cron">Cron 表达式 (分 时 日 月 周) <span class="required">*</span></label>
-        <input
-          id="dlg-task-cron"
-          v-model="cronExpr"
-          type="text"
-          class="input font-mono"
-          placeholder="0 9 * * *"
-          required
-        />
+    <div class="field flex flex-col gap-1.5">
+      <label for="dlg-task-prompt" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        执行提示词模板 <span class="text-red-500">*</span>
+      </label>
+      <UiTextarea
+        id="dlg-task-prompt"
+        v-model="promptTemplate"
+        :rows="4"
+        placeholder="每次启动执行会话时发送给 Agent 的任务提示词模板…"
+        required
+      />
+    </div>
+
+    <div class="field flex flex-col gap-2">
+      <label class="text-xs font-medium text-slate-700 dark:text-slate-300">执行方式选项</label>
+      <div class="schedule-radios flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input v-model="scheduleType" type="radio" value="manual" class="text-blue-600 accent-blue-600" />
+          <span>手动执行</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input v-model="scheduleType" type="radio" value="once" class="text-blue-600 accent-blue-600" />
+          <span>定时执行</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input v-model="scheduleType" type="radio" value="cron" class="text-blue-600 accent-blue-600" />
+          <span>周期执行 (Cron)</span>
+        </label>
       </div>
+    </div>
 
-      <p v-if="errorMessage" class="error-msg" role="alert">{{ errorMessage }}</p>
+    <div v-if="scheduleType === 'once'" class="schedule-subfield flex flex-col gap-1.5">
+      <label for="dlg-task-time" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        触发时间点 <span class="text-red-500">*</span>
+      </label>
+      <UiInput
+        id="dlg-task-time"
+        v-model="scheduledAtDate"
+        type="datetime-local"
+        required
+        block
+      />
+    </div>
 
-      <div class="actions">
-        <button type="button" class="btn-cancel" @click="emit('close')">取消</button>
-        <button type="submit" class="btn-submit" :disabled="saving">
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
-      </div>
-    </form>
-  </AppDialog>
+    <div v-if="scheduleType === 'cron'" class="schedule-subfield flex flex-col gap-1.5">
+      <label for="dlg-task-cron" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        Cron 表达式 (分 时 日 月 周) <span class="text-red-500">*</span>
+      </label>
+      <UiInput
+        id="dlg-task-cron"
+        v-model="cronExpr"
+        placeholder="0 9 * * *"
+        class="font-mono"
+        required
+        block
+      />
+    </div>
+  </UiFormDialog>
 </template>
-
-<style scoped>
-.manage-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.field label {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.required {
-  color: #ef4444;
-}
-
-.field-row {
-  display: flex;
-  gap: 1rem;
-}
-
-.flex-1 {
-  flex: 1;
-}
-
-.input,
-.select,
-.textarea {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.88rem;
-}
-
-.input:focus,
-.select:focus,
-.textarea:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
-}
-
-.font-mono {
-  font-family: monospace;
-}
-
-.model-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.loading-hint {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.schedule-radios {
-  display: flex;
-  gap: 1.25rem;
-  padding: 0.35rem 0;
-}
-
-.radio-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.schedule-subfield {
-  padding: 0.75rem;
-  background: var(--color-surface-muted);
-  border-radius: 6px;
-  border: 1px solid var(--color-border);
-}
-
-.error-msg {
-  font-size: 0.85rem;
-  color: #ef4444;
-  margin: 0;
-}
-
-.actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.btn-cancel {
-  padding: 0.45rem 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font-size: 0.88rem;
-}
-
-.btn-submit {
-  padding: 0.45rem 1.25rem;
-  border: none;
-  border-radius: 6px;
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.88rem;
-}
-
-.btn-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-</style>

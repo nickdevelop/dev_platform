@@ -26,10 +26,10 @@
 | **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v29，含 Agent 模型快照表与快捷助手固定分组） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
-| **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0 | 单页面应用（SPA），组合式 API，严格类型安全 |
+| **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (622 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (653 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
 
 ---
 
@@ -112,6 +112,10 @@ web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
   ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
+  │     └── ui/        ── 平台标准 UI 组件库（纯中性业务解耦设计，基于 Tailwind CSS）：
+  │           ├── atomic/    ── 原子组件（UiButton, UiInput, UiTextarea, UiSelect, UiDropdown, UiBadge, UiProgress, UiTooltip, UiTabs, UiAlert, UiEmpty, UiSpinner, UiDivider）
+  │           ├── compound/  ── 复合容器组件（UiDialog, UiFormDialog, UiComposer, UiScrollFollow, UiBubble, UiTree, UiTreeNode）
+  │           └── index.ts   ── 统一入口导出
   ├── features/        ── 业务领域垂直拆分目录：
   │     ├── chat/      ── Agent 工作台（核心）
   │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令
@@ -130,6 +134,20 @@ web/src/
   │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue）
   │     └── files/     ── 文件查看器、Markdown/PlantUML/图片 Artifact 预览
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
+```
+
+#### 平台标准 UI 组件库与样式管理规范
+1. **纯中性设计与业务解耦**：
+   - 提取的组件严格置于 `shared/ui/`，保持与具体业务领域（Chat、Tasks、Projects 等）彻底解耦。
+   - 例如：`UiProgress` 抽离为支持 Tooltip 提示的通用进度条组件，可供上下文用量、任务进度或磁盘限额等任何场景使用；`UiComposer` 抽离为通用可拖拽高度的复合输入交互容器；`UiTree` 抽象通用的树形层级交互骨架。
+2. **样式管理与视觉风格**：
+   - 全局引入 Tailwind CSS，预置 Slate/Zinc 为中性调色板，Blue 为 Primary 主色，Emerald/Amber/Red 为语义状态色。
+   - 视觉风格采用现代扁平化设计（Flat Design），组件圆角统一设定为轻微小圆角（`rounded: 6px`），消除厚重投影。
+   - 控件高度统一基准阶梯（标准控件高 34px / 小号 28px），操作焦点统一使用高亮光圈（Focus Ring）。
+3. **操作体验规范统一**：
+   - 弹窗操作顺序统一规范：取消按钮居左（Secondary 样式），确认/执行按钮居右（Primary 或 Danger 样式）；全量支持 Esc 关闭与 Tab 焦点陷阱。
+   - 破坏性/危险操作一律采用 Danger 红色警示按钮。
+   - 异常状态与重试引导统一使用 `UiAlert`。
 ```
 
 ---

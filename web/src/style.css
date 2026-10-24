@@ -3,6 +3,10 @@
    platform never loads a font from the network. */
 @import './fonts/fonts.css';
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Global appearance tokens. The theme palette and density are projected onto
    the document root by src/theme/apply.ts; the values here are the light /
    standard defaults used for the pre-JS first paint and as fallbacks. */

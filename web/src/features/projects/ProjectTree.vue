@@ -198,43 +198,47 @@ watch(
 // list already says a session is running. When the store reports a turn starting or
 // ending in the project it is showing, that project is refetched — once per
 // change of turns, not once per event — and the tree's own polling carries on.
-const storeTurns = computed(() => sessionsStore.sessions.map((entry) => entry.id + ':' + entry.turn).join(','))
+watch(
+  () => sessionsStore.turnRevision,
+  () => {
+    if (props.activeProjectId !== null && isExpanded(props.activeProjectId)) {
+      void loadProject(props.activeProjectId)
+    }
+  },
+)
 
-watch(storeTurns, () => {
-  const projectId = sessionsStore.projectId
-  if (projectId !== null && isExpanded(projectId)) void loadProject(projectId)
-})
+// The project tree polls only while an expanded project has a running session,
+// so a project left open after an agent run finishes generates zero network
+// traffic. Polling stops as soon as every running turn is done.
+let pollingInterval: ReturnType<typeof setInterval> | null = null
 
-// Sessions whose turn is running get no SSE events in the tree, so the tree polls
-// every expanded project that has any running session. It stops for a project as
-// soon as its list reports none, and entirely on unmount.
-// Polling requests only the visible page size rather than the full session index.
-function projectHasRunning(projectId: number): boolean {
-  return sessionsFor(projectId).some((entry) => entry.turn === 'running')
+function anyRunning(): boolean {
+  for (const id of expandedIds.value) {
+    if (sessionsFor(id).some(isRunning)) return true
+  }
+  return false
 }
 
-const anyRunning = computed(() => expandedIds.value.some((id) => projectHasRunning(id)))
-
-let pollTimer: ReturnType<typeof setInterval> | null = null
+function startPolling() {
+  if (pollingInterval !== null) return
+  pollingInterval = setInterval(() => {
+    for (const id of expandedIds.value) {
+      if (sessionsFor(id).some(isRunning)) void loadProject(id)
+    }
+  }, 2000)
+}
 
 function stopPolling() {
-  if (pollTimer !== null) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+  if (pollingInterval === null) return
+  clearInterval(pollingInterval)
+  pollingInterval = null
 }
 
 watch(
-  [expandedIds, anyRunning],
-  ([ids, running]) => {
-    stopPolling()
-    if ((ids as number[]).length > 0 && running) {
-      pollTimer = setInterval(() => {
-        for (const projectId of expandedIds.value) {
-          if (projectHasRunning(projectId)) void loadProject(projectId)
-        }
-      }, 2000)
-    }
+  () => expandedIds.value.map((id) => sessionsFor(id).map(isRunning).join(',')).join(';'),
+  () => {
+    if (anyRunning()) startPolling()
+    else stopPolling()
   },
   { immediate: true },
 )
@@ -313,48 +317,65 @@ async function onDeleteSession(projectId: number, sessionId: string) {
 </script>
 
 <template>
-  <ul class="project-tree" aria-label="项目与会话">
+  <ul class="project-tree space-y-1 p-2 text-sm select-none" aria-label="项目与会话">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
-      <div class="project-row" :class="{ selected: project.id === props.activeProjectId }">
+      <div
+        class="project-row group flex items-center justify-between px-2 py-1.5 rounded transition-colors"
+        :class="[
+          project.id === props.activeProjectId
+            ? 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
+            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70',
+        ]"
+      >
         <button
           type="button"
-          class="project-toggle"
+          class="project-toggle flex items-center gap-1.5 flex-1 min-w-0 text-left outline-none cursor-pointer"
           :aria-expanded="isExpanded(project.id)"
           @click.stop="onProjectClick(project.id)"
         >
-          <span class="caret">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
-          <span class="project-name">{{ project.name }}</span>
-          <span v-if="isExpanded(project.id)" class="count">{{ sessionsFor(project.id).length }}</span>
+          <span class="caret text-xs text-slate-400 w-3.5 inline-block text-center">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
+          <span class="project-name truncate font-medium">{{ project.name }}</span>
+          <span v-if="isExpanded(project.id)" class="count px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+            {{ sessionsFor(project.id).length }}
+          </span>
         </button>
-        <button
-          type="button"
-          class="project-new-session"
-          :aria-label="`新建会话：${project.name}`"
-          title="新建会话"
-          @click="emit('new-session', project.id)"
-        >
-          ＋
-        </button>
-        <button
-          type="button"
-          class="project-settings"
-          :aria-label="`项目设置：${project.name}`"
-          title="项目设置"
-          @click="emit('open-settings', project.id)"
-        >
-          ⚙
-        </button>
+
+        <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button
+            type="button"
+            class="project-new-session w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 font-bold transition-colors"
+            :aria-label="`新建会话：${project.name}`"
+            title="新建会话"
+            @click.stop="emit('new-session', project.id)"
+          >
+            ＋
+          </button>
+          <button
+            type="button"
+            class="project-settings w-5 h-5 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 text-xs transition-colors"
+            :aria-label="`项目设置：${project.name}`"
+            title="项目设置"
+            @click.stop="emit('open-settings', project.id)"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
 
-      <ul v-if="isExpanded(project.id)" class="sessions">
+      <ul v-if="isExpanded(project.id)" class="sessions ml-3.5 pl-2 border-l border-slate-200 dark:border-slate-800 space-y-1 my-1">
         <li
           v-for="entry in visibleSessionsFor(project.id)"
           :key="entry.id"
-          class="session"
+          class="session group/item"
           :class="{ selected: entry.id === props.activeSessionId }"
         >
           <div
-            class="session-open"
+            class="session-open p-2 rounded cursor-pointer transition-colors border"
+            :class="[
+              entry.id === props.activeSessionId
+                ? 'bg-white dark:bg-slate-800/90 border-blue-200 dark:border-blue-800/60 shadow-sm'
+                : 'border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/40 hover:border-slate-200/50 dark:hover:border-slate-700/50',
+            ]"
             role="button"
             tabindex="0"
             :aria-label="entry.title || untitledLabel"
@@ -362,35 +383,37 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             @keydown.enter.prevent="emit('select-session', project.id, entry.id)"
             @keydown.space.prevent="emit('select-session', project.id, entry.id)"
           >
-            <div class="session-row-top">
+            <div class="session-row-top flex items-center gap-1.5 mb-1">
               <RunningIndicator v-if="isRunning(entry)" />
-              <span class="title" :title="entry.title || untitledLabel">{{ entry.title || untitledLabel }}</span>
+              <span class="title truncate text-xs font-medium text-slate-800 dark:text-slate-200" :title="entry.title || untitledLabel">
+                {{ entry.title || untitledLabel }}
+              </span>
             </div>
-            <div class="session-row-bottom">
-              <div class="session-bottom-left">
+            <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-slate-400">
+              <div class="session-bottom-left flex items-center gap-1.5 shrink-0">
                 <BackendTag :backend="entry.backend" />
                 <span
                   v-if="sessionModelLabel(entry)"
-                  class="session-model"
+                  class="session-model font-mono text-[10px] text-slate-400 max-w-[80px] truncate"
                   :title="sessionModelFull(entry)"
                   data-test="session-model"
                 >
                   {{ sessionModelLabel(entry) }}
                 </span>
               </div>
-              <div class="session-bottom-right">
-                <span class="session-time" :title="formatFullTime(entry.updatedAt)">
+              <div class="session-bottom-right flex items-center gap-1 shrink-0">
+                <span class="session-time font-mono text-[10px]" :title="formatFullTime(entry.updatedAt)">
                   {{ formatSessionTime(entry.updatedAt) }}
                 </span>
                 <button
                   type="button"
-                  class="session-delete"
+                  class="session-delete opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-0.5 rounded transition-opacity"
                   title="删除会话"
                   aria-label="删除会话"
                   data-test="delete-session-btn"
                   @click.stop="onDeleteSession(project.id, entry.id)"
                 >
-                  <svg class="delete-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <svg class="delete-icon w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
@@ -399,257 +422,19 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             </div>
           </div>
         </li>
-        <li v-if="loadFailed[project.id]" class="empty">会话加载失败。<button type="button" class="load-more" @click="retryProject(project.id)">重试</button></li>
-        <li v-else-if="sessionsFor(project.id).length === 0" class="empty">该项目还没有会话。</li>
-        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty">没有匹配的会话</li>
-        <li v-if="hasMoreSessions(project.id)">
-          <button type="button" class="load-more" @click="showMoreSessions(project.id)">更多</button>
+        <li v-if="loadFailed[project.id]" class="empty text-xs text-red-500 py-1">
+          会话加载失败。<button type="button" class="load-more text-blue-600 underline ml-1" @click="retryProject(project.id)">重试</button>
+        </li>
+        <li v-else-if="sessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">该项目还没有会话。</li>
+        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">没有匹配的会话</li>
+        <li v-if="hasMoreSessions(project.id)" class="pt-1">
+          <button type="button" class="load-more w-full py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors" @click="showMoreSessions(project.id)">
+            更多
+          </button>
         </li>
       </ul>
     </li>
-    <li v-if="projectsStore.projects.length === 0" class="empty">还没有项目。</li>
-    <li v-else-if="visibleProjects.length === 0" class="empty">没有匹配的项目。</li>
+    <li v-if="projectsStore.projects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">还没有项目。</li>
+    <li v-else-if="visibleProjects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">没有匹配的项目。</li>
   </ul>
 </template>
-
-<style scoped>
-.project-tree,
-.sessions {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.project-row,
-.project-toggle {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 1.000);
-  width: 100%;
-  border: none;
-  background: transparent;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  border-radius: 6px;
-  box-sizing: border-box;
-}
-
-.project-row {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 0.333);
-  padding: 0 calc(var(--space-unit) * 0.667) 0 0;
-  border-radius: 6px;
-  box-sizing: border-box;
-}
-
-.project-toggle {
-  flex: 1;
-  min-width: 0;
-  padding: calc(var(--space-unit) * 1.167) calc(var(--space-unit) * 1.333);
-  font-weight: 600;
-}
-
-.project-new-session,
-.project-settings {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.929rem;
-  line-height: 1;
-  padding: calc(var(--space-unit) * 1.000);
-  border-radius: 6px;
-  color: var(--color-text-muted);
-}
-
-.project-row:hover,
-.project-new-session:hover,
-.project-settings:hover,
-.project-toggle:hover {
-  background: var(--color-surface-muted);
-}
-
-.project-row.selected {
-  background: var(--color-info-soft);
-  color: var(--color-primary-hover);
-}
-
-.project-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.count {
-  color: var(--color-text-muted);
-  font-size: 0.857rem;
-  font-weight: 400;
-}
-
-.sessions {
-  padding-left: calc(var(--space-unit) * 2.333);
-  padding-right: calc(var(--space-unit) * 0.667);
-  box-sizing: border-box;
-}
-
-.session {
-  border-radius: 6px;
-  box-sizing: border-box;
-  margin-bottom: calc(var(--space-unit) * 0.333);
-}
-
-.session.selected .session-open {
-  border-color: var(--color-primary);
-  background: var(--color-surface-muted);
-  box-shadow: 0 0 8px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
-}
-
-.session.selected .title {
-  font-weight: 600;
-}
-
-.session-open {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.333);
-  width: 100%;
-  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.000);
-  font-size: 0.929rem;
-  border-radius: 6px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  box-sizing: border-box;
-}
-
-.session-open:hover {
-  border-color: var(--color-primary);
-  background: var(--color-surface-muted);
-}
-
-
-.session-row-top {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 0.5);
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.session-row-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-.session-bottom-left {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 0.5);
-  min-width: 0;
-  overflow: hidden;
-}
-
-.session-model {
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted, #f1f5f9);
-  padding: 0.05rem 0.35rem;
-  border-radius: 3px;
-  max-width: 90px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: inline-block;
-  line-height: 1.2;
-}
-
-.session-bottom-right {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 0.5);
-  margin-left: auto;
-}
-
-.session-time {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-
-.session-delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.7;
-  transition: all 0.15s ease;
-}
-
-.session-open:hover .session-delete,
-.session-delete:focus-visible {
-  opacity: 1;
-}
-
-.session-delete:hover {
-  color: var(--color-danger, #ef4444);
-  background: var(--color-danger-soft, rgba(239, 68, 68, 0.15));
-}
-
-.delete-icon {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  fill: none;
-}
-
-.title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.load-more {
-  box-sizing: border-box;
-  width: 100%;
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
-  border: none;
-  background: transparent;
-  text-align: left;
-  font: inherit;
-  font-size: 0.857rem;
-  cursor: pointer;
-  border-radius: 6px;
-  color: var(--color-primary-hover);
-}
-
-.load-more:hover {
-  background: var(--color-surface-muted);
-}
-
-.empty {
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
-  color: var(--color-text-muted);
-  font-size: 0.857rem;
-}
-</style>

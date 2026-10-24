@@ -18,6 +18,7 @@ import {
 import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 import { rememberModels } from '../../shared/modelCache'
+import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
 
 const settings = useSettingsStore()
 const agents = useAgentsStore()
@@ -200,423 +201,222 @@ function cancelStop() {
 </script>
 
 <template>
-  <section class="agents" aria-label="Agent 设置">
-    <h1>Agent</h1>
-    <p class="intro">启用后可在项目中选择并创建新会话。停用只禁止新建，已有会话继续可用。</p>
+  <section class="agents max-w-4xl space-y-6" aria-label="Agent 设置">
+    <div>
+      <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">Agent 设置</h1>
+      <p class="intro text-xs text-slate-500 dark:text-slate-400">启用后可在项目中选择并创建新会话。停用只禁止新建，已有会话继续可用。</p>
+    </div>
 
-    <p v-if="settings.agentsError" class="error" role="alert">{{ settings.agentsError }}</p>
-    <p v-if="agents.diagnosticsError" class="error" role="alert">{{ agents.diagnosticsError }}</p>
+    <UiAlert v-if="settings.agentsError" variant="error" class="error">
+      {{ settings.agentsError }}
+    </UiAlert>
+    <UiAlert v-if="agents.diagnosticsError" variant="error" class="error">
+      {{ agents.diagnosticsError }}
+    </UiAlert>
 
     <article
       v-for="agent in settings.agents"
       :key="agent.backend"
-      class="agent-card"
+      class="agent-card p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4"
       :data-agent="agent.backend"
     >
-      <header>
-        <strong>{{ label(agent.backend) }}</strong>
-        <label class="inline">
+      <header class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+        <strong class="text-base text-slate-800 dark:text-slate-100 font-semibold">{{ label(agent.backend) }}</strong>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
           <input
             type="checkbox"
+            class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600"
             :data-agent-enabled="agent.backend"
             :checked="agent.enabled"
             @change="toggle(agent.backend, ($event.target as HTMLInputElement).checked)"
           />
-          启用
+          <span>启用</span>
         </label>
       </header>
 
-      <div class="path-row">
+      <div class="path-row flex items-center gap-2 flex-wrap">
         <template v-if="agent.pathSource === 'auto'">
-          <span class="path" :data-agent-path-display="agent.backend">{{ agent.path }}</span>
+          <span class="path flex-1 min-w-[16rem] text-xs font-mono text-slate-500 dark:text-slate-400 py-1.5 px-2 bg-slate-50 dark:bg-slate-800/40 rounded border border-slate-200 dark:border-slate-700" :data-agent-path-display="agent.backend">
+            {{ agent.path }}
+          </span>
         </template>
         <template v-else>
-          <input
-            type="text"
+          <UiInput
+            class="flex-1 min-w-[16rem]"
             :data-agent-path-input="agent.backend"
-            :value="pathInputs[agent.backend] ?? agent.path"
+            :model-value="pathInputs[agent.backend] ?? agent.path"
             placeholder="Agent 可执行文件路径"
-            @input="onPathInput(agent.backend, ($event.target as HTMLInputElement).value)"
+            block
+            @input="(e: Event) => onPathInput(agent.backend, (e.target as HTMLInputElement).value)"
           />
-          <button type="button" @click="savePath(agent.backend)">保存路径</button>
+          <UiButton size="md" variant="secondary" @click="savePath(agent.backend)">保存路径</UiButton>
         </template>
-        <button type="button" :data-detect="agent.backend" @click="detect(agent.backend)">检测</button>
+        <UiButton size="md" variant="secondary" :data-detect="agent.backend" @click="detect(agent.backend)">检测</UiButton>
       </div>
 
-      <p class="status">
-        <span>{{ agent.available ? '已检测到' : '未检测到' }}</span>
-        <span v-if="agent.version">版本 {{ agent.version }}</span>
+      <p class="status flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <UiBadge :variant="agent.available ? 'success' : 'default'" size="sm" dot>
+          {{ agent.available ? '已检测到' : '未检测到' }}
+        </UiBadge>
+        <span v-if="agent.version" class="font-mono">版本 {{ agent.version }}</span>
       </p>
 
-      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row">
-        <label class="inline">
-          传输模式
-          <select
+      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+        <label class="inline-flex items-center gap-2">
+          <span>传输模式</span>
+          <UiSelect
+            size="sm"
             :data-agent-mode="agent.backend"
-            :value="agent.mode || agent.modes[0]"
-            @change="onModeChange(agent.backend, ($event.target as HTMLSelectElement).value)"
+            :model-value="agent.mode || agent.modes[0]"
+            @change="(e: Event) => onModeChange(agent.backend, (e.target as HTMLSelectElement).value)"
           >
             <option v-for="mode in agent.modes" :key="mode" :value="mode">{{ mode }}</option>
-          </select>
+          </UiSelect>
         </label>
-        <span class="mode-hint">修改后需重启平台生效</span>
+        <span class="mode-hint text-slate-400">修改后需重启平台生效</span>
       </div>
 
-      <p
+      <UiAlert
         v-if="detections[agent.backend]"
+        :variant="detections[agent.backend]?.status === 'ok' ? 'success' : 'error'"
         class="detection"
         :data-detection="agent.backend"
-        :class="{ bad: detections[agent.backend]?.status !== 'ok' }"
       >
         {{
           detections[agent.backend]?.status === 'ok'
             ? `检测成功：版本 ${detections[agent.backend]?.version}`
             : `检测失败：${detections[agent.backend]?.error}`
         }}
-      </p>
+      </UiAlert>
 
-      <div v-if="supportsModels(agent.backend)" class="models" :data-test="`agent-models-${agent.backend}`">
-        <div class="models-head">
-          <strong>模型</strong>
-          <button
-            type="button"
+      <!-- 模型列表 -->
+      <div v-if="supportsModels(agent.backend)" class="models p-3 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2.5" :data-test="`agent-models-${agent.backend}`">
+        <div class="models-head flex items-center justify-between">
+          <strong class="text-xs font-semibold text-slate-700 dark:text-slate-300">可用模型</strong>
+          <UiButton
+            size="sm"
+            variant="ghost"
             :data-test="`agent-models-refresh-${agent.backend}`"
             :disabled="modelsLoading[agent.backend] === true"
+            :loading="modelsLoading[agent.backend] === true"
             @click="loadModels(agent.backend, true)"
           >
             刷新
-          </button>
+          </UiButton>
         </div>
-        <p v-if="modelsLoading[agent.backend]" class="models-line">正在读取…</p>
-        <p v-if="modelsError[agent.backend]" class="models-line bad" role="alert">
+        <p v-if="modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">正在读取…</p>
+        <UiAlert v-if="modelsError[agent.backend]" variant="error" class="models-line bad">
           {{ modelsError[agent.backend] }}
-        </p>
-        <ul v-if="models[agent.backend]?.length" class="model-list">
+        </UiAlert>
+        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-48 overflow-y-auto">
           <li
             v-for="model in models[agent.backend]"
             :key="model.id"
             :data-agent-model="model.id"
-            class="model-item"
+            class="model-item flex items-center justify-between p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs"
           >
-            <span class="model-name">{{ model.name || model.id }}</span>
-            <span class="model-id">{{ model.id }}</span>
-            <span v-if="model.variants && model.variants.length" class="model-variants">
+            <span class="model-name font-medium text-slate-800 dark:text-slate-200">{{ model.name || model.id }}</span>
+            <span class="model-id text-slate-400 font-mono">{{ model.id }}</span>
+            <span v-if="model.variants && model.variants.length" class="model-variants text-slate-400 text-[11px]">
               变体：{{ model.variants.join(' / ') }}
             </span>
           </li>
         </ul>
-        <p v-else-if="!modelsLoading[agent.backend]" class="models-line">
+        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">
           尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
         </p>
-        <p class="models-updated">{{ updatedAtLabel(agent.backend) }}</p>
+        <p class="models-updated text-[11px] text-slate-400">{{ updatedAtLabel(agent.backend) }}</p>
       </div>
 
-      <div v-if="showsService(agent.backend)" class="service">
-        <p class="service-state">
-          service
-          <strong :data-test="`service-state-${agent.backend}`">{{ stateLabel(agent.backend) }}</strong>
-          <span v-if="serviceFor(agent.backend)?.version">版本 {{ serviceFor(agent.backend)?.version }}</span>
+      <!-- Service 状态与控制 -->
+      <div v-if="showsService(agent.backend)" class="service p-3.5 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2">
+        <p class="service-state flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+          <span>service 状态:</span>
+          <UiBadge
+            :variant="serviceFor(agent.backend)?.state === 'running' ? 'success' : 'default'"
+            size="sm"
+            :data-test="`service-state-${agent.backend}`"
+          >
+            {{ stateLabel(agent.backend) }}
+          </UiBadge>
+          <span v-if="serviceFor(agent.backend)?.version" class="font-mono text-slate-400">
+            版本 {{ serviceFor(agent.backend)?.version }}
+          </span>
         </p>
-        <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line">
+        <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs font-mono text-slate-500">
           地址 {{ serviceFor(agent.backend)?.endpoint }}
         </p>
-        <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line">
+        <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs font-mono text-slate-500">
           进程 {{ serviceFor(agent.backend)?.pid }}
         </p>
-        <p data-test="service-checked-at" class="service-line">{{ checkedAt(agent.backend) }}</p>
+        <p data-test="service-checked-at" class="service-line text-[11px] text-slate-400">{{ checkedAt(agent.backend) }}</p>
         <p
           v-if="serviceFor(agent.backend)?.state === 'unreachable' && serviceFor(agent.backend)?.detail"
           data-test="service-detail"
-          class="service-line bad"
+          class="service-line text-xs text-red-500"
         >
           {{ serviceFor(agent.backend)?.detail }}
         </p>
-        <p v-if="agents.serviceError" data-test="service-error" class="service-line bad" role="alert">
+        <UiAlert v-if="agents.serviceError" data-test="service-error" variant="error" class="service-line bad">
           {{ agents.serviceError }}
-        </p>
-        <div class="service-actions">
-          <button type="button" data-test="service-detect" @click="detectService(agent.backend)">检测</button>
-          <button
-            type="button"
+        </UiAlert>
+        <div class="service-actions flex items-center gap-2 pt-1">
+          <UiButton size="sm" variant="secondary" data-test="service-detect" @click="detectService(agent.backend)">检测</UiButton>
+          <UiButton
+            size="sm"
+            variant="secondary"
             data-test="service-start"
             :disabled="serviceFor(agent.backend)?.state === 'running'"
             @click="startService(agent.backend)"
           >
             启动
-          </button>
-          <button
-            type="button"
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="danger"
             data-test="service-stop"
             :disabled="serviceFor(agent.backend)?.state !== 'running'"
             @click="askStop(agent.backend)"
           >
             停止
-          </button>
+          </UiButton>
         </div>
-        <div v-if="confirmStop === agent.backend" class="service-confirm" data-test="service-stop-dialog">
-          <p>这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。</p>
-          <div class="service-actions">
-            <button
-              type="button"
-              class="danger"
+
+        <div v-if="confirmStop === agent.backend" class="service-confirm p-3 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 space-y-2" data-test="service-stop-dialog">
+          <p class="text-xs text-red-700 dark:text-red-300 leading-relaxed">这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。</p>
+          <div class="service-actions flex items-center gap-2">
+            <UiButton
+              size="sm"
+              variant="danger"
               data-test="service-stop-confirm"
               @click="confirmStopNow(agent.backend)"
             >
               确认停止
-            </button>
-            <button type="button" data-test="service-stop-cancel" @click="cancelStop()">取消</button>
+            </UiButton>
+            <UiButton size="sm" variant="secondary" data-test="service-stop-cancel" @click="cancelStop()">取消</UiButton>
           </div>
         </div>
       </div>
 
+      <!-- 诊断详情 -->
       <details
-        class="diagnostics"
+        class="diagnostics text-xs text-slate-700 dark:text-slate-300"
         :open="diagnosticsOpen(agent.backend)"
         :data-test="`agent-diagnostics-${agent.backend}`"
       >
-        <summary>
-          诊断
-          <span class="status-badge" :class="`status-${diagnosticsStatus(agent.backend)}`">
+        <summary class="cursor-pointer font-medium py-1 select-none flex items-center gap-2">
+          <span>诊断信息</span>
+          <UiBadge
+            size="sm"
+            :variant="diagnosticsStatus(agent.backend) === 'ok' ? 'success' : diagnosticsStatus(agent.backend) === 'warning' ? 'warning' : 'danger'"
+          >
             {{ diagnosticsStatusLabel(agent.backend) }}
-          </span>
+          </UiBadge>
         </summary>
-        <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
+        <div class="pt-2">
+          <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
+        </div>
       </details>
     </article>
   </section>
 </template>
-
-<style scoped>
-.agents h1 {
-  font-size: 1.25rem;
-  margin: 0 0 var(--space-unit);
-}
-
-.intro {
-  color: var(--color-text-muted);
-  margin: 0 0 calc(var(--space-unit) * 2);
-}
-
-.agent-card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  padding: calc(var(--space-unit) * 2);
-  margin-bottom: calc(var(--space-unit) * 2);
-}
-
-.agent-card header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: calc(var(--space-unit) * 1.5);
-}
-
-.path-row {
-  display: flex;
-  gap: var(--space-unit);
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.path-row input {
-  flex: 1;
-  min-width: 16rem;
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
-
-.path {
-  flex: 1;
-  min-width: 16rem;
-  color: var(--color-text-muted);
-}
-
-button {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-}
-
-.inline {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-unit);
-}
-
-.status {
-  display: flex;
-  gap: calc(var(--space-unit) * 1.5);
-  color: var(--color-text-muted);
-  font-size: 0.857rem;
-  margin: calc(var(--space-unit) * 1.5) 0 0;
-}
-
-.detection {
-  margin: var(--space-unit) 0 0;
-  color: var(--color-success);
-}
-
-.detection.bad,
-.error {
-  color: var(--color-danger);
-}
-
-.models {
-  margin-top: calc(var(--space-unit) * 1.5);
-  padding-top: calc(var(--space-unit) * 1.5);
-  border-top: 1px solid var(--color-border);
-}
-
-.models-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-unit);
-}
-
-.model-list {
-  list-style: none;
-  margin: var(--space-unit) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.4);
-}
-
-.model-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: calc(var(--space-unit) * 0.75);
-  font-size: 0.85rem;
-}
-
-.model-name {
-  color: var(--color-text);
-}
-
-.model-id {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-.model-variants {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-.models-line,
-.models-updated {
-  margin: var(--space-unit) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.models-line.bad {
-  color: var(--color-danger);
-}
-
-.diagnostics {
-  margin-top: calc(var(--space-unit) * 1.5);
-  padding-top: calc(var(--space-unit) * 1.5);
-  border-top: 1px solid var(--color-border);
-}
-
-.diagnostics summary {
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: var(--space-unit);
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-}
-
-.status-badge {
-  padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--color-border-strong);
-  font-size: 0.75rem;
-}
-
-.status-ok {
-  border-color: var(--color-success-border);
-  color: var(--color-success);
-}
-
-.status-warning {
-  border-color: var(--color-warning-border);
-  color: var(--color-warning);
-}
-
-.status-error {
-  border-color: var(--color-danger-border);
-  color: var(--color-danger);
-}
-
-.service {
-  margin-top: calc(var(--space-unit) * 1.5);
-  padding-top: calc(var(--space-unit) * 1.5);
-  border-top: 1px solid var(--color-border);
-}
-
-.service-state {
-  display: flex;
-  gap: var(--space-unit);
-  align-items: baseline;
-  margin: 0;
-  color: var(--color-text-muted);
-  font-size: 0.857rem;
-}
-
-.service-state strong {
-  color: var(--color-text);
-}
-
-.service-line {
-  margin: calc(var(--space-unit) * 0.5) 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-.service-line.bad {
-  color: var(--color-danger);
-}
-
-.service-actions {
-  display: flex;
-  gap: var(--space-unit);
-  margin-top: var(--space-unit);
-}
-
-.service-confirm {
-  margin-top: var(--space-unit);
-  padding: var(--space-unit);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius);
-}
-
-.service-confirm p {
-  margin: 0 0 var(--space-unit);
-}
-
-button.danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-</style>

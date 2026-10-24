@@ -7,6 +7,7 @@ import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
 import TaskCreatePanel from './TaskCreatePanel.vue'
 import TaskDetailView from './TaskDetailView.vue'
+import { UiButton, UiEmpty } from '../../shared/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,7 +64,7 @@ function onCancelCreate() {
 </script>
 
 <template>
-  <main class="tasks-workbench" data-test="tasks-workbench">
+  <main class="tasks-workbench flex flex-col h-full min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-950" data-test="tasks-workbench">
     <!-- 1. Task Creation Panel -->
     <template v-if="isNewRoute">
       <TaskCreatePanel
@@ -82,87 +83,26 @@ function onCancelCreate() {
 
     <!-- 3. Empty Workbench Guidance -->
     <template v-else>
-      <div class="empty-workbench" data-test="empty-workbench">
-        <div class="empty-card">
-          <div class="empty-icon">⚡</div>
-          <h3>任务中心</h3>
-          <p class="empty-desc">
-            任务模块支持将 Agent 会话配置为可复用的模板，并支持手动触发、定时触发或周期性自动运行。
-          </p>
-          <button
-            type="button"
-            class="btn-new-task-cta"
-            data-test="btn-create-first-task"
-            @click="router.push({ name: 'task-new' })"
+      <div class="empty-workbench flex items-center justify-center h-full p-8" data-test="empty-workbench">
+        <div class="empty-card max-w-md w-full p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-sm">
+          <UiEmpty
+            title="任务中心"
+            description="任务模块支持将 Agent 会话配置为可复用的模板，并支持手动触发、定时触发或周期性自动运行。"
+            icon="⚡"
           >
-            + 创建第一个任务
-          </button>
+            <template #actions>
+              <UiButton
+                variant="primary"
+                class="btn-new-task-cta"
+                data-test="btn-create-first-task"
+                @click="router.push({ name: 'task-new' })"
+              >
+                + 创建第一个任务
+              </UiButton>
+            </template>
+          </UiEmpty>
         </div>
       </div>
     </template>
   </main>
 </template>
-
-<style scoped>
-.tasks-workbench {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-  background: var(--color-bg);
-}
-
-.empty-workbench {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 2rem;
-}
-
-.empty-card {
-  text-align: center;
-  max-width: 28rem;
-  padding: 2.5rem 2rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
-}
-
-.empty-icon {
-  font-size: 2.5rem;
-  margin-bottom: 0.75rem;
-}
-
-.empty-card h3 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin: 0 0 0.5rem 0;
-}
-
-.empty-desc {
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  margin: 0 0 1.5rem 0;
-}
-
-.btn-new-task-cta {
-  padding: 0.6rem 1.4rem;
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.btn-new-task-cta:hover {
-  opacity: 0.9;
-}
-</style>

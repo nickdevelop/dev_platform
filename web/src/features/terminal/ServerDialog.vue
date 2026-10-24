@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import AppDialog from '../../shared/components/AppDialog.vue'
 import { testServerConnection, type TerminalServer } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
 import { useAuthStore } from '../../stores/auth'
+import { UiDialog, UiButton, UiInput, UiTextarea, UiAlert } from '../../shared/ui'
 
 const props = defineProps<{
   server?: TerminalServer | null
@@ -129,334 +129,156 @@ async function onSubmit() {
 </script>
 
 <template>
-  <AppDialog :title="title" @close="emit('close')">
-    <form class="server-form" @submit.prevent="onSubmit">
-      <div v-if="errorMessage" class="form-error" role="alert">
+  <UiDialog :title="title" width-class="w-full max-w-lg" @close="emit('close')">
+    <form class="server-form space-y-4" @submit.prevent="onSubmit">
+      <UiAlert v-if="errorMessage" variant="error" class="form-error">
         {{ errorMessage }}
-      </div>
+      </UiAlert>
 
-      <div class="form-row">
-        <label class="form-label" for="server-name">
-          服务器名称 <span class="required">*</span>
+      <div class="form-row flex flex-col gap-1.5">
+        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-name">
+          服务器名称 <span class="text-red-500">*</span>
         </label>
-        <input
+        <UiInput
           id="server-name"
           v-model="name"
-          type="text"
-          class="form-input"
           placeholder="例如：开发环境、数据库服务器"
           autofocus
+          required
+          block
         />
       </div>
 
-      <div class="form-grid">
-        <div class="form-row">
-          <label class="form-label" for="server-host">
-            主机地址 (Host) <span class="required">*</span>
+      <div class="form-grid grid grid-cols-3 gap-3">
+        <div class="form-row col-span-2 flex flex-col gap-1.5">
+          <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-host">
+            主机地址 (Host) <span class="text-red-500">*</span>
           </label>
-          <input
+          <UiInput
             id="server-host"
             v-model="host"
-            type="text"
-            class="form-input"
             placeholder="IP 或域名"
+            required
+            block
           />
         </div>
 
-        <div class="form-row port-col">
-          <label class="form-label" for="server-port">端口</label>
-          <input
+        <div class="form-row port-col flex flex-col gap-1.5">
+          <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-port">端口</label>
+          <UiInput
             id="server-port"
             v-model.number="port"
             type="number"
-            class="form-input"
             min="1"
             max="65535"
             placeholder="22"
+            block
           />
         </div>
       </div>
 
-      <div class="form-row">
-        <label class="form-label" for="server-username">
-          用户名 (Username) <span class="required">*</span>
+      <div class="form-row flex flex-col gap-1.5">
+        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-username">
+          用户名 (Username) <span class="text-red-500">*</span>
         </label>
-        <input
+        <UiInput
           id="server-username"
           v-model="username"
-          type="text"
-          class="form-input"
           placeholder="例如：root、ubuntu"
+          required
+          block
         />
       </div>
 
-      <div class="form-row">
-        <label class="form-label">认证方式</label>
-        <div class="radio-group">
-          <label class="radio-label">
-            <input v-model="authType" type="radio" value="password" />
+      <div class="form-row flex flex-col gap-1.5">
+        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300">认证方式</label>
+        <div class="radio-group flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
+          <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
+            <input v-model="authType" type="radio" value="password" class="text-blue-600 accent-blue-600" />
             <span>密码认证</span>
           </label>
-          <label class="radio-label">
-            <input v-model="authType" type="radio" value="key" />
+          <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
+            <input v-model="authType" type="radio" value="key" class="text-blue-600 accent-blue-600" />
             <span>私钥认证 (SSH Key)</span>
           </label>
         </div>
       </div>
 
-      <div v-if="authType === 'password'" class="form-row">
-        <label class="form-label" for="server-password">
-          密码 <span v-if="!isEditing" class="required">*</span>
-          <span v-else class="hint-text">（留空则保持原密码不变）</span>
+      <div v-if="authType === 'password'" class="form-row flex flex-col gap-1.5">
+        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-password">
+          密码 <span v-if="!isEditing" class="text-red-500">*</span>
+          <span v-else class="hint-text text-slate-400 font-normal">（留空则保持原密码不变）</span>
         </label>
-        <div class="password-wrapper">
-          <input
+        <div class="password-wrapper flex items-center gap-2">
+          <UiInput
             id="server-password"
             v-model="secret"
             :type="showPassword ? 'text' : 'password'"
-            class="form-input"
             placeholder="输入 SSH 连接密码"
+            block
+            class="flex-1"
           />
-          <button
+          <UiButton
             type="button"
+            variant="ghost"
+            size="md"
             class="btn-toggle-visibility"
             @click="showPassword = !showPassword"
           >
             {{ showPassword ? '隐藏' : '显示' }}
-          </button>
+          </UiButton>
         </div>
       </div>
 
-      <div v-else class="form-row">
-        <label class="form-label" for="server-key">
-          SSH 私钥文本 <span v-if="!isEditing" class="required">*</span>
-          <span v-else class="hint-text">（留空则保持原私钥不变）</span>
+      <div v-else class="form-row flex flex-col gap-1.5">
+        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-key">
+          SSH 私钥文本 <span v-if="!isEditing" class="text-red-500">*</span>
+          <span v-else class="hint-text text-slate-400 font-normal">（留空则保持原私钥不变）</span>
         </label>
-        <textarea
+        <UiTextarea
           id="server-key"
           v-model="secret"
-          rows="5"
-          class="form-textarea key-textarea"
+          :rows="5"
+          class="key-textarea font-mono text-xs"
           placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
         />
       </div>
 
-      <div v-if="testResult" class="test-feedback" :class="{ 'is-ok': testResult.ok }">
-        <span class="test-icon">{{ testResult.ok ? '✓' : '✗' }}</span>
-        <span>{{ testResult.message }}</span>
-      </div>
+      <UiAlert
+        v-if="testResult"
+        :variant="testResult.ok ? 'success' : 'error'"
+        class="test-feedback"
+      >
+        {{ testResult.message }}
+      </UiAlert>
 
-      <div class="dialog-actions">
-        <button
+      <div class="dialog-actions flex items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+        <UiButton
           type="button"
+          variant="secondary"
           class="btn-test"
           :disabled="testing"
+          :loading="testing"
           @click="onTest"
         >
           {{ testing ? '测试中…' : '测试连接' }}
-        </button>
+        </UiButton>
 
-        <div class="spacer" />
-
-        <button type="button" class="btn-cancel" @click="emit('close')">
-          取消
-        </button>
-        <button
-          type="submit"
-          class="btn-save"
-          :disabled="saving"
-        >
-          {{ saving ? '保存中…' : '保存' }}
-        </button>
+        <div class="flex items-center gap-2">
+          <UiButton type="button" variant="secondary" class="btn-cancel" @click="emit('close')">
+            取消
+          </UiButton>
+          <UiButton
+            type="submit"
+            variant="primary"
+            class="btn-save"
+            :disabled="saving"
+            :loading="saving"
+          >
+            {{ saving ? '保存中…' : '保存' }}
+          </UiButton>
+        </div>
       </div>
     </form>
-  </AppDialog>
+  </UiDialog>
 </template>
-
-<style scoped>
-.server-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 440px;
-}
-
-.form-error {
-  padding: 8px 12px;
-  background: var(--color-danger-soft, rgba(239, 68, 68, 0.1));
-  color: var(--color-danger, #ef4444);
-  border: 1px solid var(--color-danger-border, rgba(239, 68, 68, 0.3));
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 100px;
-  gap: 12px;
-}
-
-.form-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.required {
-  color: #ef4444;
-}
-
-.hint-text {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  font-weight: normal;
-}
-
-.form-input,
-.form-textarea {
-  background: var(--color-surface-muted, #1e1e24);
-  color: var(--color-text, #fff);
-  border: 1px solid var(--color-border, #3a3a44);
-  border-radius: 6px;
-  padding: 8px 12px;
-  font-size: 13px;
-  transition: border-color 0.15s;
-}
-
-.form-input:focus,
-.form-textarea:focus {
-  outline: none;
-  border-color: var(--color-primary, #3b82f6);
-}
-
-.password-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.password-wrapper .form-input {
-  width: 100%;
-  padding-right: 50px;
-}
-
-.btn-toggle-visibility {
-  position: absolute;
-  right: 8px;
-  background: transparent;
-  border: none;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px;
-}
-
-.btn-toggle-visibility:hover {
-  color: var(--color-text);
-}
-
-.key-textarea {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  line-height: 1.4;
-  resize: vertical;
-}
-
-.radio-group {
-  display: flex;
-  gap: 20px;
-}
-
-.radio-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-text);
-  cursor: pointer;
-}
-
-.test-feedback {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
-  background: var(--color-danger-soft, rgba(239, 68, 68, 0.1));
-  color: var(--color-danger, #ef4444);
-  border: 1px solid var(--color-danger-border, rgba(239, 68, 68, 0.3));
-}
-
-.test-feedback.is-ok {
-  background: rgba(34, 197, 94, 0.1);
-  color: #22c55e;
-  border-color: rgba(34, 197, 94, 0.3);
-}
-
-.dialog-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.btn-test {
-  padding: 7px 12px;
-  background: var(--color-surface-muted, #2a2b32);
-  color: var(--color-text, #fff);
-  border: 1px solid var(--color-border, #3f3f46);
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.btn-test:hover:not(:disabled) {
-  background: var(--color-surface, #373842);
-}
-
-.btn-cancel {
-  padding: 7px 14px;
-  background: transparent;
-  color: var(--color-text-muted, #a1a1aa);
-  border: 1px solid var(--color-border, #3f3f46);
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.btn-cancel:hover {
-  background: var(--color-surface, #27272a);
-}
-
-.btn-save {
-  padding: 7px 16px;
-  background: var(--color-primary, #2563eb);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.btn-save:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.btn-save:disabled,
-.btn-test:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-</style>

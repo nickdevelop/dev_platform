@@ -66,8 +66,14 @@ const tooltipText = computed(() => {
 <template>
   <div
     v-if="visible"
-    class="context-meter"
-    :class="{ warning: isWarning, danger: isDanger }"
+    class="context-meter inline-flex items-center gap-1.5 h-7 px-2 rounded border transition-colors select-none text-xs leading-none cursor-default"
+    :class="[
+      isDanger
+        ? 'danger bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'
+        : isWarning
+        ? 'warning bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400'
+        : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400',
+    ]"
     role="progressbar"
     :aria-valuenow="percentage"
     aria-valuemin="0"
@@ -75,17 +81,24 @@ const tooltipText = computed(() => {
     :title="tooltipText"
     data-test="context-usage"
   >
-    <div class="meter-gauge" aria-hidden="true">
+    <div class="meter-gauge shrink-0" aria-hidden="true">
       <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`">
         <path
-          class="meter-bg"
+          class="meter-bg stroke-slate-200 dark:stroke-slate-700"
           :d="pathData"
           fill="none"
           :stroke-width="strokeWidth"
           stroke-linecap="round"
         />
         <path
-          class="meter-fill"
+          class="meter-fill transition-all duration-300 ease-out"
+          :class="[
+            isDanger
+              ? 'stroke-red-500'
+              : isWarning
+              ? 'stroke-amber-500'
+              : 'stroke-blue-600 dark:stroke-blue-400',
+          ]"
           :d="pathData"
           fill="none"
           :stroke-width="strokeWidth"
@@ -95,66 +108,6 @@ const tooltipText = computed(() => {
         />
       </svg>
     </div>
-    <span class="meter-percent">{{ percentage }}%</span>
+    <span class="meter-percent font-mono text-[11px] font-medium">{{ percentage }}%</span>
   </div>
 </template>
-
-<style scoped>
-.context-meter {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 0 0.5rem;
-  border-radius: 6px;
-  background: var(--color-surface-muted, #f1f5f9);
-  border: 1px solid var(--color-border, #e2e8f0);
-  cursor: default;
-  user-select: none;
-  font-size: 0.76rem;
-  line-height: 1;
-  color: var(--color-text-muted, #64748b);
-  transition: all 0.15s ease;
-}
-
-.meter-gauge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.meter-bg {
-  stroke: var(--color-border-strong, #cbd5e1);
-}
-
-.meter-fill {
-  stroke: var(--color-primary, #3b82f6);
-  transition: stroke-dashoffset 0.25s ease;
-}
-
-.meter-percent {
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-}
-
-.context-meter.warning {
-  border-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.08);
-  color: #d97706;
-}
-
-.context-meter.warning .meter-fill {
-  stroke: #f59e0b;
-}
-
-.context-meter.danger {
-  border-color: #ef4444;
-  background: rgba(239, 68, 68, 0.08);
-  color: #dc2626;
-}
-
-.context-meter.danger .meter-fill {
-  stroke: #ef4444;
-}
-</style>

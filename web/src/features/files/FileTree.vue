@@ -87,35 +87,56 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
       return null
   }
 }
+
+defineExpose({
+  expanded,
+  isExpanded,
+  toggleExpand,
+})
 </script>
 
 <template>
-  <ul class="file-tree-list" :style="{ '--tree-level': props.level }">
+  <ul class="file-tree-list list-none m-0 p-0 select-none">
     <li v-for="node in props.nodes" :key="node.path" class="file-tree-item">
       <div
-        class="file-tree-row"
-        :class="{
-          'is-active': props.activePath === node.path,
-          'is-dir': node.isDir,
-          'has-change': !!props.gitChangesMap.get(node.path),
-        }"
+        class="file-tree-row flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
+        :class="[
+          props.activePath === node.path
+            ? 'is-active bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
+            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70',
+          node.isDir ? 'is-dir' : '',
+          props.gitChangesMap.get(node.path) ? 'has-change' : '',
+        ]"
         :style="{ paddingLeft: `${props.level * 14 + 8}px` }"
         :draggable="!node.isDir"
         @click="onNodeClick(node)"
         @dragstart="onDragStart($event, node.path)"
       >
-        <span v-if="node.isDir" class="expand-arrow" :class="{ 'is-open': isExpanded(node.path) }">
+        <span
+          v-if="node.isDir"
+          class="expand-arrow inline-block w-3 text-[10px] text-slate-400 text-center transition-transform duration-150"
+          :class="{ 'is-open rotate-90': isExpanded(node.path) }"
+        >
           ▶
         </span>
-        <span v-else class="expand-arrow-spacer"></span>
+        <span v-else class="expand-arrow-spacer w-3 inline-block"></span>
 
-        <span class="file-icon" aria-hidden="true">{{ getFileIcon(node.name, node.isDir) }}</span>
-        <span class="file-name" :title="node.path">{{ node.name }}</span>
+        <span class="file-icon text-sm leading-none shrink-0" aria-hidden="true">{{ getFileIcon(node.name, node.isDir) }}</span>
+        <span class="file-name truncate flex-1 min-w-0" :title="node.path">{{ node.name }}</span>
 
         <span
           v-if="!node.isDir && props.gitChangesMap.get(node.path)"
-          class="git-badge"
-          :class="`git-${props.gitChangesMap.get(node.path)}`"
+          class="git-badge shrink-0 px-1 py-0.2 text-[10px] font-mono rounded font-semibold border"
+          :class="[
+            `git-${props.gitChangesMap.get(node.path)}`,
+            props.gitChangesMap.get(node.path) === 'added'
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800'
+              : props.gitChangesMap.get(node.path) === 'modified'
+              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+              : props.gitChangesMap.get(node.path) === 'deleted'
+              ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700',
+          ]"
           :title="getChangeBadge(props.gitChangesMap.get(node.path))?.label"
         >
           {{ getChangeBadge(props.gitChangesMap.get(node.path))?.text }}
@@ -124,17 +145,17 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
 
       <div
         v-if="node.isDir && isExpanded(node.path) && node.loading"
-        class="tree-state-row"
+        class="tree-state-row flex items-center gap-1.5 h-6 text-xs text-slate-400"
         :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
         data-test="tree-node-loading"
       >
-        <span class="tree-loading-spinner" aria-hidden="true">↻</span>
+        <span class="tree-loading-spinner animate-spin inline-block text-[11px]" aria-hidden="true">↻</span>
         <span class="tree-state-text">加载中…</span>
       </div>
 
       <div
         v-else-if="node.isDir && isExpanded(node.path) && node.loaded && (!node.children || node.children.length === 0)"
-        class="tree-state-row"
+        class="tree-state-row flex items-center h-6 text-xs text-slate-400 italic"
         :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
         data-test="tree-node-empty"
       >
@@ -154,133 +175,3 @@ function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: st
     </li>
   </ul>
 </template>
-
-<style scoped>
-.file-tree-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.file-tree-item {
-  margin: 0;
-  padding: 0;
-}
-
-.file-tree-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding-right: 8px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-  color: var(--color-text);
-  cursor: pointer;
-  user-select: none;
-  transition: background-color 0.15s ease;
-}
-
-.file-tree-row:hover {
-  background-color: var(--color-surface-muted, #f1f5f9);
-}
-
-.file-tree-row.is-active {
-  background-color: var(--color-primary-soft, #e8effd);
-  color: var(--color-primary, #2563eb);
-  font-weight: 500;
-}
-
-.expand-arrow {
-  display: inline-block;
-  font-size: 0.65rem;
-  color: var(--color-text-muted);
-  transition: transform 0.15s ease;
-  width: 12px;
-  text-align: center;
-}
-
-.expand-arrow.is-open {
-  transform: rotate(90deg);
-}
-
-.expand-arrow-spacer {
-  display: inline-block;
-  width: 12px;
-}
-
-.file-icon {
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
-.file-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.git-badge {
-  flex-shrink: 0;
-  font-size: 0.68rem;
-  font-weight: 700;
-  border-radius: 3px;
-  padding: 0 4px;
-  line-height: 1.4;
-}
-
-.git-modified {
-  color: #b45309;
-  background-color: #fef3c7;
-}
-
-.git-added,
-.git-untracked {
-  color: #15803d;
-  background-color: #dcfce7;
-}
-
-.git-deleted {
-  color: #b91c1c;
-  background-color: #fee2e2;
-  text-decoration: line-through;
-}
-
-.tree-state-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  font-size: 0.78rem;
-  color: var(--color-text-muted, #64748b);
-  user-select: none;
-}
-
-.tree-loading-spinner {
-  display: inline-block;
-  animation: treeSpin 1s linear infinite;
-  font-size: 0.85rem;
-  line-height: 1;
-}
-
-@keyframes treeSpin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.tree-state-text.muted {
-  color: var(--color-text-muted, #94a3b8);
-  font-style: italic;
-}
-
-.git-renamed {
-  color: #4338ca;
-  background-color: #e0e7ff;
-}
-</style>

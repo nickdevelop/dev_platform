@@ -1902,9 +1902,6 @@ async function removeSession() {
 .activity-scroll {
   flex: 1;
   min-height: 0;
-  /* Thinking/tool cards wrap their text (overflow-wrap below), so only the
-     vertical axis ever scrolls here — the pane never grows a horizontal
-     scrollbar. */
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0.5rem 0.6rem;
@@ -1934,22 +1931,27 @@ async function removeSession() {
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
-  padding: 0.3rem 0.8rem;
+  padding: 0.35rem 0.85rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   background: var(--color-surface);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.jump-latest:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .chat-header {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  /* A rule under the title separates the session heading from the
-     conversation below it. */
+  gap: 0.35rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
 }
@@ -1967,11 +1969,10 @@ async function removeSession() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 1.05rem;
+  font-weight: 600;
 }
 
-/* The workdir row owns the second header line so a long path never pushes
-   the title: the path ellipsizes in the middle (see ellipsisMiddle) with
-   the full directory on hover, beside the copy control and branch chip. */
 .workdir-row {
   display: flex;
   align-items: center;
@@ -2000,6 +2001,7 @@ async function removeSession() {
   font: inherit;
   font-size: 0.75rem;
   white-space: nowrap;
+  transition: all 0.15s ease;
 }
 
 .workdir-copy:hover {
@@ -2008,7 +2010,7 @@ async function removeSession() {
 }
 
 .delete-session {
-  padding: 0.15rem 0.5rem;
+  padding: 0.15rem 0.55rem;
   border: 1px solid var(--color-danger-border);
   border-radius: 6px;
   background: var(--color-surface);
@@ -2016,38 +2018,48 @@ async function removeSession() {
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.delete-session:hover {
+  background: var(--color-danger-soft, #fee2e2);
 }
 
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(1px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  z-index: 50;
 }
 
 .confirm-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   width: min(26rem, 90vw);
-  padding: 1rem 1.1rem;
-  border-radius: 10px;
+  padding: 1.25rem;
+  border-radius: 6px;
   background: var(--color-surface);
+  border: 1px solid var(--color-border);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
 }
 
 .confirm-title {
   margin: 0;
   font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text);
 }
 
 .confirm-hint {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 .confirm-error {
@@ -2060,27 +2072,38 @@ async function removeSession() {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+  margin-top: 0.25rem;
 }
 
 .confirm-actions button {
-  padding: 0.35rem 0.7rem;
+  padding: 0.35rem 0.8rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
   background: var(--color-surface);
   cursor: pointer;
   font: inherit;
+  font-size: 0.85rem;
+  font-medium: 500;
+  transition: all 0.15s ease;
+}
+
+.confirm-actions .confirm-cancel:hover {
+  background: var(--color-surface-muted);
 }
 
 .confirm-actions .confirm-delete {
   background: var(--color-danger);
   border-color: var(--color-danger);
-  color: var(--color-surface);
+  color: #fff;
+}
+
+.confirm-actions .confirm-delete:hover:not(:disabled) {
+  opacity: 0.9;
 }
 
 .confirm-actions .confirm-delete:disabled {
-  background: var(--color-danger-border);
-  border-color: var(--color-danger-border);
-  cursor: default;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .session-heading {
@@ -2092,9 +2115,10 @@ async function removeSession() {
   flex: none;
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
-  border-radius: 999px;
-  padding: 0.1rem 0.5rem;
-  font-size: 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
@@ -2104,19 +2128,26 @@ async function removeSession() {
 
 .turn-status {
   color: var(--color-primary-hover);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
 .history-note {
   margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-surface-muted);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .history-error {
   margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-warning-soft);
   color: var(--color-warning);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .retry {
@@ -2127,6 +2158,13 @@ async function removeSession() {
   background: var(--color-surface);
   cursor: pointer;
   font: inherit;
+  font-size: 0.78rem;
+  transition: all 0.15s ease;
+}
+
+.retry:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .send {
@@ -2160,23 +2198,22 @@ async function removeSession() {
   background: var(--color-primary);
 }
 
-/* Desktop-style composer: one rounded box holds the input and its toolbar,
-   like the opencode desktop client. */
 .composer-box {
   position: relative;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-surface);
   padding: 0.45rem 0.65rem 0.4rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .composer-box:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-info-soft);
+  box-shadow: 0 0 0 2px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
 }
 
 .composer-label {
@@ -2313,7 +2350,7 @@ async function removeSession() {
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px;
   z-index: 100;
   display: flex;
@@ -2344,6 +2381,7 @@ async function removeSession() {
 
 .send-menu-item.selected {
   font-weight: 600;
+  color: var(--color-primary);
 }
 
 .menu-check {
@@ -2417,18 +2455,27 @@ async function removeSession() {
   color: var(--color-warning);
   font-size: 0.85rem;
   margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-warning-soft);
 }
 
 .instance-note {
   color: var(--color-warning);
   font-size: 0.85rem;
   margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-warning-soft);
 }
 
 .send-error {
   color: var(--color-danger);
   font-size: 0.85rem;
   margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-danger-soft);
 }
 
 .empty,

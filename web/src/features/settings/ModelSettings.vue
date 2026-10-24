@@ -6,6 +6,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useModelsStore } from '../../stores/models'
 import type { ModelDto, RemoteModel, ServiceDto } from '../../api/models'
+import { UiButton, UiInput, UiBadge, UiAlert } from '../../shared/ui'
 
 const models = useModelsStore()
 
@@ -131,248 +132,191 @@ async function runTest(service: ServiceDto, model: ModelDto) {
 </script>
 
 <template>
-  <section class="models" aria-label="模型设置">
-    <div class="head">
-      <h1>模型</h1>
-      <button type="button" class="primary" @click="openCreate">新增服务</button>
+  <section class="models max-w-4xl space-y-6" aria-label="模型设置">
+    <div class="head flex items-center justify-between">
+      <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100">模型管理</h1>
+      <UiButton variant="primary" @click="openCreate">新增服务</UiButton>
     </div>
 
-    <form v-if="showServiceForm" class="service-form" @submit.prevent="submitService">
-      <input v-model="serviceForm.name" placeholder="服务名称" required />
-      <input v-model="serviceForm.baseUrl" placeholder="API 地址（如 https://api.openai.com/v1）" required />
-      <input
-        v-model="serviceForm.apiKey"
-        type="password"
-        placeholder="API Key（留空保留已保存的 Key，填写新值则替换）"
-      />
-      <label class="inline"><input v-model="serviceForm.enabled" type="checkbox" /> 启用</label>
-      <div class="actions">
-        <button type="submit" class="primary">保存</button>
-        <button type="button" @click="showServiceForm = false">取消</button>
+    <!-- 新增/编辑服务表单 -->
+    <form
+      v-if="showServiceForm"
+      class="service-form p-4 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3"
+      @submit.prevent="submitService"
+    >
+      <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">
+        {{ editingServiceId === null ? '新增服务' : '编辑服务' }}
+      </h2>
+      <div class="space-y-2">
+        <UiInput v-model="serviceForm.name" placeholder="服务名称" required block />
+        <UiInput v-model="serviceForm.baseUrl" placeholder="API 地址（如 https://api.openai.com/v1）" required block />
+        <UiInput
+          v-model="serviceForm.apiKey"
+          type="password"
+          placeholder="API Key（留空保留已保存的 Key，填写新值则替换）"
+          block
+        />
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+          <input v-model="serviceForm.enabled" type="checkbox" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600" />
+          <span>启用此服务</span>
+        </label>
+      </div>
+      <div class="actions flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+        <UiButton variant="secondary" type="button" @click="showServiceForm = false">取消</UiButton>
+        <UiButton variant="primary" type="submit">保存</UiButton>
       </div>
     </form>
 
-    <p v-if="models.error" class="error" role="alert">{{ models.error }}</p>
+    <UiAlert v-if="models.error" variant="error" class="error">
+      {{ models.error }}
+    </UiAlert>
 
-    <article v-for="service in models.services" :key="service.id" class="service" :data-service="service.id">
-      <header>
-        <div>
-          <strong>{{ service.name }}</strong>
-          <span class="muted">{{ service.baseUrl }}</span>
-          <span v-if="!service.enabled" class="badge">已停用</span>
+    <!-- 服务卡片列表 -->
+    <article
+      v-for="service in models.services"
+      :key="service.id"
+      class="service p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4"
+      :data-service="service.id"
+    >
+      <header class="flex items-center justify-between gap-4 flex-wrap">
+        <div class="flex items-center gap-3">
+          <strong class="text-base text-slate-800 dark:text-slate-100 font-semibold">{{ service.name }}</strong>
+          <span class="muted text-xs text-slate-400 dark:text-slate-500 font-mono">{{ service.baseUrl }}</span>
+          <UiBadge v-if="!service.enabled" variant="default" size="sm">已停用</UiBadge>
         </div>
-        <div class="service-actions">
-          <button type="button" :data-fetch-models="service.id" @click="fetchCandidates(service)">获取模型</button>
-          <button type="button" @click="openEdit(service)">编辑</button>
-          <button type="button" class="danger" @click="removeService(service)">删除</button>
+        <div class="service-actions flex items-center gap-2">
+          <UiButton size="sm" variant="secondary" :data-fetch-models="service.id" @click="fetchCandidates(service)">
+            获取模型
+          </UiButton>
+          <UiButton size="sm" variant="secondary" @click="openEdit(service)">编辑</UiButton>
+          <UiButton size="sm" variant="danger" @click="removeService(service)">删除</UiButton>
         </div>
       </header>
 
-      <div v-if="candidates[service.id]?.length" class="candidates">
-        <label v-for="candidate in candidates[service.id]" :key="candidate.id" :data-candidate="candidate.id" class="inline">
-          <input
-            type="checkbox"
-            :checked="isSelected(service.id, candidate.id)"
-            @change="selected[service.id][candidate.id] = ($event.target as HTMLInputElement).checked"
-          />
-          {{ candidate.name || candidate.id }}
-        </label>
-        <button type="button" class="primary" :data-add-selected="service.id" @click="addSelected(service)">
-          添加选中
-        </button>
+      <!-- 远端候选模型挑选列表 -->
+      <div
+        v-if="candidates[service.id]?.length"
+        class="candidates p-3 rounded bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 space-y-2.5"
+      >
+        <div class="text-xs font-semibold text-blue-800 dark:text-blue-300">勾选要添加至本服务的模型：</div>
+        <div class="flex flex-wrap gap-2.5 max-h-48 overflow-y-auto">
+          <label
+            v-for="candidate in candidates[service.id]"
+            :key="candidate.id"
+            :data-candidate="candidate.id"
+            class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 cursor-pointer select-none"
+          >
+            <input
+              type="checkbox"
+              class="w-3.5 h-3.5 rounded text-blue-600 accent-blue-600"
+              :checked="isSelected(service.id, candidate.id)"
+              @change="selected[service.id][candidate.id] = ($event.target as HTMLInputElement).checked"
+            />
+            <span class="truncate max-w-[200px]">{{ candidate.name || candidate.id }}</span>
+          </label>
+        </div>
+        <div class="flex justify-end pt-1">
+          <UiButton size="sm" variant="primary" :data-add-selected="service.id" @click="addSelected(service)">
+            添加选中
+          </UiButton>
+        </div>
       </div>
 
-      <table class="model-table">
-        <thead>
-          <tr>
-            <th>模型 ID</th>
-            <th>名称</th>
-            <th>能力</th>
-            <th>上下文</th>
-            <th>输出</th>
-            <th>状态</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="model in service.models" :key="model.id" :data-model="model.id">
-            <td>{{ model.modelId }}</td>
-            <td>{{ model.name }}</td>
-            <td class="muted">
-              <span v-if="model.supportsText">文本</span>
-              <span v-if="model.supportsImage">图片</span>
-              <span v-if="model.supportsTools">工具</span>
-            </td>
-            <td>{{ model.contextTokens }}</td>
-            <td>{{ model.outputTokens }}</td>
-            <td>
-              <span v-if="model.usable">可用</span>
-              <span v-else class="muted">不可用</span>
-            </td>
-            <td class="model-actions">
-              <button type="button" :data-test-model="model.id" @click="runTest(service, model)">测试</button>
-              <button type="button" @click="openModelEdit(model)">编辑</button>
-              <button type="button" class="danger" @click="removeModel(model)">删除</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p
-        v-for="model in service.models"
-        :key="`t-${model.id}`"
-        v-show="testMessage[model.id]"
-        class="test-message"
-      >
-        {{ testMessage[model.id] }}
-      </p>
+      <!-- 服务下属模型表格 -->
+      <div class="overflow-x-auto rounded border border-slate-100 dark:border-slate-800">
+        <table class="model-table w-full text-left text-sm border-collapse">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 text-xs font-medium border-b border-slate-100 dark:border-slate-800">
+            <tr>
+              <th class="py-2.5 px-3">模型 ID</th>
+              <th class="py-2.5 px-3">名称</th>
+              <th class="py-2.5 px-3">能力</th>
+              <th class="py-2.5 px-3">上下文</th>
+              <th class="py-2.5 px-3">输出</th>
+              <th class="py-2.5 px-3">状态</th>
+              <th class="py-2.5 px-3 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
+            <tr v-for="model in service.models" :key="model.id" :data-model="model.id" class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+              <td class="py-2 px-3 font-mono">{{ model.modelId }}</td>
+              <td class="py-2 px-3 font-medium text-slate-800 dark:text-slate-200">{{ model.name }}</td>
+              <td class="py-2 px-3 text-slate-400">
+                <span v-if="model.supportsText" class="mr-1">文本</span>
+                <span v-if="model.supportsImage" class="mr-1">图片</span>
+                <span v-if="model.supportsTools">工具</span>
+              </td>
+              <td class="py-2 px-3 font-mono">{{ model.contextTokens || '-' }}</td>
+              <td class="py-2 px-3 font-mono">{{ model.outputTokens || '-' }}</td>
+              <td class="py-2 px-3">
+                <UiBadge v-if="model.usable" variant="success" size="sm">可用</UiBadge>
+                <UiBadge v-else variant="default" size="sm">不可用</UiBadge>
+              </td>
+              <td class="py-2 px-3 text-right">
+                <div class="model-actions inline-flex items-center justify-end gap-1.5">
+                  <UiButton size="sm" variant="ghost" :data-test-model="model.id" @click="runTest(service, model)">测试</UiButton>
+                  <UiButton size="sm" variant="ghost" @click="openModelEdit(model)">编辑</UiButton>
+                  <UiButton size="sm" variant="ghost" class="text-red-600 hover:text-red-700 dark:text-red-400" @click="removeModel(model)">删除</UiButton>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 测试结果反馈 -->
+      <div v-for="model in service.models" :key="`t-${model.id}`">
+        <p
+          v-show="testMessage[model.id]"
+          class="test-message text-xs px-2.5 py-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-mono"
+        >
+          {{ testMessage[model.id] }}
+        </p>
+      </div>
     </article>
 
-    <form v-if="editingModelId !== null" class="model-form" @submit.prevent="submitModel">
-      <h2>编辑模型</h2>
-      <input v-model="modelForm.modelId" placeholder="模型 ID" required />
-      <input v-model="modelForm.name" placeholder="模型名称" required />
-      <label class="inline"><input v-model="modelForm.supportsText" type="checkbox" /> 文本输入</label>
-      <label class="inline"><input v-model="modelForm.supportsImage" type="checkbox" /> 图片输入</label>
-      <label class="inline"><input v-model="modelForm.supportsTools" type="checkbox" /> 工具调用</label>
-      <label class="inline">上下文 <input v-model.number="modelForm.contextTokens" type="number" min="0" /></label>
-      <label class="inline">输出 <input v-model.number="modelForm.outputTokens" type="number" min="0" /></label>
-      <label class="inline"><input v-model="modelForm.enabled" type="checkbox" /> 启用</label>
-      <div class="actions">
-        <button type="submit" class="primary">保存</button>
-        <button type="button" @click="editingModelId = null">取消</button>
+    <!-- 编辑单个模型弹层/表单 -->
+    <form
+      v-if="editingModelId !== null"
+      class="model-form p-4 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-3"
+      @submit.prevent="submitModel"
+    >
+      <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">编辑模型</h2>
+      <div class="space-y-2">
+        <UiInput v-model="modelForm.modelId" placeholder="模型 ID" required block />
+        <UiInput v-model="modelForm.name" placeholder="模型名称" required block />
+        <div class="flex flex-wrap gap-4 pt-1 text-sm text-slate-700 dark:text-slate-300">
+          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+            <input v-model="modelForm.supportsText" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+            <span>文本输入</span>
+          </label>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+            <input v-model="modelForm.supportsImage" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+            <span>图片输入</span>
+          </label>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+            <input v-model="modelForm.supportsTools" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+            <span>工具调用</span>
+          </label>
+        </div>
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <label class="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <span>上下文 Token 限制</span>
+            <UiInput v-model.number="modelForm.contextTokens" type="number" min="0" block />
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-slate-600 dark:text-slate-400">
+            <span>输出 Token 限制</span>
+            <UiInput v-model.number="modelForm.outputTokens" type="number" min="0" block />
+          </label>
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none pt-1">
+          <input v-model="modelForm.enabled" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+          <span>启用此模型</span>
+        </label>
+      </div>
+      <div class="actions flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+        <UiButton variant="secondary" type="button" @click="editingModelId = null">取消</UiButton>
+        <UiButton variant="primary" type="submit">保存</UiButton>
       </div>
     </form>
   </section>
 </template>
-
-<style scoped>
-.models h1 {
-  font-size: 1.25rem;
-  margin: 0;
-}
-
-.head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: calc(var(--space-unit) * 2);
-}
-
-.service {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  padding: calc(var(--space-unit) * 2);
-  margin-bottom: calc(var(--space-unit) * 2);
-}
-
-.service header {
-  display: flex;
-  justify-content: space-between;
-  gap: calc(var(--space-unit) * 2);
-}
-
-.muted {
-  color: var(--color-text-muted);
-  margin-left: calc(var(--space-unit) * 1.5);
-  font-size: 0.857rem;
-}
-
-.badge {
-  margin-left: calc(var(--space-unit) * 1.5);
-  padding: 0 var(--space-unit);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  font-size: 0.857rem;
-}
-
-.service-actions,
-.model-actions,
-.actions {
-  display: flex;
-  gap: var(--space-unit);
-}
-
-button {
-  padding: calc(var(--space-unit) * 0.6) calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font: inherit;
-}
-
-button.primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-button.danger {
-  color: var(--color-danger);
-  border-color: var(--color-danger-border);
-}
-
-.service-form,
-.model-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-unit);
-  padding: calc(var(--space-unit) * 2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  margin-bottom: calc(var(--space-unit) * 2);
-  background: var(--color-surface-muted);
-}
-
-.service-form input,
-.model-form input {
-  height: var(--control-height);
-  padding: 0 calc(var(--space-unit) * 1.5);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
-
-.inline {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-unit);
-}
-
-.candidates {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: calc(var(--space-unit) * 1.5);
-  margin: calc(var(--space-unit) * 1.5) 0;
-  padding: calc(var(--space-unit) * 1.5);
-  background: var(--color-surface-muted);
-  border-radius: var(--radius);
-}
-
-.model-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: var(--space-unit);
-}
-
-.model-table th,
-.model-table td {
-  text-align: left;
-  padding: calc(var(--space-unit) * 0.8) var(--space-unit);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.error {
-  color: var(--color-danger);
-}
-
-.test-message {
-  color: var(--color-text-muted);
-  font-size: 0.857rem;
-}
-</style>

@@ -12,6 +12,7 @@ import {
   imageAttachmentFromFile,
   imageValidationError,
 } from '../composer/imageFiles'
+import { UiButton, UiAlert } from '../../../shared/ui'
 
 const MAX_IMAGES = 4
 
@@ -207,40 +208,48 @@ function closePreview() {
 </script>
 
 <template>
-  <form class="chat-composer" @submit.prevent="submit">
-    <p v-if="props.editing" class="chat-edit-banner" data-test="chat-edit-banner" role="status">
+  <form class="chat-composer flex flex-col gap-2" @submit.prevent="submit">
+    <div
+      v-if="props.editing"
+      class="chat-edit-banner flex items-center justify-between gap-3 px-3 py-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200"
+      data-test="chat-edit-banner"
+      role="status"
+    >
       <span>正在编辑历史消息；发送后将删除该消息之后的内容。</span>
-      <button type="button" class="chat-edit-cancel" @click="emit('cancel-edit')">取消</button>
-    </p>
+      <button type="button" class="chat-edit-cancel font-medium text-blue-600 hover:underline" @click="emit('cancel-edit')">取消</button>
+    </div>
 
-    <p v-if="!props.hasModels" class="chat-composer-note" role="alert">
+    <UiAlert v-if="!props.hasModels" variant="warning" class="chat-composer-note">
       尚未配置可用模型，请先到「设置 → 模型管理」添加并启用模型。
-    </p>
-    <p v-else-if="imageModeBlocked" class="chat-composer-note" role="alert">
+    </UiAlert>
+    <UiAlert v-else-if="imageModeBlocked" variant="warning" class="chat-composer-note">
       当前模型不支持图片输入，请更换模型或移除图片。
-    </p>
-    <p v-if="notice" class="chat-composer-note" role="alert">{{ notice }}</p>
+    </UiAlert>
+    <UiAlert v-if="notice" variant="warning" class="chat-composer-note">
+      {{ notice }}
+    </UiAlert>
 
     <div
-      class="chat-composer-box"
+      class="chat-composer-box relative rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm p-2.5 flex flex-col gap-2 transition-colors focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
       @dragover.prevent
       @drop.prevent="onDrop"
     >
       <div
         v-if="!props.compact"
-        class="composer-resizer"
+        class="composer-resizer h-2 w-full flex items-center justify-center cursor-ns-resize select-none group"
         data-test="composer-resizer"
         title="拖拽调整输入框高度，双击重置"
         @mousedown="onResizerMouseDown"
         @dblclick="resetComposerHeight"
       >
-        <span class="resizer-handle"></span>
+        <span class="resizer-handle w-9 h-1 rounded-full bg-slate-300 dark:bg-slate-700 group-hover:bg-blue-500 transition-colors"></span>
       </div>
+
       <label class="sr-only" :for="resolvedInputId">发送消息</label>
       <textarea
         :id="resolvedInputId"
         ref="textarea"
-        class="chat-composer-text"
+        class="chat-composer-text w-full min-h-[2.2rem] bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm outline-none resize-none leading-relaxed"
         :rows="props.compact ? 2 : 3"
         :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
         :value="props.text"
@@ -253,11 +262,11 @@ function closePreview() {
 
       <ComposerImageTray :images="props.images" @remove="removeImage" @preview="openPreview" />
 
-      <div class="chat-composer-bar">
-        <div class="chat-composer-tools">
+      <div class="chat-composer-bar flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div class="chat-composer-tools flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            class="chat-attach-btn"
+            class="chat-attach-btn w-7 h-7 flex items-center justify-center rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-base font-medium transition-colors"
             :disabled="!props.supportsImage || props.images.length >= MAX_IMAGES"
             :title="props.supportsImage ? '添加图片' : '当前模型不支持图片'"
             aria-label="添加图片"
@@ -271,7 +280,7 @@ function closePreview() {
             type="file"
             accept="image/*"
             multiple
-            class="hidden-file-input"
+            class="hidden-file-input hidden"
             data-test="chat-file-input"
             @change="onFileInput"
           />
@@ -283,8 +292,10 @@ function closePreview() {
           />
         </div>
 
-        <button
+        <UiButton
           type="button"
+          :variant="props.running ? 'danger' : 'primary'"
+          size="sm"
           class="chat-send-btn"
           :class="{ stop: props.running }"
           :disabled="props.running ? false : !canSend"
@@ -292,211 +303,10 @@ function closePreview() {
           @click="submit"
         >
           {{ props.running ? '停止' : '发送' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
     <ImagePreviewModal :image="preview" :visible="previewVisible" @close="closePreview" />
   </form>
 </template>
-
-<style scoped>
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.chat-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.composer-resizer {
-  height: 10px;
-  margin-top: -0.25rem;
-  margin-bottom: 0.1rem;
-  cursor: ns-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  user-select: none;
-}
-
-.composer-resizer .resizer-handle {
-  width: 38px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--color-border-strong);
-  opacity: 0.6;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
-}
-
-.composer-resizer:hover .resizer-handle {
-  opacity: 1;
-  background: var(--color-primary);
-}
-
-.chat-edit-banner {
-  margin: 0;
-  padding: 0.4rem 0.6rem;
-  border-radius: 6px;
-  background: var(--color-warning-soft, #fef3c7);
-  color: var(--color-text);
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.chat-edit-cancel {
-  border: none;
-  background: transparent;
-  color: var(--color-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.8rem;
-}
-
-.chat-composer-note {
-  margin: 0;
-  color: var(--color-warning, #b45309);
-  font-size: 0.8rem;
-}
-
-.chat-composer-box {
-  position: relative;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
-  background: var(--color-surface);
-  padding: 0.45rem 0.65rem 0.4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.chat-composer-box:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-info-soft);
-}
-
-.chat-composer-text {
-  width: 100%;
-  min-height: 2.2rem;
-  max-height: 12rem;
-  padding: 0.1rem 0;
-  resize: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.88rem;
-  line-height: 1.4;
-  box-sizing: border-box;
-}
-
-.chat-composer-text::placeholder {
-  color: var(--color-text-muted);
-}
-
-.chat-composer-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding-top: 0.3rem;
-  border-top: 1px solid var(--color-border);
-  min-height: 28px;
-}
-
-.chat-composer-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.chat-attach-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  width: 28px;
-  padding: 0;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  font-size: 1.15rem;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.chat-attach-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background: var(--color-surface);
-}
-
-.chat-attach-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  filter: grayscale(1);
-}
-
-.hidden-file-input {
-  display: none;
-}
-
-.chat-send-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 28px;
-  min-width: 3.5rem;
-  padding: 0 0.85rem;
-  border: 1px solid var(--color-primary);
-  border-radius: 6px;
-  background: var(--color-primary);
-  color: var(--color-surface);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.chat-send-btn:hover:not(:disabled):not(.stop) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-}
-
-.chat-send-btn:disabled {
-  background: var(--color-info-border);
-  border-color: var(--color-info-border);
-  cursor: default;
-  opacity: 0.7;
-}
-
-.chat-send-btn.stop {
-  background: var(--color-surface);
-  border-color: var(--color-danger-border);
-  color: var(--color-danger);
-}
-
-.chat-send-btn.stop:hover:not(:disabled) {
-  background: var(--color-danger-soft);
-}
-</style>

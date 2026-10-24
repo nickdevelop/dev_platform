@@ -15,6 +15,7 @@ import {
 } from './status'
 import TaskChatDialog from './TaskChatDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
+import { UiButton, UiBadge, UiAlert, UiEmpty } from '../../shared/ui'
 
 const props = defineProps<{
   taskId: number
@@ -103,7 +104,6 @@ async function handleManualTrigger() {
   try {
     const res = await tasksStore.triggerExecution(task.value.id, 'manual')
     if (res.run) {
-      // Open modal directly or show in table
       openRunSession(res.run)
     }
   } catch (err: any) {
@@ -146,110 +146,111 @@ function calculateDuration(run: TaskRun): string {
 </script>
 
 <template>
-  <div v-if="task" class="task-detail-container" data-test="task-detail-view">
+  <div v-if="task" class="task-detail-container h-full overflow-y-auto p-6 space-y-6 bg-slate-50 dark:bg-slate-950" data-test="task-detail-view">
     <!-- Header Panel -->
-    <header class="detail-header">
-      <div class="header-main">
-        <div class="badge-row">
-          <span class="type-pill" :class="task.taskType">
+    <header class="detail-header p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex items-start justify-between gap-6 flex-wrap">
+      <div class="header-main flex-1 min-w-[280px] space-y-2">
+        <div class="badge-row flex items-center gap-2 flex-wrap">
+          <UiBadge variant="primary" size="sm">
             {{ getTaskTypeLabel(task.taskType) }}
-          </span>
-          <span class="run-status-badge" :class="getRunStatusBadgeClass(task.lastRunStatus)">
+          </UiBadge>
+          <span class="run-status-badge text-xs px-2 py-0.5 rounded font-medium border" :class="getRunStatusBadgeClass(task.lastRunStatus)">
             {{ getRunStatusLabel(task.lastRunStatus) }}
           </span>
-          <span v-if="task.scheduleEnabled" class="schedule-pill">
+          <UiBadge v-if="task.scheduleEnabled" variant="warning" size="sm">
             ⏰ {{ getScheduleTypeLabel(task.scheduleType) }}
-          </span>
+          </UiBadge>
         </div>
 
-        <h1 class="task-title">{{ task.title }}</h1>
-        <p v-if="task.description" class="task-desc">{{ task.description }}</p>
+        <h1 class="task-title text-xl font-bold text-slate-900 dark:text-slate-100">{{ task.title }}</h1>
+        <p v-if="task.description" class="task-desc text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{{ task.description }}</p>
 
         <!-- Meta info -->
-        <div class="meta-row">
-          <div class="meta-item">
-            <span class="meta-label">关联项目:</span>
-            <span class="meta-val">{{ projectName }}</span>
+        <div class="meta-row flex items-center gap-4 text-xs text-slate-600 dark:text-slate-400 pt-2 flex-wrap">
+          <div class="meta-item flex items-center gap-1.5">
+            <span class="meta-label text-slate-400">关联项目:</span>
+            <span class="meta-val font-medium text-slate-700 dark:text-slate-200">{{ projectName }}</span>
           </div>
-          <div class="meta-item">
-            <span class="meta-label">Agent:</span>
+          <div class="meta-item flex items-center gap-1.5">
+            <span class="meta-label text-slate-400">Agent:</span>
             <BackendTag :backend="task.backend" />
           </div>
-          <div class="meta-item">
-            <span class="meta-label">模型:</span>
-            <code class="meta-val">{{ task.model }}</code>
+          <div class="meta-item flex items-center gap-1.5">
+            <span class="meta-label text-slate-400">模型:</span>
+            <code class="meta-val px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono">{{ task.model }}</code>
           </div>
-          <div class="meta-item">
-            <span class="meta-label">执行方式:</span>
-            <span class="meta-val font-semibold">{{ getScheduleTypeLabel(task.scheduleType) }}</span>
+          <div class="meta-item flex items-center gap-1.5">
+            <span class="meta-label text-slate-400">执行方式:</span>
+            <span class="meta-val font-semibold text-slate-800 dark:text-slate-200">{{ getScheduleTypeLabel(task.scheduleType) }}</span>
           </div>
-          <div v-if="task.nextRunAt" class="meta-item">
+          <div v-if="task.nextRunAt" class="meta-item flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
             <span class="meta-label">下次计划执行:</span>
-            <span class="meta-val highlight">{{ formatDateTime(task.nextRunAt) }}</span>
+            <span class="meta-val font-medium">{{ formatDateTime(task.nextRunAt) }}</span>
           </div>
         </div>
       </div>
 
       <!-- Action buttons -->
-      <div class="header-actions">
-        <button
-          type="button"
+      <div class="header-actions flex items-center gap-2 shrink-0">
+        <UiButton
+          variant="primary"
           class="btn-trigger"
           :disabled="triggering"
+          :loading="triggering"
           data-test="btn-trigger-task"
           @click="handleManualTrigger"
         >
           {{ triggering ? '正在启动…' : '▶ 手动执行' }}
-        </button>
-        <button
-          type="button"
+        </UiButton>
+        <UiButton
+          variant="secondary"
           class="btn-edit"
           data-test="btn-edit-task"
           @click="showEditDialog = true"
         >
           编辑
-        </button>
-        <button
-          type="button"
+        </UiButton>
+        <UiButton
+          variant="danger"
           class="btn-delete"
           data-test="btn-delete-task"
           @click="handleDelete"
         >
           删除
-        </button>
+        </UiButton>
       </div>
     </header>
 
-    <p v-if="actionError" class="action-error-bar" role="alert">{{ actionError }}</p>
+    <UiAlert v-if="actionError" variant="error" class="action-error-bar">
+      {{ actionError }}
+    </UiAlert>
 
     <!-- Template & Execution Config Overview -->
-    <section class="section-card">
-      <div class="section-head">
-        <h3>📋 会话执行模板</h3>
+    <section class="section-card p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
+      <div class="section-head pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">📋 会话执行模板</h3>
       </div>
-      <div class="template-box">
-        <div class="template-header">
-          <span class="template-title">提示词模板内容</span>
-        </div>
-        <pre class="template-content">{{ task.promptTemplate }}</pre>
+      <div class="template-box space-y-1.5">
+        <div class="template-header text-xs text-slate-400 font-medium">提示词模板内容</div>
+        <pre class="template-content p-3 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-xs font-mono whitespace-pre-wrap leading-relaxed text-slate-800 dark:text-slate-200">{{ task.promptTemplate }}</pre>
       </div>
 
       <!-- Scheduling Details if configured -->
-      <div v-if="task.scheduleType !== 'manual'" class="schedule-summary-bar">
-        <div v-if="task.scheduleType === 'once'" class="schedule-summary-item">
+      <div v-if="task.scheduleType !== 'manual'" class="schedule-summary-bar pt-2 text-xs text-slate-600 dark:text-slate-300">
+        <div v-if="task.scheduleType === 'once'" class="schedule-summary-item flex items-center gap-2">
           <strong>定时执行时间：</strong>
-          <span>{{ formatDateTime(task.scheduledAt) }}</span>
-          <span class="status-tag" :class="{ enabled: task.scheduleEnabled }">
+          <span class="font-mono">{{ formatDateTime(task.scheduledAt) }}</span>
+          <UiBadge :variant="task.scheduleEnabled ? 'warning' : 'default'" size="sm">
             {{ task.scheduleEnabled ? '等待执行' : '已完成/已停用' }}
-          </span>
+          </UiBadge>
         </div>
-        <div v-else-if="task.scheduleType === 'cron'" class="schedule-summary-item">
+        <div v-else-if="task.scheduleType === 'cron'" class="schedule-summary-item flex items-center gap-2 flex-wrap">
           <strong>周期表达式 (Cron)：</strong>
-          <code>{{ task.cronExpr }}</code>
-          <span class="status-tag" :class="{ enabled: task.scheduleEnabled }">
+          <code class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded font-mono">{{ task.cronExpr }}</code>
+          <UiBadge :variant="task.scheduleEnabled ? 'success' : 'default'" size="sm">
             {{ task.scheduleEnabled ? '持续调度中' : '已停用' }}
-          </span>
-          <span v-if="task.nextRunAt" class="next-run-hint">
+          </UiBadge>
+          <span v-if="task.nextRunAt" class="text-slate-400 text-[11px]">
             (预计下次执行: {{ formatDateTime(task.nextRunAt) }})
           </span>
         </div>
@@ -257,55 +258,59 @@ function calculateDuration(run: TaskRun): string {
     </section>
 
     <!-- Execution History Table -->
-    <section class="section-card history-section">
-      <div class="section-head">
-        <h3>📜 任务执行历史</h3>
-        <div class="head-right">
-          <span class="count-tag">共 {{ taskRuns.length }} 次执行</span>
-          <button type="button" class="btn-refresh" title="刷新历史" @click="refreshData">🔄</button>
+    <section class="section-card history-section p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+      <div class="section-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">📜 任务执行历史</h3>
+        <div class="head-right flex items-center gap-2">
+          <span class="count-tag text-xs text-slate-400">共 {{ taskRuns.length }} 次执行</span>
+          <UiButton size="sm" variant="ghost" class="btn-refresh" title="刷新历史" @click="refreshData">🔄</UiButton>
         </div>
       </div>
 
-      <div v-if="taskRuns.length === 0" class="empty-runs-box">
-        <p class="empty-icon">⏳</p>
-        <h4>暂无执行记录</h4>
-        <p class="empty-desc">
-          点击右上角的「手动执行」按钮，系统将根据当前模板立即为您启动一次独立的 Agent 会话。
-        </p>
-        <button
-          type="button"
-          class="btn-trigger-inline"
-          :disabled="triggering"
-          @click="handleManualTrigger"
+      <div v-if="taskRuns.length === 0" class="empty-runs-box py-6 text-center">
+        <UiEmpty
+          title="暂无执行记录"
+          description="点击右上角的「手动执行」按钮，系统将根据当前模板立即为您启动一次独立的 Agent 会话。"
+          icon="⏳"
         >
-          立即开始首次执行
-        </button>
+          <template #actions>
+            <UiButton
+              variant="primary"
+              size="sm"
+              class="btn-trigger-inline"
+              :disabled="triggering"
+              @click="handleManualTrigger"
+            >
+              立即开始首次执行
+            </UiButton>
+          </template>
+        </UiEmpty>
       </div>
 
-      <div v-else class="table-responsive">
-        <table class="history-table" data-test="task-runs-table">
-          <thead>
+      <div v-else class="table-responsive overflow-x-auto rounded border border-slate-100 dark:border-slate-800">
+        <table class="history-table w-full text-left text-xs border-collapse" data-test="task-runs-table">
+          <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-medium border-b border-slate-100 dark:border-slate-800">
             <tr>
-              <th style="width: 70px;">编号</th>
-              <th style="width: 120px;">触发方式</th>
-              <th style="width: 120px;">执行状态</th>
-              <th>触发时间</th>
-              <th style="width: 120px;">耗时</th>
-              <th>执行会话 ID</th>
-              <th style="width: 110px; text-align: right;">操作</th>
+              <th class="py-2.5 px-3" style="width: 70px;">编号</th>
+              <th class="py-2.5 px-3" style="width: 120px;">触发方式</th>
+              <th class="py-2.5 px-3" style="width: 120px;">执行状态</th>
+              <th class="py-2.5 px-3">触发时间</th>
+              <th class="py-2.5 px-3" style="width: 120px;">耗时</th>
+              <th class="py-2.5 px-3">执行会话 ID</th>
+              <th class="py-2.5 px-3 text-right" style="width: 110px;">操作</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
             <tr
               v-for="run in taskRuns"
               :key="run.id"
-              class="run-row"
+              class="run-row hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer"
               data-test="task-run-row"
               @click="openRunSession(run)"
             >
-              <td class="col-id">#{{ run.id }}</td>
-              <td>
-                <span class="trigger-pill" :class="run.triggerType">
+              <td class="col-id py-2.5 px-3 font-mono font-medium text-slate-500">#{{ run.id }}</td>
+              <td class="py-2.5 px-3">
+                <UiBadge variant="default" size="sm">
                   {{
                     run.triggerType === 'cron'
                       ? '周期触发'
@@ -313,28 +318,29 @@ function calculateDuration(run: TaskRun): string {
                       ? '定时触发'
                       : '手动触发'
                   }}
-                </span>
+                </UiBadge>
               </td>
-              <td>
-                <span class="run-status-badge" :class="getRunStatusBadgeClass(run.status)">
-                  <span v-if="run.status === 'running'" class="spinner-dot"></span>
+              <td class="py-2.5 px-3">
+                <span class="run-status-badge text-[11px] px-2 py-0.5 rounded font-medium border inline-flex items-center gap-1" :class="getRunStatusBadgeClass(run.status)">
+                  <span v-if="run.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping inline-block"></span>
                   {{ getRunStatusLabel(run.status) }}
                 </span>
               </td>
-              <td class="col-time">{{ formatDateTime(run.triggeredAt) }}</td>
-              <td class="col-duration">{{ calculateDuration(run) }}</td>
-              <td class="col-session">
-                <code class="session-id-text">{{ run.sessionId }}</code>
+              <td class="col-time py-2.5 px-3 font-mono text-slate-500">{{ formatDateTime(run.triggeredAt) }}</td>
+              <td class="col-duration py-2.5 px-3 text-slate-500">{{ calculateDuration(run) }}</td>
+              <td class="col-session py-2.5 px-3">
+                <code class="session-id-text font-mono text-slate-600 dark:text-slate-400">{{ run.sessionId }}</code>
               </td>
-              <td class="col-actions" style="text-align: right;">
-                <button
-                  type="button"
+              <td class="col-actions py-2.5 px-3 text-right" style="text-align: right;">
+                <UiButton
+                  size="sm"
+                  variant="ghost"
                   class="btn-view-session"
                   data-test="btn-view-session"
                   @click.stop="openRunSession(run)"
                 >
                   💬 查看会话
-                </button>
+                </UiButton>
               </td>
             </tr>
           </tbody>
@@ -361,432 +367,3 @@ function calculateDuration(run: TaskRun): string {
     />
   </div>
 </template>
-
-<style scoped>
-.task-detail-container {
-  display: flex;
-  flex-direction: column;
-  padding: 1.5rem 2rem;
-  overflow-y: auto;
-  height: 100%;
-  gap: 1.5rem;
-  background: var(--color-bg);
-}
-
-.detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 1.5rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.header-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.badge-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-bottom: 0.5rem;
-}
-
-.type-pill {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-}
-
-.type-pill.flow {
-  background: rgba(168, 85, 247, 0.12);
-  color: #a855f7;
-}
-
-.run-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-}
-
-.badge-running {
-  background: rgba(59, 130, 246, 0.15);
-  color: #2563eb;
-}
-
-.badge-success {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.badge-failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.badge-idle {
-  background: rgba(156, 163, 175, 0.15);
-  color: var(--color-text-muted);
-}
-
-.spinner-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #2563eb;
-  animation: pulse 1s infinite alternate;
-}
-
-@keyframes pulse {
-  0% { transform: scale(0.8); opacity: 0.6; }
-  100% { transform: scale(1.3); opacity: 1; }
-}
-
-.schedule-pill {
-  font-size: 0.75rem;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  border: 1px solid var(--color-border);
-}
-
-.task-title {
-  font-size: 1.45rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin: 0.25rem 0 0.4rem 0;
-}
-
-.task-desc {
-  font-size: 0.9rem;
-  color: var(--color-text-muted);
-  margin: 0 0 0.85rem 0;
-  line-height: 1.4;
-}
-
-.meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.25rem;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.meta-val {
-  color: var(--color-text);
-}
-
-.font-semibold {
-  font-weight: 600;
-}
-
-.highlight {
-  color: var(--color-primary, #3b82f6);
-  font-weight: 600;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.6rem;
-  margin-left: 1.5rem;
-}
-
-.btn-trigger {
-  padding: 0.55rem 1.2rem;
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.btn-trigger:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.btn-trigger:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-edit,
-.btn-delete {
-  padding: 0.55rem 0.9rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  cursor: pointer;
-  font-size: 0.88rem;
-  transition: all 0.15s;
-}
-
-.btn-edit:hover {
-  background: var(--color-surface-muted);
-}
-
-.btn-delete:hover {
-  border-color: #ef4444;
-  color: #ef4444;
-}
-
-.action-error-bar {
-  padding: 0.65rem 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border-radius: 6px;
-  font-size: 0.88rem;
-}
-
-.section-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 1.25rem 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-
-.section-head h3 {
-  font-size: 1.05rem;
-  font-weight: 700;
-  color: var(--color-text);
-  margin: 0;
-}
-
-.head-right {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.count-tag {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.btn-refresh {
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  cursor: pointer;
-  padding: 0.2rem 0.4rem;
-  font-size: 0.85rem;
-}
-
-.template-box {
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.template-header {
-  padding: 0.4rem 0.75rem;
-  background: rgba(0, 0, 0, 0.03);
-  border-bottom: 1px solid var(--color-border);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-.template-content {
-  padding: 0.75rem 1rem;
-  margin: 0;
-  font-family: inherit;
-  font-size: 0.88rem;
-  color: var(--color-text);
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.45;
-  max-height: 12rem;
-  overflow-y: auto;
-}
-
-.schedule-summary-bar {
-  margin-top: 0.85rem;
-  padding: 0.65rem 0.9rem;
-  background: var(--color-surface-muted);
-  border-radius: 6px;
-  font-size: 0.85rem;
-}
-
-.schedule-summary-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.status-tag {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.4rem;
-  border-radius: 4px;
-  background: rgba(156, 163, 175, 0.2);
-  color: var(--color-text-muted);
-}
-
-.status-tag.enabled {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.next-run-hint {
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-}
-
-/* History Table */
-.empty-runs-box {
-  text-align: center;
-  padding: 2.5rem 1rem;
-}
-
-.empty-icon {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-}
-
-.empty-runs-box h4 {
-  font-size: 1.05rem;
-  color: var(--color-text);
-  margin: 0 0 0.35rem 0;
-}
-
-.empty-desc {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  max-width: 28rem;
-  margin: 0 auto 1.25rem auto;
-}
-
-.btn-trigger-inline {
-  padding: 0.5rem 1.2rem;
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.table-responsive {
-  overflow-x: auto;
-}
-
-.history-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-
-.history-table th {
-  text-align: left;
-  padding: 0.65rem 0.75rem;
-  border-bottom: 1.5px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.history-table td {
-  padding: 0.75rem;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text);
-  vertical-align: middle;
-}
-
-.run-row {
-  cursor: pointer;
-  transition: background 0.12s;
-}
-
-.run-row:hover {
-  background: var(--color-surface-muted);
-}
-
-.col-id {
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-.trigger-pill {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 4px;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-}
-
-.trigger-pill.cron {
-  color: #8b5cf6;
-  border-color: rgba(139, 92, 246, 0.3);
-}
-
-.trigger-pill.once {
-  color: #f59e0b;
-  border-color: rgba(245, 158, 11, 0.3);
-}
-
-.col-time,
-.col-duration {
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-}
-
-.session-id-text {
-  font-family: monospace;
-  font-size: 0.82rem;
-  background: var(--color-surface-muted);
-  padding: 0.15rem 0.35rem;
-  border-radius: 4px;
-}
-
-.btn-view-session {
-  padding: 0.35rem 0.65rem;
-  font-size: 0.8rem;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
-  color: var(--color-primary, #3b82f6);
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.15s;
-}
-
-.btn-view-session:hover {
-  background: var(--color-primary, #3b82f6);
-  color: #fff;
-  border-color: var(--color-primary, #3b82f6);
-}
-</style>
