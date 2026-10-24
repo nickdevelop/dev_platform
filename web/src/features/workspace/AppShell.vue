@@ -19,6 +19,7 @@ import { useOpenTabsStore, tabKey, type OpenTab } from '../../stores/openTabs'
 import { useSettingsStore } from '../../stores/settings'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
+import { useChatsStore } from '../../stores/chats'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectTree from '../projects/ProjectTree.vue'
@@ -42,6 +43,7 @@ const openTabs = useOpenTabsStore()
 const settings = useSettingsStore()
 const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
+const chats = useChatsStore()
 
 const search = ref('')
 const ready = ref(false)
@@ -228,11 +230,27 @@ const workspaceTabs = computed(() =>
   ),
 )
 
+// Tabs for the pure-chat conversation area: conversations and new-chat draft tab.
+const chatTabs = computed(() =>
+  openTabs.tabs.filter(
+    (entry) => entry.kind === 'chat' || entry.kind === 'new-chat',
+  ),
+)
+
 const activeKey = computed<string | null>(() => {
   if (!projectActive.value) return null
   if (newSessionRoute.value) return 'new-session'
   if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
   return sessionId.value
+})
+
+const activeChatKey = computed<string | null>(() => {
+  if (!chatMode.value) return null
+  if (route.name === 'chat') return 'new-chat'
+  if (route.name === 'chat-detail' && route.params.chatId !== undefined) {
+    return `chat:${route.params.chatId}`
+  }
+  return null
 })
 const missingProject = computed(
   () => ready.value && projectId.value !== null && !projects.byId(projectId.value),
@@ -267,7 +285,7 @@ const columnTitle = computed(() =>
         : terminalMode.value
         ? '服务器'
         : chatMode.value
-          ? 'Chat'
+          ? '对话'
           : '项目',
 )
 
@@ -297,34 +315,53 @@ onMounted(async () => {
   }
 })
 
-// The tab bar mirrors the current route in the project workspace: opening a session,
-// a project's settings, or the new-session form registers (or refreshes) its tab.
-// Tab titles follow the session list once it loads, and the new-session tab is replaced
-// by the created session's tab on success. Tabs are never removed implicitly except
-// when their project is gone.
+// The tab bar mirrors the current route in the project workspace or chat area.
 function syncTabWithRoute() {
-  // Only sync tabs when within the project workspace area.
-  // Settings and tasks have their own dedicated views and do not participate in workspace tabs.
-  if (!projectActive.value) return
+  if (projectActive.value) {
+    if (newSessionRoute.value) {
+      openTabs.openNewSession()
+      return
+    }
+    if (projectId.value === null) return
+    if (settingsRoute.value) {
+      openTabs.openProjectSettings(projectId.value)
+      return
+    }
+    if (sessionId.value === null) return
+    const known = sessions.sessionById(sessionId.value)
+    openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
+    return
+  }
 
-  if (newSessionRoute.value) {
-    openTabs.openNewSession()
-    return
+  if (chatMode.value) {
+    if (route.name === 'chat') {
+      openTabs.openNewChat()
+      return
+    }
+    if (route.name === 'chat-detail' && route.params.chatId !== undefined) {
+      const cId = Number(route.params.chatId)
+      if (Number.isFinite(cId) && cId > 0) {
+        const known = chats.chats.find((c) => c.id === cId)
+        openTabs.openChat(cId, known?.title ?? '')
+      }
+    }
   }
-  if (projectId.value === null) return
-  if (settingsRoute.value) {
-    openTabs.openProjectSettings(projectId.value)
-    return
-  }
-  if (sessionId.value === null) return
-  const known = sessions.sessionById(sessionId.value)
-  openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
 }
 
 watch([() => route.fullPath], syncTabWithRoute)
 
 watch(
   activeKey,
+  (key) => {
+    if (key) {
+      openTabs.setActiveKey(key)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  activeChatKey,
   (key) => {
     if (key) {
       openTabs.setActiveKey(key)
@@ -345,6 +382,17 @@ watch(
   },
 )
 
+// Chat conversation titles arrive after list loads or rename; keep tab labels fresh.
+watch(
+  () => chats.chats.map((c) => `${c.id}:${c.title ?? ''}`).join(','),
+  () => {
+    for (const c of chats.chats) {
+      if (c.title) openTabs.updateChatTitle(c.id, c.title)
+    }
+    syncTabWithRoute()
+  },
+)
+
 const projectNames = computed<Record<number, string>>(() =>
   Object.fromEntries(projects.projects.map((project) => [project.id, project.name])),
 )
@@ -352,6 +400,11 @@ const projectNames = computed<Record<number, string>>(() =>
 // Ids of the open sessions whose turn is running across all open projects.
 // The tab strip reads it to mark a running session with an animated icon before its label.
 const runningSessionIds = computed<string[]>(() => sessions.runningSessionIds)
+
+// Running chat conversation ids for marking tabs.
+const runningChatIds = computed<string[]>(() =>
+  chats.chats.filter((c) => c.running).map((c) => `chat:${c.id}`),
+)
 
 function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
@@ -372,6 +425,65 @@ function selectTab(tab: OpenTab) {
     void router.push({ name: 'session', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
   }
 }
+
+function selectChatTab(tab: OpenTab) {
+  openTabs.setActiveKey(tabKey(tab))
+  if (tab.kind === 'new-chat') {
+    void router.push({ name: 'chat' })
+    return
+  }
+  if (tab.kind === 'chat') {
+    void router.push({ name: 'chat-detail', params: { chatId: String(tab.chatId) } })
+  }
+}
+
+function focusAfterChatClose(activeRemoved: boolean) {
+  if (!activeRemoved) return
+  const remaining = chatTabs.value
+  if (remaining.length > 0) {
+    selectChatTab(remaining[remaining.length - 1])
+  } else {
+    void router.push({ name: 'chat' })
+  }
+}
+
+function closeChatTab(tab: OpenTab) {
+  if (tab.pinned === true) return
+  const wasActive = tabKey(tab) === activeChatKey.value
+  openTabs.closeTabByKey(tabKey(tab))
+  focusAfterChatClose(wasActive)
+}
+
+function closeOtherChatTabs(tab: OpenTab) {
+  openTabs.closeOtherChatTabsByKey(tabKey(tab))
+  focusAfterChatClose(!chatTabs.value.some((entry) => tabKey(entry) === activeChatKey.value))
+}
+
+function closeAllChatTabs() {
+  openTabs.closeAllChatTabs()
+  focusAfterChatClose(!chatTabs.value.some((entry) => tabKey(entry) === activeChatKey.value))
+}
+
+function togglePinChatTab(tab: OpenTab) {
+  openTabs.togglePin(tabKey(tab))
+}
+
+function onNewChatTab() {
+  chats.startNewChat()
+  void router.push({ name: 'chat' })
+}
+
+watch(
+  () => chats.closedReason,
+  (reason) => {
+    if (reason === 'deleted' && chats.activeId !== null) {
+      const tab = chatTabs.value.find((t) => t.kind === 'chat' && t.chatId === chats.activeId)
+      if (tab) {
+        closeChatTab(tab)
+      }
+    }
+  },
+)
 
 // focusAfterClose picks a new tab when the one the URL pointed at is gone: the
 // last remaining tab in the workspace, or the workbench home when nothing is left.
@@ -657,6 +769,19 @@ watch(
         @close-others="closeOtherTabs"
         @close-all="closeAllTabs"
         @new-tab="onNewTab"
+      />
+      <SessionTabs
+        v-else-if="chatMode && chatTabs.length > 0"
+        :tabs="chatTabs"
+        :active-key="activeChatKey"
+        :running-session-ids="runningChatIds"
+        new-tab-title="新建对话"
+        @select="selectChatTab"
+        @close="closeChatTab"
+        @toggle-pin="togglePinChatTab"
+        @close-others="closeOtherChatTabs"
+        @close-all="closeAllChatTabs"
+        @new-tab="onNewChatTab"
       />
       <div class="pane-body">
         <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>

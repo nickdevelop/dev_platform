@@ -76,7 +76,7 @@ describe('three-pane app shell', () => {
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
     expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
     expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)
-    const chat = wrapper.findAll('a').find((entry) => entry.text() === 'Chat')
+    const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
     expect(chat?.attributes('href')).toBe('/chat')
     expect(chat?.attributes('disabled')).toBeUndefined()
   })
@@ -86,10 +86,12 @@ describe('three-pane app shell', () => {
 
     expect(router.currentRoute.value.name).toBe('chat-detail')
     expect(wrapper.findComponent(ChatPanel).props('chatId')).toBe(5)
-    const chat = wrapper.findAll('a').find((entry) => entry.text() === 'Chat')
+    const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
     expect(chat?.classes()).toContain('active')
-    // Chat is its own center: the workspace tab strip is not shown.
-    expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
+    // Chat conversation renders as a tab
+    const tabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(tabs).toHaveLength(1)
+    expect(tabs[0].attributes('data-tab-key')).toBe('chat:5')
   })
 
   it('opens project settings as a tab at /projects/:projectId/settings', async () => {
@@ -273,7 +275,7 @@ describe('three-pane app shell', () => {
       '任务',
       '提示词',
       '终端',
-      'Chat',
+      '对话',
       '设置',
       '退出',
       '收起',

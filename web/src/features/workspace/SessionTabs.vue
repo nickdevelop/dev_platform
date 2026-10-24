@@ -12,14 +12,20 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../../stores/openTabs'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
 
-const props = defineProps<{
-  tabs: OpenTab[]
-  activeKey: string | null
-  projectNames?: Record<number, string>
-  // Session ids whose turn is running. The strip marks each with an animated
-  // icon before its label, the same marker the session tree uses.
-  runningSessionIds?: string[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    tabs: OpenTab[]
+    activeKey: string | null
+    projectNames?: Record<number, string>
+    // Session ids whose turn is running. The strip marks each with an animated
+    // icon before its label, the same marker the session tree uses.
+    runningSessionIds?: string[]
+    newTabTitle?: string
+  }>(),
+  {
+    newTabTitle: '新建会话',
+  },
+)
 
 const emit = defineEmits<{
   select: [tab: OpenTab]
@@ -36,16 +42,20 @@ function label(tab: OpenTab): string {
     return project ? `${project} · 设置` : '项目设置'
   }
   if (tab.kind === 'new-session') return 'new'
+  if (tab.kind === 'new-chat') return '新对话'
   if (tab.kind === 'platform-settings') return '设置'
   if (tab.kind === 'task') return tab.title !== '' ? tab.title : `任务 ${tab.taskId}`
+  if (tab.kind === 'chat') return tab.title !== '' ? tab.title : '未命名对话'
   return tab.title !== '' ? tab.title : tab.sessionId.slice(0, 8)
 }
 
 function titleOf(tab: OpenTab): string {
   if (tab.kind === 'new-session') return '新建会话'
+  if (tab.kind === 'new-chat') return '新对话'
   if (tab.kind === 'platform-settings') return '平台设置'
   if (tab.kind === 'task') return label(tab)
   if (tab.kind === 'project-settings') return label(tab)
+  if (tab.kind === 'chat') return label(tab)
   const project = props.projectNames?.[tab.projectId]
   const name = label(tab)
   return project ? `${name} · ${project}` : name
@@ -61,6 +71,8 @@ function closeLabel(tab: OpenTab): string {
   if (isSettings(tab)) return '关闭设置'
   if (tab.kind === 'task') return `关闭任务：${label(tab)}`
   if (tab.kind === 'new-session') return '关闭新建会话'
+  if (tab.kind === 'new-chat') return '关闭新对话'
+  if (tab.kind === 'chat') return `关闭对话：${label(tab)}`
   return `关闭会话：${label(tab)}`
 }
 
@@ -68,10 +80,19 @@ function isPinned(tab: OpenTab): boolean {
   return tab.pinned === true
 }
 
-// A session tab whose turn is running: the strip shows the animated marker in
-// place of the plain dot, so running sessions are visible without opening them.
+// A session or chat tab whose turn is running: the strip shows the animated marker in
+// place of the plain dot, so running conversations are visible without opening them.
 function isRunning(tab: OpenTab): boolean {
-  return tab.kind === 'session' && (props.runningSessionIds ?? []).includes(tab.sessionId)
+  if (tab.kind === 'session') {
+    return (props.runningSessionIds ?? []).includes(tab.sessionId)
+  }
+  if (tab.kind === 'chat') {
+    return (
+      (props.runningSessionIds ?? []).includes(String(tab.chatId)) ||
+      (props.runningSessionIds ?? []).includes(`chat:${tab.chatId}`)
+    )
+  }
+  return false
 }
 
 // A middle click on a tab closes it, the way every browser-like tab strip works.
@@ -150,6 +171,7 @@ onBeforeUnmount(() => {
       :data-tab-key="tabKey(tab)"
       :data-pinned="isPinned(tab) ? 'true' : undefined"
       :data-session-id="tab.kind === 'session' ? tab.sessionId : undefined"
+      :data-chat-id="tab.kind === 'chat' ? tab.chatId : undefined"
       @contextmenu.prevent="openMenu(tab, $event)"
       @auxclick="onAuxClick(tab, $event)"
       @mousedown.middle.prevent
@@ -158,7 +180,7 @@ onBeforeUnmount(() => {
         <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">📌</span>
         <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
         <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">📋</span>
-        <span v-else-if="tab.kind === 'new-session'" class="tab-icon" aria-hidden="true">✎</span>
+        <span v-else-if="tab.kind === 'new-session' || tab.kind === 'new-chat'" class="tab-icon" aria-hidden="true">✎</span>
         <span v-else-if="!isRunning(tab)" class="tab-dot" aria-hidden="true"></span>
         <RunningIndicator v-if="isRunning(tab)" />
         <span class="tab-label">{{ label(tab) }}</span>
@@ -179,8 +201,8 @@ onBeforeUnmount(() => {
     <button
       type="button"
       class="tab-add-btn"
-      title="新建会话"
-      aria-label="新建会话"
+      :title="props.newTabTitle"
+      :aria-label="props.newTabTitle"
       data-test="tab-add-session"
       @click="emit('newTab')"
     >

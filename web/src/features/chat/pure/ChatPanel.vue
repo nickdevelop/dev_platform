@@ -9,6 +9,7 @@ import type { ImageAttachment } from '../../../api/messageTypes'
 import type { ChatEntry } from '../state/entry'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
+import { useOpenTabsStore } from '../../../stores/openTabs'
 import { useBottomFollow } from '../../../shared/scrollFollow'
 import { UiDialog, UiButton, UiInput, UiAlert, UiEmpty } from '../../../shared/ui'
 import MessageView from '../rendering/MessageView.vue'
@@ -19,6 +20,7 @@ const props = defineProps<{ chatId?: number }>()
 
 const chats = useChatsStore()
 const models = useModelsStore()
+const openTabs = useOpenTabsStore()
 const router = useRouter()
 
 const text = ref('')
@@ -233,6 +235,7 @@ async function submit() {
     text.value = ''
     images.value = []
     chats.draftModelId = modelId.value
+    openTabs.promoteNewChat(chat.id, chat.title)
     await router.push({ name: 'chat-detail', params: { chatId: String(chat.id) } })
     return
   }
@@ -285,16 +288,23 @@ async function submitRename() {
     renameError.value = chats.actionError || '重命名失败。'
     return
   }
+  if (props.chatId !== undefined) {
+    openTabs.updateChatTitle(props.chatId, value)
+  }
   renameOpen.value = false
 }
 
 async function confirmDelete() {
   if (deleting.value) return
   deleting.value = true
+  const deletedId = props.chatId
   const ok = await chats.removeActive()
   deleting.value = false
   if (!ok) return
   deleteOpen.value = false
+  if (deletedId !== undefined) {
+    openTabs.closeTabByKey(`chat:${deletedId}`)
+  }
   await router.push({ name: 'chat' })
   await chats.loadChats()
 }

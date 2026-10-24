@@ -308,28 +308,8 @@ function formatChatTime(isoString?: string): string {
                   <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
                 </div>
 
-                <div class="chat-badges">
-                  <RunningIndicator v-if="chat.running" label="生成中" class="chat-item-running" />
-                  <div class="item-actions">
-                    <button
-                      type="button"
-                      class="mini-btn"
-                      title="移动到其他助手"
-                      aria-label="移动到其他助手"
-                      @click.stop="openMoveChat(chat)"
-                    >
-                      ⇄
-                    </button>
-                    <button
-                      type="button"
-                      class="mini-btn danger"
-                      title="删除对话"
-                      aria-label="删除对话"
-                      @click.stop="onDeleteChat(chat)"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                <div v-if="chat.running" class="chat-badges">
+                  <RunningIndicator label="生成中" class="chat-item-running" />
                 </div>
               </div>
             </li>
@@ -374,28 +354,8 @@ function formatChatTime(isoString?: string): string {
                   <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
                 </div>
 
-                <div class="chat-badges">
-                  <RunningIndicator v-if="chat.running" label="生成中" class="chat-item-running" />
-                  <div class="item-actions">
-                    <button
-                      type="button"
-                      class="mini-btn"
-                      title="移动到其他助手"
-                      aria-label="移动到其他助手"
-                      @click.stop="openMoveChat(chat)"
-                    >
-                      ⇄
-                    </button>
-                    <button
-                      type="button"
-                      class="mini-btn danger"
-                      title="删除对话"
-                      aria-label="删除对话"
-                      @click.stop="onDeleteChat(chat)"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                <div v-if="chat.running" class="chat-badges">
+                  <RunningIndicator label="生成中" class="chat-item-running" />
                 </div>
               </div>
             </li>

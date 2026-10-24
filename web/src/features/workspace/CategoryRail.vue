@@ -62,8 +62,12 @@ const projectDestination = computed(() => {
   )
   if (workspaceTabs.length > 0) {
     const preferred =
-      (openTabs.lastActiveKey
-        ? workspaceTabs.find((tab) => tabKey(tab) === openTabs.lastActiveKey)
+      (openTabs.lastActiveWorkspaceKey || openTabs.lastActiveKey
+        ? workspaceTabs.find(
+            (tab) =>
+              tabKey(tab) === openTabs.lastActiveWorkspaceKey ||
+              tabKey(tab) === openTabs.lastActiveKey,
+          )
         : null) ?? workspaceTabs[workspaceTabs.length - 1]
 
     if (preferred.kind === 'new-session') {
@@ -81,6 +85,26 @@ const projectDestination = computed(() => {
     }
   }
   return { name: 'home' }
+})
+
+const chatDestination = computed(() => {
+  const chatTabs = openTabs.tabs.filter(
+    (tab) => tab.kind === 'chat' || tab.kind === 'new-chat',
+  )
+  if (chatTabs.length > 0) {
+    const preferred =
+      (openTabs.lastActiveChatKey
+        ? chatTabs.find((tab) => tabKey(tab) === openTabs.lastActiveChatKey)
+        : null) ?? chatTabs[chatTabs.length - 1]
+
+    if (preferred.kind === 'new-chat') {
+      return { name: 'chat' }
+    }
+    if (preferred.kind === 'chat') {
+      return { name: 'chat-detail', params: { chatId: String(preferred.chatId) } }
+    }
+  }
+  return { name: 'chat' }
 })
 
 function onProjectClick(event: MouseEvent) {
@@ -188,9 +212,9 @@ const toggleTitle = computed(() => {
     <RouterLink
       class="category"
       :class="{ active: chatActive }"
-      title="纯 Chat 对话"
+      title="对话"
       :aria-current="chatActive ? 'page' : undefined"
-      :to="{ name: 'chat' }"
+      :to="chatDestination"
       @click="onChatClick"
     >
       <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -198,7 +222,7 @@ const toggleTitle = computed(() => {
           d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
         />
       </svg>
-      <span>Chat</span>
+      <span>对话</span>
     </RouterLink>
     <div class="spacer"></div>
     <RouterLink

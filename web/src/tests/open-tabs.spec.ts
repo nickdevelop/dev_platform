@@ -350,6 +350,104 @@ describe('SessionTabs component', () => {
       expect(tabNode.findComponent({ name: 'RunningIndicator' }).exists()).toBe(true)
     }
   })
+
+  it('labels the new-chat tab and chat conversation tabs', () => {
+    const tabs: OpenTab[] = [
+      { kind: 'new-chat' },
+      { kind: 'chat', chatId: 10, title: '我的工作分析' },
+      { kind: 'chat', chatId: 11, title: '' },
+    ]
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'chat:10',
+        newTabTitle: '新建对话',
+      },
+    })
+
+    const labels = wrapper.findAll('[data-test="open-tab"] .tab-label').map((node) => node.text())
+    expect(labels).toEqual(['新对话', '我的工作分析', '未命名对话'])
+
+    const closeButtons = wrapper.findAll('[data-test="close-tab"]')
+    expect(closeButtons[0].attributes('aria-label')).toBe('关闭新对话')
+    expect(closeButtons[1].attributes('aria-label')).toBe('关闭对话：我的工作分析')
+
+    const addBtn = wrapper.find('[data-test="tab-add-session"]')
+    expect(addBtn.attributes('title')).toBe('新建对话')
+  })
+
+  it('renders running indicator for running pure-chat tabs', () => {
+    const tabs: OpenTab[] = [
+      { kind: 'chat', chatId: 20, title: '生成中对话' },
+      { kind: 'chat', chatId: 21, title: '空闲对话' },
+    ]
+    const wrapper = mount(SessionTabs, {
+      props: {
+        tabs,
+        activeKey: 'chat:20',
+        runningSessionIds: ['chat:20'],
+      },
+    })
+
+    const renderedTabs = wrapper.findAll('[data-test="open-tab"]')
+    expect(renderedTabs[0].findComponent({ name: 'RunningIndicator' }).exists()).toBe(true)
+    expect(renderedTabs[1].findComponent({ name: 'RunningIndicator' }).exists()).toBe(false)
+  })
+})
+
+describe('open tabs store - pure chat support', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('manages pure chat tabs and promotes new-chat to chat tab in place', () => {
+    const store = freshStore()
+    store.openNewChat()
+    expect(store.tabs).toEqual([{ kind: 'new-chat' }])
+    expect(tabKey(store.tabs[0])).toBe('new-chat')
+    expect(store.lastActiveChatKey).toBe('new-chat')
+
+    // Promote new-chat in place
+    store.promoteNewChat(100, '首条对话')
+    expect(store.tabs).toEqual([{ kind: 'chat', chatId: 100, title: '首条对话' }])
+    expect(tabKey(store.tabs[0])).toBe('chat:100')
+    expect(store.lastActiveChatKey).toBe('chat:100')
+
+    // Update title
+    store.updateChatTitle(100, '更新后的标题')
+    expect((store.tabs[0] as Extract<OpenTab, { kind: 'chat' }>).title).toBe('更新后的标题')
+
+    // Open another chat
+    store.openChat(101, '第二条对话')
+    expect(store.tabs.map(tabKey)).toEqual(['chat:100', 'chat:101'])
+
+    // Pin tab
+    store.pinTab('chat:101')
+    expect(store.tabs.map(tabKey)).toEqual(['chat:101', 'chat:100'])
+    expect(store.tabs[0].pinned).toBe(true)
+
+    // Close other chat tabs
+    const closed = store.closeOtherChatTabsByKey('chat:100')
+    expect(closed).toEqual([]) // 101 is pinned, 100 is target, neither closed
+    expect(store.tabs.map(tabKey)).toEqual(['chat:101', 'chat:100'])
+
+    // Unpin and close others
+    store.unpinTab('chat:101')
+    const closed2 = store.closeOtherChatTabsByKey('chat:100')
+    expect(closed2.map(tabKey)).toEqual(['chat:101'])
+    expect(store.tabs.map(tabKey)).toEqual(['chat:100'])
+  })
+
+  it('persists and restores chat tabs across page reloads', () => {
+    const store = freshStore()
+    store.openChat(42, '持久化测试')
+    store.openNewChat()
+
+    const reloaded = freshStore()
+    expect(reloaded.tabs).toEqual([
+      { kind: 'chat', chatId: 42, title: '持久化测试' },
+      { kind: 'new-chat' },
+    ])
+    expect(reloaded.lastActiveChatKey).toBe('new-chat')
+  })
 })
 
 

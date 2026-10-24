@@ -1,8 +1,9 @@
-// Open workbench tabs: what this browser has open right now. Five kinds share
+// Open workbench tabs: what this browser has open right now. Seven kinds share
 // the strip — a session (a session with its cached transcript and live SSE
 // subscription), a project's settings page, the new-session form (labelled
-// "new" until the session is created), a task's detail page, and the platform
-// settings center. Switching a tab is navigation; the tab strip renders every
+// "new" until the session is created), a task's detail page, the platform
+// settings center, a pure chat conversation, and the new-chat form.
+// Switching a tab is navigation; the tab strip renders every
 // kind from one `tabKey`, so nothing downstream has to know which is which.
 // Tabs persist in localStorage so a refresh restores the working set. A tab can
 // be pinned: pinned tabs sort to the front, carry no close control, and survive
@@ -18,6 +19,8 @@ export type OpenTab =
   | { kind: 'new-session'; pinned?: boolean }
   | { kind: 'task'; taskId: number; title: string; pinned?: boolean }
   | { kind: 'platform-settings'; pinned?: boolean }
+  | { kind: 'chat'; chatId: number; title: string; pinned?: boolean }
+  | { kind: 'new-chat'; pinned?: boolean }
 
 // tabKey identifies a tab. A session is identified by its session (machine-unique),
 // a project's settings page by its project, a task by its task id, and the two
@@ -35,11 +38,17 @@ export function tabKey(tab: OpenTab): string {
       return `task:${tab.taskId}`
     case 'platform-settings':
       return 'platform-settings'
+    case 'chat':
+      return `chat:${tab.chatId}`
+    case 'new-chat':
+      return 'new-chat'
   }
 }
 
 const STORAGE_KEY = 'dev-platform-open-tabs-v2'
 const ACTIVE_TAB_KEY = 'dev-platform-active-tab-key'
+const ACTIVE_WORKSPACE_TAB_KEY = 'dev-platform-active-workspace-tab-key'
+const ACTIVE_CHAT_TAB_KEY = 'dev-platform-active-chat-tab-key'
 // The pre-tab-model key: it stored session tabs without a kind. Read once, then
 // never written again, so a user who installed this version keeps their tabs and
 // never sees the old shape again.
@@ -64,6 +73,40 @@ function persistActiveKey(key: string | null) {
   }
 }
 
+function loadPersistedWorkspaceActiveKey(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_WORKSPACE_TAB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistWorkspaceActiveKey(key: string | null) {
+  try {
+    if (key) localStorage.setItem(ACTIVE_WORKSPACE_TAB_KEY, key)
+    else localStorage.removeItem(ACTIVE_WORKSPACE_TAB_KEY)
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
+
+function loadPersistedChatActiveKey(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_CHAT_TAB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function persistChatActiveKey(key: string | null) {
+  try {
+    if (key) localStorage.setItem(ACTIVE_CHAT_TAB_KEY, key)
+    else localStorage.removeItem(ACTIVE_CHAT_TAB_KEY)
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
+
 // Only set the flag when it is true, so an unpinned tab carries no `pinned`
 // field and a round-tripped tab compares equal to one that was just opened.
 const PINNED = { pinned: true } as const
@@ -83,6 +126,12 @@ function normalize(entry: unknown): OpenTab | null {
   if (typeof tab !== 'object' || tab === null) return null
   const pinned = tab.pinned === true ? PINNED : {}
   if (tab.kind === 'new-session') return { kind: 'new-session', ...pinned }
+  if (tab.kind === 'new-chat') return { kind: 'new-chat', ...pinned }
+  if (tab.kind === 'chat') {
+    if (typeof tab.chatId !== 'number') return null
+    const title = typeof tab.title === 'string' ? tab.title : ''
+    return { kind: 'chat', chatId: tab.chatId, title, ...pinned }
+  }
   if (tab.kind === 'task') {
     if (typeof tab.taskId !== 'number') return null
     const title = typeof tab.title === 'string' ? tab.title : ''
@@ -181,6 +230,8 @@ export const useOpenTabsStore = defineStore('openTabs', {
   state: () => ({
     tabs: loadPersisted() as OpenTab[],
     lastActiveKey: loadPersistedActiveKey(),
+    lastActiveWorkspaceKey: loadPersistedWorkspaceActiveKey(),
+    lastActiveChatKey: loadPersistedChatActiveKey(),
   }),
 
   getters: {
@@ -199,6 +250,15 @@ export const useOpenTabsStore = defineStore('openTabs', {
     setActiveKey(key: string | null) {
       this.lastActiveKey = key
       persistActiveKey(key)
+      if (key) {
+        if (key === 'new-chat' || key.startsWith('chat:')) {
+          this.lastActiveChatKey = key
+          persistChatActiveKey(key)
+        } else {
+          this.lastActiveWorkspaceKey = key
+          persistWorkspaceActiveKey(key)
+        }
+      }
     },
 
     // Opens a session tab, or updates the existing one in place: re-opening the
@@ -278,6 +338,58 @@ export const useOpenTabsStore = defineStore('openTabs', {
       }
       this.setActiveKey('platform-settings')
       persist(this.tabs)
+    },
+
+    // Opens a pure chat tab, or updates the existing one in place.
+    openChat(chatId: number, title = '') {
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'chat' }> => tab.kind === 'chat' && tab.chatId === chatId,
+      )
+      if (existing) {
+        if (title !== '') existing.title = title
+      } else {
+        this.tabs.push({ kind: 'chat', chatId, title })
+        trim(this.tabs)
+      }
+      this.setActiveKey(`chat:${chatId}`)
+      persist(this.tabs)
+    },
+
+    // Opens (or focuses) the new-chat tab.
+    openNewChat() {
+      const existing = this.tabs.find((tab) => tab.kind === 'new-chat')
+      if (existing) {
+        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
+      } else {
+        this.tabs.push({ kind: 'new-chat' })
+        trim(this.tabs)
+      }
+      this.setActiveKey('new-chat')
+      persist(this.tabs)
+    },
+
+    // promoteNewChat turns the new-chat tab into a chat tab in place.
+    promoteNewChat(chatId: number, title = '') {
+      const index = this.tabs.findIndex((tab) => tab.kind === 'new-chat')
+      if (index === -1) {
+        this.tabs.push({ kind: 'chat', chatId, title })
+      } else {
+        const { pinned } = this.tabs[index]
+        const carried = pinned === true ? PINNED : {}
+        this.tabs.splice(index, 1, { kind: 'chat', chatId, title, ...carried })
+      }
+      this.setActiveKey(`chat:${chatId}`)
+      persist(this.tabs)
+    },
+
+    updateChatTitle(chatId: number, title: string) {
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'chat' }> => tab.kind === 'chat' && tab.chatId === chatId,
+      )
+      if (existing && existing.title !== title) {
+        existing.title = title
+        persist(this.tabs)
+      }
     },
 
     // promoteNewSession turns the new-session tab into a session tab in place:
@@ -383,6 +495,49 @@ export const useOpenTabsStore = defineStore('openTabs', {
       this.tabs = this.tabs.filter((tab) => tab.pinned === true)
       if (this.lastActiveKey && !this.tabs.some((t) => tabKey(t) === this.lastActiveKey)) {
         this.setActiveKey(this.tabs.length > 0 ? tabKey(this.tabs[0]) : null)
+      }
+      persist(this.tabs)
+      return closing
+    },
+
+    // closeOtherChatTabsByKey closes every unpinned chat tab except the one named;
+    // workspace tabs and pinned chat tabs are untouched.
+    closeOtherChatTabsByKey(key: string): OpenTab[] {
+      const closing = this.tabs.filter(
+        (tab) =>
+          (tab.kind === 'chat' || tab.kind === 'new-chat') &&
+          tabKey(tab) !== key &&
+          tab.pinned !== true,
+      )
+      this.tabs = this.tabs.filter(
+        (tab) =>
+          (tab.kind !== 'chat' && tab.kind !== 'new-chat') ||
+          tabKey(tab) === key ||
+          tab.pinned === true,
+      )
+      const remainingChatTabs = this.tabs.filter((tab) => tab.kind === 'chat' || tab.kind === 'new-chat')
+      if (this.lastActiveChatKey && !remainingChatTabs.some((t) => tabKey(t) === this.lastActiveChatKey)) {
+        const nextKey = remainingChatTabs.length > 0 ? tabKey(remainingChatTabs[0]) : null
+        this.lastActiveChatKey = nextKey
+        persistChatActiveKey(nextKey)
+      }
+      persist(this.tabs)
+      return closing
+    },
+
+    // closeAllChatTabs closes every unpinned chat tab; workspace tabs and pinned chat tabs stay.
+    closeAllChatTabs(): OpenTab[] {
+      const closing = this.tabs.filter(
+        (tab) => (tab.kind === 'chat' || tab.kind === 'new-chat') && tab.pinned !== true,
+      )
+      this.tabs = this.tabs.filter(
+        (tab) => (tab.kind !== 'chat' && tab.kind !== 'new-chat') || tab.pinned === true,
+      )
+      const remainingChatTabs = this.tabs.filter((tab) => tab.kind === 'chat' || tab.kind === 'new-chat')
+      if (this.lastActiveChatKey && !remainingChatTabs.some((t) => tabKey(t) === this.lastActiveChatKey)) {
+        const nextKey = remainingChatTabs.length > 0 ? tabKey(remainingChatTabs[0]) : null
+        this.lastActiveChatKey = nextKey
+        persistChatActiveKey(nextKey)
       }
       persist(this.tabs)
       return closing
