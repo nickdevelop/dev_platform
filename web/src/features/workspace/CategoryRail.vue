@@ -154,126 +154,130 @@ const toggleTitle = computed(() => {
 
 <template>
   <nav class="category-rail" aria-label="大类">
-    <RouterLink
-      class="category"
-      :class="{ active: projectActive }"
-      title="项目"
-      :aria-current="projectActive ? 'page' : undefined"
-      :to="projectDestination"
-      @click="onProjectClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-      </svg>
-      <span>项目</span>
-    </RouterLink>
-    <RouterLink
-      class="category"
-      :class="{ active: tasksActive }"
-      title="任务管理"
-      :aria-current="tasksActive ? 'page' : undefined"
-      :to="{ name: 'tasks' }"
-      @click="onTasksClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span>任务</span>
-    </RouterLink>
-    <RouterLink
-      class="category"
-      :class="{ active: promptsActive }"
-      title="提示词管理"
-      :aria-current="promptsActive ? 'page' : undefined"
-      :to="{ name: 'prompts' }"
-      @click="onPromptsClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M12 20h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span>提示词</span>
-    </RouterLink>
-    <RouterLink
-      class="category"
-      :class="{ active: terminalActive }"
-      title="终端控制台"
-      :aria-current="terminalActive ? 'page' : undefined"
-      :to="{ name: 'terminal' }"
-      @click="onTerminalClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <polyline points="4 17 10 11 4 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <line x1="12" y1="19" x2="20" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      </svg>
-      <span>终端</span>
-    </RouterLink>
-    <RouterLink
-      class="category"
-      :class="{ active: chatActive }"
-      title="对话"
-      :aria-current="chatActive ? 'page' : undefined"
-      :to="chatDestination"
-      @click="onChatClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path
-          d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
-        />
-      </svg>
-      <span>对话</span>
-    </RouterLink>
-    <div class="spacer"></div>
-    <RouterLink
-      class="footer-btn settings"
-      title="设置"
-      :aria-current="settingsActive ? 'page' : undefined"
-      :to="{ name: 'settings-appearance' }"
-      @click="onSettingsClick"
-    >
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <circle cx="12" cy="12" r="3" />
-        <path
-          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-        />
-      </svg>
-      <span>设置</span>
-    </RouterLink>
-    <button type="button" class="footer-btn logout" title="退出登录" @click="emit('logout')">
-      <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-        <polyline points="16 17 21 12 16 7" />
-        <line x1="21" y1="12" x2="9" y2="12" />
-      </svg>
-      <span>退出</span>
-    </button>
-    <button
-      v-if="sidebarCollapsible !== false"
-      type="button"
-      class="footer-btn collapse"
-      data-test="sidebar-toggle"
-      :title="toggleTitle"
-      :aria-label="toggleTitle"
-      :aria-expanded="(!sidebarCollapsed).toString()"
-      @click="emit('toggleSidebar')"
-    >
-      <svg
-        v-if="sidebarCollapsed"
-        class="rail-icon"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        focusable="false"
+    <div class="rail-top">
+      <RouterLink
+        class="category"
+        :class="{ active: projectActive }"
+        title="项目"
+        :aria-current="projectActive ? 'page' : undefined"
+        :to="projectDestination"
+        @click="onProjectClick"
       >
-        <polyline points="13 17 18 12 13 7" />
-        <polyline points="6 17 11 12 6 7" />
-      </svg>
-      <svg v-else class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <polyline points="11 17 6 12 11 7" />
-        <polyline points="18 17 13 12 18 7" />
-      </svg>
-      <span>{{ sidebarCollapsed ? '展开' : '收起' }}</span>
-    </button>
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+        </svg>
+        <span>项目</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
+        :class="{ active: tasksActive }"
+        title="任务管理"
+        :aria-current="tasksActive ? 'page' : undefined"
+        :to="{ name: 'tasks' }"
+        @click="onTasksClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>任务</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
+        :class="{ active: promptsActive }"
+        title="提示词管理"
+        :aria-current="promptsActive ? 'page' : undefined"
+        :to="{ name: 'prompts' }"
+        @click="onPromptsClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 20h9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>提示词</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
+        :class="{ active: terminalActive }"
+        title="终端控制台"
+        :aria-current="terminalActive ? 'page' : undefined"
+        :to="{ name: 'terminal' }"
+        @click="onTerminalClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <polyline points="4 17 10 11 4 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <line x1="12" y1="19" x2="20" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <span>终端</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
+        :class="{ active: chatActive }"
+        title="对话"
+        :aria-current="chatActive ? 'page' : undefined"
+        :to="chatDestination"
+        @click="onChatClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
+          />
+        </svg>
+        <span>对话</span>
+      </RouterLink>
+    </div>
+
+    <div class="rail-bottom">
+      <RouterLink
+        class="footer-btn settings"
+        title="设置"
+        :aria-current="settingsActive ? 'page' : undefined"
+        :to="{ name: 'settings-appearance' }"
+        @click="onSettingsClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
+        </svg>
+        <span>设置</span>
+      </RouterLink>
+      <button type="button" class="footer-btn logout" title="退出登录" @click="emit('logout')">
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <polyline points="16 17 21 12 16 7" />
+          <line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+        <span>退出</span>
+      </button>
+      <button
+        v-if="sidebarCollapsible !== false"
+        type="button"
+        class="footer-btn collapse"
+        data-test="sidebar-toggle"
+        :title="toggleTitle"
+        :aria-label="toggleTitle"
+        :aria-expanded="(!sidebarCollapsed).toString()"
+        @click="emit('toggleSidebar')"
+      >
+        <svg
+          v-if="sidebarCollapsed"
+          class="rail-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <polyline points="13 17 18 12 13 7" />
+          <polyline points="6 17 11 12 6 7" />
+        </svg>
+        <svg v-else class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <polyline points="11 17 6 12 11 7" />
+          <polyline points="18 17 13 12 18 7" />
+        </svg>
+        <span>{{ sidebarCollapsed ? '展开' : '收起' }}</span>
+      </button>
+    </div>
   </nav>
 </template>
 
@@ -282,15 +286,42 @@ const toggleTitle = computed(() => {
   background: var(--rail-bg);
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
   align-items: center;
-  padding: calc(var(--space-unit) * 2.000) 0;
-  gap: calc(var(--space-unit) * 1.333);
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: calc(var(--space-unit) * 1.5) 0;
+  overflow: hidden;
+  user-select: none;
+}
+
+.rail-top,
+.rail-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--space-unit) * 1.0);
+  width: 100%;
+}
+
+.rail-top {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rail-top::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-bottom {
+  flex-shrink: 0;
 }
 
 .category,
 .footer-btn {
   width: 44px;
-  padding: calc(var(--space-unit) * 1.000) 0;
+  padding: calc(var(--space-unit) * 0.8) 0;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -302,7 +333,25 @@ const toggleTitle = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.500);
+  gap: calc(var(--space-unit) * 0.4);
+  transition: all 0.15s ease;
+}
+
+.category:hover,
+.footer-btn:hover {
+  background: var(--rail-active);
+  color: #fff;
+}
+
+.footer-btn.collapse {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footer-btn.collapse:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
 }
 
 .rail-icon {
@@ -325,9 +374,5 @@ const toggleTitle = computed(() => {
 .category:disabled {
   opacity: 0.35;
   cursor: not-allowed;
-}
-
-.spacer {
-  flex: 1;
 }
 </style>

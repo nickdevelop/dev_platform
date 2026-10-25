@@ -674,6 +674,22 @@ watch(
       @expand-sidebar="onRailMenuClick"
     />
 
+    <!-- 第一栏侧边折叠/展开按钮（贴在第一栏右边缘侧边，常驻可见，随手可点） -->
+    <button
+      type="button"
+      class="rail-edge-toggle"
+      :class="{ collapsed: !isSidebarVisible }"
+      data-test="rail-edge-toggle"
+      :title="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
+      :aria-label="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
+      @click="toggleSidebar"
+    >
+      <svg class="rail-edge-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <polyline v-if="isSidebarVisible" points="15 18 9 12 15 6" />
+        <polyline v-else points="9 18 15 12 9 6" />
+      </svg>
+    </button>
+
     <!-- The column's accessible name follows the list it currently carries. -->
     <aside
       v-if="isSidebarVisible"
@@ -860,6 +876,65 @@ watch(
   background: rgba(0, 0, 0, 0.2);
   z-index: 35;
   animation: backdrop-fade-in 0.15s ease-out;
+}
+
+/* 第一栏右侧边缘贴边折叠/展开按钮 */
+.rail-edge-toggle {
+  position: fixed;
+  left: 56px;
+  top: 50%;
+  transform: translateY(-50%) translateX(-50%);
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+}
+
+.rail-edge-toggle:hover {
+  width: 22px;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.rail-edge-toggle.collapsed {
+  left: 56px;
+  transform: translateY(-50%) translateX(0);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: none;
+  background: var(--rail-bg);
+  border-color: var(--rail-active);
+  color: var(--rail-text);
+  box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+.rail-edge-toggle.collapsed:hover {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.rail-edge-icon {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 @keyframes backdrop-fade-in {

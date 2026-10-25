@@ -297,6 +297,26 @@ describe('three-pane app shell', () => {
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
   })
 
+  it('renders rail edge collapse toggle at the border of the first column and toggles the sidebar', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const edgeToggle = wrapper.find('[data-test="rail-edge-toggle"]')
+    expect(edgeToggle.exists()).toBe(true)
+    expect(edgeToggle.attributes('title')).toBe('收起侧边栏')
+    expect(edgeToggle.classes()).not.toContain('collapsed')
+
+    // Clicking edge toggle collapses the sidebar
+    await edgeToggle.trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(edgeToggle.classes()).toContain('collapsed')
+    expect(edgeToggle.attributes('title')).toBe('展开侧边栏')
+
+    // Clicking it again expands the sidebar
+    await edgeToggle.trigger('click')
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+    expect(edgeToggle.classes()).not.toContain('collapsed')
+    expect(edgeToggle.attributes('title')).toBe('收起侧边栏')
+  })
+
   it('brings the project column back floating when the project category is clicked and auto-collapses on outside click', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
     await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
