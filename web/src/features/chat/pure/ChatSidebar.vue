@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Chat, ChatGroup } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
 import RunningIndicator from '../../../shared/components/RunningIndicator.vue'
+import { UiDialog, UiButton } from '../../../shared/ui'
 import ChatGroupDialog from './ChatGroupDialog.vue'
 import MoveChatDialog from './MoveChatDialog.vue'
 
@@ -15,10 +16,12 @@ const route = useRoute()
 
 const search = ref('')
 const dialog = ref<{
-  type: 'create-group' | 'rename-group' | 'move-chat'
+  type: 'create-group' | 'rename-group' | 'move-chat' | 'delete-group' | 'delete-chat'
   group?: ChatGroup | null
   chat?: Chat | null
 } | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 const EXPANDED_GROUPS_STORAGE_KEY = 'dev-platform-chat-groups-expanded'
 const expandedGroupIds = ref<number[]>([])
@@ -172,15 +175,26 @@ function openMoveChat(chat: Chat) {
   dialog.value = { type: 'move-chat', chat }
 }
 
-async function onDeleteGroup(group: ChatGroup) {
-  const count = chatsForGroup(group.id).length
-  const msg = count > 0
-    ? `确定要删除助手「${group.name}」吗？\n该助手下的 ${count} 个对话将一并删除！`
-    : `确定要删除助手「${group.name}」吗？`
-  if (!window.confirm(msg)) return
+function onDeleteGroup(group: ChatGroup) {
+  deleteError.value = ''
+  dialog.value = { type: 'delete-group', group }
+}
+
+async function confirmDeleteGroup() {
+  if (!dialog.value || dialog.value.type !== 'delete-group' || !dialog.value.group || deleting.value) return
+  const group = dialog.value.group
+  deleting.value = true
+  deleteError.value = ''
 
   const success = await chats.deleteGroup(group.id)
-  if (success && activeId.value) {
+  deleting.value = false
+  if (!success) {
+    deleteError.value = chats.groupsError || '删除助手失败，请重试。'
+    return
+  }
+
+  dialog.value = null
+  if (activeId.value) {
     // If active chat was in this group, navigate back to /chat
     if (!chats.chats.some((c) => c.id === activeId.value)) {
       void router.push({ name: 'chat' })
@@ -188,10 +202,27 @@ async function onDeleteGroup(group: ChatGroup) {
   }
 }
 
-async function onDeleteChat(chat: Chat) {
-  if (!window.confirm(`确定要删除对话「${chat.title || '未命名对话'}」吗？`)) return
-  await chats.deleteChat(chat.id)
-  if (activeId.value === chat.id) {
+function onDeleteChat(chat: Chat) {
+  deleteError.value = ''
+  dialog.value = { type: 'delete-chat', chat }
+}
+
+async function confirmDeleteChat() {
+  if (!dialog.value || dialog.value.type !== 'delete-chat' || !dialog.value.chat || deleting.value) return
+  const chat = dialog.value.chat
+  deleting.value = true
+  deleteError.value = ''
+
+  const success = await chats.deleteChat(chat.id)
+  deleting.value = false
+  if (!success) {
+    deleteError.value = chats.listError || '删除对话失败，请重试。'
+    return
+  }
+
+  const wasActive = activeId.value === chat.id
+  dialog.value = null
+  if (wasActive) {
     void router.push({ name: 'chat' })
   }
 }
@@ -386,6 +417,66 @@ function formatChatTime(isoString?: string): string {
       @close="dialog = null"
       @submitted="dialog = null"
     />
+
+    <UiDialog
+      v-if="dialog && dialog.type === 'delete-group' && dialog.group"
+      title="删除助手"
+      width-class="w-full max-w-md"
+      data-test="delete-group-dialog"
+      @close="dialog = null"
+    >
+      <div class="space-y-2">
+        <p class="text-sm font-medium text-platform-text">
+          确定要删除助手「{{ dialog.group.name }}」吗？
+        </p>
+        <p class="text-xs text-platform-text-muted leading-relaxed">
+          {{ chatsForGroup(dialog.group.id).length > 0 ? `该助手下的 ${chatsForGroup(dialog.group.id).length} 个对话将一并删除，且无法恢复。` : '删除后，该助手将从平台中移除。' }}
+        </p>
+        <p v-if="deleteError" class="text-xs text-red-500" role="alert">{{ deleteError }}</p>
+      </div>
+      <template #footer>
+        <UiButton type="button" variant="secondary" @click="dialog = null">取消</UiButton>
+        <UiButton
+          type="button"
+          variant="danger"
+          :disabled="deleting"
+          data-test="confirm-delete-group"
+          @click="confirmDeleteGroup"
+        >
+          {{ deleting ? '删除中…' : '删除' }}
+        </UiButton>
+      </template>
+    </UiDialog>
+
+    <UiDialog
+      v-if="dialog && dialog.type === 'delete-chat' && dialog.chat"
+      title="删除对话"
+      width-class="w-full max-w-md"
+      data-test="delete-chat-dialog"
+      @close="dialog = null"
+    >
+      <div class="space-y-2">
+        <p class="text-sm font-medium text-platform-text">
+          确定要删除对话「{{ dialog.chat.title || '未命名对话' }}」吗？
+        </p>
+        <p class="text-xs text-platform-text-muted leading-relaxed">
+          删除后，该对话及其全部消息将从平台中移除，且无法恢复。
+        </p>
+        <p v-if="deleteError" class="text-xs text-red-500" role="alert">{{ deleteError }}</p>
+      </div>
+      <template #footer>
+        <UiButton type="button" variant="secondary" @click="dialog = null">取消</UiButton>
+        <UiButton
+          type="button"
+          variant="danger"
+          :disabled="deleting"
+          data-test="confirm-delete-chat"
+          @click="confirmDeleteChat"
+        >
+          {{ deleting ? '删除中…' : '删除' }}
+        </UiButton>
+      </template>
+    </UiDialog>
   </div>
 </template>
 

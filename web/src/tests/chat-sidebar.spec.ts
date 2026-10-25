@@ -149,5 +149,11 @@ describe('assistant lifecycle and unlocked controls', () => {
     expect(wrapper.find('[aria-label="编辑助手「快捷助手」"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="删除助手「快捷助手」"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="在「快捷助手」中新建对话"]').exists()).toBe(true)
+
+    // Trigger delete assistant: opens modal instead of window.confirm
+    await wrapper.find('[aria-label="删除助手「快捷助手」"]').trigger('click')
+    const dialog = wrapper.find('[data-test="delete-group-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('确定要删除助手「快捷助手」吗？')
   })
 })

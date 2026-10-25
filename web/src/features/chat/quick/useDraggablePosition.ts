@@ -1,18 +1,18 @@
-// Draggable position for the quick-assistant launcher. The button is fixed to
-// the viewport and may be moved anywhere inside it, keeping only a small
-// edge margin so it stays clickable. The position survives reloads through
-// localStorage. Panel placement is derived from the same coordinates so the
-// popover follows the button and stays inside the viewport.
+// Draggable position for the quick-assistant launcher and floating dialog.
+// The toolbar and the panel positions are completely decoupled and independently
+// draggable and persistable. Panel placement stays inside the viewport.
 
 import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 
 export const POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-position'
+export const PANEL_POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-panel-position'
 // The initial placement keeps the button 50px from the top and right edges.
 export const BUTTON_DEFAULT_OFFSET = 50
 // The drag area covers the whole viewport; this margin only prevents the
 // button from being pushed completely against an edge and becoming hard to grab.
 export const VIEWPORT_EDGE_MARGIN = 12
 export const PANEL_GAP = 12
+export const DEFAULT_PANEL_SIZE: Size = { width: 480, height: 600 }
 
 export interface Point {
   left: number
@@ -43,12 +43,21 @@ export function clampButtonPosition(point: Point, button: Size, viewport: Viewpo
   }
 }
 
+export function clampPanelPosition(point: Point, panel: Size, viewport: Viewport): Point {
+  const maxLeft = Math.max(VIEWPORT_EDGE_MARGIN, viewport.width - VIEWPORT_EDGE_MARGIN - panel.width)
+  const maxTop = Math.max(VIEWPORT_EDGE_MARGIN, viewport.height - VIEWPORT_EDGE_MARGIN - panel.height)
+  return {
+    left: clamp(point.left, VIEWPORT_EDGE_MARGIN, maxLeft),
+    top: clamp(point.top, VIEWPORT_EDGE_MARGIN, maxTop),
+  }
+}
+
 // placePanel puts a 480x600 panel beside the button: below when there is room,
 // above otherwise, right-aligned to the button and clamped to the viewport.
 export function placePanel(
   button: Point & Size,
   viewport: Viewport,
-  panelSize: Size = { width: 480, height: 600 },
+  panelSize: Size = DEFAULT_PANEL_SIZE,
 ): Point & Size {
   const width = Math.min(panelSize.width, viewport.width - VIEWPORT_EDGE_MARGIN * 2)
   const height = Math.min(panelSize.height, viewport.height - VIEWPORT_EDGE_MARGIN * 2)
@@ -87,6 +96,35 @@ function persistPosition(point: Point) {
   } catch {
     // Best-effort preference only.
   }
+}
+
+export function readStoredPanelPosition(): Point | null {
+  try {
+    const raw = localStorage.getItem(PANEL_POSITION_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<Point>
+    if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null
+    if (!Number.isFinite(parsed.left) || !Number.isFinite(parsed.top)) return null
+    return { left: parsed.left, top: parsed.top }
+  } catch {
+    return null
+  }
+}
+
+export function persistPanelPosition(point: Point) {
+  try {
+    localStorage.setItem(PANEL_POSITION_STORAGE_KEY, JSON.stringify(point))
+  } catch {
+    // Best-effort preference only.
+  }
+}
+
+export function initialPanelPosition(viewport: Viewport, panelSize: Size = DEFAULT_PANEL_SIZE): Point {
+  const width = Math.min(panelSize.width, viewport.width - VIEWPORT_EDGE_MARGIN * 2)
+  const height = Math.min(panelSize.height, viewport.height - VIEWPORT_EDGE_MARGIN * 2)
+  const defaultLeft = Math.max(VIEWPORT_EDGE_MARGIN, viewport.width - width - 60)
+  const defaultTop = Math.max(VIEWPORT_EDGE_MARGIN, 60)
+  return clampPanelPosition({ left: defaultLeft, top: defaultTop }, { width, height }, viewport)
 }
 
 interface DragState {
@@ -236,5 +274,129 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
     onPointerUp,
     onPointerCancel,
     consumeClickSuppression,
+  }
+}
+
+export function useDraggablePanel() {
+  const panelPosition = ref<Point | null>(null)
+  const panelSize = ref<Size>(DEFAULT_PANEL_SIZE)
+  const viewport = ref<Viewport>({
+    width: typeof window === 'undefined' ? 1024 : window.innerWidth,
+    height: typeof window === 'undefined' ? 768 : window.innerHeight,
+  })
+  const draggingPanel = ref(false)
+  let drag: DragState | null = null
+
+  function actualPanelSize(): Size {
+    return {
+      width: Math.min(panelSize.value.width, viewport.value.width - VIEWPORT_EDGE_MARGIN * 2),
+      height: Math.min(panelSize.value.height, viewport.value.height - VIEWPORT_EDGE_MARGIN * 2),
+    }
+  }
+
+  function setPanelPos(next: Point) {
+    const size = actualPanelSize()
+    panelPosition.value = clampPanelPosition(next, size, viewport.value)
+  }
+
+  function refreshOnResize() {
+    viewport.value = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }
+    if (panelPosition.value) setPanelPos(panelPosition.value)
+  }
+
+  onMounted(() => {
+    const stored = readStoredPanelPosition()
+    const size = actualPanelSize()
+    panelPosition.value = clampPanelPosition(
+      stored ?? initialPanelPosition(viewport.value, size),
+      size,
+      viewport.value,
+    )
+    window.addEventListener('resize', refreshOnResize)
+  })
+
+  onBeforeUnmount(() => {
+    window.removeEventListener('resize', refreshOnResize)
+  })
+
+  function onPanelPointerDown(event: PointerEvent) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('button, input, select, textarea, a')) return
+
+    const size = actualPanelSize()
+    if (!panelPosition.value) {
+      panelPosition.value = initialPanelPosition(viewport.value, size)
+    }
+
+    drag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: { ...panelPosition.value },
+      moved: false,
+    }
+    draggingPanel.value = true
+    try {
+      ;(event.currentTarget as HTMLElement)?.setPointerCapture?.(event.pointerId)
+    } catch {
+      // Pointer capture is an enhancement
+    }
+  }
+
+  function onPanelPointerMove(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return
+    drag.moved = true
+    setPanelPos({ left: drag.origin.left + dx, top: drag.origin.top + dy })
+  }
+
+  function finishPanelDrag(event: PointerEvent) {
+    if (!drag || event.pointerId !== drag.pointerId) return
+    const moved = drag.moved
+    drag = null
+    draggingPanel.value = false
+    try {
+      ;(event.currentTarget as HTMLElement)?.releasePointerCapture?.(event.pointerId)
+    } catch {
+      // Already released
+    }
+    if (moved && panelPosition.value) {
+      persistPanelPosition(panelPosition.value)
+    }
+  }
+
+  function onPanelPointerUp(event: PointerEvent) {
+    finishPanelDrag(event)
+  }
+
+  function onPanelPointerCancel(event: PointerEvent) {
+    finishPanelDrag(event)
+  }
+
+  const panelStyle = computed(() => {
+    const size = actualPanelSize()
+    const pos = panelPosition.value ?? initialPanelPosition(viewport.value, size)
+    return {
+      left: `${pos.left}px`,
+      top: `${pos.top}px`,
+      width: `${size.width}px`,
+      height: `${size.height}px`,
+    }
+  })
+
+  return {
+    panelPosition,
+    panelStyle,
+    draggingPanel,
+    onPanelPointerDown,
+    onPanelPointerMove,
+    onPanelPointerUp,
+    onPanelPointerCancel,
   }
 }

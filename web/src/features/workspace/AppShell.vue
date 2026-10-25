@@ -133,8 +133,11 @@ function toggleSidebar() {
   }
 }
 
+let railNavigationTimestamp = 0
+
 // When clicking first-column rail items: if sidebar is collapsed or unpinned, pop it out floating.
 function onRailMenuClick() {
+  railNavigationTimestamp = Date.now()
   if (!isDocked.value) {
     floatingOpen.value = true
   }
@@ -625,10 +628,16 @@ async function logout() {
 
 const sidebarRef = ref<HTMLElement | null>(null)
 
-// When route changes and sidebar is floating, collapse it back so main pane gets focus
+// When route changes and sidebar is floating:
+// If the navigation was initiated by the category rail, preserve the floating state.
+// If the navigation was initiated from inside the sidebar (e.g. clicking a session/task),
+// collapse the drawer so the main pane gets focus.
 watch(
   () => route.fullPath,
   () => {
+    if (Date.now() - railNavigationTimestamp < 300) {
+      return
+    }
     if (isFloating.value) {
       floatingOpen.value = false
     }
@@ -676,39 +685,38 @@ watch(
       }"
       :aria-label="columnLabel"
     >
-      <div class="sidebar-dock-controls">
-        <button
-          type="button"
-          class="dock-btn pin-btn"
-          data-test="sidebar-pin-btn"
-          :class="{ pinned: isDocked }"
-          :title="isDocked ? '取消固定' : '固定侧边栏'"
-          :aria-label="isDocked ? '取消固定' : '固定侧边栏'"
-          :aria-pressed="isDocked.toString()"
-          @click="toggleSidebarPinned"
-        >
-          <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <line x1="12" y1="17" x2="12" y2="22" />
-            <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="dock-btn collapse-btn"
-          data-test="sidebar-collapse-btn"
-          title="收起侧边栏"
-          aria-label="收起侧边栏"
-          @click="collapseSidebar"
-        >
-          <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <polyline points="11 17 6 12 11 7" />
-            <polyline points="18 17 13 12 18 7" />
-          </svg>
-        </button>
-      </div>
-
       <div class="sidebar-head">
         <h2>{{ columnTitle }}</h2>
+        <div class="sidebar-dock-controls">
+          <button
+            type="button"
+            class="dock-btn pin-btn"
+            data-test="sidebar-pin-btn"
+            :class="{ pinned: isDocked }"
+            :title="isDocked ? '取消固定' : '固定侧边栏'"
+            :aria-label="isDocked ? '取消固定' : '固定侧边栏'"
+            :aria-pressed="isDocked.toString()"
+            @click="toggleSidebarPinned"
+          >
+            <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <line x1="12" y1="17" x2="12" y2="22" />
+              <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="dock-btn collapse-btn"
+            data-test="sidebar-collapse-btn"
+            title="收起侧边栏"
+            aria-label="收起侧边栏"
+            @click="collapseSidebar"
+          >
+            <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <polyline points="11 17 6 12 11 7" />
+              <polyline points="18 17 13 12 18 7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- The middle column carries whichever list the open menu owns: the
@@ -896,13 +904,10 @@ watch(
 }
 
 .sidebar-dock-controls {
-  position: absolute;
-  top: calc(var(--space-unit) * 1.8);
-  right: calc(var(--space-unit) * 1.5);
   display: flex;
   align-items: center;
   gap: calc(var(--space-unit) * 0.5);
-  z-index: 10;
+  flex-shrink: 0;
 }
 
 .dock-btn {
@@ -912,21 +917,24 @@ watch(
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  background: transparent;
-  color: var(--color-text-muted);
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .dock-btn:hover {
   background: var(--color-surface-muted);
-  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  color: var(--color-primary);
 }
 
 .dock-btn.pin-btn.pinned {
   color: var(--color-primary);
+  border-color: var(--color-primary-soft, rgba(59, 130, 246, 0.4));
+  background: var(--color-primary-soft, rgba(59, 130, 246, 0.08));
 }
 
 .dock-btn.pin-btn.pinned .dock-icon {
@@ -948,11 +956,9 @@ watch(
   transition: transform 0.15s ease;
 }
 
-/* The dock controls (pin/collapse) sit in the top-right corner of the
-   sidebar; the head leaves room on the right so long titles never slide
-   underneath them. Action buttons sit on their own dedicated row below. */
+/* The dock controls (pin/collapse) are aligned directly inside the head. Action buttons sit on their own dedicated row below. */
 .sidebar-head {
-  padding: calc(var(--space-unit) * 1.8) calc(var(--space-unit) * 11) calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 2.0);
+  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 2.0);
   display: flex;
   justify-content: space-between;
   align-items: center;

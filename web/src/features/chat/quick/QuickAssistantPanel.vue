@@ -11,7 +11,13 @@ import { useBottomFollow } from '../../../shared/scrollFollow'
 import MessageView from '../rendering/MessageView.vue'
 import ChatComposer from '../pure/ChatComposer.vue'
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{
+  close: []
+  headerPointerdown: [event: PointerEvent]
+  headerPointermove: [event: PointerEvent]
+  headerPointerup: [event: PointerEvent]
+  headerPointercancel: [event: PointerEvent]
+}>()
 
 const quick = useQuickAssistantStore()
 const models = useModelsStore()
@@ -169,7 +175,13 @@ function onKeydown(event: KeyboardEvent) {
     data-test="quick-assistant-panel"
     @keydown="onKeydown"
   >
-    <header class="quick-assistant-header">
+    <header
+      class="quick-assistant-header"
+      @pointerdown="emit('headerPointerdown', $event)"
+      @pointermove="emit('headerPointermove', $event)"
+      @pointerup="emit('headerPointerup', $event)"
+      @pointercancel="emit('headerPointercancel', $event)"
+    >
       <div class="quick-assistant-heading">
         <h2>
           <span class="assistant-mini-badge">{{ assistantIcon }}</span>
@@ -302,6 +314,13 @@ function onKeydown(event: KeyboardEvent) {
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.quick-assistant-header:active {
+  cursor: grabbing;
 }
 
 .quick-assistant-heading {

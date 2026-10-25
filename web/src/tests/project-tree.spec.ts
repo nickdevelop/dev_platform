@@ -483,14 +483,23 @@ describe('ProjectTree', () => {
     expect(second.find('.session-row-top .agent-logo').text()).toBe('PI')
     expect(second.find('.session-row-bottom .session-time').text()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
-    // Click delete button
-    vi.stubGlobal('confirm', vi.fn(() => true))
+    // Click delete button: opens confirmation modal
     const deleteSpy = vi.spyOn(useSessionsStore(), 'deleteSession').mockResolvedValue(true)
     await first.find('.session-delete').trigger('click')
     await flushPromises()
 
+    const dialog = wrapper.find('[data-test="delete-session-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.find('.confirm-title').text()).toContain('Today Session')
+    expect(dialog.find('.confirm-hint').text()).toContain('仅从平台列表移除')
+
+    // Confirm deletion
+    await dialog.find('[data-test="confirm-delete"]').trigger('click')
+    await flushPromises()
+
     expect(deleteSpy).toHaveBeenCalledWith(1, 's1')
     expect(wrapper.emitted('delete-session')).toEqual([[1, 's1']])
+    expect(wrapper.find('[data-test="delete-session-dialog"]').exists()).toBe(false)
   })
 
   it('marks active session as selected with matching class', async () => {

@@ -253,7 +253,7 @@ describe('quick assistant launcher', () => {
     stubFetch()
     const { wrapper } = await mountLauncher()
 
-    const style = wrapper.find('[data-test="quick-assistant-button"]').attributes('style')
+    const style = wrapper.find('[data-test="quick-assistant-toolbar"]').attributes('style')
     expect(style).toContain('left: 400px')
     expect(style).toContain('top: 120px')
   })

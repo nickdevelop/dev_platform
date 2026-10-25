@@ -12,7 +12,7 @@
 2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
-5. **快捷助手**：可在平台设置中开启的右上角可拖拽漂浮入口，以 480×600 弹窗续接最近快捷对话或新建对话；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
+5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗续接最近快捷对话或新建对话；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
 
 ---
 
@@ -125,7 +125,7 @@ web/src/
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
-  │     │     └── quick/         ── 快捷助手漂浮按钮、480×600 弹窗与拖拽定位
+  │     │     └── quick/         ── 快捷助手横向方形工具栏、解绑 480×600 弹窗与自由拖拽定位
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
   │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
@@ -314,10 +314,11 @@ web/src/
                     ▼
 2. 主框架 (web/src/features/workspace/AppShell.vue)
    - 开关开启时挂载 QuickAssistantLauncher
-   - 按钮可拖拽至视口任意位置（保留 12px 防误触边距），位置写入 localStorage
+   - 工具栏呈现为横向方形按钮组，默认半透明，鼠标悬停完全显示；位置独立持久化
                     │
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)
+   - 弹窗位置与工具栏完全解绑，支持按住 Header 在视口内自由拖拽定位（带 12px 边界保护与独立持久化）
    - 以 480×600 打开所选助手的对话弹窗，或直接开启新对话
    - 显示所选助手的名称、图标与专属模型，独立 quickAssistant store
                     │

@@ -315,6 +315,18 @@ describe('three-pane app shell', () => {
     await wrapper.find('[data-test="sidebar-backdrop"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+
+    // When clicking a different first-level menu category (e.g. tasks), the second column also floats out
+    const tasksLink = wrapper.findAll('a').find((link) => link.text() === '任务')
+    expect(tasksLink).toBeDefined()
+    await tasksLink!.trigger('click')
+    await flushPromises()
+
+    const floatingTasksSidebar = wrapper.find('aside.sidebar')
+    expect(floatingTasksSidebar.exists()).toBe(true)
+    expect(floatingTasksSidebar.classes()).toContain('sidebar-floating')
+    expect(floatingTasksSidebar.find('.sidebar-head h2').text()).toBe('任务')
+    expect(floatingTasksSidebar.find('[data-test="sidebar-collapse-btn"]').exists()).toBe(true)
   })
 
   it('supports pin/unpin and dock collapse controls on the sidebar', async () => {
@@ -356,10 +368,11 @@ describe('three-pane app shell', () => {
     const sidebar = wrapper.find('aside.sidebar')
     expect(sidebar.exists()).toBe(true)
 
-    // Header has the title and is isolated from action buttons
+    // Header has the title and dock controls, and is isolated from action buttons
     const head = sidebar.find('.sidebar-head')
     expect(head.find('h2').text()).toBe('项目')
-    expect(head.findAll('button')).toHaveLength(0)
+    expect(head.find('.sidebar-dock-controls').exists()).toBe(true)
+    expect(head.find('button.action-btn').exists()).toBe(false)
 
     // Actions sit in dedicated second row below the head
     const actions = sidebar.find('.sidebar-actions')

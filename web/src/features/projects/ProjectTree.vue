@@ -268,18 +268,45 @@ function retryProject(projectId: number) {
   void loadProject(projectId)
 }
 
-async function onDeleteSession(projectId: number, sessionId: string) {
-  if (!window.confirm('确定要删除该会话吗？')) return
+const sessionToDelete = ref<{ projectId: number; session: AgentSession } | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
-  const success = await sessionsStore.deleteSession(projectId, sessionId)
-  if (success) {
-    if (sessionsByProject.value[projectId]) {
-      sessionsByProject.value[projectId] = sessionsByProject.value[projectId].filter(
-        (s) => s.id !== sessionId,
-      )
-    }
-    emit('delete-session', projectId, sessionId)
+function promptDeleteSession(projectId: number, sessionId: string) {
+  const session = (sessionsByProject.value[projectId] ?? []).find((s) => s.id === sessionId)
+  sessionToDelete.value = {
+    projectId,
+    session: session ?? ({ id: sessionId, title: sessionId } as AgentSession),
   }
+  deleteError.value = ''
+}
+
+function cancelDeleteSession() {
+  if (deleting.value) return
+  sessionToDelete.value = null
+  deleteError.value = ''
+}
+
+async function confirmDeleteSession() {
+  if (!sessionToDelete.value || deleting.value) return
+  const { projectId, session } = sessionToDelete.value
+  deleting.value = true
+  deleteError.value = ''
+
+  const success = await sessionsStore.deleteSession(projectId, session.id)
+  deleting.value = false
+  if (!success) {
+    deleteError.value = sessionsStore.error || '删除失败，请重试。'
+    return
+  }
+
+  if (sessionsByProject.value[projectId]) {
+    sessionsByProject.value[projectId] = sessionsByProject.value[projectId].filter(
+      (s) => s.id !== session.id,
+    )
+  }
+  emit('delete-session', projectId, session.id)
+  sessionToDelete.value = null
 }
 </script>
 
@@ -332,7 +359,7 @@ async function onDeleteSession(projectId: number, sessionId: string) {
             :session="entry"
             :is-selected="entry.id === props.activeSessionId"
             @select="emit('select-session', project.id, $event)"
-            @delete="onDeleteSession(project.id, $event)"
+            @delete="promptDeleteSession(project.id, $event)"
           />
         </li>
         <li v-if="loadFailed[project.id]" class="empty text-xs text-red-500 py-1">
@@ -363,4 +390,118 @@ async function onDeleteSession(projectId: number, sessionId: string) {
     <li v-if="projectsStore.projects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">还没有项目。</li>
     <li v-else-if="visibleProjects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">没有匹配的项目。</li>
   </ul>
+
+  <!-- Delete Session Confirmation Dialog (aligned with SessionChatPanel.vue) -->
+  <div
+    v-if="sessionToDelete"
+    class="confirm-backdrop"
+    role="dialog"
+    aria-modal="true"
+    aria-label="删除会话"
+    data-test="delete-session-dialog"
+    @click.self="cancelDeleteSession"
+  >
+    <div class="confirm-panel">
+      <p class="confirm-title">
+        确定删除会话「{{ sessionToDelete.session.title || sessionToDelete.session.id }}」吗？
+      </p>
+      <p class="confirm-hint">仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。</p>
+      <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
+      <div class="confirm-actions">
+        <button type="button" class="confirm-cancel" @click="cancelDeleteSession">取消</button>
+        <button
+          type="button"
+          class="confirm-delete"
+          data-test="confirm-delete"
+          :disabled="deleting"
+          @click="confirmDeleteSession"
+        >
+          {{ deleting ? '删除中…' : '删除' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
+
+<style scoped>
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.confirm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(26rem, 90vw);
+  padding: 1.25rem;
+  border-radius: var(--radius, 6px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+}
+
+.confirm-title {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+
+.confirm-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.confirm-error {
+  margin: 0;
+  color: var(--color-danger, #ef4444);
+  font-size: 0.85rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.confirm-actions button {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius, 6px);
+  background: var(--color-surface);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.confirm-actions .confirm-cancel:hover {
+  background: var(--color-surface-muted);
+}
+
+.confirm-actions .confirm-delete {
+  background: var(--color-danger, #ef4444);
+  border-color: var(--color-danger, #ef4444);
+  color: #fff;
+}
+
+.confirm-actions .confirm-delete:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.confirm-actions .confirm-delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style>

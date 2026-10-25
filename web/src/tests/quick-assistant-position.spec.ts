@@ -4,7 +4,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampButtonPosition,
+  clampPanelPosition,
+  initialPanelPosition,
   placePanel,
+  readStoredPanelPosition,
+  persistPanelPosition,
+  PANEL_POSITION_STORAGE_KEY,
 } from '../features/chat/quick/useDraggablePosition'
 
 const viewport = { width: 1280, height: 800 }
@@ -20,6 +25,32 @@ describe('quick assistant position', () => {
     expect(clampButtonPosition({ left: 9999, top: 100 }, button, viewport).left).toBe(
       viewport.width - 12 - button.width,
     )
+  })
+
+  it('clamps panel within viewport margins', () => {
+    const panelSize = { width: 480, height: 600 }
+    expect(clampPanelPosition({ left: -100, top: -50 }, panelSize, viewport)).toEqual({
+      left: 12,
+      top: 12,
+    })
+    expect(clampPanelPosition({ left: 2000, top: 2000 }, panelSize, viewport)).toEqual({
+      left: viewport.width - 12 - panelSize.width,
+      top: viewport.height - 12 - panelSize.height,
+    })
+  })
+
+  it('computes initial decoupled panel position near top-right', () => {
+    const pos = initialPanelPosition(viewport)
+    expect(pos.left).toBe(viewport.width - 480 - 60)
+    expect(pos.top).toBe(60)
+  })
+
+  it('reads and persists panel position independently from toolbar position', () => {
+    localStorage.clear()
+    expect(readStoredPanelPosition()).toBeNull()
+    persistPanelPosition({ left: 350, top: 150 })
+    expect(localStorage.getItem(PANEL_POSITION_STORAGE_KEY)).toBe(JSON.stringify({ left: 350, top: 150 }))
+    expect(readStoredPanelPosition()).toEqual({ left: 350, top: 150 })
   })
 
   it('places the panel below the button with a 480x600 size', () => {
