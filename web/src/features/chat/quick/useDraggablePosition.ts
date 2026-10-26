@@ -201,41 +201,45 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
       origin: { ...position.value },
       moved: false,
     }
-    dragging.value = true
-    try {
-      element.setPointerCapture?.(event.pointerId)
-    } catch {
-      // Pointer capture is an enhancement; dragging still works without it.
-    }
   }
 
   function onPointerMove(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.pointerId) return
     const dx = event.clientX - drag.startX
     const dy = event.clientY - drag.startY
-    if (!drag.moved && Math.hypot(dx, dy) < 4) return
-    drag.moved = true
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < 4) return
+      drag.moved = true
+      dragging.value = true
+      try {
+        buttonRef.value?.setPointerCapture?.(event.pointerId)
+      } catch {
+        // Pointer capture is an enhancement; dragging still works without it.
+      }
+    }
     setPosition({ left: drag.origin.left + dx, top: drag.origin.top + dy })
   }
 
   function finishDrag(event: PointerEvent) {
     if (!drag || event.pointerId !== drag.pointerId) return
     const moved = drag.moved
+    const pointerId = drag.pointerId
     drag = null
     dragging.value = false
-    try {
-      buttonRef.value?.releasePointerCapture?.(event.pointerId)
-    } catch {
-      // Already released.
+    if (moved) {
+      try {
+        buttonRef.value?.releasePointerCapture?.(pointerId)
+      } catch {
+        // Already released.
+      }
+      if (position.value) persistPosition(position.value)
+      // The click event follows pointerup; swallow exactly that one so dragging
+      // never toggles the popover.
+      suppressClick = true
+      window.setTimeout(() => {
+        suppressClick = false
+      }, 0)
     }
-    if (!moved) return
-    if (position.value) persistPosition(position.value)
-    // The click event follows pointerup; swallow exactly that one so dragging
-    // never toggles the popover.
-    suppressClick = true
-    window.setTimeout(() => {
-      suppressClick = false
-    }, 0)
   }
 
   function onPointerUp(event: PointerEvent) {

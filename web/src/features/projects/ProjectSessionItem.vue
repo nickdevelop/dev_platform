@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Compact session item component inside the project tree.
 // Row 1: Logo (simplified agent short logo) + running indicator + session title.
-// Row 2: Model tag + time tag on the left, delete button on the right.
+// Row 2: Model tag on the left, right-aligned time tag and reserved delete button on the right.
 import { computed } from 'vue'
 import type { AgentSession } from '../../api/sessions'
 import { useAgentsStore } from '../../stores/agents'
@@ -120,7 +120,7 @@ const modelLabel = computed(() => {
       </span>
     </div>
 
-    <!-- Row 2: Tags (Model + Time) & Actions (Delete) -->
+    <!-- Row 2: Model tag on the left, right-aligned time and delete action on the right -->
     <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-platform-text-muted">
       <div class="session-bottom-left flex items-center gap-1.5 min-w-0">
         <span
@@ -131,14 +131,14 @@ const modelLabel = computed(() => {
         >
           {{ modelLabel }}
         </span>
+      </div>
+      <div class="session-bottom-right flex items-center gap-1 shrink-0 ml-auto">
         <span
           class="session-time font-mono text-[10px] shrink-0"
           :title="formatFullTime(session.updatedAt)"
         >
           {{ formatSessionTime(session.updatedAt) }}
         </span>
-      </div>
-      <div class="session-bottom-right flex items-center gap-1 shrink-0">
         <button
           type="button"
           class="session-delete opacity-0 group-hover/item:opacity-100 hover:text-red-500 p-0.5 rounded transition-opacity"

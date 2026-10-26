@@ -128,17 +128,19 @@ describe('ProjectSessionItem', () => {
     const bottomRow = wrapper.find('.session-row-bottom')
     expect(bottomRow.exists()).toBe(true)
 
-    // Model tag extracts model label
-    const modelTag = bottomRow.find('[data-test="session-model"]')
+    // Model tag extracts model label on the left
+    const bottomLeft = bottomRow.find('.session-bottom-left')
+    const modelTag = bottomLeft.find('[data-test="session-model"]')
     expect(modelTag.exists()).toBe(true)
     expect(modelTag.text()).toBe('claude-3-5-sonnet')
     expect(modelTag.attributes('title')).toBe('anthropic/claude-3-5-sonnet')
 
-    // Time tag shows HH:mm:ss for today
-    expect(bottomRow.find('.session-time').text()).toBe('15:45:30')
+    // Time tag is right-aligned in session-bottom-right alongside delete button
+    const bottomRight = bottomRow.find('.session-bottom-right')
+    expect(bottomRight.find('.session-time').text()).toBe('15:45:30')
 
-    // Delete button exists
-    expect(bottomRow.find('[data-test="delete-session-btn"]').exists()).toBe(true)
+    // Delete button exists in bottom-right reserving action space
+    expect(bottomRight.find('[data-test="delete-session-btn"]').exists()).toBe(true)
   })
 
   it('formats past dates as YYYY-MM-DD on time tag', () => {

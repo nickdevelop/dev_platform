@@ -64,6 +64,10 @@ function toggle() {
 
 function selectAssistant(assistant: ChatGroup) {
   if (consumeClickSuppression()) return
+  if (open.value && quick.currentAssistant?.id === assistant.id) {
+    open.value = false
+    return
+  }
   quick.openAssistant(assistant)
   open.value = true
 }
@@ -98,18 +102,6 @@ watch(open, (value, previous) => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerCancel"
     >
-      <!-- 拖拽手柄 -->
-      <div class="toolbar-drag-handle" title="按住拖动工具栏">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
-          <circle cx="9" cy="6" r="1.5" />
-          <circle cx="15" cy="6" r="1.5" />
-          <circle cx="9" cy="12" r="1.5" />
-          <circle cx="15" cy="12" r="1.5" />
-          <circle cx="9" cy="18" r="1.5" />
-          <circle cx="15" cy="18" r="1.5" />
-        </svg>
-      </div>
-
       <!-- 多助手时的各个方形按钮 -->
       <template v-if="floatingAssistants.length > 1">
         <button
@@ -205,24 +197,10 @@ watch(open, (value, previous) => {
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.26);
 }
 
-.quick-assistant-toolbar.dragging {
+.quick-assistant-toolbar.dragging,
+.quick-assistant-toolbar.dragging .quick-assistant-button {
   cursor: grabbing;
   transform: scale(1.02);
-}
-
-.toolbar-drag-handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 32px;
-  color: var(--color-text-muted);
-  cursor: grab;
-  padding: 0 1px;
-}
-
-.quick-assistant-toolbar.dragging .toolbar-drag-handle {
-  cursor: grabbing;
 }
 
 .quick-assistant-button.square-btn {

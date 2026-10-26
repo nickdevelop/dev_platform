@@ -314,7 +314,7 @@ web/src/
                     ▼
 2. 主框架 (web/src/features/workspace/AppShell.vue)
    - 开关开启时挂载 QuickAssistantLauncher
-   - 工具栏呈现为横向方形按钮组，默认半透明，鼠标悬停完全显示；位置独立持久化
+   - 工具栏呈现为横向方形按钮组，支持直接按住按钮拖拽，默认半透明，鼠标悬停完全显示；位置独立持久化
                     │
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)

@@ -257,4 +257,77 @@ describe('quick assistant launcher', () => {
     expect(style).toContain('left: 400px')
     expect(style).toContain('top: 120px')
   })
+
+  it('does not render a dedicated drag handle and enables direct button interaction', async () => {
+    stubFetch()
+    const { wrapper } = await mountLauncher()
+
+    expect(wrapper.find('.toolbar-drag-handle').exists()).toBe(false)
+    const toolbar = wrapper.find('[data-test="quick-assistant-toolbar"]')
+    expect(toolbar.exists()).toBe(true)
+
+    const button = wrapper.find('[data-test="quick-assistant-button"]')
+    expect(button.exists()).toBe(true)
+
+    // Regular click opens popover
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(true)
+  })
+
+  it('suppresses click toggling when user drags the toolbar', async () => {
+    stubFetch()
+    const { wrapper } = await mountLauncher()
+    const toolbar = wrapper.find('[data-test="quick-assistant-toolbar"]')
+    const button = wrapper.find('[data-test="quick-assistant-button"]')
+
+    // Simulate drag start and move by > 4px via standard PointerEvents
+    const el = toolbar.element
+    el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 100, clientY: 100, button: 0 }))
+    el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 120, clientY: 120 }))
+    el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, clientX: 120, clientY: 120 }))
+
+    // Trailing click is suppressed
+    await button.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(false)
+  })
+
+  it('toggles open/close when clicking the same active assistant in multi-assistant mode', async () => {
+    const multiGroups = [
+      { id: 1, name: '助手一', showInFloat: true, createdAt: '', updatedAt: '' },
+      { id: 2, name: '助手二', showInFloat: true, createdAt: '', updatedAt: '' },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/chat-groups') {
+          return { status: 200, json: async () => ({ groups: multiGroups }) } as Response
+        }
+        return { status: 200, json: async () => ({ chats: [], total: 0 }) } as Response
+      }),
+    )
+
+    const { wrapper, quick } = await mountLauncher()
+    const buttons = wrapper.findAll('.quick-assistant-button')
+    expect(buttons).toHaveLength(2)
+
+    // Click assistant 1 to open
+    await buttons[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(true)
+    expect(quick.currentAssistant?.id).toBe(1)
+
+    // Click assistant 1 again toggles it closed
+    await buttons[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(false)
+
+    // Click assistant 2 opens it
+    await buttons[1].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(true)
+    expect(quick.currentAssistant?.id).toBe(2)
+  })
 })
