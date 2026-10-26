@@ -111,7 +111,7 @@ watch(open, (value, previous) => {
           class="quick-assistant-button square-btn"
           :class="{ active: quick.currentAssistant?.id === assistant.id && open }"
           :aria-label="`助手 · ${assistant.name}`"
-          :title="`助手 · ${assistant.name}（点击新建对话）`"
+          :title="`助手 · ${assistant.name}（点击打开/关闭对话）`"
           :data-test="index === 0 ? 'quick-assistant-button' : undefined"
           @click="selectAssistant(assistant)"
         >

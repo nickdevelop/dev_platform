@@ -117,7 +117,8 @@ function setupModels() {
   ]
 }
 
-function stubFetch(options: { existing?: boolean } = {}) {
+function stubFetch(options: { existing?: boolean; chats?: Chat[] } = {}) {
+  const defaultChats = options.chats ?? (options.existing ? [chat()] : [])
   const calls: Array<{ url: string; init?: RequestInit }> = []
   vi.stubGlobal(
     'fetch',
@@ -127,19 +128,22 @@ function stubFetch(options: { existing?: boolean } = {}) {
       if (url === '/api/chat-groups') {
         return { status: 200, json: async () => ({ groups: [GROUP] }) } as Response
       }
-      if (url === '/api/chats?limit=1&groupId=7') {
+      if (url === '/api/chats?limit=5&groupId=7' || url === '/api/chats?limit=1&groupId=7') {
         return {
           status: 200,
-          json: async () => ({ chats: options.existing ? [chat()] : [], total: options.existing ? 1 : 0 }),
+          json: async () => ({ chats: defaultChats, total: defaultChats.length }),
         } as Response
       }
-      if (url === '/api/chats/1' && (init?.method ?? 'GET') === 'GET') {
-        return { status: 200, json: async () => chat() } as Response
+      const matchChat = url.match(/^\/api\/chats\/(\d+)$/)
+      if (matchChat && (init?.method ?? 'GET') === 'GET') {
+        const id = Number(matchChat[1])
+        const found = defaultChats.find((c) => c.id === id) ?? chat({ id })
+        return { status: 200, json: async () => found } as Response
       }
       if (url === '/api/chats' && init?.method === 'POST') {
         return { status: 201, json: async () => chat() } as Response
       }
-      if (url === '/api/chats/1/messages' && init?.method === 'POST') {
+      if (url.match(/^\/api\/chats\/\d+\/messages$/) && init?.method === 'POST') {
         return { status: 202, json: async () => chat({ running: true }) } as Response
       }
       return { status: 200, json: async () => ({}) } as Response
@@ -305,6 +309,9 @@ describe('quick assistant launcher', () => {
         if (url === '/api/chat-groups') {
           return { status: 200, json: async () => ({ groups: multiGroups }) } as Response
         }
+        if (url === '/api/models/services') {
+          return { status: 200, json: async () => ({ services: [] }) } as Response
+        }
         return { status: 200, json: async () => ({ chats: [], total: 0 }) } as Response
       }),
     )
@@ -329,5 +336,146 @@ describe('quick assistant launcher', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="quick-assistant-popover"]').exists()).toBe(true)
     expect(quick.currentAssistant?.id).toBe(2)
+  })
+
+  it('renders recent 5 conversations in the history dropdown and selects the active one', async () => {
+    const historyChats = [
+      chat({ id: 101, title: '对话 1' }),
+      chat({ id: 102, title: '对话 2' }),
+      chat({ id: 103, title: '对话 3' }),
+      chat({ id: 104, title: '对话 4' }),
+      chat({ id: 105, title: '对话 5' }),
+    ]
+    stubFetch({ chats: historyChats })
+    const { wrapper, quick } = await mountLauncher()
+
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+
+    const select = wrapper.find('[data-test="quick-assistant-history-select"]')
+    expect(select.exists()).toBe(true)
+
+    const options = select.findAll('option')
+    // 1 placeholder ("最近对话…") + 5 conversations
+    expect(options).toHaveLength(6)
+    expect(options[1].text()).toBe('对话 1')
+    expect(options[2].text()).toBe('对话 2')
+    expect(options[5].text()).toBe('对话 5')
+
+    // First conversation is active by default
+    expect(quick.chatId).toBe(101)
+    expect((select.element as HTMLSelectElement).value).toBe('101')
+  })
+
+  it('switches conversation when selecting an item from the history dropdown', async () => {
+    const historyChats = [
+      chat({ id: 201, title: '对话 A' }),
+      chat({ id: 202, title: '对话 B' }),
+    ]
+    stubFetch({ chats: historyChats })
+    const { wrapper, quick } = await mountLauncher()
+
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+
+    expect(quick.chatId).toBe(201)
+
+    const select = wrapper.find('[data-test="quick-assistant-history-select"]')
+    await select.setValue('202')
+    await flushPromises()
+
+    expect(quick.chatId).toBe(202)
+    expect(FakeEventSource.instances.at(-1)?.url).toBe('/api/chats/202/events')
+  })
+
+  it('remembers new chat draft intent across closing and reopening without sending messages', async () => {
+    const historyChats = [chat({ id: 301, title: '历史对话' })]
+    stubFetch({ chats: historyChats })
+    const { wrapper, quick } = await mountLauncher()
+
+    // 1. Initial open restores the latest conversation
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+    expect(quick.chatId).toBe(301)
+    expect(quick.isNewDraft).toBe(false)
+
+    // 2. User clicks "New Chat" button -> enters new draft state
+    await wrapper.find('[data-test="quick-assistant-new"]').trigger('click')
+    await flushPromises()
+    expect(quick.chatId).toBeNull()
+    expect(quick.isNewDraft).toBe(true)
+    expect(wrapper.text()).toContain('你好，我是快捷助手')
+
+    // 3. User closes popover without sending any message
+    await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-panel"]').exists()).toBe(false)
+
+    // 4. User clicks launcher button again -> MUST reopen new draft, NOT the old conversation
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+
+    expect(quick.chatId).toBeNull()
+    expect(quick.isNewDraft).toBe(true)
+    expect(wrapper.text()).toContain('你好，我是快捷助手')
+  })
+
+  it('remembers active conversation across closing and reopening when new chat was not clicked', async () => {
+    const historyChats = [
+      chat({ id: 401, title: '旧对话 1' }),
+      chat({ id: 402, title: '旧对话 2' }),
+    ]
+    stubFetch({ chats: historyChats })
+    const { wrapper, quick } = await mountLauncher()
+
+    // 1. Open launcher, switch to conversation 402
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+
+    const select = wrapper.find('[data-test="quick-assistant-history-select"]')
+    await select.setValue('402')
+    await flushPromises()
+    expect(quick.chatId).toBe(402)
+
+    // 2. Close popover without clicking "New Chat"
+    await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-assistant-panel"]').exists()).toBe(false)
+
+    // 3. Reopen launcher -> defaults to previous conversation 402
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+
+    expect(quick.chatId).toBe(402)
+    expect(quick.isNewDraft).toBe(false)
+  })
+
+  it('transitions from new chat draft to active conversation after sending first message', async () => {
+    stubFetch()
+    const { wrapper, quick } = await mountLauncher()
+
+    // 1. Open launcher and enter new chat
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="quick-assistant-new"]').trigger('click')
+    await flushPromises()
+    expect(quick.isNewDraft).toBe(true)
+
+    // 2. Send message -> creates chat 1
+    await wrapper.find('[data-test="chat-input"]').setValue('Hello new chat')
+    await wrapper.find('[data-test="chat-send-btn"]').trigger('click')
+    await flushPromises()
+
+    // 3. Draft flag is cleared and chatId is set
+    expect(quick.isNewDraft).toBe(false)
+    expect(quick.chatId).toBe(1)
+
+    // 4. Close and reopen -> remembers chat 1
+    await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+    expect(quick.chatId).toBe(1)
+    expect(quick.isNewDraft).toBe(false)
   })
 })

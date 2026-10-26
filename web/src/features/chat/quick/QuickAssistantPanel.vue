@@ -28,8 +28,8 @@ const notice = ref('')
 const scroll = ref<HTMLElement | null>(null)
 
 const usableModels = computed(() =>
-  models.services.flatMap((service) =>
-    service.models
+  (models.services ?? []).flatMap((service) =>
+    (service.models ?? [])
       .filter((model) => model.usable && model.supportsText)
       .map((model) => ({
         id: model.id,
@@ -38,6 +38,7 @@ const usableModels = computed(() =>
       })),
   ),
 )
+const recentChats = computed(() => (Array.isArray(quick.recentChats) ? quick.recentChats : []))
 const hasModels = computed(() => usableModels.value.length > 0)
 const selectedModel = computed(() =>
   usableModels.value.find((model) => model.id === quick.modelId) ?? null,
@@ -96,7 +97,7 @@ async function focusComposer() {
 
 onMounted(async () => {
   if (models.services.length === 0) await models.load()
-  await quick.openLatest()
+  await quick.restoreOrOpenLatest()
   ensureModel()
   await nextTick()
   follow.scrollToBottom(false)
@@ -156,6 +157,27 @@ async function startNewChat() {
   await focusComposer()
 }
 
+const currentHistoryId = computed(() => {
+  if (quick.chatId !== null && recentChats.value.some((c) => c.id === quick.chatId)) {
+    return quick.chatId
+  }
+  return ''
+})
+
+async function onSelectHistory(event: Event) {
+  const target = event.target as HTMLSelectElement
+  const val = Number(target.value)
+  if (!val || Number.isNaN(val) || val === quick.chatId) return
+  notice.value = ''
+  text.value = ''
+  images.value = []
+  await quick.openChat(val)
+  ensureModel()
+  await nextTick()
+  follow.scrollToBottom(false)
+  await focusComposer()
+}
+
 function reconnect() {
   quick.reconnect()
 }
@@ -190,6 +212,32 @@ function onKeydown(event: KeyboardEvent) {
         <span class="quick-assistant-subtitle">对话保存在 Chat · {{ assistantName }}</span>
       </div>
       <div class="quick-assistant-actions">
+        <div class="history-select-wrapper" @pointerdown.stop>
+          <select
+            class="header-action history-select"
+            data-test="quick-assistant-history-select"
+            :value="currentHistoryId"
+            :disabled="quick.running || quick.loading || recentChats.length === 0"
+            :title="currentHistoryId ? '选择最近对话' : (recentChats.length === 0 ? '暂无历史对话' : '选择最近对话')"
+            aria-label="最近对话"
+            @change="onSelectHistory"
+          >
+            <option v-if="recentChats.length === 0" value="" disabled>
+              暂无历史对话
+            </option>
+            <option v-else value="" :disabled="quick.chatId !== null">
+              最近对话…
+            </option>
+            <option
+              v-for="item in recentChats"
+              :key="item.id"
+              :value="item.id"
+              :title="item.title || '新对话'"
+            >
+              {{ item.title || '新对话' }}
+            </option>
+          </select>
+        </div>
         <button
           type="button"
           class="header-action"
@@ -394,6 +442,29 @@ function onKeydown(event: KeyboardEvent) {
 .header-action.close {
   padding: 0 0.45rem;
   color: var(--color-text-muted);
+}
+
+.history-select-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.history-select {
+  max-width: 130px;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 10px;
+  padding-right: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.history-select:focus {
+  border-color: var(--color-primary);
 }
 
 .quick-assistant-scroll {

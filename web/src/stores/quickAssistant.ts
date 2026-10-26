@@ -87,6 +87,12 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
     // Invalidates an in-flight open when the popover closes or a newer request
     // starts. It is deliberately not persisted.
     requestId: 0,
+    // Recent 5 conversations for the current assistant dropdown
+    recentChats: [] as Chat[],
+    // Tracks whether the user explicitly initiated a new conversation draft
+    isNewDraft: false,
+    // Per-assistant conversation and draft state mapping
+    assistantState: {} as Record<number, { chatId: number | null; isNewDraft: boolean }>,
   }),
 
   getters: {
@@ -135,31 +141,70 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
     },
 
     openAssistant(assistant: ChatGroup) {
+      const changed = this.groupId !== assistant.id
       this.groupId = assistant.id
       this.currentAssistant = assistant
       if (assistant.defaultModelId) {
         this.modelId = assistant.defaultModelId
       }
-      this.newChat()
+      if (changed) {
+        const saved = this.assistantState[assistant.id]
+        if (saved) {
+          this.isNewDraft = saved.isNewDraft
+          this.chatId = saved.chatId
+        } else {
+          this.isNewDraft = false
+          this.chatId = null
+        }
+      }
     },
 
-    // openLatest loads the most recent assistant conversation, or leaves
-    // a blank draft when the group is empty.
-    async openLatest(targetGroupId?: number) {
+    async fetchRecentChats(targetGroupId?: number) {
+      const groupId = targetGroupId ?? this.groupId
+      if (groupId === null) return
+      try {
+        const { chats } = await listChats(5, 0, groupId)
+        this.recentChats = Array.isArray(chats) ? chats : []
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+      }
+    },
+
+    // restoreOrOpenLatest restores the assistant's previous conversation or
+    // honors the draft mode if the user initiated a new chat. If neither
+    // exists, it defaults to opening the latest conversation.
+    async restoreOrOpenLatest(targetGroupId?: number) {
       const request = ++this.requestId
       this.loading = true
       this.clearErrors()
       try {
         const groupId = await this.ensureGroup(targetGroupId)
+        if (request !== this.requestId || groupId === null) return
+
+        const { chats } = await listChats(5, 0, groupId)
         if (request !== this.requestId) return
-        if (groupId === null) return
-        const { chats } = await listChats(1, 0, groupId)
-        if (request !== this.requestId) return
-        if (chats.length === 0) {
+        this.recentChats = Array.isArray(chats) ? chats : []
+
+        const saved = this.assistantState[groupId]
+        const isNewDraft = saved !== undefined ? saved.isNewDraft : this.isNewDraft
+        const currentChatId = saved !== undefined ? saved.chatId : this.chatId
+
+        if (isNewDraft) {
+          this.resetDraft()
+          this.isNewDraft = true
+          return
+        }
+
+        if (currentChatId !== null) {
+          await this.openChat(currentChatId)
+          return
+        }
+
+        if (this.recentChats.length === 0) {
           this.resetDraft()
           return
         }
-        await this.openChat(chats[0].id)
+        await this.openChat(this.recentChats[0].id)
       } catch (error) {
         if (request !== this.requestId) return
         if (error instanceof UnauthorizedError) return
@@ -169,9 +214,18 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
       }
     },
 
+    // openLatest delegates to restoreOrOpenLatest for backward compatibility.
+    async openLatest(targetGroupId?: number) {
+      return this.restoreOrOpenLatest(targetGroupId)
+    },
+
     async openChat(chatId: number) {
       const request = this.requestId
       this.chatId = chatId
+      this.isNewDraft = false
+      if (this.groupId !== null) {
+        this.assistantState[this.groupId] = { chatId, isNewDraft: false }
+      }
       this.chat = null
       this.messages = []
       this.running = false
@@ -211,6 +265,10 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
     newChat() {
       if (this.running) return
       this.resetDraft()
+      this.isNewDraft = true
+      if (this.groupId !== null) {
+        this.assistantState[this.groupId] = { chatId: null, isNewDraft: true }
+      }
       this.clearErrors()
     },
 
@@ -230,6 +288,11 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
           if (request !== this.requestId) return false
           this.chatId = chat.id
           this.chat = chat
+          this.isNewDraft = false
+          if (this.groupId !== null) {
+            this.assistantState[this.groupId] = { chatId: chat.id, isNewDraft: false }
+            void this.fetchRecentChats(this.groupId)
+          }
           this.messages = []
           this.running = true
           this.truncated = false
@@ -245,6 +308,11 @@ export const useQuickAssistantStore = defineStore('quickAssistant', {
         if (request !== this.requestId) return false
         this.chat = chat
         this.running = true
+        this.isNewDraft = false
+        if (this.groupId !== null) {
+          this.assistantState[this.groupId] = { chatId: this.chatId, isNewDraft: false }
+          void this.fetchRecentChats(this.groupId)
+        }
         this.modelId = modelId
         persistModel(modelId)
         streamFor(this).open(this.chatId)
