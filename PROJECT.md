@@ -9,7 +9,7 @@
 `dev_platform` 是一个面向团队和个人开发者的**多 Agent 协同 AI 研发工作台**。其核心目标在于解决不同终端 AI Coding Agent（如 OpenCode V2、Pi、DeepSeek CLI）协议各异、交互割裂、缺乏集中管控的问题，提供中性同构的平台层封装：
 
 1. **多后端统一协同**：统一接入异构的 AI Coding Agent，支持开箱即用的多 Agent 实例隔离、生命周期管理与并发会话。
-2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染。
+2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；问答交互工具在主对话流直接呈现交互卡片，思考内容直接输出，后台工具输出后端摘要化极简流转。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗续接最近快捷对话或新建对话；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
@@ -187,17 +187,19 @@ web/src/
    - 适配器将原生事件转化为标准 NormalizedEvent:
        • EventTurn (started)
        • EventMessage (text_delta, reasoning_delta)
-       • EventToolCall / EventToolResult
+       • EventThinking (思考内容流式输出)
+       • EventToolCall (大入参由 core/agents.PruneToolInput 瘦身裁剪) / EventToolResult (输出由 core/agents.SummarizeToolResult 瘦身为紧凑语义化中文摘要，如“读取了 xxx 文件”、“编辑了 xxx 文件”、“执行了 xxx 命令”，清空大 diff metadata)
        • EventTurn (ended, completed/failed/cancelled)
            │
            ▼
 5. 多路复用事件总线 (internal/app/sessions/event_bus.go)
    - 将标准化事件广播至对应的 sessionID 订阅通道
            │
-           ▼ (HTTP SSE 流持续推送)
-6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts)
+           ▼ (HTTP SSE 流持续推送，传输体积下降 90% 以上)
+6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
-   - 驱动 MessageView.vue 与活动面板实时重绘
+   - 问答交互工具归入主对话流（MessageView display="messages"），作为交互卡片展示提问、选项与回答
+   - 右侧活动面板（display="activity"）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 

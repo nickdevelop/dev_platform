@@ -23,7 +23,7 @@ func TestHistoryRecordCarriesAssistantUsage(t *testing.T) {
 		Usage:   &wireUsage{Input: 800, Output: 40, CacheRead: 5000},
 	}
 
-	events := normalizeHistoryRecord(record, nil)
+	events := normalizeHistoryRecord(record, nil, nil)
 	if len(events) != 1 || events[0].Message == nil {
 		t.Fatalf("events = %+v, want one message", events)
 	}
@@ -43,7 +43,7 @@ func TestHistoryRecordCarriesAssistantUsage(t *testing.T) {
 // records (not messages) never surface as conversation or context.
 func TestHistoryRecordSkipsStandaloneUsage(t *testing.T) {
 	record := historyRecord{Type: "usage"}
-	if events := normalizeHistoryRecord(record, nil); len(events) != 0 {
+	if events := normalizeHistoryRecord(record, nil, nil); len(events) != 0 {
 		t.Fatalf("events = %+v, want none", events)
 	}
 }

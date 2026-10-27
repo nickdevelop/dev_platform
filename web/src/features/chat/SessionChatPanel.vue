@@ -29,6 +29,7 @@ import { computeContextUsage } from '../../shared/contextUsage'
 import { ellipsisMiddle, formatTokens } from '../../shared/format'
 import BackendTag from '../../shared/components/BackendTag.vue'
 import MessageView from './rendering/MessageView.vue'
+import { isQuestionCall } from './rendering/logModel'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
 import ApprovalModeSelect from './composer/ApprovalModeSelect.vue'
@@ -594,7 +595,10 @@ const activitySignature = computed(() => {
   let count = 0
   let open = 0
   for (const entry of activeMessages.value) {
-    if (entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result') {
+    if (
+      (entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result') &&
+      !isQuestionCall(entry)
+    ) {
       count += 1
       if (entry.streaming) open += entry.text.length
     }
@@ -604,7 +608,7 @@ const activitySignature = computed(() => {
 const activityCount = computed(() => {
   let count = 0
   for (const entry of activeMessages.value) {
-    if (entry.kind === 'thinking' || entry.kind === 'tool_call') count += 1
+    if ((entry.kind === 'thinking' || entry.kind === 'tool_call') && !isQuestionCall(entry)) count += 1
   }
   return count
 })

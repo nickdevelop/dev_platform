@@ -107,15 +107,13 @@ describe('MessageView tool output folding', () => {
     ]
   }
 
-  it('folds a shell output in the activity pane and expands on demand', async () => {
+  it('shows a shell call as a concise summary in the activity pane', async () => {
     const wrapper = mount(MessageView, {
-      props: { messages: shellEntries(lines(20, 'out')), capabilities: capabilities(), display: 'activity' },
+      props: { messages: shellEntries('执行了 ls 命令'), capabilities: capabilities(), display: 'activity' },
     })
     const call = wrapper.find('[data-test="tool-call"]')
-    expect(call.find('.tool-output').text()).not.toContain('out-16')
-
-    await call.find('[data-test="output-more-toggle"]').trigger('click')
-    expect(call.find('.tool-output').text()).toContain('out-20')
+    expect(call.text()).toContain('执行了 ls 命令')
+    expect(call.find('.tool-output').exists()).toBe(false)
   })
 
   it('folds a shell output in the interleaved log once the card is open', async () => {

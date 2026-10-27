@@ -17,6 +17,34 @@ type SessionEventNormalizer struct {
 	currentContextWindow *int
 	currentModel         *agents.MessageModel
 	sequence             uint64
+	toolCalls            map[string]toolCallInfo
+}
+
+type toolCallInfo struct {
+	name  string
+	input []byte
+}
+
+func (n *SessionEventNormalizer) rememberTool(callID, name string, input []byte) {
+	if callID == "" {
+		return
+	}
+	if n.toolCalls == nil {
+		n.toolCalls = make(map[string]toolCallInfo)
+	}
+	n.toolCalls[callID] = toolCallInfo{name: name, input: input}
+}
+
+func (n *SessionEventNormalizer) forgetTool(callID string) (string, []byte) {
+	if n.toolCalls == nil {
+		return "", nil
+	}
+	info, ok := n.toolCalls[callID]
+	if !ok {
+		return "", nil
+	}
+	delete(n.toolCalls, callID)
+	return info.name, info.input
 }
 
 // NewSessionEventNormalizer creates a normalizer for a given instance and session.
@@ -24,6 +52,7 @@ func NewSessionEventNormalizer(instanceID, sessionID string) *SessionEventNormal
 	return &SessionEventNormalizer{
 		instanceID: instanceID,
 		sessionID:  sessionID,
+		toolCalls:  make(map[string]toolCallInfo),
 	}
 }
 
@@ -300,12 +329,13 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			if len(inputBytes) > agents.MaxRawEventBytes {
 				inputBytes = inputBytes[:agents.MaxRawEventBytes]
 			}
+			n.rememberTool(callID, name, inputBytes)
 
 			events = append(events, n.newEvent(now, agents.EventToolCall, &agents.NormalizedEvent{
 				ToolCall: &agents.ToolCallPayload{
 					CallID: callID,
 					Name:   name,
-					Input:  inputBytes,
+					Input:  agents.PruneToolInput(name, inputBytes),
 				},
 			}))
 
@@ -315,11 +345,13 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 				toolCallID, _ := msg["toolCallId"].(string)
 				isErr, _ := msg["isError"].(bool)
 				content := extractText(msg["content"])
+				name, input := n.forgetTool(toolCallID)
+				summary := agents.SummarizeToolResult(name, input, content, isErr)
 
 				events = append(events, n.newEvent(now, agents.EventToolResult, &agents.NormalizedEvent{
 					ToolResult: &agents.ToolResultPayload{
 						CallID:  toolCallID,
-						Output:  content,
+						Output:  summary,
 						IsError: isErr,
 					},
 				}))
@@ -329,11 +361,12 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			subCallID, _ := evData["subCallId"].(string)
 			name, _ := evData["name"].(string)
 			inputBytes, _ := json.Marshal(evData["arguments"])
+			n.rememberTool(subCallID, name, inputBytes)
 			events = append(events, n.newEvent(now, agents.EventToolCall, &agents.NormalizedEvent{
 				ToolCall: &agents.ToolCallPayload{
 					CallID: subCallID,
 					Name:   name,
-					Input:  inputBytes,
+					Input:  agents.PruneToolInput(name, inputBytes),
 				},
 			}))
 
@@ -341,10 +374,12 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			subCallID, _ := evData["subCallId"].(string)
 			isErr, _ := evData["isError"].(bool)
 			content := extractText(evData["content"])
+			name, input := n.forgetTool(subCallID)
+			summary := agents.SummarizeToolResult(name, input, content, isErr)
 			events = append(events, n.newEvent(now, agents.EventToolResult, &agents.NormalizedEvent{
 				ToolResult: &agents.ToolResultPayload{
 					CallID:  subCallID,
-					Output:  content,
+					Output:  summary,
 					IsError: isErr,
 				},
 			}))

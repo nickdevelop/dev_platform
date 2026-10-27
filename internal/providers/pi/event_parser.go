@@ -78,6 +78,34 @@ type parser struct {
 	// newTurnID mints turn ids unique within the instance; a parser without
 	// one numbers its own turns.
 	newTurnID func() string
+	toolCalls map[string]toolCallInfo
+}
+
+type toolCallInfo struct {
+	name string
+	args json.RawMessage
+}
+
+func (p *parser) rememberTool(callID, name string, args json.RawMessage) {
+	if callID == "" {
+		return
+	}
+	if p.toolCalls == nil {
+		p.toolCalls = make(map[string]toolCallInfo)
+	}
+	p.toolCalls[callID] = toolCallInfo{name: name, args: args}
+}
+
+func (p *parser) forgetTool(callID string) (string, json.RawMessage) {
+	if p.toolCalls == nil {
+		return "", nil
+	}
+	info, ok := p.toolCalls[callID]
+	if !ok {
+		return "", nil
+	}
+	delete(p.toolCalls, callID)
+	return info.name, info.args
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -326,21 +354,31 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		return append(events, out)
 
 	case "tool_execution_start":
+		p.rememberTool(event.ToolCallID, event.ToolName, event.Args)
 		out := p.event()
 		out.Type = agents.EventToolCall
-		out.ToolCall = &agents.ToolCallPayload{CallID: event.ToolCallID, Name: event.ToolName, Input: event.Args}
+		out.ToolCall = &agents.ToolCallPayload{
+			CallID: event.ToolCallID,
+			Name:   event.ToolName,
+			Input:  agents.PruneToolInput(event.ToolName, event.Args),
+		}
 		return []agents.NormalizedEvent{out}
 
 	case "tool_execution_update":
-		out := p.event()
-		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.PartialResult), IsError: false}
-		return []agents.NormalizedEvent{out}
+		return nil
 
 	case "tool_execution_end":
+		name, args := p.forgetTool(event.ToolCallID)
+		if name == "" {
+			name = event.ToolName
+		}
+		if len(args) == 0 {
+			args = event.Args
+		}
 		out := p.event()
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.Result), IsError: event.IsError, Metadata: editFileDiff(event.Result, event.Args)}
+		summary := agents.SummarizeToolResult(name, args, resultText(event.Result), event.IsError)
+		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: summary, IsError: event.IsError}
 		return []agents.NormalizedEvent{out}
 
 	case "error":

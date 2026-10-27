@@ -77,6 +77,7 @@ const subagentName = (entry: ChatEntry) => log.subagentName(entry)
 const editPathFor = (entry: ChatEntry) => log.editPathFor(entry)
 const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
 const toolIcon = (entry: ChatEntry) => log.toolIcon(entry)
+const toolSummaryText = (entry: ChatEntry) => log.toolSummaryText(entry, resultForCall)
 const isEditCall = log.isEditCall
 const isShellCall = log.isShellCall
 const isQuestionCall = log.isQuestionCall
@@ -139,7 +140,9 @@ function closeImagePreview() {
 // whose call is present is already merged into that call's card (see
 // buildLogModel), so it is not listed twice.
 const flatActivityEntries = computed<ChatEntry[]>(() =>
-  visibleEntries.value.filter((entry) => log.isActivity(entry) && toolEventsVisibleFor(entry)),
+  visibleEntries.value.filter(
+    (entry) => log.isActivity(entry) && !log.isQuestionCall(entry) && toolEventsVisibleFor(entry),
+  ),
 )
 
 // Per-card folding for the flat activity list. Only three kinds fold — thinking,
@@ -215,21 +218,14 @@ async function copyMessage(entry: ChatEntry) {
       aria-label="活动"
     >
       <li v-for="entry in flatActivityEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
-        <div v-if="entry.kind === 'thinking'" class="flat-thinking" data-test="thinking">
-          <button
-            type="button"
-            class="flat-toggle"
-            data-test="flat-toggle"
-            :aria-expanded="flatExpanded(entry).toString()"
-            aria-label="折叠或展开思考内容"
-            @click="toggleFlat(entry)"
-          >
-            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
+        <!-- 思考内容直接输出，无需折叠 -->
+        <div v-if="entry.kind === 'thinking'" class="flat-thinking flat-thinking-direct" data-test="thinking">
+          <div class="thinking-direct-header">
             <span class="thinking-icon" aria-hidden="true">🧠</span>
             <span class="thinking-title">Thinking</span>
             <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
-          </button>
-          <p v-if="flatExpanded(entry)" class="thinking-text">{{ entry.text }}</p>
+          </div>
+          <p class="thinking-text">{{ entry.text }}</p>
         </div>
 
         <!-- A subagent/task call is a named row plus a button that opens its
@@ -255,81 +251,7 @@ async function copyMessage(entry: ChatEntry) {
           </button>
         </div>
 
-        <!-- Edit and shell calls fold, and start expanded: their diff/output is
-             the point of watching the turn. -->
-        <div
-          v-else-if="entry.kind === 'tool_call' && flatExpandable(entry) && toolEventsVisible()"
-          class="flat-tool"
-          data-test="tool-call"
-        >
-          <button
-            type="button"
-            class="flat-toggle"
-            data-test="flat-toggle"
-            :aria-expanded="flatExpanded(entry).toString()"
-            :aria-label="`折叠或展开工具 ${toolName(entry)}`"
-            @click="toggleFlat(entry)"
-          >
-            <span class="flat-chevron" aria-hidden="true">{{ flatExpanded(entry) ? '▾' : '▸' }}</span>
-            <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
-            <span class="tool-name">{{ toolName(entry) }}</span>
-            <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
-          </button>
-          <div v-if="flatExpanded(entry)" class="tool-body">
-            <template v-if="isQuestionCall(entry)">
-              <div
-                v-for="(item, index) in questionItems(entry)"
-                :key="index"
-                class="question-item"
-                data-test="question-item"
-              >
-                <p v-if="item.header" class="question-header">{{ item.header }}</p>
-                <p v-if="item.question" class="question-text" data-test="question-text">{{ item.question }}</p>
-                <ul v-if="item.options.length > 0" class="question-options">
-                  <li
-                    v-for="(option, optionIndex) in item.options"
-                    :key="optionIndex"
-                    class="question-option"
-                  >
-                    <span class="question-option-label">{{ option.label }}</span>
-                    <span v-if="option.description" class="question-option-description">{{ option.description }}</span>
-                  </li>
-                </ul>
-                <span v-if="item.multiple" class="question-multiple">可多选</span>
-              </div>
-              <pre
-                v-if="questionItems(entry).length === 0 && toolArgument(entry)"
-                class="tool-args"
-              >{{ toolArgument(entry) }}</pre>
-              <ToolOutput
-                v-if="resultForCall(entry)"
-                :text="resultForCall(entry)?.text ?? ''"
-                :is-error="resultForCall(entry)?.isError"
-              />
-            </template>
-            <EditToolBlock
-              v-else-if="isEditCall(entry) && editDiffFor(entry)"
-              :file-path="editPathFor(entry)"
-              :additions="editDiffFor(entry)?.additions"
-              :deletions="editDiffFor(entry)?.deletions"
-              :patch="editDiffFor(entry)?.patch"
-              :output="resultForCall(entry)?.text"
-              :is-error="resultForCall(entry)?.isError"
-            />
-            <template v-else>
-              <pre v-if="toolArgument(entry)" class="tool-args">{{ toolArgument(entry) }}</pre>
-              <ToolOutput
-                v-if="resultForCall(entry)"
-                :text="resultForCall(entry)?.text ?? ''"
-                :is-error="resultForCall(entry)?.isError"
-              />
-            </template>
-          </div>
-        </div>
-
-        <!-- Every other tool call is a single summary line: icon, name and the
-             argument that names what it acted on. No fold, no body. -->
+        <!-- 所有其它工具只展示摘要行（从后端已只返回摘要，前端紧凑展示） -->
         <div
           v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
           class="flat-tool flat-summary"
@@ -337,9 +259,9 @@ async function copyMessage(entry: ChatEntry) {
         >
           <div class="flat-head" data-test="flat-head">
             <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
-            <span class="tool-name">{{ toolName(entry) }}</span>
-            <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
+            <span class="tool-name">{{ toolSummaryText(entry) }}</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
         </div>
 
@@ -352,7 +274,7 @@ async function copyMessage(entry: ChatEntry) {
         >
           <div class="flat-head" data-test="flat-head">
             <span class="tool-icon" aria-hidden="true">🔧</span>
-            <span class="tool-name">工具结果</span>
+            <span class="tool-name">{{ entry.text || '工具结果' }}</span>
           </div>
         </div>
       </li>
@@ -544,6 +466,37 @@ async function copyMessage(entry: ChatEntry) {
                 <span class="notice-text">{{ block.entry.text }}</span>
               </span>
               <span class="notice-line"></span>
+            </div>
+          </template>
+
+          <!-- 交互问答工具卡片：在主对话界面直接展示提问内容、选项及用户回答 -->
+          <template v-else-if="block.entry.kind === 'tool_call' && isQuestionCall(block.entry)">
+            <div class="question-dialog-card" data-test="question-dialog-card">
+              <div class="question-dialog-head">
+                <span class="question-icon" aria-hidden="true">❓</span>
+                <span class="question-dialog-title">{{ questionItems(block.entry)[0]?.header || 'Agent 提问' }}</span>
+              </div>
+              <div class="question-dialog-body">
+                <template v-for="(item, idx) in questionItems(block.entry)" :key="idx">
+                  <p v-if="item.question" class="question-main-text" data-test="question-text">{{ item.question }}</p>
+                  <ul v-if="item.options.length > 0" class="question-options-list">
+                    <li v-for="(opt, optIdx) in item.options" :key="optIdx" class="question-opt-item">
+                      <span class="opt-bullet">•</span>
+                      <span class="opt-label">{{ opt.label }}</span>
+                      <span v-if="opt.description" class="opt-desc">（{{ opt.description }}）</span>
+                    </li>
+                  </ul>
+                  <span v-if="item.multiple" class="question-opt-multiple">提示：可多选</span>
+                </template>
+                <div v-if="resultForCall(block.entry)" class="question-dialog-answer" data-test="question-answer">
+                  <span class="answer-badge">✓ 用户回答</span>
+                  <span class="answer-text">{{ resultForCall(block.entry)?.text || '已回答' }}</span>
+                </div>
+                <div v-else class="question-dialog-waiting" data-test="question-waiting">
+                  <span class="waiting-icon">⏳</span>
+                  <span>等待用户回答…</span>
+                </div>
+              </div>
             </div>
           </template>
 
@@ -1389,5 +1342,138 @@ async function copyMessage(entry: ChatEntry) {
   font-size: 0.8rem;
   color: var(--color-text-muted);
   font-weight: 500;
+}
+
+/* 思考内容直接输出样式 */
+.flat-thinking-direct {
+  padding: 0.5rem 0.65rem;
+  background: var(--color-surface-muted, #f8fafc);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-primary, #3b82f6);
+  border-radius: 6px;
+}
+
+.thinking-direct-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.25rem;
+  user-select: none;
+}
+
+.tool-status-error {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--color-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+
+/* 主对话界面交互问答卡片样式 */
+.question-dialog-card {
+  margin: 0.75rem 0;
+  padding: 0.85rem 1rem;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border-strong, #cbd5e1);
+  border-left: 4px solid var(--color-primary, #3b82f6);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.question-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.question-dialog-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.question-main-text {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.question-options-list {
+  margin: 0.4rem 0 0.6rem;
+  padding-left: 0.5rem;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.question-opt-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.opt-bullet {
+  color: var(--color-primary, #3b82f6);
+  font-weight: bold;
+}
+
+.opt-label {
+  font-weight: 500;
+}
+
+.opt-desc {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.question-opt-multiple {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted, #f1f5f9);
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+
+.question-dialog-answer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.65rem;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.answer-badge {
+  font-weight: 600;
+  color: var(--color-success, #10b981);
+}
+
+.answer-text {
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.question-dialog-waiting {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--color-warning, #f59e0b);
 }
 </style>

@@ -128,6 +128,11 @@ export function groupEntryBlocks(visibleEntries: ChatEntry[]): RenderBlock[] {
     }
   }
   for (const entry of visibleEntries) {
+    if (isQuestionCall(entry)) {
+      flush()
+      blocks.push({ kind: 'entry', entry })
+      continue
+    }
     if (isActivity(entry)) {
       if (!current) current = []
       current.push(entry)
@@ -141,15 +146,18 @@ export function groupEntryBlocks(visibleEntries: ChatEntry[]): RenderBlock[] {
 }
 
 // The split log reuses the same grouping: display="messages" keeps only
-// message/error entries for the left column, display="activity" keeps only
-// the thinking/tool step groups for the right pane. display="all" keeps the
-// legacy interleaved log.
+// message/error/notice entries and user-facing question tools for the left column,
+// display="activity" keeps only the thinking/tool step groups for the right pane.
+// display="all" keeps the legacy interleaved log.
 export function blocksForDisplay(blocks: RenderBlock[], display: string): RenderBlock[] {
   if (display === 'messages') {
     return blocks.filter(
       (block) =>
         block.kind === 'entry' &&
-        (block.entry.kind === 'message' || block.entry.kind === 'error' || block.entry.kind === 'notice'),
+        (block.entry.kind === 'message' ||
+          block.entry.kind === 'error' ||
+          block.entry.kind === 'notice' ||
+          isQuestionCall(block.entry)),
     )
   }
   if (display === 'activity') {
@@ -330,10 +338,59 @@ export function questionItems(entry: ChatEntry): QuestionItem[] {
   return items
 }
 
-// The icon a tool row shows: a question mark for the question tool, a wrench for
-// everything else.
 export function toolIcon(entry: ChatEntry): string {
-  return isQuestionCall(entry) ? '❓' : '🔧'
+  if (isQuestionCall(entry)) return '❓'
+  const name = (entry.name ?? entry.text ?? '').toLowerCase()
+  if (name.includes('read')) return '📖'
+  if (name.includes('edit') || name.includes('write')) return '✏️'
+  if (
+    name.includes('bash') ||
+    name.includes('shell') ||
+    name.includes('sh') ||
+    name.includes('exec') ||
+    name.includes('command')
+  ) {
+    return '⚡'
+  }
+  if (name.includes('grep') || name.includes('glob') || name.includes('search') || name.includes('find')) {
+    return '🔍'
+  }
+  if (name.includes('fetch') || name.includes('curl') || name.includes('http')) return '🌐'
+  return '🔧'
+}
+
+export function toolSummaryText(entry: ChatEntry, resultForCall?: ResultLookup): string {
+  const res = resultForCall ? resultForCall(entry) : undefined
+  if (res?.text) {
+    return res.text
+  }
+  const name = toolName(entry).toLowerCase()
+  const arg = toolArgument(entry)
+  if (name.includes('read')) {
+    return arg ? `读取 ${arg} 文件…` : '读取文件中…'
+  }
+  if (name.includes('write')) {
+    return arg ? `写入 ${arg} 文件…` : '写入文件中…'
+  }
+  if (name.includes('edit')) {
+    return arg ? `编辑 ${arg} 文件…` : '编辑文件中…'
+  }
+  if (
+    name.includes('bash') ||
+    name.includes('shell') ||
+    name.includes('sh') ||
+    name.includes('exec') ||
+    name.includes('command')
+  ) {
+    return arg ? `执行 ${arg} 命令…` : '执行命令中…'
+  }
+  if (name.includes('grep') || name.includes('glob') || name.includes('search') || name.includes('find')) {
+    return arg ? `检索 ${arg}…` : '检索中…'
+  }
+  if (name.includes('fetch') || name.includes('curl') || name.includes('http')) {
+    return arg ? `访问 ${arg}…` : '网络请求中…'
+  }
+  return arg ? `${toolName(entry)}: ${arg}` : `${toolName(entry)} 执行中…`
 }
 
 export function flatExpandable(entry: ChatEntry): boolean {

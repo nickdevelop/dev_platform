@@ -472,7 +472,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		subs:          make(map[*subscriber]struct{}),
 		sessions:      make(map[string]string),
 		sessionModels: make(map[string]agents.MessageModel),
-		toolNames:     make(map[string]string),
+		toolCalls:     make(map[string]toolCallInfo),
 		turns:         make(map[string]string),
 	}
 
@@ -729,7 +729,7 @@ type instance struct {
 	// Live assistant events carry no model of their own, so the adapter stamps
 	// them with this; replayed history uses each message's own model instead.
 	sessionModels map[string]agents.MessageModel
-	toolNames     map[string]string
+	toolCalls     map[string]toolCallInfo
 	// turns maps each native session to the id of its open turn, and turnSeq
 	// mints turn ids unique within the instance.
 	turns   map[string]string
@@ -1296,31 +1296,41 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.input.started":
-		inst.rememberToolName(sessionID, data.AssistantMessageID, data.ID, data.Name)
+		inst.rememberTool(sessionID, data.AssistantMessageID, data.ID, data.Name, nil)
 		return nil
 
 	case "session.tool.called":
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolCall
+		tool := inst.getTool(sessionID, data.AssistantMessageID, data.ID)
+		name := tool.name
+		if name == "" {
+			name = data.Name
+		}
+		prunedInput := agents.PruneToolInput(name, data.Input)
+		inst.rememberTool(sessionID, data.AssistantMessageID, data.ID, name, data.Input)
 		out.ToolCall = &agents.ToolCallPayload{
 			CallID: data.ID,
-			Name:   inst.toolName(sessionID, data.AssistantMessageID, data.ID),
-			Input:  data.Input,
+			Name:   name,
+			Input:  prunedInput,
 		}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.success":
-		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
+		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenContent(data.Content), IsError: false, Metadata: boundedMetadata(data.Metadata)}
+		summary := agents.SummarizeToolResult(info.name, info.input, flattenContent(data.Content), false)
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: false}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.failed":
-		inst.forgetToolName(sessionID, data.AssistantMessageID, data.ID)
+		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: structuredErrorMessage(data, data.Content), IsError: true, Metadata: boundedMetadata(data.Metadata)}
+		errMsg := structuredErrorMessage(data, data.Content)
+		summary := agents.SummarizeToolResult(info.name, info.input, errMsg, true)
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: true}
 		return []agents.NormalizedEvent{out}
 
 	case "session.execution.started":
@@ -1419,28 +1429,44 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 	}
 }
 
-// rememberToolName records a tool's name until its call is emitted.
-func (inst *instance) rememberToolName(sessionID, messageID, toolID, name string) {
+type toolCallInfo struct {
+	name  string
+	input []byte
+}
+
+// rememberTool records a tool's name and input until its result is emitted.
+func (inst *instance) rememberTool(sessionID, messageID, toolID, name string, input []byte) {
 	if toolID == "" {
 		return
 	}
 	inst.mu.Lock()
-	inst.toolNames[toolKey(sessionID, messageID, toolID)] = name
-	inst.mu.Unlock()
+	defer inst.mu.Unlock()
+	key := toolKey(sessionID, messageID, toolID)
+	existing := inst.toolCalls[key]
+	if name == "" {
+		name = existing.name
+	}
+	if len(input) == 0 {
+		input = existing.input
+	}
+	inst.toolCalls[key] = toolCallInfo{name: name, input: input}
 }
 
-// toolName returns a recorded tool name, if any.
-func (inst *instance) toolName(sessionID, messageID, toolID string) string {
+// getTool returns a recorded tool info, if any.
+func (inst *instance) getTool(sessionID, messageID, toolID string) toolCallInfo {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
-	return inst.toolNames[toolKey(sessionID, messageID, toolID)]
+	return inst.toolCalls[toolKey(sessionID, messageID, toolID)]
 }
 
-// forgetToolName drops a tool's recorded name once it finishes.
-func (inst *instance) forgetToolName(sessionID, messageID, toolID string) {
+// forgetTool drops a tool's recorded info once it finishes and returns it.
+func (inst *instance) forgetTool(sessionID, messageID, toolID string) toolCallInfo {
 	inst.mu.Lock()
-	delete(inst.toolNames, toolKey(sessionID, messageID, toolID))
-	inst.mu.Unlock()
+	defer inst.mu.Unlock()
+	key := toolKey(sessionID, messageID, toolID)
+	info := inst.toolCalls[key]
+	delete(inst.toolCalls, key)
+	return info
 }
 
 // toolKey scopes adapter-side tool bookkeeping to one message's tool.

@@ -123,8 +123,8 @@ func TestParserToolEvents(t *testing.T) {
 	if got[1].Type != agents.EventToolResult || got[1].ToolResult == nil {
 		t.Fatalf("event[1] = %+v, want tool result", got[1])
 	}
-	if got[1].ToolResult.CallID != "call-1" || got[1].ToolResult.Output != "file.go" || got[1].ToolResult.IsError {
-		t.Errorf("tool result = %+v, want call-1/file.go/ok", got[1].ToolResult)
+	if got[1].ToolResult.CallID != "call-1" || got[1].ToolResult.Output != "执行了 ls 命令" || got[1].ToolResult.IsError {
+		t.Errorf("tool result = %+v, want call-1 summary for ls command", got[1].ToolResult)
 	}
 }
 

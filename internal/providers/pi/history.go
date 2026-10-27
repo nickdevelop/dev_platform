@@ -168,6 +168,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 
 	events := make([]agents.NormalizedEvent, 0, 16)
 	var currentModel *agents.MessageModel
+	toolCalls := make(map[string]toolCallInfo)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -186,7 +187,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 				Provider: record.Provider,
 			}
 		}
-		events = append(events, normalizeHistoryRecord(record, currentModel)...)
+		events = append(events, normalizeHistoryRecord(record, currentModel, toolCalls)...)
 	}
 	if err := scanner.Err(); err != nil {
 		// An unreadable or oversized record ended the read before the end.
@@ -198,7 +199,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 // normalizeHistoryRecord translates one transcript record. A record can yield
 // two events (an assistant message that both speaks and calls a tool) or none
 // (the session header, model changes, system preamble, thinking).
-func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []agents.NormalizedEvent {
+func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel, toolCalls map[string]toolCallInfo) []agents.NormalizedEvent {
 	if record.Type != "message" || record.Message == nil {
 		return nil
 	}
@@ -241,9 +242,16 @@ func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []
 				if record.Message.Role != "assistant" {
 					continue
 				}
+				if toolCalls != nil {
+					toolCalls[block.ID] = toolCallInfo{name: block.Name, args: block.Arguments}
+				}
 				event := envelope
 				event.Type = agents.EventToolCall
-				event.ToolCall = &agents.ToolCallPayload{CallID: block.ID, Name: block.Name, Input: block.Arguments}
+				event.ToolCall = &agents.ToolCallPayload{
+					CallID: block.ID,
+					Name:   block.Name,
+					Input:  agents.PruneToolInput(block.Name, block.Arguments),
+				}
 				events = append(events, event)
 			case "thinking":
 				if record.Message.Role != "assistant" || block.Thinking == "" {
@@ -265,9 +273,18 @@ func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []
 		}
 		event := envelope
 		event.Type = agents.EventToolResult
+		var name string
+		var args json.RawMessage
+		if toolCalls != nil {
+			if info, ok := toolCalls[record.Message.ToolCallID]; ok {
+				name = info.name
+				args = info.args
+			}
+		}
+		summary := agents.SummarizeToolResult(name, args, output.String(), record.Message.IsError)
 		event.ToolResult = &agents.ToolResultPayload{
 			CallID:  record.Message.ToolCallID,
-			Output:  output.String(),
+			Output:  summary,
 			IsError: record.Message.IsError,
 		}
 		return []agents.NormalizedEvent{event}

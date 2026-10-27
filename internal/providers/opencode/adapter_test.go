@@ -602,7 +602,7 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	if string(got[5].ToolCall.Input) != `{"cmd":"ls"}` {
 		t.Fatalf("tool input = %s", got[5].ToolCall.Input)
 	}
-	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "ok" || got[6].ToolResult.IsError {
+	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "执行了 ls 命令" || got[6].ToolResult.IsError {
 		t.Fatalf("event 6 = %+v", got[6])
 	}
 	// 8: this execution never started in the stream, so its failure has no
@@ -674,8 +674,9 @@ func TestAdapterSubscribeCarriesLargeToolResult(t *testing.T) {
 	if got[0].Type != agents.EventToolResult || got[0].ToolResult == nil {
 		t.Fatalf("event = %+v", got[0])
 	}
-	if got[0].ToolResult.Output != output {
-		t.Fatalf("tool output length = %d, want %d", len(got[0].ToolResult.Output), len(output))
+	// The large tool output is summarized from the backend to reduce transmission overhead.
+	if len(got[0].ToolResult.Output) > 200 || !strings.Contains(got[0].ToolResult.Output, "工具") {
+		t.Fatalf("tool output should be a concise summary, got %q (len %d)", got[0].ToolResult.Output, len(got[0].ToolResult.Output))
 	}
 }
 
@@ -1264,8 +1265,8 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		t.Errorf("first tool call input = %s, want the fixture state.input", events[3].ToolCall.Input)
 	}
 	if events[4].Type != agents.EventToolResult || events[4].ToolResult == nil ||
-		events[4].ToolResult.CallID != "call_1" || events[4].ToolResult.Output != "历史里的工具输出" || events[4].ToolResult.IsError {
-		t.Errorf("events[4] = %+v, want the completed tool result", events[4])
+		events[4].ToolResult.CallID != "call_1" || !strings.Contains(events[4].ToolResult.Output, "ls -la") || events[4].ToolResult.IsError {
+		t.Errorf("events[4] = %+v, want the completed tool result with summary", events[4])
 	}
 	if events[5].Type != agents.EventToolCall || events[5].ToolCall == nil || events[5].ToolCall.CallID != "call_2" {
 		t.Fatalf("events[5] = %+v, want the second tool call", events[5])
@@ -1274,10 +1275,10 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		events[6].ToolResult.CallID != "call_2" || !events[6].ToolResult.IsError {
 		t.Errorf("events[6] = %+v, want a failed tool result for call_2", events[6])
 	}
-	// A failed block without content falls back to its structured error so
+	// A failed block without content falls back to its structured error summary so
 	// the replay never renders an empty result.
-	if events[6].ToolResult == nil || events[6].ToolResult.Output != "工具失败原因" {
-		t.Errorf("events[6] = %+v, want the structured error message", events[6])
+	if events[6].ToolResult == nil || !strings.Contains(events[6].ToolResult.Output, "工具失败原因") {
+		t.Errorf("events[6] = %+v, want the structured error summary", events[6])
 	}
 
 	for i, event := range events {
