@@ -325,7 +325,12 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 		case "tool/call":
 			callID, _ := evData["callId"].(string)
 			name, _ := evData["name"].(string)
-			inputBytes, _ := json.Marshal(evData["arguments"])
+			var inputBytes []byte
+			if rawStr, ok := evData["arguments"].(string); ok {
+				inputBytes = []byte(rawStr)
+			} else {
+				inputBytes, _ = json.Marshal(evData["arguments"])
+			}
 			if len(inputBytes) > agents.MaxRawEventBytes {
 				inputBytes = inputBytes[:agents.MaxRawEventBytes]
 			}
@@ -364,7 +369,12 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 		case "tool/ptc-dispatch-start":
 			subCallID, _ := evData["subCallId"].(string)
 			name, _ := evData["name"].(string)
-			inputBytes, _ := json.Marshal(evData["arguments"])
+			var inputBytes []byte
+			if rawStr, ok := evData["arguments"].(string); ok {
+				inputBytes = []byte(rawStr)
+			} else {
+				inputBytes, _ = json.Marshal(evData["arguments"])
+			}
 			if agents.ClassifyTool(name) == agents.ActionQuestion {
 				name = agents.StandardToolQuestion
 				inputBytes = agents.NormalizeQuestionToolInput(inputBytes)

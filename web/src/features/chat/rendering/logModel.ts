@@ -284,6 +284,7 @@ export interface QuestionOption {
 }
 
 export interface QuestionItem {
+  id?: string
   header: string
   question: string
   options: QuestionOption[]
@@ -311,7 +312,23 @@ function questionOption(raw: unknown): QuestionOption | null {
 // prompt) is tolerated as well. Unknown shapes yield no items and the caller
 // falls back to the plain argument line.
 export function questionItems(entry: ChatEntry): QuestionItem[] {
-  const input = entry.input
+  let input = entry.input
+  // Unwrap nested JSON strings if any (e.g. arguments serialized as string)
+  if (typeof input === 'string') {
+    try {
+      input = JSON.parse(input)
+    } catch {
+      // ignore
+    }
+  }
+  if (typeof input === 'string') {
+    try {
+      input = JSON.parse(input)
+    } catch {
+      // ignore
+    }
+  }
+
   if (!input || typeof input !== 'object' || Array.isArray(input)) return []
   const record = input as Record<string, unknown>
   const list = Array.isArray(record.questions)
@@ -327,6 +344,7 @@ export function questionItems(entry: ChatEntry): QuestionItem[] {
     }
     if (!raw || typeof raw !== 'object') continue
     const question = raw as Record<string, unknown>
+    const id = typeof question.id === 'string' ? question.id.trim() : undefined
     const text =
       typeof question.question === 'string'
         ? question.question
@@ -351,6 +369,7 @@ export function questionItems(entry: ChatEntry): QuestionItem[] {
       question.multi_select === true ||
       question.multiSelect === true
     items.push({
+      id,
       header,
       question: text,
       options,
@@ -358,6 +377,129 @@ export function questionItems(entry: ChatEntry): QuestionItem[] {
     })
   }
   return items
+}
+
+// extractQuestionAnswers maps user answers to each question index for structured display.
+export function extractQuestionAnswers(
+  questions: QuestionItem[],
+  result?: ChatEntry,
+): Record<number, string> {
+  const answers: Record<number, string> = {}
+  if (!result || !result.text) return answers
+
+  let raw = result.text.trim()
+  if (raw.startsWith('已回答:')) {
+    raw = raw.slice(4).trim()
+  }
+
+  // 1. Try parsing as JSON (DeepSeek / standard form answers)
+  try {
+    let parsedJson: any = null
+    if (raw.startsWith('{') || raw.startsWith('[')) {
+      parsedJson = JSON.parse(raw)
+    } else {
+      const jsonStart = raw.indexOf('{')
+      if (jsonStart >= 0) {
+        parsedJson = JSON.parse(raw.slice(jsonStart))
+      }
+    }
+    if (parsedJson) {
+      if (Array.isArray(parsedJson.answers)) {
+        for (let i = 0; i < parsedJson.answers.length; i++) {
+          const item = parsedJson.answers[i]
+          const id = item.id
+          let ansText = ''
+          const selected = Array.isArray(item.selected) ? item.selected.filter(Boolean) : []
+          const custom = typeof item.custom === 'string' && item.custom.trim() ? item.custom.trim() : ''
+          const parts = [...selected]
+          if (custom && !parts.includes(custom)) {
+            parts.push(custom)
+          }
+          ansText = parts.join('、')
+          if (!ansText && typeof item.answer === 'string') {
+            ansText = item.answer
+          }
+
+          // Match by id or index
+          let targetIdx = -1
+          if (id) {
+            targetIdx = questions.findIndex((q) => q.id === id)
+          }
+          if (targetIdx === -1 && i < questions.length) {
+            targetIdx = i
+          }
+          if (targetIdx >= 0) {
+            answers[targetIdx] = ansText
+          }
+        }
+        if (Object.keys(answers).length > 0) {
+          return answers
+        }
+      } else if (typeof parsedJson === 'object' && parsedJson !== null) {
+        // Simple key-value object: { "q1": "val1", ... }
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i]
+          const val =
+            (q.id && parsedJson[q.id]) ||
+            (q.header && parsedJson[q.header]) ||
+            (q.question && parsedJson[q.question]) ||
+            parsedJson[String(i)]
+          if (val !== undefined && val !== null) {
+            answers[i] = Array.isArray(val) ? val.join('、') : String(val)
+          }
+        }
+        if (Object.keys(answers).length > 0) {
+          return answers
+        }
+      }
+    }
+  } catch {
+    // Ignore JSON parse errors and continue to text patterns
+  }
+
+  // 2. Try OpenCode "Question"="Answer" regex pattern
+  // Example: User has answered your questions: "平时休息日您最喜欢怎么度过？"="不用继续了，测试..."
+  const pairMatches = [...raw.matchAll(/"([^"]+)"\s*=\s*"([^"]*)"/g)]
+  if (pairMatches.length > 0) {
+    for (let i = 0; i < pairMatches.length; i++) {
+      const qText = pairMatches[i][1]
+      const aText = pairMatches[i][2]
+      let targetIdx = questions.findIndex(
+        (q) => q.question.includes(qText) || qText.includes(q.question) || (q.header && q.header === qText),
+      )
+      if (targetIdx === -1 && i < questions.length) {
+        targetIdx = i
+      }
+      if (targetIdx >= 0) {
+        answers[targetIdx] = aText
+      }
+    }
+    if (Object.keys(answers).length > 0) {
+      return answers
+    }
+  }
+
+  // 3. If single question, assign full text
+  if (questions.length === 1) {
+    answers[0] = raw
+    return answers
+  }
+
+  // 4. Fallback: if multiple lines, assign line i to question i
+  const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length === questions.length) {
+    for (let i = 0; i < questions.length; i++) {
+      answers[i] = lines[i]
+    }
+    return answers
+  }
+
+  // 5. If nothing matched and there is answer text, display it under the first question
+  if (raw) {
+    answers[0] = raw
+  }
+
+  return answers
 }
 
 export function toolIcon(entry: ChatEntry): string {

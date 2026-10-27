@@ -229,19 +229,20 @@ describe('split message/activity log', () => {
     expect(card.find('[data-test="question-text"]').text()).toContain('用哪个数据库?')
     expect(card.text()).toContain('SQLite')
     expect(card.text()).toContain('Postgres')
-    expect(card.find('[data-test="question-answer"]').text()).toContain('已回答: SQLite')
+    expect(card.find('[data-test="question-answer"]').text()).toContain('SQLite')
   })
 
   it('renders deepseek ask_user_question in the message column as a question card', () => {
     const entries: ChatEntry[] = [
       {
         id: 'c-dsh', kind: 'tool_call', role: 'assistant', text: 'ask_user_question', name: 'ask_user_question', callId: 'c-dsh-1',
-        input: {
+        // Support arguments serialized as JSON string (DeepSeek wire protocol)
+        input: JSON.stringify({
           header: '云平台',
           question: '请选择部署目标云平台',
           options: ['AWS', 'GCP', '阿里云'],
           multi_select: false,
-        },
+        }),
         streaming: false,
       },
       { id: 'r-dsh', kind: 'tool_result', role: 'tool', text: '已回答: 阿里云', callId: 'c-dsh-1', streaming: false },
@@ -262,7 +263,62 @@ describe('split message/activity log', () => {
     expect(card.find('[data-test="question-text"]').text()).toContain('请选择部署目标云平台')
     expect(card.text()).toContain('AWS')
     expect(card.text()).toContain('阿里云')
-    expect(card.find('[data-test="question-answer"]').text()).toContain('已回答: 阿里云')
+    expect(card.find('[data-test="question-answer"]').text()).toContain('阿里云')
+  })
+
+  it('renders multiple questions and their corresponding answers line-by-line', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c-multi', kind: 'tool_call', role: 'assistant', text: 'question', name: 'question', callId: 'c-multi-1',
+        input: {
+          questions: [
+            {
+              id: 'q1',
+              header: '旅行偏好',
+              question: '如果马上可以出发去旅行，您更倾向哪种？',
+              options: [
+                { label: '自然风景', description: '山海湖草' },
+                { label: '人文历史', description: '古城博物馆' },
+              ],
+            },
+            {
+              id: 'q2',
+              header: '兴趣爱好',
+              question: '如果时间完全自由，您最想培养什么爱好？',
+              options: [
+                { label: '音乐类', description: '吉他钢琴' },
+                { label: '美食类', description: '下厨调酒' },
+              ],
+            },
+          ],
+        },
+        streaming: false,
+      },
+      {
+        id: 'r-multi', kind: 'tool_result', role: 'tool',
+        // DeepSeek structured answers JSON
+        text: '已回答: {"answers":[{"id":"q1","selected":["自然风景"]},{"id":"q2","selected":["美食类"]}]}',
+        callId: 'c-multi-1', streaming: false,
+      },
+    ]
+
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'messages' },
+    })
+    const card = wrapper.find('[data-test="question-dialog-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('共 2 题')
+
+    const questionBlocks = card.findAll('[data-test="question-item"]')
+    expect(questionBlocks).toHaveLength(2)
+
+    // Question 1 and its corresponding answer
+    expect(questionBlocks[0].find('[data-test="question-text"]').text()).toContain('如果马上可以出发去旅行')
+    expect(questionBlocks[0].find('[data-test="question-answer"]').text()).toContain('自然风景')
+
+    // Question 2 and its corresponding answer
+    expect(questionBlocks[1].find('[data-test="question-text"]').text()).toContain('如果时间完全自由')
+    expect(questionBlocks[1].find('[data-test="question-answer"]').text()).toContain('美食类')
   })
 
   it('shows an activity-specific empty note instead of the message one', () => {

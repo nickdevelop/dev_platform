@@ -82,6 +82,10 @@ const isEditCall = log.isEditCall
 const isShellCall = log.isShellCall
 const isQuestionCall = log.isQuestionCall
 const questionItems = log.questionItems
+const questionAnswersFor = (entry: ChatEntry) => {
+  const items = log.questionItems(entry)
+  return log.extractQuestionAnswers(items, resultForCall(entry))
+}
 
 const displayMode = computed(() => props.display ?? 'all')
 // Manually opened blocks stay open while the turn streams. A native <details>
@@ -469,16 +473,32 @@ async function copyMessage(entry: ChatEntry) {
             </div>
           </template>
 
-          <!-- 交互问答工具卡片：在主对话界面直接展示提问内容、选项及用户回答 -->
+          <!-- 交互问答工具卡片：在主对话界面直接展示提问内容、选项及用户回答（按问题一行一行展示） -->
           <template v-else-if="block.entry.kind === 'tool_call' && isQuestionCall(block.entry)">
             <div class="question-dialog-card" data-test="question-dialog-card">
               <div class="question-dialog-head">
                 <span class="question-icon" aria-hidden="true">❓</span>
-                <span class="question-dialog-title">{{ questionItems(block.entry)[0]?.header || 'Agent 提问' }}</span>
+                <span class="question-dialog-title">
+                  {{ questionItems(block.entry)[0]?.header || 'Agent 提问' }}
+                </span>
+                <span v-if="questionItems(block.entry).length > 1" class="question-count-badge">
+                  共 {{ questionItems(block.entry).length }} 题
+                </span>
               </div>
               <div class="question-dialog-body">
-                <template v-for="(item, idx) in questionItems(block.entry)" :key="idx">
-                  <p v-if="item.question" class="question-main-text" data-test="question-text">{{ item.question }}</p>
+                <div
+                  v-for="(item, idx) in questionItems(block.entry)"
+                  :key="idx"
+                  class="question-item-block"
+                  data-test="question-item"
+                >
+                  <div class="question-item-title-row">
+                    <span v-if="questionItems(block.entry).length > 1" class="question-index">{{ idx + 1 }}.</span>
+                    <span v-if="item.header && item.header !== questionItems(block.entry)[0]?.header" class="question-item-header">[{{ item.header }}]</span>
+                    <span class="question-main-text" data-test="question-text">{{ item.question || item.header || '请选择或回答' }}</span>
+                    <span v-if="item.multiple" class="question-opt-multiple">可多选</span>
+                  </div>
+
                   <ul v-if="item.options.length > 0" class="question-options-list">
                     <li v-for="(opt, optIdx) in item.options" :key="optIdx" class="question-opt-item">
                       <span class="opt-bullet">•</span>
@@ -486,15 +506,34 @@ async function copyMessage(entry: ChatEntry) {
                       <span v-if="opt.description" class="opt-desc">（{{ opt.description }}）</span>
                     </li>
                   </ul>
-                  <span v-if="item.multiple" class="question-opt-multiple">提示：可多选</span>
-                </template>
-                <div v-if="resultForCall(block.entry)" class="question-dialog-answer" data-test="question-answer">
-                  <span class="answer-badge">✓ 用户回答</span>
-                  <span class="answer-text">{{ resultForCall(block.entry)?.text || '已回答' }}</span>
+
+                  <!-- 按问题、答案一行一行展示 -->
+                  <div
+                    v-if="questionAnswersFor(block.entry)[idx]"
+                    class="question-answer-row"
+                    data-test="question-answer"
+                  >
+                    <span class="answer-badge">✓ 回答：</span>
+                    <span class="answer-text">{{ questionAnswersFor(block.entry)[idx] }}</span>
+                  </div>
+                  <div
+                    v-else-if="!resultForCall(block.entry)"
+                    class="question-waiting-row"
+                    data-test="question-waiting"
+                  >
+                    <span class="waiting-icon">⏳</span>
+                    <span class="waiting-text">等待回答…</span>
+                  </div>
                 </div>
-                <div v-else class="question-dialog-waiting" data-test="question-waiting">
-                  <span class="waiting-icon">⏳</span>
-                  <span>等待用户回答…</span>
+
+                <!-- 兜底：如果完全没有结构化匹配上答案，但已有 result，则在底部显示原答案 -->
+                <div
+                  v-if="resultForCall(block.entry) && Object.keys(questionAnswersFor(block.entry)).length === 0"
+                  class="question-answer-row fallback-answer"
+                  data-test="question-answer"
+                >
+                  <span class="answer-badge">✓ 回答：</span>
+                  <span class="answer-text">{{ resultForCall(block.entry)?.text || '已回答' }}</span>
                 </div>
               </div>
             </div>
@@ -1388,7 +1427,9 @@ async function copyMessage(entry: ChatEntry) {
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .question-dialog-title {
@@ -1397,28 +1438,75 @@ async function copyMessage(entry: ChatEntry) {
   color: var(--color-text);
 }
 
+.question-count-badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted, #f1f5f9);
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+}
+
+.question-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.question-item-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.question-item-block:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.question-item-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  line-height: 1.5;
+}
+
+.question-index {
+  font-weight: 700;
+  color: var(--color-primary, #3b82f6);
+  font-size: 0.9rem;
+}
+
+.question-item-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
 .question-main-text {
-  margin: 0 0 0.5rem;
   font-size: 0.9rem;
   color: var(--color-text);
-  line-height: 1.5;
   font-weight: 500;
 }
 
 .question-options-list {
-  margin: 0.4rem 0 0.6rem;
+  margin: 0.25rem 0 0.4rem 0.6rem;
   padding-left: 0.5rem;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .question-opt-item {
   display: flex;
   align-items: baseline;
   gap: 0.4rem;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   color: var(--color-text);
 }
 
@@ -1433,32 +1521,38 @@ async function copyMessage(entry: ChatEntry) {
 
 .opt-desc {
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .question-opt-multiple {
   display: inline-block;
-  margin-bottom: 0.5rem;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--color-text-muted);
   background: var(--color-surface-muted, #f1f5f9);
-  padding: 0.1rem 0.45rem;
+  padding: 0.05rem 0.35rem;
   border-radius: 4px;
 }
 
-.question-dialog-answer {
+/* 一行一行展示问题的对应回答 */
+.question-answer-row {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding: 0.4rem 0.65rem;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  padding: 0.35rem 0.65rem;
   background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 6px;
   font-size: 0.85rem;
 }
 
+.question-answer-row.fallback-answer {
+  margin-top: 0.5rem;
+}
+
 .answer-badge {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--color-success, #10b981);
 }
@@ -1466,14 +1560,23 @@ async function copyMessage(entry: ChatEntry) {
 .answer-text {
   color: var(--color-text);
   word-break: break-word;
+  line-height: 1.4;
 }
 
-.question-dialog-waiting {
+.question-waiting-row {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.4rem;
-  font-size: 0.82rem;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
   color: var(--color-warning, #f59e0b);
+}
+
+.waiting-icon {
+  font-size: 0.85rem;
+}
+
+.waiting-text {
+  font-weight: 500;
 }
 </style>

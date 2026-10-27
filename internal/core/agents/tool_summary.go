@@ -299,6 +299,7 @@ type StandardQuestionOption struct {
 
 // StandardQuestionItem represents a single normalized question item.
 type StandardQuestionItem struct {
+	ID       string                   `json:"id,omitempty"`
 	Header   string                   `json:"header,omitempty"`
 	Question string                   `json:"question"`
 	Options  []StandardQuestionOption `json:"options,omitempty"`
@@ -319,6 +320,13 @@ func NormalizeQuestionToolInput(input []byte) []byte {
 	var raw any
 	if err := json.Unmarshal(input, &raw); err != nil {
 		return input
+	}
+	// Handle nested JSON string encoding (e.g. arguments serialized as string)
+	if strVal, isStr := raw.(string); isStr {
+		var inner any
+		if err := json.Unmarshal([]byte(strVal), &inner); err == nil {
+			raw = inner
+		}
 	}
 	record, ok := raw.(map[string]any)
 	if !ok {
@@ -363,6 +371,11 @@ func NormalizeQuestionToolInput(input []byte) []byte {
 
 func parseSingleQuestionItem(m map[string]any) StandardQuestionItem {
 	var item StandardQuestionItem
+
+	// ID
+	if idVal, ok := m["id"].(string); ok {
+		item.ID = strings.TrimSpace(idVal)
+	}
 
 	// Header
 	if h, ok := m["header"].(string); ok {
