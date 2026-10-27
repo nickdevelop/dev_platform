@@ -122,6 +122,13 @@ func TestSummarizeToolResult(t *testing.T) {
 			rawOutput: "Yes, continue",
 			wantSub:   "已回答: Yes, continue",
 		},
+		{
+			desc:      "question structured json answer should not truncate at 60 characters",
+			name:      "question",
+			input:     `{"questions": [{"id": "q1"}, {"id": "q2"}]}`,
+			rawOutput: `{"answers":[{"id":"task_topic","selected":["写代码 / 改项目"]},{"id":"reply_language","selected":["中文（推荐）"]},{"id":"prompt_preference","selected":["多问、先确认再动手（推荐）"]}]}`,
+			wantSub:   `已回答: {"answers":[{"id":"task_topic","selected":["写代码 / 改项目"]},{"id":"reply_language","selected":["中文（推荐）"]},{"id":"prompt_preference","selected":["多问、先确认再动手（推荐）"]}]}`,
+		},
 	}
 
 	for _, tt := range tests {

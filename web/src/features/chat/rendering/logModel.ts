@@ -388,9 +388,7 @@ export function extractQuestionAnswers(
   if (!result || !result.text) return answers
 
   let raw = result.text.trim()
-  if (raw.startsWith('已回答:')) {
-    raw = raw.slice(4).trim()
-  }
+  raw = raw.replace(/^已回答[:：]\s*/, '')
 
   // 1. Try parsing as JSON (DeepSeek / standard form answers)
   try {
@@ -398,32 +396,56 @@ export function extractQuestionAnswers(
     if (raw.startsWith('{') || raw.startsWith('[')) {
       parsedJson = JSON.parse(raw)
     } else {
-      const jsonStart = raw.indexOf('{')
+      const jsonStart = raw.indexOf('{') >= 0 ? raw.indexOf('{') : raw.indexOf('[')
       if (jsonStart >= 0) {
         parsedJson = JSON.parse(raw.slice(jsonStart))
       }
     }
     if (parsedJson) {
-      if (Array.isArray(parsedJson.answers)) {
-        for (let i = 0; i < parsedJson.answers.length; i++) {
-          const item = parsedJson.answers[i]
-          const id = item.id
+      const answerList = Array.isArray(parsedJson)
+        ? parsedJson
+        : Array.isArray(parsedJson.answers)
+          ? parsedJson.answers
+          : null
+
+      if (answerList) {
+        for (let i = 0; i < answerList.length; i++) {
+          const item = answerList[i]
+          if (item === null || item === undefined) continue
+
           let ansText = ''
-          const selected = Array.isArray(item.selected) ? item.selected.filter(Boolean) : []
-          const custom = typeof item.custom === 'string' && item.custom.trim() ? item.custom.trim() : ''
-          const parts = [...selected]
-          if (custom && !parts.includes(custom)) {
-            parts.push(custom)
-          }
-          ansText = parts.join('、')
-          if (!ansText && typeof item.answer === 'string') {
-            ansText = item.answer
+          let id = ''
+
+          if (typeof item === 'object') {
+            id = (item.id || item.key || item.name || '').trim?.() ?? ''
+            const selected = Array.isArray(item.selected)
+              ? item.selected.filter(Boolean)
+              : typeof item.selected === 'string' && item.selected.trim()
+                ? [item.selected.trim()]
+                : []
+            const custom = typeof item.custom === 'string' && item.custom.trim() ? item.custom.trim() : ''
+            const parts = [...selected]
+            if (custom && !parts.includes(custom)) {
+              parts.push(custom)
+            }
+            ansText = parts.join('、')
+            if (!ansText && typeof item.answer === 'string') {
+              ansText = item.answer
+            } else if (!ansText && typeof item.value === 'string') {
+              ansText = item.value
+            } else if (!ansText && typeof item.text === 'string') {
+              ansText = item.text
+            }
+          } else {
+            ansText = String(item)
           }
 
           // Match by id or index
           let targetIdx = -1
           if (id) {
-            targetIdx = questions.findIndex((q) => q.id === id)
+            targetIdx = questions.findIndex(
+              (q) => q.id === id || (q.header && q.header === id) || (q.question && q.question === id),
+            )
           }
           if (targetIdx === -1 && i < questions.length) {
             targetIdx = i
@@ -494,12 +516,26 @@ export function extractQuestionAnswers(
     return answers
   }
 
-  // 5. If nothing matched and there is answer text, display it under the first question
-  if (raw) {
-    answers[0] = raw
-  }
-
   return answers
+}
+
+export interface FormattedQuestionAnswer {
+  index: number
+  text: string
+}
+
+export function formatQuestionAnswersList(
+  questions: QuestionItem[],
+  result?: ChatEntry,
+): FormattedQuestionAnswer[] {
+  const map = extractQuestionAnswers(questions, result)
+  const list: FormattedQuestionAnswer[] = []
+  for (let i = 0; i < questions.length; i++) {
+    if (map[i] !== undefined && map[i] !== null && String(map[i]).trim() !== '') {
+      list.push({ index: i, text: String(map[i]).trim() })
+    }
+  }
+  return list
 }
 
 export function toolIcon(entry: ChatEntry): string {

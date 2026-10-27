@@ -86,6 +86,15 @@ const questionAnswersFor = (entry: ChatEntry) => {
   const items = log.questionItems(entry)
   return log.extractQuestionAnswers(items, resultForCall(entry))
 }
+const questionAnswersList = (entry: ChatEntry) => {
+  const items = log.questionItems(entry)
+  return log.formatQuestionAnswersList(items, resultForCall(entry))
+}
+const rawQuestionAnswerText = (entry: ChatEntry) => {
+  const res = resultForCall(entry)
+  if (!res || !res.text) return ''
+  return res.text.replace(/^已回答[:：]\s*/, '').trim() || res.text
+}
 
 const displayMode = computed(() => props.display ?? 'all')
 // Manually opened blocks stay open while the turn streams. A native <details>
@@ -473,7 +482,7 @@ async function copyMessage(entry: ChatEntry) {
             </div>
           </template>
 
-          <!-- 交互问答工具卡片：在主对话界面直接展示提问内容、选项及用户回答（按问题一行一行展示） -->
+          <!-- 交互问答工具卡片：在主对话界面直接展示提问内容、选项及用户回答（在所有问题输出完成后，在后面输出答案） -->
           <template v-else-if="block.entry.kind === 'tool_call' && isQuestionCall(block.entry)">
             <div class="question-dialog-card" data-test="question-dialog-card">
               <div class="question-dialog-head">
@@ -486,6 +495,7 @@ async function copyMessage(entry: ChatEntry) {
                 </span>
               </div>
               <div class="question-dialog-body">
+                <!-- 1. 题目及选项列表 -->
                 <div
                   v-for="(item, idx) in questionItems(block.entry)"
                   :key="idx"
@@ -506,34 +516,49 @@ async function copyMessage(entry: ChatEntry) {
                       <span v-if="opt.description" class="opt-desc">（{{ opt.description }}）</span>
                     </li>
                   </ul>
+                </div>
 
-                  <!-- 按问题、答案一行一行展示 -->
+                <!-- 2. 所有问题输出完成后，在后面输出答案区域 -->
+                <div
+                  v-if="resultForCall(block.entry)"
+                  class="question-answer-section"
+                  data-test="question-answer-section"
+                >
+                  <div class="question-answer-header">
+                    <span class="answer-badge">✓ 回答：</span>
+                  </div>
+
+                  <!-- 结构化解析出来的答案：每行填写一个答案，多题时用 1 2 3 代表题目 -->
+                  <div v-if="questionAnswersList(block.entry).length > 0" class="question-answer-list">
+                    <div
+                      v-for="ans in questionAnswersList(block.entry)"
+                      :key="ans.index"
+                      class="question-answer-line"
+                      data-test="question-answer"
+                    >
+                      <span v-if="questionItems(block.entry).length > 1" class="answer-num">{{ ans.index + 1 }}.</span>
+                      <span class="answer-text">{{ ans.text }}</span>
+                    </div>
+                  </div>
+
+                  <!-- 兜底：若未能匹配结构化答案，则展示原始回答文本 -->
                   <div
-                    v-if="questionAnswersFor(block.entry)[idx]"
-                    class="question-answer-row"
+                    v-else
+                    class="question-answer-line fallback-answer"
                     data-test="question-answer"
                   >
-                    <span class="answer-badge">✓ 回答：</span>
-                    <span class="answer-text">{{ questionAnswersFor(block.entry)[idx] }}</span>
-                  </div>
-                  <div
-                    v-else-if="!resultForCall(block.entry)"
-                    class="question-waiting-row"
-                    data-test="question-waiting"
-                  >
-                    <span class="waiting-icon">⏳</span>
-                    <span class="waiting-text">等待回答…</span>
+                    <span class="answer-text">{{ rawQuestionAnswerText(block.entry) }}</span>
                   </div>
                 </div>
 
-                <!-- 兜底：如果完全没有结构化匹配上答案，但已有 result，则在底部显示原答案 -->
+                <!-- 未回答时显示统一等待行 -->
                 <div
-                  v-if="resultForCall(block.entry) && Object.keys(questionAnswersFor(block.entry)).length === 0"
-                  class="question-answer-row fallback-answer"
-                  data-test="question-answer"
+                  v-else
+                  class="question-waiting-row"
+                  data-test="question-waiting"
                 >
-                  <span class="answer-badge">✓ 回答：</span>
-                  <span class="answer-text">{{ resultForCall(block.entry)?.text || '已回答' }}</span>
+                  <span class="waiting-icon">⏳</span>
+                  <span class="waiting-text">等待回答…</span>
                 </div>
               </div>
             </div>
@@ -1533,21 +1558,22 @@ async function copyMessage(entry: ChatEntry) {
   border-radius: 4px;
 }
 
-/* 一行一行展示问题的对应回答 */
-.question-answer-row {
+/* 所有问题输出完成后，统一在下方输出答案区域 */
+.question-answer-section {
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  margin-top: 0.25rem;
-  padding: 0.35rem 0.65rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
   background: rgba(16, 185, 129, 0.08);
   border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 6px;
   font-size: 0.85rem;
 }
 
-.question-answer-row.fallback-answer {
-  margin-top: 0.5rem;
+.question-answer-header {
+  display: flex;
+  align-items: center;
 }
 
 .answer-badge {
@@ -1557,18 +1583,42 @@ async function copyMessage(entry: ChatEntry) {
   color: var(--color-success, #10b981);
 }
 
+.question-answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 0.25rem;
+}
+
+.question-answer-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  line-height: 1.45;
+}
+
+.question-answer-line.fallback-answer {
+  padding-left: 0.25rem;
+}
+
+.answer-num {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--color-success, #10b981);
+}
+
 .answer-text {
   color: var(--color-text);
   word-break: break-word;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .question-waiting-row {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  margin-top: 0.25rem;
-  font-size: 0.8rem;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
   color: var(--color-warning, #f59e0b);
 }
 

@@ -266,7 +266,7 @@ describe('split message/activity log', () => {
     expect(card.find('[data-test="question-answer"]').text()).toContain('阿里云')
   })
 
-  it('renders multiple questions and their corresponding answers line-by-line', () => {
+  it('renders multiple questions and their corresponding answers after all questions', () => {
     const entries: ChatEntry[] = [
       {
         id: 'c-multi', kind: 'tool_call', role: 'assistant', text: 'question', name: 'question', callId: 'c-multi-1',
@@ -312,13 +312,126 @@ describe('split message/activity log', () => {
     const questionBlocks = card.findAll('[data-test="question-item"]')
     expect(questionBlocks).toHaveLength(2)
 
-    // Question 1 and its corresponding answer
+    // Questions do not contain answers inside their item blocks
     expect(questionBlocks[0].find('[data-test="question-text"]').text()).toContain('如果马上可以出发去旅行')
-    expect(questionBlocks[0].find('[data-test="question-answer"]').text()).toContain('自然风景')
+    expect(questionBlocks[0].find('[data-test="question-answer"]').exists()).toBe(false)
 
-    // Question 2 and its corresponding answer
     expect(questionBlocks[1].find('[data-test="question-text"]').text()).toContain('如果时间完全自由')
-    expect(questionBlocks[1].find('[data-test="question-answer"]').text()).toContain('美食类')
+    expect(questionBlocks[1].find('[data-test="question-answer"]').exists()).toBe(false)
+
+    // Answers are displayed in the answer section after all questions
+    const answerSection = card.find('[data-test="question-answer-section"]')
+    expect(answerSection.exists()).toBe(true)
+
+    const answerLines = answerSection.findAll('[data-test="question-answer"]')
+    expect(answerLines).toHaveLength(2)
+    expect(answerLines[0].text()).toContain('1.')
+    expect(answerLines[0].text()).toContain('自然风景')
+    expect(answerLines[1].text()).toContain('2.')
+    expect(answerLines[1].text()).toContain('美食类')
+  })
+
+  it('renders answers after all questions and formats json answers line-by-line with 1 2 3 index', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c-3q', kind: 'tool_call', role: 'assistant', text: 'question', name: 'question', callId: 'c-3q-1',
+        input: {
+          questions: [
+            {
+              id: 'task_topic',
+              header: '任务方向',
+              question: '你希望我接下来帮你做什么类型的事情？',
+              options: [
+                { label: '写代码 / 改项目', description: '修 bug、写功能' },
+                { label: '禅道工时与工作总结', description: '生成日报周报' },
+              ],
+            },
+            {
+              id: 'reply_language',
+              header: '回复语言',
+              question: '之后回复你偏好使用哪种语言？',
+              options: [
+                { label: '中文（推荐）', description: '后续全部使用中文回复' },
+                { label: 'English', description: 'Reply in English' },
+              ],
+            },
+            {
+              id: 'prompt_preference',
+              header: '提问偏好',
+              question: '以后干活时，你希望我以什么频率向你提问确认？',
+              options: [
+                { label: '多问、先确认再动手（推荐）', description: '遇到不确定的地方就询问' },
+                { label: '只在必要时间', description: '仅在关键决策点提问' },
+              ],
+            },
+          ],
+        },
+        streaming: false,
+      },
+      {
+        id: 'r-3q', kind: 'tool_result', role: 'tool',
+        text: '已回答: {"answers":[{"id":"task_topic","selected":["写代码 / 改项目"]},{"id":"reply_language","selected":["中文（推荐）"]},{"id":"prompt_preference","selected":["多问、先确认再动手（推荐）"]}]}',
+        callId: 'c-3q-1', streaming: false,
+      },
+    ]
+
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'messages' },
+    })
+    const card = wrapper.find('[data-test="question-dialog-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.text()).toContain('共 3 题')
+
+    const questionBlocks = card.findAll('[data-test="question-item"]')
+    expect(questionBlocks).toHaveLength(3)
+
+    // No answer displayed inside individual question blocks
+    for (const qBlock of questionBlocks) {
+      expect(qBlock.find('[data-test="question-answer"]').exists()).toBe(false)
+    }
+
+    // Answers are displayed in the section after all questions
+    const answerSection = card.find('[data-test="question-answer-section"]')
+    expect(answerSection.exists()).toBe(true)
+
+    const answerLines = answerSection.findAll('[data-test="question-answer"]')
+    expect(answerLines).toHaveLength(3)
+    expect(answerLines[0].text()).toContain('1.')
+    expect(answerLines[0].text()).toContain('写代码 / 改项目')
+    expect(answerLines[1].text()).toContain('2.')
+    expect(answerLines[1].text()).toContain('中文（推荐）')
+    expect(answerLines[2].text()).toContain('3.')
+    expect(answerLines[2].text()).toContain('多问、先确认再动手（推荐）')
+  })
+
+  it('shows unified waiting row after all questions when unanswered', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c-wait', kind: 'tool_call', role: 'assistant', text: 'question', name: 'question', callId: 'c-wait-1',
+        input: {
+          questions: [
+            { id: 'q1', question: '问题 1' },
+            { id: 'q2', question: '问题 2' },
+          ],
+        },
+        streaming: false,
+      },
+    ]
+
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'messages' },
+    })
+    const card = wrapper.find('[data-test="question-dialog-card"]')
+    expect(card.exists()).toBe(true)
+
+    // Unified waiting row at the bottom, not repeated inside each question block
+    const questionBlocks = card.findAll('[data-test="question-item"]')
+    for (const qBlock of questionBlocks) {
+      expect(qBlock.find('[data-test="question-waiting"]').exists()).toBe(false)
+    }
+    const waitingRow = card.find('[data-test="question-waiting"]')
+    expect(waitingRow.exists()).toBe(true)
+    expect(waitingRow.text()).toContain('等待回答…')
   })
 
   it('shows an activity-specific empty note instead of the message one', () => {

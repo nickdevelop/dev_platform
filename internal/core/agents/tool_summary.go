@@ -200,7 +200,7 @@ func SummarizeToolResult(name string, input []byte, rawOutput string, isError bo
 	case ActionQuestion:
 		ans := strings.TrimSpace(rawOutput)
 		if ans != "" {
-			return fmt.Sprintf("已回答: %s", truncateSummaryString(ans, 60))
+			return fmt.Sprintf("已回答: %s", truncateSummaryString(ans, 8192))
 		}
 		return "问答交互完成"
 	case ActionSubagent:

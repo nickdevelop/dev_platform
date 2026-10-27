@@ -188,7 +188,7 @@ web/src/
        • EventTurn (started)
        • EventMessage (text_delta, reasoning_delta)
        • EventThinking (思考内容流式输出)
-       • EventToolCall (各后端提问工具如 ask_user_question 由适配器统一归一化为标准 question 契约；大入参由 core/agents.PruneToolInput 瘦身裁剪) / EventToolResult (输出由 core/agents.SummarizeToolResult 瘦身为紧凑语义化中文摘要，如“读取了 xxx 文件”、“编辑了 xxx 文件”、“执行了 xxx 命令”，清空大 diff metadata)
+       • EventToolCall (各后端提问工具如 ask_user_question 由适配器统一归一化为标准 question 契约；大入参由 core/agents.PruneToolInput 瘦身裁剪) / EventToolResult (输出由 core/agents.SummarizeToolResult 瘦身为紧凑语义化中文摘要，如“读取了 xxx 文件”、“编辑了 xxx 文件”、“执行了 xxx 命令”，清空大 diff metadata；问答工具保留完整答案 payload 供前端结构化解析)
        • EventTurn (ended, completed/failed/cancelled)
            │
            ▼
@@ -198,7 +198,7 @@ web/src/
            ▼ (HTTP SSE 流持续推送，传输体积下降 90% 以上)
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
-   - 问答交互工具归入主对话流（MessageView display="messages"），作为交互卡片展示提问、选项与回答
+   - 问答交互工具归入主对话流（MessageView display="messages"），作为交互卡片展示提问与选项；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
    - 右侧活动面板（display="activity"）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
