@@ -3,29 +3,20 @@
 // category is reserved for a later release and is shown disabled. Every category
 // is a route link so the rail is always an exit from the current area: the
 // settings center hides the project sidebar, and without a project link here the
-// user would be trapped in /settings. The footer links to the settings center,
-// logs out, and — at the very bottom — collapses the project/task column so a
-// conversation can take the full width; the shell owns that column's visibility
-// and its persisted choice, so the rail only reports the click and reflects the
-// current state. The project category depends on that column, so activating it
-// asks the shell to show the column again.
+// user would be trapped in /settings. The footer links to the settings center and
+// logs out; collapsing the middle column is not the rail's job any more — the shell
+// renders a handle on the rail's right edge for that (see AppShell's
+// .rail-edge-toggle), which keeps a single affordance for both pinned and floating
+// columns. The project category depends on that column, so activating it
+// still asks the shell to show the column again.
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { tabKey } from '../../stores/openTabs'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
 
-const props = defineProps<{
-  // Whether the middle project/task column is currently collapsed.
-  sidebarCollapsed?: boolean
-  // Whether the middle column is collapsible from the rail toggle.
-  sidebarCollapsible?: boolean
-  sidebarTitle?: string
-}>()
-
 const emit = defineEmits<{
   logout: []
-  toggleSidebar: []
   // A rail entry that needs the project/task column asks the shell to show it,
   // so a collapsed column comes back in one click even when the entry is the
   // one already active (no route change to react to).
@@ -145,11 +136,6 @@ function onChatClick(event: MouseEvent) {
 function onSettingsClick() {
   emit('expandSidebar')
 }
-
-const toggleTitle = computed(() => {
-  const name = props.sidebarTitle ? `${props.sidebarTitle}导航` : '侧边栏'
-  return props.sidebarCollapsed ? `展开${name}` : `收起${name}`
-})
 </script>
 
 <template>
@@ -250,32 +236,6 @@ const toggleTitle = computed(() => {
           <line x1="21" y1="12" x2="9" y2="12" />
         </svg>
         <span>退出</span>
-      </button>
-      <button
-        v-if="sidebarCollapsible !== false"
-        type="button"
-        class="footer-btn collapse"
-        data-test="sidebar-toggle"
-        :title="toggleTitle"
-        :aria-label="toggleTitle"
-        :aria-expanded="(!sidebarCollapsed).toString()"
-        @click="emit('toggleSidebar')"
-      >
-        <svg
-          v-if="sidebarCollapsed"
-          class="rail-icon"
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <polyline points="13 17 18 12 13 7" />
-          <polyline points="6 17 11 12 6 7" />
-        </svg>
-        <svg v-else class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <polyline points="11 17 6 12 11 7" />
-          <polyline points="18 17 13 12 18 7" />
-        </svg>
-        <span>{{ sidebarCollapsed ? '展开' : '收起' }}</span>
       </button>
     </div>
   </nav>

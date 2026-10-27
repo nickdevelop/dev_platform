@@ -125,7 +125,7 @@ const modelLabel = computed(() => {
       <div class="session-bottom-left flex items-center gap-1.5 min-w-0">
         <span
           v-if="modelLabel"
-          class="session-model font-mono text-[10px] px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 max-w-[90px] truncate"
+          class="session-model text-[10px] px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
           :title="modelFull"
           data-test="session-model"
         >

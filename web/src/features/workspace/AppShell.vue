@@ -665,34 +665,21 @@ watch(
       @click="closeFloatingSidebar"
     />
 
-    <CategoryRail
-      :sidebar-collapsed="!isSidebarVisible"
-      :sidebar-collapsible="true"
-      :sidebar-title="columnTitle"
-      @logout="logout"
-      @toggle-sidebar="toggleSidebar"
-      @expand-sidebar="onRailMenuClick"
-    />
+    <CategoryRail @logout="logout" @expand-sidebar="onRailMenuClick" />
 
-    <!-- 第一栏侧边折叠/展开按钮（与收起侧边栏按钮保持统一的方圆角图标风格） -->
+    <!-- 第一栏右侧边缘的折叠/展开把手：极简全圆角胶囊条，骑跨在第一栏右边界上。
+         单箭头通过旋转 180° 复用同一条路径，收起时指向右、展开时指向左。 -->
     <button
       type="button"
-      class="rail-edge-toggle dock-btn"
+      class="rail-edge-toggle"
       :class="{ collapsed: !isSidebarVisible }"
       data-test="rail-edge-toggle"
       :title="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
       :aria-label="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
       @click="toggleSidebar"
     >
-      <svg class="dock-icon rail-edge-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <template v-if="isSidebarVisible">
-          <polyline points="11 17 6 12 11 7" />
-          <polyline points="18 17 13 12 18 7" />
-        </template>
-        <template v-else>
-          <polyline points="13 17 18 12 13 7" />
-          <polyline points="6 17 11 12 6 7" />
-        </template>
+      <svg class="rail-edge-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M15 19l-7-7 7-7" />
       </svg>
     </button>
 
@@ -884,59 +871,53 @@ watch(
   animation: backdrop-fade-in 0.15s ease-out;
 }
 
-/* 第一栏右侧边缘展开/收起按钮：统一按照收起侧边栏按钮（.dock-btn）的风格设计 */
+/* 第一栏右侧边缘的折叠/展开把手：极简全圆角胶囊条，骑跨在第一栏（56px）的右边界上。
+   展开与收起共用同一锚点，切换时把手不横移，只把箭头旋转 180° 换向；hover 时略微加宽。 */
 .rail-edge-toggle {
   position: fixed;
   left: 56px;
   top: 50%;
   transform: translateY(-50%) translateX(-50%);
   z-index: 45;
-  width: 24px;
-  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 36px;
   padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius, 6px);
+  border-radius: 9999px;
   background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  color: var(--color-text-muted);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: width 0.2s ease, background-color 0.2s ease, border-color 0.2s ease,
+    color 0.2s ease, box-shadow 0.2s ease;
   outline: none;
 }
 
 .rail-edge-toggle:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-border-strong);
-  color: var(--color-primary);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
-}
-
-.rail-edge-toggle.collapsed {
-  left: 56px;
-  transform: translateY(-50%) translateX(0);
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  border-left: none;
+  width: 20px;
   background: var(--color-surface);
-  border-color: var(--color-border);
-  color: var(--color-text);
-  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.14);
-}
-
-.rail-edge-toggle.collapsed:hover {
-  background: var(--color-surface-muted);
   border-color: var(--color-border-strong);
   color: var(--color-primary);
+  box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.12), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
 }
 
 .rail-edge-icon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 2.5;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: transform 0.3s ease;
+}
+
+/* Collapsed: the same chevron flips to point right, inviting the column back out. */
+.rail-edge-toggle.collapsed .rail-edge-icon {
+  transform: rotate(180deg);
 }
 
 @keyframes backdrop-fade-in {

@@ -316,7 +316,7 @@ function reconnect() {
 </script>
 
 <template>
-  <section class="pure-chat flex flex-col px-4 pb-4 gap-2 h-full min-h-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
+  <section class="pure-chat flex flex-col h-full min-h-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
     <header v-if="activeID !== null && active" class="pure-chat-header flex items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
       <div class="pure-chat-title-row flex items-baseline gap-2.5 min-w-0">
         <h2 class="pure-chat-title m-0 text-base font-semibold truncate text-slate-800 dark:text-slate-100">{{ active?.title || '未命名对话' }}</h2>

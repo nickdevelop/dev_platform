@@ -25,6 +25,16 @@ make build         # produces bin/platform
 `make verify` runs the full check suite (go vet, Go tests, frontend unit
 tests, frontend build).
 
+To build and install into a running checkout in one step, run `./deploy.sh`
+(Linux/WSL): it builds through `cmd/devctl`, then copies `bin/platform` and
+`web/dist` into the deployment directory (`/data/tools/devplatform` by
+default, override with `DEPLOY_DIR` or `--dir`), backing up what it replaces
+under `backups/<timestamp>/`. The data directory is never touched, and the
+service is restarted through the deployment's `platform.sh` only when it was
+already running — `--restart` / `--no-restart` force either way, and
+`--build-only`, `--deploy-only`, `--skip-web` and `--verify` (probe
+`/api/health`) cover the variants.
+
 To produce distributable packages instead, run `./release.sh` (or
 `make release`, Linux/WSL only): it builds the frontend once, then
 cross-compiles the server for Linux (amd64, arm64) and Windows (amd64) and

@@ -266,9 +266,9 @@ describe('three-pane app shell', () => {
   it('shows an inline icon on every first-level rail entry', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
-    // 项目 / 任务 / 提示词 / 终端 / Chat / 设置 / 退出 / 收起 each carry one inline SVG icon.
+    // 项目 / 任务 / 提示词 / 终端 / Chat / 设置 / 退出 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(8)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
@@ -278,21 +278,20 @@ describe('three-pane app shell', () => {
       '对话',
       '设置',
       '退出',
-      '收起',
     ])
   })
 
-  it('collapses the project column from the rail and persists the choice', async () => {
+  it('collapses the project column from the rail edge handle and persists the choice', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
 
-    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    await wrapper.find('[data-test="rail-edge-toggle"]').trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
     expect(wrapper.find('.app-shell').classes()).toContain('sidebar-collapsed')
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('collapsed')
 
-    // The same toggle brings the column back and reverses the stored choice.
-    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    // The same handle brings the column back and reverses the stored choice.
+    await wrapper.find('[data-test="rail-edge-toggle"]').trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
     expect(localStorage.getItem('dev-platform-sidebar-v1')).toBe('expanded')
   })
@@ -319,7 +318,7 @@ describe('three-pane app shell', () => {
 
   it('brings the project column back floating when the project category is clicked and auto-collapses on outside click', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
-    await wrapper.find('[data-test="sidebar-toggle"]').trigger('click')
+    await wrapper.find('[data-test="rail-edge-toggle"]').trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
 
     // Clicking the rail item pops the middle column out floating
@@ -557,23 +556,23 @@ describe('three-pane app shell', () => {
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 
-  it('renders sidebar toggle in settings center and reflects context title', async () => {
+  it('collapses the settings column from the shared rail edge handle', async () => {
     const { wrapper, router } = await setup('/settings/appearance')
 
-    // Sidebar toggle must be visible under settings center
-    const toggle = wrapper.find('[data-test="sidebar-toggle"]')
+    // The same edge handle serves every center, so its label is generic.
+    const toggle = wrapper.find('[data-test="rail-edge-toggle"]')
     expect(toggle.exists()).toBe(true)
-    expect(toggle.attributes('title')).toBe('收起设置导航')
+    expect(toggle.attributes('title')).toBe('收起侧边栏')
 
     // Clicking it collapses the settings column
     await toggle.trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
-    expect(wrapper.find('[data-test="sidebar-toggle"]').attributes('title')).toBe('展开设置导航')
+    expect(wrapper.find('[data-test="rail-edge-toggle"]').attributes('title')).toBe('展开侧边栏')
 
-    // Navigate to projects: toggle reflects project context
+    // Navigate to projects: the collapsed state is shared across centers
     await router.push('/')
     await flushPromises()
-    expect(wrapper.find('[data-test="sidebar-toggle"]').attributes('title')).toBe('展开项目导航')
+    expect(wrapper.find('[data-test="rail-edge-toggle"]').attributes('title')).toBe('展开侧边栏')
   })
 })
 

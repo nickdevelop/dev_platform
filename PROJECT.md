@@ -278,6 +278,8 @@ web/src/
 1. Web 前端 (features/chat/pure/ChatPanel.vue)
    - 选用 OpenAI 兼容的模型配置 (model_id)
    - 发送文本及多张图片 (最大支持 32MiB 请求体)
+   - 输入区 ChatComposer.vue 与 Agent 会话输入区同构：发送按钮为分裂按钮（主半边发送/停止，右半边下拉选 Enter 或 Ctrl+Enter 发送），
+     快捷键选择由 features/chat/composer/sendShortcut.ts 统一持久化，两个入口共用同一个提交键
                     │
                     ▼
 2. 后端纯 Chat 服务 (internal/app/chat/)
@@ -319,6 +321,7 @@ web/src/
                     ▼
 2. 主框架 (web/src/features/workspace/AppShell.vue)
    - 开关开启时挂载 QuickAssistantLauncher
+   - 中列折叠/展开由第一栏右边缘的 rail-edge-toggle 把手统一控制（CategoryRail 不再自带折叠按钮）
    - 工具栏呈现为横向方形按钮组，支持直接按住按钮拖拽，默认半透明，鼠标悬停完全显示；位置独立持久化
                     │
                     ▼

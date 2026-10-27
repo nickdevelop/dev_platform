@@ -3,7 +3,7 @@
 # dev.sh — development helper for the AI development platform (Linux / WSL).
 #
 # Builds the frontend and the Go server, then runs the server locally. The
-# server binds 0.0.0.0:18080 by default so the UI is reachable from the LAN
+# server binds 0.0.0.0:18081 by default so the UI is reachable from the LAN
 # (matching the platform's plain-HTTP LAN deployment model).
 #
 # build and run delegate to the cross-platform cmd/devctl tool (usable on
@@ -22,7 +22,7 @@
 #   ./dev.sh help              Show this help
 #
 # Environment overrides:
-#   DEV_LISTEN_ADDR   Listen address           (default 0.0.0.0:18080)
+#   DEV_LISTEN_ADDR   Listen address           (default 0.0.0.0:18081)
 #   DEV_DATA_DIR      Platform data directory  (default: the platform's own:
 #                                               $PLATFORM_DATA_DIR, else the
 #                                               user config dir)
@@ -37,7 +37,7 @@ cd "$REPO_DIR"
 
 BINARY="bin/platform"
 WEB_DIR="${DEV_WEB_DIR:-web/dist}"
-LISTEN_ADDR="${DEV_LISTEN_ADDR:-0.0.0.0:18080}"
+LISTEN_ADDR="${DEV_LISTEN_ADDR:-0.0.0.0:18081}"
 DATA_DIR="${DEV_DATA_DIR:-}"
 
 # Runtime state (PID + log) lives in an ignored directory so it never shows up

@@ -156,22 +156,20 @@ function onConnect(serverId: number) {
                 <span class="badge" :class="srv.auth_type">
                   {{ srv.auth_type === 'key' ? '私钥' : '密码' }}
                 </span>
+                    <button
+                    type="button"
+                    class="btn-connect"
+                    title="打开终端连接"
+                    @click.stop="onConnect(srv.id)"
+                  >
+                    连接
+                  </button>
               </div>
-              <div class="server-sub">
-                {{ srv.username }}@{{ srv.host }}:{{ srv.port }}
-              </div>
-            </div>
-
-            <div class="server-card-actions">
-              <button
-                type="button"
-                class="btn-connect"
-                title="打开终端连接"
-                @click.stop="onConnect(srv.id)"
-              >
-                连接
-              </button>
-              <button
+              <div class="server-sub-row">
+                <span class="server-sub">
+                  {{ srv.username }}@{{ srv.host }}:{{ srv.port }}
+                </span>
+                <button
                 type="button"
                 class="btn-icon"
                 title="编辑"
@@ -193,6 +191,7 @@ function onConnect(serverId: number) {
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -397,6 +396,12 @@ function onConnect(serverId: number) {
   gap: 6px;
 }
 
+/* The badge stays with the name on the left; only the connect button is pushed
+   to the row's right edge, lining it up with the edit/delete icons below. */
+.server-name-row .btn-connect {
+  margin-left: auto;
+}
+
 .server-name {
   font-size: 0.857rem;
   font-weight: 500;
@@ -404,6 +409,20 @@ function onConnect(serverId: number) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.server-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Same as the name row: the address takes the leftover width, keeping the two
+   icon buttons right-aligned. Scoped so the local card's plain .server-sub
+   (a column child) is not stretched vertically. */
+.server-sub-row .server-sub {
+  flex: 1;
+  min-width: 0;
 }
 
 .server-sub {
