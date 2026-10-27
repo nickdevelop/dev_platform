@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { ChatGroup } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
-import { UiButton, UiDialog } from '../../../shared/ui'
+import { UiButton, UiDialog, UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 
 const props = defineProps<{
   mode: 'create' | 'rename'
@@ -55,6 +55,16 @@ const usableModels = computed(() =>
       })),
   ),
 )
+
+const modelOptions = computed<SelectMenuItem<number | ''>[]>(() => {
+  const items: SelectMenuItem<number | ''>[] = [
+    { value: '', label: '跟随默认 / 未指定' },
+  ]
+  for (const m of usableModels.value) {
+    items.push({ value: m.id, label: m.name })
+  }
+  return items
+})
 
 const title = computed(() => {
   return props.mode === 'create' ? '新建助手' : `编辑助手「${props.group?.name || ''}」`
@@ -182,16 +192,18 @@ async function onSubmit() {
       </div>
 
       <!-- 默认模型配置 -->
-      <label class="field">
+      <div class="field">
         <span class="label-text">默认模型</span>
-        <select v-model="defaultModelIdInput" class="text-input select-input">
-          <option :value="''">跟随默认 / 未指定</option>
-          <option v-for="model in usableModels" :key="model.id" :value="model.id">
-            {{ model.name }}
-          </option>
-        </select>
+        <UiSelectMenu
+          v-model="defaultModelIdInput"
+          class="text-input-menu"
+          :options="modelOptions"
+          placeholder="跟随默认 / 未指定"
+          clearable
+          block
+        />
         <span class="hint-text">在当前助手下新建对话时默认选中的模型</span>
-      </label>
+      </div>
 
       <!-- 系统提示词 -->
       <label class="field">

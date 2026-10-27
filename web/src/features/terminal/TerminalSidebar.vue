@@ -347,7 +347,7 @@ function onConnect(serverId: number) {
 .remote-list {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
+  gap: calc(var(--space-unit) * 0.3);
 }
 
 .server-card {
@@ -355,7 +355,7 @@ function onConnect(serverId: number) {
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--space-unit) * 0.5);
-  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  padding: calc(var(--space-unit) * 0.4) calc(var(--space-unit) * 0.8);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -388,7 +388,7 @@ function onConnect(serverId: number) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.2);
+  gap: calc(var(--space-unit) * 0.1);
 }
 
 .server-name-row {
@@ -398,7 +398,7 @@ function onConnect(serverId: number) {
 }
 
 .server-name {
-  font-size: 0.929rem;
+  font-size: 0.857rem;
   font-weight: 500;
   color: var(--color-text);
   white-space: nowrap;

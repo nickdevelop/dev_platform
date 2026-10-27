@@ -12,6 +12,7 @@ import { listProjectSessions, type AgentSession } from '../../api/sessions'
 import { listTaskSessionIds } from '../../api/tasks'
 import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore } from '../../stores/sessions'
+import { UiButton, UiDialog } from '../../shared/ui'
 import ProjectSessionItem from './ProjectSessionItem.vue'
 
 const props = withDefaults(
@@ -391,36 +392,40 @@ async function confirmDeleteSession() {
     <li v-else-if="visibleProjects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">没有匹配的项目。</li>
   </ul>
 
-  <!-- Delete Session Confirmation Dialog (aligned with SessionChatPanel.vue) -->
-  <div
+  <!-- Delete Session Confirmation Dialog (Unified with UiDialog) -->
+  <UiDialog
     v-if="sessionToDelete"
-    class="confirm-backdrop"
-    role="dialog"
-    aria-modal="true"
-    aria-label="删除会话"
+    title="删除会话"
+    width-class="w-full max-w-md"
     data-test="delete-session-dialog"
-    @click.self="cancelDeleteSession"
+    @close="cancelDeleteSession"
   >
-    <div class="confirm-panel">
-      <p class="confirm-title">
+    <div class="confirm-content flex flex-col gap-3 py-1">
+      <p class="confirm-title text-sm font-medium text-platform-text">
         确定删除会话「{{ sessionToDelete.session.title || sessionToDelete.session.id }}」吗？
       </p>
-      <p class="confirm-hint">仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。</p>
-      <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
-      <div class="confirm-actions">
-        <button type="button" class="confirm-cancel" @click="cancelDeleteSession">取消</button>
-        <button
-          type="button"
+      <p class="confirm-hint text-xs text-platform-text-muted">
+        仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。
+      </p>
+      <p v-if="deleteError" class="confirm-error text-xs text-red-500" role="alert">{{ deleteError }}</p>
+      <div class="confirm-actions flex items-center justify-end gap-2 pt-2">
+        <UiButton variant="secondary" size="sm" class="confirm-cancel" @click="cancelDeleteSession">
+          取消
+        </UiButton>
+        <UiButton
+          variant="danger"
+          size="sm"
           class="confirm-delete"
           data-test="confirm-delete"
           :disabled="deleting"
+          :loading="deleting"
           @click="confirmDeleteSession"
         >
           {{ deleting ? '删除中…' : '删除' }}
-        </button>
+        </UiButton>
       </div>
     </div>
-  </div>
+  </UiDialog>
 </template>
 
 <style scoped>

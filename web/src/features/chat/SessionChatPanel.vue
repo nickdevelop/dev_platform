@@ -65,6 +65,7 @@ import {
 } from './composer/sendShortcut'
 import FileSidebar from '../files/FileSidebar.vue'
 import FileViewer from '../files/FileViewer.vue'
+import { UiButton, UiDialog } from '../../shared/ui'
 
 const props = defineProps<{ projectId: number; sessionId: string }>()
 
@@ -1424,32 +1425,40 @@ async function removeSession() {
         </aside>
       </div>
 
-      <div
+      <!-- Delete Session Confirmation Dialog (Unified with UiDialog) -->
+      <UiDialog
         v-if="confirmingDelete"
-        class="confirm-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="删除会话"
+        title="删除会话"
+        width-class="w-full max-w-md"
         data-test="delete-session-dialog"
+        @close="confirmingDelete = false"
       >
-        <div class="confirm-panel">
-          <p class="confirm-title">确定删除会话「{{ activeSession.title || activeSession.id }}」吗？</p>
-          <p class="confirm-hint">仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。</p>
-          <p v-if="deleteError" class="confirm-error" role="alert">{{ deleteError }}</p>
-          <div class="confirm-actions">
-            <button type="button" class="confirm-cancel" @click="confirmingDelete = false">取消</button>
-            <button
-              type="button"
+        <div class="confirm-content flex flex-col gap-3 py-1">
+          <p class="confirm-title text-sm font-medium text-platform-text">
+            确定删除会话「{{ activeSession.title || activeSession.id }}」吗？
+          </p>
+          <p class="confirm-hint text-xs text-platform-text-muted">
+            仅从平台列表移除；Agent 原生会话仍保留，重新扫描可能再次出现。
+          </p>
+          <p v-if="deleteError" class="confirm-error text-xs text-red-500" role="alert">{{ deleteError }}</p>
+          <div class="confirm-actions flex items-center justify-end gap-2 pt-2">
+            <UiButton variant="secondary" size="sm" class="confirm-cancel" @click="confirmingDelete = false">
+              取消
+            </UiButton>
+            <UiButton
+              variant="danger"
+              size="sm"
               class="confirm-delete"
               data-test="confirm-delete"
               :disabled="deleting"
+              :loading="deleting"
               @click="removeSession"
             >
-              删除
-            </button>
+              {{ deleting ? '删除中…' : '删除' }}
+            </UiButton>
           </div>
         </div>
-      </div>
+      </UiDialog>
     </template>
     <template v-else-if="loadError">
       <p class="empty" role="alert">{{ loadError }}</p>

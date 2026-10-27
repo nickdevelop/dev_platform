@@ -8,6 +8,7 @@ import {
   UiBadge,
   UiAlert,
   UiEmpty,
+  UiSelectMenu,
 } from '../shared/ui/atomic'
 
 describe('UiButton', () => {
@@ -171,3 +172,79 @@ describe('UiEmpty', () => {
     expect(wrapper.find('.action-btn').exists()).toBe(true)
   })
 })
+
+describe('UiSelectMenu', () => {
+  const sampleOptions = [
+    { value: 'p1', label: '项目一', sublabel: '/data/p1' },
+    { value: 'p2', label: '项目二', sublabel: '/data/p2', tag: '活跃' },
+    { value: 'p3', label: '项目三', sublabel: '/data/p3' },
+  ]
+
+  it('renders placeholder when no value is selected', () => {
+    const wrapper = mount(UiSelectMenu, {
+      props: {
+        modelValue: '',
+        options: sampleOptions,
+        placeholder: '请选择项目',
+      },
+    })
+    expect(wrapper.text()).toContain('请选择项目')
+  })
+
+  it('renders selected option label and sublabel', () => {
+    const wrapper = mount(UiSelectMenu, {
+      props: {
+        modelValue: 'p2',
+        options: sampleOptions,
+      },
+    })
+    expect(wrapper.text()).toContain('项目二')
+    expect(wrapper.text()).toContain('/data/p2')
+    expect(wrapper.text()).toContain('活跃')
+  })
+
+  it('toggles menu and emits update:modelValue on selection', async () => {
+    const wrapper = mount(UiSelectMenu, {
+      props: {
+        modelValue: 'p1',
+        options: sampleOptions,
+      },
+    })
+
+    // Initially closed
+    expect(wrapper.find('.select-menu-popover').exists()).toBe(false)
+
+    // Open on click
+    await wrapper.find('.select-trigger').trigger('click')
+    expect(wrapper.find('.select-menu-popover').exists()).toBe(true)
+
+    // Select second option
+    const options = wrapper.findAll('.option-item')
+    expect(options).toHaveLength(3)
+    await options[1].trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['p2'])
+    expect(wrapper.emitted('change')?.[0]).toEqual(['p2'])
+    // Menu closes after select
+    expect(wrapper.find('.select-menu-popover').exists()).toBe(false)
+  })
+
+  it('filters options when search query is entered', async () => {
+    const wrapper = mount(UiSelectMenu, {
+      props: {
+        modelValue: '',
+        options: sampleOptions,
+        searchable: true,
+      },
+    })
+    await wrapper.find('.select-trigger').trigger('click')
+    const searchInput = wrapper.find('.search-input')
+    expect(searchInput.exists()).toBe(true)
+
+    await searchInput.setValue('项目二')
+    const options = wrapper.findAll('.option-item')
+    expect(options).toHaveLength(1)
+    expect(options[0].text()).toContain('项目二')
+  })
+})
+

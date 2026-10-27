@@ -17,6 +17,7 @@ import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
+import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './dropdown/useComposerDropdown'
@@ -80,6 +81,29 @@ const textareaPlaceholder = computed(() => {
 })
 
 const selectedProjectId = ref<number | null>(initialProjectId)
+
+const projectOptions = computed<SelectMenuItem<number | null>[]>(() => {
+  return (projectsStore.projects ?? []).map((p) => ({
+    value: p.id,
+    label: p.name,
+    sublabel: p.path,
+  }))
+})
+
+const promptOptions = computed<SelectMenuItem<number | ''>[]>(() => {
+  const items: SelectMenuItem<number | ''>[] = [
+    { value: '', label: '不使用提示词（默认）' },
+  ]
+  const list = Array.isArray(promptsStore.prompts) ? promptsStore.prompts : []
+  for (const p of list) {
+    items.push({
+      value: p.id,
+      label: p.name,
+      sublabel: p.description || undefined,
+    })
+  }
+  return items
+})
 
 watch(
   () => [props.projectId, route?.params?.projectId],
@@ -507,21 +531,15 @@ async function createSession() {
       <form class="create-session" @submit.prevent="createSession">
         <div class="project-selector-group">
           <label for="project-select" class="project-label">关联项目</label>
-          <select
+          <UiSelectMenu
             id="project-select"
             v-model="selectedProjectId"
             class="project-select"
             data-test="project-select"
-          >
-            <option :value="null" disabled>请选择项目…</option>
-            <option
-              v-for="p in projectsStore.projects ?? []"
-              :key="p.id"
-              :value="p.id"
-            >
-              {{ p.name }} ({{ p.path }})
-            </option>
-          </select>
+            :options="projectOptions"
+            placeholder="请选择项目…"
+            block
+          />
           <div
             v-if="Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0"
             class="no-projects-hint"
@@ -583,21 +601,16 @@ async function createSession() {
             </span>
           </div>
           <div class="prompt-select-row">
-            <select
+            <UiSelectMenu
               id="prompt-select"
               v-model="selectedPromptId"
               class="prompt-select"
               data-test="prompt-select"
-            >
-              <option value="">不使用提示词（默认）</option>
-              <option
-                v-for="p in promptsStore.prompts"
-                :key="p.id"
-                :value="p.id"
-              >
-                {{ p.name }}{{ p.description ? ` (${p.description})` : '' }}
-              </option>
-            </select>
+              :options="promptOptions"
+              placeholder="不使用提示词（默认）"
+              clearable
+              block
+            />
             <button
               v-if="selectedPromptId !== ''"
               type="button"

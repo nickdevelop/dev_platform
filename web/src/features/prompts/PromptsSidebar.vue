@@ -190,7 +190,7 @@ function onSaved(prompt: Prompt) {
   padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
+  gap: calc(var(--space-unit) * 0.3);
 }
 
 .empty-state {
@@ -201,7 +201,7 @@ function onSaved(prompt: Prompt) {
 }
 
 .prompt-card {
-  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  padding: calc(var(--space-unit) * 0.4) calc(var(--space-unit) * 0.8);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -211,7 +211,7 @@ function onSaved(prompt: Prompt) {
   transition: all 0.15s ease;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.3);
+  gap: calc(var(--space-unit) * 0.15);
   user-select: none;
 }
 
@@ -232,22 +232,24 @@ function onSaved(prompt: Prompt) {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  min-width: 0;
 }
 
 .prompt-card-name {
   font-weight: 500;
-  font-size: 0.929rem;
+  font-size: 0.857rem;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
 }
 
 .placeholder-tag {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 500;
-  padding: 0.12rem 0.45rem;
-  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
   flex-shrink: 0;
@@ -258,11 +260,11 @@ function onSaved(prompt: Prompt) {
   margin: 0;
   font-size: 0.75rem;
   color: var(--color-text-muted);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.35;
 }
 </style>

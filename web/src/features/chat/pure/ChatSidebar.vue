@@ -584,20 +584,21 @@ function formatChatTime(isoString?: string): string {
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.857rem;
+  font-weight: 500;
   cursor: pointer;
   text-align: left;
   flex: 1;
   min-width: 0;
-  padding: calc(var(--space-unit) * 0.667) 0;
+  padding: calc(var(--space-unit) * 0.4) 0;
 }
 
 .caret {
-  font-size: 0.857rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
-  width: 1em;
+  width: 14px;
   text-align: center;
+  flex-shrink: 0;
 }
 
 .group-name {
@@ -607,12 +608,11 @@ function formatChatTime(isoString?: string): string {
 }
 
 .count {
-  font-size: 0.857rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
   border-radius: 9999px;
-  padding: 0 0.5em;
+  padding: 0.05rem 0.45rem;
   font-weight: normal;
   flex-shrink: 0;
 }
@@ -655,34 +655,39 @@ function formatChatTime(isoString?: string): string {
 }
 
 .icon-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.929rem;
+  font-size: 0.8rem;
   cursor: pointer;
-  padding: calc(var(--space-unit) * 0.333) calc(var(--space-unit) * 0.5);
+  padding: 0;
   border-radius: var(--radius);
-  line-height: 1;
   transition: all 0.15s ease;
 }
 
 .icon-btn:hover {
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
 }
 
 .icon-btn.danger:hover {
   color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .chat-sublist {
   list-style: none;
-  margin: calc(var(--space-unit) * 0.2) 0 calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 1.5);
-  padding: 0 0 0 calc(var(--space-unit) * 0.6);
+  margin: calc(var(--space-unit) * 0.2) 0 calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 1.0);
+  padding: 0 0 0 calc(var(--space-unit) * 0.5);
   border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.3);
+  gap: calc(var(--space-unit) * 0.2);
 }
 
 .chat-subitem {
@@ -694,7 +699,7 @@ function formatChatTime(isoString?: string): string {
   align-items: center;
   justify-content: space-between;
   gap: calc(var(--space-unit) * 0.5);
-  padding: calc(var(--space-unit) * 0.75) calc(var(--space-unit) * 1.0);
+  padding: calc(var(--space-unit) * 0.4) calc(var(--space-unit) * 0.8);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -720,7 +725,7 @@ function formatChatTime(isoString?: string): string {
 .chat-main {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.2);
+  gap: calc(var(--space-unit) * 0.1);
   min-width: 0;
   flex: 1;
 }
@@ -729,11 +734,11 @@ function formatChatTime(isoString?: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.929rem;
+  font-size: 0.857rem;
 }
 
 .chat-time {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--color-text-muted);
 }
 

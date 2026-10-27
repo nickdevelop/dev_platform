@@ -13,6 +13,7 @@ import {
   getScheduleTypeLabel,
   getTaskTypeLabel,
 } from './status'
+import { UiSelectMenu, type SelectMenuItem } from '../../shared/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,6 +24,23 @@ const openTabs = useOpenTabsStore()
 const searchKeyword = ref('')
 const selectedProjectFilter = ref<number | undefined>(undefined)
 const selectedTypeFilter = ref<TaskType | undefined>(undefined)
+
+const projectFilterOptions = computed<SelectMenuItem<number | undefined>[]>(() => {
+  const items: SelectMenuItem<number | undefined>[] = [
+    { value: undefined, label: '全部项目' },
+  ]
+  const list = Array.isArray(projectsStore.projects) ? projectsStore.projects : []
+  for (const p of list) {
+    items.push({ value: p.id, label: p.name })
+  }
+  return items
+})
+
+const typeFilterOptions = computed<SelectMenuItem<TaskType | undefined>[]>(() => [
+  { value: undefined, label: '全部类型' },
+  { value: 'standard', label: '普通任务' },
+  { value: 'flow', label: '流程任务' },
+])
 
 onMounted(async () => {
   await Promise.all([tasksStore.loadTasks(), projectsStore.load()])
@@ -98,29 +116,26 @@ function getProjectName(pid: number) {
     />
 
     <div class="sidebar-filters">
-      <select
+      <UiSelectMenu
         v-model="selectedProjectFilter"
-        class="filter-select project-filter"
+        class="filter-select project-filter flex-1 min-w-0"
         aria-label="按项目筛选"
-      >
-        <option :value="undefined">全部项目</option>
-        <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-          {{ p.name }}
-        </option>
-      </select>
+        :options="projectFilterOptions"
+        size="sm"
+        placeholder="全部项目"
+      />
 
-      <select
+      <UiSelectMenu
         v-model="selectedTypeFilter"
-        class="filter-select type-filter"
+        class="filter-select type-filter flex-1 min-w-0"
         aria-label="按类型筛选"
-      >
-        <option :value="undefined">全部类型</option>
-        <option value="standard">普通任务</option>
-        <option value="flow">流程任务</option>
-      </select>
+        :options="typeFilterOptions"
+        size="sm"
+        placeholder="全部类型"
+      />
     </div>
 
-    <!-- Task items list -->
+    <!-- Task items list: styled consistently with ProjectSessionItem -->
     <div class="task-list">
       <p v-if="filteredTasks.length === 0" class="empty-list">暂无匹配任务</p>
       <div
@@ -129,29 +144,35 @@ function getProjectName(pid: number) {
         class="task-card"
         :class="{ active: activeTaskId === t.id }"
         data-test="task-card"
+        tabindex="0"
+        role="button"
+        :aria-label="t.title"
         @click="selectTask(t.id)"
+        @keydown.enter.prevent="selectTask(t.id)"
+        @keydown.space.prevent="selectTask(t.id)"
       >
-        <div class="card-top">
+        <!-- Row 1: Badges + Title -->
+        <div class="task-row-top">
           <span class="type-pill" :class="t.taskType">
             {{ getTaskTypeLabel(t.taskType) }}
           </span>
           <span class="status-badge" :class="getRunStatusBadgeClass(t.lastRunStatus)">
             {{ getRunStatusLabel(t.lastRunStatus) }}
           </span>
+          <span class="task-title" :title="t.title">{{ t.title }}</span>
         </div>
 
-        <h4 class="card-title">{{ t.title }}</h4>
-
-        <div class="card-meta">
-          <span class="meta-project">{{ getProjectName(t.projectId) }}</span>
+        <!-- Row 2: Meta (Project name + Schedule tag) -->
+        <div class="task-row-bottom">
+          <span class="meta-project" :title="getProjectName(t.projectId)">
+            {{ getProjectName(t.projectId) }}
+          </span>
           <span class="meta-schedule">
             {{ getScheduleTypeLabel(t.scheduleType) }}
           </span>
-        </div>
-
-        <div v-if="t.scheduleEnabled && t.scheduleType === 'cron'" class="schedule-tag">
-          <span class="tag-icon">⏰</span>
-          <span>周期: {{ t.cronExpr }}</span>
+          <span v-if="t.scheduleEnabled && t.scheduleType === 'cron'" class="schedule-tag" :title="`周期: ${t.cronExpr}`">
+            ⏰ {{ t.cronExpr }}
+          </span>
         </div>
       </div>
     </div>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Chat } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
-import { UiButton, UiDialog } from '../../../shared/ui'
+import { UiButton, UiDialog, UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 
 const props = defineProps<{
   chat: Chat
@@ -17,6 +17,15 @@ const chats = useChatsStore()
 const selectedGroupId = ref<number>(props.chat.groupId ?? 0)
 const submitting = ref(false)
 const error = ref('')
+
+const groupOptions = computed<SelectMenuItem<number>[]>(() => {
+  const items: SelectMenuItem<number>[] = [{ value: 0, label: '未分组' }]
+  const list = (chats.groups ?? []).filter((entry) => !entry.systemKey)
+  for (const g of list) {
+    items.push({ value: g.id, label: g.name })
+  }
+  return items
+})
 
 async function onSubmit() {
   submitting.value = true
@@ -38,19 +47,16 @@ async function onSubmit() {
 <template>
   <UiDialog :title="`移动对话「${chat.title || '未命名对话'}」`" width-class="w-full max-w-md" @close="emit('close')">
     <form class="move-form" @submit.prevent="onSubmit">
-      <label class="field">
+      <div class="field">
         <span class="label-text">选择目标分组</span>
-        <select v-model.number="selectedGroupId" class="select-input">
-          <option :value="0">未分组</option>
-          <option
-            v-for="group in chats.groups.filter((entry) => !entry.systemKey)"
-            :key="group.id"
-            :value="group.id"
-          >
-            {{ group.name }}
-          </option>
-        </select>
-      </label>
+        <UiSelectMenu
+          v-model="selectedGroupId"
+          class="select-input-menu"
+          :options="groupOptions"
+          placeholder="选择目标分组"
+          block
+        />
+      </div>
 
       <p v-if="error" class="error-msg" role="alert">{{ error }}</p>
 

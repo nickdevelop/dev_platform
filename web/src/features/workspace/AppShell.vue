@@ -674,19 +674,25 @@ watch(
       @expand-sidebar="onRailMenuClick"
     />
 
-    <!-- 第一栏侧边折叠/展开按钮（贴在第一栏右边缘侧边，常驻可见，随手可点） -->
+    <!-- 第一栏侧边折叠/展开按钮（与收起侧边栏按钮保持统一的方圆角图标风格） -->
     <button
       type="button"
-      class="rail-edge-toggle"
+      class="rail-edge-toggle dock-btn"
       :class="{ collapsed: !isSidebarVisible }"
       data-test="rail-edge-toggle"
       :title="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
       :aria-label="isSidebarVisible ? '收起侧边栏' : '展开侧边栏'"
       @click="toggleSidebar"
     >
-      <svg class="rail-edge-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-        <polyline v-if="isSidebarVisible" points="15 18 9 12 15 6" />
-        <polyline v-else points="9 18 15 12 9 6" />
+      <svg class="dock-icon rail-edge-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <template v-if="isSidebarVisible">
+          <polyline points="11 17 6 12 11 7" />
+          <polyline points="18 17 13 12 18 7" />
+        </template>
+        <template v-else>
+          <polyline points="13 17 18 12 13 7" />
+          <polyline points="6 17 11 12 6 7" />
+        </template>
       </svg>
     </button>
 
@@ -878,35 +884,31 @@ watch(
   animation: backdrop-fade-in 0.15s ease-out;
 }
 
-/* 第一栏右侧边缘贴边折叠/展开按钮 */
+/* 第一栏右侧边缘展开/收起按钮：统一按照收起侧边栏按钮（.dock-btn）的风格设计 */
 .rail-edge-toggle {
   position: fixed;
   left: 56px;
   top: 50%;
   transform: translateY(-50%) translateX(-50%);
   z-index: 45;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 48px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: 9999px;
+  border-radius: var(--radius, 6px);
   background: var(--color-surface);
-  color: var(--color-text-muted);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  color: var(--color-text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s ease;
   outline: none;
 }
 
 .rail-edge-toggle:hover {
-  width: 22px;
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong);
+  color: var(--color-primary);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 }
 
 .rail-edge-toggle.collapsed {
@@ -915,23 +917,23 @@ watch(
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   border-left: none;
-  background: var(--rail-bg);
-  border-color: var(--rail-active);
-  color: var(--rail-text);
-  box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.22);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+  box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.14);
 }
 
 .rail-edge-toggle.collapsed:hover {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong);
+  color: var(--color-primary);
 }
 
 .rail-edge-icon {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   stroke: currentColor;
-  stroke-width: 2.5;
+  stroke-width: 2;
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
