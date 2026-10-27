@@ -257,12 +257,24 @@ export function isShellCall(entry: ChatEntry): boolean {
 // The question tool asks the user to choose among options. Its row folds like
 // the other detail-worthy tools, and its body renders the questions readably
 // instead of a raw payload.
-const QUESTION_TOOL_NAMES = new Set(['question', 'ask', 'askuserquestion', 'ask_user'])
+const QUESTION_TOOL_NAMES = new Set([
+  'question',
+  'ask',
+  'askuserquestion',
+  'ask_user',
+  'ask_user_question',
+  'ask_question',
+  'ask_followup_question',
+  'inquire',
+])
 
 export function isQuestionCall(entry: ChatEntry): boolean {
+  if (entry.kind !== 'tool_call') return false
+  const name = (entry.name ?? entry.text ?? '').toLowerCase()
   return (
-    entry.kind === 'tool_call' &&
-    QUESTION_TOOL_NAMES.has((entry.name ?? entry.text ?? '').toLowerCase())
+    QUESTION_TOOL_NAMES.has(name) ||
+    name.includes('ask_user') ||
+    name.includes('question')
   )
 }
 
@@ -328,11 +340,21 @@ export function questionItems(entry: ChatEntry): QuestionItem[] {
           .map(questionOption)
           .filter((option): option is QuestionOption => option !== null)
       : []
+    const header =
+      typeof question.header === 'string' && question.header.trim() !== ''
+        ? question.header.trim()
+        : typeof question.detail === 'string' && question.detail.trim() !== '' && text !== question.detail.trim()
+          ? question.detail.trim()
+          : ''
+    const multiple =
+      question.multiple === true ||
+      question.multi_select === true ||
+      question.multiSelect === true
     items.push({
-      header: typeof question.header === 'string' ? question.header : '',
+      header,
       question: text,
       options,
-      multiple: question.multiple === true,
+      multiple,
     })
   }
   return items

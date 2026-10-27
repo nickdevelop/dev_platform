@@ -329,6 +329,10 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			if len(inputBytes) > agents.MaxRawEventBytes {
 				inputBytes = inputBytes[:agents.MaxRawEventBytes]
 			}
+			if agents.ClassifyTool(name) == agents.ActionQuestion {
+				name = agents.StandardToolQuestion
+				inputBytes = agents.NormalizeQuestionToolInput(inputBytes)
+			}
 			n.rememberTool(callID, name, inputBytes)
 
 			events = append(events, n.newEvent(now, agents.EventToolCall, &agents.NormalizedEvent{
@@ -361,6 +365,10 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 			subCallID, _ := evData["subCallId"].(string)
 			name, _ := evData["name"].(string)
 			inputBytes, _ := json.Marshal(evData["arguments"])
+			if agents.ClassifyTool(name) == agents.ActionQuestion {
+				name = agents.StandardToolQuestion
+				inputBytes = agents.NormalizeQuestionToolInput(inputBytes)
+			}
 			n.rememberTool(subCallID, name, inputBytes)
 			events = append(events, n.newEvent(now, agents.EventToolCall, &agents.NormalizedEvent{
 				ToolCall: &agents.ToolCallPayload{

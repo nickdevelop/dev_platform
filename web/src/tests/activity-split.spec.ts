@@ -232,6 +232,39 @@ describe('split message/activity log', () => {
     expect(card.find('[data-test="question-answer"]').text()).toContain('已回答: SQLite')
   })
 
+  it('renders deepseek ask_user_question in the message column as a question card', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c-dsh', kind: 'tool_call', role: 'assistant', text: 'ask_user_question', name: 'ask_user_question', callId: 'c-dsh-1',
+        input: {
+          header: '云平台',
+          question: '请选择部署目标云平台',
+          options: ['AWS', 'GCP', '阿里云'],
+          multi_select: false,
+        },
+        streaming: false,
+      },
+      { id: 'r-dsh', kind: 'tool_result', role: 'tool', text: '已回答: 阿里云', callId: 'c-dsh-1', streaming: false },
+    ]
+
+    // 1. Excluded from activity pane
+    const activityWrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    expect(activityWrapper.find('[data-test="tool-call"]').exists()).toBe(false)
+
+    // 2. Rendered in message column
+    const messageWrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'messages' },
+    })
+    const card = messageWrapper.find('[data-test="question-dialog-card"]')
+    expect(card.exists()).toBe(true)
+    expect(card.find('[data-test="question-text"]').text()).toContain('请选择部署目标云平台')
+    expect(card.text()).toContain('AWS')
+    expect(card.text()).toContain('阿里云')
+    expect(card.find('[data-test="question-answer"]').text()).toContain('已回答: 阿里云')
+  })
+
   it('shows an activity-specific empty note instead of the message one', () => {
     const wrapper = mount(MessageView, {
       props: { messages: [], capabilities: capabilities(), display: 'activity' },

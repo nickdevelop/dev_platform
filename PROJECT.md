@@ -188,7 +188,7 @@ web/src/
        • EventTurn (started)
        • EventMessage (text_delta, reasoning_delta)
        • EventThinking (思考内容流式输出)
-       • EventToolCall (大入参由 core/agents.PruneToolInput 瘦身裁剪) / EventToolResult (输出由 core/agents.SummarizeToolResult 瘦身为紧凑语义化中文摘要，如“读取了 xxx 文件”、“编辑了 xxx 文件”、“执行了 xxx 命令”，清空大 diff metadata)
+       • EventToolCall (各后端提问工具如 ask_user_question 由适配器统一归一化为标准 question 契约；大入参由 core/agents.PruneToolInput 瘦身裁剪) / EventToolResult (输出由 core/agents.SummarizeToolResult 瘦身为紧凑语义化中文摘要，如“读取了 xxx 文件”、“编辑了 xxx 文件”、“执行了 xxx 命令”，清空大 diff metadata)
        • EventTurn (ended, completed/failed/cancelled)
            │
            ▼

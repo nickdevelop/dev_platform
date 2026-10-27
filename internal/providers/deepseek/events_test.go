@@ -2,6 +2,7 @@ package deepseek
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"devplatform/internal/core/agents"
@@ -360,4 +361,77 @@ func TestEventNormalization(t *testing.T) {
 	}
 
 	_ = json.Marshal
+}
+
+func TestAskUserQuestionNormalized(t *testing.T) {
+	norm := NewSessionEventNormalizer("inst-1", "ses-1")
+
+	// Frame carrying deepseek's ask_user_question tool call
+	callFrame := []byte(`{
+		"type": "event",
+		"event": {
+			"type": "tool/call",
+			"data": {
+				"callId": "call-ask-1",
+				"name": "ask_user_question",
+				"arguments": {
+					"header": "Deployment",
+					"question": "Which cloud provider to deploy to?",
+					"options": ["AWS", "GCP", "Azure"],
+					"multi_select": false
+				}
+			}
+		}
+	}`)
+
+	evs := norm.NormalizeFrame(callFrame)
+	if len(evs) != 1 || evs[0].Type != agents.EventToolCall || evs[0].ToolCall == nil {
+		t.Fatalf("expected EventToolCall, got %+v", evs)
+	}
+
+	tc := evs[0].ToolCall
+	// Tool name should be normalized to standard "question"
+	if tc.Name != agents.StandardToolQuestion {
+		t.Errorf("tool name = %q, want %q", tc.Name, agents.StandardToolQuestion)
+	}
+
+	// Arguments should be normalized to canonical StandardQuestionPayload
+	var payload agents.StandardQuestionPayload
+	if err := json.Unmarshal(tc.Input, &payload); err != nil {
+		t.Fatalf("unmarshal input failed: %v", err)
+	}
+	if len(payload.Questions) != 1 {
+		t.Fatalf("expected 1 question item, got %d", len(payload.Questions))
+	}
+	q := payload.Questions[0]
+	if q.Header != "Deployment" || q.Question != "Which cloud provider to deploy to?" || q.Multiple {
+		t.Errorf("question item mismatch: %+v", q)
+	}
+	if len(q.Options) != 3 || q.Options[0].Label != "AWS" || q.Options[1].Label != "GCP" || q.Options[2].Label != "Azure" {
+		t.Errorf("options mismatch: %+v", q.Options)
+	}
+
+	// Tool result frame
+	resultFrame := []byte(`{
+		"type": "event",
+		"event": {
+			"type": "tool/result",
+			"data": {
+				"message": {
+					"toolCallId": "call-ask-1",
+					"isError": false,
+					"content": "AWS"
+				}
+			}
+		}
+	}`)
+
+	resEvs := norm.NormalizeFrame(resultFrame)
+	if len(resEvs) != 1 || resEvs[0].Type != agents.EventToolResult || resEvs[0].ToolResult == nil {
+		t.Fatalf("expected EventToolResult, got %+v", resEvs)
+	}
+	tr := resEvs[0].ToolResult
+	if tr.CallID != "call-ask-1" || !strings.Contains(tr.Output, "已回答: AWS") {
+		t.Errorf("tool result output = %q, want '已回答: AWS'", tr.Output)
+	}
 }
