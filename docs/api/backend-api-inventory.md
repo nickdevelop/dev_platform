@@ -118,7 +118,7 @@ end note
 
 - Cookie 为 `HttpOnly` + `SameSite=Strict`，未设置 `Secure`（平台按局域网明文 HTTP 设计）。
 - 登录失败按客户端 key 限流，错误响应不区分"未配置密码"与"密码错误"。
-- 所有 API 请求体上限 1 MiB；SSE 处理器通过 `http.NewResponseController` 清除写超时。
+- 普通 API 请求体上限 1 MiB；纯 Chat 与会话（Agent session）的图片写路由单独放宽到 32 MiB，SSE 处理器通过 `http.NewResponseController` 清除写超时。
 - WebSocket 的 `CheckOrigin` 恒为 `true`，实际防护依赖 `SameSite=Strict` 的会话 Cookie。
 
 ## 4. 接口清单
@@ -273,7 +273,7 @@ end note
 | 96 | POST | `/chats/{id}/messages/{messageId}/edit` | 编辑用户消息并截断后续消息后重发 | 会话+CSRF | 202 |
 | 97 | GET | `/chats/{id}/events` | 对话 SSE：快照、增量、消息最终态、标题/轮次、关闭 | 会话 | 200 SSE |
 
-纯 Chat 的写路由单独挂载在 32 MiB 请求体分组下（其他 API 仍为 1 MiB），以容纳最多 4 张 5 MiB 图片的 base64 载荷；鉴权与 CSRF 仍由全局中间件统一执行。
+纯 Chat 与会话（Agent session）的写路由单独挂载在 32 MiB 请求体分组下（其他 API 仍为 1 MiB），以容纳最多 4 张 5 MiB 图片的 base64 载荷；鉴权与 CSRF 仍由全局中间件统一执行。
 
 ## 5. 关键链路
 

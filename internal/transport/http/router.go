@@ -25,11 +25,11 @@ import (
 // and is rejected before it can be buffered.
 const maxRequestBodyBytes = 1 << 20
 
-// maxChatRequestBodyBytes bounds the pure-chat write routes. A user message
-// may carry up to four 5 MiB images, which base64 expands to roughly 27 MiB;
-// 32 MiB leaves room for JSON framing without weakening the limit of every
-// other API route.
-const maxChatRequestBodyBytes = 32 << 20
+// maxImageRequestBodyBytes bounds the routes whose user turn may carry
+// images: pure chat and agent sessions. A message may carry up to four 5 MiB
+// images, which base64 expands to roughly 27 MiB; 32 MiB leaves room for JSON
+// framing without weakening the limit of every other API route.
+const maxImageRequestBodyBytes = 32 << 20
 
 // limitRequestBody caps the request body a handler may read from. Reads past
 // the cap fail, so gin's binder reports the malformed request instead of the
@@ -149,8 +149,12 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			deps.AgentModels.RegisterRoutes(protected)
 		}
 		if deps.Sessions != nil {
-			deps.Sessions.RegisterRoutes(protected)
-			deps.Sessions.RegisterInteractionRoutes(protected)
+			// Session create/send turns may carry the same attached images as
+			// pure chat, so this group gets the larger cap too. It is still
+			// inside RequireSession and the global CSRF middleware.
+			sessions := authenticated.Group("", limitRequestBody(maxImageRequestBodyBytes))
+			deps.Sessions.RegisterRoutes(sessions)
+			deps.Sessions.RegisterInteractionRoutes(sessions)
 		}
 		if deps.Tasks != nil {
 			deps.Tasks.RegisterRoutes(protected)
@@ -165,7 +169,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			// Chat messages may carry images; only this group gets the larger
 			// cap. It is still inside RequireSession and the global CSRF
 			// middleware.
-			chats := authenticated.Group("", limitRequestBody(maxChatRequestBodyBytes))
+			chats := authenticated.Group("", limitRequestBody(maxImageRequestBodyBytes))
 			deps.Chats.RegisterRoutes(chats)
 		}
 	}
