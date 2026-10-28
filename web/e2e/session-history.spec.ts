@@ -34,15 +34,26 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-async function registerProject(request: APIRequestContext, csrf: string, name: string): Promise<number> {
-  const projectDir = join(workspaceRoot, `${name}-${Date.now()}-${process.pid}`)
+async function registerProject(
+  request: APIRequestContext,
+  csrf: string,
+  name: string,
+): Promise<{ id: number; name: string }> {
+  const projectName = `${name}-${Date.now()}-${process.pid}`
+  const projectDir = join(workspaceRoot, projectName)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {
     data: { path: projectDir },
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  return ((await registered.json()) as { id: number }).id
+  return { id: ((await registered.json()) as { id: number }).id, name: projectName }
+}
+
+function projectRow(page: Page, projectName: string) {
+  return page.locator('.project-row', {
+    has: page.locator('.project-name', { hasText: projectName }),
+  })
 }
 
 async function uiLogin(page: Page) {
@@ -57,10 +68,15 @@ function sessionRow(page: Page, title: string) {
   return page.locator('.session', { hasText: title })
 }
 
-async function createSession(page: Page, backendName: string, title: string) {
-  // Scoped to the selected project row: the tree renders one ＋ per
-  // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-session').click()
+async function createSession(
+  page: Page,
+  projectName: string,
+  backendName: string,
+  title: string,
+) {
+  // Scope the ＋ to the project this test just registered: earlier specs
+  // register their own projects in the same isolated workspace.
+  await projectRow(page, projectName).locator('.project-new-session').click()
   await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
   await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
   await page.locator('#first-message').fill(title)
@@ -88,16 +104,16 @@ test('a reply survives a page reload and continues in the same conversation', as
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf, 'session-history')
+  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'session-history')
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createSession(page, 'pi', 'pi-history')
+  await createSession(page, projectName, 'pi', 'pi-history')
   const conversation = await openSessionTab(page, 'pi-history')
   await send(page, 'remember this turn')
   await expect(conversation).toContainText('pi reply: remember this turn', { timeout: 20_000 })
 
-  await createSession(page, 'opencode-v2', 'oc-history')
+  await createSession(page, projectName, 'opencode-v2', 'oc-history')
   const ocConversation = await openSessionTab(page, 'oc-history')
   await send(page, 'remember this opencode turn')
   await expect(ocConversation).toContainText('opencode reply: remember this opencode turn', {
@@ -114,7 +130,8 @@ test('a reply survives a page reload and continues in the same conversation', as
 
   // Reasoning is replayed in the activity pane, above the reply.
   const expandBtn = replayed.locator('[data-test="toggle-preview-btn"]')
-  if (await expandBtn.isVisible()) {
+  await expect(expandBtn).toBeVisible()
+  if ((await expandBtn.getAttribute('aria-pressed')) === 'false') {
     await expandBtn.click()
   }
   const piThinking = replayed.locator('[data-test="activity-scroll"] [data-test="thinking"]')
@@ -131,7 +148,8 @@ test('a reply survives a page reload and continues in the same conversation', as
   const replayedOC = await openSessionTab(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
   const ocExpandBtn = replayedOC.locator('[data-test="toggle-preview-btn"]')
-  if (await ocExpandBtn.isVisible()) {
+  await expect(ocExpandBtn).toBeVisible()
+  if ((await ocExpandBtn.getAttribute('aria-pressed')) === 'false') {
     await ocExpandBtn.click()
   }
   const ocThinking = replayedOC.locator('[data-test="activity-scroll"] [data-test="thinking"]')
@@ -146,11 +164,11 @@ test('opening a session whose instance was stopped re-attaches it without any ma
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf, 'session-resume')
+  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'session-resume')
   await uiLogin(page)
   await page.goto(`/projects/${projectId}/settings`)
 
-  await createSession(page, 'pi', 'pi-resume')
+  await createSession(page, projectName, 'pi', 'pi-resume')
   const conversation = await openSessionTab(page, 'pi-resume')
   await send(page, 'first turn')
   await expect(conversation).toContainText('pi reply: first turn', { timeout: 20_000 })

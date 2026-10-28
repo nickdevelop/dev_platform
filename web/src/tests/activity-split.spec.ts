@@ -469,22 +469,33 @@ describe('activity pane floating button and in-tab popup', () => {
     return wrapper
   }
 
-  it('defaults to collapsed with a header preview button and a full-width message area', async () => {
+  it('defaults to collapsed with a right-rail preview toggle and a full-width message area', async () => {
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="conversation-scroll"]').exists()).toBe(true)
     // The message composer is in the message column.
     expect(wrapper.find('.message-column form.send').exists()).toBe(true)
-    // The activity pane is hidden by default and represented by a header preview button.
+    // The activity pane is hidden by default and represented by the right rail.
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
     const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
     expect(toggleBtn.exists()).toBe(true)
-    expect(toggleBtn.text()).toContain('预览')
-    // Preview comes before the file tree in the title row.
-    const headerTools = wrapper.findAll('.title-row .header-tool-btn')
-    expect(headerTools.map((button) => button.attributes('data-test'))).toEqual([
-      'toggle-preview-btn',
-      'toggle-filetree-btn',
-    ])
+    expect(toggleBtn.attributes('aria-pressed')).toBe('false')
+    expect(toggleBtn.attributes('title')).toBe('展开预览面板')
+    // The toggle lives in the slim right rail, not in the title row.
+    expect(wrapper.find('[data-test="chat-side-rail-right"]').exists()).toBe(true)
+    expect(wrapper.find('.title-row [data-test="toggle-preview-btn"]').exists()).toBe(false)
+    // The file tree toggle lives in the left rail and is active while docked.
+    const filetreeBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
+    expect(filetreeBtn.exists()).toBe(true)
+    expect(filetreeBtn.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="chat-side-rail-left"]').exists()).toBe(true)
+    expect(wrapper.find('.title-row [data-test="toggle-filetree-btn"]').exists()).toBe(false)
+    // The rail itself exposes a single accessible toolbar name.
+    const leftRail = wrapper.find('[data-test="chat-side-rail-left"]')
+    expect(leftRail.attributes('role')).toBe('toolbar')
+    expect(leftRail.attributes('aria-orientation')).toBe('vertical')
+    expect(leftRail.attributes('aria-label')).toBe('会话文件导航')
+    // Title row no longer carries pane tools at all.
+    expect(wrapper.findAll('.title-row .header-tool-btn')).toHaveLength(0)
   })
 
   it('opens in-tab popup on preview button click and persists expanded choice', async () => {
@@ -495,7 +506,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(false)
+    expect(toggleBtn.attributes('aria-pressed')).toBe('true')
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
@@ -509,7 +520,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await hideBtn.trigger('click')
 
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
   })
 
@@ -517,7 +528,7 @@ describe('activity pane floating button and in-tab popup', () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('true')
   })
 
   it('closes the open popup when Escape key is pressed', async () => {
@@ -529,7 +540,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
   })
 
   it('displays activity count badge on header preview button and popup title', async () => {
@@ -545,7 +556,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await flushPromises()
 
     const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
-    expect(toggleBtn.find('.mini-count').text()).toBe('2')
+    expect(toggleBtn.find('.rail-count').text()).toBe('2')
 
     await toggleBtn.trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
@@ -593,9 +604,13 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     return wrapper
   }
 
-  it('renders three columns: message column, preview column, and filetree drawer', async () => {
+  it('renders two slim rails around the message column, preview column, and filetree drawer', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
+
+    // The two rails are always present on a session.
+    expect(wrapper.find('[data-test="chat-side-rail-left"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="chat-side-rail-right"]').exists()).toBe(true)
 
     // 1st column: message area
     expect(wrapper.find('.message-column').exists()).toBe(true)
@@ -610,11 +625,26 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(fixedTab.text()).toContain('思考与工具')
     expect(fixedTab.classes()).toContain('is-active')
 
-    // 3rd column: file tree drawer (docked by default)
+    // 3rd column: file tree drawer (docked by default, next to the left rail)
     const filetree = wrapper.find('[data-test="filetree-drawer"]')
     expect(filetree.exists()).toBe(true)
     expect(filetree.classes()).toContain('filetree-docked')
     expect(filetree.text()).toContain('工作区文件')
+
+    // DOM order: left rail -> file tree -> messages -> preview -> right rail.
+    const splitChildren = Array.from(
+      wrapper.find('[data-test="conversation-split"]').element.children,
+    ).map((child) => (child as HTMLElement).className)
+    const leftIndex = splitChildren.findIndex((name) => name.includes('chat-side-rail') && name.includes('left'))
+    const filetreeIndex = splitChildren.findIndex((name) => name.includes('filetree-drawer'))
+    const messagesIndex = splitChildren.findIndex((name) => name.includes('message-column'))
+    const previewIndex = splitChildren.findIndex((name) => name.includes('preview-pane'))
+    const rightIndex = splitChildren.findIndex((name) => name.includes('chat-side-rail') && name.includes('right'))
+    expect(leftIndex).toBeGreaterThanOrEqual(0)
+    expect(leftIndex).toBeLessThan(filetreeIndex)
+    expect(filetreeIndex).toBeLessThan(messagesIndex)
+    expect(messagesIndex).toBeLessThan(previewIndex)
+    expect(previewIndex).toBeLessThan(rightIndex)
   })
 
   it('opens a file as a preview tab when selected in the file tree and auto-expands preview if collapsed', async () => {
@@ -624,7 +654,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
 
     // Preview is initially collapsed
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
 
     // Select a file from file sidebar
     const sidebar = wrapper.findComponent(FileSidebar)
@@ -751,9 +781,10 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     await flushPromises()
     expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
 
-    // Header toggle button can re-open the file tree drawer
+    // The left rail toggle can re-open the file tree drawer
     const toggleBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
     expect(toggleBtn.exists()).toBe(true)
+    expect(toggleBtn.attributes('aria-pressed')).toBe('false')
     await toggleBtn.trigger('click')
     await flushPromises()
 

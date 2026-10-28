@@ -184,6 +184,8 @@ describe('pure chat panel', () => {
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="workdir-row"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="toggle-filetree-btn"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="chat-side-rail-left"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="chat-side-rail-right"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="approval-mode-select"]').exists()).toBe(false)
   })
 
