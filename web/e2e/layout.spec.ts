@@ -161,7 +161,7 @@ test('a long session tree scrolls the sidebar and keeps the composer in view', a
   expect(metrics.composerInViewport).toBe(true)
 })
 
-test('both rails stay in view when the file tree and preview are open together', async ({
+test('the right rail stays in view when the file tree and preview are open together', async ({
   page,
   request,
 }) => {
@@ -175,8 +175,10 @@ test('both rails stay in view when the file tree and preview are open together',
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 
-  // The default file-tree drawer is docked; open the preview from the right rail.
-  const previewBtn = conversation.locator('[data-test="toggle-preview-btn"]')
+  // The default file-tree drawer is docked; both toggles share the right rail.
+  const rail = conversation.locator('[data-test="chat-side-rail-right"]')
+  await expect(rail.locator('[data-test="toggle-filetree-btn"]')).toBeVisible()
+  const previewBtn = rail.locator('[data-test="toggle-preview-btn"]')
   await expect(previewBtn).toHaveAttribute('aria-pressed', 'false')
   await previewBtn.click()
   await expect(previewBtn).toHaveAttribute('aria-pressed', 'true')
@@ -234,7 +236,7 @@ test('an activity card never adds a horizontal scroller to the activity pane', a
   await sessionRow(page, 'oc-steps').click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
-  await expect(conversation.locator('[data-test="chat-side-rail-left"]')).toBeVisible()
+  await expect(conversation.locator('[data-test="chat-side-rail-left"]')).toHaveCount(0)
   await expect(conversation.locator('[data-test="chat-side-rail-right"]')).toBeVisible()
 
   await page.locator('#message-text').fill('step group please')

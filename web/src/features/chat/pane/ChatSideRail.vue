@@ -109,21 +109,4 @@ defineProps<{
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-
-.chat-side-rail :slotted(.rail-count) {
-  position: absolute;
-  top: -5px;
-  right: -6px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border: 1.5px solid var(--color-surface);
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: var(--color-on-primary, #fff);
-  font-size: 0.56rem;
-  font-weight: 700;
-  line-height: 11px;
-  text-align: center;
-}
 </style>

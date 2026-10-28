@@ -8,13 +8,13 @@
 // confirmations and the composer, while the right pane shows only
 // thinking/tool activity as a flat list with its own independent scroller
 // (thinking/edit/shell/question fold and start expanded; other tools are a summary line).
-// A pair of slim rails surrounds the split: the left one toggles the file tree,
-// the right one toggles the activity pane and carries its count. Both toggles
-// stay visible when their panes are collapsed, so the header only carries the
-// session identity and the delete action. The preview divider drags to resize
-// the activity pane (width persisted); collapsing hides the pane entirely so the
-// messages take the full width. Below 900px the pane overlays the messages
-// instead of squeezing them.
+// A slim rail on the right of the split carries both pane toggles: the file
+// tree and the activity pane (with its count inside the pane title). Both
+// toggles stay visible when their panes are collapsed, so the header only
+// carries the session identity and the delete action. The preview divider drags
+// to resize the activity pane (width persisted); collapsing hides the pane
+// entirely so the messages take the full width. Below 900px the pane overlays
+// the messages instead of squeezing them.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../../stores/agents'
@@ -1040,80 +1040,6 @@ async function removeSession() {
           data-test="filetree-backdrop"
           @click="closeFloatingFileTree"
         />
-        <!-- Slim left rail: the file tree toggle lives here, not in the header. -->
-        <ChatSideRail side="left" label="文件" aria-label="会话文件导航">
-          <button
-            type="button"
-            class="rail-btn filetree-rail-btn"
-            :class="{ 'is-active': isFileTreeVisible }"
-            data-test="toggle-filetree-btn"
-            aria-controls="session-filetree-drawer"
-            :aria-pressed="isFileTreeVisible.toString()"
-            :title="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            :aria-label="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            @click="toggleFileTree"
-          >
-            <svg class="rail-icon" viewBox="0 0 24 24">
-              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-            </svg>
-          </button>
-        </ChatSideRail>
-
-        <!-- File tree drawer: docked next to the left rail, or floating over the messages. -->
-        <aside
-          v-if="isFileTreeVisible"
-          id="session-filetree-drawer"
-          class="filetree-drawer"
-          :class="{
-            'filetree-docked': isFileTreeDocked,
-            'filetree-floating': isFileTreeFloating,
-          }"
-          aria-label="项目文件树"
-          data-test="filetree-drawer"
-        >
-          <header class="filetree-head">
-            <div class="filetree-title">
-              <span class="title-text">工作区文件</span>
-            </div>
-            <div class="filetree-controls">
-              <button
-                type="button"
-                class="dock-btn pin-btn"
-                data-test="filetree-pin-btn"
-                :class="{ pinned: isFileTreeDocked }"
-                :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
-                :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
-                :aria-pressed="isFileTreeDocked.toString()"
-                @click="toggleFileTreePinned"
-              >
-                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="17" x2="12" y2="22" />
-                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="dock-btn collapse-btn"
-                data-test="filetree-collapse-btn"
-                title="收起文件树"
-                aria-label="收起文件树"
-                @click="setFileTreeCollapsed(true)"
-              >
-                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <div class="filetree-body">
-            <FileSidebar
-              :project-id="props.projectId"
-              :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
-              @select="onSelectWorkspaceFile"
-            />
-          </div>
-        </aside>
 
         <div class="message-column">
           <div class="conversation-area">
@@ -1435,8 +1361,79 @@ async function removeSession() {
           </div>
         </aside>
 
-        <!-- Slim right rail: the activity/preview toggle lives here, not in the header. -->
-        <ChatSideRail side="right" label="预览" aria-label="会话预览导航">
+        <!-- File tree drawer: docked next to the right rail, or floating over the messages. -->
+        <aside
+          v-if="isFileTreeVisible"
+          id="session-filetree-drawer"
+          class="filetree-drawer"
+          :class="{
+            'filetree-docked': isFileTreeDocked,
+            'filetree-floating': isFileTreeFloating,
+          }"
+          aria-label="项目文件树"
+          data-test="filetree-drawer"
+        >
+          <header class="filetree-head">
+            <div class="filetree-title">
+              <span class="title-text">工作区文件</span>
+            </div>
+            <div class="filetree-controls">
+              <button
+                type="button"
+                class="dock-btn pin-btn"
+                data-test="filetree-pin-btn"
+                :class="{ pinned: isFileTreeDocked }"
+                :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
+                :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
+                :aria-pressed="isFileTreeDocked.toString()"
+                @click="toggleFileTreePinned"
+              >
+                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="17" x2="12" y2="22" />
+                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="dock-btn collapse-btn"
+                data-test="filetree-collapse-btn"
+                title="收起文件树"
+                aria-label="收起文件树"
+                @click="setFileTreeCollapsed(true)"
+              >
+                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="filetree-body">
+            <FileSidebar
+              :project-id="props.projectId"
+              :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
+              @select="onSelectWorkspaceFile"
+            />
+          </div>
+        </aside>
+
+        <!-- Slim right rail: both pane toggles live here, not in the header. -->
+        <ChatSideRail side="right" label="面板" aria-label="会话面板导航">
+          <button
+            type="button"
+            class="rail-btn filetree-rail-btn"
+            :class="{ 'is-active': isFileTreeVisible }"
+            data-test="toggle-filetree-btn"
+            aria-controls="session-filetree-drawer"
+            :aria-pressed="isFileTreeVisible.toString()"
+            :title="isFileTreeVisible ? '收起文件树' : '打开文件树'"
+            :aria-label="isFileTreeVisible ? '收起文件树' : '打开文件树'"
+            @click="toggleFileTree"
+          >
+            <svg class="rail-icon" viewBox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
+            </svg>
+          </button>
           <button
             type="button"
             class="rail-btn preview-rail-btn"
@@ -1453,7 +1450,6 @@ async function removeSession() {
               <path d="M15 4v16" />
               <path d="M6.5 9h4M6.5 12h4M6.5 15h4" />
             </svg>
-            <span v-if="activityCount > 0" class="rail-count">{{ activityCount }}</span>
           </button>
         </ChatSideRail>
       </div>
@@ -1524,11 +1520,12 @@ async function removeSession() {
 
 .conversation-split {
   position: relative;
-  /* One source of truth for the rails: the fixed rail width plus the flex gap
-     gives the offset used by floating drawers and the mobile overlay. */
+  /* One source of truth for the rail: its fixed width plus the flex gap gives
+     the offset used by the floating drawer and the preview overlay. */
   --chat-rail-width: 34px;
   --chat-rail-gap: 0.5rem;
   --chat-rail-offset: calc(var(--chat-rail-width) + var(--chat-rail-gap));
+  --chat-filetree-min: 210px;
   /* Allows the preview to overlay when both docked panes would not fit. */
   container-type: inline-size;
   flex: 1;
@@ -1625,7 +1622,7 @@ async function removeSession() {
 
 /* Below this conversation width even the three docked columns cannot keep a
    usable message area. The preview becomes an overlay, like the mobile layout,
-   while the rails stay reachable. The split itself is the size container, so
+   while the rail stays reachable. The split itself is the size container, so
    collapsing the sidebar or opening a wider window restores the docked view. */
 @container (max-width: 900px) {
   .preview-pane {
@@ -1639,6 +1636,21 @@ async function removeSession() {
     z-index: 25;
     box-shadow: -4px 0 24px rgba(15, 23, 42, 0.16);
     animation: activitySlideIn 0.18s ease-out;
+  }
+
+  /* With both panes docked, the preview overlays the messages only; keep the
+     file tree on screen and stop the preview from covering it. */
+  .conversation-split.filetree-docked:not(.preview-collapsed) .filetree-drawer.filetree-docked {
+    flex-basis: var(--chat-filetree-min);
+  }
+
+  .conversation-split.filetree-docked:not(.preview-collapsed) .preview-pane {
+    right: calc(var(--chat-rail-offset) + var(--chat-filetree-min) + var(--chat-rail-gap));
+    width: min(
+      32rem,
+      calc(100% - var(--chat-rail-offset) - var(--chat-filetree-min) - var(--chat-rail-gap))
+    ) !important;
+    max-width: calc(100% - var(--chat-rail-offset) - var(--chat-filetree-min) - var(--chat-rail-gap));
   }
 
   .preview-resizer {
@@ -1776,9 +1788,9 @@ async function removeSession() {
 /* Third Column: File Tree Drawer */
 .filetree-backdrop {
   position: absolute;
-  /* Leave the left rail clickable: the floating drawer starts after it. */
-  left: var(--chat-rail-offset);
-  right: 0;
+  /* Leave the right rail clickable: the floating drawer starts before it. */
+  left: 0;
+  right: var(--chat-rail-offset);
   top: 0;
   bottom: 0;
   background: rgba(15, 23, 42, 0.28);
@@ -1809,7 +1821,7 @@ async function removeSession() {
 .filetree-drawer.filetree-docked {
   /* Shrink before the message column becomes unusable when both panes are open. */
   flex: 0 1 260px;
-  min-width: 210px;
+  min-width: var(--chat-filetree-min);
   max-width: 320px;
   height: 100%;
   position: relative;
@@ -1819,18 +1831,18 @@ async function removeSession() {
 .filetree-drawer.filetree-floating {
   position: absolute;
   top: 0;
-  left: var(--chat-rail-offset);
+  right: var(--chat-rail-offset);
   bottom: 0;
   width: 290px;
   z-index: 40;
-  border-radius: 0 8px 8px 0;
-  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
+  border-radius: 8px 0 0 8px;
+  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.18);
   animation: drawerSlideIn 0.18s ease-out;
 }
 
 @keyframes drawerSlideIn {
   from {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
   to {
     transform: translateX(0);

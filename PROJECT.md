@@ -123,7 +123,7 @@ web/src/
   │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令多源补全与执行分发路由（内置/原生/压缩）
   │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护
   │     │     ├── interactions/  ── 权限确认卡片、表单队列、审批事件派发
-  │     │     ├── pane/          ── 会话左右 34px 细导航（ChatSideRail）、右侧活动面板（思考/工具/文件预览）折叠与宽度拖拽、左侧文件树停靠/浮出、`useActivityPane` 视图状态
+  │     │     ├── pane/          ── 会话右侧 34px 细导航（ChatSideRail，文件树/预览双入口）、右侧活动面板（思考/工具/文件预览）折叠与宽度拖拽、右侧文件树停靠/浮出、`useActivityPane` 视图状态
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
@@ -148,7 +148,7 @@ web/src/
      - **两级分类**：严格参照 `ProjectTree` 规范（高度统一的分组行 Header、SVG 矢量旋转折叠箭头、hover 浮现的紧凑操作按钮、会话级二级项）。
      - **一级分类**：直接参照 `ProjectSessionItem` 的两行紧凑卡片排版规范（Row 1 徽标/状态 + 标题截断；Row 2 属性标签 + 时间；内边距统一 `px-2 py-1`，选中态统一采用主题色发光阴影与微边框高亮），覆盖任务、提示词与服务器列表。
    - **折叠/展开交互按钮**：全平台统一采用 24×24px 方圆角微按钮（`var(--radius, 6px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
-   - **会话级双侧细导航栏**：项目会话对话区左右各设 34px 竖向细导航——左侧控制文件树，右侧控制「思考与工具 / 文件预览」面板；使用 26×26px 图标按钮、竖排微标签与 Tooltip，面板收起后入口常驻。展开状态以 active 样式与 `aria-pressed` 表达，按钮不得再放回会话标题行。组件位于 `features/chat/pane/ChatSideRail.vue`，状态仍由 `useActivityPane`（localStorage）管理；该组件带会话业务语义，禁止下沉到 `shared/ui/`。文件树停靠与预览同时展开时，预览按会话区容器宽度自动转为覆盖层，避免把右轨挤出视口；消息列最小宽度 300px，文件树与预览可分别收缩至 210px / 300px。
+   - **会话级右侧细导航栏**：项目会话对话区右侧设 34px 竖向细导航，集中承载「文件树」与「思考与工具 / 文件预览」两个入口；使用 26×26px 图标按钮、竖排微标签与 Tooltip，面板收起后入口常驻。展开状态以 active 样式与 `aria-pressed` 表达，按钮不得再放回会话标题行，预览入口不显示活动数量角标。组件位于 `features/chat/pane/ChatSideRail.vue`，状态仍由 `useActivityPane`（localStorage）管理；该组件带会话业务语义，禁止下沉到 `shared/ui/`。文件树与预览均停靠右侧；两者同时展开时，预览按会话区容器宽度自动转为覆盖消息列的覆盖层，文件树保持可见，避免把右轨挤出视口；消息列最小宽度 300px，文件树与预览可分别收缩至 210px / 300px。
 3. **样式管理与视觉风格**：
    - 全局引入 Tailwind CSS，预置 Slate/Zinc 为中性调色板，Blue 为 Primary 主色，Emerald/Amber/Red 为语义状态色。
    - 视觉风格采用现代扁平化设计（Flat Design），组件圆角统一设定为轻微小圆角（`rounded: 6px`），消除厚重投影。
@@ -203,7 +203,7 @@ web/src/
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
    - 问答交互工具归入主对话流（MessageView display="messages"），作为交互卡片展示提问与选项；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
-   - 右侧活动面板（display="activity"，由右轨预览开关控制）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要；左侧细导航栏控制文件树停靠/浮出
+   - 右侧活动面板（display="activity"，由右轨预览开关控制）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要；同一右轨的文件树开关控制文件树停靠/浮出
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 
