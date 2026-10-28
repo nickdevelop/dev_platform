@@ -708,6 +708,89 @@ func TestAdapterSessionModelTrackingAndHistory(t *testing.T) {
 	}
 }
 
+// TestSendMessageImageUsesDSHMediaType pins the image content-block shape
+// dsh's session/prompt schema requires: mediaType, data and optional name.
+// Sending mimeType (or omitting mediaType) makes dsh reject every image turn.
+func TestSendMessageImageUsesDSHMediaType(t *testing.T) {
+	promptCh := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/session/prompt" {
+			http.NotFound(w, r)
+			return
+		}
+		var req rpcRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		args, _ := req.Payload.Args.(map[string]any)
+		request, _ := args["request"].(map[string]any)
+		promptCh <- request
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(rpcResponse{
+			Type:  "server-response",
+			RPCID: req.RPCID,
+			Result: rpcResult{
+				OK:    true,
+				Value: mustJSON(map[string]any{"accepted": true}),
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "dsh-auth=test-auth-cookie")
+	adapter := New(Options{
+		ProcessLauncher: func(context.Context) (*Process, error) {
+			return &Process{client: client, exitDone: make(chan struct{})}, nil
+		},
+	})
+
+	ref := agents.SessionRef{
+		InstanceID: "inst-dsh-test",
+		Backend:    agents.BackendDeepSeek,
+		SessionID:  "ses-test",
+	}
+	err := adapter.SendMessage(context.Background(), ref, agents.SendMessageRequest{
+		Text: "look at this screenshot",
+		Images: []agents.ImageAttachment{{
+			ID:        "img-1",
+			Name:      "shot.png",
+			MediaType: "image/png",
+			Data:      "aGVsbG8=",
+			Size:      5,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("SendMessage failed: %v", err)
+	}
+
+	prompt := <-promptCh
+	content, ok := prompt["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content = %#v, want text + image blocks", prompt["content"])
+	}
+	block, ok := content[1].(map[string]any)
+	if !ok {
+		t.Fatalf("image block = %#v, want object", content[1])
+	}
+	if block["type"] != "image" {
+		t.Errorf("type = %v, want image", block["type"])
+	}
+	if block["mediaType"] != "image/png" {
+		t.Errorf("mediaType = %v, want image/png", block["mediaType"])
+	}
+	if block["data"] != "aGVsbG8=" {
+		t.Errorf("data = %v, want aGVsbG8=", block["data"])
+	}
+	if block["name"] != "shot.png" {
+		t.Errorf("name = %v, want shot.png", block["name"])
+	}
+	if _, ok := block["mimeType"]; ok {
+		t.Errorf("image block must not carry mimeType: %#v", block)
+	}
+}
+
 func TestAdapterClose(t *testing.T) {
 	exitDone := make(chan struct{})
 	adapter := New(Options{

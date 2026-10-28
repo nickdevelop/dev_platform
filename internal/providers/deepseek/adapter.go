@@ -620,11 +620,17 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		})
 	}
 	for _, img := range message.Images {
-		contentBlocks = append(contentBlocks, map[string]any{
-			"type":     "image",
-			"data":     img.Data,
-			"mimeType": img.MediaType,
-		})
+		// dsh's session/prompt schema names the image MIME field mediaType;
+		// mimeType is not part of the content block and fails validation.
+		block := map[string]any{
+			"type":      "image",
+			"mediaType": img.MediaType,
+			"data":      img.Data,
+		}
+		if img.Name != "" {
+			block["name"] = img.Name
+		}
+		contentBlocks = append(contentBlocks, block)
 	}
 
 	req := map[string]any{
