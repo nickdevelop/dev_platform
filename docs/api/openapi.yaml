@@ -1741,6 +1741,133 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /chat-events/{uuid}:
+    get:
+      summary: Connect to pure-chat multiplexed client event bus stream
+      description: >-
+        Streams events for all chats subscribed to this client bus UUID as Server-Sent Events (text/event-stream).
+      operationId: connectChatEventBus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Server-Sent Event stream of chat events.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /chat-events/{uuid}/subscriptions:
+    post:
+      summary: Subscribe a chat to the client event bus
+      description: >-
+        Attaches a conversation to the client event bus and returns its current snapshot.
+      operationId: subscribeChatEventBus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chatId]
+              properties:
+                chatId:
+                  type: integer
+      responses:
+        '200':
+          description: Chat snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Chat not found.
+    get:
+      summary: List chat subscriptions on the client event bus
+      description: Lists all chat IDs currently subscribed to the given event bus.
+      operationId: listChatEventBusSubscriptions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          description: Unique client event bus identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of subscribed chat IDs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: array
+                    items:
+                      type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /chat-events/{uuid}/subscriptions/{id}:
+    delete:
+      summary: Unsubscribe a chat from the client event bus
+      description: Detaches a conversation from the client event bus.
+      operationId: unsubscribeChatEventBus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Successfully unsubscribed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /projects/{id}/sessions/{sessionId}/commands:
     get:
       summary: List slash commands and skills for the session

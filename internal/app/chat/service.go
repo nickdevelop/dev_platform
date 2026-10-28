@@ -63,6 +63,7 @@ type Service struct {
 	models    ModelResolver
 	completer Completer
 	manager   *runManager
+	eventBus  *EventBusManager
 
 	baseCtx   context.Context
 	cancel    context.CancelFunc
@@ -86,6 +87,8 @@ func NewServiceWithRepository(repo Repository, models ModelResolver, opts ...Opt
 		baseCtx:   baseCtx,
 		cancel:    cancel,
 	}
+	service.eventBus = NewEventBusManager(service)
+	service.manager.onBroadcast = service.eventBus.Broadcast
 	for _, opt := range opts {
 		opt(service)
 	}
@@ -737,6 +740,15 @@ func (s *Service) snapshot(chatID uint, run *runView) (Event, error) {
 			Truncated:    truncated,
 		},
 	}, nil
+}
+
+// Snapshot builds and returns the current conversation snapshot.
+func (s *Service) Snapshot(chatID uint) (*Snapshot, error) {
+	ev, err := s.snapshot(chatID, s.manager.view(s.manager.currentRun(chatID)))
+	if err != nil {
+		return nil, err
+	}
+	return ev.Snapshot, nil
 }
 
 func (s *Service) publishSnapshot(chatID uint) error {

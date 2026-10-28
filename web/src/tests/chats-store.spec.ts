@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useChatsStore } from '../stores/chats'
 import { installTestCSRF, testCSRFToken } from './csrf-fixture'
 import type { Chat, ChatMessage, ChatSnapshot } from '../api/chats'
+import { closeChatBus, resetChatBusId } from '../features/chat/pure/ChatEventBusClient'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -99,6 +100,8 @@ function stubFetch(handler: (url: string, init?: RequestInit) => unknown) {
 }
 
 beforeEach(() => {
+  resetChatBusId()
+  closeChatBus()
   setActivePinia(createPinia())
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
@@ -106,6 +109,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  closeChatBus()
   vi.unstubAllGlobals()
 })
 
@@ -119,7 +123,7 @@ describe('chats store stream mapping', () => {
     await chats.openChat(1)
 
     const source = FakeEventSource.instances[0]
-    expect(source.url).toBe('/api/chats/1/events')
+    expect(source.url).toContain('/api/chat-events/')
     source.dispatch('snapshot', { type: 'snapshot', chatId: 1, timestamp: '', snapshot: snapshot() })
 
     expect(chats.activeId).toBe(1)

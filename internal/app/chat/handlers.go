@@ -37,6 +37,12 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		chats.POST("/:id/messages/:messageId/edit", s.handleEdit)
 		chats.GET("/:id/events", s.handleEvents)
 	}
+
+	// Chat EventBus multiplexed streaming routes.
+	r.GET("/chat-events/:uuid", s.handleBusEvents)
+	r.POST("/chat-events/:uuid/subscriptions", s.handleBusSubscribe)
+	r.DELETE("/chat-events/:uuid/subscriptions/:id", s.handleBusUnsubscribe)
+	r.GET("/chat-events/:uuid/subscriptions", s.handleBusListSubscriptions)
 }
 
 type errorResponse struct {
@@ -420,3 +426,83 @@ func groupID(c *gin.Context) (uint, bool) {
 	}
 	return uint(value), true
 }
+
+// chatBusSubscribeRequest is the JSON payload for attaching a chat to a client event bus.
+type chatBusSubscribeRequest struct {
+	ChatID uint `json:"chatId"`
+}
+
+// handleBusEvents establishes the multiplexed SSE connection for a client UUID in pure chat.
+func (s *Service) handleBusEvents(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	c.Writer.Flush()
+
+	_ = s.eventBus.StreamBus(c.Request.Context(), uuid, c.Writer, func() { c.Writer.Flush() })
+}
+
+// handleBusSubscribe registers a chat with a client event bus and returns its current snapshot.
+func (s *Service) handleBusSubscribe(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	var req chatBusSubscribeRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.ChatID == 0 {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	snap, err := s.eventBus.SubscribeChat(c.Request.Context(), uuid, req.ChatID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, snap)
+}
+
+// handleBusUnsubscribe removes a chat subscription from an event bus.
+func (s *Service) handleBusUnsubscribe(c *gin.Context) {
+	uuid := c.Param("uuid")
+	id, ok := chatID(c)
+	if !ok || uuid == "" {
+		return
+	}
+
+	if err := s.eventBus.UnsubscribeChat(uuid, id); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// handleBusListSubscriptions lists active chat subscriptions for an event bus.
+func (s *Service) handleBusListSubscriptions(c *gin.Context) {
+	uuid := c.Param("uuid")
+	if uuid == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	subs, err := s.eventBus.ListSubscriptions(uuid)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"subscriptions": subs})
+}
+

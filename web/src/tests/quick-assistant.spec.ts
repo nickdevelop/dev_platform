@@ -9,6 +9,7 @@ import { useModelsStore } from '../stores/models'
 import { useQuickAssistantStore } from '../stores/quickAssistant'
 import { installTestCSRF } from './csrf-fixture'
 import type { Chat, ChatMessage, ChatSnapshot } from '../api/chats'
+import { closeChatBus, resetChatBusId } from '../features/chat/pure/ChatEventBusClient'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -162,6 +163,8 @@ async function mountLauncher() {
 }
 
 beforeEach(() => {
+  resetChatBusId()
+  closeChatBus()
   localStorage.clear()
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
@@ -169,6 +172,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  closeChatBus()
   vi.unstubAllGlobals()
 })
 
@@ -200,7 +204,7 @@ describe('quick assistant launcher', () => {
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
 
-    expect(FakeEventSource.instances[0]?.url).toBe('/api/chats/1/events')
+    expect(FakeEventSource.instances[0]?.url).toContain('/api/chat-events/')
     FakeEventSource.instances[0].dispatch('snapshot', {
       type: 'snapshot',
       chatId: 1,
@@ -385,7 +389,8 @@ describe('quick assistant launcher', () => {
     await flushPromises()
 
     expect(quick.chatId).toBe(202)
-    expect(FakeEventSource.instances.at(-1)?.url).toBe('/api/chats/202/events')
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0]?.url).toContain('/api/chat-events/')
   })
 
   it('remembers new chat draft intent across closing and reopening without sending messages', async () => {

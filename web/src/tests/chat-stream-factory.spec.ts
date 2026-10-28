@@ -1,8 +1,10 @@
-// Each pure-chat store owns its own EventSource. The main Chat page and the
-// quick-assistant popover must be able to stream different conversations at the
-// same time; closing one stream cannot close the other.
+// Multiplexed pure-chat stream factory. The main Chat page and the
+// quick-assistant popover share the window-level ChatEventBusClient and can
+// stream different conversations simultaneously over a single SSE connection.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createChatStream, type ChatStreamStore } from '../features/chat/pure/useChatStream'
+import { closeChatBus, resetChatBusId, setChatBusId } from '../features/chat/pure/ChatEventBusClient'
+import { installTestCSRF } from './csrf-fixture'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -35,6 +37,7 @@ class FakeEventSource {
 
   close() {
     this.closed = true
+    this.readyState = FakeEventSource.CLOSED
   }
 }
 
@@ -52,17 +55,54 @@ function makeStore() {
   return { store, calls }
 }
 
+installTestCSRF()
+
 beforeEach(() => {
+  resetChatBusId()
+  setChatBusId('test-bus-factory')
+  closeChatBus()
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
+
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (String(url).includes('/subscriptions') && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { chatId: number }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: async () => ({
+          conversation: { id: body.chatId, groupId: 1, title: 'Chat ' + body.chatId },
+          messages: [],
+          running: false,
+          truncated: false,
+        }),
+      } as unknown as Response
+    }
+    if (init?.method === 'DELETE') {
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'Content-Type': 'application/json' }),
+        json: async () => ({ success: true }),
+      } as unknown as Response
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: async () => ({}),
+    } as unknown as Response
+  })
 })
 
 afterEach(() => {
+  closeChatBus()
   vi.unstubAllGlobals()
 })
 
 describe('chat stream factory', () => {
-  it('keeps one EventSource per store and closes only its own stream', () => {
+  it('shares one EventSource connection across stores on the bus', () => {
     const first = makeStore()
     const second = makeStore()
     const firstStream = createChatStream(first.store)
@@ -71,17 +111,14 @@ describe('chat stream factory', () => {
     firstStream.open(1)
     secondStream.open(2)
 
-    expect(FakeEventSource.instances.map((source) => source.url)).toEqual([
-      '/api/chats/1/events',
-      '/api/chats/2/events',
-    ])
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0].url).toBe('/api/chat-events/test-bus-factory')
 
     firstStream.close()
-    expect(FakeEventSource.instances[0].closed).toBe(true)
-    expect(FakeEventSource.instances[1].closed).toBe(false)
+    // Bus connection remains active because secondStream is still listening
+    expect(FakeEventSource.instances[0].closed).toBe(false)
 
     secondStream.close()
-    expect(FakeEventSource.instances[1].closed).toBe(true)
   })
 
   it('passes the conversation id with delta and turn callbacks', () => {

@@ -55,8 +55,9 @@ type chatState struct {
 }
 
 type runManager struct {
-	mu     sync.Mutex
-	states map[uint]*chatState
+	mu          sync.Mutex
+	states      map[uint]*chatState
+	onBroadcast func(Event)
 }
 
 func newRunManager() *runManager {
@@ -142,6 +143,9 @@ func (m *runManager) setUsage(run *runState, usage *Usage) {
 }
 
 func (m *runManager) view(run *runState) *runView {
+	if run == nil {
+		return nil
+	}
 	state := m.state(run.chatID)
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -232,6 +236,9 @@ func (m *runManager) subscribe(chatID uint, build func(*runView) (Event, error))
 }
 
 func (m *runManager) broadcastLocked(state *chatState, event Event) {
+	if m.onBroadcast != nil {
+		m.onBroadcast(event)
+	}
 	for ch := range state.subscribers {
 		select {
 		case ch <- event:

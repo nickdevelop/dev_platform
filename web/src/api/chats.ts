@@ -173,6 +173,38 @@ export function chatEventsPath(id: number): string {
   return `/api/chats/${id}/events`
 }
 
+// chatEventBusPath is the multiplexed SSE endpoint for pure chat.
+export function chatEventBusPath(uuid: string): string {
+  return `/api/chat-events/${encodeURIComponent(uuid)}`
+}
+
+export function subscribeChatEventBus(
+  uuid: string,
+  chatId: number,
+): Promise<ChatSnapshot> {
+  return mutate<ChatSnapshot>('POST', `/chat-events/${encodeURIComponent(uuid)}/subscriptions`, {
+    chatId,
+  })
+}
+
+export function unsubscribeChatEventBus(
+  uuid: string,
+  chatId: number,
+): Promise<{ success: boolean }> {
+  return mutate<{ success: boolean }>(
+    'DELETE',
+    `/chat-events/${encodeURIComponent(uuid)}/subscriptions/${encodeURIComponent(String(chatId))}`,
+  )
+}
+
+export function listChatEventBusSubscriptions(
+  uuid: string,
+): Promise<{ subscriptions: number[] }> {
+  return get<{ subscriptions: number[] }>(
+    `/chat-events/${encodeURIComponent(uuid)}/subscriptions`,
+  )
+}
+
 export function listChatGroups(): Promise<ChatGroupList> {
   return get<ChatGroupList>('/chat-groups')
 }

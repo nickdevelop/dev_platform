@@ -67,7 +67,7 @@
 | **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史、文件树遍历。 | `service.go`（项目生命周期）、`files.go`（工作区文件树与内容读取）、`git.go` / `git_status.go`（Git CLI 操作集成） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
-| **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现。 |
+| **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
 | **`tasks/`** | 计划任务与自动化调度引擎。支持标准 Cron 表达式与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。 | `handlers.go`（WebSocket 升级与同源拦截）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
@@ -289,9 +289,11 @@ web/src/
    - 委托 modelconfig 解析模型服务地址与 API Key
    - 调用 completer.go 发起带 context 的流式 HTTP 调用
                     │
-                    ▼ (SSE 数据切分)
-3. 响应推送与标题自动推导
-   - stream.go 以 SSE 格式逐块推给前端并持久化 Assistant 消息
+                    ▼ (SSE 数据切分与事件总线分发)
+3. 多路复用事件推送 (internal/app/chat/event_bus.go)
+   - stream.go 以 SSE 格式逐块切分并持久化 Assistant 消息
+   - 经 event_bus.go 聚合至客户端级单一 SSE 管道 (/api/chat-events/:uuid)
+   - 前端通过 ChatEventBusClient 维护单条长连接，主面板与快捷助手等多组件基于 chatId 动态订阅，消除每会话独立连接开销
    - 若对话无标题，触发 core/textutil/title.go 自动提炼标题并落库
 ```
 

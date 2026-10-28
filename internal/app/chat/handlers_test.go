@@ -125,3 +125,76 @@ func TestChatRoutes(t *testing.T) {
 		t.Fatalf("get after delete = %d", recorder.Code)
 	}
 }
+
+func TestChatBusRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	completer := &fakeCompleter{}
+	service, _, _ := testService(t, completer)
+	router := gin.New()
+	service.RegisterRoutes(router)
+
+	// Create a chat first
+	chat, err := service.Create(context.Background(), CreateInput{
+		ModelID: 1,
+		Text:    "test chat bus",
+	})
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+
+	busUUID := "bus-handlers-test-uuid"
+
+	// 1. POST /chat-events/:uuid/subscriptions
+	subPayload := `{"chatId":` + strconv.FormatUint(uint64(chat.ID), 10) + `}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/chat-events/"+busUUID+"/subscriptions", strings.NewReader(subPayload))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("subscribe code = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var snap Snapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &snap); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	if snap.Conversation.ID != chat.ID {
+		t.Errorf("got snapshot chat ID %d, want %d", snap.Conversation.ID, chat.ID)
+	}
+
+	// 2. GET /chat-events/:uuid/subscriptions
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/chat-events/"+busUUID+"/subscriptions", nil)
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("list subs code = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+	var listResp struct {
+		Subscriptions []uint `json:"subscriptions"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list subs: %v", err)
+	}
+	if len(listResp.Subscriptions) != 1 || listResp.Subscriptions[0] != chat.ID {
+		t.Errorf("got subscriptions %v, want [%d]", listResp.Subscriptions, chat.ID)
+	}
+
+	// 3. DELETE /chat-events/:uuid/subscriptions/:id
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodDelete, "/chat-events/"+busUUID+"/subscriptions/"+strconv.FormatUint(uint64(chat.ID), 10), nil)
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unsubscribe code = %d, body = %s", recorder.Code, recorder.Body.String())
+	}
+
+	// Verify subscriptions empty
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/chat-events/"+busUUID+"/subscriptions", nil)
+	router.ServeHTTP(recorder, request)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list subs after delete: %v", err)
+	}
+	if len(listResp.Subscriptions) != 0 {
+		t.Errorf("expected 0 subs, got %v", listResp.Subscriptions)
+	}
+}

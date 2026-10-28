@@ -10,6 +10,7 @@ import { useChatsStore } from '../stores/chats'
 import { useModelsStore } from '../stores/models'
 import { installTestCSRF, testCSRFToken } from './csrf-fixture'
 import type { Chat, ChatMessage, ChatSnapshot } from '../api/chats'
+import { closeChatBus, resetChatBusId } from '../features/chat/pure/ChatEventBusClient'
 
 class FakeEventSource {
   static instances: FakeEventSource[] = []
@@ -161,12 +162,15 @@ async function mountPanel(chatId?: number) {
 }
 
 beforeEach(() => {
+  resetChatBusId()
+  closeChatBus()
   FakeEventSource.instances = []
   vi.stubGlobal('EventSource', FakeEventSource)
   installTestCSRF()
 })
 
 afterEach(() => {
+  closeChatBus()
   vi.unstubAllGlobals()
 })
 
