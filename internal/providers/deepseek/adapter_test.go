@@ -146,6 +146,16 @@ func newMockDSHServer(t *testing.T) (*httptest.Server, *Client) {
 						},
 					},
 				}
+			case "compaction/compact":
+				val = map[string]any{"success": true}
+			case "commands/execute":
+				val = map[string]any{
+					"commandId": "cmd-123",
+					"result": map[string]any{
+						"kind": "success",
+						"text": "Compacted history",
+					},
+				}
 			case "commands/list":
 				val = []any{
 					map[string]any{
@@ -476,19 +486,13 @@ func TestAdapterPermissionsAndCommands(t *testing.T) {
 		t.Fatalf("expected ErrReplyExpired, got %v", err)
 	}
 
-	// 2. Command discoverer
-	commands, err := adapter.ListCommands(context.Background(), ref)
-	if err != nil {
-		t.Fatalf("ListCommands failed: %v", err)
+	// 2. Session compactor
+	compactor, ok := any(adapter).(agents.SessionCompactor)
+	if !ok {
+		t.Fatalf("adapter does not implement agents.SessionCompactor")
 	}
-	if len(commands) != 2 {
-		t.Fatalf("ListCommands returned %d items, want 2 (1 slash command, 1 skill)", len(commands))
-	}
-	if commands[0].Name != "compact" || commands[0].Kind != agents.CommandKindSlash {
-		t.Errorf("command 0 = %+v, want compact (command)", commands[0])
-	}
-	if commands[1].Name != "websearch" || commands[1].Kind != agents.CommandKindSkill {
-		t.Errorf("command 1 = %+v, want websearch (skill)", commands[1])
+	if err := compactor.CompactSession(context.Background(), ref, "summarize history"); err != nil {
+		t.Fatalf("CompactSession failed: %v", err)
 	}
 
 	// 3. ListModels

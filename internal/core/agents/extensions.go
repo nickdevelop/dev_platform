@@ -50,27 +50,49 @@ type RawEventOpener interface {
 	OpenRawEvents(ctx context.Context) (io.ReadCloser, error)
 }
 
-// CommandKind describes the nature of an agent-provided command.
-type CommandKind string
+// CommandCategory describes the nature of a platform-designed command.
+type CommandCategory string
 
 const (
-	CommandKindSlash  CommandKind = "command"
-	CommandKindSkill  CommandKind = "skill"
-	CommandKindPrompt CommandKind = "prompt"
+	// CommandCategoryAction indicates a functional command (e.g. compact) that triggers
+	// a dedicated session capability rather than sending a prompt to the LLM.
+	CommandCategoryAction CommandCategory = "action"
+	// CommandCategoryPrompt indicates a prompt injection command that injects a
+	// prompt template into the conversation turn loop.
+	CommandCategoryPrompt CommandCategory = "prompt"
 )
 
-// AgentCommand is a slash command, skill, or prompt template exposed by an agent backend.
-type AgentCommand struct {
-	Name         string      `json:"name"`
-	Description  string      `json:"description"`
-	Kind         CommandKind `json:"kind"`
-	ArgumentHint string      `json:"argumentHint,omitempty"`
+// PlatformCommand is a slash command designed and managed by the platform.
+// Commands are not synchronized from downstream agent backends; the platform owns
+// their definition, categorization, and dispatch logic.
+type PlatformCommand struct {
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Category     CommandCategory `json:"category"`
+	ArgumentHint string          `json:"argumentHint,omitempty"`
 }
 
-// CommandDiscoverer is the optional extension for agent backends that expose
-// slash commands, skills, or prompt templates to the platform.
-type CommandDiscoverer interface {
-	ListCommands(ctx context.Context, ref SessionRef) ([]AgentCommand, error)
+// AgentCommand is an alias for PlatformCommand for compatibility across the codebase.
+type AgentCommand = PlatformCommand
+
+// CommandInvocation specifies a slash command invocation dispatched to a backend.
+type CommandInvocation struct {
+	Name      string `json:"name"`
+	RawInput  string `json:"rawInput"`
+	Arguments string `json:"arguments"`
+}
+
+// CommandExecutionResult holds the immediate outcome of a non-streaming command execution.
+type CommandExecutionResult struct {
+	Handled bool   `json:"handled"`
+	Output  string `json:"output,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// SessionCompactor is the extension for agent backends that support
+// manual context compaction.
+type SessionCompactor interface {
+	CompactSession(ctx context.Context, ref SessionRef, instructions string) error
 }
 
 // SessionTurnDetector is the optional extension for agent backends that can

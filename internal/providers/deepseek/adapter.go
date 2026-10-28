@@ -20,7 +20,7 @@ var (
 	_ agents.SessionTurnDetector = (*Adapter)(nil)
 	_ agents.HistoryReader       = (*Adapter)(nil)
 	_ agents.PermissionReplier   = (*Adapter)(nil)
-	_ agents.CommandDiscoverer   = (*Adapter)(nil)
+	_ agents.SessionCompactor    = (*Adapter)(nil)
 	_ agents.Diagnostician       = (*Adapter)(nil)
 	_ agents.BackendCloser       = (*Adapter)(nil)
 )

@@ -64,7 +64,7 @@
 
 | 模块目录 | 核心职责与功能边界 | 关键入口与核心文件 | 协作与边界约束 |
 |---|---|---|---|
-| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
+| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史、文件树遍历。 | `service.go`（项目生命周期）、`files.go`（工作区文件树与内容读取）、`git.go` / `git_status.go`（Git CLI 操作集成） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
@@ -88,7 +88,7 @@
 
 | 模块目录 | 核心职责与关键文件 |
 |---|---|
-| **`agents/`** | **Agent 统一核心契约**：<br>• `contracts.go`：`BackendID`、`AgentAdapter` 主接口、能力声明 `Capabilities`、标准消息/模型载荷。<br>• `events.go`：类型化轮次 `EventTurn`、标准交互事件 `EventInteraction`、流式增量事件。<br>• `extensions.go`：可选扩展接口（`PermissionReplier` 审批、`HistoryReader` 历史回放、`ServiceController` 机器服务、`RawEventOpener`）。<br>• `descriptor.go` & `registry.go`：后端元数据描述符、`Catalog` 目录树与全局适配器注册表。 |
+| **`agents/`** | **Agent 统一核心契约**：<br>• `contracts.go`：`BackendID`、`AgentAdapter` 主接口、能力声明 `Capabilities`、标准消息/模型载荷。<br>• `events.go`：类型化轮次 `EventTurn`、标准交互事件 `EventInteraction`、流式增量事件。<br>• `extensions.go`：平台命令模型（`PlatformCommand`、`CommandCategory`：action/prompt）与可选扩展接口（`SessionCompactor` 上下文压缩、`PermissionReplier` 审批、`HistoryReader` 历史回放、`ServiceController` 机器服务、`RawEventOpener`；命令由平台统一定义，不再由下游 agent 同步）。<br>• `descriptor.go` & `registry.go`：后端元数据描述符、`Catalog` 目录树与全局适配器注册表。 |
 | **`platform/`** | **操作系统差异化抽象**：<br>• `platform.go`：统一导出 `Process`、`PTY`、`Terminal` 端口接口。<br>• `new_unix.go` / `new_windows.go`：Linux/Unix 与 Windows 的条件编译实现。<br>• 子包 `policy/`、`fake/`、`unix/`：跨平台路径策略、测试伪造平台实现。 |
 | **`textutil/`** | **通用文本工具**：<br>• `title.go`：依据首条消息智能截断与推导会话标题。 |
 
@@ -118,7 +118,7 @@ web/src/
   │           └── index.ts   ── 统一入口导出
   ├── features/        ── 业务领域垂直拆分目录：
   │     ├── chat/      ── Agent 工作台（核心）
-  │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令
+  │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令多源补全与执行分发路由（内置/原生/压缩）
   │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护
   │     │     ├── interactions/  ── 权限确认卡片、表单队列、审批事件派发
   │     │     ├── pane/          ── 右侧活动面板（思考/工具/文件树）折叠与宽度拖拽
@@ -126,7 +126,7 @@ web/src/
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
   │     │     └── quick/         ── 快捷助手横向方形工具栏、解绑 480×600 弹窗与自由拖拽定位
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue）、会话 Tab
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
   │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）

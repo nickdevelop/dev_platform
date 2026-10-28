@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Leftmost category rail. Only the project category is available; the chat
-// category is reserved for a later release and is shown disabled. Every category
-// is a route link so the rail is always an exit from the current area: the
+// Leftmost category rail. The project and pure-chat categories are the two primary
+// work areas, so chat sits directly below the project entry; the remaining centers
+// follow. Every category is a route link so the rail is always an exit from the
+// current area: the
 // settings center hides the project sidebar, and without a project link here the
 // user would be trapped in /settings. The footer links to the settings center and
 // logs out; collapsing the middle column is not the rail's job any more — the shell
@@ -156,6 +157,21 @@ function onSettingsClick() {
       </RouterLink>
       <RouterLink
         class="category"
+        :class="{ active: chatActive }"
+        title="对话"
+        :aria-current="chatActive ? 'page' : undefined"
+        :to="chatDestination"
+        @click="onChatClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
+          />
+        </svg>
+        <span>对话</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
         :class="{ active: tasksActive }"
         title="任务管理"
         :aria-current="tasksActive ? 'page' : undefined"
@@ -195,21 +211,6 @@ function onSettingsClick() {
           <line x1="12" y1="19" x2="20" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
         <span>终端</span>
-      </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: chatActive }"
-        title="对话"
-        :aria-current="chatActive ? 'page' : undefined"
-        :to="chatDestination"
-        @click="onChatClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
-          />
-        </svg>
-        <span>对话</span>
       </RouterLink>
     </div>
 

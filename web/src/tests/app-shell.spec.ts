@@ -263,19 +263,21 @@ describe('three-pane app shell', () => {
     expect(router.currentRoute.value.name).toBe('session')
   })
 
-  it('shows an inline icon on every first-level rail entry', async () => {
+  it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
-    // 项目 / 任务 / 提示词 / 终端 / Chat / 设置 / 退出 each carry one inline SVG icon.
+    // 项目 / 对话 / 任务 / 提示词 / 终端 / 设置 / 退出 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
     expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
+    // Chat is a first-level peer immediately below projects, not nested in the
+    // project tree, because both are primary work areas.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
+      '对话',
       '任务',
       '提示词',
       '终端',
-      '对话',
       '设置',
       '退出',
     ])

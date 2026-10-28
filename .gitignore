@@ -18,6 +18,7 @@ playwright-report/
 /bin/
 *.test
 *.out
+*.db
 
 # release.sh output (packages + SHA256SUMS)
 /release/

@@ -1457,9 +1457,21 @@ func validateRef(ref *agents.SessionRef, inst instances.Instance) error {
 	return nil
 }
 
-// ListCommands returns the commands and skills supported by the session's agent backend.
-// If the backend adapter does not implement agents.CommandDiscoverer, it returns an empty list.
-func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID string) ([]agents.AgentCommand, error) {
+// PlatformCommands defines all slash commands designed and supported by the platform.
+// Commands are categorized into action (functional) and prompt (prompt injection) commands.
+// Currently, only the functional "compact" command is implemented.
+var PlatformCommands = []agents.PlatformCommand{
+	{
+		Name:         "compact",
+		Description:  "压缩当前会话上下文历史，减少 Token 占用",
+		Category:     agents.CommandCategoryAction,
+		ArgumentHint: "[可选说明]",
+	},
+}
+
+// ListCommands returns the platform-designed commands available for the session.
+// Commands are owned and defined by the platform; they are not synchronized from downstream agents.
+func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID string) ([]agents.PlatformCommand, error) {
 	row, err := s.store.GetByID(sessionID)
 	if err != nil {
 		return nil, err
@@ -1468,15 +1480,58 @@ func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID st
 		return nil, ErrSessionNotFound
 	}
 
-	backendID := agents.BackendID(row.Backend)
-	adapter, err := s.adapter(backendID)
+	cmds := make([]agents.PlatformCommand, len(PlatformCommands))
+	copy(cmds, PlatformCommands)
+	return cmds, nil
+}
+
+// ExecuteCommand dispatches a platform-designed command for the session.
+// For functional action commands like "compact", it delegates to the backend's SessionCompactor.
+func (s *Service) ExecuteCommand(ctx context.Context, projectID uint, sessionID string, invocation agents.CommandInvocation) (*agents.CommandExecutionResult, error) {
+	row, err := s.store.GetByID(sessionID)
 	if err != nil {
 		return nil, err
 	}
+	if row.ProjectID != projectID {
+		return nil, ErrSessionNotFound
+	}
 
-	discoverer, ok := adapter.(agents.CommandDiscoverer)
+	switch strings.ToLower(invocation.Name) {
+	case "compact":
+		if err := s.CompactSession(ctx, projectID, sessionID, invocation.Arguments); err != nil {
+			return &agents.CommandExecutionResult{
+				Handled: false,
+				Error:   err.Error(),
+			}, err
+		}
+		return &agents.CommandExecutionResult{
+			Handled: true,
+			Output:  "会话上下文已成功压缩。",
+		}, nil
+	default:
+		return nil, fmt.Errorf("%w: unknown or unsupported command %q", ErrUnsupportedCapability, invocation.Name)
+	}
+}
+
+// CompactSession requests manual context compaction on the session's agent backend.
+func (s *Service) CompactSession(ctx context.Context, projectID uint, sessionID string, instructions string) error {
+	row, err := s.store.GetByID(sessionID)
+	if err != nil {
+		return err
+	}
+	if row.ProjectID != projectID {
+		return ErrSessionNotFound
+	}
+
+	backendID := agents.BackendID(row.Backend)
+	adapter, err := s.adapter(backendID)
+	if err != nil {
+		return err
+	}
+
+	compactor, ok := adapter.(agents.SessionCompactor)
 	if !ok {
-		return []agents.AgentCommand{}, nil
+		return fmt.Errorf("%w: session compaction", ErrUnsupportedCapability)
 	}
 
 	ref := agents.SessionRef{
@@ -1486,5 +1541,5 @@ func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID st
 		Title:      row.Title,
 	}
 
-	return discoverer.ListCommands(ctx, ref)
+	return compactor.CompactSession(ctx, ref, instructions)
 }

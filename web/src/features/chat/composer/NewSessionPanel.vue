@@ -21,7 +21,7 @@ import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './dropdown/useComposerDropdown'
-import { BuiltInSlashSource } from './dropdown/sources/BuiltInSlashSource'
+import { ProviderSlashSource } from './dropdown/sources/ProviderSlashSource'
 import { WorkspaceFileSource } from './dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './sessionMentionResolver'
@@ -211,7 +211,11 @@ const selectedEnabled = computed(
 // Dropdown autocomplete for slash commands, workspace files (@) and session mentions (@)
 const dropdown = useComposerDropdown({
   sources: [
-    new BuiltInSlashSource(),
+    new ProviderSlashSource(
+      () => selectedProjectId.value ?? 0,
+      () => '',
+      () => selectedBackend.value || '',
+    ),
     new WorkspaceFileSource({
       projectId: () => selectedProjectId.value ?? 0,
     }),

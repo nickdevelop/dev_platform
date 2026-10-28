@@ -1870,9 +1870,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /projects/{id}/sessions/{sessionId}/commands:
     get:
-      summary: List slash commands and skills for the session
+      summary: List platform-designed slash commands for the session
       description: >-
-        Returns slash commands and skills offered by the session's agent backend.
+        Returns slash commands designed and owned by the platform (categorized into action and prompt).
       operationId: listSessionCommands
       security:
         - cookieAuth: []
@@ -1903,6 +1903,121 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/AgentCommand'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions/{sessionId}/command:
+    post:
+      summary: Execute a native slash command on the session's agent backend
+      description: Dispatches a native slash command directly to the session backend.
+      operationId: executeSessionCommand
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                rawInput:
+                  type: string
+                arguments:
+                  type: string
+      responses:
+        '200':
+          description: Command execution outcome.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [handled]
+                properties:
+                  handled:
+                    type: boolean
+                  output:
+                    type: string
+                  error:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session in this project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions/{sessionId}/compact:
+    post:
+      summary: Request context compaction on the session's agent backend
+      description: Requests manual context compaction to reduce conversation token usage.
+      operationId: compactSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                instructions:
+                  type: string
+      responses:
+        '200':
+          description: Compaction requested successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4966,15 +5081,17 @@ components:
       additionalProperties: false
     AgentCommand:
       type: object
-      required: [name, description, source]
+      required: [name, description, category]
       properties:
         name:
           type: string
         description:
           type: string
-        source:
+        category:
           type: string
-          enum: [command, skill]
+          enum: [action, prompt]
+        argumentHint:
+          type: string
       additionalProperties: false
     StepDef:
       type: object

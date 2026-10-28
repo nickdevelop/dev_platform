@@ -30,6 +30,8 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.DELETE("/projects/:id/sessions/:sessionId", s.handleDelete)
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
+	r.POST("/projects/:id/sessions/:sessionId/command", s.handleExecuteCommand)
+	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 
 	// EventBus multiplexed streaming routes.
@@ -451,6 +453,76 @@ func (s *Service) handleCommands(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, commandsResponse{Commands: commands})
+}
+
+type executeCommandRequest struct {
+	Name      string `json:"name"`
+	RawInput  string `json:"rawInput"`
+	Arguments string `json:"arguments"`
+}
+
+type compactSessionRequest struct {
+	Instructions string `json:"instructions"`
+}
+
+// handleExecuteCommand executes a slash command on the session's agent backend.
+func (s *Service) handleExecuteCommand(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	var req executeCommandRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if req.Name == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	invocation := agents.CommandInvocation{
+		Name:      req.Name,
+		RawInput:  req.RawInput,
+		Arguments: req.Arguments,
+	}
+
+	result, err := s.ExecuteCommand(c.Request.Context(), id, sessionID, invocation)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// handleCompactSession requests context compaction on the session's agent backend.
+func (s *Service) handleCompactSession(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	var req compactSessionRequest
+	_ = c.ShouldBindJSON(&req)
+
+	if err := s.CompactSession(c.Request.Context(), id, sessionID, req.Instructions); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

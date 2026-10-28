@@ -15,6 +15,7 @@ export function useComposerDropdown(options: UseComposerDropdownOptions) {
 
   const activeMatch = ref<TriggerMatch | null>(null)
   const activeSource = ref<DropdownSource | null>(null)
+  let itemSourceMap = new Map<string, DropdownSource>()
 
   let abortController: AbortController | null = null
   let isComposing = false
@@ -34,25 +35,28 @@ export function useComposerDropdown(options: UseComposerDropdownOptions) {
     const cursor = textarea.selectionStart ?? 0
     const textVal = textarea.value
 
-    let matchedSource: DropdownSource | null = null
-    let matchedTrigger: TriggerMatch | null = null
+    const matched: Array<{ source: DropdownSource; match: TriggerMatch }> = []
+    let primaryTrigger: string | null = null
 
     for (const source of options.sources) {
       const match = source.match(textVal, cursor)
       if (match) {
-        matchedSource = source
-        matchedTrigger = match
-        break
+        if (primaryTrigger === null) {
+          primaryTrigger = match.trigger
+        }
+        if (match.trigger === primaryTrigger) {
+          matched.push({ source, match })
+        }
       }
     }
 
-    if (!matchedSource || !matchedTrigger) {
+    if (matched.length === 0) {
       close()
       return
     }
 
-    activeSource.value = matchedSource
-    activeMatch.value = matchedTrigger
+    activeSource.value = matched[0].source
+    activeMatch.value = matched[0].match
 
     abortController?.abort()
     const ac = new AbortController()
@@ -60,12 +64,34 @@ export function useComposerDropdown(options: UseComposerDropdownOptions) {
 
     loading.value = true
     try {
-      const loaded = await matchedSource.load(matchedTrigger, ac.signal)
+      const results = await Promise.all(
+        matched.map(async ({ source, match }) => {
+          try {
+            const loaded = await source.load(match, ac.signal)
+            return { source, items: loaded }
+          } catch {
+            return { source, items: [] as readonly DropdownItem[] }
+          }
+        }),
+      )
       if (ac.signal.aborted) return
 
-      items.value = loaded
+      const combined: DropdownItem[] = []
+      const map = new Map<string, DropdownSource>()
+
+      for (const res of results) {
+        for (const item of res.items) {
+          if (!map.has(item.id)) {
+            map.set(item.id, res.source)
+            combined.push(item)
+          }
+        }
+      }
+
+      itemSourceMap = map
+      items.value = combined
       selectedIndex.value = 0
-      isOpen.value = loaded.length > 0
+      isOpen.value = combined.length > 0
     } catch {
       if (!ac.signal.aborted) {
         items.value = []
@@ -83,6 +109,7 @@ export function useComposerDropdown(options: UseComposerDropdownOptions) {
     abortController = null
     isOpen.value = false
     items.value = []
+    itemSourceMap = new Map()
     selectedIndex.value = 0
     activeMatch.value = null
     activeSource.value = null
@@ -92,8 +119,10 @@ export function useComposerDropdown(options: UseComposerDropdownOptions) {
   function selectItem(index: number) {
     const item = items.value[index]
     const match = activeMatch.value
-    const source = activeSource.value
-    if (!item || !match || !source) return
+    if (!item || !match) return
+
+    const source = itemSourceMap.get(item.id) || activeSource.value
+    if (!source) return
 
     const replacement = source.select(item, match)
     const currentText = options.text.value

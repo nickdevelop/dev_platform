@@ -29,10 +29,10 @@ describe('ProviderSlashSource', () => {
     expect(source.match('/review args', 12)).toBeNull()
   })
 
-  it('loads commands from API and caches results', async () => {
-    const mockCommands: sessionsApi.AgentCommand[] = [
-      { name: 'review', description: '代码审查', kind: 'command', argumentHint: '[path]' },
-      { name: 'opencode', description: '加载技能', kind: 'skill' },
+  it('loads platform commands from API and caches results', async () => {
+    const mockCommands: sessionsApi.PlatformCommand[] = [
+      { name: 'compact', description: '压缩上下文', category: 'action', argumentHint: '[可选说明]' },
+      { name: 'review', description: '注入代码审查提示词', category: 'prompt' },
     ]
 
     const apiSpy = vi.spyOn(sessionsApi, 'listSessionCommands').mockResolvedValue({
@@ -48,23 +48,23 @@ describe('ProviderSlashSource', () => {
     expect(apiSpy).toHaveBeenCalledTimes(1)
     expect(items.length).toBe(2)
     expect(items[0]).toEqual({
-      id: 'provider:review',
-      label: '/review',
-      detail: '代码审查 · [path]',
+      id: 'platform:compact',
+      label: '/compact',
+      detail: '压缩上下文 · [可选说明]',
       kind: 'command',
-      badge: 'Agent',
-      replacement: '/review ',
+      badge: '功能',
+      replacement: '/compact ',
     })
-    expect(items[1].badge).toBe('技能')
+    expect(items[1].badge).toBe('提示词')
 
     // Second load with filter should hit cache
     const filtered = await source.load(
-      { trigger: '/', query: 'open', start: 0, end: 5, atLineStart: true },
+      { trigger: '/', query: 'comp', start: 0, end: 5, atLineStart: true },
       new AbortController().signal,
     )
     expect(apiSpy).toHaveBeenCalledTimes(1)
     expect(filtered.length).toBe(1)
-    expect(filtered[0].label).toBe('/opencode')
+    expect(filtered[0].label).toBe('/compact')
 
     // Clear cache allows fresh API fetch
     source.clearCache('ses-abc')

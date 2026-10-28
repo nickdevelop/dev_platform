@@ -39,19 +39,17 @@ import ImagePreviewModal from './rendering/ImagePreviewModal.vue'
 import QuestionQueue from './interactions/QuestionQueue.vue'
 import ComposerDropdown from './composer/dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './composer/dropdown/useComposerDropdown'
-import { BuiltInSlashSource } from './composer/dropdown/sources/BuiltInSlashSource'
-import { ProviderSlashSource } from './composer/dropdown/sources/ProviderSlashSource'
+import { ProviderSlashSource as PlatformSlashSource } from './composer/dropdown/sources/ProviderSlashSource'
 import { WorkspaceFileSource } from './composer/dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './composer/dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
-import { getSessionHistory } from '../../api/sessions'
+import { getSessionHistory, executeCommand, compactSession } from '../../api/sessions'
 import type { ImageAttachment } from '../../api/messageTypes'
 import {
   VALID_IMAGE_TYPES,
   imageAttachmentFromFile,
   imageValidationError,
 } from './composer/imageFiles'
-import { detectBuiltInCommand } from './composer/builtInCommands'
 import {
   type ApprovalMode,
   getPersistedApprovalMode,
@@ -190,10 +188,10 @@ function onResizerMouseDown(e: MouseEvent) {
 function resetComposerHeight() {
   textareaHeight.value = null
 }
-const slashSource = new BuiltInSlashSource()
-const providerSlashSource = new ProviderSlashSource(
+const platformSlashSource = new PlatformSlashSource(
   () => props.projectId,
   () => props.sessionId,
+  () => activeSession.value?.backend,
 )
 const fileSource = new WorkspaceFileSource(() => props.projectId)
 const sessionSource = new SessionMentionSource(
@@ -202,7 +200,7 @@ const sessionSource = new SessionMentionSource(
 )
 
 const dropdown = useComposerDropdown({
-  sources: [slashSource, providerSlashSource, fileSource, sessionSource],
+  sources: [platformSlashSource, fileSource, sessionSource],
   text: messageText,
   onApplyText(newText, newCursor) {
     messageText.value = newText
@@ -717,7 +715,7 @@ watch(
         isRestoringDraft = false
       })
     }
-    providerSlashSource.clearCache(newSessionId)
+    platformSlashSource.clearCache(newSessionId)
   },
 )
 const {
@@ -864,39 +862,49 @@ async function stop() {
   busy.value = false
 }
 
-async function handleBuiltInCommand(input: string): Promise<boolean> {
-  const builtIn = detectBuiltInCommand(input)
-  if (!builtIn) return false
+async function handleSlashCommand(input: string): Promise<boolean> {
+  const trimmed = input.trim()
+  if (!trimmed.startsWith('/')) return false
 
-  switch (builtIn.command.action) {
-    case 'stop':
-      await stop()
+  const session = activeSession.value
+  if (!session) return false
+
+  const spaceIndex = trimmed.indexOf(' ')
+  const name = spaceIndex === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIndex)
+  const args = spaceIndex === -1 ? '' : trimmed.slice(spaceIndex + 1).trim()
+  const lowerName = name.toLowerCase()
+
+  const cmd = platformSlashSource.findCommand(lowerName)
+
+  // 1. 功能类命令（Action Commands）：平台当前仅设计并支持 compact
+  if (lowerName === 'compact') {
+    busy.value = true
+    try {
+      await compactSession(props.projectId, session.id, args)
+      toolNotice.value = '已向后端发送会话历史上下文压缩指令。'
       messageText.value = ''
+      busy.value = false
       return true
-    case 'new':
-      messageText.value = ''
-      await router.push({ name: 'session-new', params: { projectId: String(props.projectId) } })
+    } catch (err: unknown) {
+      toolNotice.value = `压缩执行失败: ${err instanceof Error ? err.message : String(err)}`
+      busy.value = false
       return true
-    case 'model':
-      if (builtIn.args) {
-        selectedModel.value = builtIn.args
-        toolNotice.value = `已切换模型为: ${builtIn.args}`
-      } else {
-        toolNotice.value = `当前模型: ${selectedModel.value || '默认'}`
-      }
-      messageText.value = ''
-      return true
-    case 'help':
-      toolNotice.value = '可用内置命令: /new (新建会话), /stop (停止任务), /model <名称> (切换模型), /help (帮助)'
-      messageText.value = ''
-      return true
-    default:
-      return false
+    }
   }
+
+  // 2. 提示词注入类命令（Prompt Commands）：未来平台扩展提示词模板注入时在此拦截处理
+  if (cmd?.category === 'prompt') {
+    return false
+  }
+
+  // 3. 未知或不支持的斜杠命令拦截提示
+  toolNotice.value = `未知命令 /${name}。当前平台支持的命令：/compact`
+  messageText.value = ''
+  return true
 }
 
 async function onSubmit() {
-  if (await handleBuiltInCommand(messageText.value)) {
+  if (await handleSlashCommand(messageText.value)) {
     return
   }
   if (isRunning.value) {

@@ -495,3 +495,101 @@ func splitModelRef(model string) (provider, modelID string) {
 	}
 	return "", model
 }
+
+// getCommands queries the child's available slash commands, prompt templates, and skills.
+func (c *rpcChild) getCommands(ctx context.Context) ([]rpcCommandInfo, error) {
+	response, err := c.conn.request(ctx, rpcCommand{Type: rpcCommandGetCommands}, rpcCommandTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if !response.Success {
+		return nil, fmt.Errorf("pi: get_commands rejected: %s", redactSecrets(response.Error))
+	}
+	var data rpcGetCommandsData
+	if err := json.Unmarshal(response.Data, &data); err != nil {
+		return nil, fmt.Errorf("pi: decode get_commands response: %w", err)
+	}
+	return data.Commands, nil
+}
+
+// compact asks pi to compact context history with optional instructions.
+func (c *rpcChild) compact(ctx context.Context, instructions string) error {
+	// Context compaction may involve a full LLM summarization pass over long history,
+	// so we allow up to 120 seconds rather than the default 30-second unary timeout.
+	timeout := 120 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		if remain := time.Until(deadline); remain > 0 && remain < timeout {
+			timeout = remain
+		}
+	}
+
+	response, err := c.conn.request(ctx, rpcCommand{Type: rpcCommandCompact, CustomInstructions: instructions}, timeout)
+	if err != nil {
+		return err
+	}
+	if !response.Success {
+		errStr := response.Error
+		lowerErr := strings.ToLower(errStr)
+		// Pi rejects compaction with an error when history is too small or already compacted:
+		// "Nothing to compact (session too small)" or "Already compacted".
+		// In platform semantics, these are benign no-op outcomes indicating the context
+		// is already compact, not an execution failure.
+		if strings.Contains(lowerErr, "nothing to compact") ||
+			strings.Contains(lowerErr, "session too small") ||
+			strings.Contains(lowerErr, "already compacted") {
+			return nil
+		}
+
+		return fmt.Errorf("pi: compact rejected: %s", redactSecrets(errStr))
+	}
+	return nil
+}
+
+// executeCommand runs a slash command or thinking command directly.
+func (c *rpcChild) executeCommand(ctx context.Context, name, rawInput, arguments string) (*agents.CommandExecutionResult, error) {
+	if name == "thinking" {
+		level := strings.TrimSpace(arguments)
+		if level == "" {
+			level = "medium"
+		}
+		response, err := c.conn.request(ctx, rpcCommand{Type: rpcCommandSetThinkingLevel, Level: level}, rpcCommandTimeout)
+		if err != nil {
+			return nil, err
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("pi: set_thinking_level rejected: %s", redactSecrets(response.Error))
+		}
+		return &agents.CommandExecutionResult{
+			Handled: true,
+			Output:  fmt.Sprintf("Thinking level set to %s", level),
+		}, nil
+	}
+
+	promptMsg := rawInput
+	if promptMsg == "" {
+		promptMsg = "/" + name
+		if arguments != "" {
+			promptMsg += " " + arguments
+		}
+	}
+
+	response, err := c.conn.request(ctx, rpcCommand{
+		Type:    rpcCommandPrompt,
+		Message: promptMsg,
+	}, rpcCommandTimeout)
+	if err != nil {
+		return nil, err
+	}
+	if !response.Success {
+		return nil, fmt.Errorf("pi: command prompt rejected: %s", redactSecrets(response.Error))
+	}
+
+	var data struct {
+		Disposition string `json:"disposition"`
+	}
+	_ = json.Unmarshal(response.Data, &data)
+
+	return &agents.CommandExecutionResult{
+		Handled: data.Disposition == "handled",
+	}, nil
+}

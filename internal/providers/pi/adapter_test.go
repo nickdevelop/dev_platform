@@ -1,14 +1,17 @@
 package pi
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -867,5 +870,88 @@ func TestPiDetectTurn(t *testing.T) {
 	if running {
 		t.Errorf("DetectTurn with idle child = true, want false")
 	}
+}
+
+func TestPiCompactSession(t *testing.T) {
+	sessionDir := t.TempDir()
+	adapter := newRPCAdapter(t, sessionDir, "")
+	ctx := context.Background()
+
+	compactor, ok := any(adapter).(agents.SessionCompactor)
+	if !ok {
+		t.Fatalf("Pi adapter does not implement agents.SessionCompactor")
+	}
+
+	inst, _ := rpcInstance(t, adapter)
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Wrong backend rejection
+	badRef := *ref
+	badRef.Backend = "opencode-v2"
+	if err := compactor.CompactSession(ctx, badRef, ""); err == nil {
+		t.Errorf("CompactSession with wrong backend should fail")
+	}
+
+	// 2. Test child.compact with benign error strings vs fatal errors
+	runCompactCase := func(errStr string, expectErr bool) {
+		parser := newParser("inst", "sess", nil)
+		connReader, responseWriter := io.Pipe()
+		commandReader, connWriter := io.Pipe()
+		conn := newRPCConn(connWriter, parser, func(agents.NormalizedEvent) {})
+		commands := bufio.NewReader(commandReader)
+		go func() { _ = conn.readLoop(connReader) }()
+		defer func() {
+			_ = connReader.Close()
+			_ = responseWriter.Close()
+			_ = commandReader.Close()
+			_ = connWriter.Close()
+		}()
+
+		child := &rpcChild{conn: conn}
+		done := make(chan error, 1)
+		go func() {
+			done <- child.compact(ctx, "test instructions")
+		}()
+
+		rawCmd := readStubLine(t, commands)
+		var cmdMap map[string]any
+		if err := json.Unmarshal(rawCmd, &cmdMap); err != nil {
+			t.Fatal(err)
+		}
+		cmdID, _ := cmdMap["id"].(string)
+
+		if errStr == "" {
+			writeStubResponse(t, responseWriter, cmdID, "compact")
+		} else {
+			resp := map[string]any{
+				"type":    "response",
+				"id":      cmdID,
+				"command": "compact",
+				"success": false,
+				"error":   errStr,
+			}
+			data, _ := json.Marshal(resp)
+			_, _ = responseWriter.Write(append(data, '\n'))
+		}
+
+		resErr := <-done
+		if expectErr && resErr == nil {
+			t.Errorf("compact with error %q expected failure, got nil", errStr)
+		} else if !expectErr && resErr != nil {
+			t.Errorf("compact with error %q expected success, got %v", errStr, resErr)
+		}
+	}
+
+	// Success case
+	runCompactCase("", false)
+	// Benign "session too small" -> should return nil
+	runCompactCase("Nothing to compact (session too small)", false)
+	// Benign "already compacted" -> should return nil
+	runCompactCase("Already compacted", false)
+	// Fatal error -> should fail
+	runCompactCase("Fatal LLM failure", true)
 }
 

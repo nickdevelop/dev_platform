@@ -612,6 +612,75 @@ func sessionPath(sessionID string) string {
 	return "/api/session/" + url.PathEscape(sessionID)
 }
 
+// CommandRecord describes a command exposed by the OpenCode server.
+type CommandRecord struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// SkillRecord describes a skill exposed by the OpenCode server.
+type SkillRecord struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ListCommands fetches native commands from the OpenCode server.
+func (c *Client) ListCommands(ctx context.Context) ([]CommandRecord, error) {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/api/command", nil, nil, &raw); err != nil {
+		return nil, err
+	}
+	var list []CommandRecord
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list, nil
+	}
+	var wrapped struct {
+		Data []CommandRecord `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil {
+		return wrapped.Data, nil
+	}
+	return nil, nil
+}
+
+// ListSkills fetches available skills from the OpenCode server.
+func (c *Client) ListSkills(ctx context.Context) ([]SkillRecord, error) {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/api/skill", nil, nil, &raw); err != nil {
+		return nil, err
+	}
+	var list []SkillRecord
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list, nil
+	}
+	var wrapped struct {
+		Data []SkillRecord `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &wrapped); err == nil {
+		return wrapped.Data, nil
+	}
+	return nil, nil
+}
+
+// ExecuteCommand executes a slash command on the OpenCode session.
+func (c *Client) ExecuteCommand(ctx context.Context, sessionID, name, text string) error {
+	body := struct {
+		Name string `json:"name"`
+		Text string `json:"text,omitempty"`
+	}{
+		Name: name,
+		Text: text,
+	}
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/command", nil, body, nil)
+}
+
+// CompactSession requests context compaction on the OpenCode session.
+func (c *Client) CompactSession(ctx context.Context, sessionID string) error {
+	body := map[string]any{}
+	return c.do(ctx, http.MethodPost, sessionPath(sessionID)+"/compact", nil, body, nil)
+}
+
 // do performs one non-streaming request, applying the default timeout when the
 // caller has no deadline, enforcing a response-size bound, and surfacing non-2xx
 // responses as *APIError.

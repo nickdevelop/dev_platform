@@ -18,6 +18,9 @@ const (
 	rpcCommandGetState           = "get_state"
 	rpcCommandSetSessionName     = "set_session_name"
 	rpcCommandGetAvailableModels = "get_available_models"
+	rpcCommandGetCommands        = "get_commands"
+	rpcCommandCompact            = "compact"
+	rpcCommandSetThinkingLevel   = "set_thinking_level"
 )
 
 // rpcCommand is the wire shape of every command the adapter sends. The
@@ -41,6 +44,12 @@ type rpcCommand struct {
 	// set_model: the provider and model id to switch to.
 	Provider string `json:"provider,omitempty"`
 	ModelID  string `json:"modelId,omitempty"`
+
+	// compact: custom instructions for manual compaction.
+	CustomInstructions string `json:"customInstructions,omitempty"`
+
+	// set_thinking_level: thinking / reasoning level.
+	Level string `json:"level,omitempty"`
 }
 
 // rpcResponse is one stdout response record. A successful response repeats the
@@ -73,6 +82,19 @@ type rpcModelData struct {
 	Provider      string   `json:"provider"`
 	ContextWindow int      `json:"contextWindow"`
 	Input         []string `json:"input"`
+}
+
+// rpcCommandInfo is one command entry in a get_commands response.
+type rpcCommandInfo struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Source       string `json:"source"`
+	ArgumentHint string `json:"argumentHint,omitempty"`
+}
+
+// rpcGetCommandsData is the get_commands response data body.
+type rpcGetCommandsData struct {
+	Commands []rpcCommandInfo `json:"commands"`
 }
 
 // qualifyModelID ensures a model id is prefixed with its provider name.

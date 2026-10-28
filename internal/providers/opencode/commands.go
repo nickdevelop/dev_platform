@@ -2,37 +2,32 @@ package opencode
 
 import (
 	"context"
+	"fmt"
 
 	"devplatform/internal/core/agents"
 )
 
-var _ agents.CommandDiscoverer = (*Adapter)(nil)
+var _ agents.SessionCompactor = (*Adapter)(nil)
 
-// ListCommands returns the built-in slash commands supported across the platform.
-func (a *Adapter) ListCommands(ctx context.Context, ref agents.SessionRef) ([]agents.AgentCommand, error) {
-	commands := []agents.AgentCommand{
-		{
-			Name:        "new",
-			Description: "新建并切换到全新会话",
-			Kind:        agents.CommandKindSlash,
-		},
-		{
-			Name:        "stop",
-			Description: "停止当前正在运行的 Agent 任务",
-			Kind:        agents.CommandKindSlash,
-		},
-		{
-			Name:         "model",
-			Description:  "切换当前会话所使用的模型",
-			Kind:         agents.CommandKindSlash,
-			ArgumentHint: "[model-name]",
-		},
-		{
-			Name:        "help",
-			Description: "查看可用命令与快捷操作提示",
-			Kind:        agents.CommandKindSlash,
-		},
+// CompactSession requests context compaction on the OpenCode server.
+// According to the platform command design, compact is a functional action command
+// defined by the platform domain layer and implemented by the adapter.
+func (a *Adapter) CompactSession(ctx context.Context, ref agents.SessionRef, instructions string) error {
+	if ref.Backend != agents.BackendOpenCodeV2 {
+		return fmt.Errorf("opencode: session backend %q is not opencode-v2", ref.Backend)
 	}
 
-	return commands, nil
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return err
+	}
+
+	if err := inst.client.CompactSession(ctx, ref.SessionID); err != nil {
+		return fmt.Errorf("opencode: compact session %q: %w", ref.SessionID, err)
+	}
+
+	return nil
 }

@@ -305,14 +305,19 @@ export function sessionEventsPath(
   return lastEventId ? `${base}?lastEventId=${encodeURIComponent(lastEventId)}` : base
 }
 
-export type CommandKind = 'command' | 'skill' | 'prompt'
+export type CommandCategory = 'action' | 'prompt'
 
-export interface AgentCommand {
+// PlatformCommand defines a command designed and managed by the platform.
+// Commands are categorized into action (functional, e.g. compact) and prompt (prompt injection).
+export interface PlatformCommand {
   name: string
   description: string
-  kind: CommandKind
+  category: CommandCategory
   argumentHint?: string
 }
+
+// AgentCommand is an alias for PlatformCommand for codebase compatibility.
+export type AgentCommand = PlatformCommand
 
 export interface SessionCommandsResponse {
   commands: AgentCommand[]
@@ -325,5 +330,43 @@ export function listSessionCommands(
 ): Promise<SessionCommandsResponse> {
   return get<SessionCommandsResponse>(
     `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/commands`,
+  )
+}
+
+export interface CommandExecutionResult {
+  handled: boolean
+  output?: string
+  error?: string
+}
+
+export interface ExecuteCommandPayload {
+  name: string
+  rawInput?: string
+  arguments?: string
+}
+
+// POST /api/projects/{id}/sessions/{sessionId}/command
+export function executeCommand(
+  projectId: number,
+  sessionId: string,
+  payload: ExecuteCommandPayload,
+): Promise<CommandExecutionResult> {
+  return mutate<CommandExecutionResult>(
+    'POST',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/command`,
+    payload,
+  )
+}
+
+// POST /api/projects/{id}/sessions/{sessionId}/compact
+export function compactSession(
+  projectId: number,
+  sessionId: string,
+  instructions?: string,
+): Promise<{ ok: boolean }> {
+  return mutate<{ ok: boolean }>(
+    'POST',
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/compact`,
+    { instructions: instructions || '' },
   )
 }
