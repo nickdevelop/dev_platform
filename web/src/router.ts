@@ -24,6 +24,7 @@ import AgentSettings from './features/settings/AgentSettings.vue'
 import TasksView from './features/tasks/TasksView.vue'
 import PromptsView from './features/prompts/PromptsView.vue'
 import TerminalWorkspace from './features/terminal/TerminalWorkspace.vue'
+import ProxySettings from './features/settings/ProxySettings.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -70,6 +71,7 @@ export function createAppRouter() {
               { path: 'appearance', name: 'settings-appearance', component: AppearanceSettings },
               { path: 'models', name: 'settings-models', component: ModelSettings },
               { path: 'agents', name: 'settings-agents', component: AgentSettings },
+              { path: 'proxies', name: 'settings-proxies', component: ProxySettings },
             ],
           },
           {

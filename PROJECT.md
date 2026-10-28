@@ -13,6 +13,7 @@
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗续接最近快捷对话或新建对话；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
+6. **服务代理与 Demo 预览**：提供统一的动态 ContextPath 网关，支持将服务器上的静态文件目录（Directory Serving）或本地监听端口的 HTTP 服务（Port Reverse Proxy）通过平台端口以独立 ContextPath（`/proxy/:alias/`）直接暴露；免登录公开访问，支持外部快速分享与查看 demo，全协议透传并支持 WebSocket 升级（完美兼容 Vite/Webpack 等开发工具的 HMR 热更新）。
 
 ---
 
@@ -23,13 +24,13 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v29，含 Agent 模型快照表与快捷助手固定分组） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v31，含 Agent 模型快照表与快捷助手固定分组及服务代理映射表 `service_proxies`） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (653 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (691 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
 
 ---
 
@@ -77,7 +78,8 @@
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题、快捷助手开关、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v30 迁移链，含 `agent_models` / `agent_model_catalogs` 与 `chat_groups` 助手扩展字段及 `chats.system_prompt`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v31 迁移链，含 `agent_models` / `agent_model_catalogs` 与 `chat_groups` 助手扩展字段、`chats.system_prompt` 及服务代理映射表 `service_proxies`）。 | `database.go`（SQLite 连接）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -128,7 +130,8 @@ web/src/
   │     │     └── quick/         ── 快捷助手横向方形工具栏、解绑 480×600 弹窗与自由拖拽定位
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
-  │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置
+  │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
+  │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置、服务代理设置（ProxySettings.vue）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）
   │     ├── tasks/     ── 定时任务管理、执行面板、任务专属对话弹窗（TasksView.vue）
   │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue）
@@ -343,6 +346,35 @@ web/src/
    - 新建对话在指定助手下创建，系统提示词隐式注入模型上下文且不污染消息列表
    - 彻底解除历史固定分组锁定限制，所有助手平级可管理
    - 主 Chat 页面与弹窗各自维护 SSE 流，互不关闭
+```
+
+---
+
+### 7. 服务代理与 ContextPath 动态分发流（Service Proxy & Gateway Flow）
+
+```
+[ 客户端访问 http://host:port/proxy/:alias/*subpath ]
+                           │
+                           ▼
+1. 传输路由编排 (internal/transport/http/router.go)
+   - 路由优先命中 /proxy/*any，先于 SPA 静态回退 (NoRoute) 处理
+   - 检验尾部斜杠：若为裸别名 /proxy/:alias，返回 301 永久重定向至 /proxy/:alias/，确保相对资源正常解析
+                           │
+                           ▼ (免登录公开直连，数据面无 Session 校验)
+2. 动态网关分发器 (internal/app/proxy/gateway.go)
+   - 提取 alias，自 service/repository 查找匹配且处于 Enabled 状态的代理规则；不存在或未启用直接返回 404
+   - 分支 A：静态目录 (directory)
+       • 防穿越安全保障：目标路径由 paths.Resolve 规范化绝对路径，通过 http.Dir + http.StripPrefix 进行静态文件服务
+       • 默认索引与目录树：目录下有 index.html 则直接渲染；无 index.html 则自动生成安全文件树浏览列表，支持直接点击下载
+   - 分支 B：端口反代 (port)
+       • WebSocket 升级侦测：若标头包含 Upgrade: websocket，通过 c.Writer.Hijack() 升级原生 TCP 连接，全双工双向 io.Copy 透传 (满足 Vite/Webpack HMR)
+       • HTTP 反向代理：通过 httputil.ReverseProxy 透明代理至 127.0.0.1:<target_port>，自动剥离 /proxy/:alias 前缀并追加 X-Forwarded-Prefix: /proxy/:alias
+                           │
+                           ▼
+3. 控制面治理 (internal/app/proxy/handlers.go & web/src/features/proxies)
+   - 代理管理接口 (/api/proxies) 强制继承 RequireSession 与 RequireCSRF 双提交防护
+   - 支持实时连通性探测 (net.DialTimeout 200ms 检测回环端口是否处于监听状态)
+   - 前端提供一键在新标签页打开、剪贴板一键复制链接、在线状态徽标与开关启停
 ```
 
 ## 六、API 传输层与安全规范（ADR-0001）

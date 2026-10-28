@@ -14,6 +14,7 @@ import (
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
+	"devplatform/internal/app/proxy"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
@@ -90,6 +91,8 @@ type Dependencies struct {
 	// the chat routes are served under /api/chats behind RequireSession and
 	// carry the larger image-message body limit.
 	Chats *chat.Service
+	// Proxy manages contextpath exposure for local directories and ports.
+	Proxy *proxy.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -165,6 +168,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		if deps.Terminal != nil {
 			deps.Terminal.RegisterRoutes(protected)
 		}
+		if deps.Proxy != nil {
+			deps.Proxy.RegisterRoutes(protected)
+		}
 		if deps.Chats != nil {
 			// Chat messages may carry images; only this group gets the larger
 			// cap. It is still inside RequireSession and the global CSRF
@@ -172,6 +178,10 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			chats := authenticated.Group("", limitRequestBody(maxImageRequestBodyBytes))
 			deps.Chats.RegisterRoutes(chats)
 		}
+	}
+
+	if deps.Proxy != nil {
+		proxy.RegisterGateway(router, deps.Proxy)
 	}
 
 	if deps.WebDir != "" {

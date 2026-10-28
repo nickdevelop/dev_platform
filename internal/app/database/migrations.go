@@ -315,6 +315,14 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 31, name: "create_service_proxies", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&ServiceProxy{}) {
+			if err := tx.Migrator().CreateTable(&ServiceProxy{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

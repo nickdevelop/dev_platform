@@ -3932,6 +3932,217 @@ paths:
         '404':
           description: Conversation not found.
 
+  /proxies:
+    get:
+      summary: List service proxies
+      description: Returns all contextpath proxy mappings with port connectivity status.
+      operationId: listProxies
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of service proxies.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a service proxy
+      description: Registers a new directory or port contextpath proxy mapping.
+      operationId: createProxy
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - alias
+                - type
+                - target
+              properties:
+                name:
+                  type: string
+                alias:
+                  type: string
+                type:
+                  type: string
+                  enum: [directory, port]
+                target:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '201':
+          description: Proxy created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: Duplicate alias.
+
+  /proxies/browse-directories:
+    get:
+      summary: Browse local directories for proxy configuration
+      description: Lists subdirectory names and paths to assist directory picking.
+      operationId: browseDirectories
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Directory listing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current:
+                    type: string
+                  parent:
+                    type: string
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        path:
+                          type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /proxies/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get service proxy details
+      operationId: getProxy
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Proxy details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Proxy not found.
+    put:
+      summary: Update a service proxy
+      operationId: updateProxy
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - alias
+                - type
+                - target
+              properties:
+                name:
+                  type: string
+                alias:
+                  type: string
+                type:
+                  type: string
+                  enum: [directory, port]
+                target:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Proxy updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Proxy not found.
+        '409':
+          description: Duplicate alias.
+    delete:
+      summary: Delete a service proxy
+      operationId: deleteProxy
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Proxy deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Proxy not found.
+
+  /proxies/{id}/toggle:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Toggle proxy enabled status
+      operationId: toggleProxy
+      tags:
+        - Proxies
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Status toggled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Proxy not found.
+
 components:
   securitySchemes:
     cookieAuth:

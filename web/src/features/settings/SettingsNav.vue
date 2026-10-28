@@ -9,6 +9,7 @@ const links = [
   { name: 'settings-appearance', label: '外观' },
   { name: 'settings-models', label: '模型' },
   { name: 'settings-agents', label: 'Agent' },
+  { name: 'settings-proxies', label: '服务代理' },
 ]
 </script>
 

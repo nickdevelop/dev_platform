@@ -391,3 +391,20 @@ type TerminalServer struct {
 
 // TableName pins the table name for TerminalServer.
 func (TerminalServer) TableName() string { return "terminal_servers" }
+
+// ServiceProxy records a proxy mapping exposing a local directory or port via a contextpath.
+// Table: service_proxies.
+type ServiceProxy struct {
+	ID        uint      `gorm:"primaryKey;column:id"`
+	Name      string    `gorm:"column:name;not null"`
+	Alias     string    `gorm:"column:alias;not null;uniqueIndex"`
+	Type      string    `gorm:"column:type;not null"` // "directory" | "port"
+	Target    string    `gorm:"column:target;not null"`
+	Enabled   bool      `gorm:"column:enabled;not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName pins the table name for ServiceProxy.
+func (ServiceProxy) TableName() string { return "service_proxies" }
+

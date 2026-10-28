@@ -27,6 +27,7 @@ import (
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
+	"devplatform/internal/app/proxy"
 	platformruntime "devplatform/internal/app/runtime"
 	"devplatform/internal/app/secrets"
 	"devplatform/internal/app/sessions"
@@ -379,6 +380,9 @@ func runServer(args []string) error {
 	terminalService := terminal.NewService(terminalRepo, secretStore, platform.New())
 	defer terminalService.Close()
 
+	proxyRepo := proxy.NewRepository(db)
+	proxyService := proxy.NewService(proxyRepo)
+
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
 	// process outlives the platform (finding 1). Defers unwind LIFO, so this
@@ -404,6 +408,7 @@ func runServer(args []string) error {
 		Prompts:       promptService,
 		Terminal:      terminalService,
 		Chats:         chatService,
+		Proxy:         proxyService,
 		WebDir:        webDir,
 	})
 

@@ -19,6 +19,7 @@ import (
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/app/proxy"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
@@ -67,6 +68,7 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Tasks:         tasksSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
 		Chats:         chatSvc,
+		Proxy:         proxy.NewService(proxy.NewRepository(db)),
 	}
 }
 
