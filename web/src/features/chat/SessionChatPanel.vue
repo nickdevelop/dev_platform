@@ -1412,21 +1412,6 @@ async function removeSession() {
         <ChatSideRail side="right" label="面板" aria-label="会话面板导航">
           <button
             type="button"
-            class="rail-btn filetree-rail-btn"
-            :class="{ 'is-active': isFileTreeVisible }"
-            data-test="toggle-filetree-btn"
-            aria-controls="session-filetree-drawer"
-            :aria-pressed="isFileTreeVisible.toString()"
-            :title="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            :aria-label="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            @click="toggleFileTree"
-          >
-            <svg class="rail-icon" viewBox="0 0 24 24">
-              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-            </svg>
-          </button>
-          <button
-            type="button"
             class="rail-btn preview-rail-btn"
             :class="{ 'is-active': !previewCollapsed }"
             data-test="toggle-preview-btn"
@@ -1441,6 +1426,23 @@ async function removeSession() {
               <path d="M15 4v16" />
               <path d="M6.5 9h4M6.5 12h4M6.5 15h4" />
             </svg>
+            <span class="rail-text" aria-hidden="true">预览</span>
+          </button>
+          <button
+            type="button"
+            class="rail-btn filetree-rail-btn"
+            :class="{ 'is-active': isFileTreeVisible }"
+            data-test="toggle-filetree-btn"
+            aria-controls="session-filetree-drawer"
+            :aria-pressed="isFileTreeVisible.toString()"
+            :title="isFileTreeVisible ? '收起文件树' : '打开文件树'"
+            :aria-label="isFileTreeVisible ? '收起文件树' : '打开文件树'"
+            @click="toggleFileTree"
+          >
+            <svg class="rail-icon" viewBox="0 0 24 24">
+              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
+            </svg>
+            <span class="rail-text" aria-hidden="true">文件树</span>
           </button>
         </ChatSideRail>
       </div>
@@ -1513,9 +1515,9 @@ async function removeSession() {
   position: relative;
   /* One source of truth for the rail: its fixed width plus the flex gap gives
      the offset used by the floating drawer and the preview overlay. */
-  --chat-rail-width: 34px;
+  --chat-rail-width: 20px;
   --chat-rail-gap: 0.5rem;
-  --chat-rail-offset: calc(var(--chat-rail-width) + var(--chat-rail-gap));
+  --chat-rail-offset: calc(var(--chat-rail-width));
   --chat-filetree-min: 210px;
   /* Allows the preview to overlay when both docked panes would not fit. */
   container-type: inline-size;
@@ -1524,7 +1526,6 @@ async function removeSession() {
   min-width: 0;
   display: flex;
   align-items: stretch;
-  gap: 0.5rem;
   overflow: hidden;
 }
 

@@ -31,18 +31,18 @@ defineProps<{
 
 <style scoped>
 .chat-side-rail {
-  /* 34px is deliberate: two rails cost less than one old header button row and
-     keep the conversation width when both panes are open. The shell can override
-     --chat-rail-width to resize both rails together. */
-  flex: 0 0 var(--chat-rail-width, 34px);
-  width: var(--chat-rail-width, 34px);
+  /* 20px is deliberate: the rail gives the conversation back every pixel it can
+     and the buttons carry their own caption (icon on top, vertical text below).
+     The shell overrides --chat-rail-width to resize both rails together. */
+  flex: 0 0 var(--chat-rail-width, 20px);
+  width: var(--chat-rail-width, 20px);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 6px 0;
+  padding: 4px 0;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--color-surface);
   min-height: 0;
 }
@@ -54,29 +54,38 @@ defineProps<{
   gap: 4px;
 }
 
+/* The rail's own caption sits at the very bottom, pushed there by margin-top:
+   auto, so it never competes with the buttons for the top of the rail. The
+   narrow width stacks the two characters without writing-mode, which keeps the
+   column centred on the rail's axis instead of clinging to its right edge. */
 .rail-label {
   margin-top: auto;
   margin-bottom: 2px;
+  width: 12px;
   color: var(--color-text-muted);
   font-size: 0.6rem;
-  line-height: 1;
-  letter-spacing: 0.08em;
-  writing-mode: vertical-rl;
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-all;
+  overflow-wrap: anywhere;
   user-select: none;
 }
 
 /* Slot content belongs to SessionChatPanel, so :slotted is required for these
-   styles to reach the buttons rendered there. */
+   styles to reach the buttons rendered there. The button is a vertical stack:
+   icon on top, a slim vertical-rl caption below it, both on the same centre
+   line and with square corners to match the narrow rail. */
 .chat-side-rail :slotted(.rail-btn) {
   position: relative;
-  width: 26px;
-  height: 26px;
-  padding: 0;
+  width: 16px;
+  padding: 3px 0 4px;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 0;
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
@@ -101,12 +110,31 @@ defineProps<{
 }
 
 .chat-side-rail :slotted(.rail-icon) {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  flex: none;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The caption under the icon, kept out of the accessible name (the button's
+   aria-label already names the action). Deliberately NOT writing-mode: in
+   vertical-rl the block axis is horizontal, so a single line hugs the box's
+   right edge and cannot be centred on the icon. A width of one em with
+   word-break stacks the characters one per line, and text-align centres that
+   column on the same axis as the icon above it. */
+.chat-side-rail :slotted(.rail-text) {
+  width: 1em;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-align: center;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  user-select: none;
 }
 </style>
