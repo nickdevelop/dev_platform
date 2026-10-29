@@ -827,4 +827,64 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
 
     expect(localStorage.getItem('dev-platform-preview-width-v1')).toBe('510')
   })
+
+  it('keeps chat-header inside message-column and places preview, file tree and rail as siblings in conversation-split', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+
+    const split = wrapper.find('[data-test="conversation-split"]')
+    expect(split.exists()).toBe(true)
+
+    // chat-header is inside message-column, matching the main chat column width
+    const msgColumn = split.find('.message-column')
+    expect(msgColumn.exists()).toBe(true)
+    const header = msgColumn.find('.chat-header')
+    expect(header.exists()).toBe(true)
+
+    // Preview pane, file tree drawer and side rail are siblings of message-column inside the split
+    expect(split.find('[data-test="activity-pane"]').exists()).toBe(true)
+    expect(split.find('[data-test="filetree-drawer"]').exists()).toBe(true)
+    expect(split.find('[data-test="chat-side-rail-right"]').exists()).toBe(true)
+  })
+
+  it('renders thinking with card styling while tools render without border and with full wrap summary', async () => {
+    const longCommand = 'git status --porcelain && npm test && cargo build --release --verbose --package dev-platform'
+    const entries: ChatEntry[] = [
+      { id: 't1', kind: 'thinking', role: 'assistant', text: 'detailed reasoning steps', streaming: false },
+      {
+        id: 'c1',
+        kind: 'tool_call',
+        role: 'assistant',
+        name: 'bash',
+        toolCallId: 'call-1',
+        input: { command: longCommand },
+        streaming: false,
+      },
+    ]
+
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: entries,
+        capabilities: capabilities({ toolCallEvents: true }),
+        display: 'activity',
+      },
+    })
+
+    // Thinking element is styled as card
+    const thinkingEl = wrapper.find('[data-test="thinking"]')
+    expect(thinkingEl.exists()).toBe(true)
+    expect(thinkingEl.classes()).toContain('flat-thinking')
+
+    // Tool call element is flat-tool (no border) and displays the summary text
+    const toolEl = wrapper.find('[data-test="tool-call"]')
+    expect(toolEl.exists()).toBe(true)
+    expect(toolEl.classes()).toContain('flat-tool')
+    expect(toolEl.classes()).not.toContain('flat-thinking')
+
+    // Summary text displays the long command and is not truncated
+    const summaryTextEl = toolEl.find('.tool-name')
+    expect(summaryTextEl.exists()).toBe(true)
+    expect(summaryTextEl.text()).toContain(longCommand)
+  })
 })
+

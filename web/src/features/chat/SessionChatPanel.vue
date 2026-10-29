@@ -947,74 +947,6 @@ async function removeSession() {
     :data-stream-status="streamStatus"
   >
     <template v-if="activeSession">
-      <header class="chat-header">
-        <div class="title-row">
-          <BackendTag :backend="activeSession.backend" />
-          <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
-          <button
-            type="button"
-            class="delete-session"
-            data-test="delete-session"
-            title="删除会话"
-            @click="confirmingDelete = true"
-          >
-            删除
-          </button>
-        </div>
-        <div v-if="instance" class="workdir-row" data-test="workdir-row">
-          <span class="workdir-path" data-test="workdir-path" :title="instance.directory">{{
-            shortDirectory
-          }}</span>
-          <button
-            type="button"
-            class="workdir-copy"
-            data-test="workdir-copy"
-            :title="copiedPath ? '已复制' : '复制完整路径'"
-            @click="copyDirectory"
-          >
-            {{ copiedPath ? '已复制' : '复制' }}
-          </button>
-          <span
-            v-if="branchLabel"
-            class="chip branch"
-            data-test="git-branch"
-            :title="branchTitle"
-            >{{ branchLabel }}</span
-          >
-          <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
-        </div>
-        <div v-else-if="isRunning" class="workdir-row">
-          <span class="turn-status" role="status" aria-live="polite">运行中</span>
-        </div>
-      </header>
-
-      <p v-if="preparing" class="history-note" data-test="preparing" role="status" aria-live="polite">
-        正在准备 agent…
-      </p>
-
-      <p v-if="historyTruncated" class="history-note" data-test="history-truncated">
-        仅显示最近的历史记录。
-      </p>
-
-      <p v-if="historyError" class="history-error" role="alert" data-test="history-error">
-        {{ historyError }}
-        <button type="button" class="retry" data-test="history-retry" @click="retryOpen">重试</button>
-      </p>
-
-      <p v-if="unavailable" class="instance-note" role="alert" data-test="session-unavailable">
-        {{ unavailableMessage }}
-        <button
-          v-if="serviceDown"
-          type="button"
-          class="retry"
-          data-test="session-reconnect"
-          @click="retryOpen"
-        >
-          重新连接
-        </button>
-        <button v-else type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
-      </p>
-
       <div
         class="conversation-split"
         data-test="conversation-split"
@@ -1033,6 +965,74 @@ async function removeSession() {
         />
 
         <div class="message-column">
+          <header class="chat-header">
+            <div class="title-row">
+              <BackendTag :backend="activeSession.backend" />
+              <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
+              <button
+                type="button"
+                class="delete-session"
+                data-test="delete-session"
+                title="删除会话"
+                @click="confirmingDelete = true"
+              >
+                删除
+              </button>
+            </div>
+            <div v-if="instance" class="workdir-row" data-test="workdir-row">
+              <span class="workdir-path" data-test="workdir-path" :title="instance.directory">{{
+                shortDirectory
+              }}</span>
+              <button
+                type="button"
+                class="workdir-copy"
+                data-test="workdir-copy"
+                :title="copiedPath ? '已复制' : '复制完整路径'"
+                @click="copyDirectory"
+              >
+                {{ copiedPath ? '已复制' : '复制' }}
+              </button>
+              <span
+                v-if="branchLabel"
+                class="chip branch"
+                data-test="git-branch"
+                :title="branchTitle"
+                >{{ branchLabel }}</span
+              >
+              <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
+            </div>
+            <div v-else-if="isRunning" class="workdir-row">
+              <span class="turn-status" role="status" aria-live="polite">运行中</span>
+            </div>
+          </header>
+
+          <p v-if="preparing" class="history-note" data-test="preparing" role="status" aria-live="polite">
+            正在准备 agent…
+          </p>
+
+          <p v-if="historyTruncated" class="history-note" data-test="history-truncated">
+            仅显示最近的历史记录。
+          </p>
+
+          <p v-if="historyError" class="history-error" role="alert" data-test="history-error">
+            {{ historyError }}
+            <button type="button" class="retry" data-test="history-retry" @click="retryOpen">重试</button>
+          </p>
+
+          <p v-if="unavailable" class="instance-note" role="alert" data-test="session-unavailable">
+            {{ unavailableMessage }}
+            <button
+              v-if="serviceDown"
+              type="button"
+              class="retry"
+              data-test="session-reconnect"
+              @click="retryOpen"
+            >
+              重新连接
+            </button>
+            <button v-else type="button" class="retry" data-test="session-retry" @click="retryOpen">重试</button>
+          </p>
+
           <div class="conversation-area">
             <div
               class="conversation-scroll"
@@ -1976,6 +1976,7 @@ async function removeSession() {
   gap: 0.35rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .title-row {

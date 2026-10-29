@@ -25,7 +25,7 @@ export function settled(entry: ChatEntry, streamStatus: string | undefined): boo
 }
 
 export function toolName(entry: ChatEntry): string {
-  return entry.name ?? entry.text
+  return entry.name ?? entry.text ?? ''
 }
 
 // The argument keys that name what a tool acted on, in preference order, so the

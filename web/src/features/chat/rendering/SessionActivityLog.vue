@@ -217,8 +217,7 @@ function closeSubagent() {
   width: 100%;
 }
 
-.flat-thinking,
-.flat-tool {
+.flat-thinking {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--color-border);
@@ -227,40 +226,79 @@ function closeSubagent() {
   padding: 0.45rem 0.6rem;
 }
 
+.flat-tool {
+  box-sizing: border-box;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.25rem 0.2rem;
+}
+
 .flat-head {
   margin: 0;
   display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 0.85rem;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.84rem;
   color: var(--color-text-muted);
   min-width: 0;
+  width: 100%;
+  line-height: 1.45;
 }
 
-.flat-head .tool-name,
+.flat-head .tool-icon {
+  flex-shrink: 0;
+  line-height: 1.45;
+  user-select: none;
+}
+
 .flat-head .thinking-title {
+  flex-shrink: 0;
+}
+
+.flat-head .tool-name {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.flat-subagent .flat-head .tool-name {
   flex-shrink: 0;
 }
 
 .flat-head .tool-arg {
   flex: 1;
+  min-width: 0;
   font-family: var(--font-mono, monospace);
   font-size: 0.8rem;
   color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .flat-head .tool-running {
+  flex-shrink: 0;
   margin-left: auto;
   font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: nowrap;
+  align-self: flex-start;
   color: var(--color-accent, #2563eb);
 }
 
 .flat-head .tool-status-error {
+  flex-shrink: 0;
   margin-left: auto;
   font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: nowrap;
+  align-self: flex-start;
   color: var(--color-danger, #dc2626);
 }
 
