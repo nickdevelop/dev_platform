@@ -215,7 +215,9 @@ func CheckPortListening(port string) bool {
 func (s *Service) BrowseDirectories(targetPath string) (BrowseDirectoriesResponse, error) {
 	targetPath = strings.TrimSpace(targetPath)
 	if targetPath == "" {
-		targetPath = "."
+		// No path given: browse the filesystem root (must be absolute,
+		// paths.Resolve rejects relative paths like ".").
+		targetPath = "/"
 	}
 
 	canonical, err := paths.Resolve(targetPath)

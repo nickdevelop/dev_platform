@@ -172,6 +172,25 @@ func TestBrowseDirectories(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected error for non-existent path")
 	}
+
+	// Empty path defaults to the filesystem root, not an error.
+	for _, input := range []string{"", "   "} {
+		root, err := svc.BrowseDirectories(input)
+		if err != nil {
+			t.Fatalf("browse empty path %q: %v", input, err)
+		}
+		if root.Current != "/" {
+			t.Errorf("browse %q: current = %q, want %q", input, root.Current, "/")
+		}
+		if root.Parent != "" {
+			t.Errorf("browse %q: parent = %q, want empty at root", input, root.Parent)
+		}
+		for _, e := range root.Entries {
+			if !filepath.IsAbs(e.Path) || e.Path == "/" {
+				t.Errorf("browse %q: unexpected entry path %q", input, e.Path)
+			}
+		}
+	}
 }
 
 func TestProxyGateway(t *testing.T) {
