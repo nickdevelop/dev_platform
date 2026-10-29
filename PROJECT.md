@@ -12,7 +12,7 @@
 2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；问答交互工具在主对话流直接呈现交互卡片，思考内容直接输出，后台工具输出后端摘要化极简流转。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
-5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗续接最近快捷对话或新建对话；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
+5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
 6. **服务代理与 Demo 预览**：提供统一的动态 ContextPath 网关，支持将服务器上的静态文件目录（Directory Serving）或本地监听端口的 HTTP 服务（Port Reverse Proxy）通过平台端口以独立 ContextPath（`/proxy/:alias/`）直接暴露；免登录公开访问，支持外部快速分享与查看 demo，全协议透传并支持 WebSocket 升级（完美兼容 Vite/Webpack 等开发工具的 HMR 热更新）。
 
 ---
@@ -30,7 +30,7 @@
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (691 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (693 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
 
 ---
 
@@ -127,7 +127,7 @@ web/src/
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
-  │     │     └── quick/         ── 快捷助手横向方形工具栏、解绑 480×600 弹窗与自由拖拽定位
+  │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
@@ -335,9 +335,9 @@ web/src/
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)
    - 弹窗位置与工具栏完全解绑，支持按住 Header 在视口内自由拖拽定位（带 12px 边界保护与独立持久化）
-   - 以 480×600 打开所选助手的对话弹窗，或直接开启新对话
-   - Header 操作区支持最近 5 条对话快速下拉选择切换与开启新对话
-   - 状态机精准记忆：未点击新对话时关闭再打开默认恢复之前的对话；若点击了新对话，即使未输入消息，关闭再打开仍保持新对话
+   - 以 480×600 打开所选助手的对话弹窗；每次打开（含切换助手）都进入新的空白对话草稿
+   - 首条消息发送时才在助手分组内创建会话记录，避免产生空会话；关闭再打开不会恢复上一次会话
+   - Header 操作区支持最近 5 条对话下拉选择切换与开启新对话；历史会话由用户在下拉中自行选择
    - 显示所选助手的名称、图标与专属模型，独立 quickAssistant store
                     │
                     ▼

@@ -197,23 +197,16 @@ describe('quick assistant launcher', () => {
     expect(wrapper.text()).toContain('你好，我是快捷助手')
   })
 
-  it('loads the latest reserved-group conversation and renders it', async () => {
-    stubFetch({ existing: true })
-    const { wrapper } = await mountLauncher()
+  it('opens a fresh draft instead of restoring the latest conversation', async () => {
+    const calls = stubFetch({ existing: true })
+    const { wrapper, quick } = await mountLauncher()
 
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
 
-    expect(FakeEventSource.instances[0]?.url).toContain('/api/chat-events/')
-    FakeEventSource.instances[0].dispatch('snapshot', {
-      type: 'snapshot',
-      chatId: 1,
-      timestamp: '',
-      snapshot: snapshot(),
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('你好，我在。')
+    expect(quick.chatId).toBeNull()
+    expect(wrapper.text()).toContain('你好，我是快捷助手')
+    expect(calls.some((call) => call.url === '/api/chats/1')).toBe(false)
   })
 
   it('creates the first message inside the reserved group', async () => {
@@ -342,7 +335,7 @@ describe('quick assistant launcher', () => {
     expect(quick.currentAssistant?.id).toBe(2)
   })
 
-  it('renders recent 5 conversations in the history dropdown and selects the active one', async () => {
+  it('renders recent 5 conversations in the history dropdown without opening one', async () => {
     const historyChats = [
       chat({ id: 101, title: '对话 1' }),
       chat({ id: 102, title: '对话 2' }),
@@ -362,13 +355,14 @@ describe('quick assistant launcher', () => {
     const options = select.findAll('option')
     // 1 placeholder ("最近对话…") + 5 conversations
     expect(options).toHaveLength(6)
+    expect(options[0].text()).toContain('最近对话')
     expect(options[1].text()).toBe('对话 1')
     expect(options[2].text()).toBe('对话 2')
     expect(options[5].text()).toBe('对话 5')
 
-    // First conversation is active by default
-    expect(quick.chatId).toBe(101)
-    expect((select.element as HTMLSelectElement).value).toBe('101')
+    // The popover starts on a blank draft; history is opt-in.
+    expect(quick.chatId).toBeNull()
+    expect((select.element as HTMLSelectElement).value).toBe('')
   })
 
   it('switches conversation when selecting an item from the history dropdown', async () => {
@@ -382,7 +376,8 @@ describe('quick assistant launcher', () => {
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
 
-    expect(quick.chatId).toBe(201)
+    // Opening the popover no longer selects the newest conversation.
+    expect(quick.chatId).toBeNull()
 
     const select = wrapper.find('[data-test="quick-assistant-history-select"]')
     await select.setValue('202')
@@ -391,96 +386,115 @@ describe('quick assistant launcher', () => {
     expect(quick.chatId).toBe(202)
     expect(FakeEventSource.instances).toHaveLength(1)
     expect(FakeEventSource.instances[0]?.url).toContain('/api/chat-events/')
+
+    FakeEventSource.instances[0].dispatch('snapshot', {
+      type: 'snapshot',
+      chatId: 202,
+      timestamp: '',
+      snapshot: snapshot({ conversation: chat({ id: 202, title: '对话 B' }) }),
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('你好，我在。')
   })
 
-  it('remembers new chat draft intent across closing and reopening without sending messages', async () => {
+  it('starts a new draft every time the popover is opened', async () => {
     const historyChats = [chat({ id: 301, title: '历史对话' })]
-    stubFetch({ chats: historyChats })
+    const calls = stubFetch({ chats: historyChats })
     const { wrapper, quick } = await mountLauncher()
 
-    // 1. Initial open restores the latest conversation
+    // 1. Opening goes straight to a blank draft even though history exists.
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await flushPromises()
+    expect(quick.chatId).toBeNull()
+    expect(wrapper.text()).toContain('你好，我是快捷助手')
+
+    // 2. The user deliberately picks the historical conversation.
+    const select = wrapper.find('[data-test="quick-assistant-history-select"]')
+    await select.setValue('301')
     await flushPromises()
     expect(quick.chatId).toBe(301)
-    expect(quick.isNewDraft).toBe(false)
 
-    // 2. User clicks "New Chat" button -> enters new draft state
-    await wrapper.find('[data-test="quick-assistant-new"]').trigger('click')
-    await flushPromises()
-    expect(quick.chatId).toBeNull()
-    expect(quick.isNewDraft).toBe(true)
-    expect(wrapper.text()).toContain('你好，我是快捷助手')
-
-    // 3. User closes popover without sending any message
+    // 3. Closing and reopening must NOT restore that conversation.
     await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="quick-assistant-panel"]').exists()).toBe(false)
 
-    // 4. User clicks launcher button again -> MUST reopen new draft, NOT the old conversation
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
 
     expect(quick.chatId).toBeNull()
-    expect(quick.isNewDraft).toBe(true)
     expect(wrapper.text()).toContain('你好，我是快捷助手')
+    // Only the explicit dropdown selection fetched the conversation.
+    expect(calls.filter((call) => call.url === '/api/chats/301')).toHaveLength(1)
   })
 
-  it('remembers active conversation across closing and reopening when new chat was not clicked', async () => {
-    const historyChats = [
-      chat({ id: 401, title: '旧对话 1' }),
-      chat({ id: 402, title: '旧对话 2' }),
+  it('does not restore the conversation after switching assistants', async () => {
+    const multiGroups = [
+      { id: 1, name: '助手一', showInFloat: true, createdAt: '', updatedAt: '' },
+      { id: 2, name: '助手二', showInFloat: true, createdAt: '', updatedAt: '' },
     ]
-    stubFetch({ chats: historyChats })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/chat-groups') {
+          return { status: 200, json: async () => ({ groups: multiGroups }) } as Response
+        }
+        if (url === '/api/chats?limit=5&groupId=1') {
+          return {
+            status: 200,
+            json: async () => ({ chats: [chat({ id: 501, groupId: 1 })], total: 1 }),
+          } as Response
+        }
+        if (url === '/api/chats?limit=5&groupId=2') {
+          return { status: 200, json: async () => ({ chats: [], total: 0 }) } as Response
+        }
+        if (url === '/api/chats/501') {
+          return { status: 200, json: async () => chat({ id: 501, groupId: 1 }) } as Response
+        }
+        return { status: 200, json: async () => ({}) } as Response
+      }),
+    )
+
     const { wrapper, quick } = await mountLauncher()
+    const buttons = wrapper.findAll('.quick-assistant-button')
 
-    // 1. Open launcher, switch to conversation 402
-    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
+    await buttons[0].trigger('click')
     await flushPromises()
-
     const select = wrapper.find('[data-test="quick-assistant-history-select"]')
-    await select.setValue('402')
+    await select.setValue('501')
     await flushPromises()
-    expect(quick.chatId).toBe(402)
+    expect(quick.chatId).toBe(501)
 
-    // 2. Close popover without clicking "New Chat"
-    await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
+    // Switching assistants remounts the panel and starts a new draft.
+    await buttons[1].trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="quick-assistant-panel"]').exists()).toBe(false)
-
-    // 3. Reopen launcher -> defaults to previous conversation 402
-    await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
-    await flushPromises()
-
-    expect(quick.chatId).toBe(402)
-    expect(quick.isNewDraft).toBe(false)
+    expect(quick.currentAssistant?.id).toBe(2)
+    expect(quick.chatId).toBeNull()
+    expect(wrapper.text()).toContain('你好，我是助手二')
   })
 
-  it('transitions from new chat draft to active conversation after sending first message', async () => {
+  it('starts a new draft after sending the first message and reopening', async () => {
     stubFetch()
     const { wrapper, quick } = await mountLauncher()
 
-    // 1. Open launcher and enter new chat
+    // 1. Open launcher: it is already a new draft.
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-test="quick-assistant-new"]').trigger('click')
-    await flushPromises()
-    expect(quick.isNewDraft).toBe(true)
+    expect(quick.chatId).toBeNull()
 
     // 2. Send message -> creates chat 1
     await wrapper.find('[data-test="chat-input"]').setValue('Hello new chat')
     await wrapper.find('[data-test="chat-send-btn"]').trigger('click')
     await flushPromises()
-
-    // 3. Draft flag is cleared and chatId is set
-    expect(quick.isNewDraft).toBe(false)
     expect(quick.chatId).toBe(1)
 
-    // 4. Close and reopen -> remembers chat 1
+    // 3. Close and reopen -> a fresh draft, not chat 1
     await wrapper.find('[data-test="quick-assistant-close"]').trigger('click')
     await flushPromises()
     await wrapper.find('[data-test="quick-assistant-button"]').trigger('click')
     await flushPromises()
-    expect(quick.chatId).toBe(1)
-    expect(quick.isNewDraft).toBe(false)
+    expect(quick.chatId).toBeNull()
+    expect(wrapper.text()).toContain('你好，我是快捷助手')
   })
 })

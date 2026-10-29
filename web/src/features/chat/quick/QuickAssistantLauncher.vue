@@ -158,6 +158,7 @@ watch(open, (value, previous) => {
       data-test="quick-assistant-popover"
     >
       <QuickAssistantPanel
+        :key="quick.groupId ?? 0"
         @close="close"
         @header-pointerdown="onPanelPointerDown"
         @header-pointermove="onPanelPointerMove"

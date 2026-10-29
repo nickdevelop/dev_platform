@@ -75,6 +75,10 @@ test.describe.serial('quick assistant', () => {
     expect(before).not.toBeNull()
     await page.mouse.move(before!.x + before!.width / 2, before!.y + before!.height / 2)
     await page.mouse.down()
+    // Move inside the toolbar first so pointer capture engages before the
+    // cursor leaves the 40px-wide bar; a single large step would skip the first
+    // pointermove and never start the drag.
+    await page.mouse.move(before!.x + before!.width / 2 - 10, before!.y + before!.height / 2 + 5)
     await page.mouse.move(before!.x + before!.width / 2 - 220, before!.y + before!.height / 2 + 90, {
       steps: 8,
     })
@@ -117,16 +121,16 @@ test.describe.serial('quick assistant', () => {
     await expect(page.locator('[data-test="quick-assistant-button"]')).toHaveCount(0)
   })
 
-  test('shows the reserved group in Chat with its controls locked', async ({ page }) => {
+  test('shows the reserved group in Chat as an unlocked assistant', async ({ page }) => {
     await uiLogin(page)
-    await page.getByRole('link', { name: 'Chat' }).click()
+    await page.getByRole('link', { name: '对话' }).click()
     await expect(page).toHaveURL(/\/chat$/)
 
     const sidebar = page.getByRole('complementary', { name: '对话列表' })
     await expect(sidebar.getByText('快捷助手')).toBeVisible()
-    await expect(sidebar.getByText('固定')).toBeVisible()
-    await expect(sidebar.locator('[aria-label="重命名分组「快捷助手」"]')).toHaveCount(0)
-    await expect(sidebar.locator('[aria-label="删除分组「快捷助手」"]')).toHaveCount(0)
-    await expect(sidebar.locator('[aria-label="在「快捷助手」中新建对话"]')).toHaveCount(0)
+    await expect(sidebar.getByText('固定')).toHaveCount(0)
+    await expect(sidebar.locator('[aria-label="编辑助手「快捷助手」"]')).toBeVisible()
+    await expect(sidebar.locator('[aria-label="删除助手「快捷助手」"]')).toBeVisible()
+    await expect(sidebar.locator('[aria-label="在「快捷助手」中新建对话"]')).toBeVisible()
   })
 })

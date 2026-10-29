@@ -97,7 +97,7 @@ async function focusComposer() {
 
 onMounted(async () => {
   if (models.services.length === 0) await models.load()
-  await quick.restoreOrOpenLatest()
+  await quick.beginSession()
   ensureModel()
   await nextTick()
   follow.scrollToBottom(false)
@@ -269,6 +269,7 @@ function onKeydown(event: KeyboardEvent) {
       <div v-if="quick.chatId === null && !quick.loading" class="quick-assistant-welcome">
         <h3>你好，我是{{ assistantName }}</h3>
         <p>有什么可以帮你？对话会自动保存到 Chat 中。</p>
+        <p>每次打开都会开始新对话；需要之前的对话，请用右上角的「最近对话」。</p>
         <p v-if="!hasModels" class="quick-assistant-warning">
           尚未配置可用模型，请先到「设置 → 模型」添加并启用模型。
         </p>
