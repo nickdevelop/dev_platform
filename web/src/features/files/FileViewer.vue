@@ -4,6 +4,7 @@ import { getFileContent, getFileRawUrl } from '../../api/files'
 import type { FileContentResponse, FileTab } from './types'
 import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
+import HtmlArtifactView from './HtmlArtifactView.vue'
 import ArtifactImageView from './ArtifactImageView.vue'
 
 const props = withDefaults(
@@ -120,10 +121,11 @@ const isEmpty = computed(() => {
   return tabs.value.length === 0
 })
 
-const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() => {
+const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'code'>(() => {
   if (!activeTabPath.value) return 'code'
   const ext = activeTabPath.value.split('.').pop()?.toLowerCase() || ''
   if (ext === 'md' || ext === 'markdown') return 'markdown'
+  if (ext === 'html' || ext === 'htm') return 'html'
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image'
   if (fileData.value?.isBinary) return 'binary'
   return 'code'
@@ -191,6 +193,16 @@ const currentFileType = computed<'markdown' | 'image' | 'binary' | 'code'>(() =>
           :file-size="fileData.size"
           :lines="fileData.lines"
           @open-file="openTab"
+        />
+
+        <!-- HTML view -->
+        <HtmlArtifactView
+          v-else-if="currentFileType === 'html'"
+          :project-id="props.projectId"
+          :file-path="activeTabPath"
+          :content="fileData.content || ''"
+          :file-size="fileData.size"
+          :lines="fileData.lines"
         />
 
         <!-- Image view -->

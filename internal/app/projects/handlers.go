@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,7 +28,15 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/files/tree", s.handleFileTree)
 	r.GET("/projects/:id/files/content", s.handleFileContent)
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
+	r.POST("/projects/:id/files/preview-ticket", s.handleCreatePreviewTicket)
 	r.GET("/projects/:id/git/status", s.handleGitStatus)
+}
+
+// RegisterPreviewRoutes registers the static preview route that authenticates
+// via the URL ticket instead of the session cookie, allowing sandboxed iframes
+// to load nested assets cleanly under strict SameSite policies.
+func (s *Service) RegisterPreviewRoutes(r gin.IRouter) {
+	r.GET("/projects/:id/files/preview/:ticket/*filepath", s.handlePreviewFile)
 }
 
 // errorResponse is the JSON error envelope for project API failures.
@@ -340,6 +349,52 @@ func (s *Service) handleFileRaw(c *gin.Context) {
 		return
 	}
 	defer reader.Close()
+	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
+}
+
+// handleCreatePreviewTicket issues a short-lived random ticket for previewing files in sandboxed iframes.
+func (s *Service) handleCreatePreviewTicket(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	ticket, err := s.CreatePreviewTicket(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ticket": ticket})
+}
+
+// handlePreviewFile streams workspace files identified by a valid preview ticket and wildcard relative path.
+func (s *Service) handlePreviewFile(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	ticket := c.Param("ticket")
+	if !s.ValidatePreviewTicket(ticket, id) {
+		respondError(c, http.StatusForbidden, "invalid_preview_ticket")
+		return
+	}
+
+	rawPath := c.Param("filepath")
+	relPath := strings.TrimPrefix(rawPath, "/")
+	if relPath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+
+	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, relPath)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	defer reader.Close()
+
+	// Enforce CSP sandbox and prevent MIME-sniffing
+	c.Header("Content-Security-Policy", "sandbox allow-scripts allow-forms allow-modals;")
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
 }
 

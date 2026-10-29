@@ -745,6 +745,41 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/preview-ticket:
+    post:
+      summary: Create a file preview ticket
+      description: Issues a short-lived random ticket for previewing workspace files in sandboxed iframes without session cookies.
+      operationId: createProjectFilePreviewTicket
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Preview ticket issued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ticket
+                properties:
+                  ticket:
+                    type: string
+                    description: Cryptographically random preview ticket valid for 10 minutes.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/git-info:
     get:
       summary: Git state of a project working directory

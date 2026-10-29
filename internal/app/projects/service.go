@@ -19,12 +19,15 @@ package projects
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -89,6 +92,12 @@ type InstanceStopper interface {
 	StopProjectInstances(ctx context.Context, projectID uint) error
 }
 
+// previewTicketInfo holds metadata for a short-lived file preview ticket.
+type previewTicketInfo struct {
+	projectID uint
+	expiresAt time.Time
+}
+
 // Service manages project records and their directories. All operations are
 // serialized by mu so two concurrent requests can never both observe a free
 // target and race the filesystem, and so an unregister cannot interleave with
@@ -101,6 +110,9 @@ type Service struct {
 	// stopper stops a project's live instances before it is unregistered.
 	stopper InstanceStopper
 	mu      sync.Mutex
+
+	previewMu      sync.RWMutex
+	previewTickets map[string]previewTicketInfo
 }
 
 // NewService builds the project service over the platform database. The
@@ -112,7 +124,11 @@ func NewService(db *gorm.DB) *Service {
 
 // NewServiceWithRepository builds the project service over a custom repository.
 func NewServiceWithRepository(repo Repository) *Service {
-	return &Service{repo: repo, renamePath: os.Rename}
+	return &Service{
+		repo:           repo,
+		renamePath:     os.Rename,
+		previewTickets: make(map[string]previewTicketInfo),
+	}
 }
 
 // SetInstanceStopper installs the component that stops a project's live
@@ -463,3 +479,57 @@ func pathWithin(parent, child string) bool {
 	}
 	return true
 }
+
+const previewTicketTTL = 10 * time.Minute
+
+// CreatePreviewTicket generates a 32-byte cryptographic random ticket for previewing project files.
+func (s *Service) CreatePreviewTicket(ctx context.Context, projectID uint) (string, error) {
+	if _, err := s.repo.Get(projectID); err != nil {
+		return "", err
+	}
+
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate preview ticket: %w", err)
+	}
+	ticket := hex.EncodeToString(b)
+
+	s.previewMu.Lock()
+	defer s.previewMu.Unlock()
+
+	now := time.Now()
+	for k, v := range s.previewTickets {
+		if now.After(v.expiresAt) {
+			delete(s.previewTickets, k)
+		}
+	}
+
+	s.previewTickets[ticket] = previewTicketInfo{
+		projectID: projectID,
+		expiresAt: now.Add(previewTicketTTL),
+	}
+
+	return ticket, nil
+}
+
+// ValidatePreviewTicket checks whether a ticket is valid, unexpired, and matches the given project ID.
+func (s *Service) ValidatePreviewTicket(ticket string, projectID uint) bool {
+	if ticket == "" {
+		return false
+	}
+	s.previewMu.RLock()
+	defer s.previewMu.RUnlock()
+
+	info, ok := s.previewTickets[ticket]
+	if !ok {
+		return false
+	}
+	if info.projectID != projectID {
+		return false
+	}
+	if time.Now().After(info.expiresAt) {
+		return false
+	}
+	return true
+}
+

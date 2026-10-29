@@ -537,3 +537,98 @@ func TestGitStatus(t *testing.T) {
 	}
 }
 
+func TestPreviewTicketAndFileHandler(t *testing.T) {
+	svc, id, dir := setupTestProject(t)
+
+	// Create test html and nested css
+	htmlPath := filepath.Join(dir, "index.html")
+	if err := os.WriteFile(htmlPath, []byte("<!DOCTYPE html><html><body><h1>Hello</h1></body></html>"), 0o644); err != nil {
+		t.Fatalf("write html: %v", err)
+	}
+	subDir := filepath.Join(dir, "css")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir css: %v", err)
+	}
+	cssPath := filepath.Join(subDir, "style.css")
+	if err := os.WriteFile(cssPath, []byte("body { color: red; }"), 0o644); err != nil {
+		t.Fatalf("write css: %v", err)
+	}
+
+	// 1. Test Service CreatePreviewTicket & ValidatePreviewTicket
+	ticket, err := svc.CreatePreviewTicket(context.Background(), id)
+	if err != nil {
+		t.Fatalf("CreatePreviewTicket failed: %v", err)
+	}
+	if len(ticket) != 64 {
+		t.Fatalf("expected 64 hex chars ticket, got %d (%s)", len(ticket), ticket)
+	}
+	if !svc.ValidatePreviewTicket(ticket, id) {
+		t.Fatalf("ValidatePreviewTicket should succeed with valid ticket and matching project")
+	}
+	if svc.ValidatePreviewTicket(ticket, id+999) {
+		t.Fatalf("ValidatePreviewTicket should fail for mismatched project")
+	}
+	if svc.ValidatePreviewTicket("invalid-ticket", id) {
+		t.Fatalf("ValidatePreviewTicket should fail for nonexistent ticket")
+	}
+
+	// 2. Test HTTP handler via Gin
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	svc.RegisterRoutes(router)
+	svc.RegisterPreviewRoutes(router)
+
+	// POST /projects/:id/files/preview-ticket
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/preview-ticket", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview-ticket endpoint status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var res map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || res["ticket"] == "" {
+		t.Fatalf("failed to decode ticket response: %v, body = %s", err, w.Body.String())
+	}
+	issuedTicket := res["ticket"]
+
+	// GET /projects/:id/files/preview/:ticket/index.html
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/preview/"+issuedTicket+"/index.html", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview html status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("Hello")) {
+		t.Fatalf("preview html missing body content: %s", w.Body.String())
+	}
+	// Check CSP and nosniff headers
+	csp := w.Header().Get("Content-Security-Policy")
+	if csp != "sandbox allow-scripts allow-forms allow-modals;" {
+		t.Errorf("unexpected CSP header: %q", csp)
+	}
+	nosniff := w.Header().Get("X-Content-Type-Options")
+	if nosniff != "nosniff" {
+		t.Errorf("unexpected X-Content-Type-Options: %q", nosniff)
+	}
+
+	// GET nested relative asset /projects/:id/files/preview/:ticket/css/style.css
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/preview/"+issuedTicket+"/css/style.css", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview css status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("color: red")) {
+		t.Fatalf("preview css missing body content: %s", w.Body.String())
+	}
+
+	// GET with invalid ticket should return 403
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/preview/fake-ticket/index.html", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("preview with fake ticket status = %d, want 403", w.Code)
+	}
+}
+
+

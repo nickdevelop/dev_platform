@@ -135,6 +135,7 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		protected := authenticated.Group("", limitRequestBody(maxRequestBodyBytes))
 		if deps.Projects != nil {
 			deps.Projects.RegisterRoutes(protected)
+			deps.Projects.RegisterPreviewRoutes(api)
 		}
 		if deps.Settings != nil {
 			deps.Settings.RegisterRoutes(protected)

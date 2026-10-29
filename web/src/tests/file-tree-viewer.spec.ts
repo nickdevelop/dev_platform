@@ -7,6 +7,8 @@ import CodeView from '../features/files/CodeView.vue'
 import ArtifactToolbar from '../features/files/ArtifactToolbar.vue'
 import MarkdownArtifactView from '../features/files/MarkdownArtifactView.vue'
 import ArtifactImageView from '../features/files/ArtifactImageView.vue'
+import HtmlArtifactView from '../features/files/HtmlArtifactView.vue'
+import HtmlPreviewModal from '../features/files/HtmlPreviewModal.vue'
 import FileViewer from '../features/files/FileViewer.vue'
 import * as filesApi from '../api/files'
 import type { FileTreeNode, GitStatusItem } from '../features/files/types'
@@ -403,4 +405,176 @@ describe('FileViewer.vue', () => {
     await flushPromises()
     expect(wrapper.find('.empty-state').exists()).toBe(true)
   })
+
+  it('renders HtmlArtifactView when an html file is opened', async () => {
+    vi.spyOn(filesApi, 'getFileContent').mockResolvedValue({
+      path: 'index.html',
+      size: 150,
+      lines: 8,
+      mimeType: 'text/html',
+      isBinary: false,
+      content: '<!DOCTYPE html><html><body><h1>Hello World</h1></body></html>',
+    })
+
+    const wrapper = mount(FileViewer, {
+      props: {
+        projectId: 1,
+        activePath: 'index.html',
+      },
+    })
+
+    await vi.waitFor(() => expect(wrapper.findComponent(HtmlArtifactView).exists()).toBe(true))
+    expect(wrapper.text()).toContain('预览')
+    expect(wrapper.findComponent(CodeView).exists()).toBe(true)
+    expect(wrapper.text()).toContain('Hello World')
+  })
 })
+
+describe('HtmlPreviewModal.vue', () => {
+  it('renders dialog with 80% viewport defaults and sandboxed iframe', () => {
+    const wrapper = mount(HtmlPreviewModal, {
+      props: {
+        visible: true,
+        fileName: 'demo.html',
+        previewUrl: '/api/projects/1/files/preview/test-ticket/demo.html',
+        filePath: 'public/demo.html',
+      },
+      attachTo: document.body,
+    })
+
+    const dialog = document.querySelector('[data-test="html-preview-dialog"]')
+    expect(dialog).toBeTruthy()
+    expect(dialog?.classList.contains('is-fullscreen')).toBe(false)
+
+    const iframe = document.querySelector('[data-test="html-preview-frame"]') as HTMLIFrameElement
+    expect(iframe).toBeTruthy()
+    expect(iframe.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-modals')
+    expect(iframe.getAttribute('src')).toBe('/api/projects/1/files/preview/test-ticket/demo.html')
+
+    wrapper.unmount()
+  })
+
+  it('toggles full screen mode on fullscreen button click and restores on Esc', async () => {
+    const wrapper = mount(HtmlPreviewModal, {
+      props: {
+        visible: true,
+        fileName: 'demo.html',
+        previewUrl: '/api/projects/1/files/preview/test-ticket/demo.html',
+      },
+      attachTo: document.body,
+    })
+
+    const fullscreenBtn = document.querySelector('[data-test="modal-fullscreen-btn"]') as HTMLButtonElement
+    expect(fullscreenBtn).toBeTruthy()
+
+    // Click full screen
+    fullscreenBtn.click()
+    await wrapper.vm.$nextTick()
+    let dialog = document.querySelector('[data-test="html-preview-dialog"]')
+    expect(dialog?.classList.contains('is-fullscreen')).toBe(true)
+    expect(fullscreenBtn.textContent).toContain('还原')
+
+    // Press Esc when in fullscreen - should exit fullscreen first without closing modal
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    dialog = document.querySelector('[data-test="html-preview-dialog"]')
+    expect(dialog?.classList.contains('is-fullscreen')).toBe(false)
+    expect(wrapper.emitted('close')).toBeFalsy()
+
+    // Press Esc again - should emit close
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('triggers refresh and increments iframe key', async () => {
+    const wrapper = mount(HtmlPreviewModal, {
+      props: {
+        visible: true,
+        fileName: 'demo.html',
+        previewUrl: '/api/projects/1/files/preview/test-ticket/demo.html',
+      },
+      attachTo: document.body,
+    })
+
+    const refreshBtn = document.querySelector('[data-test="modal-refresh-btn"]') as HTMLButtonElement
+    expect(refreshBtn).toBeTruthy()
+    refreshBtn.click()
+    await wrapper.vm.$nextTick()
+
+    // Component internal key should increment
+    expect((wrapper.vm as any).iframeKey).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('emits close when clicking close button or backdrop', async () => {
+    const wrapper = mount(HtmlPreviewModal, {
+      props: {
+        visible: true,
+        fileName: 'demo.html',
+        previewUrl: '/api/projects/1/files/preview/test-ticket/demo.html',
+      },
+      attachTo: document.body,
+    })
+
+    const closeBtn = document.querySelector('[data-test="modal-close-btn"]') as HTMLButtonElement
+    closeBtn.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')).toBeTruthy()
+
+    const backdrop = document.querySelector('[data-test="html-preview-backdrop"]') as HTMLElement
+    backdrop.click()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')?.length).toBe(2)
+
+    wrapper.unmount()
+  })
+})
+
+describe('HtmlArtifactView.vue', () => {
+  it('renders source CodeView and toolbar with metadata', () => {
+    const wrapper = mount(HtmlArtifactView, {
+      props: {
+        projectId: 1,
+        filePath: 'public/index.html',
+        content: '<!DOCTYPE html><html><body><h1>Test</h1></body></html>',
+        fileSize: 1024,
+        lines: 5,
+      },
+    })
+
+    expect(wrapper.findComponent(CodeView).exists()).toBe(true)
+    expect(wrapper.text()).toContain('预览')
+    expect(wrapper.text()).toContain('5 行')
+    expect(wrapper.text()).toContain('1.0 KB')
+    expect(wrapper.text()).toContain('public/index.html')
+  })
+
+  it('requests preview ticket and opens HtmlPreviewModal when clicking 预览', async () => {
+    const createTicketSpy = vi.spyOn(filesApi, 'createPreviewTicket').mockResolvedValue('mock-random-ticket-123')
+
+    const wrapper = mount(HtmlArtifactView, {
+      props: {
+        projectId: 42,
+        filePath: 'docs/page.html',
+        content: '<h1>Content</h1>',
+      },
+    })
+
+    const browseBtn = wrapper.find('[data-test="browse-in-browser-btn"]')
+    expect(browseBtn.exists()).toBe(true)
+
+    await browseBtn.trigger('click')
+    await flushPromises()
+
+    expect(createTicketSpy).toHaveBeenCalledWith(42)
+    const modal = wrapper.findComponent(HtmlPreviewModal)
+    expect(modal.exists()).toBe(true)
+    expect(modal.props('visible')).toBe(true)
+    expect(modal.props('previewUrl')).toBe('/api/projects/42/files/preview/mock-random-ticket-123/docs/page.html')
+    expect(modal.props('fileName')).toBe('page.html')
+  })
+})
+
