@@ -474,3 +474,9 @@ function reconnect() {
     </UiDialog>
   </section>
 </template>
+
+<style scoped>
+.pure-chat {
+  padding: calc(var(--space-unit) * 1);
+}
+</style>

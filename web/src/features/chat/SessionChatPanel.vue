@@ -1535,6 +1535,7 @@ async function removeSession() {
   flex-direction: column;
   gap: 0.5rem;
   min-height: 0;
+  padding: calc(var(--space-unit) * 1);
 }
 
 .conversation-area {

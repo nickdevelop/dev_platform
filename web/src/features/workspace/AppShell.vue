@@ -1112,17 +1112,17 @@ watch(
   overflow: hidden;
 }
 
-/* Ordinary pages scroll inside the padded body; the tab bar stays pinned above. */
+/* Ordinary pages scroll inside the body; the tab bar stays pinned above. The body
+   carries no inset, so page content sits flush against the pane's edges. */
 .pane-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: calc(var(--space-unit) * 3.000) calc(var(--space-unit) * 3.333);
+  padding: 0;
 }
 
 /* The conversation pane fills the viewport and never scrolls itself: its message
-   area scrolls instead. The body keeps the same inset, and the panel's
-   height: 100% resolves against this definite box. */
+   area scrolls instead. The panel's height: 100% resolves against this definite box. */
 .pane-full .pane-body {
   overflow: hidden;
 }
