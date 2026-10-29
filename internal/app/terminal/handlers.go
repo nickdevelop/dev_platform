@@ -18,6 +18,15 @@ import (
 	"devplatform/internal/core/platform"
 )
 
+// errorResponse is the JSON wire shape for all API error bodies.
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
+func abortWithError(c *gin.Context, status int, code string) {
+	c.AbortWithStatusJSON(status, errorResponse{Error: code})
+}
+
 // checkSameOrigin verifies that the WebSocket handshake Origin header (if present)
 // matches the request Host, preventing Cross-Site WebSocket Hijacking (CSWSH).
 func checkSameOrigin(r *http.Request) bool {
@@ -61,7 +70,7 @@ func (s *Service) handleStatus(c *gin.Context) {
 func (s *Service) handleListServers(c *gin.Context) {
 	servers, err := s.ListServers(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	c.JSON(http.StatusOK, servers)
@@ -71,17 +80,17 @@ func (s *Service) handleGetServer(c *gin.Context) {
 	idParam := c.Param("id")
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid server id"})
+		abortWithError(c, http.StatusBadRequest, "invalid_server_id")
 		return
 	}
 
 	server, err := s.GetServer(c.Request.Context(), uint(id))
 	if err != nil {
 		if errors.Is(err, ErrServerNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+			abortWithError(c, http.StatusNotFound, "server_not_found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	c.JSON(http.StatusOK, server)
@@ -90,13 +99,13 @@ func (s *Service) handleGetServer(c *gin.Context) {
 func (s *Service) handleCreateServer(c *gin.Context) {
 	var req CreateServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusBadRequest, "invalid_body")
 		return
 	}
 
 	created, err := s.CreateServer(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	c.JSON(http.StatusCreated, created)
@@ -106,27 +115,27 @@ func (s *Service) handleUpdateServer(c *gin.Context) {
 	idParam := c.Param("id")
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid server id"})
+		abortWithError(c, http.StatusBadRequest, "invalid_server_id")
 		return
 	}
 
 	var req UpdateServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusBadRequest, "invalid_body")
 		return
 	}
 
 	updated, err := s.UpdateServer(c.Request.Context(), uint(id), req)
 	if err != nil {
 		if errors.Is(err, ErrLocalImmutable) {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			abortWithError(c, http.StatusForbidden, "local_server_immutable")
 			return
 		}
 		if errors.Is(err, ErrServerNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+			abortWithError(c, http.StatusNotFound, "server_not_found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	c.JSON(http.StatusOK, updated)
@@ -136,21 +145,21 @@ func (s *Service) handleDeleteServer(c *gin.Context) {
 	idParam := c.Param("id")
 	id, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid server id"})
+		abortWithError(c, http.StatusBadRequest, "invalid_server_id")
 		return
 	}
 
 	err = s.DeleteServer(c.Request.Context(), uint(id))
 	if err != nil {
 		if errors.Is(err, ErrLocalImmutable) {
-			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			abortWithError(c, http.StatusForbidden, "local_server_immutable")
 			return
 		}
 		if errors.Is(err, ErrServerNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+			abortWithError(c, http.StatusNotFound, "server_not_found")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -159,12 +168,12 @@ func (s *Service) handleDeleteServer(c *gin.Context) {
 func (s *Service) handleTestConnection(c *gin.Context) {
 	var req TestConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusBadRequest, "invalid_body")
 		return
 	}
 
 	if err := s.TestConnection(c.Request.Context(), req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		abortWithError(c, http.StatusBadRequest, "connection_failed")
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "连接测试成功"})
@@ -174,7 +183,7 @@ func (s *Service) handleWebSocket(c *gin.Context) {
 	idParam := c.Param("serverId")
 	serverID, err := strconv.ParseUint(idParam, 10, 32)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid server id"})
+		abortWithError(c, http.StatusBadRequest, "invalid_server_id")
 		return
 	}
 
@@ -193,7 +202,7 @@ func (s *Service) handleWebSocket(c *gin.Context) {
 	}
 
 	if serverID == 0 && !s.platform.PTY().Supported() {
-		c.JSON(http.StatusNotImplemented, gin.H{"error": "terminal is only supported on Linux"})
+		abortWithError(c, http.StatusNotImplemented, "terminal_unsupported")
 		return
 	}
 

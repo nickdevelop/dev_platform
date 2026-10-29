@@ -47,6 +47,7 @@ import { ProviderSlashSource as PlatformSlashSource } from './composer/dropdown/
 import { WorkspaceFileSource } from './composer/dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './composer/dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './composer/sessionMentionResolver'
+import { dispatchSlashCommand } from './composer/slashActionDispatcher'
 import { getSessionHistory, executeCommand, compactSession } from '../../api/sessions'
 import type { ImageAttachment } from '../../api/messageTypes'
 import {
@@ -867,44 +868,34 @@ async function stop() {
 }
 
 async function handleSlashCommand(input: string): Promise<boolean> {
-  const trimmed = input.trim()
-  if (!trimmed.startsWith('/')) return false
-
   const session = activeSession.value
   if (!session) return false
 
-  const spaceIndex = trimmed.indexOf(' ')
-  const name = spaceIndex === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIndex)
-  const args = spaceIndex === -1 ? '' : trimmed.slice(spaceIndex + 1).trim()
-  const lowerName = name.toLowerCase()
-
-  const cmd = platformSlashSource.findCommand(lowerName)
-
-  // 1. 功能类命令（Action Commands）：平台当前仅设计并支持 compact
-  if (lowerName === 'compact') {
-    busy.value = true
-    try {
-      await compactSession(props.projectId, session.id, args)
-      toolNotice.value = '已向后端发送会话历史上下文压缩指令。'
-      messageText.value = ''
+  busy.value = true
+  try {
+    const res = await dispatchSlashCommand(input, {
+      projectId: props.projectId,
+      sessionId: session.id,
+      findCommand: (cmdName) => platformSlashSource.findCommand(cmdName),
+      compactSession,
+    })
+    if (!res.handled) {
       busy.value = false
-      return true
-    } catch (err: unknown) {
-      toolNotice.value = `压缩执行失败: ${err instanceof Error ? err.message : String(err)}`
-      busy.value = false
-      return true
+      return false
     }
+    if (res.notice) {
+      toolNotice.value = res.notice
+    }
+    if (res.clearInput) {
+      messageText.value = ''
+    }
+    busy.value = false
+    return true
+  } catch (err: unknown) {
+    toolNotice.value = `执行失败: ${err instanceof Error ? err.message : String(err)}`
+    busy.value = false
+    return true
   }
-
-  // 2. 提示词注入类命令（Prompt Commands）：未来平台扩展提示词模板注入时在此拦截处理
-  if (cmd?.category === 'prompt') {
-    return false
-  }
-
-  // 3. 未知或不支持的斜杠命令拦截提示
-  toolNotice.value = `未知命令 /${name}。当前平台支持的命令：/compact`
-  messageText.value = ''
-  return true
 }
 
 async function onSubmit() {

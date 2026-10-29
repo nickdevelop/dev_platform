@@ -48,9 +48,9 @@ func respondServiceError(c *gin.Context, err error) {
 		// The failed attempt is recorded and discoverable through the list
 		// route; the start request itself did not succeed.
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
-	case errors.Is(err, projects.ErrDirectoryMissing), errors.Is(err, projects.ErrNotDirectory):
+	case errors.Is(err, ErrDirectoryUnavailable), errors.Is(err, projects.ErrDirectoryMissing), errors.Is(err, projects.ErrNotDirectory):
 		respondError(c, http.StatusConflict, "project_directory_unavailable")
-	case errors.Is(err, paths.ErrInvalidPath), errors.Is(err, projects.ErrPathChanged):
+	case errors.Is(err, ErrProjectNotAuthorized), errors.Is(err, paths.ErrInvalidPath), errors.Is(err, projects.ErrPathChanged):
 		respondError(c, http.StatusBadRequest, "project_not_authorized")
 	default:
 		respondError(c, http.StatusInternalServerError, "server_error")

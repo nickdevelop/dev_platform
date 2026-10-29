@@ -23,6 +23,7 @@ import (
 
 	"devplatform/internal/core/agents"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/paths"
 	"devplatform/internal/app/projects"
 )
 
@@ -46,6 +47,10 @@ var (
 	// ErrAgentDisabled reports an attempt to start a backend the platform has
 	// disabled. Disabling only blocks new work; existing instances keep running.
 	ErrAgentDisabled = errors.New("instances: agent is disabled platform-wide")
+	// ErrDirectoryUnavailable reports that the project directory is missing or not a directory.
+	ErrDirectoryUnavailable = errors.New("instances: project directory unavailable")
+	// ErrProjectNotAuthorized reports that the project path is invalid or outside authorized roots.
+	ErrProjectNotAuthorized = errors.New("instances: project path not authorized")
 )
 
 // ProjectDirectoryResolver turns a project id into its canonical, authorized
@@ -452,12 +457,18 @@ func (s *Service) ReplaySince(instanceID string, after uint64) ([]agents.Normali
 }
 
 // resolveProject maps a project id to its authorized directory, translating
-// the project repository's not-found sentinel.
+// the project repository's not-found sentinel and wrapping authorization errors.
 func (s *Service) resolveProject(projectID uint) (string, error) {
 	directory, err := s.projects.ResolveDirectory(projectID)
 	if err != nil {
 		if errors.Is(err, projects.ErrProjectNotFound) {
 			return "", fmt.Errorf("%w: %d", ErrProjectNotFound, projectID)
+		}
+		if errors.Is(err, projects.ErrDirectoryMissing) || errors.Is(err, projects.ErrNotDirectory) {
+			return "", fmt.Errorf("%w: %w", ErrDirectoryUnavailable, err)
+		}
+		if errors.Is(err, paths.ErrInvalidPath) || errors.Is(err, projects.ErrPathChanged) {
+			return "", fmt.Errorf("%w: %w", ErrProjectNotAuthorized, err)
 		}
 		return "", err
 	}

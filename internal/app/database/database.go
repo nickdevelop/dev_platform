@@ -123,6 +123,17 @@ func Open(dataDir string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("database: open sqlite database at %s: %w", dbPath, err)
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("database: access generic database handle: %w", err)
+	}
+	// SQLite supports multiple concurrent readers and a single writer in WAL mode.
+	// Bounding the connection pool prevents uncontrolled goroutine bursts from
+	// triggering transient SQLITE_BUSY lock contentions.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 	// The WAL and shared-memory sidecars carry the same data as the database;
 	// restrict them too when SQLite has already created them. They are
 	// re-restricted on the next write if SQLite recreates them. A missing

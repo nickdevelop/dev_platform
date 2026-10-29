@@ -27,6 +27,7 @@ import { formatMessageTime } from '../../../shared/format'
 import { renderMarkdown } from '../../../shared/markdown'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import PlantumlBlock from './PlantumlBlock.vue'
+import SessionActivityLog from './SessionActivityLog.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
 import ImagePreviewModal from './ImagePreviewModal.vue'
@@ -213,101 +214,30 @@ async function copyMessage(entry: ChatEntry) {
 
 <template>
   <div class="message-view">
-    <p
-      v-if="displayMode !== 'activity' && displayMode !== 'chat' && (props.streamStatus === 'reconnecting' || props.streamStatus === 'error')"
-      class="stream-status"
-      role="status"
-      aria-live="polite"
-    >
-      <template v-if="props.streamStatus === 'reconnecting'">事件流已断开，如未自行恢复可重新连接。</template>
-      <template v-else>事件流已断开，无法接收新消息。</template>
-    </p>
-
-    <ol
+    <SessionActivityLog
       v-if="displayMode === 'activity'"
-      class="entries flat-activity"
-      role="log"
-      aria-live="polite"
-      aria-label="活动"
-    >
-      <li v-for="entry in flatActivityEntries" :key="entry.id" class="chat-entry" :class="`kind-${entry.kind}`">
-        <!-- 思考内容直接输出，无需折叠 -->
-        <div v-if="entry.kind === 'thinking'" class="flat-thinking flat-thinking-direct" data-test="thinking">
-          <div class="thinking-direct-header">
-            <span class="thinking-icon" aria-hidden="true">🧠</span>
-            <span class="thinking-title">Thinking</span>
-            <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
-          </div>
-          <p class="thinking-text">{{ entry.text }}</p>
-        </div>
+      :messages="props.messages"
+      :capabilities="props.capabilities"
+      :running="props.running"
+    />
 
-        <!-- A subagent/task call is a named row plus a button that opens its
-             full detail; the subagent's body is never rendered inline. -->
-        <div
-          v-else-if="isSubagentCall(entry)"
-          class="flat-tool flat-subagent"
-          data-test="tool-call"
-        >
-          <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">🤖</span>
-            <span class="tool-name">子任务</span>
-            <span v-if="subagentName(entry)" class="tool-arg">{{ subagentName(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
-          </div>
-          <button
-            type="button"
-            class="subagent-open"
-            data-test="subagent-open"
-            @click="openSubagent(entry)"
-          >
-            查看子任务详情
-          </button>
-        </div>
+    <template v-else>
+      <p
+        v-if="displayMode !== 'chat' && (props.streamStatus === 'reconnecting' || props.streamStatus === 'error')"
+        class="stream-status"
+        role="status"
+        aria-live="polite"
+      >
+        <template v-if="props.streamStatus === 'reconnecting'">事件流已断开，如未自行恢复可重新连接。</template>
+        <template v-else>事件流已断开，无法接收新消息。</template>
+      </p>
 
-        <!-- 所有其它工具只展示摘要行（从后端已只返回摘要，前端紧凑展示） -->
-        <div
-          v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
-          class="flat-tool flat-summary"
-          data-test="tool-call"
-        >
-          <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
-            <span class="tool-name">{{ toolSummaryText(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
-            <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
-          </div>
-        </div>
-
-        <!-- A result whose call is missing (a truncated history) shows as a
-             summary line as well, never as an expandable body. -->
-        <div
-          v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
-          class="flat-tool flat-summary"
-          data-test="tool-result"
-        >
-          <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">🔧</span>
-            <span class="tool-name">{{ entry.text || '工具结果' }}</span>
-          </div>
-        </div>
-      </li>
-
-      <!-- Running indicator row when session turn is running -->
-      <li v-if="props.running" class="chat-entry kind-running" data-test="running-entry">
-        <div class="running-indicator-card">
-          <RunningIndicator label="正在运行" />
-          <span class="running-text">正在运行...</span>
-        </div>
-      </li>
-    </ol>
-
-    <ol
-      v-else
-      class="entries"
-      role="log"
-      aria-live="polite"
-      :aria-label="props.logLabel ?? '会话消息'"
-    >
+      <ol
+        class="entries"
+        role="log"
+        aria-live="polite"
+        :aria-label="props.logLabel ?? '会话消息'"
+      >
       <li v-for="block in displayedBlocks" :key="block.kind === 'entry' ? block.entry.id : block.id" class="chat-entry" :class="block.kind === 'step' ? 'kind-step' : `kind-${block.entry.kind}`">
         <template v-if="block.kind === 'entry'">
           <template v-if="block.entry.kind === 'message'">
@@ -683,7 +613,8 @@ async function copyMessage(entry: ChatEntry) {
       </li>
     </ol>
 
-    <p v-if="displayMode === 'activity' ? flatActivityEntries.length === 0 : props.messages.length === 0" class="empty">{{ displayMode === 'activity' ? '暂无活动。' : '尚无消息。' }}</p>
+    <p v-if="props.messages.length === 0" class="empty">尚无消息。</p>
+    </template>
 
     <div
       v-if="subagentModal"
