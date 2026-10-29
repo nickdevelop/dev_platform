@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -18,6 +19,10 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	// Refreshing calls the backend and rewrites the snapshot, so it is a
 	// state-changing operation and must never be a plain GET.
 	r.POST("/agent-backends/:backend/models/refresh", s.handleRefresh)
+	// Updating allows enabling, disabling and customizing model metadata.
+	// Both /models and /models/*model forms are supported to handle model IDs containing slashes.
+	r.PATCH("/agent-backends/:backend/models", s.handleUpdateModel)
+	r.PATCH("/agent-backends/:backend/models/*model", s.handleUpdateModel)
 }
 
 // errorResponse is the JSON error envelope for model catalog failures.
@@ -38,6 +43,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, agents.ErrServiceNotRunning):
 		respondError(c, http.StatusConflict, "service_not_running")
+	case errors.Is(err, ErrModelNotFound):
+		respondError(c, http.StatusNotFound, "model_not_found")
+	case errors.Is(err, ErrInvalidModelPatch):
+		respondError(c, http.StatusBadRequest, "invalid_model_patch")
 	case errors.Is(err, ErrStorage):
 		respondError(c, http.StatusInternalServerError, "server_error")
 	case errors.Is(err, ErrModelListFailed):
@@ -90,4 +99,55 @@ func (s *Service) handleRefresh(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, list)
+}
+
+type updateModelRequest struct {
+	ModelID        string  `json:"modelId"`
+	Enabled        *bool   `json:"enabled"`
+	Name           *string `json:"name"`
+	ContextLimit   *int    `json:"contextLimit"`
+	SupportsImages *bool   `json:"supportsImages"`
+}
+
+// handleUpdateModel modifies the platform-level configuration (enabled state,
+// custom name, context limit, image support) of an agent model.
+func (s *Service) handleUpdateModel(c *gin.Context) {
+	backend, ok := backendID(c)
+	if !ok {
+		return
+	}
+
+	modelID := strings.TrimPrefix(c.Param("model"), "/")
+
+	var req updateModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_payload")
+		return
+	}
+
+	if modelID == "" {
+		modelID = req.ModelID
+	} else if req.ModelID != "" && req.ModelID != modelID {
+		respondError(c, http.StatusBadRequest, "invalid_model_id")
+		return
+	}
+
+	if modelID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_model_id")
+		return
+	}
+
+	patch := ModelPatch{
+		Enabled:        req.Enabled,
+		Name:           req.Name,
+		ContextLimit:   req.ContextLimit,
+		SupportsImages: req.SupportsImages,
+	}
+
+	updated, err := s.UpdateModel(c.Request.Context(), backend, modelID, patch)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, updated)
 }

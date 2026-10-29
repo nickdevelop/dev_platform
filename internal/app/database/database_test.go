@@ -153,6 +153,9 @@ func TestMigrateCreatesAgentModelTables(t *testing.T) {
 	if !db.Migrator().HasIndex(&AgentModel{}, "idx_agent_model_backend_model") {
 		t.Error("agent_models (backend, model_id) unique index is missing")
 	}
+	if !db.Migrator().HasColumn(&AgentModel{}, "enabled") {
+		t.Error("agent_models enabled column is missing")
+	}
 }
 
 func TestMigrateCreatesChatTables(t *testing.T) {

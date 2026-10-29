@@ -174,6 +174,47 @@ describe('AgentSettings diagnostics and models', () => {
     expect(wrapper.find('[data-test="agent-models-pi"]').text()).toContain('尚未同步模型')
     expect(calls.some((c) => c.method === 'POST' && c.path.includes('/models/refresh'))).toBe(false)
   })
+
+  it('toggles model enablement and updates model configuration', async () => {
+    const calls = stubFetch({
+      'GET /agent-backends/opencode-v2/models': {
+        models: [{ id: 'acme/gpt', name: 'GPT', provider: 'acme', enabled: true }],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+      'PATCH /agent-backends/opencode-v2/models': {
+        id: 'acme/gpt',
+        name: 'Custom GPT',
+        provider: 'acme',
+        enabled: false,
+      },
+    })
+    const wrapper = await mountView()
+
+    const toggle = wrapper.find('[data-agent-model-toggle="acme/gpt"]')
+    expect(toggle.exists()).toBe(true)
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+
+    // Toggle to disable
+    await toggle.setValue(false)
+    await flushPromises()
+
+    const patchCall = calls.find((c) => c.method === 'PATCH' && c.path === '/agent-backends/opencode-v2/models')
+    expect(patchCall).toBeDefined()
+    expect(patchCall?.body).toMatchObject({ modelId: 'acme/gpt', enabled: false })
+
+    // Open edit form
+    await wrapper.find('[data-agent-model-edit="acme/gpt"]').trigger('click')
+    await flushPromises()
+
+    const form = wrapper.find('[data-agent-model-form="acme/gpt"]')
+    expect(form.exists()).toBe(true)
+
+    // Submit edit form
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(2)
+  })
 })
 
 // The machine-level service block: the settings page is the only place the

@@ -67,7 +67,7 @@ async function loadModels() {
   loadingModels.value = true
   try {
     const list = await listAgentBackendModels(selectedBackend.value)
-    models.value = list.models
+    models.value = list.models.filter((m) => m.enabled !== false)
     if (
       models.value.length > 0 &&
       (!selectedModel.value || !models.value.some((m) => m.id === selectedModel.value))

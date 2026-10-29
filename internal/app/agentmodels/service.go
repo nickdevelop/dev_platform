@@ -32,6 +32,10 @@ var (
 	// ErrStorage reports a database failure while reading or replacing a
 	// snapshot.
 	ErrStorage = errors.New("agentmodels: storage failure")
+	// ErrModelNotFound reports a model id that does not exist in the persisted snapshot.
+	ErrModelNotFound = errors.New("agentmodels: model not found")
+	// ErrInvalidModelPatch reports an invalid patch payload (e.g. empty model id).
+	ErrInvalidModelPatch = errors.New("agentmodels: invalid model patch")
 )
 
 // ModelList is one backend's persisted catalog snapshot. UpdatedAt is nil when
@@ -125,6 +129,32 @@ func (s *Service) Refresh(ctx context.Context, backend agents.BackendID) (ModelL
 		return ModelList{}, fmt.Errorf("%w: %w", ErrStorage, err)
 	}
 	return ModelList{Models: models, UpdatedAt: &syncedAt}, nil
+}
+
+// UpdateModel updates the platform-level configuration of one agent model.
+func (s *Service) UpdateModel(ctx context.Context, backend agents.BackendID, modelID string, patch ModelPatch) (agents.ModelInfo, error) {
+	if !backend.Valid() {
+		return agents.ModelInfo{}, fmt.Errorf("%w: %q", ErrUnknownBackend, backend)
+	}
+	adapter, ok := s.registry.Get(backend)
+	if !ok {
+		return agents.ModelInfo{}, fmt.Errorf("%w: %q (%w)", ErrUnknownBackend, backend, agents.ErrBackendNotRegistered)
+	}
+	if !adapter.Capabilities().ModelSelection {
+		return agents.ModelInfo{}, fmt.Errorf("%w: %q", ErrUnsupportedCapability, backend)
+	}
+	if modelID == "" {
+		return agents.ModelInfo{}, fmt.Errorf("%w: empty model id", ErrInvalidModelPatch)
+	}
+
+	model, err := s.repo.Update(backend, modelID, patch)
+	if err != nil {
+		if errors.Is(err, ErrModelNotFound) {
+			return agents.ModelInfo{}, err
+		}
+		return agents.ModelInfo{}, fmt.Errorf("%w: %w", ErrStorage, err)
+	}
+	return model, nil
 }
 
 // normalizeModels drops empty ids and duplicate ids while preserving the

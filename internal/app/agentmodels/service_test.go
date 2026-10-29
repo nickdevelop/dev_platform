@@ -86,6 +86,28 @@ func (f *fakeRepository) Replace(_ agents.BackendID, models []agents.ModelInfo, 
 	return nil
 }
 
+func (f *fakeRepository) Update(_ agents.BackendID, modelID string, patch ModelPatch) (agents.ModelInfo, error) {
+	for i, m := range f.models {
+		if m.ID == modelID {
+			if patch.Enabled != nil {
+				m.Enabled = *patch.Enabled
+			}
+			if patch.Name != nil {
+				m.Name = *patch.Name
+			}
+			if patch.ContextLimit != nil {
+				m.ContextLimit = patch.ContextLimit
+			}
+			if patch.SupportsImages != nil {
+				m.SupportsImages = *patch.SupportsImages
+			}
+			f.models[i] = m
+			return m, nil
+		}
+	}
+	return agents.ModelInfo{}, ErrModelNotFound
+}
+
 func newService(t *testing.T, caps agents.Capabilities, repo Repository) (*Service, *stubAdapter) {
 	t.Helper()
 
@@ -288,5 +310,63 @@ func TestRouteRefusesUnsupportedCapability(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/agent-backends/pi/models/refresh", nil))
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("POST refresh = %d %s, want 409", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateModelServiceAndRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &fakeRepository{
+		models: []agents.ModelInfo{
+			{ID: "openai/gpt-4o", Name: "GPT-4o", Provider: "openai", Enabled: true},
+		},
+	}
+	service, _ := newService(t, agents.Capabilities{ModelSelection: true}, repo)
+	router := gin.New()
+	service.RegisterRoutes(router)
+
+	// 1. Successful PATCH with path param containing slash
+	patchPayload := `{"enabled":false,"name":"Custom GPT-4o","contextLimit":128000,"supportsImages":true}`
+	req := httptest.NewRequest(http.MethodPatch, "/agent-backends/pi/models/openai/gpt-4o", strings.NewReader(patchPayload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var updated agents.ModelInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode updated: %v", err)
+	}
+	if updated.Enabled != false || updated.Name != "Custom GPT-4o" || updated.ContextLimit == nil || *updated.ContextLimit != 128000 || !updated.SupportsImages {
+		t.Errorf("updated model = %+v, want modified fields", updated)
+	}
+
+	// 2. Successful PATCH on /models with modelId in payload
+	patchPayload2 := `{"modelId":"openai/gpt-4o","enabled":true}`
+	req2 := httptest.NewRequest(http.MethodPatch, "/agent-backends/pi/models", strings.NewReader(patchPayload2))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("PATCH body modelId status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+
+	// 3. 404 for non-existent model
+	reqNotFound := httptest.NewRequest(http.MethodPatch, "/agent-backends/pi/models/non-existent", strings.NewReader(`{"enabled":false}`))
+	reqNotFound.Header.Set("Content-Type", "application/json")
+	recNotFound := httptest.NewRecorder()
+	router.ServeHTTP(recNotFound, reqNotFound)
+	if recNotFound.Code != http.StatusNotFound {
+		t.Errorf("PATCH non-existent = %d, want 404", recNotFound.Code)
+	}
+
+	// 4. 400 for mismatched modelId
+	reqMismatch := httptest.NewRequest(http.MethodPatch, "/agent-backends/pi/models/openai/gpt-4o", strings.NewReader(`{"modelId":"different"}`))
+	reqMismatch.Header.Set("Content-Type", "application/json")
+	recMismatch := httptest.NewRecorder()
+	router.ServeHTTP(recMismatch, reqMismatch)
+	if recMismatch.Code != http.StatusBadRequest {
+		t.Errorf("PATCH mismatch = %d, want 400", recMismatch.Code)
 	}
 }

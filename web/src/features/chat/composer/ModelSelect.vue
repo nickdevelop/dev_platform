@@ -50,10 +50,12 @@ const SEARCH_THRESHOLD = 6
 // applyModels shows a list and keeps the selection valid: an unknown previous
 // value falls back to the first model, and an empty snapshot clears it so a
 // stale model is never sent to a backend that no longer offers it.
+// Disabled models are excluded from the picker.
 function applyModels(list: ModelInfo[]) {
-  models.value = list
+  const enabledList = list.filter((model) => model.enabled !== false)
+  models.value = enabledList
   const current = props.modelValue
-  const next = list.some((model) => model.id === current) ? current : (list[0]?.id ?? '')
+  const next = enabledList.some((model) => model.id === current) ? current : (enabledList[0]?.id ?? '')
   if (next !== current) emit('update:modelValue', next)
 }
 

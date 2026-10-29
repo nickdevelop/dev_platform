@@ -222,6 +222,7 @@ type AgentModel struct {
 	ContextLimit   *int   `gorm:"column:context_limit"`
 	SupportsImages bool   `gorm:"column:supports_images;not null;default:false"`
 	SortOrder      int    `gorm:"column:sort_order;not null;default:0"`
+	Enabled        bool   `gorm:"column:enabled;not null;default:true"`
 }
 
 // TableName pins the agent model table name.

@@ -123,6 +123,7 @@ type ModelInfo struct {
 	Variants       []string `json:"variants,omitempty"`
 	ContextLimit   *int     `json:"contextLimit,omitempty"`
 	SupportsImages bool     `json:"supportsImages"`
+	Enabled        bool     `json:"enabled"`
 }
 
 // ImageAttachment represents a base64 encoded image attachment sent with a turn.

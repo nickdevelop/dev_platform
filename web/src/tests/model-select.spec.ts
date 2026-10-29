@@ -260,4 +260,26 @@ describe('ModelSelect', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['pi/a#fast'])
     expect(wrapper.emitted('picked')?.at(-1)).toEqual(['pi/a#fast'])
   })
+
+  it('filters out disabled models and falls back to the first enabled model', async () => {
+    stubModels({
+      models: [
+        { id: 'pi/disabled', name: 'Disabled Model', provider: 'pi', enabled: false },
+        { id: 'pi/enabled', name: 'Enabled Model', provider: 'pi', enabled: true },
+      ],
+      updatedAt: '2026-10-13T12:00:00Z',
+    })
+
+    const wrapper = mountSelect()
+    await flushPromises()
+
+    // Trigger should fall back to first enabled model
+    expect(wrapper.find('.model-trigger').text()).toContain('Enabled Model')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['pi/enabled'])
+
+    await wrapper.find('.model-trigger').trigger('click')
+    const options = wrapper.findAll('.model-option')
+    expect(options).toHaveLength(1)
+    expect(options[0].attributes('data-model-id')).toBe('pi/enabled')
+  })
 })

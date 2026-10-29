@@ -108,3 +108,62 @@ func TestRepositoryNeverSynced(t *testing.T) {
 		t.Errorf("List updatedAt = %v, want nil", updatedAt)
 	}
 }
+
+func TestRepositoryUpdateAndPreserveOnRefresh(t *testing.T) {
+	repo := NewGORMRepository(openTestDB(t))
+	t1 := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	initial := []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "GPT", Provider: "acme"},
+		{ID: "acme/old", Name: "Old", Provider: "acme"},
+	}
+	if err := repo.Replace(agents.BackendPi, initial, t1); err != nil {
+		t.Fatalf("Replace initial: %v", err)
+	}
+
+	// Update acme/gpt: disable it and change custom name and context limit
+	disabled := false
+	newName := "Custom GPT"
+	newLimit := 64000
+	hasImg := true
+	updated, err := repo.Update(agents.BackendPi, "acme/gpt", ModelPatch{
+		Enabled:        &disabled,
+		Name:           &newName,
+		ContextLimit:   &newLimit,
+		SupportsImages: &hasImg,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Enabled != false || updated.Name != newName || *updated.ContextLimit != newLimit || !updated.SupportsImages {
+		t.Errorf("updated model = %+v, want disabled custom name and limit", updated)
+	}
+
+	// Now backend reports a new list: acme/gpt still exists, acme/old is gone, acme/new is added
+	t2 := t1.Add(time.Hour)
+	refreshed := []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "GPT Upstream", Provider: "acme-v2", Variants: []string{"pro"}},
+		{ID: "acme/new", Name: "New Model", Provider: "acme-v2"},
+	}
+	if err := repo.Replace(agents.BackendPi, refreshed, t2); err != nil {
+		t.Fatalf("Replace refreshed: %v", err)
+	}
+
+	got, _, err := repo.List(agents.BackendPi)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("List models length = %d, want 2", len(got))
+	}
+	// acme/gpt should preserve disabled and custom name, but receive updated variants & provider
+	if got[0].ID != "acme/gpt" || got[0].Enabled != false || got[0].Name != newName || *got[0].ContextLimit != newLimit || !got[0].SupportsImages {
+		t.Errorf("got[0] = %+v, want preserved customizations", got[0])
+	}
+	if got[0].Provider != "acme-v2" || len(got[0].Variants) != 1 || got[0].Variants[0] != "pro" {
+		t.Errorf("got[0] variants/provider = %+v, want upstream updates", got[0])
+	}
+	// acme/new should be enabled by default
+	if got[1].ID != "acme/new" || got[1].Enabled != true || got[1].Name != "New Model" {
+		t.Errorf("got[1] = %+v, want new enabled model", got[1])
+	}
+}

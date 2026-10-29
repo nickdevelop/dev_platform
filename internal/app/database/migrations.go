@@ -323,6 +323,19 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 32, name: "add_enabled_to_agent_models", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&AgentModel{}) {
+			if !tx.Migrator().HasColumn(&AgentModel{}, "enabled") {
+				if err := tx.Migrator().AddColumn(&AgentModel{}, "enabled"); err != nil {
+					return err
+				}
+				if err := tx.Model(&AgentModel{}).Where("enabled IS NULL").Update("enabled", true).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

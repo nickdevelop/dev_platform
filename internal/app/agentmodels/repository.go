@@ -20,9 +20,21 @@ type Repository interface {
 	// empty slice and a nil time.
 	List(backend agents.BackendID) ([]agents.ModelInfo, *time.Time, error)
 
-	// Replace atomically replaces a backend's snapshot. A failed write leaves
-	// the previous snapshot untouched.
+	// Replace atomically updates a backend's snapshot, merging new and existing
+	// models so that user-defined configurations (such as enabled status and custom name)
+	// are preserved across refreshes. Obsolete models not reported by the backend are purged.
 	Replace(backend agents.BackendID, models []agents.ModelInfo, syncedAt time.Time) error
+
+	// Update updates configuration fields of a single persisted agent model.
+	Update(backend agents.BackendID, modelID string, patch ModelPatch) (agents.ModelInfo, error)
+}
+
+// ModelPatch carries the fields that can be updated on an agent model.
+type ModelPatch struct {
+	Enabled        *bool   `json:"enabled,omitempty"`
+	Name           *string `json:"name,omitempty"`
+	ContextLimit   *int    `json:"contextLimit,omitempty"`
+	SupportsImages *bool   `json:"supportsImages,omitempty"`
 }
 
 type gormRepository struct {
@@ -50,6 +62,7 @@ func (r *gormRepository) List(backend agents.BackendID) ([]agents.ModelInfo, *ti
 			Provider:       row.Provider,
 			ContextLimit:   row.ContextLimit,
 			SupportsImages: row.SupportsImages,
+			Enabled:        row.Enabled,
 		}
 		if row.Variants != "" {
 			if err := json.Unmarshal([]byte(row.Variants), &model.Variants); err != nil {
@@ -74,21 +87,52 @@ func (r *gormRepository) List(backend agents.BackendID) ([]agents.ModelInfo, *ti
 
 func (r *gormRepository) Replace(backend agents.BackendID, models []agents.ModelInfo, syncedAt time.Time) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("backend = ?", string(backend)).Delete(&database.AgentModel{}).Error; err != nil {
-			return fmt.Errorf("clear agent models: %w", err)
+		var existingRows []database.AgentModel
+		if err := tx.Where("backend = ?", string(backend)).Find(&existingRows).Error; err != nil {
+			return fmt.Errorf("query existing agent models: %w", err)
 		}
 
-		if len(models) > 0 {
-			rows := make([]database.AgentModel, 0, len(models))
-			for index, model := range models {
-				variants := ""
-				if len(model.Variants) > 0 {
-					encoded, err := json.Marshal(model.Variants)
-					if err != nil {
-						return fmt.Errorf("encode variants of %q: %w", model.ID, err)
-					}
-					variants = string(encoded)
+		existingMap := make(map[string]database.AgentModel, len(existingRows))
+		for _, row := range existingRows {
+			existingMap[row.ModelID] = row
+		}
+
+		activeIDs := make(map[string]struct{}, len(models))
+
+		for index, model := range models {
+			activeIDs[model.ID] = struct{}{}
+
+			variants := ""
+			if len(model.Variants) > 0 {
+				encoded, err := json.Marshal(model.Variants)
+				if err != nil {
+					return fmt.Errorf("encode variants of %q: %w", model.ID, err)
 				}
+				variants = string(encoded)
+			}
+
+			if existing, ok := existingMap[model.ID]; ok {
+				// Preserve user customizations (name, contextLimit, supportsImages, enabled)
+				// while updating backend-reported fields and order.
+				name := existing.Name
+				if name == "" {
+					name = model.Name
+				}
+				contextLimit := existing.ContextLimit
+				if contextLimit == nil {
+					contextLimit = model.ContextLimit
+				}
+
+				existing.SortOrder = index
+				existing.Provider = model.Provider
+				existing.Variants = variants
+				existing.Name = name
+				existing.ContextLimit = contextLimit
+
+				if err := tx.Save(&existing).Error; err != nil {
+					return fmt.Errorf("update agent model %q: %w", model.ID, err)
+				}
+			} else {
 				row := database.AgentModel{
 					Backend:        string(backend),
 					ModelID:        model.ID,
@@ -98,11 +142,20 @@ func (r *gormRepository) Replace(backend agents.BackendID, models []agents.Model
 					ContextLimit:   model.ContextLimit,
 					SupportsImages: model.SupportsImages,
 					SortOrder:      index,
+					Enabled:        true,
 				}
-				rows = append(rows, row)
+				if err := tx.Create(&row).Error; err != nil {
+					return fmt.Errorf("store agent model %q: %w", model.ID, err)
+				}
 			}
-			if err := tx.Create(&rows).Error; err != nil {
-				return fmt.Errorf("store agent models: %w", err)
+		}
+
+		// Purge obsolete models not reported by the backend anymore.
+		for modelID, oldRow := range existingMap {
+			if _, keep := activeIDs[modelID]; !keep {
+				if err := tx.Delete(&oldRow).Error; err != nil {
+					return fmt.Errorf("purge obsolete agent model %q: %w", modelID, err)
+				}
 			}
 		}
 
@@ -112,4 +165,44 @@ func (r *gormRepository) Replace(backend agents.BackendID, models []agents.Model
 		}
 		return nil
 	})
+}
+
+func (r *gormRepository) Update(backend agents.BackendID, modelID string, patch ModelPatch) (agents.ModelInfo, error) {
+	var row database.AgentModel
+	if err := r.db.Where("backend = ? AND model_id = ?", string(backend), modelID).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return agents.ModelInfo{}, ErrModelNotFound
+		}
+		return agents.ModelInfo{}, fmt.Errorf("find agent model: %w", err)
+	}
+
+	if patch.Enabled != nil {
+		row.Enabled = *patch.Enabled
+	}
+	if patch.Name != nil {
+		row.Name = *patch.Name
+	}
+	if patch.ContextLimit != nil {
+		row.ContextLimit = patch.ContextLimit
+	}
+	if patch.SupportsImages != nil {
+		row.SupportsImages = *patch.SupportsImages
+	}
+
+	if err := r.db.Save(&row).Error; err != nil {
+		return agents.ModelInfo{}, fmt.Errorf("save agent model: %w", err)
+	}
+
+	model := agents.ModelInfo{
+		ID:             row.ModelID,
+		Name:           row.Name,
+		Provider:       row.Provider,
+		ContextLimit:   row.ContextLimit,
+		SupportsImages: row.SupportsImages,
+		Enabled:        row.Enabled,
+	}
+	if row.Variants != "" {
+		_ = json.Unmarshal([]byte(row.Variants), &model.Variants)
+	}
+	return model, nil
 }

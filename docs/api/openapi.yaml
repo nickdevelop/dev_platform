@@ -887,6 +887,66 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+    patch:
+      summary: Update platform configuration of an agent model
+      description: >-
+        Updates configuration fields (enabled status, custom display name,
+        context window limit, image support) of a persisted model for the given
+        agent backend.
+      operationId: updateAgentBackendModel
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                modelId:
+                  type: string
+                enabled:
+                  type: boolean
+                name:
+                  type: string
+                contextLimit:
+                  type: integer
+                supportsImages:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated model information.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelInfo'
+        '400':
+          description: Invalid backend, model ID, or payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: The model was not found in the persisted snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not declare model selection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /agent-backends/{backend}/models/refresh:
     post:
       summary: Refresh and persist an agent backend's model snapshot
@@ -4886,6 +4946,12 @@ components:
           type: integer
           minimum: 1
           description: Context window in tokens, when the backend reports one.
+        supportsImages:
+          type: boolean
+          description: Whether the model accepts image input.
+        enabled:
+          type: boolean
+          description: Whether the model is enabled on this platform.
       additionalProperties: false
     AgentModelList:
       type: object

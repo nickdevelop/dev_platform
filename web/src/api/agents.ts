@@ -140,6 +140,7 @@ export interface ModelInfo {
   variants?: string[]
   contextLimit?: number
   supportsImages?: boolean
+  enabled?: boolean
 }
 
 // Mirrors #/components/schemas/AgentModelList: the platform-wide model snapshot
@@ -224,5 +225,28 @@ export function refreshAgentBackendModels(backend: BackendId): Promise<AgentMode
   return mutate<AgentModelList>(
     'POST',
     `/agent-backends/${encodeURIComponent(backend)}/models/refresh`,
+  )
+}
+
+export interface AgentModelPatch {
+  modelId?: string
+  enabled?: boolean
+  name?: string
+  contextLimit?: number
+  supportsImages?: boolean
+}
+
+// PATCH /api/agent-backends/{backend}/models
+//
+// Updates platform-level configuration of an agent model (enable/disable, custom name, etc.).
+export function updateAgentBackendModel(
+  backend: BackendId,
+  modelId: string,
+  patch: Omit<AgentModelPatch, 'modelId'>,
+): Promise<ModelInfo> {
+  return mutate<ModelInfo>(
+    'PATCH',
+    `/agent-backends/${encodeURIComponent(backend)}/models`,
+    { modelId, ...patch },
   )
 }

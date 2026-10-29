@@ -12,6 +12,7 @@ import { describeApiError } from '../../api/client'
 import {
   listAgentBackendModels,
   refreshAgentBackendModels,
+  updateAgentBackendModel,
   type AgentServiceStatus,
   type ModelInfo,
 } from '../../api/agents'
@@ -140,6 +141,74 @@ function updatedAtLabel(backend: string): string {
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) return '上次同步时间未知'
   return `上次同步于 ${parsed.toLocaleString()}`
+}
+
+interface EditingModelState {
+  backend: string
+  id: string
+  name: string
+  contextLimit: number | null
+  supportsImages: boolean
+  enabled: boolean
+  saving: boolean
+  error: string
+}
+const editingModel = ref<EditingModelState | null>(null)
+
+function openEditModel(backend: string, model: ModelInfo) {
+  editingModel.value = {
+    backend,
+    id: model.id,
+    name: model.name || model.id,
+    contextLimit: model.contextLimit ?? null,
+    supportsImages: model.supportsImages === true,
+    enabled: model.enabled !== false,
+    saving: false,
+    error: '',
+  }
+}
+
+function cancelEditModel() {
+  editingModel.value = null
+}
+
+async function submitEditModel() {
+  if (!editingModel.value) return
+  const cur = editingModel.value
+  cur.saving = true
+  cur.error = ''
+  try {
+    const updated = await updateAgentBackendModel(cur.backend, cur.id, {
+      name: cur.name.trim(),
+      contextLimit: cur.contextLimit && cur.contextLimit > 0 ? Number(cur.contextLimit) : undefined,
+      supportsImages: cur.supportsImages,
+      enabled: cur.enabled,
+    })
+    const list = models[cur.backend] ?? []
+    const idx = list.findIndex((m) => m.id === cur.id)
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...updated }
+      rememberModels(cur.backend, list)
+    }
+    editingModel.value = null
+  } catch (error) {
+    cur.error = describeApiError(error)
+  } finally {
+    if (editingModel.value) editingModel.value.saving = false
+  }
+}
+
+async function toggleModelEnabled(backend: string, model: ModelInfo, enabled: boolean) {
+  const prev = model.enabled !== false
+  model.enabled = enabled
+  try {
+    await updateAgentBackendModel(backend, model.id, { enabled })
+    const list = models[backend] ?? []
+    rememberModels(backend, list)
+  } catch (error) {
+    model.enabled = prev
+    modelsError[backend] = describeApiError(error)
+  }
 }
 
 const diagnosticsStatusLabels: Record<string, string> = {
@@ -308,24 +377,100 @@ function cancelStop() {
         <UiAlert v-if="modelsError[agent.backend]" variant="error" class="models-line bad">
           {{ modelsError[agent.backend] }}
         </UiAlert>
-        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-48 overflow-y-auto">
+        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-60 overflow-y-auto">
           <li
             v-for="model in models[agent.backend]"
             :key="model.id"
             :data-agent-model="model.id"
-            class="model-item flex items-center justify-between p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs"
+            class="model-item flex items-center justify-between p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs gap-2"
           >
-            <span class="model-name font-medium text-slate-800 dark:text-slate-200">{{ model.name || model.id }}</span>
-            <span class="model-id text-slate-400 font-mono">{{ model.id }}</span>
-            <span v-if="model.variants && model.variants.length" class="model-variants text-slate-400 text-[11px]">
-              变体：{{ model.variants.join(' / ') }}
-            </span>
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <label class="inline-flex items-center cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer"
+                  :data-agent-model-toggle="model.id"
+                  :checked="model.enabled !== false"
+                  @change="toggleModelEnabled(agent.backend, model, ($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+              <UiBadge :variant="model.enabled !== false ? 'success' : 'default'" size="sm">
+                {{ model.enabled !== false ? '已启用' : '已停用' }}
+              </UiBadge>
+              <span class="model-name font-medium text-slate-800 dark:text-slate-200 truncate">{{ model.name || model.id }}</span>
+              <span class="model-id text-slate-400 font-mono truncate text-[11px]">{{ model.id }}</span>
+              <span v-if="model.contextLimit" class="text-slate-400 text-[11px] whitespace-nowrap">
+                {{ Math.round(model.contextLimit / 1000) }}k 上下文
+              </span>
+              <span v-if="model.supportsImages" class="text-blue-500 text-[11px] whitespace-nowrap">图片</span>
+              <span v-if="model.variants && model.variants.length" class="model-variants text-slate-400 text-[11px] truncate">
+                变体：{{ model.variants.join(' / ') }}
+              </span>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <UiButton
+                size="sm"
+                variant="ghost"
+                :data-agent-model-edit="model.id"
+                @click="openEditModel(agent.backend, model)"
+              >
+                编辑
+              </UiButton>
+            </div>
           </li>
         </ul>
         <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">
           尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
         </p>
         <p class="models-updated text-[11px] text-slate-400">{{ updatedAtLabel(agent.backend) }}</p>
+
+        <!-- 模型配置编辑表单 -->
+        <form
+          v-if="editingModel && editingModel.backend === agent.backend"
+          class="model-edit-form p-3.5 mt-2 rounded bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 shadow-sm space-y-3"
+          :data-agent-model-form="editingModel.id"
+          @submit.prevent="submitEditModel"
+        >
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-slate-800 dark:text-slate-200">
+              配置模型：<span class="font-mono text-slate-500">{{ editingModel.id }}</span>
+            </h3>
+            <span class="text-[11px] text-slate-400">可自定义模型显示名称与参数</span>
+          </div>
+
+          <UiAlert v-if="editingModel.error" variant="error">
+            {{ editingModel.error }}
+          </UiAlert>
+
+          <div class="space-y-2">
+            <div>
+              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">显示名称</label>
+              <UiInput v-model="editingModel.name" placeholder="模型友好名称" required block />
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 pt-1">
+              <div>
+                <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">上下文 Token 限制 (留空按默认)</label>
+                <UiInput v-model.number="editingModel.contextLimit" type="number" min="0" placeholder="如 128000" block />
+              </div>
+              <div class="flex flex-col justify-end gap-1.5 pb-1">
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input v-model="editingModel.supportsImages" type="checkbox" class="w-3.5 h-3.5 rounded text-blue-600 accent-blue-600" />
+                  <span>支持图片输入</span>
+                </label>
+                <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <input v-model="editingModel.enabled" type="checkbox" class="w-3.5 h-3.5 rounded text-blue-600 accent-blue-600" />
+                  <span>启用此模型</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <UiButton size="sm" variant="secondary" type="button" @click="cancelEditModel">取消</UiButton>
+            <UiButton size="sm" variant="primary" type="submit" :loading="editingModel.saving">保存</UiButton>
+          </div>
+        </form>
       </div>
 
       <!-- Service 状态与控制 -->
