@@ -38,4 +38,16 @@ describe('renderMarkdown', () => {
     expect(html).toContain('href="https://example.com/docs"')
     expect(html).toContain('文档')
   })
+
+  it('wraps code blocks with a wrapper and copy button', () => {
+    const html = renderMarkdown('```typescript\nconst a = 1 < 2;\nconsole.log(a);\n```')
+
+    expect(html).toContain('class="code-block-wrapper"')
+    expect(html).toContain('class="code-copy-btn"')
+    expect(html).toContain('title="复制代码"')
+    expect(html).toContain('aria-label="复制代码"')
+    expect(html).toContain('class="code-copy-text">复制</span>')
+    expect(html).toContain('<pre><code class="language-typescript">')
+    expect(html).toContain('const a = 1 &lt; 2;')
+  })
 })

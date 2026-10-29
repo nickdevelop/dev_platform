@@ -210,6 +210,34 @@ async function copyMessage(entry: ChatEntry) {
     }
   }, 1500)
 }
+
+async function handleMarkdownClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  const btn = target.closest<HTMLButtonElement>('.code-copy-btn')
+  if (!btn) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const wrapper = btn.closest('.code-block-wrapper')
+  const codeEl = wrapper?.querySelector('pre code') || wrapper?.querySelector('pre')
+  if (!codeEl) return
+
+  const codeText = (codeEl.textContent || '').replace(/\n$/, '')
+  const ok = await copyToClipboard(codeText)
+  if (!ok) return
+
+  btn.classList.add('is-copied')
+  btn.setAttribute('title', '已复制')
+  btn.setAttribute('aria-label', '已复制')
+
+  setTimeout(() => {
+    btn.classList.remove('is-copied')
+    btn.setAttribute('title', '复制代码')
+    btn.setAttribute('aria-label', '复制代码')
+  }, 1500)
+}
 </script>
 
 <template>
@@ -256,7 +284,7 @@ async function copyMessage(entry: ChatEntry) {
                 </div>
                 <span v-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>
               </template>
-              <div v-else class="message-text markdown-body">
+              <div v-else class="message-text markdown-body" @click="handleMarkdownClick">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
                   <div
                     v-if="segment.kind === 'markdown'"
@@ -752,6 +780,78 @@ async function copyMessage(entry: ChatEntry) {
   background: var(--color-text);
   color: var(--color-border);
   overflow-x: auto;
+}
+
+.markdown-body :deep(.code-block-wrapper) {
+  position: relative;
+  margin: 0 0 0.5rem;
+}
+
+.markdown-body :deep(.code-block-wrapper pre) {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  padding-top: 1.85rem;
+}
+
+.markdown-body :deep(.code-copy-btn) {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--color-border);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+}
+
+.markdown-body :deep(.code-copy-btn:hover) {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #ffffff;
+}
+
+.markdown-body :deep(.code-copy-btn:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.markdown-body :deep(.code-copy-btn .code-copy-icon) {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex-shrink: 0;
+}
+
+.markdown-body :deep(.code-copy-btn .code-copy-icon-copied),
+.markdown-body :deep(.code-copy-btn .code-copied-text) {
+  display: none;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied) {
+  background: var(--color-success, #16a34a);
+  border-color: var(--color-success, #16a34a);
+  color: #ffffff;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-idle),
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-text) {
+  display: none;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-copied) {
+  display: inline-block;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copied-text) {
+  display: inline;
 }
 
 .markdown-body :deep(pre code) {

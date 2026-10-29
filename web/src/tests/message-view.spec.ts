@@ -433,6 +433,38 @@ describe('MessageView copy button', () => {
     expect(children[1].getAttribute('data-test')).toBe('message-time')
     expect(children[2].getAttribute('data-test')).toBe('message-copy-btn')
   })
+
+  it('copies code block content when clicking code-copy-btn', async () => {
+    vi.useFakeTimers()
+    const writeTextMock = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: writeTextMock },
+      writable: true,
+      configurable: true,
+    })
+
+    const assistant = message('assistant', '示例代码：\n\n```python\ndef hello():\n    print("world")\n```')
+    const wrapper = mount(MessageView, {
+      props: { messages: [assistant], capabilities: capabilities() },
+    })
+
+    const codeBtn = wrapper.find('.code-copy-btn')
+    expect(codeBtn.exists()).toBe(true)
+    expect(codeBtn.attributes('title')).toBe('复制代码')
+
+    await codeBtn.trigger('click')
+    await flushPromises()
+
+    expect(writeTextMock).toHaveBeenCalledWith('def hello():\n    print("world")')
+    expect(codeBtn.classes()).toContain('is-copied')
+    expect(codeBtn.attributes('title')).toBe('已复制')
+
+    vi.advanceTimersByTime(1500)
+    await wrapper.vm.$nextTick()
+
+    expect(codeBtn.classes()).not.toContain('is-copied')
+    expect(codeBtn.attributes('title')).toBe('复制代码')
+  })
 })
 
 describe('MessageView plantuml blocks', () => {
