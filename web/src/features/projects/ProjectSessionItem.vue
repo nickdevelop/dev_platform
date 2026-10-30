@@ -88,11 +88,11 @@ const modelLabel = computed(() => {
 
 <template>
   <div
-    class="session-open px-2 py-1 rounded cursor-pointer transition-colors border group/item"
+    class="session-open px-2.5 py-1.5 rounded-[3px] cursor-pointer transition-colors border group/item"
     :class="[
       isSelected
-        ? 'bg-platform-surface-muted border-platform-primary shadow-[0_0_6px_var(--color-primary-soft,rgba(59,130,246,0.2))] font-medium text-platform-text'
-        : 'border-transparent hover:bg-platform-surface-muted hover:border-platform-border text-platform-text',
+        ? 'selected bg-platform-surface-muted border-platform-primary border-l-2 border-l-[var(--color-accent,#4a8ad6)] border-t-transparent border-r-transparent border-b-transparent font-medium text-platform-text'
+        : 'border-transparent hover:bg-platform-surface-muted/60 text-platform-text',
     ]"
     role="button"
     tabindex="0"

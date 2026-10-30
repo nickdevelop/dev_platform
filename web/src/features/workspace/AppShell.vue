@@ -1019,22 +1019,25 @@ watch(
 
 /* The dock controls (pin/collapse) are aligned directly inside the head. Action buttons sit on their own dedicated row below. */
 .sidebar-head {
-  padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 2.0);
+  padding: 10px 12px 8px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  min-height: 28px;
+  min-height: 32px;
 }
 
 .sidebar-head h2 {
-  font-size: 1.071rem;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--color-text);
   margin: 0;
 }
 
 .sidebar-actions {
   display: flex;
-  gap: calc(var(--space-unit) * 1.0);
-  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
+  gap: 6px;
+  padding: 0 12px 8px 12px;
 }
 
 .sidebar-actions .action-btn {
@@ -1042,39 +1045,52 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-strong);
+  height: 26px;
+  border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
-  border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  border-radius: var(--radius, 4px);
+  padding: 0 8px;
   cursor: pointer;
-  font-size: 0.857rem;
+  font-size: 12px;
   font-weight: 500;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .sidebar-actions .action-btn:hover {
   background: var(--color-surface-muted);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
 }
 
 .search {
-  margin: 0 calc(var(--space-unit) * 2.000) calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 1.000) calc(var(--space-unit) * 1.667);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+  margin: 0 12px 8px 12px;
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.929rem;
+  font-size: 12px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.12s ease-out;
+}
+
+.search:focus {
+  border-color: var(--color-accent, #4a8ad6);
+}
+
+.search::placeholder {
+  color: var(--color-text-muted);
 }
 
 .sidebar-filter-bar {
   display: flex;
   align-items: center;
-  padding: 0 calc(var(--space-unit) * 2.000) calc(var(--space-unit) * 1.000);
-  margin-top: calc(var(--space-unit) * -0.5);
+  padding: 0 14px 6px 14px;
+  margin-top: -2px;
 }
 
 .filter-task-checkbox {

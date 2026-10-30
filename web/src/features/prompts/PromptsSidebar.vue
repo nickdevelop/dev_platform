@@ -100,12 +100,14 @@ function onSaved(prompt: Prompt) {
             占位符
           </span>
         </div>
-        <p v-if="prompt.description" class="prompt-card-desc">
-          {{ prompt.description }}
-        </p>
-        <p v-else class="prompt-card-preview">
-          {{ prompt.content }}
-        </p>
+        <div class="prompt-card-bottom">
+          <p v-if="prompt.description" class="prompt-card-desc truncate">
+            {{ prompt.description }}
+          </p>
+          <p v-else class="prompt-card-preview truncate">
+            {{ prompt.content }}
+          </p>
+        </div>
       </div>
     </div>
 
@@ -128,8 +130,8 @@ function onSaved(prompt: Prompt) {
 
 .sidebar-actions {
   display: flex;
-  gap: calc(var(--space-unit) * 1.0);
-  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
+  gap: 6px;
+  padding: 0 12px 8px 12px;
 }
 
 .action-btn,
@@ -139,44 +141,44 @@ function onSaved(prompt: Prompt) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-strong);
+  height: 26px;
+  border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
-  border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  border-radius: var(--radius, 4px);
+  padding: 0 8px;
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
   white-space: nowrap;
 }
 
 .action-btn:hover,
 .new-prompt-btn:hover {
   background: var(--color-surface-muted);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  opacity: 1;
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
 }
 
 .search {
-  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+  margin: 0 12px 8px 12px;
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.929rem;
+  font-size: 12px;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.12s ease-out;
 }
 
 .search:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-info-soft);
+  border-color: var(--color-accent, #4a8ad6);
 }
 
 .search::placeholder {
@@ -187,43 +189,41 @@ function onSaved(prompt: Prompt) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
+  padding: 0 8px 16px 8px;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.3);
+  gap: 2px;
 }
 
 .empty-state {
-  margin: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0);
+  margin: 16px 8px;
   text-align: center;
   color: var(--color-text-muted);
-  font-size: 0.857rem;
+  font-size: 12px;
 }
 
 .prompt-card {
-  padding: calc(var(--space-unit) * 0.4) calc(var(--space-unit) * 0.8);
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  padding: 6px 8px;
+  border-radius: var(--radius, 4px);
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--color-text);
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.15);
+  gap: 3px;
   user-select: none;
 }
 
 .prompt-card:hover {
-  border-color: var(--color-border);
   background: var(--color-surface-muted);
 }
 
 .prompt-card.active {
-  border-color: var(--color-primary);
+  border-left-color: var(--color-accent, #4a8ad6);
   background: var(--color-surface-muted);
-  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
   font-weight: 500;
 }
 
@@ -237,7 +237,7 @@ function onSaved(prompt: Prompt) {
 
 .prompt-card-name {
   font-weight: 500;
-  font-size: 0.857rem;
+  font-size: 12px;
   color: var(--color-text);
   white-space: nowrap;
   overflow: hidden;
@@ -246,24 +246,29 @@ function onSaved(prompt: Prompt) {
 }
 
 .placeholder-tag {
-  font-size: 0.7rem;
+  font-size: 10px;
   font-weight: 500;
-  padding: 0.05rem 0.35rem;
+  padding: 0 4px;
+  height: 16px;
+  line-height: 16px;
   border-radius: 3px;
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  color: var(--color-accent, #4a8ad6);
   flex-shrink: 0;
+}
+
+.prompt-card-bottom {
+  min-width: 0;
 }
 
 .prompt-card-desc,
 .prompt-card-preview {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 11px;
   color: var(--color-text-muted);
   line-height: 1.35;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }

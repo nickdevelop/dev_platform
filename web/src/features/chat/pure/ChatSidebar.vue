@@ -281,7 +281,19 @@ function formatChatTime(isoString?: string): string {
               :aria-expanded="isGroupExpanded(group.id)"
               @click.stop="toggleGroup(group.id)"
             >
-              <span class="caret">{{ isGroupExpanded(group.id) ? '▾' : '▸' }}</span>
+              <svg
+                class="caret-icon"
+                :class="{ expanded: isGroupExpanded(group.id) }"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 4 10 8 6 12" />
+              </svg>
               <span class="assistant-badge" :title="group.name">{{ getAssistantIcon(group) }}</span>
               <span class="group-name" :title="group.name">{{ group.name }}</span>
               <span class="count">{{ chatsForGroup(group.id).length }}</span>
@@ -295,7 +307,10 @@ function formatChatTime(isoString?: string): string {
                 title="新建对话"
                 @click.stop="startNewChat(group.id)"
               >
-                ＋
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                  <line x1="8" y1="3" x2="8" y2="13" />
+                  <line x1="3" y1="8" x2="13" y2="8" />
+                </svg>
               </button>
               <button
                 type="button"
@@ -336,15 +351,42 @@ function formatChatTime(isoString?: string): string {
                 @keydown.enter.prevent="openChat(chat.id)"
                 @keydown.space.prevent="openChat(chat.id)"
               >
-                <div class="chat-main">
-                  <span class="chat-title" :title="chat.title || '未命名对话'">
+                <!-- Row 1: Title + Running + Action Strip -->
+                <div class="chat-row-top">
+                  <RunningIndicator v-if="chat.running" class="chat-item-running shrink-0" />
+                  <span class="chat-title truncate" :title="chat.title || '未命名对话'">
                     {{ chat.title || '未命名对话' }}
                   </span>
-                  <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
+                  <div class="item-actions ml-auto shrink-0">
+                    <button
+                      type="button"
+                      class="mini-btn"
+                      title="移动对话"
+                      aria-label="移动对话"
+                      @click.stop="openMoveChat(chat)"
+                    >
+                      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                        <polyline points="5 9 8 6 11 9" />
+                        <line x1="8" y1="6" x2="8" y2="13" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="mini-btn danger"
+                      title="删除对话"
+                      aria-label="删除对话"
+                      @click.stop="onDeleteChat(chat)"
+                    >
+                      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
-                <div v-if="chat.running" class="chat-badges">
-                  <RunningIndicator label="生成中" class="chat-item-running" />
+                <!-- Row 2: Subtitle/Time -->
+                <div class="chat-row-bottom">
+                  <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
                 </div>
               </div>
             </li>
@@ -363,7 +405,19 @@ function formatChatTime(isoString?: string): string {
               :aria-expanded="query !== '' || expandedUngrouped"
               @click.stop="expandedUngrouped = !expandedUngrouped"
             >
-              <span class="caret">{{ (query !== '' || expandedUngrouped) ? '▾' : '▸' }}</span>
+              <svg
+                class="caret-icon"
+                :class="{ expanded: query !== '' || expandedUngrouped }"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 4 10 8 6 12" />
+              </svg>
               <span class="group-name">未分组对话</span>
               <span class="count">{{ ungroupedChats.length }}</span>
             </button>
@@ -382,15 +436,40 @@ function formatChatTime(isoString?: string): string {
                 @keydown.enter.prevent="openChat(chat.id)"
                 @keydown.space.prevent="openChat(chat.id)"
               >
-                <div class="chat-main">
-                  <span class="chat-title" :title="chat.title || '未命名对话'">
+                <div class="chat-row-top">
+                  <RunningIndicator v-if="chat.running" class="chat-item-running shrink-0" />
+                  <span class="chat-title truncate" :title="chat.title || '未命名对话'">
                     {{ chat.title || '未命名对话' }}
                   </span>
-                  <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
+                  <div class="item-actions ml-auto shrink-0">
+                    <button
+                      type="button"
+                      class="mini-btn"
+                      title="移动对话"
+                      aria-label="移动对话"
+                      @click.stop="openMoveChat(chat)"
+                    >
+                      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                        <polyline points="5 9 8 6 11 9" />
+                        <line x1="8" y1="6" x2="8" y2="13" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="mini-btn danger"
+                      title="删除对话"
+                      aria-label="删除对话"
+                      @click.stop="onDeleteChat(chat)"
+                    >
+                      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
 
-                <div v-if="chat.running" class="chat-badges">
-                  <RunningIndicator label="生成中" class="chat-item-running" />
+                <div class="chat-row-bottom">
+                  <span class="chat-time">{{ formatChatTime(chat.updatedAt) }}</span>
                 </div>
               </div>
             </li>
@@ -495,8 +574,8 @@ function formatChatTime(isoString?: string): string {
 
 .sidebar-actions {
   display: flex;
-  gap: calc(var(--space-unit) * 1.0);
-  padding: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
+  gap: 6px;
+  padding: 0 12px 8px 12px;
 }
 
 .action-btn {
@@ -504,42 +583,43 @@ function formatChatTime(isoString?: string): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border-strong);
+  height: 26px;
+  border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
-  border-radius: var(--radius);
-  padding: calc(var(--space-unit) * 0.667) calc(var(--space-unit) * 1.333);
+  border-radius: var(--radius, 4px);
+  padding: 0 8px;
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
   white-space: nowrap;
 }
 
 .action-btn:hover {
   background: var(--color-surface-muted);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
 }
 
 .search {
-  margin: 0 calc(var(--space-unit) * 2.0) calc(var(--space-unit) * 1.333);
-  padding: calc(var(--space-unit) * 1.0) calc(var(--space-unit) * 1.667);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius);
+  margin: 0 12px 8px 12px;
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 1rem;
+  font-size: 12px;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.12s ease-out;
 }
 
 .search:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-info-soft);
+  border-color: var(--color-accent, #4a8ad6);
 }
 
 .search::placeholder {
@@ -550,7 +630,7 @@ function formatChatTime(isoString?: string): string {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2.0);
+  padding: 0 8px 16px 8px;
 }
 
 .group-tree {
@@ -559,7 +639,7 @@ function formatChatTime(isoString?: string): string {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.5);
+  gap: 2px;
 }
 
 .group-item {
@@ -571,9 +651,9 @@ function formatChatTime(isoString?: string): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 0.667);
-  border-radius: var(--radius);
-  transition: background-color 0.15s ease;
+  padding: 4px 6px;
+  border-radius: var(--radius, 4px);
+  transition: background-color 0.12s ease-out;
 }
 
 .group-row:hover {
@@ -583,26 +663,30 @@ function formatChatTime(isoString?: string): string {
 .group-toggle {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.6);
+  gap: 6px;
   border: none;
   background: transparent;
   color: var(--color-text);
   font: inherit;
-  font-size: 0.857rem;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
   flex: 1;
   min-width: 0;
-  padding: calc(var(--space-unit) * 0.4) 0;
+  padding: 2px 0;
 }
 
-.caret {
-  font-size: 0.75rem;
+.caret-icon {
+  width: 12px;
+  height: 12px;
   color: var(--color-text-muted);
-  width: 14px;
-  text-align: center;
   flex-shrink: 0;
+  transition: transform 0.15s ease-out;
+}
+
+.caret-icon.expanded {
+  transform: rotate(90deg);
 }
 
 .group-name {
@@ -612,12 +696,14 @@ function formatChatTime(isoString?: string): string {
 }
 
 .count {
-  font-size: 0.75rem;
+  font-size: 11px;
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
-  border-radius: 9999px;
-  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
+  padding: 0 4px;
   font-weight: normal;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
@@ -625,32 +711,24 @@ function formatChatTime(isoString?: string): string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
-  color: var(--color-primary);
-  font-size: 0.8rem;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 10px;
   font-weight: 600;
   flex-shrink: 0;
   user-select: none;
 }
 
-.system-badge {
-  font-size: 0.68rem;
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary);
-  border-radius: 9999px;
-  padding: 0 0.45em;
-  flex-shrink: 0;
-}
-
 .group-controls {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.2);
+  gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.12s ease-out;
 }
 
 .group-row:hover .group-controls,
@@ -667,11 +745,11 @@ function formatChatTime(isoString?: string): string {
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 12px;
   cursor: pointer;
   padding: 0;
-  border-radius: var(--radius);
-  transition: all 0.15s ease;
+  border-radius: var(--radius, 4px);
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .icon-btn:hover {
@@ -680,18 +758,18 @@ function formatChatTime(isoString?: string): string {
 }
 
 .icon-btn.danger:hover {
-  color: var(--color-danger);
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--color-danger, #e5566f);
+  background: color-mix(in srgb, var(--color-danger, #e5566f) 10%, transparent);
 }
 
 .chat-sublist {
   list-style: none;
-  margin: calc(var(--space-unit) * 0.2) 0 calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 1.0);
-  padding: 0 0 0 calc(var(--space-unit) * 0.5);
+  margin: 2px 0 4px 8px;
+  padding: 0 0 0 6px;
   border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  gap: calc(var(--space-unit) * 0.2);
+  gap: 2px;
 }
 
 .chat-subitem {
@@ -700,65 +778,63 @@ function formatChatTime(isoString?: string): string {
 
 .chat-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: calc(var(--space-unit) * 0.5);
-  padding: calc(var(--space-unit) * 0.4) calc(var(--space-unit) * 0.8);
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 8px;
+  border-radius: var(--radius, 4px);
+  border-left: 2px solid transparent;
   background: transparent;
   color: var(--color-text);
   cursor: pointer;
   outline: none;
-  transition: all 0.15s ease;
+  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
   user-select: none;
 }
 
 .chat-row:hover {
-  border-color: var(--color-border);
   background: var(--color-surface-muted);
 }
 
 .chat-row.active {
-  border-color: var(--color-primary);
+  border-left-color: var(--color-accent, #4a8ad6);
   background: var(--color-surface-muted);
-  box-shadow: 0 0 6px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
   font-weight: 500;
 }
 
-.chat-main {
+.chat-row-top {
   display: flex;
-  flex-direction: column;
-  gap: calc(var(--space-unit) * 0.1);
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-  flex: 1;
 }
 
 .chat-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.857rem;
+  font-size: 12px;
+  flex: 1;
+}
+
+.chat-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .chat-time {
-  font-size: 0.72rem;
+  font-size: 11px;
   color: var(--color-text-muted);
-}
-
-.chat-badges {
-  display: flex;
-  align-items: center;
-  gap: calc(var(--space-unit) * 0.4);
-  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .item-actions {
   display: flex;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.2);
+  gap: 2px;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 0.12s ease-out;
 }
 
 .chat-row:hover .item-actions,
@@ -767,40 +843,42 @@ function formatChatTime(isoString?: string): string {
 }
 
 .mini-btn {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.857rem;
   cursor: pointer;
-  padding: calc(var(--space-unit) * 0.333) calc(var(--space-unit) * 0.5);
-  border-radius: var(--radius);
-  line-height: 1;
-  transition: all 0.15s ease;
+  padding: 0;
+  border-radius: var(--radius, 4px);
+  transition: color 0.12s ease-out;
 }
 
 .mini-btn:hover {
-  color: var(--color-primary);
-  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .mini-btn.danger:hover {
-  color: var(--color-danger);
+  color: var(--color-danger, #e5566f);
 }
 
 .sublist-empty {
-  padding: calc(var(--space-unit) * 0.5) calc(var(--space-unit) * 0.8);
-  font-size: 0.78rem;
+  padding: 4px 8px;
+  font-size: 11px;
   color: var(--color-text-muted);
 }
 
 .empty,
 .list-error {
-  margin: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 1.0);
-  font-size: 0.857rem;
+  margin: 12px 8px;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
 .list-error {
-  color: var(--color-danger);
+  color: var(--color-danger, #e5566f);
 }
 </style>

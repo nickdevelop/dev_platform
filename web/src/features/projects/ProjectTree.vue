@@ -323,19 +323,34 @@ async function confirmDeleteSession() {
           :aria-expanded="isExpanded(project.id)"
           @click.stop="onProjectClick(project.id)"
         >
-          <span class="caret text-xs text-platform-text-muted w-3.5 inline-block text-center">{{ isExpanded(project.id) ? '▾' : '▸' }}</span>
+          <svg
+            class="caret text-platform-text-muted w-3.5 h-3.5 transition-transform duration-150 inline-block shrink-0"
+            :class="{ 'rotate-90': isExpanded(project.id) }"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 4 10 8 6 12" />
+          </svg>
           <span class="project-name truncate font-medium text-sm">{{ project.name }}</span>
         </button>
 
         <div class="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <button
             type="button"
-            class="project-new-session w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text font-bold transition-colors"
+            class="project-new-session w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text transition-colors"
             :aria-label="`新建会话：${project.name}`"
             title="新建会话"
             @click.stop="emit('new-session', project.id)"
           >
-            ＋
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <line x1="8" y1="3" x2="8" y2="13" />
+              <line x1="3" y1="8" x2="13" y2="8" />
+            </svg>
           </button>
           <button
             type="button"
