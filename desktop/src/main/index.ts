@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import * as path from 'node:path'
 import * as http from 'node:http'
 import * as https from 'node:https'
@@ -188,6 +188,7 @@ async function createWindow(proxyPort: number) {
     minWidth: 1024,
     minHeight: 650,
     title: 'AI-Dev-Platform',
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       nodeIntegration: false,
@@ -195,6 +196,8 @@ async function createWindow(proxyPort: number) {
       sandbox: false,
     },
   })
+
+  mainWindow.removeMenu()
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -206,6 +209,7 @@ async function createWindow(proxyPort: number) {
 
 async function init() {
   await app.whenReady()
+  Menu.setApplicationMenu(null)
 
   connectionStore = new ConnectionStore()
   serviceManager = new LocalServiceManager()

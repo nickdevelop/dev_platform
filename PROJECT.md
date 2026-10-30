@@ -31,7 +31,7 @@
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **桌面客户端外壳** | Electron v34, TypeScript, Node.js 原生 HTTP/WebSocket 透明代理, `electron-builder` | 原生跨平台桌面封装（Linux/Windows/macOS）、Sidecar 本地子进程纳管、双模网络同构代理与凭据加密安全存储 |
+| **桌面客户端外壳** | Electron v34, TypeScript, Node.js 原生 HTTP/WebSocket 透明代理, `electron-builder` | 原生跨平台桌面封装（Linux/Windows/macOS，禁用/移除默认原生菜单栏）、Sidecar 本地子进程纳管、双模网络同构代理与凭据加密安全存储 |
 | **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (717 单测通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、桌面代理与连接单测、全流程端到端自动化 |
 
 ---
@@ -360,7 +360,7 @@ web/src/
 2. 主框架 (web/src/features/workspace/AppShell.vue)
    - 开关开启时挂载 QuickAssistantLauncher
    - 中列折叠/展开由第一栏右边缘的 rail-edge-toggle 把手统一控制（CategoryRail 不再自带折叠按钮）
-   - 工具栏呈现为横向方形按钮组，支持直接按住按钮拖拽，默认半透明，鼠标悬停完全显示；位置独立持久化
+   - 工具栏呈现为横向方形按钮组，默认在视口右上角贴边固定，上下左右无边距限制且支持自由拖拽到界面任意位置，默认半透明，鼠标悬停完全显示；位置独立持久化
                     │
                     ▼
 3. 弹窗 (features/chat/quick/QuickAssistantPanel.vue)

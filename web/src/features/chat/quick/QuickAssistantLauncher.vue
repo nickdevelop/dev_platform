@@ -172,8 +172,8 @@ watch(open, (value, previous) => {
 <style scoped>
 .quick-assistant-toolbar {
   position: fixed;
-  top: 50px;
-  right: 50px;
+  top: 0;
+  right: 0;
   z-index: 61;
   display: inline-flex;
   flex-direction: row;

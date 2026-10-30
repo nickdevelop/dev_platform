@@ -1,10 +1,12 @@
-// Pure geometry for the draggable quick-assistant launcher: the button keeps
-// 50px of vertical breathing room, and the 480x600 panel flips above the button
-// when there is no room below.
+// Pure geometry for the draggable quick-assistant launcher: the button has no
+// edge margin and docks flush against the top-right corner by default, and the
+// 480x600 panel flips above the button when there is no room below.
 import { describe, expect, it } from 'vitest'
 import {
+  BUTTON_DEFAULT_OFFSET,
   clampButtonPosition,
   clampPanelPosition,
+  defaultButtonPosition,
   initialPanelPosition,
   placePanel,
   readStoredPanelPosition,
@@ -16,15 +18,24 @@ const viewport = { width: 1280, height: 800 }
 const button = { width: 110, height: 36 }
 
 describe('quick assistant position', () => {
-  it('allows dragging across the whole viewport with a small edge margin', () => {
-    expect(clampButtonPosition({ left: 100, top: 0 }, button, viewport).top).toBe(12)
+  it('allows dragging across the whole viewport with zero edge margin', () => {
+    expect(clampButtonPosition({ left: 100, top: 0 }, button, viewport).top).toBe(0)
     expect(clampButtonPosition({ left: 100, top: 9999 }, button, viewport).top).toBe(
-      viewport.height - 12 - button.height,
+      viewport.height - button.height,
     )
-    expect(clampButtonPosition({ left: -200, top: 100 }, button, viewport).left).toBe(12)
+    expect(clampButtonPosition({ left: -200, top: 100 }, button, viewport).left).toBe(0)
     expect(clampButtonPosition({ left: 9999, top: 100 }, button, viewport).left).toBe(
-      viewport.width - 12 - button.width,
+      viewport.width - button.width,
     )
+  })
+
+  it('docks flush against the top-right corner by default with zero offset', () => {
+    expect(BUTTON_DEFAULT_OFFSET).toBe(0)
+    const pos = defaultButtonPosition(button, viewport)
+    expect(pos).toEqual({
+      left: viewport.width - button.width,
+      top: 0,
+    })
   })
 
   it('clamps panel within viewport margins', () => {

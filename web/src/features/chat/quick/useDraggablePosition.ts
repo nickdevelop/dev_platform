@@ -6,8 +6,8 @@ import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref }
 
 export const POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-position'
 export const PANEL_POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-panel-position'
-// The initial placement keeps the button 50px from the top and right edges.
-export const BUTTON_DEFAULT_OFFSET = 50
+// The initial placement docks the button flush against the top-right corner.
+export const BUTTON_DEFAULT_OFFSET = 0
 // The drag area covers the whole viewport; this margin only prevents the
 // button from being pushed completely against an edge and becoming hard to grab.
 export const VIEWPORT_EDGE_MARGIN = 12
@@ -35,11 +35,18 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function clampButtonPosition(point: Point, button: Size, viewport: Viewport): Point {
-  const maxLeft = Math.max(VIEWPORT_EDGE_MARGIN, viewport.width - VIEWPORT_EDGE_MARGIN - button.width)
-  const maxTop = Math.max(VIEWPORT_EDGE_MARGIN, viewport.height - VIEWPORT_EDGE_MARGIN - button.height)
+  const maxLeft = Math.max(0, viewport.width - button.width)
+  const maxTop = Math.max(0, viewport.height - button.height)
   return {
-    left: clamp(point.left, VIEWPORT_EDGE_MARGIN, maxLeft),
-    top: clamp(point.top, VIEWPORT_EDGE_MARGIN, maxTop),
+    left: clamp(point.left, 0, maxLeft),
+    top: clamp(point.top, 0, maxTop),
+  }
+}
+
+export function defaultButtonPosition(button: Size, viewport: Viewport): Point {
+  return {
+    left: Math.max(0, viewport.width - button.width),
+    top: 0,
   }
 }
 
@@ -164,20 +171,20 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
       width: window.innerWidth,
       height: window.innerHeight,
     }
-    if (position.value) setPosition(position.value)
+    const stored = readStoredPosition()
+    if (!stored) {
+      position.value = defaultButtonPosition(buttonSize.value, viewport.value)
+    } else if (position.value) {
+      setPosition(position.value)
+    }
   }
 
   onMounted(() => {
     const size = measureButton()
     const stored = readStoredPosition()
-    position.value = clampButtonPosition(
-      stored ?? {
-        left: viewport.value.width - BUTTON_DEFAULT_OFFSET - size.width,
-        top: BUTTON_DEFAULT_OFFSET,
-      },
-      size,
-      viewport.value,
-    )
+    position.value = stored
+      ? clampButtonPosition(stored, size, viewport.value)
+      : defaultButtonPosition(size, viewport.value)
     window.addEventListener('resize', refreshOnResize)
   })
 
