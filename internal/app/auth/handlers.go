@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"sync"
@@ -92,6 +93,7 @@ func (s *Service) PasswordConfigured() (bool, error) {
 func (s *Service) RegisterRoutes(r gin.IRoutes) {
 	r.POST("/auth/login", s.handleLogin)
 	r.POST("/auth/logout", RequireSession(s), s.handleLogout)
+	r.POST("/auth/setup", s.handleSetupPassword)
 	r.GET("/auth/session", s.handleSession)
 }
 
@@ -101,6 +103,7 @@ type sessionResponse struct {
 	Authenticated bool       `json:"authenticated"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
 	CSRFToken     string     `json:"csrfToken"`
+	NeedsSetup    bool       `json:"needsSetup,omitempty"`
 }
 
 // errorResponse is the JSON error envelope for auth failures.
@@ -207,7 +210,72 @@ func (s *Service) handleSession(c *gin.Context) {
 		}
 	}
 
+	if !resp.Authenticated && isLocalClient(c) {
+		configured, err := s.PasswordConfigured()
+		if err != nil {
+			abortWithError(c, http.StatusInternalServerError, "server_error")
+			return
+		}
+		if !configured {
+			resp.NeedsSetup = true
+		}
+	}
+
 	c.JSON(http.StatusOK, resp)
+}
+
+// setupPasswordRequest is the JSON body of POST /api/auth/setup.
+type setupPasswordRequest struct {
+	Password string `json:"password"`
+}
+
+// handleSetupPassword configures the platform password on first run from localhost.
+func (s *Service) handleSetupPassword(c *gin.Context) {
+	setNoStore(c)
+
+	if !isLocalClient(c) {
+		abortWithError(c, http.StatusForbidden, "local_access_only")
+		return
+	}
+
+	var req setupPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Password == "" {
+		abortWithError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	configured, err := s.PasswordConfigured()
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	if configured {
+		abortWithError(c, http.StatusConflict, "password_already_set")
+		return
+	}
+
+	if err := s.SetPassword(req.Password); err != nil {
+		if errors.Is(err, ErrPasswordAlreadySet) {
+			abortWithError(c, http.StatusConflict, "password_already_set")
+			return
+		}
+		abortWithError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+
+	session, err := s.sessions.Create()
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+
+	setSessionCookie(c, session.ID, session.ExpiresAt, maxAgeSeconds(s.sessionTTL))
+	expires := session.ExpiresAt
+	c.JSON(http.StatusOK, sessionResponse{
+		Authenticated: true,
+		ExpiresAt:     &expires,
+		CSRFToken:     s.issueCSRFToken(c),
+	})
 }
 
 // handleLogout invalidates the current session and clears the cookie.
@@ -234,6 +302,16 @@ func clientKey(c *gin.Context) string {
 		return c.Request.RemoteAddr
 	}
 	return host
+}
+
+// isLocalClient reports whether the request originated from a loopback address.
+func isLocalClient(c *gin.Context) bool {
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		host = c.Request.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // reservation identifies one admitted login attempt. It lets a successful

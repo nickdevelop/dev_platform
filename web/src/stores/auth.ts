@@ -14,6 +14,7 @@ export interface SessionResponse {
   authenticated: boolean
   expiresAt?: string
   csrfToken: string
+  needsSetup?: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -21,6 +22,7 @@ export const useAuthStore = defineStore('auth', {
     authenticated: false,
     expiresAt: null as string | null,
     csrfToken: '',
+    needsSetup: false,
     // The session endpoint is consulted once per page load, not on every
     // navigation; afterwards the store's state is the source of truth.
     sessionChecked: false,
@@ -61,6 +63,17 @@ export const useAuthStore = defineStore('auth', {
       this.sessionChecked = true
     },
 
+    async setupPassword(password: string) {
+      const session = await mutate<SessionResponse>(
+        'POST',
+        '/auth/setup',
+        { password },
+        { ignoreUnauthorized: true },
+      )
+      this.apply(session)
+      this.sessionChecked = true
+    },
+
     async logout() {
       try {
         await mutate<SessionResponse>('POST', '/auth/logout')
@@ -75,12 +88,14 @@ export const useAuthStore = defineStore('auth', {
       this.authenticated = false
       this.expiresAt = null
       this.csrfToken = ''
+      this.needsSetup = false
     },
 
     apply(session: SessionResponse) {
       this.authenticated = session.authenticated
       this.expiresAt = session.expiresAt ?? null
       this.csrfToken = session.csrfToken
+      this.needsSetup = Boolean(session.needsSetup)
     },
   },
 })

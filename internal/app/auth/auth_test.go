@@ -687,3 +687,162 @@ func TestLoginAndLogoutRotateCSRFToken(t *testing.T) {
 		t.Errorf("mutation with the pre-logout token status = %d, want %d", replayed.StatusCode, http.StatusForbidden)
 	}
 }
+
+func TestSessionEndpointReportsNeedsSetupOnlyForLocalhostWhenNoPasswordSet(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+	router := newRouter(svc)
+
+	// 1. Localhost via httptest.NewServer (default loopback 127.0.0.1)
+	client, base := newClient(t, router)
+	resp, err := client.Get(base + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET /api/auth/session: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var sessionResp sessionResponse
+	if err := json.NewDecoder(resp.Body).Decode(&sessionResp); err != nil {
+		t.Fatalf("decode session response: %v", err)
+	}
+	if sessionResp.Authenticated {
+		t.Errorf("authenticated = true, want false")
+	}
+	if !sessionResp.NeedsSetup {
+		t.Errorf("needsSetup = false, want true for unconfigured localhost request")
+	}
+
+	// 2. Non-localhost request simulated with httptest.NewRecorder
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("non-localhost session status = %d, want 200", rec.Code)
+	}
+	var nonLocalResp sessionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&nonLocalResp); err != nil {
+		t.Fatalf("decode non-local session response: %v", err)
+	}
+	if nonLocalResp.NeedsSetup {
+		t.Errorf("needsSetup = true, want false for non-local request")
+	}
+
+	// 3. After password is configured, localhost should report needsSetup = false
+	if err := svc.SetPassword("super-secret"); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	respAfter, err := client.Get(base + "/api/auth/session")
+	if err != nil {
+		t.Fatalf("GET /api/auth/session after set: %v", err)
+	}
+	defer respAfter.Body.Close()
+
+	var afterResp sessionResponse
+	if err := json.NewDecoder(respAfter.Body).Decode(&afterResp); err != nil {
+		t.Fatalf("decode session response after set: %v", err)
+	}
+	if afterResp.NeedsSetup {
+		t.Errorf("needsSetup = true, want false once password is configured")
+	}
+}
+
+func TestSetupPasswordFromLocalhostSucceedsAndAuthenticates(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+	router := newRouter(svc)
+	client, base := newClient(t, router)
+
+	csrf := fetchCSRF(t, client, base)
+
+	// POST /api/auth/setup
+	setupResp := postJSON(t, client, base+"/api/auth/setup", csrf, `{"password":"initial-password"}`)
+	defer setupResp.Body.Close()
+
+	if setupResp.StatusCode != http.StatusOK {
+		t.Fatalf("setup status = %d, want 200", setupResp.StatusCode)
+	}
+
+	var body sessionResponse
+	if err := json.NewDecoder(setupResp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode setup response: %v", err)
+	}
+	if !body.Authenticated {
+		t.Errorf("setup authenticated = false, want true")
+	}
+	if body.CSRFToken == "" || body.CSRFToken == csrf {
+		t.Errorf("setup CSRFToken = %q, want fresh token", body.CSRFToken)
+	}
+
+	// Immediate access to protected route succeeds without needing another login
+	protectedResp, err := client.Get(base + "/api/protected/ping")
+	if err != nil {
+		t.Fatalf("GET /api/protected/ping: %v", err)
+	}
+	protectedResp.Body.Close()
+	if protectedResp.StatusCode != http.StatusOK {
+		t.Errorf("protected ping status = %d, want 200", protectedResp.StatusCode)
+	}
+
+	// Subsequent setup attempt is rejected with 409 Conflict
+	secondSetup := postJSON(t, client, base+"/api/auth/setup", body.CSRFToken, `{"password":"second-password"}`)
+	secondSetup.Body.Close()
+	if secondSetup.StatusCode != http.StatusConflict {
+		t.Errorf("second setup status = %d, want 409", secondSetup.StatusCode)
+	}
+
+	// PasswordConfigured reports true
+	configured, err := svc.PasswordConfigured()
+	if err != nil || !configured {
+		t.Errorf("PasswordConfigured = (%v, %v), want (true, nil)", configured, err)
+	}
+}
+
+func TestSetupPasswordRejectsNonLocalhostRequests(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+	router := newRouter(svc)
+
+	// Fetch CSRF using loopback client
+	client, base := newClient(t, router)
+	csrf := fetchCSRF(t, client, base)
+
+	// Simulate non-localhost POST
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup", strings.NewReader(`{"password":"initial-password"}`))
+	req.RemoteAddr = "192.168.1.100:12345"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrf)
+	// We also need the cookie matching the CSRF token
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: csrf})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("non-local setup status = %d, want 403 Forbidden", rec.Code)
+	}
+	var errResp errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if errResp.Error != "local_access_only" {
+		t.Errorf("error = %q, want 'local_access_only'", errResp.Error)
+	}
+}
+
+func TestSetupPasswordRejectsEmptyPassword(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db)
+	router := newRouter(svc)
+	client, base := newClient(t, router)
+
+	csrf := fetchCSRF(t, client, base)
+
+	resp := postJSON(t, client, base+"/api/auth/setup", csrf, `{"password":""}`)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty password setup status = %d, want 400 Bad Request", resp.StatusCode)
+	}
+}

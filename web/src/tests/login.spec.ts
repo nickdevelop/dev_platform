@@ -332,4 +332,74 @@ describe('project management', () => {
     expect(document.activeElement).not.toBeNull()
     expect(dialog(wrapper).element.contains(document.activeElement)).toBe(true)
   })
+
+  it('shows the initial setup password form when needsSetup is true', async () => {
+    const { wrapper, router } = await mountApp([
+      {
+        method: 'GET',
+        path: '/api/auth/session',
+        status: 200,
+        body: { authenticated: false, csrfToken: 'csrf-1', needsSetup: true },
+      },
+    ])
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.text()).toContain('检测到首次在本机启动，请设置初始访问密码')
+    expect(wrapper.find('input#login-password').exists()).toBe(true)
+    expect(wrapper.find('input#login-confirm-password').exists()).toBe(true)
+    expect(wrapper.find('button[type="submit"]').text()).toBe('设置密码并登录')
+  })
+
+  it('validates password mismatch on initial setup before submitting', async () => {
+    const { wrapper, calls } = await mountApp([
+      {
+        method: 'GET',
+        path: '/api/auth/session',
+        status: 200,
+        body: { authenticated: false, csrfToken: 'csrf-1', needsSetup: true },
+      },
+    ])
+
+    await wrapper.find('input#login-password').setValue('password-123')
+    await wrapper.find('input#login-confirm-password').setValue('password-mismatch')
+    await wrapper.find('form.login-form').trigger('submit')
+    await flushPromises()
+
+    const setupCalls = calls.filter((c) => c.path === '/api/auth/setup')
+    expect(setupCalls.length).toBe(0)
+    const alert = wrapper.find('.login-error')
+    expect(alert.exists()).toBe(true)
+    expect(alert.text()).toContain('两次输入的密码不一致')
+  })
+
+  it('submits initial password setup and redirects to home on success', async () => {
+    const { wrapper, router, calls } = await mountApp([
+      {
+        method: 'GET',
+        path: '/api/auth/session',
+        status: 200,
+        body: { authenticated: false, csrfToken: 'csrf-1', needsSetup: true },
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/setup',
+        status: 200,
+        body: { authenticated: true, csrfToken: 'csrf-2', expiresAt: '2026-10-09T00:00:00Z' },
+      },
+      { method: 'GET', path: '/api/projects', status: 200, body: { projects: [demoProject] } },
+    ])
+
+    await wrapper.find('input#login-password').setValue('brand-new-password')
+    await wrapper.find('input#login-confirm-password').setValue('brand-new-password')
+    await wrapper.find('form.login-form').trigger('submit')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(wrapper.text()).toContain('demo')
+
+    const setupCall = calls.find((call) => call.method === 'POST' && call.path === '/api/auth/setup')
+    expect(setupCall).toBeDefined()
+    expect(setupCall?.body).toEqual({ password: 'brand-new-password' })
+    expect(setupCall?.headers['x-csrf-token']).toBe('csrf-1')
+  })
 })

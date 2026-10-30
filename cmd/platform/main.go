@@ -259,7 +259,7 @@ func runServer(args []string) error {
 	if configured, err := authService.PasswordConfigured(); err != nil {
 		return err
 	} else if !configured {
-		log.Printf("no platform password configured; run %q first", setPasswordCommand)
+		log.Printf("no platform password configured; set it on first login from localhost or run %q", setPasswordCommand)
 	}
 
 	// Route dumps and debug warnings are noise in production logs.

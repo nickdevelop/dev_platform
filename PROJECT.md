@@ -14,6 +14,7 @@
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
 6. **服务代理与 Demo 预览**：提供统一的动态 ContextPath 网关，支持将服务器上的静态文件目录（Directory Serving）或本地监听端口的 HTTP 服务（Port Reverse Proxy）通过平台端口以独立 ContextPath（`/proxy/:alias/`）直接暴露；免登录公开访问，支持外部快速分享与查看 demo，全协议透传并支持 WebSocket 升级（完美兼容 Vite/Webpack 等开发工具的 HMR 热更新）。
+7. **桌面端双模协同**：提供原生桌面客户端外壳（Electron 架构），支持“本地单机自带服务（Sidecar 自动拉起与优雅停机）”与“连接远程云端/团队服务”双模开箱即用与自由切换；主进程内置高性能轻量本地透明反代（Desktop Local Proxy），无缝穿透跨域与 SameSite Cookie 限制，并动态对齐 Origin 保证终端 WebSocket CSWSH 安全校验 100% 契约一致，使前端业务代码与后端服务零侵入同构。
 
 ---
 
@@ -30,7 +31,8 @@
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (693 单测通过); Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、全流程端到端自动化 |
+| **桌面客户端外壳** | Electron v34, TypeScript, Node.js 原生 HTTP/WebSocket 透明代理, `electron-builder` | 原生跨平台桌面封装（Linux/Windows/macOS）、Sidecar 本地子进程纳管、双模网络同构代理与凭据加密安全存储 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (714 单测通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、桌面代理与连接单测、全流程端到端自动化 |
 
 ---
 
@@ -39,11 +41,11 @@
 项目严格对齐 Claudian 的五层架构体系，将“与具体 Agent 无关的通用同构层”和“必须因后端而异的异构层”彻底解耦：
 
 ```
-① 组合根     cmd/platform/（Go 程序入口）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
+① 组合根     cmd/platform/（Go 服务入口）+ desktop/src/main/（Electron 桌面主进程）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
 ③ 领域服务   internal/app/{sessions, instances, agentmodels, projects, chat, tasks, terminal, settings, auth, ...}
 ⑤ 异构适配   internal/providers/{opencode, pi, deepseek}（实现 core 契约，向组合根导出 Descriptor）
-传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）
+传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）+ desktop/src/main/proxy.ts（桌面透明反代）
 ② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
 ```
 
@@ -75,7 +77,7 @@
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
 | **`agentservices/`** | 机器级 Agent 后台守护服务管理。负责机器级第三方后台服务（如 OpenCode service）的健康探测、运维手动启停与启动门控。 | `service.go`（探测与启停协调）、`handlers.go`（运维管理 API） | 仅在后台服务支持的后端生效；不承担模型缓存失效职责。 |
 | **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态。 | `service.go`（List/Refresh/UpdateModel）、`repository.go`（快照读写与增量合并）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
-| **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出） | 全局路由拦截第一关。 |
+| **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、本机首次免命令行密码设置引导、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出/首次密码设置） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题、快捷助手开关、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
 | **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
@@ -158,6 +160,20 @@ web/src/
    - 破坏性/危险操作一律采用 Danger 红色警示按钮。
    - 异常状态与重试引导统一使用 `UiAlert`。
 ```
+
+---
+
+### 5. 桌面客户端外壳架构（`desktop/`）
+
+桌面端外壳由 Electron 驱动，完全解耦于 Web 端代码库与 Go 核心后端，通过同构网络代理透明桥接：
+
+| 模块文件 | 核心职责与架构说明 |
+|---|---|
+| **`desktop/src/main/index.ts`** | Electron 主进程入口。负责单实例锁校验（防止重复运行）、主窗口几何尺寸管理、系统生命周期监控（`before-quit` 级联停机）、统一 IPC 通道分发。 |
+| **`desktop/src/main/service-manager.ts`** | 本地 Go 服务端（Sidecar）生命周期调度器。在本地模式下派生 `bin/platform` 子进程，监听回环地址随机端口（`-listen 127.0.0.1:0`），自动从日志中探测绑定端口并做 `/api/health` 可达性校验；应用关闭时发送 SIGTERM 优雅退出，并在 5 秒超时后兜底回收，彻底消除孤儿进程。 |
+| **`desktop/src/main/proxy.ts`** | 本地透明反向代理（Desktop Local Proxy）。主进程在 `127.0.0.1:DESKTOP_PORT` 启动轻量高性能代理，前端无论连接本地还是远程后端均访问该同源端口；代理负责 HTTP/SSE 请求透明转发、静态文件与 SPA 路由直接响应，并在 WebSocket 握手时自动重写 Host 与 Origin，保证终端 `checkSameOrigin` 与 CSRF 双提交校验 100% 同构兼容。 |
+| **`desktop/src/main/connection-store.ts`** | 多环境连接配置与安全凭据管理。持久化存储“本地单机内置服务”及“远程服务器”连接列表，利用 Electron 原生 `safeStorage`（系统 Keychain / DPAPI）对敏感凭据进行操作系统级硬件加密存储。 |
+| **`desktop/src/preload/index.ts`** | Preload 安全上下文隔离网桥。向渲染进程安全暴露只读中立契约 `window.desktopAPI`，包含获取连接、保存配置、切换连接、连通性探测及原生目录对话框。 |
 
 ---
 
@@ -378,6 +394,76 @@ web/src/
    - 支持实时连通性探测 (net.DialTimeout 200ms 检测回环端口是否处于监听状态)
    - 前端提供一键在新标签页打开、剪贴板一键复制链接、在线状态徽标与开关启停
 ```
+
+---
+
+### 8. 桌面应用双模连接与本地透明代理流（Desktop Dual-Mode & Proxy Flow）
+
+```
+[ 用户启动桌面客户端 / 点击分类栏底部“连接”切换服务器 ]
+                         │
+                         ▼
+1. 桌面壳主进程 (desktop/src/main/index.ts)
+   - 执行单实例互斥锁判定 (requestSingleInstanceLock)，防多进程竞争；
+   - 读取 ConnectionStore 配置；若当前激活目标为本地 (local)，唤醒 LocalServiceManager；
+   - LocalServiceManager 自动派生 bin/platform 并分配 127.0.0.1 动态端口，等待健康探测就绪。
+                         │
+                         ▼
+2. 本地透明反向代理 (desktop/src/main/proxy.ts)
+   - 在 127.0.0.1:DESKTOP_PORT 启动轻量透明网关，主窗口加载该同源地址；
+   - 静态资源：直接由代理从本地打包的 web/dist 毫秒级托管响应 (含 SPA NoRoute 兜底)；
+   - 数据面与 API 请求：
+       • 模式 A (本地)：请求原样管道透传至 127.0.0.1:LOCAL_PORT；
+       • 模式 B (远程)：请求转发至目标远程服务器，主进程自动注入凭据并动态重写 Host 与 Origin，
+         不仅彻底规避了浏览器 CORS 与 SameSite=Strict Cookie 限制，更使终端 WebSocket 的
+         checkSameOrigin 校验 100% 契约一致通过；
+       • WebSocket 升级：原生全双工管道透传，完美承载在线交互式终端与开发热更新。
+                         │
+                         ▼
+3. 渲染进程与连接管理器 (features/workspace/ConnectionDialog.vue & shared/desktop.ts)
+   - 通过 preload 注入的 window.desktopAPI 暴露连接增删改查、连通性实时探测与动态切换；
+   - 用户切换目标连接时：原子化重置前端活动 Tab、断开正在运行的 SSE 与 WebSocket 连接，清空
+     CSRF/Auth Store，平滑过渡至目标服务环境，保证状态绝对物理隔离。
+```
+
+---
+
+### 9. 用户认证鉴权与本机免命令行首次初始化流（First-Run Localhost Setup & Auth Flow）
+
+```
+[ 平台首次启动且数据库未配置密码 ]
+                 │
+                 ▼
+1. 访问来源探测 (internal/app/auth/handlers.go)
+   - 客户端访问 GET /api/auth/session
+   - 服务端提取底层 TCP 连接 remote address (c.Request.RemoteAddr) 并校验 net.ParseIP().IsLoopback()
+   - 若 !authenticated 且 !passwordConfigured 且 isLoopback:
+       • 响应 sessionResponse 携带 { authenticated: false, needsSetup: true, csrfToken: "..." }
+   - 若来自非本机（外部网络/公网）：
+       • needsSetup 保持 false，绝不向外部网络泄漏系统未初始化的脆弱状态
+                 │
+                 ▼
+2. Web 前端渲染 (views/LoginView.vue & stores/auth.ts)
+   - Auth store 解析 session 响应，检测到 needsSetup === true
+   - 页面自动切换为“首次平台密码初始化”引导模式（提示：检测到首次在本机启动，请设置初始访问密码）
+   - 表单呈现“设置平台密码”与“确认密码”两个输入框，前端校验两次输入一致性
+                 │
+                 ▼ (用户点击“设置密码并登录”，经 client.ts 自动注入 X-CSRF-Token)
+3. 首次密码持久化 (POST /api/auth/setup)
+   - 传输层 RequireCSRF 中间件执行 Double-Submit 校验
+   - handler 再次强制校验 isLocalClient(c)，非本机直接 403 Forbidden (local_access_only)
+   - 校验密码非空与原子防重 (若已设置过立即返回 409 Conflict password_already_set)
+   - 执行 Argon2id 哈希持久化 (auth.SetPassword)
+   - 自动登录闭环：直接为当前连接创建会话 (s.sessions.Create)，植入 Session Cookie 并签发新 CSRF Token
+                 │
+                 ▼
+4. 前端状态流转
+   - 接收到已认证的 sessionResponse (authenticated: true)
+   - Auth store 状态更新为已登录，路由无缝跳转至主工作区 (home)
+   - 命令行 platform set-password 保留作为无浏览器/无头服务器运维的兼容兜底
+```
+
+---
 
 ## 六、API 传输层与安全规范（ADR-0001）
 

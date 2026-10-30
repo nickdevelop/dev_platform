@@ -78,6 +78,45 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /auth/setup:
+    post:
+      summary: Set initial platform password
+      description: >-
+        Configures the initial platform password on first run. Permitted only
+        from loopback (localhost) connections when no password has been set.
+        Issues an expiring session cookie upon success. Requires a valid CSRF token.
+      operationId: setupPassword
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetupPasswordRequest'
+      responses:
+        '200':
+          description: Password configured and authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Request rejected because it is not from localhost or CSRF validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Password has already been configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /auth/logout:
     post:
       summary: Log out
@@ -4337,6 +4376,15 @@ components:
           type: string
           writeOnly: true
       additionalProperties: false
+    SetupPasswordRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          writeOnly: true
+      additionalProperties: false
     SessionResponse:
       type: object
       required:
@@ -4350,6 +4398,8 @@ components:
           format: date-time
         csrfToken:
           type: string
+        needsSetup:
+          type: boolean
       additionalProperties: false
     Project:
       type: object
