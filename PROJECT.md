@@ -141,20 +141,25 @@ web/src/
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```
 
-#### 平台标准 UI 组件库与样式管理规范
+#### 平台标准 UI 组件库与设计系统规范（Data Terminal）
+> 详细设计系统规范、色彩 Token、字符对齐律、状态交互法则（The Move）与图标规范详见：👉 [`docs/architecture/design-system.md`](./docs/architecture/design-system.md)
+
 1. **纯中性设计与业务解耦**：
    - 提取的组件严格置于 `shared/ui/`，保持与具体业务领域（Chat、Tasks、Projects 等）彻底解耦。
    - 例如：`UiSelectMenu` 提炼为通用的现代下拉选择器（支持触发器展示主副文本、弹出浮层、搜索过滤、快捷清除与多选/单选无障碍支持，彻底替代各业务模块的裸露原生 `<select>`）；`UiProgress` 抽离为支持 Tooltip 提示的通用进度条组件；`UiComposer` 抽离为通用可拖拽高度的复合输入交互容器；`UiTree` 抽象通用的树形层级交互骨架。
 2. **第二栏与侧边栏列表标准规范**：
    - 第二栏（中间导航栏）确立以“项目 + 会话”为全平台绝对基准规范：
      - **两级分类**：严格参照 `ProjectTree` 规范（高度统一的分组行 Header、SVG 矢量旋转折叠箭头、hover 浮现的紧凑操作按钮、会话级二级项）。
-     - **一级分类**：直接参照 `ProjectSessionItem` 的两行紧凑卡片排版规范（Row 1 徽标/状态 + 标题截断；Row 2 属性标签 + 时间；内边距统一 `px-2 py-1`，选中态统一采用主题色发光阴影与微边框高亮），覆盖任务、提示词与服务器列表。
-   - **折叠/展开交互按钮**：全平台统一采用 24×24px 方圆角微按钮（`var(--radius, 6px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
+     - **一级分类**：直接参照 `ProjectSessionItem` 的两行紧凑卡片排版规范（Row 1 徽标/状态 + 标题截断；Row 2 属性标签 + 时间；内边距统一 `px-2 py-1`，选中态统一采用 1px 微边框高亮与阶梯底色），覆盖任务、提示词与服务器列表。
+   - **折叠/展开交互按钮**：全平台统一采用紧凑方圆角微按钮（`var(--radius, 4px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
    - **会话级右侧细导航栏**：项目会话对话区右侧设 34px 竖向细导航，集中承载「文件树」与「思考与工具 / 文件预览」两个入口；使用 26×26px 图标按钮、竖排微标签与 Tooltip，面板收起后入口常驻。展开状态以 active 样式与 `aria-pressed` 表达，按钮不得再放回会话标题行，预览入口不显示活动数量角标。组件位于 `features/chat/pane/ChatSideRail.vue`，状态仍由 `useActivityPane`（localStorage）管理；该组件带会话业务语义，禁止下沉到 `shared/ui/`。文件树与预览均停靠右侧；两者同时展开时，预览按会话区容器宽度自动转为覆盖消息列的覆盖层，文件树保持可见，避免把右轨挤出视口；消息列最小宽度 300px，文件树与预览可分别收缩至 210px / 300px。
-3. **样式管理与视觉风格**：
-   - 全局引入 Tailwind CSS，预置 Slate/Zinc 为中性调色板，Blue 为 Primary 主色，Emerald/Amber/Red 为语义状态色。
-   - 视觉风格采用现代扁平化设计（Flat Design），组件圆角统一设定为轻微小圆角（`rounded: 6px`），消除厚重投影。
-   - 控件高度统一基准阶梯（标准控件高 34px / 小号 28px），操作焦点统一使用高亮光圈（Focus Ring）。
+3. **Data Terminal 极客终端视觉风格与 Token 规范**：
+   - 全局遵循 **Data Terminal** 终端工程风格（基于 `design-taste-frontend` 开发者工具标准）：
+     - **色彩预算**：视口彩色像素严格在 3% 以内；深石墨灰基调（`--ground: #0f1115`，`--surface: #14171f`），纯平 1px 细线边框（`--border: #222631`），彻底清除静止卡片阴影（`box-shadow`）与毛玻璃模糊（`backdrop-filter: blur`）。
+     - **排版与对齐**：全局强制数字等宽（`font-variant-numeric: tabular-nums`），离线内嵌 Google Sans Code 与 Noto Sans SC；严禁全大写宽字距标签（micro-label 禁令）。
+     - **圆角收敛**：组件外框与卡片统一收敛为平直微圆角（`--radius: 3px~4px`）。
+     - **交互激活（The Move）**：所有 Tab 标签、导航项、范围选择器的激活状态统一使用紧贴底边或侧边的 1px/2px 科技蓝强调线（`--color-accent: #4a8ad6`）。
+     - **纯净矢量图标系统**：全站杜绝原生 UI Emoji，统一升级为 1.5px/1.8px 细线条极简几何矢量 SVG 图标。
 4. **操作体验规范统一**：
    - 弹窗操作顺序统一规范：取消按钮居左（Secondary 样式），确认/执行按钮居右（Primary 或 Danger 样式）；全量统一使用 `UiDialog` / `UiFormDialog`，消除各业务自造的手写遮罩层；全量支持 Esc 关闭与 Tab 焦点陷阱。
    - 破坏性/危险操作一律采用 Danger 红色警示按钮。
