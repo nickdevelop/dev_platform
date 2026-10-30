@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
-import ConnectionDialog from '../features/workspace/ConnectionDialog.vue'
+import ConnectionSettings from '../features/settings/ConnectionSettings.vue'
 import { useDesktopConnection, resetDesktopStateForTesting, type DesktopIpcApi } from '../shared/desktop'
 
 vi.mock('vue-router', () => ({
@@ -11,7 +11,7 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-describe('Desktop Connections & Dialog', () => {
+describe('Desktop Connections & ConnectionSettings', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.restoreAllMocks()
@@ -20,20 +20,10 @@ describe('Desktop Connections & Dialog', () => {
   })
 
   it('handles non-desktop environment gracefully', async () => {
-    const wrapper = mount(ConnectionDialog, {
-      props: { open: true },
-      global: {
-        stubs: {
-          UiDialog: {
-            props: ['title'],
-            template: '<div class="ui-dialog-stub"><h2>{{ title }}</h2><slot /></div>',
-          },
-        },
-      },
-    })
+    const wrapper = mount(ConnectionSettings)
 
-    expect(wrapper.text()).toContain('服务连接管理器')
-    expect(wrapper.text()).toContain('当前处于浏览器模式')
+    expect(wrapper.text()).toContain('服务连接')
+    expect(wrapper.text()).toContain('当前处于 Web 浏览器直连模式')
   })
 
   it('loads connections and switches target in desktop environment', async () => {
@@ -67,17 +57,7 @@ describe('Desktop Connections & Dialog', () => {
     const desktop = useDesktopConnection()
     await desktop.refresh()
 
-    const wrapper = mount(ConnectionDialog, {
-      props: { open: true },
-      global: {
-        stubs: {
-          UiDialog: {
-            props: ['title'],
-            template: '<div class="ui-dialog-stub"><h2>{{ title }}</h2><slot /></div>',
-          },
-        },
-      },
-    })
+    const wrapper = mount(ConnectionSettings)
 
     await nextTick()
     await nextTick()
@@ -112,17 +92,7 @@ describe('Desktop Connections & Dialog', () => {
     const desktop = useDesktopConnection()
     await desktop.refresh()
 
-    const wrapper = mount(ConnectionDialog, {
-      props: { open: true },
-      global: {
-        stubs: {
-          UiDialog: {
-            props: ['title'],
-            template: '<div class="ui-dialog-stub"><h2>{{ title }}</h2><slot /></div>',
-          },
-        },
-      },
-    })
+    const wrapper = mount(ConnectionSettings)
 
     await nextTick()
     await nextTick()

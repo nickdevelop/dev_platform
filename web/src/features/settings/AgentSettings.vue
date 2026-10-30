@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Agent management section: per-backend platform enablement, executable path
-// detection, a manual path fallback when auto-detection fails, the
-// machine-level service block — the one place in the platform that may start or
-// stop a third-party service — persisted model catalogs with manual refresh,
-// and each backend's diagnostics. Backend diagnostics live here, not in project
-// settings: they describe the machine, not a project.
+// detection, manual path fallback when auto-detection fails, machine-level service
+// controller, persisted model catalogs with refresh, and diagnostics.
+// Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
+// flat surfaces, zero resting shadows, tabular figures, precise status pills,
+// structured sections).
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useAgentsStore } from '../../stores/agents'
@@ -26,8 +26,7 @@ const agents = useAgentsStore()
 const pathInputs = reactive<Record<string, string>>({})
 const detections = reactive<Record<string, AgentDetection | null>>({})
 
-// Persisted model snapshots, one per backend. A read never touches the agent;
-// only the refresh button asks the backend for its current catalog.
+// Persisted model snapshots, one per backend.
 const models = reactive<Record<string, ModelInfo[]>>({})
 const modelsUpdatedAt = reactive<Record<string, string | null>>({})
 const modelsLoading = reactive<Record<string, boolean>>({})
@@ -38,24 +37,16 @@ const diagnosticsByBackend = computed(() => {
   for (const report of agents.diagnostics) byBackend.set(report.backend, report)
   return byBackend
 })
-// The backend whose stop is awaiting confirmation, and nothing else. Stopping a
-// machine-wide service interrupts every client of it, so the click that opens
-// this confirmation is never the click that stops it.
+
 const confirmStop = ref<string | null>(null)
 
 onMounted(async () => {
   void settings.loadAgents()
   await agents.loadBackends()
-  // Diagnostics are point-in-time and refetched on every visit; nothing polls.
   void agents.loadDiagnostics()
-  // One look per page load, and after that only when the operator presses the
-  // button. The service is a third-party process: the platform does not poll it
-  // and never acts on its state by itself.
   for (const entry of agents.serviceBackends) {
     void agents.detectService(entry.backend)
   }
-  // Read the persisted snapshot only; the agent is not contacted until the
-  // operator presses refresh.
   for (const entry of agents.orderedBackends) {
     if (entry.capabilities?.modelSelection) void loadModels(entry.backend, false)
   }
@@ -80,8 +71,6 @@ async function detect(backend: string) {
 
 async function toggle(backend: string, value: boolean) {
   await settings.setAgentEnabled(backend, value)
-  // The workbench reads the platform switch from the agents store; reload it
-  // so the new state applies without a page reload.
   await agents.refreshBackends()
 }
 
@@ -94,15 +83,9 @@ function serviceFor(backend: string): AgentServiceStatus | null {
 }
 
 function showsService(backend: string): boolean {
-  // A backend listed here is one the platform has a service controller for; a
-  // server answer of `supported: false` overrides it, because the server is
-  // right and the platform must not offer a control that does not apply.
   return agents.backendFor(backend)?.serviceSupported === true && serviceFor(backend)?.supported !== false
 }
 
-// stateLabel is the operator's wording for what detection found. "未启动" and
-// "无法连接" are deliberately different: the first means nothing is registered,
-// the second means something is there that does not answer.
 function stateLabel(backend: string): string {
   switch (serviceFor(backend)?.state) {
     case 'running':
@@ -253,8 +236,6 @@ function startService(backend: string) {
   void agents.startService(backend)
 }
 
-// askStop only opens the confirmation. The service may be serving the desktop
-// app or another client; saying so is the point of the dialog.
 function askStop(backend: string) {
   confirmStop.value = backend
 }
@@ -270,11 +251,14 @@ function cancelStop() {
 </script>
 
 <template>
-  <section class="agents max-w-4xl space-y-6" aria-label="Agent 设置">
-    <div>
-      <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-1">Agent 设置</h1>
-      <p class="intro text-xs text-slate-500 dark:text-slate-400">启用后可在项目中选择并创建新会话。停用只禁止新建，已有会话继续可用。</p>
-    </div>
+  <section class="agents-settings w-full space-y-6" aria-label="Agent 设置">
+    <!-- Header row -->
+    <header class="pb-4 border-b border-slate-200 dark:border-slate-800">
+      <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Agent 设置</h1>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        配置平台接入的 AI Coding Agent 后端（OpenCode、Pi 等），管理二进制路径、模型目录与后台服务守护进程。
+      </p>
+    </header>
 
     <UiAlert v-if="settings.agentsError" variant="error" class="error">
       {{ settings.agentsError }}
@@ -283,15 +267,20 @@ function cancelStop() {
       {{ agents.diagnosticsError }}
     </UiAlert>
 
+    <!-- Agent backend cards list -->
     <article
       v-for="agent in settings.agents"
       :key="agent.backend"
-      class="agent-card p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4"
+      class="agent-card p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5"
       :data-agent="agent.backend"
     >
-      <header class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-        <strong class="text-base text-slate-800 dark:text-slate-100 font-semibold">{{ label(agent.backend) }}</strong>
-        <label class="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+      <!-- Backend Card Header -->
+      <header class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-3">
+          <strong class="text-base text-slate-900 dark:text-slate-100 font-semibold">{{ label(agent.backend) }}</strong>
+          <code class="text-[11px] font-mono text-slate-400 dark:text-slate-500">{{ agent.backend }}</code>
+        </div>
+        <label class="toggle-control inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
           <input
             type="checkbox"
             class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600"
@@ -299,40 +288,48 @@ function cancelStop() {
             :checked="agent.enabled"
             @change="toggle(agent.backend, ($event.target as HTMLInputElement).checked)"
           />
-          <span>启用</span>
+          <span>启用此 Agent</span>
         </label>
       </header>
 
-      <div class="path-row flex items-center gap-2 flex-wrap">
-        <template v-if="agent.pathSource === 'auto'">
-          <span class="path flex-1 min-w-[16rem] text-xs font-mono text-slate-500 dark:text-slate-400 py-1.5 px-2 bg-slate-50 dark:bg-slate-800/40 rounded border border-slate-200 dark:border-slate-700" :data-agent-path-display="agent.backend">
-            {{ agent.path }}
-          </span>
-        </template>
-        <template v-else>
-          <UiInput
-            class="flex-1 min-w-[16rem]"
-            :data-agent-path-input="agent.backend"
-            :model-value="pathInputs[agent.backend] ?? agent.path"
-            placeholder="Agent 可执行文件路径"
-            block
-            @input="(e: Event) => onPathInput(agent.backend, (e.target as HTMLInputElement).value)"
-          />
-          <UiButton size="md" variant="secondary" @click="savePath(agent.backend)">保存路径</UiButton>
-        </template>
-        <UiButton size="md" variant="secondary" :data-detect="agent.backend" @click="detect(agent.backend)">检测</UiButton>
+      <!-- Executable path & detection -->
+      <div class="space-y-2">
+        <span class="text-xs font-medium text-slate-700 dark:text-slate-300 block">可执行文件路径</span>
+        <div class="path-row flex items-center gap-2 flex-wrap">
+          <template v-if="agent.pathSource === 'auto'">
+            <div class="flex-1 min-w-[16rem] flex items-center gap-2 py-1.5 px-3 bg-slate-50 dark:bg-slate-800/50 rounded border border-slate-200 dark:border-slate-700 text-xs">
+              <span class="text-[11px] text-slate-400 select-none">自动检测:</span>
+              <code class="path font-mono text-slate-700 dark:text-slate-300 flex-1 truncate" :data-agent-path-display="agent.backend">
+                {{ agent.path }}
+              </code>
+            </div>
+          </template>
+          <template v-else>
+            <UiInput
+              class="flex-1 min-w-[16rem] font-mono text-xs"
+              :data-agent-path-input="agent.backend"
+              :model-value="pathInputs[agent.backend] ?? agent.path"
+              placeholder="Agent 可执行文件绝对路径"
+              block
+              @input="(e: Event) => onPathInput(agent.backend, (e.target as HTMLInputElement).value)"
+            />
+            <UiButton size="sm" variant="secondary" @click="savePath(agent.backend)">保存路径</UiButton>
+          </template>
+          <UiButton size="sm" variant="secondary" :data-detect="agent.backend" @click="detect(agent.backend)">重新检测</UiButton>
+        </div>
+
+        <div class="status flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
+          <UiBadge :variant="agent.available ? 'success' : 'default'" size="sm" dot>
+            {{ agent.available ? '已检测到' : '未检测到' }}
+          </UiBadge>
+          <span v-if="agent.version" class="tabular-nums text-[11px]">版本 {{ agent.version }}</span>
+        </div>
       </div>
 
-      <p class="status flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
-        <UiBadge :variant="agent.available ? 'success' : 'default'" size="sm" dot>
-          {{ agent.available ? '已检测到' : '未检测到' }}
-        </UiBadge>
-        <span v-if="agent.version" class="font-mono">版本 {{ agent.version }}</span>
-      </p>
-
-      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400">
+      <!-- Mode selection row -->
+      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 py-1 border-t border-slate-100 dark:border-slate-800">
         <label class="inline-flex items-center gap-2">
-          <span>传输模式</span>
+          <span class="font-medium text-slate-700 dark:text-slate-300">传输模式:</span>
           <UiSelect
             size="sm"
             :data-agent-mode="agent.backend"
@@ -342,9 +339,10 @@ function cancelStop() {
             <option v-for="mode in agent.modes" :key="mode" :value="mode">{{ mode }}</option>
           </UiSelect>
         </label>
-        <span class="mode-hint text-slate-400">修改后需重启平台生效</span>
+        <span class="mode-hint text-slate-400 text-[11px]">修改传输模式后需重启平台生效</span>
       </div>
 
+      <!-- Detection alert feedback -->
       <UiAlert
         v-if="detections[agent.backend]"
         :variant="detections[agent.backend]?.status === 'ok' ? 'success' : 'error'"
@@ -358,10 +356,17 @@ function cancelStop() {
         }}
       </UiAlert>
 
-      <!-- 模型列表 -->
-      <div v-if="supportsModels(agent.backend)" class="models p-3 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2.5" :data-test="`agent-models-${agent.backend}`">
-        <div class="models-head flex items-center justify-between">
-          <strong class="text-xs font-semibold text-slate-700 dark:text-slate-300">可用模型</strong>
+      <!-- Agent available models catalog -->
+      <div
+        v-if="supportsModels(agent.backend)"
+        class="models p-4 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+        :data-test="`agent-models-${agent.backend}`"
+      >
+        <div class="models-head flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
+          <div>
+            <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">可用模型目录</strong>
+            <span class="models-updated text-[11px] text-slate-400">{{ updatedAtLabel(agent.backend) }}</span>
+          </div>
           <UiButton
             size="sm"
             variant="ghost"
@@ -370,22 +375,24 @@ function cancelStop() {
             :loading="modelsLoading[agent.backend] === true"
             @click="loadModels(agent.backend, true)"
           >
-            刷新
+            刷新模型
           </UiButton>
         </div>
-        <p v-if="modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">正在读取…</p>
+
+        <p v-if="modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">正在同步模型目录…</p>
         <UiAlert v-if="modelsError[agent.backend]" variant="error" class="models-line bad">
           {{ modelsError[agent.backend] }}
         </UiAlert>
-        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-60 overflow-y-auto">
+
+        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-64 overflow-y-auto pr-1">
           <li
             v-for="model in models[agent.backend]"
             :key="model.id"
             :data-agent-model="model.id"
-            class="model-item flex items-center justify-between p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs gap-2"
+            class="model-item p-2.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs gap-2.5 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between"
           >
-            <div class="flex items-center gap-2 flex-1 min-w-0">
-              <label class="inline-flex items-center cursor-pointer select-none">
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+              <label class="inline-flex items-center cursor-pointer select-none shrink-0">
                 <input
                   type="checkbox"
                   class="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 accent-blue-600 cursor-pointer"
@@ -398,16 +405,32 @@ function cancelStop() {
                 {{ model.enabled !== false ? '已启用' : '已停用' }}
               </UiBadge>
               <span class="model-name font-medium text-slate-800 dark:text-slate-200 truncate">{{ model.name || model.id }}</span>
-              <span class="model-id text-slate-400 font-mono truncate text-[11px]">{{ model.id }}</span>
-              <span v-if="model.contextLimit" class="text-slate-400 text-[11px] whitespace-nowrap">
+              <!-- Desktop inline details -->
+              <div class="hidden sm:inline-flex items-center gap-2 text-[11px] text-slate-400 min-w-0">
+                <code class="model-id text-slate-400 font-mono truncate max-w-[140px]">{{ model.id }}</code>
+                <span v-if="model.contextLimit" class="tabular-nums whitespace-nowrap">
+                  {{ Math.round(model.contextLimit / 1000) }}k 上下文
+                </span>
+                <span v-if="model.supportsImages" class="text-blue-500 whitespace-nowrap">图片</span>
+                <span v-if="model.variants && model.variants.length" class="model-variants truncate max-w-[140px]">
+                  变体：{{ model.variants.join(' / ') }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Mobile subline -->
+            <div class="flex sm:hidden items-center gap-2 text-[11px] text-slate-400 pl-6 flex-wrap">
+              <code class="model-id text-slate-400 font-mono">{{ model.id }}</code>
+              <span v-if="model.contextLimit" class="tabular-nums">
                 {{ Math.round(model.contextLimit / 1000) }}k 上下文
               </span>
-              <span v-if="model.supportsImages" class="text-blue-500 text-[11px] whitespace-nowrap">图片</span>
-              <span v-if="model.variants && model.variants.length" class="model-variants text-slate-400 text-[11px] truncate">
+              <span v-if="model.supportsImages" class="text-blue-500">图片</span>
+              <span v-if="model.variants && model.variants.length" class="model-variants">
                 变体：{{ model.variants.join(' / ') }}
               </span>
             </div>
-            <div class="flex items-center gap-1.5 shrink-0">
+
+            <div class="flex items-center justify-end gap-1 shrink-0 self-end sm:self-center">
               <UiButton
                 size="sm"
                 variant="ghost"
@@ -419,36 +442,35 @@ function cancelStop() {
             </div>
           </li>
         </ul>
-        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">
+        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400 py-1">
           尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
         </p>
-        <p class="models-updated text-[11px] text-slate-400">{{ updatedAtLabel(agent.backend) }}</p>
 
-        <!-- 模型配置编辑表单 -->
+        <!-- Model edit form inline -->
         <form
           v-if="editingModel && editingModel.backend === agent.backend"
-          class="model-edit-form p-3.5 mt-2 rounded bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 shadow-sm space-y-3"
+          class="model-edit-form p-4 mt-2 rounded bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/60 space-y-3"
           :data-agent-model-form="editingModel.id"
           @submit.prevent="submitEditModel"
         >
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between pb-1 border-b border-slate-100 dark:border-slate-800">
             <h3 class="text-xs font-semibold text-slate-800 dark:text-slate-200">
-              配置模型：<span class="font-mono text-slate-500">{{ editingModel.id }}</span>
+              配置模型：<code class="font-mono text-slate-500">{{ editingModel.id }}</code>
             </h3>
-            <span class="text-[11px] text-slate-400">可自定义模型显示名称与参数</span>
+            <span class="text-[11px] text-slate-400">自定义友好显示名称与上下文 Token 限制</span>
           </div>
 
           <UiAlert v-if="editingModel.error" variant="error">
             {{ editingModel.error }}
           </UiAlert>
 
-          <div class="space-y-2">
+          <div class="space-y-2.5">
             <div>
               <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">显示名称</label>
               <UiInput v-model="editingModel.name" placeholder="模型友好名称" required block />
             </div>
 
-            <div class="grid grid-cols-2 gap-2 pt-1">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">上下文 Token 限制 (留空按默认)</label>
                 <UiInput v-model.number="editingModel.contextLimit" type="number" min="0" placeholder="如 128000" block />
@@ -468,45 +490,56 @@ function cancelStop() {
 
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
             <UiButton size="sm" variant="secondary" type="button" @click="cancelEditModel">取消</UiButton>
-            <UiButton size="sm" variant="primary" type="submit" :loading="editingModel.saving">保存</UiButton>
+            <UiButton size="sm" variant="primary" type="submit" :loading="editingModel.saving">保存配置</UiButton>
           </div>
         </form>
       </div>
 
-      <!-- Service 状态与控制 -->
-      <div v-if="showsService(agent.backend)" class="service p-3.5 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2">
-        <p class="service-state flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
-          <span>service 状态:</span>
-          <UiBadge
-            :variant="serviceFor(agent.backend)?.state === 'running' ? 'success' : 'default'"
-            size="sm"
-            :data-test="`service-state-${agent.backend}`"
-          >
-            {{ stateLabel(agent.backend) }}
-          </UiBadge>
-          <span v-if="serviceFor(agent.backend)?.version" class="font-mono text-slate-400">
+      <!-- Service daemon controller -->
+      <div
+        v-if="showsService(agent.backend)"
+        class="service-block p-4 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+      >
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
+          <div class="flex items-center gap-2 text-xs">
+            <span class="font-medium text-slate-700 dark:text-slate-300">后台 service 守护进程:</span>
+            <UiBadge
+              :variant="serviceFor(agent.backend)?.state === 'running' ? 'success' : 'default'"
+              size="sm"
+              :data-test="`service-state-${agent.backend}`"
+            >
+              {{ stateLabel(agent.backend) }}
+            </UiBadge>
+          </div>
+          <span v-if="serviceFor(agent.backend)?.version" class="tabular-nums text-[11px] text-slate-400">
             版本 {{ serviceFor(agent.backend)?.version }}
           </span>
-        </p>
-        <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs font-mono text-slate-500">
-          地址 {{ serviceFor(agent.backend)?.endpoint }}
-        </p>
-        <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs font-mono text-slate-500">
-          进程 {{ serviceFor(agent.backend)?.pid }}
-        </p>
-        <p data-test="service-checked-at" class="service-line text-[11px] text-slate-400">{{ checkedAt(agent.backend) }}</p>
-        <p
-          v-if="serviceFor(agent.backend)?.state === 'unreachable' && serviceFor(agent.backend)?.detail"
-          data-test="service-detail"
-          class="service-line text-xs text-red-500"
-        >
-          {{ serviceFor(agent.backend)?.detail }}
-        </p>
-        <UiAlert v-if="agents.serviceError" data-test="service-error" variant="error" class="service-line bad">
-          {{ agents.serviceError }}
-        </UiAlert>
+        </div>
+
+        <div class="space-y-1 text-xs">
+          <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs text-slate-600 dark:text-slate-400">
+            服务地址 <code class="text-[11px]">{{ serviceFor(agent.backend)?.endpoint }}</code>
+          </p>
+          <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs text-slate-600 dark:text-slate-400">
+            进程 PID <span class="tabular-nums text-[11px]">{{ serviceFor(agent.backend)?.pid }}</span>
+          </p>
+          <p data-test="service-checked-at" class="service-line text-[11px] text-slate-400">
+            {{ checkedAt(agent.backend) }}
+          </p>
+          <p
+            v-if="serviceFor(agent.backend)?.state === 'unreachable' && serviceFor(agent.backend)?.detail"
+            data-test="service-detail"
+            class="service-line text-xs text-red-500"
+          >
+            {{ serviceFor(agent.backend)?.detail }}
+          </p>
+          <UiAlert v-if="agents.serviceError" data-test="service-error" variant="error" class="service-line bad">
+            {{ agents.serviceError }}
+          </UiAlert>
+        </div>
+
         <div class="service-actions flex items-center gap-2 pt-1">
-          <UiButton size="sm" variant="secondary" data-test="service-detect" @click="detectService(agent.backend)">检测</UiButton>
+          <UiButton size="sm" variant="secondary" data-test="service-detect" @click="detectService(agent.backend)">检测状态</UiButton>
           <UiButton
             size="sm"
             variant="secondary"
@@ -514,21 +547,29 @@ function cancelStop() {
             :disabled="serviceFor(agent.backend)?.state === 'running'"
             @click="startService(agent.backend)"
           >
-            启动
+            启动服务
           </UiButton>
           <UiButton
             size="sm"
-            variant="danger"
+            variant="secondary"
+            class="text-red-600 hover:text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"
             data-test="service-stop"
             :disabled="serviceFor(agent.backend)?.state !== 'running'"
             @click="askStop(agent.backend)"
           >
-            停止
+            停止服务
           </UiButton>
         </div>
 
-        <div v-if="confirmStop === agent.backend" class="service-confirm p-3 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 space-y-2" data-test="service-stop-dialog">
-          <p class="text-xs text-red-700 dark:text-red-300 leading-relaxed">这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。</p>
+        <!-- Stop confirmation dialog inline -->
+        <div
+          v-if="confirmStop === agent.backend"
+          class="service-confirm p-3.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 space-y-2.5"
+          data-test="service-stop-dialog"
+        >
+          <p class="text-xs text-red-700 dark:text-red-300 leading-relaxed font-medium">
+            这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。
+          </p>
           <div class="service-actions flex items-center gap-2">
             <UiButton
               size="sm"
@@ -543,22 +584,25 @@ function cancelStop() {
         </div>
       </div>
 
-      <!-- 诊断详情 -->
+      <!-- Diagnostics accordion -->
       <details
-        class="diagnostics text-xs text-slate-700 dark:text-slate-300"
+        class="diagnostics text-xs text-slate-700 dark:text-slate-300 pt-1 border-t border-slate-100 dark:border-slate-800"
         :open="diagnosticsOpen(agent.backend)"
         :data-test="`agent-diagnostics-${agent.backend}`"
       >
-        <summary class="cursor-pointer font-medium py-1 select-none flex items-center gap-2">
-          <span>诊断信息</span>
-          <UiBadge
-            size="sm"
-            :variant="diagnosticsStatus(agent.backend) === 'ok' ? 'success' : diagnosticsStatus(agent.backend) === 'warning' ? 'warning' : 'danger'"
-          >
-            {{ diagnosticsStatusLabel(agent.backend) }}
-          </UiBadge>
+        <summary class="cursor-pointer font-medium py-1.5 select-none flex items-center justify-between hover:text-slate-900 dark:hover:text-slate-100">
+          <div class="flex items-center gap-2">
+            <span>后端诊断信息</span>
+            <UiBadge
+              size="sm"
+              :variant="diagnosticsStatus(agent.backend) === 'ok' ? 'success' : diagnosticsStatus(agent.backend) === 'warning' ? 'warning' : 'danger'"
+            >
+              {{ diagnosticsStatusLabel(agent.backend) }}
+            </UiBadge>
+          </div>
+          <span class="text-slate-400 text-[11px]">展开/收起 ▾</span>
         </summary>
-        <div class="pt-2">
+        <div class="pt-2.5">
           <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
         </div>
       </details>

@@ -266,9 +266,9 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
 
-    // 项目 / 对话 / 任务 / 提示词 / 终端 / 连接 / 设置 / 退出 each carry one inline SVG icon.
+    // 项目 / 对话 / 任务 / 提示词 / 终端 / 设置 / 退出 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(8)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
     // Chat is a first-level peer immediately below projects, not nested in the
     // project tree, because both are primary work areas.
@@ -278,7 +278,6 @@ describe('three-pane app shell', () => {
       '任务',
       '提示词',
       '终端',
-      '连接',
       '设置',
       '退出',
     ])
@@ -475,6 +474,7 @@ describe('three-pane app shell', () => {
     expect(wrapper.find('[data-test="settings-nav"]').exists()).toBe(true)
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(false)
     expect(wrapper.text()).toContain('外观')
+    expect(wrapper.text()).toContain('服务连接')
     // Workspace tabs are not rendered in the settings center
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })

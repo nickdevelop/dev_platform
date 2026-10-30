@@ -1,27 +1,29 @@
 <script setup lang="ts">
+// Connection settings section: manage local built-in service and remote backend connections.
+// Designed with design-taste-frontend app-screens guidelines (framed-sheet,
+// flat surfaces, zero resting shadows, tabular figures, pale status pills,
+// precise controls and calm information hierarchy).
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useDesktopConnection, type ServerConnection, type TestConnectionResult } from '../../shared/desktop'
+import {
+  useDesktopConnection,
+  type ServerConnection,
+  type TestConnectionResult,
+} from '../../shared/desktop'
 import { useAuthStore } from '../../stores/auth'
 import { useOpenTabsStore } from '../../stores/openTabs'
-import UiDialog from '../../shared/ui/compound/UiDialog.vue'
-import UiButton from '../../shared/ui/atomic/UiButton.vue'
-import UiInput from '../../shared/ui/atomic/UiInput.vue'
-import UiBadge from '../../shared/ui/atomic/UiBadge.vue'
-import UiAlert from '../../shared/ui/atomic/UiAlert.vue'
-import UiSpinner from '../../shared/ui/atomic/UiSpinner.vue'
-
-const props = defineProps<{
-  open: boolean
-}>()
-
-const emit = defineEmits<{
-  'update:open': [value: boolean]
-}>()
+import {
+  UiButton,
+  UiBadge,
+  UiAlert,
+  UiInput,
+  UiSpinner,
+} from '../../shared/ui'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const openTabsStore = useOpenTabsStore()
+
 const {
   isDesktop,
   status,
@@ -128,9 +130,8 @@ async function handleSwitch(conn: ServerConnection) {
     // Clear in-memory tabs and auth session
     openTabsStore.tabs = []
     authStore.reset()
-    emit('update:open', false)
-    // Force navigate to home/login to reload target environment state
-    router.push({ name: 'home' })
+    // Force navigate to home to reload target environment state
+    await router.push({ name: 'home' })
   } catch (err: any) {
     switchError.value = err.message || '切换后端连接失败'
   } finally {
@@ -140,72 +141,104 @@ async function handleSwitch(conn: ServerConnection) {
 </script>
 
 <template>
-  <UiDialog
-    v-if="open"
-    title="服务连接管理器"
-    width-class="w-full max-w-xl"
-    @close="emit('update:open', false)"
-  >
-    <div class="space-y-4">
-      <UiAlert v-if="switchError" variant="error">
-        {{ switchError }}
-      </UiAlert>
-
-      <!-- Web environment notice if not inside Electron -->
-      <UiAlert v-if="!isDesktop" variant="info">
-        当前处于浏览器模式，已直连当前宿主服务。如需在本地自带服务与远程服务间自由切换，请使用桌面客户端。
-      </UiAlert>
-
-      <!-- Switching overlay -->
-      <div v-if="isSwitching" class="py-8 flex flex-col items-center justify-center space-y-3">
-        <UiSpinner class="w-8 h-8 text-blue-500" />
-        <p class="text-sm text-slate-500 dark:text-slate-400">正在切换目标后端，请稍候...</p>
+  <section class="connection-settings w-full space-y-6" aria-label="服务连接设置">
+    <!-- Header -->
+    <header class="settings-head pb-4 border-b border-slate-200 dark:border-slate-800">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务连接</h1>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            管理当前客户端连接的后端服务，支持在本地内置单机引擎与远程团队服务器间无缝切换。
+          </p>
+        </div>
+        <UiButton
+          v-if="isDesktop && !isEditing"
+          variant="secondary"
+          size="sm"
+          class="shrink-0"
+          @click="openCreateForm"
+        >
+          + 添加远程服务
+        </UiButton>
       </div>
+    </header>
 
-      <!-- Main view: Connection list -->
-      <div v-else-if="!isEditing" class="space-y-3">
-        <div class="flex items-center justify-between pb-1">
-          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
-            可用后端连接
-          </span>
-          <UiButton
-            v-if="isDesktop"
-            variant="secondary"
-            size="sm"
-            @click="openCreateForm"
-          >
-            + 添加远程服务
-          </UiButton>
+    <!-- Error Alert -->
+    <UiAlert v-if="switchError" variant="error">
+      {{ switchError }}
+    </UiAlert>
+
+    <!-- Web browser environment callout -->
+    <div
+      v-if="!isDesktop"
+      class="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 space-y-1.5"
+    >
+      <div class="flex items-center space-x-2 font-medium text-slate-800 dark:text-slate-200">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+          <circle cx="8" cy="8" r="6.5" />
+          <line x1="8" y1="5" x2="8" y2="8" />
+          <circle cx="8" cy="11" r=".5" fill="currentColor" />
+        </svg>
+        <span>当前处于 Web 浏览器直连模式</span>
+      </div>
+      <p class="leading-relaxed">
+        您当前正直接访问宿主 Web 服务。如需在本地内置单机引擎与多台远程团队服务器间自由切换连接，请使用桌面客户端运行本平台。
+      </p>
+    </div>
+
+    <!-- Switching overlay -->
+    <div
+      v-if="isSwitching"
+      class="p-12 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center space-y-3"
+    >
+      <UiSpinner class="w-8 h-8 text-blue-500" />
+      <p class="text-sm font-medium text-slate-600 dark:text-slate-300">正在切换目标后端，请稍候…</p>
+    </div>
+
+    <!-- Main View: Connections List -->
+    <div v-else-if="!isEditing" class="space-y-4">
+      <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+        <div class="group-header">
+          <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">可用后端连接</legend>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            桌面端当前已注册的本地与远程服务节点。激活后平台将自动指向所选服务。
+          </p>
         </div>
 
-        <div class="space-y-2">
-          <!-- Connection items -->
+        <div class="space-y-3">
           <div
             v-for="conn in connections"
             :key="conn.id"
-            class="flex items-center justify-between p-3 rounded-md border transition-colors"
+            class="flex items-center justify-between p-3.5 rounded-md border transition-colors"
             :class="[
               conn.id === activeConnection?.id
-                ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20'
-                : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900',
+                ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
+                : 'border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 hover:border-slate-300 dark:hover:border-slate-700',
             ]"
           >
-            <div class="flex items-center space-x-3 min-w-0">
+            <div class="flex items-center space-x-3.5 min-w-0">
               <div
-                class="w-8 h-8 rounded flex items-center justify-center shrink-0"
-                :class="conn.type === 'local' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400'"
+                class="w-9 h-9 rounded flex items-center justify-center shrink-0"
+                :class="
+                  conn.type === 'local'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/40'
+                    : 'bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200/50 dark:border-sky-800/40'
+                "
               >
+                <!-- Local Service Icon -->
                 <svg v-if="conn.type === 'local'" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
                   <rect x="2" y="3" width="12" height="8" rx="1" />
                   <line x1="5" y1="14" x2="11" y2="14" />
                   <line x1="8" y1="11" x2="8" y2="14" />
                 </svg>
+                <!-- Remote Server Icon -->
                 <svg v-else viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
                   <circle cx="8" cy="8" r="6.5" />
                   <ellipse cx="8" cy="8" rx="3" ry="6.5" />
                   <line x1="1.5" y1="8" x2="14.5" y2="8" />
                 </svg>
               </div>
+
               <div class="min-w-0">
                 <div class="flex items-center space-x-2">
                   <span class="font-medium text-sm text-slate-900 dark:text-slate-100 truncate">
@@ -226,7 +259,7 @@ async function handleSwitch(conn: ServerConnection) {
                 </div>
                 <div class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
                   <span v-if="conn.type === 'local'">
-                    本地单机服务（127.0.0.1:{{ status?.localService.port || '动态' }}）
+                    本地内置单机服务 (127.0.0.1:{{ status?.localService.port || '动态' }})
                   </span>
                   <span v-else>
                     {{ conn.url }}
@@ -248,7 +281,7 @@ async function handleSwitch(conn: ServerConnection) {
                 <button
                   type="button"
                   title="编辑"
-                  class="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                  class="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   @click="openEditForm(conn)"
                 >
                   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -259,7 +292,7 @@ async function handleSwitch(conn: ServerConnection) {
                 <button
                   type="button"
                   title="删除"
-                  class="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                  class="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   @click="handleRemoveConnection(conn.id)"
                 >
                   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -271,21 +304,30 @@ async function handleSwitch(conn: ServerConnection) {
             </div>
           </div>
         </div>
-      </div>
+      </fieldset>
+    </div>
 
-      <!-- Edit / Create Form -->
-      <div v-else class="space-y-4">
-        <div class="text-sm font-medium text-slate-900 dark:text-slate-100 pb-1 border-b border-slate-100 dark:border-slate-800">
-          {{ formId ? '编辑远程服务器' : '添加远程服务器' }}
+    <!-- Edit / Create Form Panel -->
+    <div v-else class="space-y-4">
+      <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+        <div class="group-header flex items-center justify-between">
+          <div>
+            <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">
+              {{ formId ? '编辑远程服务器' : '添加远程服务器' }}
+            </legend>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              配置远程 dev_platform 服务端点地址与安全访问凭据。
+            </p>
+          </div>
         </div>
 
         <UiAlert v-if="formError" variant="error">
           {{ formError }}
         </UiAlert>
 
-        <div class="space-y-3">
+        <div class="space-y-4 pt-1">
           <div>
-            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
               服务器名称 *
             </label>
             <UiInput
@@ -295,7 +337,7 @@ async function handleSwitch(conn: ServerConnection) {
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
               服务地址 (URL) *
             </label>
             <div class="flex space-x-2">
@@ -315,7 +357,15 @@ async function handleSwitch(conn: ServerConnection) {
             </div>
           </div>
 
-          <div v-if="testResult" class="text-xs p-2 rounded border" :class="testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'">
+          <div
+            v-if="testResult"
+            class="text-xs p-3 rounded-md border"
+            :class="
+              testResult.ok
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300'
+            "
+          >
             <div class="flex items-center space-x-1.5 font-medium">
               <svg v-if="testResult.ok" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 8 6 11 13 4" />
@@ -325,14 +375,14 @@ async function handleSwitch(conn: ServerConnection) {
                 <line x1="13" y1="3" x2="3" y2="13" />
               </svg>
               <span>{{ testResult.ok ? '连接成功' : '连接失败' }}</span>
-              <span v-if="testResult.latencyMs !== undefined" class="text-slate-400">({{ testResult.latencyMs }}ms)</span>
+              <span v-if="testResult.latencyMs !== undefined" class="text-slate-500 font-normal">({{ testResult.latencyMs }}ms)</span>
             </div>
-            <div v-if="testResult.message" class="mt-0.5">{{ testResult.message }}</div>
+            <div v-if="testResult.message" class="mt-1 text-[11px] opacity-90">{{ testResult.message }}</div>
           </div>
 
           <div>
-            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-              访问密码 / 凭据（可选，将安全加密存储）
+            <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+              访问密码 / 凭据（可选，将由系统安全加密存储）
             </label>
             <UiInput
               v-model="formToken"
@@ -342,7 +392,7 @@ async function handleSwitch(conn: ServerConnection) {
           </div>
         </div>
 
-        <div class="pt-3 flex items-center justify-end space-x-2.5 border-t border-slate-100 dark:border-slate-800">
+        <div class="pt-4 flex items-center justify-end space-x-3 border-t border-slate-100 dark:border-slate-800">
           <UiButton
             variant="secondary"
             type="button"
@@ -358,7 +408,13 @@ async function handleSwitch(conn: ServerConnection) {
             保存
           </UiButton>
         </div>
-      </div>
+      </fieldset>
     </div>
-  </UiDialog>
+  </section>
 </template>
+
+<style scoped>
+.connection-settings {
+  min-width: 0;
+}
+</style>

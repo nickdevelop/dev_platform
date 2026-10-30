@@ -15,11 +15,9 @@ import { RouterLink, useRoute } from 'vue-router'
 import { tabKey } from '../../stores/openTabs'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
-import { useDesktopConnection } from '../../shared/desktop'
 
 const emit = defineEmits<{
   logout: []
-  openConnections: []
   // A rail entry that needs the project/task column asks the shell to show it,
   // so a collapsed column comes back in one click even when the entry is the
   // one already active (no route change to react to).
@@ -29,7 +27,6 @@ const emit = defineEmits<{
 const route = useRoute()
 const openTabs = useOpenTabsStore()
 const draftsStore = useDraftsStore()
-const { isDesktop, isLocal, status } = useDesktopConnection()
 
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The prompts routes declare `meta.prompts` or start with /prompts.
@@ -218,27 +215,6 @@ function onSettingsClick() {
     </div>
 
     <div class="rail-bottom">
-      <button
-        type="button"
-        class="footer-btn connections"
-        :title="isDesktop ? (isLocal ? '服务连接（当前：本地内置服务）' : '服务连接（当前：远程服务）') : '服务连接'"
-        @click="emit('openConnections')"
-      >
-        <span class="icon-wrap">
-          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path v-if="isLocal" d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle v-else cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/>
-            <path v-if="!isLocal" d="M3.6 9h16.8M3.6 15h16.8M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18" fill="none" stroke="currentColor" stroke-width="2"/>
-          </svg>
-          <span
-            v-if="isDesktop"
-            class="status-dot"
-            :class="status?.connectionState === 'connected' ? (isLocal ? 'dot-local' : 'dot-remote') : 'dot-warn'"
-          />
-        </span>
-        <span>连接</span>
-      </button>
-
       <RouterLink
         class="footer-btn settings"
         title="设置"
@@ -327,35 +303,6 @@ function onSettingsClick() {
 .footer-btn:hover {
   background: var(--rail-active);
   color: #fff;
-}
-
-.icon-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.status-dot {
-  position: absolute;
-  bottom: -1px;
-  right: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  border: 1.5px solid var(--rail-bg);
-}
-
-.dot-local {
-  background-color: #10b981;
-}
-
-.dot-remote {
-  background-color: #0284c7;
-}
-
-.dot-warn {
-  background-color: #f59e0b;
 }
 
 .footer-btn.collapse {

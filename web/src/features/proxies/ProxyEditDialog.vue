@@ -152,7 +152,7 @@ async function submit() {
         ContextPath 别名 <span class="text-red-500">*</span>
       </label>
       <div class="flex items-center gap-1.5">
-        <span class="text-xs text-slate-400 select-none font-mono">/proxy/</span>
+        <code class="text-xs text-slate-400 select-none">/proxy/</code>
         <UiInput
           id="dlg-proxy-alias"
           v-model="alias"
@@ -160,7 +160,7 @@ async function submit() {
           required
           block
         />
-        <span class="text-xs text-slate-400 select-none font-mono">/</span>
+        <code class="text-xs text-slate-400 select-none">/</code>
       </div>
       <p class="text-[11px] text-slate-400">
         访问路径前缀，仅限小写英文、数字与横线。外部访问链接将形如 <code>http://host:port/proxy/{{ alias || 'demo' }}/</code>

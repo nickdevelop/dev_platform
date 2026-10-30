@@ -83,9 +83,9 @@ onMounted(() => {
           上一级
         </button>
         <span class="text-slate-300 dark:text-slate-600 select-none">|</span>
-        <div class="flex-1 font-mono truncate text-slate-700 dark:text-slate-300 select-all" :title="currentPath">
+        <code class="flex-1 font-mono truncate text-slate-700 dark:text-slate-300 select-all" :title="currentPath">
           {{ currentPath || '正在定位路径…' }}
-        </div>
+        </code>
       </div>
 
       <UiAlert v-if="errorMessage" variant="danger" dismissible @dismiss="errorMessage = ''">
@@ -134,7 +134,7 @@ onMounted(() => {
       <!-- Selection preview -->
       <div class="text-[11px] text-slate-500 flex items-center gap-1.5 truncate">
         <span class="shrink-0 text-slate-400">选中路径：</span>
-        <span class="font-mono text-slate-700 dark:text-slate-300 truncate">{{ selectedPath || currentPath }}</span>
+        <code class="font-mono text-slate-700 dark:text-slate-300 truncate">{{ selectedPath || currentPath }}</code>
       </div>
 
       <!-- Actions -->

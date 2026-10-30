@@ -30,7 +30,6 @@ import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
-import ConnectionDialog from './ConnectionDialog.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
@@ -49,7 +48,6 @@ const chats = useChatsStore()
 const search = ref('')
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
-const connectionsOpen = ref(false)
 
 // The middle column (project tree, task list or settings menu) can be pinned (docked)
 // or floating (unpinned/drawer), and can be collapsed from the dock controls or rail.
@@ -670,7 +668,6 @@ watch(
     <CategoryRail
       @logout="logout"
       @expand-sidebar="onRailMenuClick"
-      @open-connections="connectionsOpen = true"
     />
 
     <!-- 第一栏右侧边缘的折叠/展开把手：极简全圆角胶囊条，骑跨在第一栏右边界上。
@@ -834,8 +831,6 @@ watch(
     />
 
     <QuickAssistantLauncher v-if="settings.quickAssistant.enabled" />
-
-    <ConnectionDialog v-model:open="connectionsOpen" />
   </div>
 </template>
 

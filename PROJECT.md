@@ -32,7 +32,7 @@
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
 | **桌面客户端外壳** | Electron v34, TypeScript, Node.js 原生 HTTP/WebSocket 透明代理, `electron-builder` | 原生跨平台桌面封装（Linux/Windows/macOS）、Sidecar 本地子进程纳管、双模网络同构代理与凭据加密安全存储 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (714 单测通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、桌面代理与连接单测、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (717 单测通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、桌面代理与连接单测、全流程端到端自动化 |
 
 ---
 
@@ -407,7 +407,7 @@ web/src/
 ### 8. 桌面应用双模连接与本地透明代理流（Desktop Dual-Mode & Proxy Flow）
 
 ```
-[ 用户启动桌面客户端 / 点击分类栏底部“连接”切换服务器 ]
+[ 用户启动桌面客户端 / 进入“设置 → 服务连接”切换服务器 ]
                          │
                          ▼
 1. 桌面壳主进程 (desktop/src/main/index.ts)
@@ -427,7 +427,7 @@ web/src/
        • WebSocket 升级：原生全双工管道透传，完美承载在线交互式终端与开发热更新。
                          │
                          ▼
-3. 渲染进程与连接管理器 (features/workspace/ConnectionDialog.vue & shared/desktop.ts)
+3. 渲染进程与连接管理器 (features/settings/ConnectionSettings.vue & shared/desktop.ts)
    - 通过 preload 注入的 window.desktopAPI 暴露连接增删改查、连通性实时探测与动态切换；
    - 用户切换目标连接时：原子化重置前端活动 Tab、断开正在运行的 SSE 与 WebSocket 连接，清空
      CSRF/Auth Store，平滑过渡至目标服务环境，保证状态绝对物理隔离。
