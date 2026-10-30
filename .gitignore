@@ -4,9 +4,11 @@
 # dev.sh runtime state (PID + log)
 .dev/
 
-# Node / Vue
+# Node / Vue / Desktop
 node_modules/
 dist/
+dist-package/
+dist-test/
 coverage/
 *.tsbuildinfo
 test-results/

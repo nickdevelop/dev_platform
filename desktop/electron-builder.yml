@@ -1,0 +1,30 @@
+appId: com.devplatform.desktop
+productName: AI-Dev-Platform
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+directories:
+  output: dist-package
+files:
+  - dist/**/*
+  - package.json
+extraResources:
+  - from: ../bin
+    to: bin
+    filter:
+      - platform*
+  - from: ../web/dist
+    to: web
+linux:
+  target:
+    - AppImage
+    - tar.gz
+  category: Development
+win:
+  signAndEditExecutable: false
+  target:
+    - nsis
+    - zip
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
