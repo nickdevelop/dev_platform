@@ -55,7 +55,7 @@ e2e: ## Run the Playwright E2E suite against the real stack
 
 verify: vet test web-test web-typecheck web-build desktop-test ## Run everything: vet, Go tests, frontend tests, typecheck, frontend build, desktop tests
 
-release: ## Build Linux/Windows packages into release/ (see ./release.sh help)
+release: ## Build web + desktop packages into release/ (see ./release.sh help)
 	./release.sh
 
 clean: ## Remove build artifacts

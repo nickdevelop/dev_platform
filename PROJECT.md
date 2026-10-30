@@ -175,6 +175,8 @@ web/src/
 | **`desktop/src/main/connection-store.ts`** | 多环境连接配置与安全凭据管理。持久化存储“本地单机内置服务”及“远程服务器”连接列表，利用 Electron 原生 `safeStorage`（系统 Keychain / DPAPI）对敏感凭据进行操作系统级硬件加密存储。 |
 | **`desktop/src/preload/index.ts`** | Preload 安全上下文隔离网桥。向渲染进程安全暴露只读中立契约 `window.desktopAPI`，包含获取连接、保存配置、切换连接、连通性探测及原生目录对话框。 |
 
+**发布打包**：`./release.sh`（`make release`）一次产出两类产物并统一生成 `SHA256SUMS`：① Web 服务端包（Linux amd64/arm64、Windows amd64，内含二进制 + `web/dist` + 运维指南）；② 桌面安装包（`electron-builder`：Linux AppImage/tar.gz、Windows zip），包内以 extraResources 内嵌同架构 Go sidecar（`resources/bin/platform*`）与 `web/dist`，安装后即可本地自带后端运行。桌面应用版本默认为 `desktop/package.json` 的 `version`；发布标签为语义化版本（如 `./release.sh v0.2.0`）时自动对该版本。`web/dist` 只构建一次、两类产物共用；`--skip-desktop` / `--skip-server` 可只构建其中一类。
+
 ---
 
 ## 五、核心业务流程与端到端时序流转全景

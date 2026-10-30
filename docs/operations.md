@@ -36,14 +36,33 @@ already running — `--restart` / `--no-restart` force either way, and
 `/api/health`) cover the variants.
 
 To produce distributable packages instead, run `./release.sh` (or
-`make release`, Linux/WSL only): it builds the frontend once, then
-cross-compiles the server for Linux (amd64, arm64) and Windows (amd64) and
-writes self-contained archives to `release/`, each holding the binary, a
-copied `web/dist`, and this guide, plus a `SHA256SUMS` file. Unpack a
-package and run `./platform` (Windows: `platform.exe`) from its root — the
-binary serves the bundled UI on `:8080` with no further configuration.
-Pass `--version <label>` to name the artifacts, or `--targets "linux/amd64
-windows/amd64"` to build a subset.
+`make release`, Linux/WSL only). It builds the frontend once, then ships two
+families of artifacts into `release/`, all covered by a single `SHA256SUMS`
+file:
+
+- **Web (server) packages** — the server cross-compiled for Linux (amd64,
+  arm64) and Windows (amd64), one self-contained archive per target holding
+  the binary, a copied `web/dist`, and this guide. Unpack a package and run
+  `./platform` (Windows: `platform.exe`) from its root — the binary serves
+  the bundled UI on `:8080` with no further configuration. Name the artifacts
+  with `--version <label>`, or build a subset with `--targets "linux/amd64
+  windows/amd64"`.
+- **Desktop packages** — the Electron app from `desktop/`, packaged by
+  `electron-builder`: AppImage + `tar.gz` for Linux and a `zip` for Windows
+  (a Linux host cannot build the nsis installer without Wine). Each package
+  bundles the matching Go sidecar (`resources/bin/platform[.exe]`) and
+  `web/dist`, so the installed app can start its own local backend, and keeps
+  the usual remote-server mode. Only build the Linux app with
+  `--desktop-targets "linux"`; the desktop app version defaults to the
+  release label when it is a semantic version (`./release.sh v0.2.0`), else to
+  `desktop/package.json` — override with `--desktop-version <semver>`.
+
+Use `--skip-desktop` to build web packages only, `--skip-server` for desktop
+packages only, and `--skip-web` to reuse an existing `web/dist` (it is bundled
+into both families, so it is built once).
+
+The desktop packages need `desktop/` dependencies (`cd desktop && npm install`
+once); `release.sh` installs them automatically when missing.
 
 ## First run: set the platform password
 
