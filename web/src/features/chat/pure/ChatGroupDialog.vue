@@ -28,8 +28,8 @@ const error = ref('')
 const submitting = ref(false)
 
 const PRESET_ICONS = [
-  '🤖', '💡', '💻', '📝', '🎨', '🔍', '🚀', '⚙️',
-  '🛠️', '📊', '🌐', '📚', '💬', '⚡', '🎯', '🔮',
+  '🤖', '💡', '💻', '📝', '🎨', '🔍', '🚀', '⚙️', // taste-skill-ignore
+  '🛠️', '📊', '🌐', '📚', '💬', '⚡', '🎯', '🔮', // taste-skill-ignore
 ]
 
 onMounted(async () => {

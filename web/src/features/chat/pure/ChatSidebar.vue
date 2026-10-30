@@ -304,7 +304,9 @@ function formatChatTime(isoString?: string): string {
                 title="编辑助手"
                 @click.stop="openRenameGroup(group)"
               >
-                ✎
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+                </svg>
               </button>
               <button
                 type="button"
@@ -313,7 +315,9 @@ function formatChatTime(isoString?: string): string {
                 title="删除助手"
                 @click.stop="onDeleteGroup(group)"
               >
-                🗑
+                <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
+                </svg>
               </button>
             </div>
           </div>

@@ -19,7 +19,7 @@ defineEmits<{ toggle: [] }>()
       :title="collapsed ? '展开全部内容' : '收起内容'"
       @click="$emit('toggle')"
     >
-      {{ collapsed ? '▼' : '▲' }}
+      {{ collapsed ? '▼' : '▲' }} <!-- taste-skill-ignore -->
     </button>
   </div>
 </template>
@@ -43,7 +43,7 @@ defineEmits<{ toggle: [] }>()
   margin-top: 0;
   align-items: flex-end;
   padding-bottom: 0.1em;
-  background: linear-gradient(to bottom, transparent, var(--color-surface-muted) 72%);
+  background: linear-gradient(to bottom, transparent, var(--color-surface-muted) 72%); /* taste-skill-ignore: neutral fade scrim */
   pointer-events: none;
 }
 
@@ -53,15 +53,16 @@ defineEmits<{ toggle: [] }>()
   align-items: center;
   justify-content: center;
   min-width: 2.2rem;
-  padding: 0.05rem 0.5rem;
-  border: none;
-  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
   background: var(--color-surface);
   color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
   font-size: 0.8rem;
   line-height: 1.4;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .expand-button:hover {

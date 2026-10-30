@@ -161,7 +161,11 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
     <div class="viewer-body">
       <!-- Empty state -->
       <div v-if="isEmpty" class="empty-state">
-        <span class="empty-icon">📁</span>
+        <span class="empty-icon">
+          <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 4h6l2 2h10v12H3V4z" />
+          </svg>
+        </span>
         <p class="empty-text">在左侧文件树中点击文件进行查看</p>
       </div>
 
@@ -215,7 +219,13 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
 
         <!-- Binary placeholder view -->
         <div v-else-if="currentFileType === 'binary'" class="binary-state">
-          <span class="binary-icon">📦</span>
+          <span class="binary-icon">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2l9 5v10l-9 5-9-5V7l9-5z" />
+              <path d="M12 22V12" />
+              <path d="M21 7l-9 5-9-5" />
+            </svg>
+          </span>
           <p class="binary-title">二进制文件无法在线直接显示</p>
           <p class="binary-meta">文件大小: {{ (fileData.size / 1024).toFixed(1) }} KB · 类型: {{ fileData.mimeType }}</p>
         </div>
@@ -258,26 +268,27 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border-radius: 4px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   font-size: 0.78rem;
   color: var(--color-text-muted);
   cursor: pointer;
   user-select: none;
   background: transparent;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out;
   max-width: 180px;
 }
 
 .viewer-tab:hover {
-  background: rgba(0, 0, 0, 0.04);
   color: var(--color-text);
 }
 
 .viewer-tab.is-active {
-  background: var(--color-surface, #ffffff);
-  color: var(--color-primary, #2563eb);
+  background: transparent;
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .tab-title {

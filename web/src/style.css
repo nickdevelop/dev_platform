@@ -25,8 +25,8 @@
   --color-danger: #b91c1c;
   --color-danger-border: #fca5a5;
   --color-danger-soft: #fee2e2;
-  --color-accent: #7c3aed;
-  --color-accent-soft: #f1e9fe;
+  --color-accent: #4a8ad6;
+  --color-accent-soft: #edf3fb;
   --color-success: #15803d;
   --color-success-soft: #ecfdf5;
   --color-success-border: #86efac;
@@ -70,10 +70,25 @@ body,
 html {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   overflow: hidden;
   background: var(--color-bg);
   color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Data terminal base: crisp 1px borders, no resting shadows, flat tone steps */
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
 }

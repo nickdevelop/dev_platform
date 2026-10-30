@@ -89,8 +89,13 @@ function onConnect(serverId: number) {
       aria-label="搜索服务器名称或主机"
     />
 
-    <div v-if="!terminalStore.isSupported" class="platform-warning" role="alert">
-      <span>⚠️ 该功能仅在 Linux 服务器环境中支持，当前宿主暂不支持本地终端。</span>
+    <div v-if="!terminalStore.isSupported" class="platform-warning flex items-center gap-1.5" role="alert">
+      <svg class="shrink-0 text-amber-500" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M8 2l6.5 11.5H1.5L8 2z" />
+        <line x1="8" y1="6" x2="8" y2="9.5" />
+        <circle cx="8" cy="11.5" r="0.75" fill="currentColor" />
+      </svg>
+      <span>该功能仅在 Linux 服务器环境中支持，当前宿主暂不支持本地终端。</span>
     </div>
 
     <div class="server-list-container">

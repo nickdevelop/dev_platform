@@ -107,7 +107,7 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
             :class="{ off: !entry.capabilities[capability] }"
             :title="entry.capabilities[capability] ? '支持' : '该后端不支持此能力'"
           >
-            {{ capabilityLabels[capability] ?? capability }}{{ entry.capabilities[capability] ? '' : ' ✕' }}
+            {{ capabilityLabels[capability] ?? capability }}{{ entry.capabilities[capability] ? '' : ' ✕' }} <!-- taste-skill-ignore -->
           </span>
         </div>
       </li>

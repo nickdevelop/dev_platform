@@ -87,7 +87,12 @@ onBeforeUnmount(() => {
               data-test="modal-refresh-btn"
               @click="handleRefresh"
             >
-              <span class="btn-icon">🔄</span>
+              <span class="btn-icon">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M14 8A6 6 0 1 1 9.5 2.5" />
+                  <polyline points="14 2.5 14 6 10.5 6" />
+                </svg>
+              </span>
               <span class="btn-text">刷新</span>
             </button>
 
@@ -98,7 +103,16 @@ onBeforeUnmount(() => {
               data-test="modal-fullscreen-btn"
               @click="toggleFullScreen"
             >
-              <span class="btn-icon">{{ isFullScreen ? '🗗' : '⛶' }}</span>
+              <span class="btn-icon">
+                <svg v-if="isFullScreen" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <polyline points="3 6 6 6 6 3" />
+                  <polyline points="13 10 10 10 10 13" />
+                </svg>
+                <svg v-else viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <polyline points="2 6 2 2 6 2" />
+                  <polyline points="14 10 14 14 10 14" />
+                </svg>
+              </span>
               <span class="btn-text">{{ isFullScreen ? '还原' : '全屏' }}</span>
             </button>
 
@@ -110,7 +124,10 @@ onBeforeUnmount(() => {
               data-test="modal-close-btn"
               @click="handleClose"
             >
-              ✕
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                <line x1="3" y1="3" x2="13" y2="13" />
+                <line x1="13" y1="3" x2="3" y2="13" />
+              </svg>
             </button>
           </div>
         </header>
@@ -136,8 +153,7 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(4px);
+  background: rgba(10, 12, 16, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -156,12 +172,11 @@ onBeforeUnmount(() => {
   height: 80vh;
   display: flex;
   flex-direction: column;
-  background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border-strong, #cbd5e1);
-  border-radius: 8px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+  background: var(--color-surface, #14171f);
+  border: 1px solid var(--color-border-strong, #2e3545);
+  border-radius: 4px;
   overflow: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width 0.18s ease-out, height 0.18s ease-out;
 }
 
 .html-modal-dialog.is-fullscreen {

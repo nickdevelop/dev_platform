@@ -53,6 +53,10 @@ function toolIcon(entry: ChatEntry): string {
   return log.toolIcon(entry)
 }
 
+function toolKind(entry: ChatEntry): log.ToolKind {
+  return log.toolKind(entry)
+}
+
 function isSubagentCall(entry: ChatEntry): boolean {
   return log.isSubagentCall(entry, resultForCall)
 }
@@ -98,7 +102,13 @@ function closeSubagent() {
         <!-- 思考内容直接输出，无需折叠 -->
         <div v-if="entry.kind === 'thinking'" class="flat-thinking flat-thinking-direct" data-test="thinking">
           <div class="thinking-direct-header">
-            <span class="thinking-icon" aria-hidden="true">🧠</span>
+            <span class="thinking-icon" aria-hidden="true">
+              <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M8 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.5V11h4V9.5c1.2-.7 2-2 2-3.5a4 4 0 0 0-4-4z" />
+                <line x1="6" y1="13" x2="10" y2="13" />
+                <line x1="7" y1="15" x2="9" y2="15" />
+              </svg>
+            </span>
             <span class="thinking-title">Thinking</span>
             <span v-if="entry.streaming" class="streaming-cursor" data-test="streaming" aria-hidden="true">…</span>
           </div>
@@ -112,7 +122,15 @@ function closeSubagent() {
           data-test="tool-call"
         >
           <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">🤖</span>
+            <span class="tool-icon" aria-hidden="true">
+              <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                <rect x="3" y="4" width="10" height="8" rx="2" />
+                <line x1="8" y1="2" x2="8" y2="4" />
+                <circle cx="6" cy="8" r="0.75" fill="currentColor" />
+                <circle cx="10" cy="8" r="0.75" fill="currentColor" />
+                <line x1="6" y1="10" x2="10" y2="10" />
+              </svg>
+            </span>
             <span class="tool-name">子任务</span>
             <span v-if="subagentName(entry)" class="tool-arg">{{ subagentName(entry) }}</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
@@ -134,7 +152,50 @@ function closeSubagent() {
           data-test="tool-call"
         >
           <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">{{ toolIcon(entry) }}</span>
+            <span class="tool-icon" aria-hidden="true">
+              <template v-if="toolKind(entry) === 'question'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M6 6a2 2 0 1 1 3 1.73c-.5.3-.8.7-.8 1.27v.5" />
+                  <circle cx="8" cy="11.5" r="0.5" fill="currentColor" />
+                </svg>
+              </template>
+              <template v-else-if="toolKind(entry) === 'read'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M3 2h7l3 3v9H3V2z" />
+                  <polyline points="10 2 10 5 13 5" />
+                </svg>
+              </template>
+              <template v-else-if="toolKind(entry) === 'edit'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+                </svg>
+              </template>
+              <template v-else-if="toolKind(entry) === 'bash'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polyline points="4 5 8 8 4 11" />
+                  <line x1="9" y1="11" x2="13" y2="11" />
+                </svg>
+              </template>
+              <template v-else-if="toolKind(entry) === 'search'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="7" cy="7" r="4.5" />
+                  <line x1="10.5" y1="10.5" x2="14" y2="14" />
+                </svg>
+              </template>
+              <template v-else-if="toolKind(entry) === 'fetch'">
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <ellipse cx="8" cy="8" rx="3" ry="6.5" />
+                  <line x1="1.5" y1="8" x2="14.5" y2="8" />
+                </svg>
+              </template>
+              <template v-else>
+                <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M14 10l-4-4M10 2a3.5 3.5 0 0 0-4.8 4.8L2 10v4h4l3.2-3.2A3.5 3.5 0 0 0 14 6V2h-4z" />
+                </svg>
+              </template>
+            </span>
             <span class="tool-name">{{ toolSummaryText(entry) }}</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
             <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
@@ -148,7 +209,11 @@ function closeSubagent() {
           data-test="tool-result"
         >
           <div class="flat-head" data-test="flat-head">
-            <span class="tool-icon" aria-hidden="true">🔧</span>
+            <span class="tool-icon" aria-hidden="true">
+              <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M14 10l-4-4M10 2a3.5 3.5 0 0 0-4.8 4.8L2 10v4h4l3.2-3.2A3.5 3.5 0 0 0 14 6V2h-4z" />
+              </svg>
+            </span>
             <span class="tool-name">{{ entry.text || '工具结果' }}</span>
           </div>
         </div>

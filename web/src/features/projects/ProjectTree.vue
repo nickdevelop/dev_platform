@@ -344,7 +344,10 @@ async function confirmDeleteSession() {
             title="项目设置"
             @click.stop="emit('open-settings', project.id)"
           >
-            ⚙
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="2.5" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+            </svg>
           </button>
         </div>
       </div>

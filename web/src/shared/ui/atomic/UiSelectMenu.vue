@@ -197,7 +197,7 @@ watch(
 
       <span
         v-if="clearable && selectedOption && !disabled"
-        class="clear-btn"
+        class="clear-btn inline-flex items-center justify-center"
         role="button"
         title="清除选择"
         tabindex="0"
@@ -205,7 +205,10 @@ watch(
         @keydown.enter.prevent="handleClear"
         @keydown.space.prevent="handleClear"
       >
-        ✕
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
+          <line x1="3" y1="3" x2="13" y2="13" />
+          <line x1="13" y1="3" x2="3" y2="13" />
+        </svg>
       </span>
 
       <span class="trigger-caret" aria-hidden="true">▾</span>
@@ -262,7 +265,11 @@ watch(
                 <span v-if="opt.sublabel" class="option-sublabel">{{ opt.sublabel }}</span>
               </div>
               <span v-if="opt.tag" class="option-tag">{{ opt.tag }}</span>
-              <span v-if="String(opt.value) === String(modelValue)" class="check-icon" aria-hidden="true">✓</span>
+              <span v-if="String(opt.value) === String(modelValue)" class="check-icon inline-flex items-center justify-center" aria-hidden="true">
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 8 6 11 13 4" />
+                </svg>
+              </span>
             </slot>
           </li>
 

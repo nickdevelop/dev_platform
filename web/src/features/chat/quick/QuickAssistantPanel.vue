@@ -256,7 +256,10 @@ function onKeydown(event: KeyboardEvent) {
           data-test="quick-assistant-close"
           @click="emit('close')"
         >
-          ✕
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
         </button>
       </div>
     </header>

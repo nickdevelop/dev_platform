@@ -177,10 +177,30 @@ onBeforeUnmount(() => {
       @mousedown.middle.prevent
     >
       <button type="button" class="tab-select" @click="emit('select', tab)">
-        <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">📌</span>
-        <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">⚙</span>
-        <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">📋</span>
-        <span v-else-if="tab.kind === 'new-session' || tab.kind === 'new-chat'" class="tab-icon" aria-hidden="true">✎</span>
+        <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="8" y1="11" x2="8" y2="15" />
+            <path d="M4 11h8l-1.5-6h-5L4 11z" />
+            <line x1="5.5" y1="2" x2="10.5" y2="2" />
+          </svg>
+        </span>
+        <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="2.5" />
+            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+          </svg>
+        </span>
+        <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="10" height="11" rx="1" />
+            <path d="M6 1.5h4v2H6v-2zM5.5 7h5M5.5 10h3" />
+          </svg>
+        </span>
+        <span v-else-if="tab.kind === 'new-session' || tab.kind === 'new-chat'" class="tab-icon" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+          </svg>
+        </span>
         <span v-else-if="!isRunning(tab)" class="tab-dot" aria-hidden="true"></span>
         <RunningIndicator v-if="isRunning(tab)" />
         <span class="tab-label">{{ label(tab) }}</span>
@@ -249,10 +269,9 @@ onBeforeUnmount(() => {
 .session-tabs {
   display: flex;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: 1px;
   overflow-x: auto;
-  /* Pinned to the very top of the pane and full width: no top inset. */
-  padding: 0 0.35rem;
+  padding: 0 0.25rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
@@ -263,17 +282,17 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 0.15rem;
   max-width: 12rem;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-radius: 8px 8px 0 0;
-  padding: 0.25rem 0.25rem 0.3rem 0.5rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.35rem 0.25rem 0.3rem 0.5rem;
   background: transparent;
   white-space: nowrap;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .tab.active {
   background: var(--color-bg);
-  border-color: var(--color-border);
+  border-bottom-color: var(--color-accent);
 }
 
 .tab-select {
@@ -303,19 +322,22 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
-.tab-icon {
+.tab-icon,
+.tab-pin {
   flex-shrink: 0;
-  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-text-muted);
 }
 
-.tab-pin {
-  flex-shrink: 0;
-  font-size: 0.7rem;
+.tab.active .tab-dot {
+  background: var(--color-accent);
 }
 
-.tab.active .tab-dot {
-  background: var(--color-primary);
+.tab.active .tab-icon,
+.tab.active .tab-pin {
+  color: var(--color-accent);
 }
 
 .tab-label {
@@ -332,8 +354,9 @@ onBeforeUnmount(() => {
   font-size: 0.95rem;
   line-height: 1;
   padding: 0.15rem 0.35rem;
-  border-radius: 6px;
+  border-radius: 2px;
   color: var(--color-text-muted);
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .tab-close:hover {
@@ -355,9 +378,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   padding: 0.25rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 8px;
+  border-radius: 3px;
   background: var(--color-surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
 }
 
 .tab-menu button {
@@ -365,12 +387,13 @@ onBeforeUnmount(() => {
   background: transparent;
   text-align: left;
   padding: 0.35rem 0.6rem;
-  border-radius: 6px;
+  border-radius: 2px;
   cursor: pointer;
   font: inherit;
   font-size: 0.85rem;
   color: var(--color-text);
   white-space: nowrap;
+  transition: background-color 0.12s ease-out;
 }
 
 .tab-menu button:hover:not(:disabled) {
@@ -392,12 +415,12 @@ onBeforeUnmount(() => {
   align-self: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 3px;
   color: var(--color-text-muted);
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .tab-add-btn:hover {

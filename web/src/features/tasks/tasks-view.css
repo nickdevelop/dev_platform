@@ -165,8 +165,8 @@
 }
 
 .flow-pill.transactional {
-  background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  background: var(--color-primary-soft);
+  color: var(--color-accent);
 }
 
 .flow-pill.development {
@@ -344,8 +344,8 @@
 }
 
 .flow-badge.transactional {
-  background: rgba(139, 92, 246, 0.2);
-  color: #a78bfa;
+  background: var(--color-primary-soft);
+  color: var(--color-accent);
 }
 
 .flow-badge.development {

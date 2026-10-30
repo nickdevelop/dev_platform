@@ -41,19 +41,30 @@ onBeforeUnmount(() => {
       <div class="task-chat-dialog-panel">
         <div class="task-chat-dialog-head">
           <div class="dialog-title-wrap">
-            <span class="dialog-icon">🤖</span>
+            <span class="dialog-icon inline-flex items-center text-platform-text-muted">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6">
+                <rect x="3" y="4" width="10" height="8" rx="2" />
+                <line x1="8" y1="2" x2="8" y2="4" />
+                <circle cx="6" cy="8" r="0.75" fill="currentColor" />
+                <circle cx="10" cy="8" r="0.75" fill="currentColor" />
+                <line x1="6" y1="10" x2="10" y2="10" />
+              </svg>
+            </span>
             <span class="dialog-title">{{ title }}</span>
             <span v-if="backend" class="dialog-meta-badge">{{ backend }} {{ model ? `· ${model}` : '' }}</span>
           </div>
           <button
             type="button"
-            class="dialog-close-btn"
+            class="dialog-close-btn inline-flex items-center justify-center"
             title="关闭 (Esc)"
             aria-label="关闭"
             data-test="task-chat-dialog-close"
             @click="emit('close')"
           >
-            ✕
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <line x1="3" y1="3" x2="13" y2="13" />
+              <line x1="13" y1="3" x2="3" y2="13" />
+            </svg>
           </button>
         </div>
         <div class="task-chat-dialog-body">
@@ -76,8 +87,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(2px);
+  background: rgba(10, 12, 16, 0.75);
   padding: 1.5rem;
 }
 
@@ -88,8 +98,7 @@ onBeforeUnmount(() => {
   height: 90vh;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
   overflow: hidden;
 }
 

@@ -538,11 +538,13 @@ export function formatQuestionAnswersList(
   return list
 }
 
-export function toolIcon(entry: ChatEntry): string {
-  if (isQuestionCall(entry)) return '❓'
+export type ToolKind = 'question' | 'read' | 'edit' | 'bash' | 'search' | 'fetch' | 'tool'
+
+export function toolKind(entry: ChatEntry): ToolKind {
+  if (isQuestionCall(entry)) return 'question'
   const name = (entry.name ?? entry.text ?? '').toLowerCase()
-  if (name.includes('read')) return '📖'
-  if (name.includes('edit') || name.includes('write')) return '✏️'
+  if (name.includes('read')) return 'read'
+  if (name.includes('edit') || name.includes('write')) return 'edit'
   if (
     name.includes('bash') ||
     name.includes('shell') ||
@@ -550,13 +552,17 @@ export function toolIcon(entry: ChatEntry): string {
     name.includes('exec') ||
     name.includes('command')
   ) {
-    return '⚡'
+    return 'bash'
   }
   if (name.includes('grep') || name.includes('glob') || name.includes('search') || name.includes('find')) {
-    return '🔍'
+    return 'search'
   }
-  if (name.includes('fetch') || name.includes('curl') || name.includes('http')) return '🌐'
-  return '🔧'
+  if (name.includes('fetch') || name.includes('curl') || name.includes('http')) return 'fetch'
+  return 'tool'
+}
+
+export function toolIcon(entry: ChatEntry): string {
+  return toolKind(entry)
 }
 
 export function toolSummaryText(entry: ChatEntry, resultForCall?: ResultLookup): string {

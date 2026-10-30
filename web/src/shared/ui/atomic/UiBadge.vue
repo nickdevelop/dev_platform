@@ -75,11 +75,14 @@ const dotColorClasses = computed(() => {
     <button
       v-if="closable"
       type="button"
-      class="hover:opacity-75 focus:outline-none ml-0.5"
+      class="hover:opacity-75 focus:outline-none ml-0.5 inline-flex items-center justify-center"
       aria-label="移除标签"
       @click.stop="emit('close', $event)"
     >
-      ✕
+      <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="3" y1="3" x2="13" y2="13" />
+        <line x1="13" y1="3" x2="3" y2="13" />
+      </svg>
     </button>
   </span>
 </template>

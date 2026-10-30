@@ -35,7 +35,11 @@ function onError() {
         :title="zoomMode === 'fit' ? '适应窗口 (点击切换实际尺寸)' : '实际尺寸 (点击切换适应窗口)'"
         @click="toggleZoom"
       >
-        {{ zoomMode === 'fit' ? '🔍 实际尺寸 (100%)' : '🔍 适应窗口' }}
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="14" y2="14" />
+        </svg>
+        <span>{{ zoomMode === 'fit' ? '实际尺寸 (100%)' : '适应窗口' }}</span>
       </button>
       <span class="image-name">{{ props.fileName }}</span>
     </div>
@@ -104,12 +108,7 @@ function onError() {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background-image: linear-gradient(45deg, #eee 25%, transparent 25%),
-    linear-gradient(-45deg, #eee 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #eee 75%),
-    linear-gradient(-45deg, transparent 75%, #eee 75%);
-  background-size: 16px 16px;
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background: var(--color-surface-muted, #14171f);
 }
 
 .zoom-fit .preview-img {
@@ -117,12 +116,12 @@ function onError() {
   max-height: 100%;
   object-fit: contain;
   cursor: zoom-in;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-border);
 }
 
 .zoom-actual .preview-img {
   cursor: zoom-out;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--color-border);
 }
 
 .image-error {

@@ -147,7 +147,10 @@ onUnmounted(() => {
         :title="copied ? '已复制' : '复制代码'"
         @click="copyCode"
       >
-        {{ copied ? '✓ 已复制' : '复制' }}
+        <svg v-if="copied" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 8 6 11 13 4" />
+        </svg>
+        <span>{{ copied ? '已复制' : '复制' }}</span>
       </button>
       <button
         type="button"
@@ -155,7 +158,11 @@ onUnmounted(() => {
         title="搜索 (Ctrl+F)"
         @click="toggleSearch"
       >
-        🔍 查找
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="14" y2="14" />
+        </svg>
+        <span>查找</span>
       </button>
     </div>
 

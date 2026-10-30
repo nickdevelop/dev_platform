@@ -60,14 +60,20 @@ function onDragStart(event: DragEvent, path: string) {
   emit('dragstart', event, path)
 }
 
-function getFileIcon(name: string, isDir: boolean): string {
-  if (isDir) return '📁'
+export type FileKind = 'folder' | 'markdown' | 'image' | 'code' | 'config' | 'file'
+
+function getFileKind(name: string, isDir: boolean): FileKind {
+  if (isDir) return 'folder'
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  if (ext === 'md' || ext === 'markdown') return '📝'
-  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return '🖼️'
-  if (['ts', 'js', 'vue', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'sh'].includes(ext)) return '📄'
-  if (['json', 'yaml', 'yml', 'toml'].includes(ext)) return '⚙️'
-  return '📃'
+  if (ext === 'md' || ext === 'markdown') return 'markdown'
+  if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image'
+  if (['ts', 'js', 'vue', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'sh'].includes(ext)) return 'code'
+  if (['json', 'yaml', 'yml', 'toml'].includes(ext)) return 'config'
+  return 'file'
+}
+
+function getFileIcon(name: string, isDir: boolean): string {
+  return getFileKind(name, isDir)
 }
 
 function getChangeBadge(status?: GitFileChangeStatus): { text: string; label: string } | null {
@@ -114,14 +120,54 @@ defineExpose({
       >
         <span
           v-if="node.isDir"
-          class="expand-arrow inline-block w-3 text-[10px] text-slate-400 text-center transition-transform duration-150"
+          class="expand-arrow inline-flex items-center justify-center w-3 text-slate-400 transition-transform duration-150"
           :class="{ 'is-open rotate-90': isExpanded(node.path) }"
         >
-          ▶
+          <svg viewBox="0 0 16 16" width="9" height="9" fill="currentColor">
+            <polygon points="5 3 11 8 5 13" />
+          </svg>
         </span>
         <span v-else class="expand-arrow-spacer w-3 inline-block"></span>
 
-        <span class="file-icon text-sm leading-none shrink-0" aria-hidden="true">{{ getFileIcon(node.name, node.isDir) }}</span>
+        <span class="file-icon shrink-0 inline-flex items-center text-slate-400 dark:text-slate-500" aria-hidden="true">
+          <template v-if="getFileKind(node.name, node.isDir) === 'folder'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M2 3h4l2 2h6v8H2V3z" />
+            </svg>
+          </template>
+          <template v-else-if="getFileKind(node.name, node.isDir) === 'markdown'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2.5" y="2" width="11" height="12" rx="1" />
+              <path d="M5 6v4l2-2 2 2V6" />
+            </svg>
+          </template>
+          <template v-else-if="getFileKind(node.name, node.isDir) === 'image'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="2" width="12" height="12" rx="1" />
+              <circle cx="5.5" cy="5.5" r="1" />
+              <polyline points="3 13 8 8 13 13" />
+            </svg>
+          </template>
+          <template v-else-if="getFileKind(node.name, node.isDir) === 'code'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 2h7l3 3v9H3V2z" />
+              <polyline points="10 2 10 5 13 5" />
+              <path d="M6 8l-1.5 1.5 1.5 1.5M9 8l1.5 1.5-1.5 1.5" />
+            </svg>
+          </template>
+          <template v-else-if="getFileKind(node.name, node.isDir) === 'config'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="2.5" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+            </svg>
+          </template>
+          <template v-else>
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M3 2h7l3 3v9H3V2z" />
+              <polyline points="10 2 10 5 13 5" />
+            </svg>
+          </template>
+        </span>
         <span class="file-name truncate flex-1 min-w-0" :title="node.path">{{ node.name }}</span>
 
         <span

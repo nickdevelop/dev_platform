@@ -171,7 +171,11 @@ function getProjectName(pid: number) {
             {{ getScheduleTypeLabel(t.scheduleType) }}
           </span>
           <span v-if="t.scheduleEnabled && t.scheduleType === 'cron'" class="schedule-tag" :title="`周期: ${t.cronExpr}`">
-            ⏰ {{ t.cronExpr }}
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="8" cy="8" r="6.5" />
+              <polyline points="8 4 8 8 11 10" />
+            </svg>
+            <span>{{ t.cronExpr }}</span>
           </span>
         </div>
       </div>
@@ -331,8 +335,8 @@ function getProjectName(pid: number) {
 }
 
 .type-pill.flow {
-  background: rgba(168, 85, 247, 0.12);
-  color: #a855f7;
+  background: var(--color-primary-soft);
+  color: var(--color-accent);
 }
 
 .status-badge {
@@ -387,6 +391,6 @@ function getProjectName(pid: number) {
   gap: 0.25rem;
   margin-top: calc(var(--space-unit) * 0.3);
   font-size: 0.75rem;
-  color: #8b5cf6;
+  color: var(--color-accent);
 }
 </style>

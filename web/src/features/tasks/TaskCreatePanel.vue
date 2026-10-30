@@ -241,19 +241,22 @@ async function handleCreateTask() {
         </div>
         <button
           type="button"
-          class="btn-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded"
+          class="btn-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded inline-flex items-center justify-center"
           title="取消"
           aria-label="关闭面板"
           @click="emit('cancel')"
         >
-          ✕
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
         </button>
       </header>
 
       <form class="create-form space-y-5" @submit.prevent="handleCreateTask">
         <!-- 1. Task Type Selection -->
         <div class="form-section space-y-2">
-          <label class="section-label text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">任务类型</label>
+          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">任务类型</label>
           <div class="task-type-selector grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div
               class="type-card flex items-start gap-3 p-3.5 rounded border cursor-pointer select-none transition-colors"
@@ -264,7 +267,11 @@ async function handleCreateTask() {
               ]"
               @click="selectedTaskType = 'standard'"
             >
-              <div class="type-icon text-2xl">⚡</div>
+              <div class="type-icon text-slate-700 dark:text-slate-200 shrink-0">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
                   <span class="type-title text-sm font-semibold text-slate-800 dark:text-slate-200">普通任务</span>
@@ -283,7 +290,15 @@ async function handleCreateTask() {
               ]"
               @click="selectedTaskType = 'flow'"
             >
-              <div class="type-icon text-2xl">🔀</div>
+              <div class="type-icon text-slate-700 dark:text-slate-200 shrink-0">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polyline points="16 3 21 3 21 8" />
+                  <line x1="4" y1="20" x2="21" y2="3" />
+                  <polyline points="21 16 21 21 16 21" />
+                  <line x1="15" y1="15" x2="21" y2="21" />
+                  <line x1="4" y1="4" x2="9" y2="9" />
+                </svg>
+              </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
                   <span class="type-title text-sm font-semibold text-slate-800 dark:text-slate-200">流程任务</span>
@@ -297,7 +312,7 @@ async function handleCreateTask() {
 
         <!-- 2. Basic Info -->
         <div class="form-section space-y-3">
-          <label class="section-label text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">基本信息</label>
+          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">基本信息</label>
           <div class="form-group flex flex-col gap-1.5">
             <label for="task-title" class="text-xs font-medium text-slate-700 dark:text-slate-300">
               任务名称 <span class="text-red-500">*</span>
@@ -325,7 +340,7 @@ async function handleCreateTask() {
 
         <!-- 3. Session Template Configuration -->
         <div class="form-section space-y-3">
-          <label class="section-label text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">会话执行模板</label>
+          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">会话执行模板</label>
 
           <!-- Project Selector -->
           <div class="form-group flex flex-col gap-1.5">
@@ -433,7 +448,7 @@ async function handleCreateTask() {
 
         <!-- 4. Execution Mode Options -->
         <div class="form-section space-y-3">
-          <label class="section-label text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">执行方式选项</label>
+          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">执行方式选项</label>
           <div class="schedule-mode-grid grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div
               class="mode-card p-3 rounded border cursor-pointer select-none transition-colors"
@@ -451,7 +466,9 @@ async function handleCreateTask() {
                 class="sr-only"
               />
               <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <span>👆</span>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
                 <span>手动执行</span>
               </div>
               <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">仅在任务创建完成后，由人工在任务详情页点击按钮立即触发。</p>
@@ -473,7 +490,10 @@ async function handleCreateTask() {
                 class="sr-only"
               />
               <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <span>⏰</span>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
                 <span>定时执行 (单次)</span>
               </div>
               <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">在设定的未来时间点自动启动并执行一次任务会话。</p>
@@ -495,7 +515,11 @@ async function handleCreateTask() {
                 class="sr-only"
               />
               <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <span>🔄</span>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
                 <span>周期执行 (Cron)</span>
               </div>
               <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">按照预设周期或 Cron 表达式自动循环执行任务并沉淀历史。</p>

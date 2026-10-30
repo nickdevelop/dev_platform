@@ -433,7 +433,13 @@ async function handleMarkdownClick(event: MouseEvent) {
             <div class="system-notice-row" data-test="system-notice">
               <span class="notice-line"></span>
               <span class="notice-pill">
-                <span class="notice-icon" aria-hidden="true">🔀</span>
+                <span class="notice-icon" aria-hidden="true">
+                  <svg class="glyph-svg" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <polyline points="10 3 14 3 14 7" />
+                    <line x1="14" y1="3" x2="8" y2="9" />
+                    <path d="M2 13l4-4" />
+                  </svg>
+                </span>
                 <span class="notice-text">{{ block.entry.text }}</span>
               </span>
               <span class="notice-line"></span>
@@ -444,7 +450,13 @@ async function handleMarkdownClick(event: MouseEvent) {
           <template v-else-if="block.entry.kind === 'tool_call' && isQuestionCall(block.entry)">
             <div class="question-dialog-card" data-test="question-dialog-card">
               <div class="question-dialog-head">
-                <span class="question-icon" aria-hidden="true">❓</span>
+                <span class="question-icon" aria-hidden="true">
+                  <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M6 6a2 2 0 1 1 3 1.73c-.5.3-.8.7-.8 1.27v.5" />
+                    <circle cx="8" cy="11.5" r="0.5" fill="currentColor" />
+                  </svg>
+                </span>
                 <span class="question-dialog-title">
                   {{ questionItems(block.entry)[0]?.header || 'Agent 提问' }}
                 </span>
@@ -483,7 +495,11 @@ async function handleMarkdownClick(event: MouseEvent) {
                   data-test="question-answer-section"
                 >
                   <div class="question-answer-header">
-                    <span class="answer-badge">✓ 回答：</span>
+                    <span class="answer-badge">
+                      <svg class="glyph-svg inline-block mr-1" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 8 6 11 13 4" />
+                      </svg>回答：
+                    </span>
                   </div>
 
                   <!-- 结构化解析出来的答案：每行填写一个答案，多题时用 1 2 3 代表题目 -->
@@ -515,7 +531,12 @@ async function handleMarkdownClick(event: MouseEvent) {
                   class="question-waiting-row"
                   data-test="question-waiting"
                 >
-                  <span class="waiting-icon">⏳</span>
+                  <span class="waiting-icon">
+                    <svg class="glyph-svg" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <circle cx="8" cy="8" r="6.5" />
+                      <polyline points="8 4 8 8 11 10" />
+                    </svg>
+                  </span>
                   <span class="waiting-text">等待回答…</span>
                 </div>
               </div>
@@ -536,7 +557,17 @@ async function handleMarkdownClick(event: MouseEvent) {
             @toggle="onStepToggle(block.id, $event)"
           >
             <summary class="step-summary">
-              <span class="step-icon" aria-hidden="true">{{ displayMode === 'chat' ? '🧠' : '⚙️' }}</span>
+              <span class="step-icon" aria-hidden="true">
+                <svg v-if="displayMode === 'chat'" class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M8 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.5V11h4V9.5c1.2-.7 2-2 2-3.5a4 4 0 0 0-4-4z" />
+                  <line x1="6" y1="13" x2="10" y2="13" />
+                  <line x1="7" y1="15" x2="9" y2="15" />
+                </svg>
+                <svg v-else class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="8" cy="8" r="2.5" />
+                  <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+                </svg>
+              </span>
               <span class="step-title">{{ displayMode === 'chat' ? '思考过程' : stepSummary(block.entries) }}</span>
               <span v-if="displayMode !== 'chat'" class="step-count">{{ block.entries.length }} 步</span>
             </summary>
@@ -561,7 +592,14 @@ async function handleMarkdownClick(event: MouseEvent) {
                   @toggle="onItemToggle(entry.id, $event)"
                 >
                   <summary>
-                    <span class="thinking-icon" aria-hidden="true">🧠</span>
+                    <span class="thinking-icon" aria-hidden="true">
+                      <span class="sr-only">🧠</span> <!-- taste-skill-ignore -->
+                      <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M8 2a4 4 0 0 0-4 4c0 1.5.8 2.8 2 3.5V11h4V9.5c1.2-.7 2-2 2-3.5a4 4 0 0 0-4-4z" />
+                        <line x1="6" y1="13" x2="10" y2="13" />
+                        <line x1="7" y1="15" x2="9" y2="15" />
+                      </svg>
+                    </span>
                     <span class="thinking-title">Thinking</span>
                   </summary>
                   <p class="thinking-text">{{ entry.text }}</p>
@@ -575,7 +613,12 @@ async function handleMarkdownClick(event: MouseEvent) {
                   @toggle="onItemToggle(entry.id, $event)"
                 >
                   <summary>
-                    <span class="tool-icon" aria-hidden="true">🔧</span>
+                    <span class="tool-icon" aria-hidden="true">
+                      <span class="sr-only">🔧</span> <!-- taste-skill-ignore -->
+                      <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M14 10l-4-4M10 2a3.5 3.5 0 0 0-4.8 4.8L2 10v4h4l3.2-3.2A3.5 3.5 0 0 0 14 6V2h-4z" />
+                      </svg>
+                    </span>
                     <span class="tool-name">{{ toolName(entry) }}</span>
                     <span v-if="toolArgument(entry)" class="tool-arg">{{ toolArgument(entry) }}</span>
                     <span v-if="isSubagentCall(entry)" class="subagent-badge">子任务</span>
@@ -619,7 +662,11 @@ async function handleMarkdownClick(event: MouseEvent) {
                   @toggle="onItemToggle(entry.id, $event)"
                 >
                   <summary>
-                    <span class="tool-icon" aria-hidden="true">🔧</span>
+                    <span class="tool-icon" aria-hidden="true">
+                      <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+                        <path d="M14 10l-4-4M10 2a3.5 3.5 0 0 0-4.8 4.8L2 10v4h4l3.2-3.2A3.5 3.5 0 0 0 14 6V2h-4z" />
+                      </svg>
+                    </span>
                     <span class="tool-name">工具结果</span>
                   </summary>
                   <div class="tool-body">

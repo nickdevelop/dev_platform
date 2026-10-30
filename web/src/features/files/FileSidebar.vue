@@ -241,7 +241,15 @@ function getChangeStatusLabel(status: GitFileChangeStatus): { text: string; labe
               @click="item.isDir ? undefined : onSelectFile(item.path)"
               @dragstart="item.isDir ? undefined : onDragStart($event, item.path)"
             >
-              <span class="search-file-icon" aria-hidden="true">{{ item.isDir ? '📁' : '📄' }}</span>
+              <span class="search-file-icon" aria-hidden="true">
+                <svg v-if="item.isDir" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M2 3h4l2 2h6v8H2V3z" />
+                </svg>
+                <svg v-else viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M3 2h7l3 3v9H3V2z" />
+                  <polyline points="10 2 10 5 13 5" />
+                </svg>
+              </span>
               <span class="change-file-name" :title="item.path">{{ item.path }}</span>
             </li>
           </ul>

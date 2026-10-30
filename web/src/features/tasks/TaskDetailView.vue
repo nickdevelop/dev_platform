@@ -158,7 +158,11 @@ function calculateDuration(run: TaskRun): string {
             {{ getRunStatusLabel(task.lastRunStatus) }}
           </span>
           <UiBadge v-if="task.scheduleEnabled" variant="warning" size="sm">
-            ⏰ {{ getScheduleTypeLabel(task.scheduleType) }}
+            <svg class="inline-block mr-1" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="8" cy="8" r="6.5" />
+              <polyline points="8 4 8 8 11 10" />
+            </svg>
+            <span>{{ getScheduleTypeLabel(task.scheduleType) }}</span>
           </UiBadge>
         </div>
 
@@ -227,8 +231,12 @@ function calculateDuration(run: TaskRun): string {
 
     <!-- Template & Execution Config Overview -->
     <section class="section-card p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-3">
-      <div class="section-head pb-2 border-b border-slate-100 dark:border-slate-800">
-        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">📋 会话执行模板</h3>
+      <div class="section-head pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+        <svg class="text-slate-400" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="3" y="3" width="10" height="11" rx="1" />
+          <path d="M6 1.5h4v2H6v-2zM5.5 7h5M5.5 10h3" />
+        </svg>
+        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">会话执行模板</h3>
       </div>
       <div class="template-box space-y-1.5">
         <div class="template-header text-xs text-slate-400 font-medium">提示词模板内容</div>
@@ -260,10 +268,23 @@ function calculateDuration(run: TaskRun): string {
     <!-- Execution History Table -->
     <section class="section-card history-section p-5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
       <div class="section-head flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
-        <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">📜 任务执行历史</h3>
+        <div class="flex items-center gap-2">
+          <svg class="text-slate-400" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M13 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1z" />
+            <line x1="5" y1="5.5" x2="11" y2="5.5" />
+            <line x1="5" y1="8" x2="11" y2="8" />
+            <line x1="5" y1="10.5" x2="9" y2="10.5" />
+          </svg>
+          <h3 class="text-sm font-semibold text-slate-800 dark:text-slate-200">任务执行历史</h3>
+        </div>
         <div class="head-right flex items-center gap-2">
           <span class="count-tag text-xs text-slate-400">共 {{ taskRuns.length }} 次执行</span>
-          <UiButton size="sm" variant="ghost" class="btn-refresh" title="刷新历史" @click="refreshData">🔄</UiButton>
+          <UiButton size="sm" variant="ghost" class="btn-refresh" title="刷新历史" @click="refreshData">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M14 8A6 6 0 1 1 9.5 2.5" />
+              <polyline points="14 2.5 14 6 10.5 6" />
+            </svg>
+          </UiButton>
         </div>
       </div>
 
@@ -271,8 +292,13 @@ function calculateDuration(run: TaskRun): string {
         <UiEmpty
           title="暂无执行记录"
           description="点击右上角的「手动执行」按钮，系统将根据当前模板立即为您启动一次独立的 Agent 会话。"
-          icon="⏳"
         >
+          <template #icon>
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="9" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+          </template>
           <template #actions>
             <UiButton
               variant="primary"
@@ -322,7 +348,7 @@ function calculateDuration(run: TaskRun): string {
               </td>
               <td class="py-2.5 px-3">
                 <span class="run-status-badge text-[11px] px-2 py-0.5 rounded font-medium border inline-flex items-center gap-1" :class="getRunStatusBadgeClass(run.status)">
-                  <span v-if="run.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping inline-block"></span>
+                  <span v-if="run.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
                   {{ getRunStatusLabel(run.status) }}
                 </span>
               </td>
@@ -339,7 +365,10 @@ function calculateDuration(run: TaskRun): string {
                   data-test="btn-view-session"
                   @click.stop="openRunSession(run)"
                 >
-                  💬 查看会话
+                  <svg class="inline-block mr-1" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <path d="M2 4h12v7H5l-3 3V4z" />
+                  </svg>
+                  <span>查看会话</span>
                 </UiButton>
               </td>
             </tr>

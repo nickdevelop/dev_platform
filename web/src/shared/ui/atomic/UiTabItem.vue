@@ -80,12 +80,15 @@ function onClose(e: MouseEvent) {
     <button
       v-if="closable"
       type="button"
-      class="hover:text-red-500 p-0.5 rounded focus:outline-none"
+      class="hover:text-red-500 p-0.5 rounded focus:outline-none inline-flex items-center justify-center"
       title="关闭"
       aria-label="关闭标签"
       @click.stop="onClose"
     >
-      ✕
+      <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="3" y1="3" x2="13" y2="13" />
+        <line x1="13" y1="3" x2="3" y2="13" />
+      </svg>
     </button>
   </button>
 </template>

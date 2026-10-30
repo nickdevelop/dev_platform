@@ -102,7 +102,10 @@ function handleClear() {
       aria-label="清空内容"
       @click="handleClear"
     >
-      ✕
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="3" y1="3" x2="13" y2="13" />
+        <line x1="13" y1="3" x2="3" y2="13" />
+      </svg>
     </button>
 
     <div

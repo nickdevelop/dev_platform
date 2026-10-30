@@ -43,10 +43,28 @@ watch(
       >
         <div class="item-main">
           <span class="item-icon" aria-hidden="true">
-            <template v-if="item.kind === 'command'">⚡</template>
-            <template v-else-if="item.kind === 'file'">📄</template>
-            <template v-else-if="item.kind === 'folder'">📁</template>
-            <template v-else-if="item.kind === 'session'">💬</template>
+            <template v-if="item.kind === 'command'">
+              <svg class="glyph-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                <polyline points="4 5 8 8 4 11" />
+                <line x1="9" y1="11" x2="13" y2="11" />
+              </svg>
+            </template>
+            <template v-else-if="item.kind === 'file'">
+              <svg class="glyph-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M3 2h7l3 3v9H3V2z" />
+                <polyline points="10 2 10 5 13 5" />
+              </svg>
+            </template>
+            <template v-else-if="item.kind === 'folder'">
+              <svg class="glyph-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 3h4l2 2h6v8H2V3z" />
+              </svg>
+            </template>
+            <template v-else-if="item.kind === 'session'">
+              <svg class="glyph-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 4h12v7H5l-3 3V4z" />
+              </svg>
+            </template>
             <template v-else>•</template>
           </span>
           <span class="item-label">{{ item.label }}</span>
@@ -66,17 +84,16 @@ watch(
   right: 0;
   z-index: 50;
   max-height: 16rem;
-  background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border-strong, #cbd5e1);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  background: var(--color-surface, #15181f);
+  border: 1px solid var(--color-border-strong, #2e3545);
+  border-radius: var(--radius, 4px);
   overflow-y: auto;
   padding: 0.25rem;
 }
 
 .dropdown-loading {
   padding: 0.5rem 0.75rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-muted, #8a8c92);
   font-size: 0.82rem;
   text-align: center;
 }
@@ -95,14 +112,19 @@ watch(
   gap: 0.5rem;
   padding: 0.25rem 0.5rem;
   min-height: 28px;
-  border-radius: 5px;
+  border-radius: 2px;
   cursor: pointer;
-  transition: background-color 0.1s ease;
+  border-left: 2px solid transparent;
+  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .dropdown-item:hover,
 .dropdown-item.active {
-  background: var(--color-surface-muted, #f1f5f9);
+  background: var(--color-surface-muted, #1c202a);
+}
+
+.dropdown-item.active {
+  border-left-color: var(--color-accent, #4a8ad6);
 }
 
 .item-main {
@@ -114,25 +136,33 @@ watch(
 }
 
 .item-icon {
-  font-size: 0.85rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   width: 1.1rem;
+  color: var(--color-text-muted, #8a8c92);
+}
+
+.dropdown-item.active .item-icon {
+  color: var(--color-accent, #4a8ad6);
+}
+
+.glyph-icon {
+  display: block;
 }
 
 .item-label {
   font-weight: 500;
   font-size: 0.82rem;
-  color: var(--color-text, #0f172a);
+  color: var(--color-text, #e6e8ef);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .item-detail {
   font-size: 0.75rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-muted, #8a8c92);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -143,15 +173,15 @@ watch(
 .item-badge {
   font-size: 0.68rem;
   padding: 0.05rem 0.3rem;
-  border-radius: 3px;
-  background: var(--color-border, #e2e8f0);
-  color: var(--color-text-muted, #64748b);
+  border-radius: 2px;
+  background: var(--color-border, #222631);
+  color: var(--color-text-muted, #8a8c92);
   flex-shrink: 0;
   line-height: 1.2;
 }
 
 .dropdown-item.active .item-badge {
-  background: var(--color-primary, #3b82f6);
-  color: #ffffff;
+  background: var(--color-primary-soft, #152236);
+  color: var(--color-accent, #4a8ad6);
 }
 </style>

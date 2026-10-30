@@ -165,7 +165,7 @@ async function handleSwitch(conn: ServerConnection) {
       <!-- Main view: Connection list -->
       <div v-else-if="!isEditing" class="space-y-3">
         <div class="flex items-center justify-between pb-1">
-          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
             可用后端连接
           </span>
           <UiButton
@@ -192,10 +192,19 @@ async function handleSwitch(conn: ServerConnection) {
           >
             <div class="flex items-center space-x-3 min-w-0">
               <div
-                class="w-8 h-8 rounded flex items-center justify-center shrink-0 text-base"
+                class="w-8 h-8 rounded flex items-center justify-center shrink-0"
                 :class="conn.type === 'local' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400' : 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400'"
               >
-                {{ conn.type === 'local' ? '💻' : '🌐' }}
+                <svg v-if="conn.type === 'local'" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <rect x="2" y="3" width="12" height="8" rx="1" />
+                  <line x1="5" y1="14" x2="11" y2="14" />
+                  <line x1="8" y1="11" x2="8" y2="14" />
+                </svg>
+                <svg v-else viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <ellipse cx="8" cy="8" rx="3" ry="6.5" />
+                  <line x1="1.5" y1="8" x2="14.5" y2="8" />
+                </svg>
               </div>
               <div class="min-w-0">
                 <div class="flex items-center space-x-2">
@@ -308,7 +317,14 @@ async function handleSwitch(conn: ServerConnection) {
 
           <div v-if="testResult" class="text-xs p-2 rounded border" :class="testResult.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'">
             <div class="flex items-center space-x-1.5 font-medium">
-              <span>{{ testResult.ok ? '✓ 连接成功' : '✗ 连接失败' }}</span>
+              <svg v-if="testResult.ok" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 8 6 11 13 4" />
+              </svg>
+              <svg v-else viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="3" y1="3" x2="13" y2="13" />
+                <line x1="13" y1="3" x2="3" y2="13" />
+              </svg>
+              <span>{{ testResult.ok ? '连接成功' : '连接失败' }}</span>
               <span v-if="testResult.latencyMs !== undefined" class="text-slate-400">({{ testResult.latencyMs }}ms)</span>
             </div>
             <div v-if="testResult.message" class="mt-0.5">{{ testResult.message }}</div>

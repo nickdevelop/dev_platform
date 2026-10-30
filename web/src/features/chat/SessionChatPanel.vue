@@ -1201,7 +1201,11 @@ async function removeSession() {
                         data-test="shortcut-enter"
                         @click="setShortcut('enter')"
                       >
-                        <span class="menu-check">{{ sendShortcut === 'enter' ? '✓' : '' }}</span>
+                        <span class="menu-check">
+                          <svg v-if="sendShortcut === 'enter'" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 8 6 11 13 4" />
+                          </svg>
+                        </span>
                         <div class="menu-content">
                           <span class="menu-label">Enter 发送</span>
                           <span class="menu-hint">Shift+Enter 换行</span>
@@ -1214,7 +1218,11 @@ async function removeSession() {
                         data-test="shortcut-ctrl-enter"
                         @click="setShortcut('ctrl-enter')"
                       >
-                        <span class="menu-check">{{ sendShortcut === 'ctrl-enter' ? '✓' : '' }}</span>
+                        <span class="menu-check">
+                          <svg v-if="sendShortcut === 'ctrl-enter'" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 8 6 11 13 4" />
+                          </svg>
+                        </span>
                         <div class="menu-content">
                           <span class="menu-label">Ctrl+Enter 发送</span>
                           <span class="menu-hint">Enter 换行</span>
@@ -1567,13 +1575,12 @@ async function removeSession() {
   flex-direction: column;
   min-height: 0;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--color-surface);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   overflow: hidden;
   position: relative;
   z-index: 10;
-  transition: width 0.18s ease;
+  transition: width 0.18s ease-out;
 }
 
 .preview-pane.is-resizing {
@@ -1591,25 +1598,25 @@ async function removeSession() {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease-out;
 }
 
 .preview-resizer:hover,
 .preview-pane.is-resizing .preview-resizer {
-  background: var(--color-primary-soft, rgba(59, 130, 246, 0.15));
+  background: var(--color-primary-soft);
 }
 
 .preview-resizer-line {
   width: 2px;
   height: 24px;
   border-radius: 1px;
-  background: var(--color-border-strong, #cbd5e1);
-  transition: background 0.15s ease, height 0.15s ease;
+  background: var(--color-border-strong);
+  transition: background-color 0.15s ease-out, height 0.15s ease-out;
 }
 
 .preview-resizer:hover .preview-resizer-line,
 .preview-pane.is-resizing .preview-resizer-line {
-  background: var(--color-primary, #3b82f6);
+  background: var(--color-accent);
   height: 36px;
 }
 
@@ -1627,7 +1634,7 @@ async function removeSession() {
     width: min(32rem, 86%) !important;
     max-width: 86%;
     z-index: 25;
-    box-shadow: -4px 0 24px rgba(15, 23, 42, 0.16);
+    border-left: 1px solid var(--color-border-strong);
     animation: activitySlideIn 0.18s ease-out;
   }
 
@@ -1688,14 +1695,15 @@ async function removeSession() {
 }
 
 .pane-tab {
-  border: 1px solid transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
-  padding: 3px 8px;
-  border-radius: 5px;
+  padding: 4px 8px;
+  border-radius: 0;
   font-size: 0.78rem;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1705,15 +1713,14 @@ async function removeSession() {
 
 .pane-tab:hover {
   color: var(--color-text);
-  background: var(--color-surface);
+  background: transparent;
 }
 
 .pane-tab.is-active {
-  background: var(--color-surface);
-  color: var(--color-primary);
-  border-color: var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .preview-file-tab {
@@ -1735,7 +1742,7 @@ async function removeSession() {
   justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 50%;
+  border-radius: 2px;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
@@ -1744,12 +1751,12 @@ async function removeSession() {
   cursor: pointer;
   padding: 0;
   margin-left: 2px;
-  transition: all 0.12s ease;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .tab-close-icon:hover {
-  background: var(--color-danger-border, #fee2e2);
-  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .preview-content {
@@ -1805,9 +1812,8 @@ async function removeSession() {
   flex-direction: column;
   min-height: 0;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 4px;
   background: var(--color-surface);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
   overflow: hidden;
 }
 
@@ -1828,8 +1834,8 @@ async function removeSession() {
   bottom: 0;
   width: 290px;
   z-index: 40;
-  border-radius: 8px 0 0 8px;
-  box-shadow: -4px 0 24px rgba(15, 23, 42, 0.18);
+  border-radius: 4px 0 0 4px;
+  border-left: 1px solid var(--color-border-strong);
   animation: drawerSlideIn 0.18s ease-out;
 }
 
@@ -1873,11 +1879,11 @@ async function removeSession() {
   height: 22px;
   padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: 4px;
+  border-radius: 2px;
   background: var(--color-surface);
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .filetree-controls .dock-btn:hover {
@@ -1959,17 +1965,16 @@ async function removeSession() {
   border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   background: var(--color-surface);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .jump-latest:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 .chat-header {
@@ -2053,8 +2058,7 @@ async function removeSession() {
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(1px);
+  background: rgba(10, 12, 16, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2067,10 +2071,9 @@ async function removeSession() {
   gap: 0.75rem;
   width: min(26rem, 90vw);
   padding: 1.25rem;
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+  border: 1px solid var(--color-border-strong);
 }
 
 .confirm-title {
@@ -2226,19 +2229,17 @@ async function removeSession() {
 .composer-box {
   position: relative;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--color-surface);
   padding: 0.45rem 0.65rem 0.4rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease-out;
 }
 
 .composer-box:focus-within {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  border-color: var(--color-accent);
 }
 
 .composer-label {
@@ -2374,8 +2375,7 @@ async function removeSession() {
   min-width: 175px;
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border-radius: 4px;
   padding: 4px;
   z-index: 100;
   display: flex;

@@ -60,7 +60,13 @@ async function openInBrowserModal() {
           data-test="browse-in-browser-btn"
           @click="openInBrowserModal"
         >
-          <span class="btn-icon">🌐</span>
+          <span class="btn-icon">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6">
+              <circle cx="8" cy="8" r="6.5" />
+              <ellipse cx="8" cy="8" rx="3" ry="6.5" />
+              <line x1="1.5" y1="8" x2="14.5" y2="8" />
+            </svg>
+          </span>
           <span>{{ isLoadingTicket ? '准备预览中…' : '预览' }}</span>
         </button>
         <span v-if="errorMessage" class="error-inline">{{ errorMessage }}</span>

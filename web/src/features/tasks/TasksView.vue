@@ -84,12 +84,16 @@ function onCancelCreate() {
     <!-- 3. Empty Workbench Guidance -->
     <template v-else>
       <div class="empty-workbench flex items-center justify-center h-full p-8" data-test="empty-workbench">
-        <div class="empty-card max-w-md w-full p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-sm">
+        <div class="empty-card max-w-md w-full p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
           <UiEmpty
             title="任务中心"
             description="任务模块支持将 Agent 会话配置为可复用的模板，并支持手动触发、定时触发或周期性自动运行。"
-            icon="⚡"
           >
+            <template #icon>
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </template>
             <template #actions>
               <UiButton
                 variant="primary"

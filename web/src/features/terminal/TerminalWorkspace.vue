@@ -85,8 +85,13 @@ function onQuickConnectLocal() {
           在平台上直接通过命令行方式连接管理服务器。请在左侧列表中选择服务器并点击「连接」以打开终端。
         </p>
 
-        <div v-if="!terminalStore.isSupported" class="platform-alert">
-          <span>⚠️ 当前环境非 Linux，本地终端暂不支持；您仍可添加并连接第三方 SSH 服务器。</span>
+        <div v-if="!terminalStore.isSupported" class="platform-alert flex items-center justify-center gap-1.5" role="alert">
+          <svg class="shrink-0 text-amber-500" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M8 2l6.5 11.5H1.5L8 2z" />
+            <line x1="8" y1="6" x2="8" y2="9.5" />
+            <circle cx="8" cy="11.5" r="0.75" fill="currentColor" />
+          </svg>
+          <span>当前环境非 Linux，本地终端暂不支持；您仍可添加并连接第三方 SSH 服务器。</span>
         </div>
 
         <div class="empty-actions">

@@ -348,8 +348,13 @@ function reconnect() {
           <UiEmpty
             :title="chats.selectedGroup ? `与「${chats.selectedGroup.name}」开始新对话` : '开始新的对话'"
             :description="chats.selectedGroup ? '输入消息即可开始交流，助手的系统提示词将自动注入到模型上下文中。' : '请从左侧选择一个助手发起对话。'"
-            :icon="chats.selectedGroup?.icon || '💬'"
           >
+            <template #icon>
+              <span v-if="chats.selectedGroup?.icon">{{ chats.selectedGroup.icon }}</span>
+              <svg v-else viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </template>
             <template v-if="!hasModels" #description>
               <p class="chat-welcome-warning text-xs text-amber-600 dark:text-amber-400">
                 尚未配置可用模型，请先到

@@ -63,12 +63,12 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[1px]"
+    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75"
     @keydown="onKeydown"
   >
     <div
       ref="panel"
-      class="relative bg-platform-surface text-platform-text rounded-[var(--radius,6px)] border border-platform-border shadow-xl max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
+      class="relative bg-platform-surface text-platform-text rounded-[var(--radius,4px)] border border-platform-border-strong max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
       :class="widthClass"
       role="dialog"
       aria-modal="true"
@@ -85,12 +85,15 @@ function onKeydown(event: KeyboardEvent) {
         <button
           v-if="showClose"
           type="button"
-          class="text-platform-text-muted hover:text-platform-text p-1 rounded transition-colors"
+          class="text-platform-text-muted hover:text-platform-text p-1 rounded transition-colors inline-flex items-center justify-center"
           title="关闭"
           aria-label="关闭对话框"
           @click="emit('close')"
         >
-          ✕
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
         </button>
       </div>
 

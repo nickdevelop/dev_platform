@@ -307,8 +307,8 @@ function onSettingsClick() {
 .footer-btn {
   width: 44px;
   padding: calc(var(--space-unit) * 0.8) 0;
-  border: none;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
   background: transparent;
   color: var(--rail-text);
   font-size: 0.857rem;
@@ -319,7 +319,8 @@ function onSettingsClick() {
   flex-direction: column;
   align-items: center;
   gap: calc(var(--space-unit) * 0.4);
-  transition: all 0.15s ease;
+  position: relative;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
 }
 
 .category:hover,
@@ -381,7 +382,8 @@ function onSettingsClick() {
 
 .category.active {
   background: var(--rail-active);
-  color: var(--color-surface);
+  color: #ffffff;
+  border-left: 2px solid var(--color-accent);
 }
 
 .category.reserved,

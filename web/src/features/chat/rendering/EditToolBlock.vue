@@ -25,7 +25,11 @@ const hasCounts = computed(
 <template>
   <div class="edit-tool" data-test="edit-tool">
     <div class="edit-head">
-      <span class="tool-icon" aria-hidden="true">✏️</span>
+      <span class="tool-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+        </svg>
+      </span>
       <span class="tool-name">edit</span>
       <span v-if="filePath" class="tool-arg" data-test="edit-path">{{ filePath }}</span>
       <EditDiffBadge :additions="additions" :deletions="deletions" />
@@ -45,10 +49,17 @@ const hasCounts = computed(
 <style scoped>
 .edit-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.4rem;
   font-size: 0.85rem;
   min-width: 0;
+}
+
+.tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
 }
 
 .edit-head .tool-arg {

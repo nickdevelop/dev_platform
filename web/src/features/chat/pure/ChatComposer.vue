@@ -382,7 +382,11 @@ function closePreview() {
                 data-test="shortcut-enter"
                 @click="setShortcut('enter')"
               >
-                <span class="menu-check">{{ sendShortcut === 'enter' ? '✓' : '' }}</span>
+                <span class="menu-check">
+                  <svg v-if="sendShortcut === 'enter'" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 8 6 11 13 4" />
+                  </svg>
+                </span>
                 <div class="menu-content">
                   <span class="menu-label">Enter 发送</span>
                   <span class="menu-hint">Shift+Enter 换行</span>
@@ -395,7 +399,11 @@ function closePreview() {
                 data-test="shortcut-ctrl-enter"
                 @click="setShortcut('ctrl-enter')"
               >
-                <span class="menu-check">{{ sendShortcut === 'ctrl-enter' ? '✓' : '' }}</span>
+                <span class="menu-check">
+                  <svg v-if="sendShortcut === 'ctrl-enter'" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 8 6 11 13 4" />
+                  </svg>
+                </span>
                 <div class="menu-content">
                   <span class="menu-label">Ctrl+Enter 发送</span>
                   <span class="menu-hint">Enter 换行</span>

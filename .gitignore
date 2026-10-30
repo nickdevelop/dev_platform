@@ -1,5 +1,6 @@
 # SDD scratch workspace
 .superpowers/
+.taste-skill/
 
 # dev.sh runtime state (PID + log)
 .dev/

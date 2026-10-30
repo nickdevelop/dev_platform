@@ -218,7 +218,10 @@ onMounted(() => {
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <UiButton variant="secondary" size="xs" @click="copyUrl(p)">
-              {{ copiedId === p.id ? '✓ 已复制' : '复制链接' }}
+              <svg v-if="copiedId === p.id" class="inline-block mr-1" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 8 6 11 13 4" />
+              </svg>
+              <span>{{ copiedId === p.id ? '已复制' : '复制链接' }}</span>
             </UiButton>
             <UiButton variant="primary" size="xs" :disabled="!p.enabled" @click="openUrl(p)">
               在浏览器打开 ↗

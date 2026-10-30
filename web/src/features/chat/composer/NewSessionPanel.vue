@@ -623,7 +623,10 @@ async function createSession() {
               data-test="btn-clear-prompt"
               @click="selectedPromptId = ''"
             >
-              ✕
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                <line x1="3" y1="3" x2="13" y2="13" />
+                <line x1="13" y1="3" x2="3" y2="13" />
+              </svg>
             </button>
           </div>
           <div v-if="selectedPrompt" class="prompt-preview-snippet" data-test="prompt-preview-snippet">
@@ -948,10 +951,9 @@ async function createSession() {
 
 .backend-option.active {
   background: var(--color-surface);
-  border-color: var(--color-border-strong);
+  border-color: var(--color-accent);
   color: var(--color-text);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
 .backend-option:disabled {
@@ -964,11 +966,11 @@ async function createSession() {
 .composer-box {
   position: relative;
   border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--color-surface);
   display: flex;
   flex-direction: column;
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease-out;
 }
 
 .composer-box:focus-within {

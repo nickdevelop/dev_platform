@@ -81,11 +81,14 @@ const iconColorClasses = computed(() => {
     <button
       v-if="closable"
       type="button"
-      class="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+      class="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 inline-flex items-center justify-center"
       aria-label="关闭提示"
       @click="emit('close')"
     >
-      ✕
+      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="3" y1="3" x2="13" y2="13" />
+        <line x1="13" y1="3" x2="3" y2="13" />
+      </svg>
     </button>
   </div>
 </template>

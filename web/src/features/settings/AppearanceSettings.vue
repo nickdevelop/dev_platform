@@ -48,7 +48,7 @@ async function toggleQuickAssistant(event: Event) {
     <h1 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">外观</h1>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">主题配色</legend>
+      <legend class="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">主题配色</legend>
       <div class="theme-grid grid grid-cols-2 sm:grid-cols-4 gap-3">
         <button
           v-for="theme in themes"
@@ -77,7 +77,7 @@ async function toggleQuickAssistant(event: Event) {
     </fieldset>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">字号</legend>
+      <legend class="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">字号</legend>
       <div class="font-size-row flex flex-wrap gap-3" data-font-size>
         <button
           v-for="opt in fontSizes"
@@ -98,7 +98,7 @@ async function toggleQuickAssistant(event: Event) {
     </fieldset>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">界面密度</legend>
+      <legend class="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">界面密度</legend>
       <div class="density-row flex flex-wrap gap-3">
         <button
           v-for="density in densities"
@@ -119,7 +119,7 @@ async function toggleQuickAssistant(event: Event) {
     </fieldset>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">PlantUML 渲染模式</legend>
+      <legend class="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">PlantUML 渲染模式</legend>
       <div class="density-row flex flex-wrap gap-3">
         <button
           type="button"
@@ -166,7 +166,7 @@ async function toggleQuickAssistant(event: Event) {
     </fieldset>
 
     <fieldset class="group p-4 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
-      <legend class="px-1 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">快捷助手</legend>
+      <legend class="px-1 text-xs font-medium text-slate-500 dark:text-slate-400">快捷助手</legend>
       <label class="toggle-row inline-flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
         <input
           type="checkbox"
