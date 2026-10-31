@@ -399,10 +399,12 @@ describe('three-pane app shell', () => {
     expect(actions.exists()).toBe(true)
     const registerBtn = actions.find('button.register')
     const createBtn = actions.find('button.create')
-    expect(registerBtn.exists()).toBe(true)
-    expect(registerBtn.text()).toBe('打开项目')
+    const settingsBtn = actions.find('button.project-settings-btn')
+    expect(registerBtn.exists()).toBe(false)
     expect(createBtn.exists()).toBe(true)
     expect(createBtn.text()).toBe('新建项目')
+    expect(settingsBtn.exists()).toBe(true)
+    expect(settingsBtn.text()).toBe('设置')
 
     // Dock controls are present and isolated from action buttons
     const dockControls = sidebar.find('.sidebar-dock-controls')

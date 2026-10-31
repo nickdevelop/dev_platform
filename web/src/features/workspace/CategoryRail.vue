@@ -50,7 +50,11 @@ const projectActive = computed(
 const projectDestination = computed(() => {
   // Only restore to tabs that actually belong to the workspace area.
   const workspaceTabs = openTabs.tabs.filter(
-    (tab) => tab.kind === 'session' || tab.kind === 'new-session' || tab.kind === 'project-settings',
+    (tab) =>
+      tab.kind === 'session' ||
+      tab.kind === 'new-session' ||
+      tab.kind === 'project-settings' ||
+      tab.kind === 'projects-management',
   )
   if (workspaceTabs.length > 0) {
     const preferred =
@@ -62,6 +66,9 @@ const projectDestination = computed(() => {
           )
         : null) ?? workspaceTabs[workspaceTabs.length - 1]
 
+    if (preferred.kind === 'projects-management') {
+      return { name: 'projects-management' }
+    }
     if (preferred.kind === 'new-session') {
       const draft = draftsStore.newSessionDraft
       if (draft.projectId) {

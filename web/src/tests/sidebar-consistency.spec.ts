@@ -23,8 +23,9 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
 
     // Zone A: Actions
     expect(wrapper.find('.sidebar-actions').exists()).toBe(true)
-    expect(wrapper.find('.action-btn.register').exists()).toBe(true)
+    expect(wrapper.find('.action-btn.register').exists()).toBe(false)
     expect(wrapper.find('.action-btn.create').exists()).toBe(true)
+    expect(wrapper.find('.action-btn.project-settings-btn').exists()).toBe(true)
 
     // Zone B: Search with inset icon and filter
     expect(wrapper.find('.sidebar-search-bar').exists()).toBe(true)

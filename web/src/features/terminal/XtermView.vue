@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { buildTerminalWSUrl } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
+import { copyToClipboard } from '../../shared/clipboard'
 
 const props = withDefaults(
   defineProps<{
@@ -207,6 +208,12 @@ async function mountTerminal(): Promise<void> {
   term.loadAddon(fitAddon)
   term.open(containerRef.value)
 
+  if (typeof term.onSelectionChange === 'function') {
+    term.onSelectionChange(() => {
+      handleSelectionCopy()
+    })
+  }
+
   term.onData((data) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'input', data }))
@@ -234,6 +241,31 @@ async function mountTerminal(): Promise<void> {
       term?.focus()
     }
   })
+}
+
+function handleSelectionCopy() {
+  if (term && typeof term.hasSelection === 'function' && term.hasSelection()) {
+    const selection = typeof term.getSelection === 'function' ? term.getSelection() : ''
+    if (selection) {
+      void copyToClipboard(selection)
+    }
+  }
+}
+
+async function handleContextMenuPaste(event: MouseEvent) {
+  event.preventDefault()
+  if (!term) return
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+      const text = await navigator.clipboard.readText()
+      if (text) {
+        term.paste(text)
+      }
+    }
+  } catch (err) {
+    // Non-secure context or permission denied
+    console.warn('终端粘贴失败 (剪贴板权限被拒绝):', err)
+  }
 }
 
 watch(
@@ -266,7 +298,12 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="xterm-wrapper" :class="{ 'is-active': active }">
-    <div ref="containerRef" class="xterm-container" />
+    <div
+      ref="containerRef"
+      class="xterm-container"
+      @mouseup="handleSelectionCopy"
+      @contextmenu="handleContextMenuPaste"
+    />
     <div v-if="!isConnected" class="terminal-bar">
       <span class="disconnect-notice">
         {{ connectionError ? `连接异常: ${connectionError}` : '终端会话已断开' }}

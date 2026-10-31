@@ -311,10 +311,13 @@ describe('project management', () => {
       { method: 'POST', path: '/api/projects', status: 201, body: { id: 9, name: 'demo', path: '/workspace/demo' } },
     ])
 
-    await wrapper.find('button.register').trigger('click')
+    await wrapper.find('button.create').trigger('click')
     await flushPromises()
     const registerDialog = dialog(wrapper)
+    await registerDialog.find('#dialog-project-name').setValue('demo')
     await registerDialog.find('#dialog-path').setValue('/workspace/demo')
+    // Uncheck "create new subdir", so it registers directly
+    await registerDialog.find('input[type="checkbox"]').setValue(false)
     await registerDialog.find('button.confirm').trigger('click')
     await flushPromises()
 

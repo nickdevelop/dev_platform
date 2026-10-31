@@ -14,6 +14,7 @@ import { defineStore } from 'pinia'
 export type OpenTab =
   | { kind: 'session'; projectId: number; sessionId: string; title: string; pinned?: boolean }
   | { kind: 'project-settings'; projectId: number; pinned?: boolean }
+  | { kind: 'projects-management'; pinned?: boolean }
   // The new-session form is a single strip-wide tab: opening it from any project
   // focuses the same tab, and the form's project picker decides the target.
   | { kind: 'new-session'; pinned?: boolean }
@@ -32,6 +33,8 @@ export function tabKey(tab: OpenTab): string {
       return tab.sessionId
     case 'project-settings':
       return `settings:${tab.projectId}`
+    case 'projects-management':
+      return 'projects-management'
     case 'new-session':
       return 'new-session'
     case 'task':
@@ -137,6 +140,7 @@ function normalize(entry: unknown): OpenTab | null {
     const title = typeof tab.title === 'string' ? tab.title : ''
     return { kind: 'task', taskId: tab.taskId, title, ...pinned }
   }
+  if (tab.kind === 'projects-management') return { kind: 'projects-management', ...pinned }
   if (tab.kind === 'platform-settings') return { kind: 'platform-settings', ...pinned }
   if (typeof tab.projectId !== 'number') return null
   if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId, ...pinned }
@@ -337,6 +341,19 @@ export const useOpenTabsStore = defineStore('openTabs', {
         trim(this.tabs)
       }
       this.setActiveKey('platform-settings')
+      persist(this.tabs)
+    },
+
+    // Opens (or focuses) the projects management tab.
+    openProjectsManagement() {
+      const existing = this.tabs.find((tab) => tab.kind === 'projects-management')
+      if (existing) {
+        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
+      } else {
+        this.tabs.push({ kind: 'projects-management' })
+        trim(this.tabs)
+      }
+      this.setActiveKey('projects-management')
       persist(this.tabs)
     },
 

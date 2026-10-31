@@ -4,7 +4,7 @@
 // (stopping its live agent instances and dropping their sessions) and never touches the
 // directory on disk. Move and rename directory require the typed current project name.
 // The parent owns visibility: it receives `submitted` and `close`.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
@@ -16,6 +16,7 @@ import {
   type Project,
 } from '../../api/projects'
 import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
+import ProxyDirectoryPicker from '../proxies/ProxyDirectoryPicker.vue'
 
 type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
 
@@ -33,7 +34,28 @@ const dialogError = ref('')
 const submitting = ref(false)
 const pathInput = ref('')
 const nameInput = ref('')
+const subDirName = ref('')
+const createNewDir = ref(true)
+const showDirPicker = ref(false)
 const confirmNameInput = ref('')
+
+// When user types project name, default the sub directory name to it if user hasn't explicitly diverged
+let subDirManuallyEdited = false
+watch(nameInput, (val) => {
+  if (!subDirManuallyEdited && props.kind === 'create') {
+    subDirName.value = val.trim().replace(/[\/\\]/g, '-').toLowerCase()
+  }
+})
+
+function onSubDirInput(val: string) {
+  subDirName.value = val
+  subDirManuallyEdited = true
+}
+
+function onDirectorySelected(path: string) {
+  pathInput.value = path
+  showDirPicker.value = false
+}
 
 onMounted(() => {
   if (props.kind === 'rename-name' && props.project) {
@@ -47,7 +69,7 @@ const dialogTitle = computed(() => {
     case 'register':
       return '打开已有项目目录'
     case 'create':
-      return '新建项目目录'
+      return '新建项目'
     case 'move':
       return `移动项目 ${name}`
     case 'rename':
@@ -64,7 +86,7 @@ const confirmLabel = computed(() => {
     case 'register':
       return '打开'
     case 'create':
-      return '创建'
+      return '确定'
     case 'move':
       return '移动'
     case 'rename':
@@ -84,6 +106,11 @@ const typedNameMatches = computed(
 
 const canSubmit = computed(() => {
   if (submitting.value) return false
+  if (props.kind === 'create') {
+    if (!nameInput.value.trim() || !pathInput.value.trim()) return false
+    if (createNewDir.value && !subDirName.value.trim()) return false
+    return true
+  }
   if (props.kind === 'rename-name') {
     return nameInput.value.trim() !== ''
   }
@@ -102,9 +129,21 @@ async function submit() {
       case 'register':
         await registerProject(pathInput.value.trim())
         break
-      case 'create':
-        await createProject(pathInput.value.trim(), nameInput.value.trim())
+      case 'create': {
+        const trimmedPath = pathInput.value.trim()
+        const trimmedName = nameInput.value.trim()
+        let created: Project
+        if (createNewDir.value) {
+          const dir = subDirName.value.trim() || trimmedName
+          created = await createProject(trimmedPath, dir)
+        } else {
+          created = await registerProject(trimmedPath)
+        }
+        if (trimmedName && created.name !== trimmedName) {
+          await updateProjectName(created.id, trimmedName)
+        }
         break
+      }
       case 'move':
         await moveProject(project!.id, pathInput.value.trim(), confirmNameInput.value)
         break
@@ -142,13 +181,74 @@ async function submit() {
 
       <template v-else-if="kind === 'create'">
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-path" class="text-xs font-semibold text-slate-700 dark:text-slate-300">父目录的绝对路径</label>
-          <UiInput id="dialog-path" v-model="pathInput" autocomplete="off" spellcheck="false" block />
+          <label for="dialog-project-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            项目名称 <span class="text-red-500">*</span>
+          </label>
+          <UiInput
+            id="dialog-project-name"
+            v-model="nameInput"
+            placeholder="例如：my-awesome-app"
+            autocomplete="off"
+            spellcheck="false"
+            block
+          />
+          <p class="hint text-xs text-slate-400">在平台工作区和侧边栏中显示的项目友好名称。</p>
         </div>
+
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目目录名</label>
-          <UiInput id="dialog-name" v-model="nameInput" autocomplete="off" spellcheck="false" block />
-          <p class="hint text-xs text-slate-400">将在父目录下创建同名新目录；已存在的目标不会被覆盖。</p>
+          <label for="dialog-path" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            项目路径 <span class="text-red-500">*</span>
+          </label>
+          <div class="flex items-center gap-2">
+            <UiInput
+              id="dialog-path"
+              v-model="pathInput"
+              class="flex-1"
+              placeholder="例如：/data/projects"
+              autocomplete="off"
+              spellcheck="false"
+              block
+            />
+            <UiButton
+              type="button"
+              variant="secondary"
+              size="md"
+              class="shrink-0 text-xs px-3"
+              @click="showDirPicker = true"
+            >
+              浏览…
+            </UiButton>
+          </div>
+          <p class="hint text-xs text-slate-400">
+            {{ createNewDir ? '将在该父目录下创建项目子目录' : '将直接把此目录登记为项目根目录' }}
+          </p>
+        </div>
+
+        <div class="pt-1 border-t border-slate-100 dark:border-slate-800">
+          <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+            <input
+              v-model="createNewDir"
+              type="checkbox"
+              class="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
+            />
+            <span class="font-medium">在指定目录下新建项目目录</span>
+          </label>
+        </div>
+
+        <div v-if="createNewDir" class="flex flex-col gap-1.5 pl-6">
+          <label for="dialog-subdir" class="text-xs font-medium text-slate-600 dark:text-slate-400">新建目录名</label>
+          <UiInput
+            id="dialog-subdir"
+            :model-value="subDirName"
+            placeholder="项目目录名"
+            autocomplete="off"
+            spellcheck="false"
+            block
+            @update:model-value="onSubDirInput"
+          />
+          <p class="hint text-xs text-slate-400">
+            完整路径将为：<code class="font-mono text-slate-600 dark:text-slate-300">{{ pathInput ? `${pathInput.replace(/\/+$/, '')}/${subDirName || '...'}` : `.../${subDirName || ''}` }}</code>
+          </p>
         </div>
       </template>
 
@@ -220,4 +320,11 @@ async function submit() {
       </div>
     </form>
   </UiDialog>
+
+  <ProxyDirectoryPicker
+    v-if="showDirPicker"
+    :initial-path="pathInput"
+    @close="showDirPicker = false"
+    @select="onDirectorySelected"
+  />
 </template>

@@ -95,6 +95,9 @@ function isTaskSession(entry: AgentSession): boolean {
 // it — a marker there would only ask the user to fix something the platform
 // already repairs.
 function isRunning(entry: AgentSession): boolean {
+  if (sessionsStore.sessionTurns[entry.id] !== undefined) {
+    return sessionsStore.sessionTurns[entry.id] === 'running'
+  }
   return entry.turn === 'running'
 }
 
@@ -165,9 +168,11 @@ function collapseSessions(projectId: number) {
   }
 }
 
+const baseProjects = computed(() => projectsStore.orderedVisibleProjects)
+
 const visibleProjects = computed(() => {
-  if (query.value === '') return projectsStore.projects
-  return projectsStore.projects.filter(
+  if (query.value === '') return baseProjects.value
+  return baseProjects.value.filter(
     (project) =>
       project.id === props.activeProjectId ||
       isExpanded(project.id) ||
@@ -195,8 +200,8 @@ watch(
 )
 
 // A session created in the main pane — or deleted from it — is not in any list the
-// tree holds, and the tree polls only while a turn runs. The store records every
-// change it makes to the session index; each expanded project is refetched then.
+// tree holds. The store records every change it makes to the session index; each
+// expanded project is refetched then.
 watch(
   () => sessionsStore.revision,
   () => {
@@ -204,65 +209,39 @@ watch(
   },
 )
 
-// The 「运行中」 label is read from the cached list, so a turn started in the
-// conversation pane would never show: the tree polls a project only once its own
-// list already says a session is running. When the store reports a turn starting or
-// ending in the project it is showing, that project is refetched — once per
-// change of turns, not once per event — and the tree's own polling carries on.
+// When an active session's turn changes (e.g. from running to completed/idle),
+// update the session status in place in sessionsByProject without polling or full network refetch.
 watch(
-  () => sessionsStore.turnRevision,
-  () => {
-    if (props.activeProjectId !== null && isExpanded(props.activeProjectId)) {
-      void loadProject(props.activeProjectId)
+  [() => props.activeProjectId, () => props.activeSessionId, () => sessionsStore.runningSessionIds],
+  ([pId, sId, runningIds]) => {
+    if (pId !== null && sId) {
+      const list = sessionsByProject.value[pId]
+      if (list) {
+        const item = list.find((s) => s.id === sId)
+        if (item) {
+          const isNowRunning = (runningIds ?? []).includes(sId)
+          if (!isNowRunning && item.turn === 'running') {
+            item.turn = 'idle'
+          } else if (isNowRunning && item.turn !== 'running') {
+            item.turn = 'running'
+          }
+        }
+      }
     }
-  },
-)
-
-// The project tree polls only while an expanded project has a running session,
-// so a project left open after an agent run finishes generates zero network
-// traffic. Polling stops as soon as every running turn is done.
-let pollingInterval: ReturnType<typeof setInterval> | null = null
-
-function anyRunning(): boolean {
-  for (const id of expandedIds.value) {
-    if (sessionsFor(id).some(isRunning)) return true
-  }
-  return false
-}
-
-function startPolling() {
-  if (pollingInterval !== null) return
-  pollingInterval = setInterval(() => {
-    for (const id of expandedIds.value) {
-      if (sessionsFor(id).some(isRunning)) void loadProject(id)
-    }
-  }, 2000)
-}
-
-function stopPolling() {
-  if (pollingInterval === null) return
-  clearInterval(pollingInterval)
-  pollingInterval = null
-}
-
-watch(
-  () => expandedIds.value.map((id) => sessionsFor(id).map(isRunning).join(',')).join(';'),
-  () => {
-    if (anyRunning()) startPolling()
-    else stopPolling()
   },
   { immediate: true },
 )
 
-onBeforeUnmount(stopPolling)
-
-// Clicking a project toggles only that project; other expanded projects stay
-// open. Toggling never navigates: the settings control is the only way into
-// the project configuration.
+// Clicking a project toggles that project; other expanded projects stay open.
+// When opening an unexpanded project, load its latest session status on-demand.
 function onProjectClick(projectId: number) {
-  expandedIds.value = isExpanded(projectId)
-    ? expandedIds.value.filter((id) => id !== projectId)
-    : [...expandedIds.value, projectId]
+  const willExpand = !isExpanded(projectId)
+  expandedIds.value = willExpand
+    ? [...expandedIds.value, projectId]
+    : expandedIds.value.filter((id) => id !== projectId)
+  if (willExpand) {
+    void loadProject(projectId)
+  }
 }
 
 function retryProject(projectId: number) {

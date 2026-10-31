@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Column 2 for the project workspace: project tree, search, filter and management actions.
 // Follows design-taste-frontend (Data Terminal / App Screens) compact three-zone standard:
-//   Zone A: Standardized 26px actions (打开项目 / 新建项目) with 1.5px fine-line vector icons
+//   Zone A: Standardized 26px actions (新建项目 / 项目设置) with 1.5px fine-line vector icons
 //   Zone B: Compact search bar with inset 1.5px magnifier icon and task-session filter toggle
 //   Zone C: Tree of projects with their respective agent session items
 import { ref } from 'vue'
 import ProjectTree from './ProjectTree.vue'
+import { useOpenTabsStore } from '../../stores/openTabs'
 
 defineProps<{
   activeProjectId: number | null
@@ -15,12 +16,19 @@ defineProps<{
 const emit = defineEmits<{
   manage: [kind: 'register' | 'create']
   'open-settings': [projectId: number]
+  'open-projects-management': []
   'select-session': [projectId: number, sessionId: string]
   'new-session': [projectId: number]
   'delete-session': [projectId: number, sessionId: string]
 }>()
 
+const openTabsStore = useOpenTabsStore()
 const search = ref('')
+
+function openProjectsSettings() {
+  openTabsStore.openProjectsManagement()
+  emit('open-projects-management')
+}
 
 const SHOW_TASK_SESSIONS_STORAGE_KEY = 'dev-platform-show-task-sessions'
 const showTaskSessions = ref(false)
@@ -48,19 +56,9 @@ function onShowTaskSessionsChange() {
     <div class="sidebar-actions">
       <button
         type="button"
-        class="action-btn register"
-        title="打开已有项目目录"
-        @click="emit('manage', 'register')"
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M2 13h12M2 3h4l2 2h6v8H2V3z"/>
-        </svg>
-        <span>打开项目</span>
-      </button>
-      <button
-        type="button"
-        class="action-btn create"
+        class="action-btn create flex-1"
         title="新建并初始化项目"
+        data-test="btn-create-project"
         @click="emit('manage', 'create')"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -68,6 +66,20 @@ function onShowTaskSessionsChange() {
           <line x1="3" y1="8" x2="13" y2="8" />
         </svg>
         <span>新建项目</span>
+      </button>
+      <button
+        type="button"
+        class="action-btn project-settings-btn"
+        title="项目列表与显示设置"
+        aria-label="项目列表与显示设置"
+        data-test="btn-projects-management"
+        @click="openProjectsSettings"
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+          <circle cx="8" cy="8" r="2.5" />
+          <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
+        </svg>
+        <span>设置</span>
       </button>
     </div>
 
@@ -134,6 +146,11 @@ function onShowTaskSessionsChange() {
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+
+.project-settings-btn {
+  flex: 0 0 auto !important;
+  padding: 0 8px;
 }
 
 .tree {

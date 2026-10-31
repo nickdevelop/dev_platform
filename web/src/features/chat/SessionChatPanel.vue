@@ -72,7 +72,16 @@ import FileSidebar from '../files/FileSidebar.vue'
 import FileViewer from '../files/FileViewer.vue'
 import { UiButton, UiDialog } from '../../shared/ui'
 
-const props = defineProps<{ projectId: number; sessionId: string }>()
+const props = withDefaults(
+  defineProps<{
+    projectId: number
+    sessionId: string
+    hideSideRail?: boolean
+  }>(),
+  {
+    hideSideRail: false,
+  },
+)
 
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
@@ -1056,7 +1065,7 @@ async function removeSession() {
                 :capabilities="activeSession.capabilities"
                 :stream-status="streamStatus"
                 :running="isRunning"
-                display="all"
+                display="messages"
               />
 
               <button
@@ -1249,7 +1258,7 @@ async function removeSession() {
 
         <!-- Column 2: Pure File Preview Tab Panel -->
         <aside
-          v-if="!previewCollapsed"
+          v-if="!props.hideSideRail && !previewCollapsed"
           id="session-preview-pane"
           class="preview-pane activity-pane"
           :class="{ 'is-resizing': isPreviewResizing }"
@@ -1347,7 +1356,7 @@ async function removeSession() {
 
         <!-- Column 3: File tree drawer -->
         <aside
-          v-if="isFileTreeVisible"
+          v-if="!props.hideSideRail && isFileTreeVisible"
           id="session-filetree-drawer"
           class="filetree-drawer"
           :class="{
@@ -1403,7 +1412,7 @@ async function removeSession() {
         </aside>
 
         <!-- Slim right rail: both pane toggles live here, not in the header. -->
-        <ChatSideRail side="right" label="面板" aria-label="会话面板导航">
+        <ChatSideRail v-if="!props.hideSideRail" side="right" label="面板" aria-label="会话面板导航">
           <button
             type="button"
             class="rail-btn preview-rail-btn"

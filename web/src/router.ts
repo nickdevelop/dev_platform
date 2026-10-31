@@ -14,6 +14,7 @@ import AppShell from './features/workspace/AppShell.vue'
 import EmptyWorkspace from './features/workspace/EmptyWorkspace.vue'
 import LoginView from './views/LoginView.vue'
 import ProjectSettingsPanel from './features/projects/ProjectSettingsPanel.vue'
+import ProjectsManagementView from './features/projects/ProjectsManagementView.vue'
 import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
 import ChatPanel from './features/chat/pure/ChatPanel.vue'
@@ -43,6 +44,11 @@ export function createAppRouter() {
             // The old URL would otherwise render a panel no tab points to.
             path: 'projects/:projectId',
             redirect: { name: 'home' },
+          },
+          {
+            path: 'projects/management',
+            name: 'projects-management',
+            component: ProjectsManagementView,
           },
           {
             path: 'projects/:projectId/settings',

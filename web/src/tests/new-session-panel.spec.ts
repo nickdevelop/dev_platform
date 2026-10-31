@@ -67,8 +67,21 @@ function setup(options: {
   return { wrapper, createSpy, sessions, agents }
 }
 
+async function selectBackend(wrapper: ReturnType<typeof mount>, backend: string) {
+  const trigger = wrapper.find('[data-test="agent-select-trigger"]')
+  if (trigger.exists()) {
+    await trigger.trigger('click')
+    await flushPromises()
+  }
+  const option = wrapper.find(`[data-test="agent-select-menu"] [data-backend="${backend}"]`)
+  if (option.exists()) {
+    await option.trigger('click')
+    await flushPromises()
+  }
+}
+
 function backendButton(wrapper: ReturnType<typeof mount>, backend: string) {
-  return wrapper.find(`.backend-switch [data-backend="${backend}"]`)
+  return wrapper.find(`[data-test="agent-select-menu"] [data-backend="${backend}"]`)
 }
 
 describe('NewSessionPanel', () => {
@@ -84,13 +97,15 @@ describe('NewSessionPanel', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders a backend switch and a message composer, without a select or title', async () => {
+  it('renders an agent select and a message composer, without a title or select', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
-    expect(wrapper.find('.backend-switch[role="radiogroup"]').exists()).toBe(true)
-    expect(wrapper.find('.backend-switch [data-backend="opencode-v2"]').exists()).toBe(true)
-    expect(wrapper.find('.backend-switch [data-backend="pi"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-select"]').exists()).toBe(true)
+    await wrapper.find('[data-test="agent-select-trigger"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="agent-select-menu"] [data-backend="opencode-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-select-menu"] [data-backend="pi"]').exists()).toBe(true)
     expect(wrapper.find('#first-message').exists()).toBe(true)
     expect(wrapper.find('#session-title').exists()).toBe(false)
     expect(wrapper.find('#backend-select').exists()).toBe(false)
@@ -98,13 +113,14 @@ describe('NewSessionPanel', () => {
     expect(wrapper.find('#new-session-model').exists()).toBe(false)
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="project-select"]').exists()).toBe(true)
+    expect(wrapper.find('.approval-mode-select').exists()).toBe(true)
   })
 
   it('submits { backend, message } and never a title, instanceId', async () => {
     const { wrapper, createSpy } = setup()
     await flushPromises()
 
-    await backendButton(wrapper, 'pi').trigger('click')
+    await selectBackend(wrapper, 'pi')
     await wrapper.find('#first-message').setValue('帮我检查构建')
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
@@ -130,13 +146,12 @@ describe('NewSessionPanel', () => {
     expect(body).not.toHaveProperty('title')
   })
 
-  it('labels the submit as 开始对话 when a first message is present', async () => {
+  it('renders unified send button matching chat panel and provides approval mode selector', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
-    expect(wrapper.find('button.create').text()).toBe('新建会话')
-    await wrapper.find('#first-message').setValue('帮我检查构建')
-    expect(wrapper.find('button.create').text()).toBe('创建并开始对话')
+    expect(wrapper.find('button.create').text()).toBe('发送')
+    expect(wrapper.find('.approval-mode-select').exists()).toBe(true)
   })
 
   it('sends the first message and model with the create request', async () => {
@@ -159,7 +174,7 @@ describe('NewSessionPanel', () => {
     const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
-    await backendButton(wrapper, 'opencode-v2').trigger('click')
+    await selectBackend(wrapper, 'opencode-v2')
     await flushPromises()
     await wrapper.find('#first-message').setValue('帮我检查构建失败')
     await flushPromises()
@@ -195,7 +210,7 @@ describe('NewSessionPanel', () => {
     const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
-    await backendButton(wrapper, 'opencode-v2').trigger('click')
+    await selectBackend(wrapper, 'opencode-v2')
     await flushPromises()
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
@@ -223,7 +238,7 @@ describe('NewSessionPanel', () => {
     const { wrapper, createSpy } = setup({ modelSelection: true })
     await flushPromises()
 
-    await backendButton(wrapper, 'opencode-v2').trigger('click')
+    await selectBackend(wrapper, 'opencode-v2')
     await flushPromises()
     await wrapper.find('#first-message').setValue('帮我检查构建失败')
     await flushPromises()
@@ -238,6 +253,9 @@ describe('NewSessionPanel', () => {
 
   it('does not offer a backend disabled platform-wide', async () => {
     const { wrapper } = setup({ piEnabled: false })
+    await flushPromises()
+
+    await wrapper.find('[data-test="agent-select-trigger"]').trigger('click')
     await flushPromises()
 
     expect(backendButton(wrapper, 'pi').exists()).toBe(false)
@@ -405,7 +423,7 @@ describe('NewSessionPanel', () => {
     await flushPromises()
 
     // Even without user input, hasContent is true because prompt is selected
-    expect(wrapper.find('button.create').text()).toBe('创建并开始对话')
+    expect(wrapper.find('button.create').text()).toBe('发送')
 
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()

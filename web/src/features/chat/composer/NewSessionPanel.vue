@@ -19,6 +19,9 @@ import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
+import AgentSelect from './AgentSelect.vue'
+import ApprovalModeSelect from './ApprovalModeSelect.vue'
+import type { ApprovalMode } from '../interactions/autoApproval'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './dropdown/useComposerDropdown'
 import { ProviderSlashSource } from './dropdown/sources/ProviderSlashSource'
@@ -131,12 +134,24 @@ watch(
 const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
 const messageText = ref(initialDraft.messageText ?? '')
 const selectedModel = ref(initialDraft.model ?? '')
+const approvalMode = ref<ApprovalMode>(initialDraft.approvalMode ?? 'default')
+const sendShortcut = ref<'enter' | 'ctrl-enter'>('enter')
+const sendMenuOpen = ref(false)
 const modelOk = ref(false)
 const modelFailed = ref(false)
 const creating = ref(false)
 const composerBox = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const toolNotice = ref('')
+
+function toggleSendMenu() {
+  sendMenuOpen.value = !sendMenuOpen.value
+}
+
+function chooseSendShortcut(shortcut: 'enter' | 'ctrl-enter') {
+  sendShortcut.value = shortcut
+  sendMenuOpen.value = false
+}
 
 watch(selectedProjectId, (newId, oldId) => {
   if (oldId && oldId !== newId) {
@@ -148,6 +163,7 @@ watch(selectedProjectId, (newId, oldId) => {
         promptId: selectedPromptId.value,
         messageText: messageText.value,
         attachedImages: attachedImages.value,
+        approvalMode: approvalMode.value,
       },
       oldId,
     )
@@ -164,6 +180,7 @@ watch(selectedProjectId, (newId, oldId) => {
     selectedBackend.value = fallbackBackend
     selectedModel.value = targetDraft.model || ''
     selectedPromptId.value = targetDraft.promptId || ''
+    approvalMode.value = targetDraft.approvalMode || 'default'
     attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
     void nextTick(() => {
       isRestoringDraft = false
@@ -198,6 +215,11 @@ watch(selectedModel, (val) => {
 watch(selectedPromptId, (val) => {
   if (isRestoringDraft) return
   draftsStore.setNewSessionDraft({ promptId: val }, selectedProjectId.value)
+})
+
+watch(approvalMode, (val) => {
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ approvalMode: val }, selectedProjectId.value)
 })
 
 const selectedCapabilities = computed(() =>
@@ -249,9 +271,16 @@ function onCompositionEnd() {
 
 function onTextareaKeydown(event: KeyboardEvent) {
   if (dropdown.onKeydown(event)) return
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    void createSession()
+  if (sendShortcut.value === 'enter') {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void createSession()
+    }
+  } else {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      void createSession()
+    }
   }
 }
 
@@ -520,6 +549,7 @@ async function createSession() {
   })
   creating.value = false
   if (created) {
+    draftsStore.setSessionDraft(created.id, { approvalMode: approvalMode.value })
     draftsStore.clearNewSessionDraft(targetProjectId)
     emit('created', created.id, targetProjectId)
   }
@@ -553,15 +583,6 @@ async function createSession() {
             <button
               type="button"
               class="btn-proj-link"
-              data-test="btn-register-project"
-              @click="emit('manage', 'register', null)"
-            >
-              打开已有目录
-            </button>
-            <span class="divider">·</span>
-            <button
-              type="button"
-              class="btn-proj-link"
               data-test="btn-create-project"
               @click="emit('manage', 'create', null)"
             >
@@ -569,30 +590,6 @@ async function createSession() {
             </button>
           </div>
         </div>
-
-        <div class="backend-switch" role="radiogroup" aria-label="Agent 后端">
-          <button
-            v-for="backend in selectableBackends"
-            :key="backend.backend"
-            type="button"
-            role="radio"
-            class="backend-option"
-            :class="{ active: selectedBackend === backend.backend }"
-            :aria-checked="selectedBackend === backend.backend"
-            :data-backend="backend.backend"
-            :title="backend.label"
-            @click="selectBackend(backend.backend)"
-          >
-            <span class="backend-name">{{ backend.label || backend.backend }}</span>
-          </button>
-        </div>
-        <p v-if="selectedCapabilities" class="hint">
-          {{
-            selectedCapabilities.modelSelection
-              ? '支持模型选择；可在下方输入框内选定模型，之后也可在对话页更换。'
-              : '不支持模型选择；模型将使用后端默认值。'
-          }}
-        </p>
 
         <div class="prompt-selector-group">
           <div class="prompt-selector-header">
@@ -686,6 +683,10 @@ async function createSession() {
                 data-test="file-input"
                 @change="onFileInput"
               />
+              <AgentSelect
+                v-model="selectedBackend"
+                :backends="selectableBackends"
+              />
               <ModelSelect
                 v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
@@ -695,11 +696,62 @@ async function createSession() {
                 @status="modelOk = $event"
                 @failed="modelFailed = $event"
               />
-              <span class="composer-hint">Enter 创建 · Shift+Enter 换行</span>
+              <span class="composer-hint">
+                {{ sendShortcut === 'enter' ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行' }}
+              </span>
             </div>
-            <button type="submit" class="create send-button" :disabled="!canCreate">
-              {{ createLabel }}
-            </button>
+
+            <div class="composer-actions">
+              <ApprovalModeSelect v-model="approvalMode" />
+              <div class="send-split-group" data-test="send-split-group">
+                <button
+                  type="submit"
+                  class="composer-action send-main-btn send-button create"
+                  :disabled="!canCreate"
+                  :title="canCreate ? (sendShortcut === 'enter' ? '发送 (Enter)' : '发送 (Ctrl+Enter)') : '请先选择项目与 Agent 并输入内容'"
+                  data-test="composer-send-btn"
+                >
+                  {{ creating ? '创建中…' : '发送' }}
+                </button>
+                <button
+                  type="button"
+                  class="send-dropdown-trigger send-trigger"
+                  :class="{ 'is-open': sendMenuOpen }"
+                  data-test="send-shortcut-toggle"
+                  aria-label="选择发送快捷键"
+                  title="选择发送快捷键"
+                  @click.stop="toggleSendMenu"
+                >
+                  <svg class="dropdown-arrow" viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+                    <path d="M7 10l5 5 5-5z" />
+                  </svg>
+                </button>
+                <div v-if="sendMenuOpen" class="send-dropdown-menu" data-test="send-shortcut-menu">
+                  <button
+                    type="button"
+                    class="send-menu-item"
+                    :class="{ active: sendShortcut === 'enter' }"
+                    data-test="send-shortcut-enter"
+                    @click="chooseSendShortcut('enter')"
+                  >
+                    <span class="menu-check">{{ sendShortcut === 'enter' ? '✓' : '' }}</span>
+                    <span class="menu-label">按 Enter 发送</span>
+                    <span class="menu-hint">Shift+Enter 换行</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="send-menu-item"
+                    :class="{ active: sendShortcut === 'ctrl-enter' }"
+                    data-test="send-shortcut-ctrl-enter"
+                    @click="chooseSendShortcut('ctrl-enter')"
+                  >
+                    <span class="menu-check">{{ sendShortcut === 'ctrl-enter' ? '✓' : '' }}</span>
+                    <span class="menu-label">按 Ctrl+Enter 发送</span>
+                    <span class="menu-hint">Enter 换行</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <p v-if="toolNotice" class="notice-bar" role="status">{{ toolNotice }}</p>
@@ -1055,30 +1107,132 @@ async function createSession() {
   margin-left: 0.25rem;
 }
 
-.create {
-  margin-left: auto;
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
-.send-button {
-  padding: 0.4rem 1rem;
-  border: none;
+.send-split-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.send-split-group .send-main-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.composer-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  min-width: 3.2rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: var(--color-primary);
-  color: #fff;
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
+  background: var(--color-surface);
   cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.composer-action.send-button {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.composer-action.send-button:disabled {
+  background: var(--color-info-border);
+  border-color: var(--color-info-border);
+  cursor: default;
+}
+
+.send-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 20px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.send-dropdown-trigger.send-trigger {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.send-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  min-width: 175px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  padding: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.send-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
   transition: background 0.15s ease;
 }
 
-.send-button:hover:not(:disabled) {
-  background: var(--color-primary-hover);
+.send-menu-item:hover {
+  background: var(--color-surface-muted);
 }
 
-.send-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.send-menu-item.active {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.menu-check {
+  width: 12px;
+  display: inline-block;
+  color: var(--color-primary);
+  font-size: 0.85rem;
+}
+
+.menu-label {
+  font-size: 0.82rem;
+}
+
+.menu-hint {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  margin-left: auto;
 }
 
 .hint {

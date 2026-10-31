@@ -172,6 +172,7 @@ const sessionId = computed<string | null>(() =>
 // form, task details and the platform settings each map onto their tab key the
 // strip renders.
 const settingsRoute = computed(() => route.name === 'project-settings')
+const projectsManagementRoute = computed(() => route.name === 'projects-management')
 const platformSettingsRoute = computed(
   () => typeof route.name === 'string' && route.name.startsWith('settings-'),
 )
@@ -208,7 +209,8 @@ const workspaceTabs = computed(() =>
     (entry) =>
       entry.kind === 'session' ||
       entry.kind === 'new-session' ||
-      entry.kind === 'project-settings',
+      entry.kind === 'project-settings' ||
+      entry.kind === 'projects-management',
   ),
 )
 
@@ -221,6 +223,7 @@ const chatTabs = computed(() =>
 
 const activeKey = computed<string | null>(() => {
   if (!projectActive.value) return null
+  if (projectsManagementRoute.value) return 'projects-management'
   if (newSessionRoute.value) return 'new-session'
   if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
   return sessionId.value
@@ -390,6 +393,10 @@ const runningChatIds = computed<string[]>(() =>
 
 function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
+  if (tab.kind === 'projects-management') {
+    void router.push({ name: 'projects-management' })
+    return
+  }
   if (tab.kind === 'project-settings') {
     void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return

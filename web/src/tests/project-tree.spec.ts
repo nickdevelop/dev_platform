@@ -160,28 +160,27 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('断开')
   })
 
-  it('polls while the expanded project has a running session and stops when none is', async () => {
+  it('does not poll periodically for running sessions, but updates status in place on completion', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const byProject: Record<number, AgentSession[]> = { 1: [session({ id: 's1', turn: 'running' })] }
     const requested = stubSessions(byProject)
-    mountTree({ activeProjectId: 1 })
+    const sessionsStore = useSessionsStore()
+    sessionsStore.sessionTurns['s1'] = 'running'
+    const wrapper = mountTree({ activeProjectId: 1, activeSessionId: 's1' })
     await flushPromises()
     expect(requested).toEqual(['/api/projects/1/sessions'])
 
-    vi.advanceTimersByTime(2000)
-    await flushPromises()
-    expect(requested.length).toBe(2)
-
-    // The turn finished: the next refresh carries no running session and the poll
-    // stops, so further time passes issue no more requests.
-    byProject[1] = [session({ id: 's1', turn: 'idle' })]
-    vi.advanceTimersByTime(2000)
-    await flushPromises()
-    expect(requested.length).toBe(3)
-
+    // No periodic polling requests issued over time
     vi.advanceTimersByTime(4000)
     await flushPromises()
-    expect(requested.length).toBe(3)
+    expect(requested.length).toBe(1)
+
+    // When the active running session completes, status is updated in place
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(true)
+    sessionsStore.sessionTurns['s1'] = 'idle'
+    await flushPromises()
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
+    expect(requested.length).toBe(1)
   })
 
   it('keeps the active session selected and emits nothing when search has no match', async () => {

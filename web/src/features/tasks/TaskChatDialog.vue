@@ -75,6 +75,7 @@ onBeforeUnmount(() => {
             :key="sessionId"
             :project-id="projectId"
             :session-id="sessionId"
+            :hide-side-rail="true"
           />
         </div>
       </div>
@@ -97,8 +98,8 @@ onBeforeUnmount(() => {
 .task-chat-dialog-panel {
   display: flex;
   flex-direction: column;
-  width: min(80rem, 95vw);
-  height: 90vh;
+  width: min(52rem, 90vw);
+  height: min(680px, 80vh);
   background: var(--color-surface, #ffffff);
   border: 1px solid var(--color-border, #e2e8f0);
   border-radius: var(--radius, 6px);

@@ -546,7 +546,7 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
   })
 
-  it('renders thinking and tool calls directly in the main conversation and keeps preview pane for files only', async () => {
+  it('keeps conversation area clean without thinking and tool calls, and keeps preview pane for files only', async () => {
     const sessionsStore = useSessionsStore()
     const wrapper = await mountPanel()
 
@@ -558,10 +558,11 @@ describe('activity pane floating button and in-tab popup', () => {
     ]
     await flushPromises()
 
-    // The main conversation area renders thinking and tool calls directly
+    // The main conversation area remains clean without thinking and tool calls
     const conversationArea = wrapper.find('.conversation-area')
-    expect(conversationArea.text()).toContain('thinking...')
-    expect(conversationArea.text()).toContain('read')
+    expect(conversationArea.text()).toContain('hi')
+    expect(conversationArea.text()).not.toContain('thinking...')
+    expect(conversationArea.text()).not.toContain('read')
 
     // Preview pane does not have activity title/count
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')

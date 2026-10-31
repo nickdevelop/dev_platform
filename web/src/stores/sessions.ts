@@ -145,11 +145,11 @@ export const useSessionsStore = defineStore('sessions', {
         if (turn === 'running') ids.add(id)
       }
       for (const entry of state.sessions) {
-        if (entry.turn === 'running') ids.add(entry.id)
+        if (state.sessionTurns[entry.id] !== 'idle' && entry.turn === 'running') ids.add(entry.id)
       }
       for (const list of Object.values(state.sessionsByProject)) {
         for (const entry of list) {
-          if (entry.turn === 'running') ids.add(entry.id)
+          if (state.sessionTurns[entry.id] !== 'idle' && entry.turn === 'running') ids.add(entry.id)
         }
       }
       return Array.from(ids)
