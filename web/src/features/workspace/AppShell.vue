@@ -790,19 +790,6 @@ watch(
         @close-all="closeAllTabs"
         @new-tab="onNewTab"
       />
-      <SessionTabs
-        v-else-if="chatMode && chatTabs.length > 0"
-        :tabs="chatTabs"
-        :active-key="activeChatKey"
-        :running-session-ids="runningChatIds"
-        new-tab-title="新建对话"
-        @select="selectChatTab"
-        @close="closeChatTab"
-        @toggle-pin="togglePinChatTab"
-        @close-others="closeOtherChatTabs"
-        @close-all="closeAllChatTabs"
-        @new-tab="onNewChatTab"
-      />
       <div class="pane-body">
         <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
         <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>

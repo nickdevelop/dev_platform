@@ -128,7 +128,7 @@ web/src/
   │     │     ├── pane/          ── 会话右侧 34px 细导航（ChatSideRail，文件树/预览双入口）、右侧活动面板（思考/工具/文件预览）折叠与宽度拖拽、右侧文件树停靠/浮出、`useActivityPane` 视图状态
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、SessionActivityLog.vue 右侧活动面板专属展示、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
-  │     │     ├── pure/          ── 独立纯 Chat 对话界面与树形两级导航
+  │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
   │     ├── projects/  ── 项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
@@ -151,9 +151,9 @@ web/src/
    - 全平台第二栏（中间导航与对象索引栏：项目、对话、任务、提示词、终端）统一采用**三段式紧凑架构（Header / Search & Filter / Entity List）**：
      - **Zone A 紧凑 Header**：标题高度收敛（13px，`font-weight: 600`），右侧集成 22px 微型方圆角停靠与展开控制按钮（`var(--radius, 4px)`），消除冗余大块装饰。
      - **Zone B 紧凑检索与微过滤**：统一 26~28px 极简工具栏，内嵌 1.5px 极简放大镜矢量图标与微型选项胶囊，移除输入框聚焦外发光（glow / ring）与外层大按钮，大幅释放首屏纵向阅读高度。
-     - **Zone C 两级分类与标准两行紧凑卡片（Dense Two-Row Pitch）**：
-       - **两级树状折叠**（项目树 `ProjectTree` 与助手对话树 `ChatSidebar`）：统一采用 1.5px 矢量旋转 SVG 折叠角（展开平滑旋转 90°，彻底杜绝 `'▾'`/`'▸'` 原生字符）、等宽计数徽标及悬浮平滑淡入的 1.5px 纯净 SVG 快捷加号操作微按钮。
-       - **实体列表项排版**（覆盖会话项、对话项、任务项、提示词项、服务器项）：全量采用标准两行紧凑卡片（Row 1 徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；Row 2 属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
+     - **Zone C 紧凑列表与导航卡片（Dense Pitch）**：
+       - **层级导航**：项目树 `ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 会话计数 + 编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现。
+       - **实体列表项排版**（覆盖会话项、助手项、对话项、任务项、提示词项、服务器项）：全量采用标准紧凑卡片（徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
        - **选中与激活法则（The Move）**：所有列表项激活态严格收敛为**左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）** 与阶梯底色（`var(--surface-muted)`），全平台第二栏彻底清除静止投影（`box-shadow`）与毛玻璃模糊。
        - **色彩预算**：彩色严格控制在 3% 以内，任务与终端状态仅在运行/阻断错误时显色，已完成与常规状态保持中性阶梯底色。
    - **折叠/展开交互按钮**：全平台统一采用紧凑方圆角微按钮（`var(--radius, 4px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
@@ -311,7 +311,8 @@ web/src/
 [ 用户在“Chat”分类下新建或进入模型对话 ]
                     │
                     ▼
-1. Web 前端 (features/chat/pure/ChatPanel.vue)
+1. Web 前端 (features/chat/pure/ChatPanel.vue + ChatHistoryPane.vue + ChatSidebar.vue)
+   - 布局架构：第二栏专属展示助手列表；第3栏移除 Tab，组织为左右两列（左侧对话主面板，右侧助手对话清单且顶部支持助手下拉切换与新建会话），双向响应式联动
    - 选用 OpenAI 兼容的模型配置 (model_id)
    - 发送文本及多张图片 (最大支持 32MiB 请求体)
    - 输入区 ChatComposer.vue 与 Agent 会话输入区同构：发送按钮为分裂按钮（主半边发送/停止，右半边下拉选 Enter 或 Ctrl+Enter 发送），

@@ -1,10 +1,12 @@
-// Pure-chat sidebar: loads the global conversation list, filters titles
-// locally, and makes both "new chat" and row selection navigate.
+// Pure-chat sidebar: exclusively lists chat assistants (groups),
+// filters assistants by name, manages assistant selection, and handles
+// assistant creation, editing and deletion dialogs.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ChatSidebar from '../features/chat/pure/ChatSidebar.vue'
+import { useChatsStore } from '../stores/chats'
 
 const chat = (id: number, title: string, running = false, groupId = 0) => ({
   id,
@@ -72,35 +74,34 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('pure chat sidebar', () => {
-  it('lists conversations and marks the running one', async () => {
-    const { wrapper } = await mountSidebar('/chat/2')
-    const items = wrapper.findAll('[data-chat-id]')
-    expect(items).toHaveLength(2)
-    expect(items[0].text()).toContain('第一个对话')
-    expect(items[0].find('[data-test="running-indicator"]').exists()).toBe(true)
-    expect(items[1].classes()).toContain('active')
+describe('pure chat sidebar - assistant list', () => {
+  it('lists assistants and shows conversation count', async () => {
+    const { wrapper } = await mountSidebar('/chat')
+    const items = wrapper.findAll('.assistant-item')
+    expect(items.length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.text()).toContain('工作分组')
+    expect(wrapper.text()).toContain('未分组对话')
+
+    const chatsStore = useChatsStore()
+    // First assistant selected by default
+    expect(chatsStore.selectedGroupId).toBe(10)
   })
 
-  it('filters by title and opens a conversation', async () => {
-    const { wrapper, router } = await mountSidebar('/chat')
-    await wrapper.find('input[type="search"]').setValue('购物')
-    expect(wrapper.findAll('[data-chat-id]')).toHaveLength(1)
+  it('filters assistants by name and selects an assistant on click', async () => {
+    const { wrapper } = await mountSidebar('/chat')
+    const chatsStore = useChatsStore()
 
-    await wrapper.find('[data-chat-id="2"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('chat-detail')
-    expect(router.currentRoute.value.params.chatId).toBe('2')
+    await wrapper.find('input[type="search"]').setValue('工作')
+    const items = wrapper.findAll('.assistant-item')
+    expect(items).toHaveLength(1)
+    expect(items[0].text()).toContain('工作分组')
+
+    // Click to select
+    await items[0].trigger('click')
+    expect(chatsStore.selectedGroupId).toBe(10)
   })
 
-  it('starts a new chat on assistant from any chat route', async () => {
-    const { wrapper, router } = await mountSidebar('/chat/1')
-    await wrapper.find('[aria-label="在「工作分组」中新建对话"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.name).toBe('chat')
-  })
-
-  it('renders groups, ungrouped section, and opens create group dialog', async () => {
+  it('renders groups, ungrouped section, and opens create assistant dialog', async () => {
     const { wrapper } = await mountSidebar('/chat')
     expect(wrapper.text()).toContain('工作分组')
     expect(wrapper.text()).toContain('未分组对话')
@@ -113,7 +114,7 @@ describe('pure chat sidebar', () => {
 })
 
 describe('assistant lifecycle and unlocked controls', () => {
-  it('does not mark the assistant fixed and exposes edit, delete and create controls', async () => {
+  it('does not mark the assistant fixed and exposes edit and delete controls', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -148,7 +149,6 @@ describe('assistant lifecycle and unlocked controls', () => {
     expect(wrapper.text()).not.toContain('固定')
     expect(wrapper.find('[aria-label="编辑助手「快捷助手」"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="删除助手「快捷助手」"]').exists()).toBe(true)
-    expect(wrapper.find('[aria-label="在「快捷助手」中新建对话"]').exists()).toBe(true)
 
     // Trigger delete assistant: opens modal instead of window.confirm
     await wrapper.find('[aria-label="删除助手「快捷助手」"]').trigger('click')

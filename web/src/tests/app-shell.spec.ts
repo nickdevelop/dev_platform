@@ -88,10 +88,9 @@ describe('three-pane app shell', () => {
     expect(wrapper.findComponent(ChatPanel).props('chatId')).toBe(5)
     const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
     expect(chat?.classes()).toContain('active')
-    // Chat conversation renders as a tab
+    // In chatMode, tab strip is removed as specified
     const tabs = wrapper.findAll('[data-test="open-tab"]')
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0].attributes('data-tab-key')).toBe('chat:5')
+    expect(tabs).toHaveLength(0)
   })
 
   it('opens project settings as a tab at /projects/:projectId/settings', async () => {

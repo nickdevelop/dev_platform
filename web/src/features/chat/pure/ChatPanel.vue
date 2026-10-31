@@ -14,6 +14,7 @@ import { useBottomFollow } from '../../../shared/scrollFollow'
 import { UiDialog, UiButton, UiInput, UiAlert, UiEmpty } from '../../../shared/ui'
 import MessageView from '../rendering/MessageView.vue'
 import ChatComposer from './ChatComposer.vue'
+import ChatHistoryPane from './ChatHistoryPane.vue'
 import { reconnectChatStream } from './useChatStream'
 
 const props = defineProps<{ chatId?: number }>()
@@ -316,7 +317,8 @@ function reconnect() {
 </script>
 
 <template>
-  <section class="pure-chat flex flex-col h-full min-h-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
+  <div class="chat-workspace-layout flex h-full w-full min-h-0 min-w-0 overflow-hidden" data-test="chat-workspace">
+    <section class="pure-chat flex-1 flex flex-col h-full min-h-0 min-w-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
     <header v-if="activeID !== null && active" class="pure-chat-header flex items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
       <div class="pure-chat-title-row flex items-baseline gap-2.5 min-w-0">
         <h2 class="pure-chat-title m-0 text-base font-semibold truncate text-slate-800 dark:text-slate-100">{{ active?.title || '未命名对话' }}</h2>
@@ -477,10 +479,23 @@ function reconnect() {
         </div>
       </div>
     </UiDialog>
-  </section>
+    </section>
+
+    <ChatHistoryPane :chat-id="props.chatId" />
+  </div>
 </template>
 
 <style scoped>
+.chat-workspace-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-bg, #ffffff);
+}
+
 .pure-chat {
   padding: calc(var(--space-unit) * 2);
 }
