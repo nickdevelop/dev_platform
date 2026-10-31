@@ -54,6 +54,7 @@ export interface AgentDto {
   modes?: string[]
   version?: string
   checkedAt?: string
+  idleTimeoutMinutes?: number
 }
 
 export interface AgentList {
@@ -82,6 +83,10 @@ export function setAgentPath(backend: string, path: string): Promise<AgentDto> {
 
 export function setAgentMode(backend: string, mode: string): Promise<AgentDto> {
   return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/mode`, { mode })
+}
+
+export function setAgentIdleTimeout(backend: string, minutes: number): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/idle-timeout`, { minutes })
 }
 
 export function detectAgent(backend: string): Promise<AgentDetection> {

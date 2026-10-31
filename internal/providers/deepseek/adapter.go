@@ -37,6 +37,8 @@ type Options struct {
 	Env []string
 	// IdleTimeout is how long the shared host sits idle before being reclaimed.
 	IdleTimeout time.Duration
+	// ResolveIdleTimeout, when set, is consulted dynamically to obtain the current idle timeout.
+	ResolveIdleTimeout func() time.Duration
 	// StartupTimeout is the deadline for dsh startup.
 	StartupTimeout time.Duration
 	// VersionProbe overrides version detection for tests.
@@ -125,12 +127,13 @@ func New(opts Options) *Adapter {
 	}
 
 	host := NewSharedHost(SharedHostOptions{
-		ResolveExecutable: opts.ResolveExecutable,
-		WorkDir:           opts.WorkDir,
-		Env:               opts.Env,
-		IdleTimeout:       opts.IdleTimeout,
-		StartupTimeout:    opts.StartupTimeout,
-		ProcessLauncher:   opts.ProcessLauncher,
+		ResolveExecutable:  opts.ResolveExecutable,
+		ResolveIdleTimeout: opts.ResolveIdleTimeout,
+		WorkDir:            opts.WorkDir,
+		Env:                opts.Env,
+		IdleTimeout:        opts.IdleTimeout,
+		StartupTimeout:     opts.StartupTimeout,
+		ProcessLauncher:    opts.ProcessLauncher,
 	})
 
 	return &Adapter{

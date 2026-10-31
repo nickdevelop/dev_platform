@@ -21,6 +21,7 @@ function backendList() {
     backends: [
       { backend: 'opencode-v2', capabilities: capabilities(true), enabled: true, label: 'OpenCode', order: 1, serviceSupported: true },
       { backend: 'pi', capabilities: capabilities(false), enabled: true, label: 'Pi Agent', order: 2, serviceSupported: false },
+      { backend: 'deepseek', capabilities: capabilities(false), enabled: true, label: 'DeepSeek', order: 3, serviceSupported: false },
     ],
   }
 }
@@ -31,6 +32,7 @@ function stubFetch(extra: Record<string, unknown> = {}) {
     agents: [
       { backend: 'pi', enabled: true, path: '/usr/local/bin/pi', pathSource: 'auto', available: true, version: '1.1.0' },
       { backend: 'opencode-v2', enabled: false, path: '', pathSource: 'none', available: false },
+      { backend: 'deepseek', enabled: true, path: '/usr/local/bin/dsh', pathSource: 'auto', available: true, version: '0.2.1', idleTimeoutMinutes: 30 },
     ],
   }
   vi.stubGlobal(
@@ -340,5 +342,44 @@ describe('AgentSettings service block', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="service-error"]').text()).toContain('已在运行')
+  })
+
+  it('switches between agent tabs and configures dsh idle timeout', async () => {
+    const calls = stubFetch({
+      'PUT /agents/deepseek/idle-timeout': {
+        backend: 'deepseek',
+        enabled: true,
+        path: '/usr/local/bin/dsh',
+        pathSource: 'auto',
+        available: true,
+        idleTimeoutMinutes: 15,
+      },
+    })
+    const wrapper = await mountView()
+
+    // Tab buttons exist for each agent
+    expect(wrapper.find('[data-test="agent-tab-opencode-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-tab-pi"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-tab-deepseek"]').exists()).toBe(true)
+
+    // Switch to deepseek tab
+    await wrapper.find('[data-test="agent-tab-deepseek"]').trigger('click')
+    await flushPromises()
+
+    // DeepSeek card is visible and provides idle timeout controls
+    const idleBlock = wrapper.find('[data-test="agent-idle-timeout-deepseek"]')
+    expect(idleBlock.exists()).toBe(true)
+    expect(idleBlock.text()).toContain('DSH 进程空闲断开时间')
+
+    // Input new idle timeout (15 mins) and save
+    const input = wrapper.find('[data-test="idle-timeout-input-deepseek"]')
+    await input.setValue(15)
+    await wrapper.find('[data-test="save-idle-timeout-deepseek"]').trigger('click')
+    await flushPromises()
+
+    const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/agents/deepseek/idle-timeout')
+    expect(putCall).toBeDefined()
+    expect(putCall?.body).toMatchObject({ minutes: 15 })
+    expect(wrapper.find('[data-test="idle-timeout-success"]').text()).toContain('空闲断开时间已成功保存')
   })
 })

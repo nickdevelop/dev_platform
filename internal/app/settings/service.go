@@ -63,7 +63,7 @@ func DefaultQuickAssistant() QuickAssistant {
 
 // Allowed values. The frontend's presets mirror these lists.
 var (
-	validThemes         = map[string]bool{"light": true, "dark": true, "warm": true, "cool": true}
+	validThemes         = map[string]bool{"light": true, "warm": true, "cool": true}
 	validDensities      = map[string]bool{"compact": true, "standard": true, "relaxed": true}
 	validPlantumlModes  = map[string]bool{"local": true, "online": true}
 )

@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/core/agents"
 )
 
 func agentReq(t *testing.T, router *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
@@ -47,8 +50,8 @@ func TestAgentHandlerListAndToggle(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if len(list.Agents) != 2 {
-		t.Fatalf("agents = %+v, want both backends", list.Agents)
+	if len(list.Agents) != 3 {
+		t.Fatalf("agents = %+v, want all backends", list.Agents)
 	}
 	for _, agent := range list.Agents {
 		if !agent.Enabled || agent.PathSource != "none" || agent.Available {
@@ -189,5 +192,57 @@ func TestAgentHandlerSetMode(t *testing.T) {
 	none := agentReq(t, router, http.MethodPut, "/api/agents/opencode-v2/mode", `{"mode":"rpc"}`)
 	if none.Code != http.StatusBadRequest {
 		t.Errorf("opencode mode status = %d, want 400", none.Code)
+	}
+}
+
+func TestAgentHandlerSetIdleTimeout(t *testing.T) {
+	router, svc := newAppearanceRouter(t)
+
+	// List initially includes default idle timeout for deepseek
+	list := agentReq(t, router, http.MethodGet, "/api/agents", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("get agents status = %d", list.Code)
+	}
+	var payload struct {
+		Agents []struct {
+			Backend            string `json:"backend"`
+			IdleTimeoutMinutes int    `json:"idleTimeoutMinutes"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	var deepseekFound bool
+	for _, a := range payload.Agents {
+		if a.Backend == "deepseek" {
+			deepseekFound = true
+			if a.IdleTimeoutMinutes != 30 {
+				t.Errorf("default deepseek IdleTimeoutMinutes = %d, want 30", a.IdleTimeoutMinutes)
+			}
+		}
+	}
+	if !deepseekFound {
+		t.Fatal("deepseek backend not found in agents list")
+	}
+
+	// Update idle timeout for deepseek to 15 minutes
+	res := agentReq(t, router, http.MethodPut, "/api/agents/deepseek/idle-timeout", `{"minutes":15}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("put idle-timeout status = %d, body %s", res.Code, res.Body.String())
+	}
+	var dto struct {
+		IdleTimeoutMinutes int `json:"idleTimeoutMinutes"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode res: %v", err)
+	}
+	if dto.IdleTimeoutMinutes != 15 {
+		t.Errorf("got IdleTimeoutMinutes = %d, want 15", dto.IdleTimeoutMinutes)
+	}
+
+	// Service method reflects the change
+	duration := svc.AgentIdleTimeout(agents.BackendDeepSeek)
+	if duration != 15*time.Minute {
+		t.Errorf("svc.AgentIdleTimeout = %v, want 15m", duration)
 	}
 }

@@ -72,7 +72,8 @@ describe('AppearanceSettings', () => {
     stubFetch()
     const { wrapper } = await mountSettings()
 
-    expect(wrapper.findAll('[data-theme-option]')).toHaveLength(4)
+    expect(wrapper.findAll('[data-theme-option]')).toHaveLength(3)
+    expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-density-option]')).toHaveLength(3)
     expect(wrapper.findAll('legend').map((legend) => legend.text())).toEqual([
       '主题配色',
@@ -119,13 +120,14 @@ describe('AppearanceSettings', () => {
     const calls = stubFetch()
     const { wrapper } = await mountSettings()
 
-    await wrapper.find('[data-theme-option="dark"]').trigger('click')
+    expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
+    await wrapper.find('[data-theme-option="warm"]').trigger('click')
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
-    expect(put?.body).toMatchObject({ theme: 'dark' })
-    expect(document.documentElement.dataset.theme).toBe('dark')
-    expect(useSettingsStore().appearance.theme).toBe('dark')
+    expect(put?.body).toMatchObject({ theme: 'warm' })
+    expect(document.documentElement.dataset.theme).toBe('warm')
+    expect(useSettingsStore().appearance.theme).toBe('warm')
   })
 
   it('saves the font size without sending any font face', async () => {
@@ -173,7 +175,7 @@ describe('AppearanceSettings', () => {
     stubFetch(500)
     const { wrapper } = await mountSettings()
 
-    await wrapper.find('[data-theme-option="dark"]').trigger('click')
+    await wrapper.find('[data-theme-option="warm"]').trigger('click')
     await flushPromises()
 
     expect(useSettingsStore().appearance.theme).toBe('light')

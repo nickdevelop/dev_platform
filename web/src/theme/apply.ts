@@ -42,11 +42,10 @@ const colorVariables: Record<keyof ThemeColors, string> = {
 }
 
 export function applyAppearance(appearance: Appearance): void {
-  const root = document.documentElement
-  root.dataset.theme = appearance.theme
-  root.dataset.density = appearance.density
-
   const theme = themes.find((entry) => entry.key === appearance.theme) ?? themes[0]
+  const root = document.documentElement
+  root.dataset.theme = theme.key
+  root.dataset.density = appearance.density
   for (const [field, variable] of Object.entries(colorVariables) as [keyof ThemeColors, string][]) {
     root.style.setProperty(variable, theme.colors[field])
   }

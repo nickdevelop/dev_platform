@@ -2946,6 +2946,41 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /agents/{backend}/idle-timeout:
+    put:
+      summary: Set an agent idle disconnection timeout
+      description: >-
+        Sets the idle duration in minutes before a shared backend host (such as dsh for
+        deepseek) is automatically reclaimed. -1 means never disconnect, > 0 specifies the minutes.
+      operationId: setAgentIdleTimeout
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [minutes]
+              properties:
+                minutes:
+                  type: integer
+      responses:
+        '200':
+          description: The updated backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
   /agents/{backend}/detect:
     post:
       summary: Detect an agent executable
@@ -5545,6 +5580,9 @@ components:
           type: string
         checkedAt:
           type: string
+        idleTimeoutMinutes:
+          type: integer
+          description: Idle reclamation timeout in minutes.
       additionalProperties: false
     AgentList:
       type: object

@@ -9,7 +9,7 @@
 `dev_platform` 是一个面向团队和个人开发者的**多 Agent 协同 AI 研发工作台**。其核心目标在于解决不同终端 AI Coding Agent（如 OpenCode V2、Pi、DeepSeek CLI）协议各异、交互割裂、缺乏集中管控的问题，提供中性同构的平台层封装：
 
 1. **多后端统一协同**：统一接入异构的 AI Coding Agent，支持开箱即用的多 Agent 实例隔离、生命周期管理与并发会话。
-2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；问答交互工具在主对话流直接呈现交互卡片，思考内容直接输出，后台工具输出后端摘要化极简流转。
+2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流完整承载问答交互卡片、流式思考折叠卡片与工具调用过程，右侧面板专职作为纯文件预览面板；当文件预览展开时，文件树展开/收缩自动占用文件预览面板宽度，绝不占用主对话窗口宽度。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
@@ -79,7 +79,7 @@
 | **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态。 | `service.go`（List/Refresh/UpdateModel）、`repository.go`（快照读写与增量合并）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、本机首次免命令行密码设置引导、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出/首次密码设置） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
-| **`settings/`** | 平台全局偏好设置。管理外观主题、快捷助手开关、Agent 后端启用开关、可执行文件路径与运行模式配置。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
+| **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态与空闲超时）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
 | **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
 | **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v32 迁移链，含 `agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、`chat_groups` 助手扩展字段、`chats.system_prompt` 及服务代理映射表 `service_proxies`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
@@ -105,7 +105,7 @@
 |---|---|---|
 | **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；管理 Sidecar 与本地服务探测；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
 | **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
-| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、30min 空闲回收）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
+| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
 
 ---
 
@@ -125,18 +125,18 @@ web/src/
   │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令调度器（slashActionDispatcher.ts）与多源补全
   │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护
   │     │     ├── interactions/  ── 权限确认卡片、表单队列、审批事件派发
-  │     │     ├── pane/          ── 会话右侧 34px 细导航（ChatSideRail，文件树/预览双入口）、右侧活动面板（思考/工具/文件预览）折叠与宽度拖拽、右侧文件树停靠/浮出、`useActivityPane` 视图状态
-  │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染、SessionActivityLog.vue 右侧活动面板专属展示、logModel.ts 纯逻辑
+  │     │     ├── pane/          ── 会话右侧 34px 细导航（ChatSideRail，文件树/文件预览双入口）、右侧文件预览面板折叠与宽度拖拽（纯文件预览，思考与工具由主对话流承载；文件预览展开时文件树展开/收缩内部吞吐宽度、主对话区宽度零抖动）、右侧文件树停靠/浮出、`useActivityPane` 视图状态
+  │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染（完整承载主对话流思考与工具折叠卡片）、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作/Zone B 检索与过滤/Zone C 树容器）、项目树（ProjectTree.vue）、会话卡片项（ProjectSessionItem.vue）、项目设置、打开/创建项目弹窗
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
-  │     ├── settings/  ── 外观设置、大模型配置、Agent 后端开关配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
+  │     ├── settings/  ── 外观设置（移除深色主题，支持明亮浅色与暖冷色系）、大模型配置、Agent 后端 Tab 隔离与空闲断开配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
   │     ├── tasks/     ── 定时任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）
-  │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue）、提示词侧边栏（PromptsSidebar.vue）
+  │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue，单栏全宽专业模版正文呈现，移除实时合成预览）、提示词侧边栏（PromptsSidebar.vue）
   │     └── files/     ── 文件查看器（FileViewer.vue，支持普通查看与 Diff 双模式）、变更树组件（ChangeTree.vue，树形层级展示变动文件，支持暂存/取消暂存/放弃修改悬浮操作）、本地分支选择器（BranchSelector.vue，支持分支切换与快速新建）、Git 提交操作栏（GitCommitBar.vue，支持 Ctrl+Enter 快捷提交与自动暂存闭环）、Diff 预览器（DiffViewer.vue，Unified Diff 高亮对比与双列行号）、Markdown/PlantUML/图片 Artifact 预览、HTML 源码高亮与“🌐 预览”独立弹窗沙箱预览（HtmlArtifactView.vue、HtmlPreviewModal.vue）
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```
@@ -157,7 +157,7 @@ web/src/
        - **选中与激活法则（The Move）**：所有列表项激活态严格收敛为**左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）** 与阶梯底色（`var(--surface-muted)`），全平台第二栏彻底清除静止投影（`box-shadow`）与毛玻璃模糊。
        - **色彩预算**：彩色严格控制在 3% 以内，任务与终端状态仅在运行/阻断错误时显色，已完成与常规状态保持中性阶梯底色。
    - **折叠/展开交互按钮**：全平台统一采用紧凑方圆角微按钮（`var(--radius, 4px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
-   - **会话级右侧细导航栏**：项目会话对话区右侧设 34px 竖向细导航，集中承载「文件树」与「思考与工具 / 文件预览」两个入口；使用 26×26px 图标按钮、竖排微标签与 Tooltip，面板收起后入口常驻。展开状态以 active 样式与 `aria-pressed` 表达，按钮不得再放回会话标题行，预览入口不显示活动数量角标。组件位于 `features/chat/pane/ChatSideRail.vue`，状态仍由 `useActivityPane`（localStorage）管理；该组件带会话业务语义，禁止下沉到 `shared/ui/`。文件树与预览均停靠右侧；两者同时展开时，预览按会话区容器宽度自动转为覆盖消息列的覆盖层，文件树保持可见，避免把右轨挤出视口；消息列最小宽度 300px，文件树与预览可分别收缩至 210px / 300px。
+   - **会话级右侧细导航栏与面板联动**：项目会话对话区右侧设 34px 竖向细导航，集中承载「文件树」与「文件预览」两个入口；使用 26×26px 图标按钮、竖排微标签与 Tooltip，面板收起后入口常驻。展开状态以 active 样式与 `aria-pressed` 表达，预览面板专职于文件内容与 Diff 预览（移除了思考与工具面板，思考与工具回归主对话流展示）；若文件预览面板展开时，文件树展开或者收缩时占用文件预览面板宽度，绝不占用主对话窗口的宽度；消息列最小宽度 300px，文件树与预览可分别收缩至 210px / 300px。
 3. **Data Terminal 极客终端视觉风格与 Token 规范**：
    - 全局遵循 **Data Terminal** 终端工程风格（基于 `design-taste-frontend` 开发者工具标准）：
      - **色彩预算**：视口彩色像素严格在 3% 以内；深石墨灰基调（`--ground: #0f1115`，`--surface: #14171f`），纯平 1px 细线边框（`--border: #222631`），彻底清除静止卡片阴影（`box-shadow`）与毛玻璃模糊（`backdrop-filter: blur`）。
@@ -230,11 +230,11 @@ web/src/
            ▼ (HTTP SSE 流持续推送，传输体积下降 90% 以上)
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
-   - 问答交互工具归入主对话流（MessageView display="messages"），作为交互卡片展示提问与选项；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
+   - 问答交互工具与完整执行过程归入主对话流（MessageView display="all"），完整承载流式思考折叠卡片、工具调用执行卡片与交互式问答；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
    - 主对话流动态运行状态指示（MessageView kind-running）：移除原有静态“正在运行...”，采用 deriveRunningAction 基于最新活动动态解析动作语义（如“正在思考...”、“执行 <cmd>”、“编辑 <path>”、“读取 <path>”、“搜索 <query>”等）并以微动效卡片实时呈现
-   - 右侧活动面板（display="activity"，由右轨预览开关控制）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要；同一右轨的文件树开关控制文件树停靠/浮出
+   - 右侧文件预览面板专职作为文件查看与变更 Diff 比对面板（移除了思考与工具面板，思考与工具回归主对话流展示）；若文件预览面板展开时，文件树展开或者收缩时占用文件预览面板宽度，绝不占用主对话窗口的宽度
    - 会话历史读取瘦身（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务统一对适配器历史事件进行按需瘦身过滤，仅保留主对话视图所需的消息（EventMessage、EventError）以及成对的问答交互工具（IsQuestionTool 识别之 EventToolCall 及配套 EventToolResult），海量思维链 EventThinking 与非问答类工具事件均不透传，进一步压降前后端交互体量
-   - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列与右侧活动面板的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则平滑跟随最新内容。
+   - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则平滑跟随最新内容。
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 

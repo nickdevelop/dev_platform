@@ -25,6 +25,14 @@ func testCatalog(t testing.TB) *agents.Catalog {
 			Order:          2,
 			Modes:          []string{"cli", "rpc"},
 		},
+		agents.BackendDescriptor{
+			ID:                        agents.BackendDeepSeek,
+			Label:                     "DeepSeek",
+			Binary:                    "dsh",
+			DefaultEnabled:            true,
+			Order:                     3,
+			DefaultIdleTimeoutMinutes: 30,
+		},
 	)
 	if err != nil {
 		t.Fatalf("NewCatalog: %v", err)

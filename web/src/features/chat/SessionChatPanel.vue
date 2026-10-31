@@ -108,9 +108,6 @@ const currentActivePreviewFile = computed(() =>
 
 function selectPreviewTab(tabKey: string) {
   activePreviewTab.value = tabKey
-  if (tabKey === 'activity') {
-    scrollActivityToBottomReliably(false)
-  }
 }
 
 function openFileInPreview(
@@ -155,8 +152,7 @@ function closeFileTab(path: string, event?: MouseEvent) {
       const nextIdx = Math.min(idx, openFileTabs.value.length - 1)
       activePreviewTab.value = openFileTabs.value[nextIdx].path
     } else {
-      activePreviewTab.value = 'activity'
-      scrollActivityToBottomReliably(false)
+      activePreviewTab.value = ''
     }
   }
 }
@@ -490,15 +486,9 @@ function onDrop(event: DragEvent) {
 // hand in jsdom tests, so every read and write of the scroller geometry goes
 // through the element itself.
 const logScroll = ref<HTMLElement | null>(null)
-const activityScroll = ref<HTMLElement | null>(null)
 // Whether the activity pane is collapsed (persisted in localStorage).
 // Defaults to collapsed, presenting a floating FAB that opens an in-tab drawer.
-const pane = useActivityPane(() => {
-  // Expanding returns to the newest activity when the pane is showing activity.
-  if (activePreviewTab.value === 'activity') {
-    scrollActivityToBottomReliably(false)
-  }
-})
+const pane = useActivityPane()
 const {
   previewCollapsed,
   setPreviewCollapsed,
@@ -556,11 +546,22 @@ function onPreviewResizerMouseDown(e: MouseEvent) {
   window.addEventListener('mouseup', onMouseUp)
 }
 
+const DOCKED_FILETREE_WIDTH = 240
+
+// When preview pane is open and file tree is docked, the preview pane shrinks by
+// DOCKED_FILETREE_WIDTH so the file tree eats preview width instead of message column width!
+const computedPreviewWidth = computed(() => {
+  if (isFileTreeVisible.value && isFileTreeDocked.value) {
+    return Math.max(260, previewWidth.value - DOCKED_FILETREE_WIDTH)
+  }
+  return previewWidth.value
+})
+
 watch(
   () => [props.projectId, props.sessionId],
   () => {
     openFileTabs.value = []
-    activePreviewTab.value = 'activity'
+    activePreviewTab.value = ''
   },
 )
 
@@ -617,36 +618,9 @@ const logSignature = computed(() => {
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 const historyError = computed(() => sessions.historyError[props.sessionId] ?? '')
 const historyTruncated = computed(() => sessions.historyTruncated[props.sessionId] === true)
-// The activity pane's change signal mirrors the message log but counts only
-// thinking/tool entries, so a new user/agent message never scrolls the right
-// pane, and new activity never touches the left column's jump button.
-const activitySignature = computed(() => {
-  let count = 0
-  let open = 0
-  for (const entry of activeMessages.value) {
-    if (
-      (entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result') &&
-      !isQuestionCall(entry)
-    ) {
-      count += 1
-      if (entry.streaming) open += entry.text.length
-    }
-  }
-  return `${props.sessionId}:${count}:${open}`
-})
-const activityCount = computed(() => {
-  let count = 0
-  for (const entry of activeMessages.value) {
-    if ((entry.kind === 'thinking' || entry.kind === 'tool_call') && !isQuestionCall(entry)) count += 1
-  }
-  return count
-})
-
-// The message column and the activity pane each follow their own scroller:
-// reaching the bottom resumes following and hides the jump button; scrolling
-// away parks the view. See shared/scrollFollow.
+// The message column follows its scroller: reaching the bottom resumes
+// following and hides the jump button; scrolling away parks the view. See shared/scrollFollow.
 const logFollow = useBottomFollow(logScroll, logSignature)
-const activityFollow = useBottomFollow(activityScroll, activitySignature)
 
 function onLogScroll() {
   logFollow.onScroll()
@@ -655,38 +629,9 @@ function onLogScroll() {
   }
 }
 
-function onActivityScroll() {
-  activityFollow.onScroll()
-  if (props.sessionId && activityScroll.value) {
-    viewportStore.saveActivityScroll(props.sessionId, activityScroll.value.scrollTop, activityPinned.value)
-  }
-}
-
 const scrollToBottom = logFollow.scrollToBottom
-const scrollActivityToBottom = activityFollow.scrollToBottom
 const showJumpToLatest = logFollow.showJump
 const pinnedToBottom = logFollow.pinned
-const showJumpActivity = activityFollow.showJump
-const activityPinned = activityFollow.pinned
-
-function scrollActivityToBottomReliably(smooth = false) {
-  activityPinned.value = true
-  showJumpActivity.value = false
-  void nextTick(() => {
-    scrollActivityToBottom(smooth)
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => {
-        scrollActivityToBottom(smooth)
-      })
-    }
-  })
-}
-
-watch(activePreviewTab, (newTab) => {
-  if (newTab === 'activity') {
-    scrollActivityToBottomReliably(false)
-  }
-})
 
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
@@ -797,9 +742,6 @@ onBeforeUnmount(() => {
     if (logScroll.value) {
       viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
     }
-    if (activityScroll.value) {
-      viewportStore.saveActivityScroll(currentSessionId, activityScroll.value.scrollTop, activityPinned.value)
-    }
   }
   if (currentSessionId && !isRestoringDraft) {
     draftsStore.setSessionDraft(currentSessionId, {
@@ -835,7 +777,6 @@ async function open() {
   modelOk.value = true
 
   const savedLogState = viewportStore.getSessionScroll(props.sessionId)
-  const savedActivityState = viewportStore.getActivityScroll(props.sessionId)
 
   if (savedLogState && !savedLogState.pinned) {
     pinnedToBottom.value = false
@@ -843,14 +784,6 @@ async function open() {
   } else {
     pinnedToBottom.value = true
     showJumpToLatest.value = false
-  }
-
-  if (savedActivityState && !savedActivityState.pinned) {
-    activityPinned.value = false
-    showJumpActivity.value = true
-  } else {
-    activityPinned.value = true
-    showJumpActivity.value = false
   }
 
   // The instance list is loaded only to label the conversation's working
@@ -894,23 +827,10 @@ async function open() {
       scrollToBottom(false)
     }
 
-    if (savedActivityState && !savedActivityState.pinned) {
-      if (activityScroll.value) {
-        activityScroll.value.scrollTop = savedActivityState.scrollTop
-      }
-      activityPinned.value = false
-      showJumpActivity.value = true
-    } else {
-      scrollActivityToBottomReliably(false)
-    }
-
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
       window.requestAnimationFrame(() => {
         if (savedLogState && !savedLogState.pinned && logScroll.value) {
           logScroll.value.scrollTop = savedLogState.scrollTop
-        }
-        if (savedActivityState && !savedActivityState.pinned && activityScroll.value) {
-          activityScroll.value.scrollTop = savedActivityState.scrollTop
         }
       })
     }
@@ -1136,7 +1056,7 @@ async function removeSession() {
                 :capabilities="activeSession.capabilities"
                 :stream-status="streamStatus"
                 :running="isRunning"
-                display="messages"
+                display="all"
               />
 
               <button
@@ -1327,14 +1247,14 @@ async function removeSession() {
           </form>
         </div>
 
-        <!-- Column 2: Preview Tab Panel -->
+        <!-- Column 2: Pure File Preview Tab Panel -->
         <aside
           v-if="!previewCollapsed"
           id="session-preview-pane"
           class="preview-pane activity-pane"
           :class="{ 'is-resizing': isPreviewResizing }"
-          :style="{ width: `${previewWidth}px`, flex: `0 1 ${previewWidth}px` }"
-          aria-label="预览面板"
+          :style="{ width: `${computedPreviewWidth}px`, flex: `0 1 ${computedPreviewWidth}px` }"
+          aria-label="文件预览面板"
           data-test="activity-pane"
           data-test-preview="preview-pane"
         >
@@ -1348,22 +1268,7 @@ async function removeSession() {
           </div>
           <header class="preview-head activity-head">
             <div class="preview-tabs-list" role="tablist">
-              <!-- Tab 0: Fixed 思考与工具 -->
-              <button
-                type="button"
-                class="pane-tab activity-title"
-                :class="{ 'is-active': activePreviewTab === 'activity' }"
-                role="tab"
-                :aria-selected="activePreviewTab === 'activity'"
-                data-test="tab-activity"
-                title="思考与工具"
-                @click="selectPreviewTab('activity')"
-              >
-                <span>思考与工具</span>
-                <span v-if="activityCount > 0" class="activity-count" data-test="activity-count">{{ activityCount }}</span>
-              </button>
-
-              <!-- Dynamic Tabs: Opened files -->
+              <!-- Dynamic Tabs: Opened files only (No fixed 思考与工具 tab) -->
               <div
                 v-for="fileTab in openFileTabs"
                 :key="fileTab.path"
@@ -1412,44 +1317,24 @@ async function removeSession() {
           </header>
 
           <div class="preview-content">
-            <!-- Content 1: 思考与工具 -->
-            <div
-              v-show="activePreviewTab === 'activity'"
-              class="activity-pane-view"
-            >
-              <div
-                class="activity-scroll"
-                data-test="activity-scroll"
-                ref="activityScroll"
-                @scroll.passive="onActivityScroll"
-              >
-                <MessageView
-                  :messages="activeMessages"
-                  :capabilities="activeSession.capabilities"
-                  :stream-status="streamStatus"
-                  :running="isRunning"
-                  display="activity"
-                />
+            <div v-if="openFileTabs.length === 0" class="preview-empty-state" data-test="preview-empty-state">
+              <div class="empty-icon-wrap p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
               </div>
-              <button
-                v-if="showJumpActivity"
-                type="button"
-                class="jump-latest"
-                data-test="jump-activity"
-                @click="scrollActivityToBottom(true)"
-              >
-                ↓ 最新活动
-              </button>
+              <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
+              <p class="empty-desc text-[11px] text-slate-400 leading-relaxed max-w-[200px] text-center">
+                在工作区文件树中选择文件即可在此快速预览文件内容与变更
+              </p>
             </div>
-
-            <!-- Content 2: 文件预览 -->
-            <div
-              v-show="activePreviewTab !== 'activity'"
-              class="preview-file-viewer"
-            >
+            <div v-else class="preview-file-viewer">
               <FileViewer
                 :project-id="props.projectId"
-                :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
+                :active-path="activePreviewTab"
                 :hide-tabs="true"
                 :mode="currentActivePreviewFile?.mode || 'view'"
                 :commit-ref="currentActivePreviewFile?.commitRef"
@@ -1460,7 +1345,7 @@ async function removeSession() {
           </div>
         </aside>
 
-        <!-- File tree drawer: docked next to the right rail, or floating over the messages. -->
+        <!-- Column 3: File tree drawer -->
         <aside
           v-if="isFileTreeVisible"
           id="session-filetree-drawer"
@@ -1469,6 +1354,7 @@ async function removeSession() {
             'filetree-docked': isFileTreeDocked,
             'filetree-floating': isFileTreeFloating,
           }"
+          :style="isFileTreeDocked ? { width: `${DOCKED_FILETREE_WIDTH}px`, flex: `0 0 ${DOCKED_FILETREE_WIDTH}px` } : undefined"
           aria-label="项目文件树"
           data-test="filetree-drawer"
         >
@@ -1510,7 +1396,7 @@ async function removeSession() {
           <div class="filetree-body">
             <FileSidebar
               :project-id="props.projectId"
-              :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
+              :active-path="activePreviewTab"
               @select="onSelectWorkspaceFile"
             />
           </div>
@@ -1667,7 +1553,60 @@ async function removeSession() {
   overflow-x: hidden;
 }
 
-/* Second Column: Preview Pane (Tab Panel) */
+/* Second Column: Preview Workspace Dock (Locks total width to previewWidth) */
+.preview-dock-wrapper {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  min-width: 320px;
+  max-width: 80vw;
+  min-height: 0;
+  transition: width 0.18s ease-out;
+  z-index: 10;
+}
+
+.preview-dock-wrapper.is-resizing {
+  transition: none !important;
+}
+
+.preview-dock-wrapper .preview-pane {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  overflow: hidden;
+  position: relative;
+}
+
+.filetree-in-preview {
+  width: 240px;
+  flex: 0 0 240px;
+  min-width: 180px;
+  max-width: 300px;
+  height: 100%;
+  margin-left: 0.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.preview-empty-state {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  user-select: none;
+}
+
+/* Standalone preview pane fallback when not in dock wrapper */
 .preview-pane {
   min-width: 300px;
   max-width: 80vw;
@@ -1702,6 +1641,7 @@ async function removeSession() {
 }
 
 .preview-resizer:hover,
+.preview-dock-wrapper.is-resizing .preview-resizer,
 .preview-pane.is-resizing .preview-resizer {
   background: var(--color-primary-soft);
 }
@@ -1715,6 +1655,7 @@ async function removeSession() {
 }
 
 .preview-resizer:hover .preview-resizer-line,
+.preview-dock-wrapper.is-resizing .preview-resizer-line,
 .preview-pane.is-resizing .preview-resizer-line {
   background: var(--color-accent);
   height: 36px;
@@ -1725,6 +1666,17 @@ async function removeSession() {
    while the rail stays reachable. The split itself is the size container, so
    collapsing the sidebar or opening a wider window restores the docked view. */
 @container (max-width: 900px) {
+  .preview-dock-wrapper {
+    position: absolute;
+    top: 0;
+    right: var(--chat-rail-offset);
+    bottom: 0;
+    width: min(32rem, 86%) !important;
+    max-width: 86%;
+    z-index: 25;
+    animation: activitySlideIn 0.18s ease-out;
+  }
+
   .preview-pane {
     position: absolute;
     top: 0;
@@ -1742,15 +1694,6 @@ async function removeSession() {
      file tree on screen and stop the preview from covering it. */
   .conversation-split.filetree-docked:not(.preview-collapsed) .filetree-drawer.filetree-docked {
     flex-basis: var(--chat-filetree-min);
-  }
-
-  .conversation-split.filetree-docked:not(.preview-collapsed) .preview-pane {
-    right: calc(var(--chat-rail-offset) + var(--chat-filetree-min) + var(--chat-rail-gap));
-    width: min(
-      32rem,
-      calc(100% - var(--chat-rail-offset) - var(--chat-filetree-min) - var(--chat-rail-gap))
-    ) !important;
-    max-width: calc(100% - var(--chat-rail-offset) - var(--chat-filetree-min) - var(--chat-rail-gap));
   }
 
   .preview-resizer {

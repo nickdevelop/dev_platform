@@ -14,7 +14,8 @@ var Descriptor = agents.BackendDescriptor{
 	Tested:           "0.2.1-rc.2",
 	Minimum:          "0.2.0",
 	Maximum:          "1.0.0",
-	ServiceSupported: false,
-	Tone:             "info",
+	ServiceSupported:          false,
+	DefaultIdleTimeoutMinutes: 30,
+	Tone:                      "info",
 	Color:            "#1E40AF",
 }

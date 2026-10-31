@@ -20,6 +20,7 @@ type SharedHost struct {
 	startupTimeout time.Duration
 
 	resolveExecutable func() string
+	resolveIdleTimeout func() time.Duration
 	workDir           string
 	env               []string
 
@@ -29,12 +30,13 @@ type SharedHost struct {
 
 // SharedHostOptions configures the SharedHost.
 type SharedHostOptions struct {
-	ResolveExecutable func() string
-	WorkDir           string
-	Env               []string
-	IdleTimeout       time.Duration
-	StartupTimeout    time.Duration
-	ProcessLauncher   func(ctx context.Context) (*Process, error)
+	ResolveExecutable  func() string
+	ResolveIdleTimeout func() time.Duration
+	WorkDir            string
+	Env                []string
+	IdleTimeout        time.Duration
+	StartupTimeout     time.Duration
+	ProcessLauncher    func(ctx context.Context) (*Process, error)
 }
 
 // NewSharedHost creates a SharedHost.
@@ -44,12 +46,13 @@ func NewSharedHost(opts SharedHostOptions) *SharedHost {
 		idleTimeout = defaultIdleTimeout
 	}
 	return &SharedHost{
-		resolveExecutable: opts.ResolveExecutable,
-		workDir:           opts.WorkDir,
-		env:               opts.Env,
-		idleTimeout:       idleTimeout,
-		startupTimeout:    opts.StartupTimeout,
-		processLauncher:   opts.ProcessLauncher,
+		resolveExecutable:  opts.ResolveExecutable,
+		resolveIdleTimeout: opts.ResolveIdleTimeout,
+		workDir:            opts.WorkDir,
+		env:                opts.Env,
+		idleTimeout:        idleTimeout,
+		startupTimeout:     opts.StartupTimeout,
+		processLauncher:    opts.ProcessLauncher,
 	}
 }
 
@@ -126,17 +129,22 @@ func (h *SharedHost) release(proc *Process) {
 	if h.leases <= 0 {
 		h.leases = 0
 		if h.proc == proc && h.proc != nil {
-			if h.idleTimeout < 0 {
+			idleTimeout := h.idleTimeout
+			if h.resolveIdleTimeout != nil {
+				idleTimeout = h.resolveIdleTimeout()
+			}
+			if idleTimeout < 0 {
 				// Immediate shutdown
 				p := h.proc
 				h.proc = nil
 				go func() { _ = p.Shutdown(context.Background()) }()
-			} else {
+			} else if idleTimeout > 0 {
 				// Schedule idle shutdown
-				h.idleTimer = time.AfterFunc(h.idleTimeout, func() {
+				h.idleTimer = time.AfterFunc(idleTimeout, func() {
 					h.idleShutdown(proc)
 				})
 			}
+			// idleTimeout == 0: never shutdown on idle
 		}
 	}
 }

@@ -24,10 +24,11 @@ type agentDTO struct {
 	// Mode is the configured transport for backends that have more than one
 	// (pi: "cli" or "rpc"); empty means the backend default. Modes lists the
 	// choices so the workbench can render the control.
-	Mode      string   `json:"mode,omitempty"`
-	Modes     []string `json:"modes,omitempty"`
-	Version   string   `json:"version,omitempty"`
-	CheckedAt string   `json:"checkedAt,omitempty"`
+	Mode               string   `json:"mode,omitempty"`
+	Modes              []string `json:"modes,omitempty"`
+	Version            string   `json:"version,omitempty"`
+	CheckedAt          string   `json:"checkedAt,omitempty"`
+	IdleTimeoutMinutes int      `json:"idleTimeoutMinutes,omitempty"`
 }
 
 type agentListResponse struct {
@@ -149,6 +150,26 @@ func (s *Service) handleSetAgentMode(c *gin.Context) {
 	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
 }
 
+func (s *Service) handleSetAgentIdleTimeout(c *gin.Context) {
+	backend, ok := s.backendParam(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Minutes int `json:"minutes"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	setting, err := s.SetAgentIdleTimeout(backend, request.Minutes)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
+}
+
 func (s *Service) handleDetectAgent(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
@@ -179,15 +200,16 @@ func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agent
 	path, source := s.ResolvePath(backend)
 	descriptor, _ := s.catalog.Get(backend)
 	return agentDTO{
-		Backend:    string(backend),
-		Enabled:    setting.Enabled,
-		Path:       path,
-		PathSource: source,
-		Available:  source != "none" && s.platform.Executables().IsExecutable(path),
-		Mode:       setting.Mode,
-		Modes:      descriptor.Modes,
-		Version:    setting.Version,
-		CheckedAt:  setting.CheckedAt,
+		Backend:            string(backend),
+		Enabled:            setting.Enabled,
+		Path:               path,
+		PathSource:         source,
+		Available:          source != "none" && s.platform.Executables().IsExecutable(path),
+		Mode:               setting.Mode,
+		Modes:              descriptor.Modes,
+		Version:            setting.Version,
+		CheckedAt:          setting.CheckedAt,
+		IdleTimeoutMinutes: setting.IdleTimeoutMinutes,
 	}
 }
 

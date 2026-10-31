@@ -26,6 +26,17 @@ const agents = useAgentsStore()
 const pathInputs = reactive<Record<string, string>>({})
 const detections = reactive<Record<string, AgentDetection | null>>({})
 
+// Tab selection state for switching between backends
+const selectedBackend = ref<string>('')
+
+const activeAgent = computed(() => {
+  if (selectedBackend.value) {
+    const found = settings.agents.find((a) => a.backend === selectedBackend.value)
+    if (found) return found
+  }
+  return settings.agents[0] ?? null
+})
+
 // Persisted model snapshots, one per backend.
 const models = reactive<Record<string, ModelInfo[]>>({})
 const modelsUpdatedAt = reactive<Record<string, string | null>>({})
@@ -39,6 +50,37 @@ const diagnosticsByBackend = computed(() => {
 })
 
 const confirmStop = ref<string | null>(null)
+
+// Idle timeout state per backend
+const idleTimeoutInputs = reactive<Record<string, number | null>>({})
+const idleTimeoutSaving = reactive<Record<string, boolean>>({})
+const idleTimeoutSuccess = reactive<Record<string, boolean>>({})
+
+function supportsIdleTimeout(backend: string): boolean {
+  return backend === 'deepseek' || settings.agents.find((a) => a.backend === backend)?.idleTimeoutMinutes !== undefined
+}
+
+function setIdleTimeoutPreset(backend: string, minutes: number) {
+  idleTimeoutInputs[backend] = minutes
+}
+
+async function saveIdleTimeout(backend: string) {
+  const agent = settings.agents.find((a) => a.backend === backend)
+  const minutes = idleTimeoutInputs[backend] ?? agent?.idleTimeoutMinutes ?? 30
+  idleTimeoutSaving[backend] = true
+  idleTimeoutSuccess[backend] = false
+  try {
+    const ok = await settings.setAgentIdleTimeout(backend, minutes)
+    if (ok) {
+      idleTimeoutSuccess[backend] = true
+      setTimeout(() => {
+        idleTimeoutSuccess[backend] = false
+      }, 2500)
+    }
+  } finally {
+    idleTimeoutSaving[backend] = false
+  }
+}
 
 onMounted(async () => {
   void settings.loadAgents()
@@ -256,7 +298,7 @@ function cancelStop() {
     <header class="pb-4 border-b border-slate-200 dark:border-slate-800">
       <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Agent 设置</h1>
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-        配置平台接入的 AI Coding Agent 后端（OpenCode、Pi 等），管理二进制路径、模型目录与后台服务守护进程。
+        配置平台接入的 AI Coding Agent 后端（OpenCode、Pi、DeepSeek 等），管理二进制路径、模型目录、空闲断开策略与后台服务守护进程。
       </p>
     </header>
 
@@ -267,9 +309,42 @@ function cancelStop() {
       {{ agents.diagnosticsError }}
     </UiAlert>
 
-    <!-- Agent backend cards list -->
+    <!-- Agent navigation tabs -->
+    <nav
+      v-if="settings.agents.length > 0"
+      class="agent-tabs-nav flex items-center gap-1 border-b border-slate-200 dark:border-slate-800"
+      role="tablist"
+      aria-label="Agent 代理选择"
+    >
+      <button
+        v-for="agent in settings.agents"
+        :key="agent.backend"
+        type="button"
+        class="agent-tab relative py-2.5 px-4 text-xs font-medium cursor-pointer transition-colors border-b-2 -mb-px flex items-center gap-2 select-none"
+        :class="[
+          (activeAgent?.backend === agent.backend)
+            ? 'border-blue-600 text-blue-600 dark:text-blue-400 font-semibold'
+            : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+        ]"
+        :data-agent-tab="agent.backend"
+        :data-test="`agent-tab-${agent.backend}`"
+        role="tab"
+        :aria-selected="activeAgent?.backend === agent.backend"
+        @click="selectedBackend = agent.backend"
+      >
+        <span>{{ label(agent.backend) }}</span>
+        <span
+          class="w-1.5 h-1.5 rounded-full"
+          :class="agent.available ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+          :title="agent.available ? '可执行文件已检测到' : '未检测到'"
+        ></span>
+      </button>
+    </nav>
+
+    <!-- Agent backend cards list (isolated by Tab view) -->
     <article
       v-for="agent in settings.agents"
+      v-show="activeAgent?.backend === agent.backend"
       :key="agent.backend"
       class="agent-card p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5"
       :data-agent="agent.backend"
@@ -340,6 +415,62 @@ function cancelStop() {
           </UiSelect>
         </label>
         <span class="mode-hint text-slate-400 text-[11px]">修改传输模式后需重启平台生效</span>
+      </div>
+
+      <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->
+      <div
+        v-if="supportsIdleTimeout(agent.backend)"
+        class="idle-timeout-block p-4 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+        :data-test="`agent-idle-timeout-${agent.backend}`"
+      >
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
+          <div>
+            <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">DSH 进程空闲断开时间</strong>
+            <span class="text-[11px] text-slate-400">设置无会话活跃时共享 dsh 守护进程的自动释放时长</span>
+          </div>
+          <span v-if="agent.idleTimeoutMinutes !== undefined" class="tabular-nums text-[11px] text-slate-400">
+            当前设定：{{ agent.idleTimeoutMinutes < 0 ? '从不断开' : `${agent.idleTimeoutMinutes} 分钟` }}
+          </span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <label :for="`idle-timeout-input-${agent.backend}`" class="text-slate-600 dark:text-slate-400 font-medium">空闲断开时长:</label>
+              <UiInput
+                :id="`idle-timeout-input-${agent.backend}`"
+                type="number"
+                min="-1"
+                class="w-24 text-xs font-mono"
+                :data-test="`idle-timeout-input-${agent.backend}`"
+                :model-value="idleTimeoutInputs[agent.backend] ?? agent.idleTimeoutMinutes ?? 30"
+                @update:model-value="(val: string | number) => idleTimeoutInputs[agent.backend] = Number(val)"
+              />
+              <span class="text-slate-400 text-xs">分钟（-1 表示从不断开）</span>
+            </div>
+
+            <div class="preset-buttons flex items-center gap-1.5">
+              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 15)">15m</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 30)">30m</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 60)">60m</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, -1)">从不断开</UiButton>
+            </div>
+
+            <UiButton
+              size="sm"
+              variant="primary"
+              :data-test="`save-idle-timeout-${agent.backend}`"
+              :loading="idleTimeoutSaving[agent.backend]"
+              @click="saveIdleTimeout(agent.backend)"
+            >
+              保存设置
+            </UiButton>
+          </div>
+
+          <p v-if="idleTimeoutSuccess[agent.backend]" class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium" data-test="idle-timeout-success">
+            ✓ 空闲断开时间已成功保存
+          </p>
+        </div>
       </div>
 
       <!-- Detection alert feedback -->

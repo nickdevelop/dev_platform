@@ -104,41 +104,6 @@ export const themes: ThemePreset[] = [
     },
   },
   {
-    key: 'dark',
-    label: '深色',
-    dark: true,
-    colors: {
-      bg: '#0f1115',
-      surface: '#14171f',
-      surfaceMuted: '#1a1e27',
-      text: '#e6e8ef',
-      textMuted: '#8a8c92',
-      border: '#222631',
-      borderStrong: '#2e3545',
-      primary: '#4a8ad6',
-      primaryHover: '#3975be',
-      primarySoft: '#152236',
-      onPrimary: '#0b0d11',
-      danger: '#e5566f',
-      dangerBorder: '#6d2230',
-      dangerSoft: '#2c161d',
-      accent: '#4a8ad6',
-      accentSoft: '#152236',
-      success: '#44a282',
-      successSoft: '#12241e',
-      successBorder: '#225845',
-      warning: '#d9a441',
-      warningSoft: '#282012',
-      warningBorder: '#6d521e',
-      info: '#4a8ad6',
-      infoSoft: '#152236',
-      infoBorder: '#233e63',
-      railBg: '#0a0c0f',
-      railText: '#8a8c92',
-      railActive: '#1c202a',
-    },
-  },
-  {
     key: 'warm',
     label: '暖阳',
     dark: false,
@@ -213,7 +178,7 @@ export const themes: ThemePreset[] = [
 // isDarkTheme reports whether a palette key names a dark palette. An unknown
 // key is treated as light, which is what a missing setting should draw.
 export function isDarkTheme(key: string): boolean {
-  return themes.find((theme) => theme.key === key)?.dark === true
+  return key === 'dark' || themes.find((theme) => theme.key === key)?.dark === true
 }
 
 export const densities: DensityPreset[] = [

@@ -47,6 +47,9 @@ type BackendDescriptor struct {
 	// (for example pi's "cli" and "rpc"). Empty means the backend has a
 	// single transport and no mode control is shown.
 	Modes []string
+	// DefaultIdleTimeoutMinutes is the default idle duration in minutes before
+	// a shared host process is reclaimed. 0 means no idle timeout is configured by default.
+	DefaultIdleTimeoutMinutes int
 	// Tone is an optional visual tone preference for backend tags in the UI
 	// (such as "info", "warning", "primary", or "neutral"). It is the fallback
 	// when Color is empty.

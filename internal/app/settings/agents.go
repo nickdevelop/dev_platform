@@ -25,6 +25,10 @@ type AgentSetting struct {
 	Mode      string `json:"mode,omitempty"`
 	Version   string `json:"version"`
 	CheckedAt string `json:"checkedAt"`
+	// IdleTimeoutMinutes configures how long an idle backend host process
+	// runs before automatic reclamation. -1 means never disconnect, > 0 specifies
+	// the minutes. 0 uses the catalog descriptor default.
+	IdleTimeoutMinutes int `json:"idleTimeoutMinutes,omitempty"`
 }
 
 // defaultAgentSettings returns every catalog backend at its descriptor's
@@ -32,7 +36,10 @@ type AgentSetting struct {
 func (s *Service) defaultAgentSettings() map[agents.BackendID]AgentSetting {
 	defaults := make(map[agents.BackendID]AgentSetting)
 	for _, descriptor := range s.catalog.All() {
-		defaults[descriptor.ID] = AgentSetting{Enabled: descriptor.DefaultEnabled}
+		defaults[descriptor.ID] = AgentSetting{
+			Enabled:            descriptor.DefaultEnabled,
+			IdleTimeoutMinutes: descriptor.DefaultIdleTimeoutMinutes,
+		}
 	}
 	return defaults
 }
@@ -135,6 +142,51 @@ func (s *Service) SetAgentMode(backend agents.BackendID, mode string) (AgentSett
 		return AgentSetting{}, err
 	}
 	return setting, nil
+}
+
+// SetAgentIdleTimeout records the idle disconnection timeout in minutes for a backend.
+// -1 means never disconnect, > 0 specifies the minutes.
+func (s *Service) SetAgentIdleTimeout(backend agents.BackendID, minutes int) (AgentSetting, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	settings, err := s.loadAgents()
+	if err != nil {
+		return AgentSetting{}, err
+	}
+	setting := settings[backend]
+	setting.IdleTimeoutMinutes = minutes
+	settings[backend] = setting
+	if err := s.saveAgents(settings); err != nil {
+		return AgentSetting{}, err
+	}
+	return setting, nil
+}
+
+// AgentIdleTimeout returns the idle duration for a backend before reclamation.
+// -1 returns 0 (indicating no idle timeout). Values > 0 are converted to minutes.
+// If unset (0), defaults to the descriptor's configured timeout or 30 minutes.
+func (s *Service) AgentIdleTimeout(backend agents.BackendID) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		if descriptor, ok := s.catalog.Get(backend); ok && descriptor.DefaultIdleTimeoutMinutes > 0 {
+			return time.Duration(descriptor.DefaultIdleTimeoutMinutes) * time.Minute
+		}
+		return 30 * time.Minute
+	}
+	minutes := settings[backend].IdleTimeoutMinutes
+	if minutes < 0 {
+		return 0 // never disconnect
+	}
+	if minutes == 0 {
+		if descriptor, ok := s.catalog.Get(backend); ok && descriptor.DefaultIdleTimeoutMinutes > 0 {
+			return time.Duration(descriptor.DefaultIdleTimeoutMinutes) * time.Minute
+		}
+		return 30 * time.Minute
+	}
+	return time.Duration(minutes) * time.Minute
 }
 
 // AgentMode returns the configured transport mode for a backend (empty when

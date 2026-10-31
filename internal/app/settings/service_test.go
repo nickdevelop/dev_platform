@@ -47,7 +47,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))
 
-	input := Appearance{Theme: "dark", FontSize: 18, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
+	input := Appearance{Theme: "warm", FontSize: 18, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
 	saved, err := svc.SetAppearance(input)
 	if err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -74,6 +74,7 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 		mutate func(*Appearance)
 	}{
 		{"theme", func(a *Appearance) { a.Theme = "neon" }},
+		{"theme dark removed", func(a *Appearance) { a.Theme = "dark" }},
 		{"density", func(a *Appearance) { a.Density = "huge" }},
 		{"font size low", func(a *Appearance) { a.FontSize = 11 }},
 		{"font size high", func(a *Appearance) { a.FontSize = 21 }},
@@ -124,7 +125,7 @@ func TestStoredAppearanceHasNoFontFields(t *testing.T) {
 // loading one must ignore those keys instead of failing.
 func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
 	db := openTestDB(t)
-	stored := `{"theme":"dark","font":"mono","customFont":"Fira Code","fontSize":16,"density":"compact"}`
+	stored := `{"theme":"cool","font":"mono","customFont":"Fira Code","fontSize":16,"density":"compact"}`
 	if err := db.Save(&database.Setting{Key: appearanceKey, Value: stored}).Error; err != nil {
 		t.Fatalf("store legacy appearance: %v", err)
 	}
@@ -133,7 +134,7 @@ func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "dark", FontSize: 16, Density: "compact", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
+	want := Appearance{Theme: "cool", FontSize: 16, Density: "compact", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if got != want {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
 	}

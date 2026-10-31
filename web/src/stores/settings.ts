@@ -12,6 +12,7 @@ import {
   putAppearance,
   putQuickAssistantSettings,
   setAgentEnabled,
+  setAgentIdleTimeout,
   setAgentMode,
   setAgentPath,
   type AgentDetection,
@@ -156,6 +157,18 @@ export const useSettingsStore = defineStore('settings', {
     async setAgentMode(backend: string, mode: string): Promise<boolean> {
       try {
         await setAgentMode(backend, mode)
+        await this.loadAgents()
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentsError = describeApiError(error)
+        return false
+      }
+    },
+
+    async setAgentIdleTimeout(backend: string, minutes: number): Promise<boolean> {
+      try {
+        await setAgentIdleTimeout(backend, minutes)
         await this.loadAgents()
         return true
       } catch (error) {

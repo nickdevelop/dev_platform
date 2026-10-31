@@ -103,7 +103,7 @@ describe('Prompts UI Components', () => {
     expect(wrapper.findComponent(PromptManageDialog).exists()).toBe(true)
   })
 
-  it('PromptsView shows template content and provides real-time placeholder replacement preview', async () => {
+  it('PromptsView shows template content and removes real-time synthesis preview', async () => {
     const store = usePromptsStore()
     store.prompts = [
       {
@@ -124,11 +124,9 @@ describe('Prompts UI Components', () => {
     expect(wrapper.text()).toContain('请审查：')
     expect(wrapper.text()).toContain('{user_prompt}')
 
-    // Enter test text in preview
-    await wrapper.find('[data-test="prompt-test-input"]').setValue('const x = 1;')
-    await flushPromises()
-
-    const previewOutput = wrapper.find('[data-test="prompt-preview-output"]')
-    expect(previewOutput.text()).toBe('请审查：\n\nconst x = 1;\n\n谢谢。')
+    // Verify real-time synthesis input and output are removed
+    expect(wrapper.find('[data-test="prompt-test-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="prompt-preview-output"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="copy-template-btn"]').exists()).toBe(true)
   })
 })

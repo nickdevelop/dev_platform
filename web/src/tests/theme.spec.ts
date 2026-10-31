@@ -17,20 +17,27 @@ afterEach(() => {
 })
 
 describe('theme presets', () => {
-  it('offers four themes and three densities', () => {
-    expect(themes.map((t) => t.key)).toEqual(['light', 'dark', 'warm', 'cool'])
+  it('offers three light-based themes and three densities', () => {
+    expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool'])
     expect(densities.map((d) => d.key)).toEqual(['compact', 'standard', 'relaxed'])
   })
 })
 
 describe('applyAppearance', () => {
   it('sets theme, density and font size on the root element', () => {
-    applyAppearance({ theme: 'dark', fontSize: 16, density: 'compact' })
+    applyAppearance({ theme: 'warm', fontSize: 16, density: 'compact' })
 
     const root = document.documentElement
-    expect(root.dataset.theme).toBe('dark')
+    expect(root.dataset.theme).toBe('warm')
     expect(root.dataset.density).toBe('compact')
     expect(root.style.getPropertyValue('--font-size-base')).toBe('16px')
+  })
+
+  it('falls back to light when an unknown or removed theme is provided', () => {
+    applyAppearance({ theme: 'dark', fontSize: 14, density: 'standard' })
+
+    const root = document.documentElement
+    expect(root.dataset.theme).toBe('light')
   })
 
   it('leaves the built-in font family alone', () => {

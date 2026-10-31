@@ -320,8 +320,9 @@ func runServer(args []string) error {
 		return fmt.Errorf("register opencode adapter: %w", err)
 	}
 	if err := registry.Register(agents.BackendDeepSeek, deepseek.New(deepseek.Options{
-		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendDeepSeek) },
-		WorkDir:           dataDir,
+		ResolveExecutable:  func() string { return settingsService.Executable(agents.BackendDeepSeek) },
+		ResolveIdleTimeout: func() time.Duration { return settingsService.AgentIdleTimeout(agents.BackendDeepSeek) },
+		WorkDir:            dataDir,
 	})); err != nil {
 		return fmt.Errorf("register deepseek adapter: %w", err)
 	}

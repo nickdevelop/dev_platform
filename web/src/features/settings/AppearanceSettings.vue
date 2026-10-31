@@ -57,10 +57,10 @@ async function toggleQuickAssistant(event: Event) {
     <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
       <div class="group-header">
         <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">主题配色</legend>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">选择符合您视觉习惯的配色体系，支持明亮浅色、极简深色与低眩光暖冷色系。</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">选择符合您视觉习惯的配色体系，支持明亮浅色与低眩光暖冷色系。</p>
       </div>
 
-      <div class="theme-grid grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="theme-grid grid grid-cols-1 sm:grid-cols-3 gap-3">
         <button
           v-for="theme in themes"
           :key="theme.key"

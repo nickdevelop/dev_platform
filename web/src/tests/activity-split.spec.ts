@@ -508,7 +508,7 @@ describe('activity pane floating button and in-tab popup', () => {
 
     await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-empty-state"]').exists()).toBe(true)
     expect(toggleBtn.attributes('aria-pressed')).toBe('true')
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
@@ -546,7 +546,7 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
   })
 
-  it('keeps the activity count in the preview pane title and not on the rail icon', async () => {
+  it('renders thinking and tool calls directly in the main conversation and keeps preview pane for files only', async () => {
     const sessionsStore = useSessionsStore()
     const wrapper = await mountPanel()
 
@@ -558,12 +558,16 @@ describe('activity pane floating button and in-tab popup', () => {
     ]
     await flushPromises()
 
-    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
-    expect(toggleBtn.find('.rail-count').exists()).toBe(false)
+    // The main conversation area renders thinking and tool calls directly
+    const conversationArea = wrapper.find('.conversation-area')
+    expect(conversationArea.text()).toContain('thinking...')
+    expect(conversationArea.text()).toContain('read')
 
-    await toggleBtn.trigger('click')
+    // Preview pane does not have activity title/count
+    await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
-    expect(pane.find('.activity-title [data-test="activity-count"]').text()).toBe('2')
+    expect(pane.find('.activity-title').exists()).toBe(false)
+    expect(pane.find('[data-test="activity-count"]').exists()).toBe(false)
   })
 })
 
@@ -622,11 +626,9 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     const preview = wrapper.find('[data-test="activity-pane"]')
     expect(preview.exists()).toBe(true)
 
-    // Fixed first tab is "思考与工具"
-    const fixedTab = preview.find('[data-test="tab-activity"]')
-    expect(fixedTab.exists()).toBe(true)
-    expect(fixedTab.text()).toContain('思考与工具')
-    expect(fixedTab.classes()).toContain('is-active')
+    // File preview pane starts with empty state when no files opened (no fixed 思考与工具 tab)
+    expect(preview.find('[data-test="tab-activity"]').exists()).toBe(false)
+    expect(preview.find('[data-test="preview-empty-state"]').exists()).toBe(true)
 
     // 3rd column: file tree drawer (docked by default, next to the right rail)
     const filetree = wrapper.find('[data-test="filetree-drawer"]')
@@ -681,7 +683,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(viewer.text()).toContain('content of src/main.go')
   })
 
-  it('switches between 思考与工具 and file tabs, and handles closing file tabs with proper fallback', async () => {
+  it('switches between file tabs and falls back to empty state when all tabs are closed', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
     const sidebar = wrapper.findComponent(FileSidebar)
@@ -696,12 +698,6 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     let fileTabs = preview.findAll('[data-test="tab-file"]')
     expect(fileTabs.length).toBe(2)
     expect(fileTabs[1].classes()).toContain('is-active') // README.md is active
-
-    // Switch back to 思考与工具
-    const fixedTab = preview.find('[data-test="tab-activity"]')
-    await fixedTab.trigger('click')
-    expect(fixedTab.classes()).toContain('is-active')
-    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
 
     // Switch to main.go tab
     await fileTabs[0].trigger('click')
@@ -718,47 +714,51 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(fileTabs[0].text()).toContain('README.md')
     expect(fileTabs[0].classes()).toContain('is-active')
 
-    // Close README.md tab -> falls back to 思考与工具
+    // Close README.md tab -> falls back to empty preview state
     const closeReadmeBtn = fileTabs[0].find('[data-test="close-file-tab"]')
     await closeReadmeBtn.trigger('click')
     await flushPromises()
 
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
-    expect(fixedTab.classes()).toContain('is-active')
-    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
+    expect(preview.find('[data-test="preview-empty-state"]').exists()).toBe(true)
   })
 
-  it('scrolls activity pane to bottom when switching back to 思考与工具 tab', async () => {
+  it('when preview pane is expanded, file tree expands and collapses eating preview width, not conversation width', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    localStorage.setItem('dev-platform-preview-width-v1', '600')
+    localStorage.setItem('dev-platform-chat-filetree-collapsed-v1', 'collapsed')
     const wrapper = await mountPanel()
-    const sessionsStore = useSessionsStore()
-
-    // Add activity entries
-    sessionsStore.messages['sess-1'] = [
-      { id: 't1', kind: 'thinking', role: 'assistant', text: 'thinking 1', streaming: false },
-      { id: 'c1', kind: 'tool_call', role: 'assistant', text: 'tool 1', name: 'read', callId: '1', streaming: false },
-      { id: 't2', kind: 'thinking', role: 'assistant', text: 'thinking 2', streaming: false },
-    ]
-    await flushPromises()
 
     const preview = wrapper.find('[data-test="activity-pane"]')
-    const activityScrollEl = preview.find('[data-test="activity-scroll"]').element as HTMLElement
-    Object.defineProperty(activityScrollEl, 'scrollHeight', { configurable: true, writable: true, value: 800 })
-    Object.defineProperty(activityScrollEl, 'clientHeight', { configurable: true, writable: true, value: 300 })
+    expect(preview.exists()).toBe(true)
 
-    const sidebar = wrapper.findComponent(FileSidebar)
-    sidebar.vm.$emit('select', 'src/main.go')
+    // Initially file tree is collapsed
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
+    // Preview takes full previewWidth
+    const fullWidth = (wrapper.vm as any).previewWidth
+    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth)
+
+    // Expand file tree
+    const toggleFileTreeBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
+    await toggleFileTreeBtn.trigger('click')
     await flushPromises()
 
-    // Simulate scroll offset changed while away
-    activityScrollEl.scrollTop = 0
+    // File tree is now docked and visible
+    const filetree = wrapper.find('[data-test="filetree-drawer"]')
+    expect(filetree.exists()).toBe(true)
+    expect(filetree.classes()).toContain('filetree-docked')
 
-    // Switch back to 思考与工具
-    const fixedTab = preview.find('[data-test="tab-activity"]')
-    await fixedTab.trigger('click')
+    // Preview pane shrunk by exactly 240px (eating preview width, preserving total width)
+    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth - 240)
+
+    // Collapse file tree again
+    const collapseBtn = filetree.find('[data-test="filetree-collapse-btn"]')
+    await collapseBtn.trigger('click')
     await flushPromises()
 
-    expect(activityScrollEl.scrollTop).toBe(800)
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
+    // Preview pane re-claims full width
+    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth)
   })
 
   it('supports file tree drawer pinning/unpinning, collapse and right-rail toggle', async () => {
