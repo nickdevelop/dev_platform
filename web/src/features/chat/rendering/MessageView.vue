@@ -98,6 +98,7 @@ const rawQuestionAnswerText = (entry: ChatEntry) => {
 }
 
 const displayMode = computed(() => props.display ?? 'all')
+const runningAction = computed(() => log.deriveRunningAction(props.messages))
 // Manually opened blocks stay open while the turn streams. A native <details>
 // loses its `open` state whenever Vue re-creates the element, and a step group
 // is re-created whenever an activity entry is appended to it, so the view owns
@@ -681,9 +682,15 @@ async function handleMarkdownClick(event: MouseEvent) {
 
       <!-- Running indicator row when session turn is running -->
       <li v-if="props.running" class="chat-entry kind-running" data-test="running-entry">
-        <div class="running-indicator-card">
-          <RunningIndicator label="正在运行" />
-          <span class="running-text">正在运行...</span>
+        <div class="running-indicator-card" :class="`kind-${runningAction.kind}`">
+          <RunningIndicator :label="runningAction.label" />
+          <span class="running-text" data-test="running-label">{{ runningAction.label }}</span>
+          <code
+            v-if="runningAction.code"
+            class="running-code"
+            data-test="running-code"
+            :title="runningAction.fullCode || runningAction.code"
+          >{{ runningAction.code }}</code>
         </div>
       </li>
     </ol>
@@ -1484,6 +1491,21 @@ async function handleMarkdownClick(event: MouseEvent) {
   font-size: 0.8rem;
   color: var(--color-text-muted);
   font-weight: 500;
+}
+
+.running-code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  line-height: 1.4;
 }
 
 /* 思考内容直接输出样式 */

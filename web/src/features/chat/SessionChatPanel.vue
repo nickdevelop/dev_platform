@@ -87,6 +87,9 @@ const initialSessionDraft = draftsStore.getSessionDraft(props.sessionId)
 interface OpenFileTab {
   path: string
   name: string
+  mode?: 'view' | 'diff'
+  commitRef?: string
+  commitMessage?: string
 }
 
 function getFileName(filePath: string): string {
@@ -97,6 +100,10 @@ function getFileName(filePath: string): string {
 const openFileTabs = ref<OpenFileTab[]>([])
 const activePreviewTab = ref<string>('activity')
 
+const currentActivePreviewFile = computed(() =>
+  openFileTabs.value.find((f) => f.path === activePreviewTab.value),
+)
+
 function selectPreviewTab(tabKey: string) {
   activePreviewTab.value = tabKey
   if (tabKey === 'activity') {
@@ -104,15 +111,29 @@ function selectPreviewTab(tabKey: string) {
   }
 }
 
-function openFileInPreview(filePath: string) {
+function openFileInPreview(
+  filePath: string,
+  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
+) {
   const cleanPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
   if (!cleanPath) return
-  const exists = openFileTabs.value.some((f) => f.path === cleanPath)
-  if (!exists) {
+  const reqMode = options?.mode || 'view'
+  const reqCommit = options?.commitRef
+  const reqMsg = options?.commitMessage
+
+  const existing = openFileTabs.value.find((f) => f.path === cleanPath)
+  if (!existing) {
     openFileTabs.value.push({
       path: cleanPath,
       name: getFileName(cleanPath),
+      mode: reqMode,
+      commitRef: reqCommit,
+      commitMessage: reqMsg,
     })
+  } else {
+    existing.mode = reqMode
+    existing.commitRef = reqCommit
+    existing.commitMessage = reqMsg
   }
   activePreviewTab.value = cleanPath
   // If preview pane is collapsed, expand it so the file is previewed immediately
@@ -138,8 +159,11 @@ function closeFileTab(path: string, event?: MouseEvent) {
   }
 }
 
-function onSelectWorkspaceFile(filePath: string) {
-  openFileInPreview(filePath)
+function onSelectWorkspaceFile(
+  filePath: string,
+  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
+) {
+  openFileInPreview(filePath, options)
 }
 
 const ready = ref(false)
@@ -1286,6 +1310,12 @@ async function removeSession() {
                 @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
               >
                 <span class="file-tab-name">{{ fileTab.name }}</span>
+                <span
+                  v-if="fileTab.mode === 'diff'"
+                  class="tab-diff-badge text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
+                >
+                  Diff
+                </span>
                 <button
                   type="button"
                   class="tab-close-icon"
@@ -1354,6 +1384,9 @@ async function removeSession() {
                 :project-id="props.projectId"
                 :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
                 :hide-tabs="true"
+                :mode="currentActivePreviewFile?.mode || 'view'"
+                :commit-ref="currentActivePreviewFile?.commitRef"
+                :commit-message="currentActivePreviewFile?.commitMessage"
                 @select="openFileInPreview"
               />
             </div>

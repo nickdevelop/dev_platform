@@ -74,6 +74,14 @@ var (
 	ErrFileNotFound = errors.New("projects: file not found")
 	// ErrPathEscaped reports that the requested path escapes the project root.
 	ErrPathEscaped = errors.New("projects: path escapes project root")
+	// ErrNotGitRepo reports that the project directory is not a git work tree.
+	ErrNotGitRepo = errors.New("projects: not a git repository")
+	// ErrEmptyCommitMessage reports that a commit was attempted with an empty message.
+	ErrEmptyCommitMessage = errors.New("projects: commit message cannot be empty")
+	// ErrGitOperationFailed reports that a git CLI operation failed.
+	ErrGitOperationFailed = errors.New("projects: git operation failed")
+	// ErrInvalidBranchName reports an invalid git branch name.
+	ErrInvalidBranchName = errors.New("projects: invalid branch name")
 )
 
 // Project is the JSON-stable API representation of a managed project. GORM

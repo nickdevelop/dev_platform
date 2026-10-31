@@ -3,6 +3,7 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -434,3 +435,25 @@ func (e NormalizedEvent) Validate() error {
 	}
 	return nil
 }
+
+var questionToolNames = map[string]struct{}{
+	"question":              {},
+	"ask":                   {},
+	"askuserquestion":       {},
+	"ask_user":              {},
+	"ask_user_question":     {},
+	"ask_question":          {},
+	"ask_followup_question": {},
+	"inquire":               {},
+}
+
+// IsQuestionTool reports whether toolName identifies a question/interaction tool
+// whose invocations and answers belong in the primary chat message flow.
+func IsQuestionTool(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if _, ok := questionToolNames[lower]; ok {
+		return true
+	}
+	return strings.Contains(lower, "ask_user") || strings.Contains(lower, "question")
+}
+

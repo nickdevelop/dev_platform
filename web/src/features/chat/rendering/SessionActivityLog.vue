@@ -43,6 +43,8 @@ const flatActivityEntries = computed<ChatEntry[]>(() =>
   ),
 )
 
+const runningAction = computed(() => log.deriveRunningAction(props.messages))
+
 const resultForCall = (entry: ChatEntry): ChatEntry | undefined => model.value.resultForCall(entry)
 
 function toolSummaryText(entry: ChatEntry): string {
@@ -221,9 +223,15 @@ function closeSubagent() {
 
       <!-- Running indicator row when session turn is running -->
       <li v-if="props.running" class="chat-entry kind-running" data-test="running-entry">
-        <div class="running-indicator-card">
-          <RunningIndicator label="正在运行" />
-          <span class="running-text">正在运行...</span>
+        <div class="running-indicator-card" :class="`kind-${runningAction.kind}`">
+          <RunningIndicator :label="runningAction.label" />
+          <span class="running-text" data-test="running-label">{{ runningAction.label }}</span>
+          <code
+            v-if="runningAction.code"
+            class="running-code"
+            data-test="running-code"
+            :title="runningAction.fullCode || runningAction.code"
+          >{{ runningAction.code }}</code>
         </div>
       </li>
     </ol>
@@ -428,6 +436,21 @@ function closeSubagent() {
   border-radius: 6px;
   font-size: 0.85rem;
   color: var(--color-text-muted);
+}
+
+.running-code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  line-height: 1.4;
 }
 
 .streaming-cursor {

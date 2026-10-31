@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"io"
@@ -41,8 +40,8 @@ type FileContentResponse struct {
 }
 
 // SearchFiles scans the project's directory and returns relative paths matching query.
-// For git repositories, it filters files adhering to .gitignore rules.
-// For non-git directories, it only hides hidden files and folders (names starting with '.').
+// It searches all workspace files without filtering by .gitignore or dotfile prefixes,
+// only skipping the .git version control metadata directory.
 func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string, limit int) ([]FileItem, error) {
 	if limit <= 0 {
 		limit = 50
@@ -58,13 +57,7 @@ func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string,
 	rootDir := proj.Path
 	normQuery := strings.ToLower(strings.TrimSpace(query))
 
-	if s.isGitDir(ctx, rootDir) {
-		items, err := s.searchGitFiles(ctx, rootDir, normQuery, limit)
-		if err == nil {
-			return items, nil
-		}
-	}
-	return s.searchNonGitFiles(ctx, rootDir, normQuery, limit)
+	return s.searchWorkspaceFiles(ctx, rootDir, normQuery, limit)
 }
 
 func (s *Service) isGitDir(ctx context.Context, directory string) bool {
@@ -75,85 +68,8 @@ func (s *Service) isGitDir(ctx context.Context, directory string) bool {
 	return false
 }
 
-// searchGitFiles uses git ls-files with standard ignore rules (.gitignore).
-func (s *Service) searchGitFiles(ctx context.Context, rootDir, normQuery string, limit int) ([]FileItem, error) {
-	out, err := gitOutputLimit(ctx, rootDir, 10<<20, "ls-files", "--cached", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, err
-	}
-
-	dirOut, _ := gitOutputLimit(ctx, rootDir, 2<<20, "ls-files", "--others", "--directory", "--exclude-standard")
-
-	seenDirs := make(map[string]struct{})
-	var files []string
-
-	scanner := bufio.NewScanner(strings.NewReader(out))
-	for scanner.Scan() {
-		rel := filepath.ToSlash(strings.TrimSpace(scanner.Text()))
-		if rel == "" || rel == ".git" || strings.HasPrefix(rel, ".git/") {
-			continue
-		}
-		files = append(files, rel)
-		parts := strings.Split(rel, "/")
-		for i := 1; i < len(parts); i++ {
-			dirPath := strings.Join(parts[:i], "/")
-			if dirPath != "" && dirPath != ".git" && !strings.HasPrefix(dirPath, ".git/") {
-				seenDirs[dirPath] = struct{}{}
-			}
-		}
-	}
-
-	if dirOut != "" {
-		dirScanner := bufio.NewScanner(strings.NewReader(dirOut))
-		for dirScanner.Scan() {
-			dirRel := filepath.ToSlash(strings.TrimSpace(dirScanner.Text()))
-			dirRel = strings.TrimSuffix(dirRel, "/")
-			if dirRel != "" && dirRel != ".git" && !strings.HasPrefix(dirRel, ".git/") {
-				seenDirs[dirRel] = struct{}{}
-			}
-		}
-	}
-
-	var matchedDirs []FileItem
-	for d := range seenDirs {
-		name := filepath.Base(d)
-		if normQuery == "" || strings.Contains(strings.ToLower(d), normQuery) || strings.Contains(strings.ToLower(name), normQuery) {
-			matchedDirs = append(matchedDirs, FileItem{Path: d, IsDir: true})
-		}
-	}
-	sort.Slice(matchedDirs, func(i, j int) bool {
-		return matchedDirs[i].Path < matchedDirs[j].Path
-	})
-
-	var matchedFiles []FileItem
-	for _, f := range files {
-		name := filepath.Base(f)
-		if normQuery == "" || strings.Contains(strings.ToLower(f), normQuery) || strings.Contains(strings.ToLower(name), normQuery) {
-			matchedFiles = append(matchedFiles, FileItem{Path: f, IsDir: false})
-		}
-	}
-	sort.Slice(matchedFiles, func(i, j int) bool {
-		return matchedFiles[i].Path < matchedFiles[j].Path
-	})
-
-	items := make([]FileItem, 0, limit)
-	for _, d := range matchedDirs {
-		items = append(items, d)
-		if len(items) >= limit {
-			return items, nil
-		}
-	}
-	for _, f := range matchedFiles {
-		items = append(items, f)
-		if len(items) >= limit {
-			break
-		}
-	}
-	return items, nil
-}
-
-// searchNonGitFiles scans with standard fs traversal, only skipping items whose name starts with '.'
-func (s *Service) searchNonGitFiles(ctx context.Context, rootDir, normQuery string, limit int) ([]FileItem, error) {
+// searchWorkspaceFiles scans with standard fs traversal, only skipping .git metadata directory.
+func (s *Service) searchWorkspaceFiles(ctx context.Context, rootDir, normQuery string, limit int) ([]FileItem, error) {
 	var items []FileItem
 
 	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
@@ -168,8 +84,8 @@ func (s *Service) searchNonGitFiles(ctx context.Context, rootDir, normQuery stri
 		}
 
 		name := d.Name()
-		// Only hide dot files and folders
-		if strings.HasPrefix(name, ".") {
+		// Only skip .git metadata directory
+		if name == ".git" {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -258,6 +174,8 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string) (string
 }
 
 // GetFileTree returns the multi-level directory tree of the project workspace.
+// It returns all files without filtering by .gitignore or dotfile prefixes,
+// only skipping the .git version control metadata directory.
 func (s *Service) GetFileTree(ctx context.Context, projectID uint) ([]FileTreeNode, error) {
 	proj, err := s.repo.Get(projectID)
 	if err != nil {
@@ -267,41 +185,25 @@ func (s *Service) GetFileTree(ctx context.Context, projectID uint) ([]FileTreeNo
 	rootDir := proj.Path
 	var filePaths []string
 
-	if s.isGitDir(ctx, rootDir) {
-		out, err := gitOutputLimit(ctx, rootDir, 10<<20, "ls-files", "--cached", "--others", "--exclude-standard")
-		if err == nil {
-			scanner := bufio.NewScanner(strings.NewReader(out))
-			for scanner.Scan() {
-				rel := filepath.ToSlash(strings.TrimSpace(scanner.Text()))
-				if rel == "" || rel == ".git" || strings.HasPrefix(rel, ".git/") {
-					continue
-				}
-				filePaths = append(filePaths, rel)
-			}
+	_ = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || path == rootDir || ctx.Err() != nil {
+			return walkErr
 		}
-	}
-
-	if len(filePaths) == 0 {
-		_ = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil || path == rootDir || ctx.Err() != nil {
-				return walkErr
-			}
-			name := d.Name()
-			if strings.HasPrefix(name, ".") {
-				if d.IsDir() {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !d.IsDir() {
-				rel, err := filepath.Rel(rootDir, path)
-				if err == nil {
-					filePaths = append(filePaths, filepath.ToSlash(rel))
-				}
+		name := d.Name()
+		if name == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
 			}
 			return nil
-		})
-	}
+		}
+		if !d.IsDir() {
+			rel, err := filepath.Rel(rootDir, path)
+			if err == nil {
+				filePaths = append(filePaths, filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
 
 	return buildTreeFromPaths(filePaths), nil
 }
@@ -425,50 +327,10 @@ func (s *Service) resolveProjectSafeDir(projectID uint, relPath string) (string,
 	return rootDir, fullPath, nil
 }
 
-// checkGitIgnored checks which directory entries under relDir are ignored by git in rootDir.
-func (s *Service) checkGitIgnored(ctx context.Context, rootDir string, relDir string, entries []fs.DirEntry) map[string]bool {
-	var pathsToCheck []string
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		target := name
-		if relDir != "" {
-			target = filepath.ToSlash(filepath.Join(relDir, name))
-		}
-		if entry.IsDir() {
-			target += "/"
-		}
-		pathsToCheck = append(pathsToCheck, target)
-	}
-
-	if len(pathsToCheck) == 0 {
-		return nil
-	}
-
-	args := append([]string{"check-ignore", "--"}, pathsToCheck...)
-	out, err := gitOutputLimit(ctx, rootDir, 1<<20, args...)
-	if err != nil && out == "" {
-		return nil
-	}
-
-	ignored := make(map[string]bool)
-	scanner := bufio.NewScanner(strings.NewReader(out))
-	for scanner.Scan() {
-		line := filepath.ToSlash(strings.TrimSpace(scanner.Text()))
-		line = strings.TrimSuffix(line, "/")
-		if line == "" {
-			continue
-		}
-		base := filepath.Base(line)
-		ignored[base] = true
-	}
-	return ignored
-}
-
 // GetFileTreeShallow returns only the direct children (files and subdirectories) of the given subPath
 // without recursively expanding deeper directories. This powers lazy loading of workspace file trees.
+// It returns all items without filtering by .gitignore or dotfile prefixes,
+// only skipping the .git version control metadata directory.
 func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPath string) ([]FileTreeNode, error) {
 	rootDir, targetDir, err := s.resolveProjectSafeDir(projectID, subPath)
 	if err != nil {
@@ -485,11 +347,6 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 		relDir = ""
 	}
 
-	var ignoredMap map[string]bool
-	if s.isGitDir(ctx, rootDir) && len(entries) > 0 {
-		ignoredMap = s.checkGitIgnored(ctx, rootDir, relDir, entries)
-	}
-
 	var dirs []FileTreeNode
 	var files []FileTreeNode
 
@@ -498,10 +355,8 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 			return nil, ctx.Err()
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		if ignoredMap != nil && ignoredMap[name] {
+		// Only skip .git metadata directory
+		if name == ".git" {
 			continue
 		}
 

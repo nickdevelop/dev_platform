@@ -6,20 +6,25 @@ import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
 import HtmlArtifactView from './HtmlArtifactView.vue'
 import ArtifactImageView from './ArtifactImageView.vue'
+import DiffViewer from './DiffViewer.vue'
 
 const props = withDefaults(
   defineProps<{
     projectId: number
     activePath?: string
     hideTabs?: boolean
+    mode?: 'view' | 'diff'
+    commitRef?: string
+    commitMessage?: string
   }>(),
   {
     hideTabs: false,
+    mode: 'view',
   },
 )
 
 const emit = defineEmits<{
-  select: [path: string]
+  select: [path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }]
   close: [path: string]
 }>()
 
@@ -34,18 +39,27 @@ function getFileName(filePath: string): string {
   return parts[parts.length - 1] || filePath
 }
 
-function openTab(path: string) {
+function openTab(path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }) {
   if (!path) return
   const cleanPath = path.replace(/\\/g, '/').replace(/^\/+/, '')
+  const reqMode = options?.mode ?? props.mode ?? 'view'
+  const reqCommit = options?.commitRef ?? props.commitRef
+  const reqMsg = options?.commitMessage ?? props.commitMessage
+
   const existing = tabs.value.find((t) => t.path === cleanPath)
   if (!existing) {
     tabs.value.push({
       path: cleanPath,
       name: getFileName(cleanPath),
+      mode: reqMode,
+      commitRef: reqCommit,
     })
+  } else if (options?.mode || options?.commitRef !== undefined) {
+    existing.mode = reqMode
+    existing.commitRef = reqCommit
   }
   activeTabPath.value = cleanPath
-  emit('select', cleanPath)
+  emit('select', cleanPath, { mode: reqMode, commitRef: reqCommit, commitMessage: reqMsg })
 }
 
 function closeTab(path: string, event?: MouseEvent) {
@@ -59,8 +73,9 @@ function closeTab(path: string, event?: MouseEvent) {
   if (activeTabPath.value === path) {
     if (tabs.value.length > 0) {
       const nextIdx = Math.min(idx, tabs.value.length - 1)
-      activeTabPath.value = tabs.value[nextIdx].path
-      emit('select', activeTabPath.value)
+      const nextTab = tabs.value[nextIdx]
+      activeTabPath.value = nextTab.path
+      emit('select', nextTab.path, { mode: nextTab.mode, commitRef: nextTab.commitRef })
     } else {
       activeTabPath.value = ''
       fileData.value = null
@@ -69,14 +84,14 @@ function closeTab(path: string, event?: MouseEvent) {
 }
 
 watch(
-  () => props.activePath,
-  (newPath) => {
+  [() => props.activePath, () => props.mode, () => props.commitRef],
+  ([newPath, newMode, newCommit]) => {
     if (newPath) {
       const cleanPath = newPath.replace(/\\/g, '/').replace(/^\/+/, '')
       if (props.hideTabs) {
         activeTabPath.value = cleanPath
-      } else if (cleanPath !== activeTabPath.value) {
-        openTab(newPath)
+      } else {
+        openTab(cleanPath, { mode: newMode, commitRef: newCommit, commitMessage: props.commitMessage })
       }
     } else if (props.hideTabs) {
       activeTabPath.value = ''
@@ -86,10 +101,26 @@ watch(
   { immediate: true },
 )
 
+const activeTab = computed(() => tabs.value.find((t) => t.path === activeTabPath.value))
+
+const isDiffMode = computed(() => {
+  if (props.hideTabs) {
+    return props.mode === 'diff'
+  }
+  return activeTab.value?.mode === 'diff'
+})
+
+const activeCommitRef = computed(() => {
+  if (props.hideTabs) {
+    return props.commitRef
+  }
+  return activeTab.value?.commitRef || props.commitRef
+})
+
 async function loadCurrentFile() {
   const projId = props.projectId
   const currentPath = activeTabPath.value
-  if (!projId || !currentPath) {
+  if (!projId || !currentPath || isDiffMode.value) {
     fileData.value = null
     return
   }
@@ -107,9 +138,11 @@ async function loadCurrentFile() {
 }
 
 watch(
-  [() => props.projectId, activeTabPath],
+  [() => props.projectId, activeTabPath, isDiffMode],
   () => {
-    void loadCurrentFile()
+    if (!isDiffMode.value) {
+      void loadCurrentFile()
+    }
   },
   { immediate: true },
 )
@@ -142,9 +175,15 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
         class="viewer-tab"
         :class="{ 'is-active': activeTabPath === tab.path }"
         :title="tab.path"
-        @click="openTab(tab.path)"
+        @click="openTab(tab.path, { mode: tab.mode, commitRef: tab.commitRef })"
       >
         <span class="tab-title">{{ tab.name }}</span>
+        <span
+          v-if="tab.mode === 'diff'"
+          class="tab-diff-badge text-[10px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium"
+        >
+          Diff
+        </span>
         <button
           type="button"
           class="tab-close-btn"
@@ -169,12 +208,22 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
         <p class="empty-text">在左侧文件树中点击文件进行查看</p>
       </div>
 
-      <!-- Loading state -->
+      <!-- Diff mode view -->
+      <template v-else-if="isDiffMode">
+        <DiffViewer
+          :project-id="props.projectId"
+          :file-path="activeTabPath"
+          :commit-ref="activeCommitRef"
+          :commit-message="props.commitMessage"
+        />
+      </template>
+
+      <!-- Loading state (for normal file view) -->
       <div v-else-if="loading" class="state-loading">
         正在加载文件内容…
       </div>
 
-      <!-- Error state -->
+      <!-- Error state (for normal file view) -->
       <div v-else-if="error" class="state-error">
         <p>{{ error }}</p>
         <button
@@ -300,29 +349,60 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
 .tab-close-btn {
   border: none;
   background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.95rem;
-  line-height: 1;
-  padding: 0 2px;
+  width: 16px;
+  height: 16px;
   border-radius: 2px;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--color-text-muted);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
 }
 
 .tab-close-btn:hover {
+  opacity: 1;
   background: rgba(0, 0, 0, 0.08);
-  color: var(--color-danger, #b91c1c);
+  color: var(--color-text);
 }
 
 .viewer-body {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   position: relative;
 }
 
-.empty-state,
-.state-loading,
-.state-error,
-.binary-state {
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  gap: 8px;
+}
+
+.empty-icon {
+  opacity: 0.4;
+}
+
+.empty-text {
+  font-size: 0.82rem;
+}
+
+.state-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.state-error {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -330,34 +410,9 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
   height: 100%;
   padding: 24px;
   text-align: center;
-  color: var(--color-text-muted);
-}
-
-.empty-icon,
-.binary-icon {
-  font-size: 2.2rem;
-  margin-bottom: 8px;
-}
-
-.empty-text {
-  font-size: 0.85rem;
-}
-
-.binary-title {
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: var(--color-text);
-  margin-bottom: 4px;
-}
-
-.binary-meta {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-}
-
-.state-error {
   color: var(--color-danger, #b91c1c);
-  gap: 10px;
+  gap: 8px;
+  font-size: 0.82rem;
 }
 
 .retry-btn {
@@ -367,6 +422,31 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
   padding: 4px 12px;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.binary-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+  gap: 8px;
+}
+
+.binary-icon {
+  opacity: 0.4;
+}
+
+.binary-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.binary-meta {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 </style>

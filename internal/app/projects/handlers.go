@@ -30,6 +30,14 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
 	r.POST("/projects/:id/files/preview-ticket", s.handleCreatePreviewTicket)
 	r.GET("/projects/:id/git/status", s.handleGitStatus)
+	r.GET("/projects/:id/git/commits", s.handleGitCommits)
+	r.GET("/projects/:id/git/diff", s.handleGitDiff)
+	r.POST("/projects/:id/git/stage", s.handleGitStage)
+	r.POST("/projects/:id/git/unstage", s.handleGitUnstage)
+	r.POST("/projects/:id/git/discard", s.handleGitDiscard)
+	r.POST("/projects/:id/git/commit", s.handleGitCommit)
+	r.GET("/projects/:id/git/branches", s.handleGitBranches)
+	r.POST("/projects/:id/git/branches", s.handleGitCheckoutBranch)
 }
 
 // RegisterPreviewRoutes registers the static preview route that authenticates
@@ -74,6 +82,14 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusNotFound, "file_not_found")
 	case errors.Is(err, ErrPathEscaped):
 		respondError(c, http.StatusBadRequest, "path_escaped")
+	case errors.Is(err, ErrNotGitRepo):
+		respondError(c, http.StatusBadRequest, "not_a_git_repo")
+	case errors.Is(err, ErrEmptyCommitMessage):
+		respondError(c, http.StatusBadRequest, "empty_commit_message")
+	case errors.Is(err, ErrInvalidBranchName):
+		respondError(c, http.StatusBadRequest, "invalid_branch_name")
+	case errors.Is(err, ErrGitOperationFailed):
+		respondError(c, http.StatusBadRequest, "git_operation_failed")
 	case errors.Is(err, ErrRollbackFailed):
 		respondError(c, http.StatusInternalServerError, "inconsistent_state")
 	default:
@@ -398,16 +414,192 @@ func (s *Service) handlePreviewFile(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
 }
 
-// handleGitStatus returns the list of changed files in the git workspace.
+// handleGitStatus returns the list of changed files in the git workspace (or a specific commit).
 func (s *Service) handleGitStatus(c *gin.Context) {
 	id, ok := projectID(c)
 	if !ok {
 		return
 	}
-	items, err := s.GitStatus(c.Request.Context(), id)
+	commitRef := c.Query("commit")
+	items, err := s.GitStatusWithRef(c.Request.Context(), id, commitRef)
 	if err != nil {
 		respondServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"changes": items})
+}
+
+// commitsResponse is the JSON envelope for GET /api/projects/:id/git/commits.
+type commitsResponse struct {
+	Commits []GitCommitItem `json:"commits"`
+}
+
+// handleGitCommits returns the recent commits of the project's git repository.
+func (s *Service) handleGitCommits(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	limit := 20
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	commits, err := s.GitCommits(c.Request.Context(), id, limit)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, commitsResponse{Commits: commits})
+}
+
+// handleGitDiff returns the unified diff and change stats for a single file.
+func (s *Service) handleGitDiff(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	filePath := c.Query("path")
+	if filePath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	commitRef := c.Query("commit")
+	diff, err := s.GitFileDiff(c.Request.Context(), id, filePath, commitRef)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, diff)
+}
+
+type gitPathsRequest struct {
+	Paths []string `json:"paths"`
+}
+
+type gitDiscardRequest struct {
+	Path string `json:"path"`
+}
+
+type gitCommitRequest struct {
+	Message string `json:"message"`
+}
+
+type gitCheckoutRequest struct {
+	Branch string `json:"branch"`
+	Create bool   `json:"create"`
+}
+
+// handleGitStage stages one or more files in the git workspace.
+func (s *Service) handleGitStage(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req gitPathsRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := s.StageFiles(c.Request.Context(), id, req.Paths); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// handleGitUnstage unstages one or more files in the git workspace.
+func (s *Service) handleGitUnstage(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req gitPathsRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := s.UnstageFiles(c.Request.Context(), id, req.Paths); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// handleGitDiscard discards working tree changes for a specific file.
+func (s *Service) handleGitDiscard(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req gitDiscardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if strings.TrimSpace(req.Path) == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	if err := s.DiscardFileChanges(c.Request.Context(), id, req.Path); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// handleGitCommit creates a git commit with staged changes.
+func (s *Service) handleGitCommit(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req gitCommitRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	commit, err := s.CommitChanges(c.Request.Context(), id, req.Message)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, commit)
+}
+
+// handleGitBranches returns all local branches and the active branch.
+func (s *Service) handleGitBranches(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	result, err := s.ListBranches(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// handleGitCheckoutBranch switches branch or creates a new branch.
+func (s *Service) handleGitCheckoutBranch(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req gitCheckoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if strings.TrimSpace(req.Branch) == "" {
+		respondError(c, http.StatusBadRequest, "invalid_branch_name")
+		return
+	}
+	if err := s.CheckoutBranch(c.Request.Context(), id, req.Branch, req.Create); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

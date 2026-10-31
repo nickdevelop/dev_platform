@@ -151,7 +151,16 @@ end note
 | 15 | GET | `/projects/{id}/files/tree` | 懒加载文件树 | 会话 | 200 |
 | 16 | GET | `/projects/{id}/files/content` | 读取文本文件内容 | 会话 | 200 |
 | 17 | GET | `/projects/{id}/files/raw` | 原始字节流下载文件 | 会话 | 200（流） |
-| 18 | GET | `/projects/{id}/git/status` | Git 详细状态 | 会话 | 200 |
+| 18 | POST | `/projects/{id}/files/preview-ticket` | 创建只读预览票据 | 会话+CSRF | 200 |
+| 19 | GET | `/projects/{id}/git/status` | Git 详细状态（包含暂存与未暂存） | 会话 | 200 |
+| 20 | GET | `/projects/{id}/git/commits` | Git 提交历史列表 | 会话 | 200 |
+| 21 | GET | `/projects/{id}/git/diff` | 单文件 Unified Diff 比对 | 会话 | 200 |
+| 22 | POST | `/projects/{id}/git/stage` | 暂存单个或全部变更文件 | 会话+CSRF | 200 |
+| 23 | POST | `/projects/{id}/git/unstage` | 取消暂存单个或全部文件 | 会话+CSRF | 200 |
+| 24 | POST | `/projects/{id}/git/discard` | 放弃指定文件的未暂存修改 | 会话+CSRF | 200 |
+| 25 | POST | `/projects/{id}/git/commit` | 提交暂存区代码变动 | 会话+CSRF | 200 |
+| 26 | GET | `/projects/{id}/git/branches` | 查询本地分支列表及激活分支 | 会话 | 200 |
+| 27 | POST | `/projects/{id}/git/branches` | 切换分支或检出新分支 | 会话+CSRF | 200 |
 
 ### 4.3 模型服务与模型（9）
 
@@ -193,7 +202,7 @@ end note
 | 41 | POST | `/projects/{id}/sessions/{sessionId}/stop` | 停止会话 | 会话+CSRF | 200 |
 | 42 | POST | `/projects/{id}/sessions/{sessionId}/interrupt` | 中断当前轮 | 会话+CSRF | 200 |
 | 43 | DELETE | `/projects/{id}/sessions/{sessionId}` | 删除会话索引条目 | 会话+CSRF | 204 |
-| 44 | GET | `/projects/{id}/sessions/{sessionId}/history` | 读取历史轮次 | 会话 | 200 |
+| 44 | GET | `/projects/{id}/sessions/{sessionId}/history` | 读取历史轮次（精简模式：仅返回消息与成对问答，剔除思考与普通工具） | 会话 | 200 |
 | 45 | GET | `/projects/{id}/sessions/{sessionId}/commands` | 列出斜杠命令与技能 | 会话 | 200 |
 | 46 | GET | `/projects/{id}/sessions/{sessionId}/events` | 规范化事件 SSE，支持断点续传 | 会话 | 200 SSE |
 | 47 | GET | `/events/{uuid}` | 客户端多路复用事件总线 SSE | 会话 | 200 SSE |

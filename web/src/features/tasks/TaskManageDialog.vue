@@ -175,14 +175,14 @@ async function submit() {
   <UiFormDialog
     :title="isEditing ? '编辑任务模板' : '新建任务模板'"
     width-class="w-full max-w-xl"
-    :confirm-label="saving ? '保存中…' : '保存'"
+    :confirm-label="saving ? '保存中…' : '保存修改'"
     :confirm-loading="saving"
     :error="errorMessage"
     @close="emit('close')"
     @submit="submit"
   >
     <div class="field flex flex-col gap-1.5">
-      <label for="dlg-task-title" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+      <label for="dlg-task-title" class="text-xs font-medium text-[var(--color-text)]">
         任务名称 <span class="text-red-500">*</span>
       </label>
       <UiInput
@@ -195,7 +195,7 @@ async function submit() {
     </div>
 
     <div class="field flex flex-col gap-1.5">
-      <label for="dlg-task-desc" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+      <label for="dlg-task-desc" class="text-xs font-medium text-[var(--color-text)]">
         任务描述 (可选)
       </label>
       <UiInput
@@ -208,7 +208,7 @@ async function submit() {
 
     <div class="field-row grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div class="field flex flex-col gap-1.5">
-        <label for="dlg-task-project" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label for="dlg-task-project" class="text-xs font-medium text-[var(--color-text)]">
           关联项目 <span class="text-red-500">*</span>
         </label>
         <UiSelect id="dlg-task-project" v-model="selectedProjectId" block required>
@@ -220,7 +220,7 @@ async function submit() {
       </div>
 
       <div class="field flex flex-col gap-1.5">
-        <label for="dlg-task-backend" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label for="dlg-task-backend" class="text-xs font-medium text-[var(--color-text)]">
           Agent 后端 <span class="text-red-500">*</span>
         </label>
         <UiSelect id="dlg-task-backend" v-model="selectedBackend" block required>
@@ -237,8 +237,8 @@ async function submit() {
     </div>
 
     <div class="field flex flex-col gap-1.5">
-      <label for="dlg-task-model" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-        模型 <span class="text-red-500">*</span>
+      <label for="dlg-task-model" class="text-xs font-medium text-[var(--color-text)]">
+        运行模型 <span class="text-red-500">*</span>
       </label>
       <div class="model-row space-y-1">
         <UiSelect
@@ -261,12 +261,12 @@ async function submit() {
           required
           block
         />
-        <span v-if="loadingModels" class="text-[11px] text-slate-400">加载模型中…</span>
+        <span v-if="loadingModels" class="text-[11px] text-[var(--color-text-muted)]">加载模型列表中…</span>
       </div>
     </div>
 
     <div class="field flex flex-col gap-1.5">
-      <label for="dlg-task-prompt" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+      <label for="dlg-task-prompt" class="text-xs font-medium text-[var(--color-text)]">
         执行提示词模板 <span class="text-red-500">*</span>
       </label>
       <UiTextarea
@@ -279,8 +279,8 @@ async function submit() {
     </div>
 
     <div class="field flex flex-col gap-2">
-      <label class="text-xs font-medium text-slate-700 dark:text-slate-300">执行方式选项</label>
-      <div class="schedule-radios flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
+      <label class="text-xs font-medium text-[var(--color-text)]">执行方式选项</label>
+      <div class="schedule-radios flex items-center gap-4 text-xs text-[var(--color-text)]">
         <label class="inline-flex items-center gap-1.5 cursor-pointer">
           <input v-model="scheduleType" type="radio" value="manual" class="text-blue-600 accent-blue-600" />
           <span>手动执行</span>
@@ -296,8 +296,8 @@ async function submit() {
       </div>
     </div>
 
-    <div v-if="scheduleType === 'once'" class="schedule-subfield flex flex-col gap-1.5">
-      <label for="dlg-task-time" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+    <div v-if="scheduleType === 'once'" class="schedule-subfield flex flex-col gap-1.5 p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)]">
+      <label for="dlg-task-time" class="text-xs font-medium text-[var(--color-text)]">
         触发时间点 <span class="text-red-500">*</span>
       </label>
       <UiInput
@@ -309,15 +309,15 @@ async function submit() {
       />
     </div>
 
-    <div v-if="scheduleType === 'cron'" class="schedule-subfield flex flex-col gap-1.5">
-      <label for="dlg-task-cron" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+    <div v-if="scheduleType === 'cron'" class="schedule-subfield flex flex-col gap-1.5 p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)]">
+      <label for="dlg-task-cron" class="text-xs font-medium text-[var(--color-text)]">
         Cron 表达式 (分 时 日 月 周) <span class="text-red-500">*</span>
       </label>
       <UiInput
         id="dlg-task-cron"
         v-model="cronExpr"
         placeholder="0 9 * * *"
-        class="font-mono"
+        class="font-mono text-xs"
         required
         block
       />

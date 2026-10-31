@@ -629,3 +629,108 @@ export function editPathFor(entry: ChatEntry): string {
 export function editDiffFor(entry: ChatEntry, resultForCall: ResultLookup): ChatEntry['diff'] {
   return resultForCall(entry)?.diff
 }
+
+export interface RunningActionInfo {
+  label: string
+  code?: string
+  fullCode?: string
+  kind: 'thinking' | 'bash' | 'edit' | 'read' | 'search' | 'task' | 'tool'
+}
+
+/**
+ * deriveRunningAction derives the human-readable action label and parameters
+ * from the most recent activity entry in the message log. This replaces the static
+ * "正在运行..." indicator with live feedback such as "正在思考..." or "执行 git status".
+ */
+export function deriveRunningAction(messages: ChatEntry[]): RunningActionInfo {
+  if (!messages || messages.length === 0) {
+    return { label: '正在思考...', kind: 'thinking' }
+  }
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const entry = messages[i]
+    if (entry.kind === 'thinking') {
+      return { label: '正在思考...', kind: 'thinking' }
+    }
+    if (entry.kind === 'tool_call') {
+      if (isQuestionCall(entry)) {
+        return { label: '等待回答...', kind: 'tool' }
+      }
+      const kind = toolKind(entry)
+      if (kind === 'bash' || isShellCall(entry)) {
+        const arg = toolArgument(entry).trim()
+        const code = arg.length > 50 ? arg.slice(0, 48) + '…' : arg
+        return {
+          label: '执行',
+          code: code || undefined,
+          fullCode: arg || undefined,
+          kind: 'bash',
+        }
+      }
+      if (kind === 'edit' || isEditCall(entry)) {
+        const path = (editPathFor(entry) || toolArgument(entry)).trim()
+        const code = path.length > 50 ? path.slice(0, 48) + '…' : path
+        return {
+          label: '编辑',
+          code: code || undefined,
+          fullCode: path || undefined,
+          kind: 'edit',
+        }
+      }
+      if (kind === 'read') {
+        const path = toolArgument(entry).trim()
+        const code = path.length > 50 ? path.slice(0, 48) + '…' : path
+        return {
+          label: '读取',
+          code: code || undefined,
+          fullCode: path || undefined,
+          kind: 'read',
+        }
+      }
+      if (kind === 'search') {
+        const query = toolArgument(entry).trim()
+        const code = query.length > 50 ? query.slice(0, 48) + '…' : query
+        return {
+          label: '搜索',
+          code: code || undefined,
+          fullCode: query || undefined,
+          kind: 'search',
+        }
+      }
+      const tName = (entry.name ?? entry.text ?? '').toLowerCase()
+      if (SUBAGENT_NAMES.has(entry.name ?? '') || SUBAGENT_NAMES.has(tName)) {
+        const name = (subagentName(entry) || toolArgument(entry)).trim()
+        const code = name.length > 50 ? name.slice(0, 48) + '…' : name
+        return {
+          label: '执行子任务',
+          code: code || undefined,
+          fullCode: name || undefined,
+          kind: 'task',
+        }
+      }
+      const name = toolName(entry)
+      const arg = toolArgument(entry).trim()
+      const code = arg ? (arg.length > 40 ? arg.slice(0, 38) + '…' : arg) : undefined
+      return {
+        label: `调用 ${name}`,
+        code,
+        fullCode: arg || undefined,
+        kind: 'tool',
+      }
+    }
+    if (entry.kind === 'tool_result') {
+      return { label: '正在思考...', kind: 'thinking' }
+    }
+    if (entry.kind === 'message') {
+      if (entry.role === 'assistant') {
+        return { label: '正在思考...', kind: 'thinking' }
+      }
+      if (entry.role === 'user') {
+        break
+      }
+    }
+  }
+
+  return { label: '正在思考...', kind: 'thinking' }
+}
+

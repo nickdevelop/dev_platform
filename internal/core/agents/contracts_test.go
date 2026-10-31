@@ -732,4 +732,38 @@ func TestThinkingEventJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestIsQuestionTool(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"question", true},
+		{"ask", true},
+		{"askuserquestion", true},
+		{"ask_user", true},
+		{"ask_user_question", true},
+		{"ask_question", true},
+		{"ask_followup_question", true},
+		{"inquire", true},
+		{"Question", true},
+		{"ASK_USER", true},
+		{"opencode_ask_user", true},
+		{"custom_question_form", true},
+		{"bash", false},
+		{"edit", false},
+		{"read", false},
+		{"grep", false},
+		{"glob", false},
+		{"task", false},
+		{"subagent", false},
+		{"", false},
+	}
+
+	for _, tc := range cases {
+		if got := IsQuestionTool(tc.name); got != tc.want {
+			t.Errorf("IsQuestionTool(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func (stubAdapter) Capabilities() Capabilities { return Capabilities{} }

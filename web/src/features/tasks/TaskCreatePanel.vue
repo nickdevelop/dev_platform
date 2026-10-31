@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Task Creation Panel: structured like NewSessionPanel with session template fields,
-// adding task type selection (standard vs flow placeholder) and execution mode configuration.
+// Task Creation Panel: structured with clean session template fields,
+// task type selector and execution mode configuration.
 import { computed, onMounted, ref, watch } from 'vue'
 import type { BackendId } from '../../api/agents'
 import type { ScheduleType, TaskType } from '../../api/tasks'
@@ -11,7 +11,7 @@ import { usePromptsStore } from '../../stores/prompts'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
-import { UiButton, UiInput, UiSelect, UiTextarea, UiBadge, UiAlert } from '../../shared/ui'
+import { UiButton, UiInput, UiSelect, UiTextarea, UiAlert } from '../../shared/ui'
 
 const props = defineProps<{
   initialProjectId?: number
@@ -232,89 +232,89 @@ async function handleCreateTask() {
 </script>
 
 <template>
-  <div class="task-create-container flex justify-center items-start p-6 overflow-y-auto h-full bg-slate-50 dark:bg-slate-950" data-test="task-create-panel">
-    <div class="create-card w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-sm p-6 space-y-6">
-      <header class="create-header flex items-start justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+  <div class="task-create-container flex justify-center items-start p-6 md:p-8 overflow-y-auto h-full bg-[var(--color-bg)]" data-test="task-create-panel">
+    <div class="create-card w-full max-w-3xl bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius,6px)] p-6 md:p-8 space-y-6">
+      <!-- Header -->
+      <header class="create-header flex items-start justify-between pb-4 border-b border-[var(--color-border)]">
         <div class="header-titles space-y-1">
-          <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">创建任务</h2>
-          <p class="subtitle text-xs text-slate-500 dark:text-slate-400">配置可手动、定时或周期执行的会话模板</p>
+          <h1 class="text-xl font-semibold text-[var(--color-text)] tracking-tight">新建任务</h1>
+          <p class="subtitle text-xs text-[var(--color-text-muted)]">配置自动化会话模板与排期调度策略</p>
         </div>
         <button
           type="button"
-          class="btn-close text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded inline-flex items-center justify-center"
+          class="btn-close text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1.5 rounded transition-colors inline-flex items-center justify-center"
           title="取消"
           aria-label="关闭面板"
           @click="emit('cancel')"
         >
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <line x1="3" y1="3" x2="13" y2="13" />
             <line x1="13" y1="3" x2="3" y2="13" />
           </svg>
         </button>
       </header>
 
-      <form class="create-form space-y-5" @submit.prevent="handleCreateTask">
+      <form class="create-form space-y-6" @submit.prevent="handleCreateTask">
         <!-- 1. Task Type Selection -->
         <div class="form-section space-y-2">
-          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">任务类型</label>
+          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">任务类型</label>
           <div class="task-type-selector grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div
-              class="type-card flex items-start gap-3 p-3.5 rounded border cursor-pointer select-none transition-colors"
+              class="type-card flex items-start gap-3 p-3.5 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
               :class="[
                 selectedTaskType === 'standard'
-                  ? 'active border-blue-600 ring-1 ring-blue-600 bg-blue-50/20 dark:bg-blue-950/20'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800',
+                  ? 'active border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                  : 'border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]',
               ]"
               @click="selectedTaskType = 'standard'"
             >
-              <div class="type-icon text-slate-700 dark:text-slate-200 shrink-0">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              <div class="type-icon text-[var(--color-primary)] shrink-0 mt-0.5">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polygon points="9 2 2 10 8 10 7 15 14 7 8 7 9 2" />
                 </svg>
               </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="type-title text-sm font-semibold text-slate-800 dark:text-slate-200">普通任务</span>
-                  <UiBadge variant="primary" size="sm">推荐</UiBadge>
+                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">普通任务</span>
+                  <span class="type-pill standard">推荐</span>
                 </div>
-                <p class="type-desc text-xs text-slate-400 mt-1 leading-relaxed">基于会话模板运行，支持手动执行、定时执行与周期自动化调度。</p>
+                <p class="type-desc text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">基于会话模板运行，支持手动执行、定时执行与周期自动化调度。</p>
               </div>
             </div>
 
             <div
-              class="type-card disabled-card flex items-start gap-3 p-3.5 rounded border cursor-pointer select-none transition-colors opacity-60"
+              class="type-card disabled-card flex items-start gap-3 p-3.5 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors opacity-60"
               :class="[
                 selectedTaskType === 'flow'
-                  ? 'active border-blue-600 ring-1 ring-blue-600'
-                  : 'border-slate-200 dark:border-slate-800',
+                  ? 'active border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                  : 'border-[var(--color-border)]',
               ]"
               @click="selectedTaskType = 'flow'"
             >
-              <div class="type-icon text-slate-700 dark:text-slate-200 shrink-0">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <polyline points="16 3 21 3 21 8" />
-                  <line x1="4" y1="20" x2="21" y2="3" />
-                  <polyline points="21 16 21 21 16 21" />
-                  <line x1="15" y1="15" x2="21" y2="21" />
-                  <line x1="4" y1="4" x2="9" y2="9" />
+              <div class="type-icon text-[var(--color-text-muted)] shrink-0 mt-0.5">
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <rect x="2" y="2" width="4" height="4" rx="1" />
+                  <rect x="10" y="2" width="4" height="4" rx="1" />
+                  <rect x="6" y="10" width="4" height="4" rx="1" />
+                  <path d="M4 6v2a2 2 0 0 0 2 2h2m4-4v2a2 2 0 0 1-2 2H8" />
                 </svg>
               </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="type-title text-sm font-semibold text-slate-800 dark:text-slate-200">流程任务</span>
-                  <UiBadge variant="default" size="sm">开发中</UiBadge>
+                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">流程任务</span>
+                  <span class="type-pill flow">扩展槽</span>
                 </div>
-                <p class="type-desc text-xs text-slate-400 mt-1 leading-relaxed">多阶段工作流与复杂节点编排（DAG 异构引擎扩展插槽）。</p>
+                <p class="type-desc text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">多阶段工作流与复杂节点编排引擎（后续插件扩展预留）。</p>
               </div>
             </div>
           </div>
         </div>
 
         <!-- 2. Basic Info -->
-        <div class="form-section space-y-3">
-          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">基本信息</label>
+        <div class="form-section space-y-3.5">
+          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">基本信息</label>
           <div class="form-group flex flex-col gap-1.5">
-            <label for="task-title" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label for="task-title" class="text-xs font-medium text-[var(--color-text)]">
               任务名称 <span class="text-red-500">*</span>
             </label>
             <UiInput
@@ -326,7 +326,7 @@ async function handleCreateTask() {
             />
           </div>
           <div class="form-group flex flex-col gap-1.5">
-            <label for="task-desc" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label for="task-desc" class="text-xs font-medium text-[var(--color-text)]">
               任务描述 (可选)
             </label>
             <UiInput
@@ -339,12 +339,12 @@ async function handleCreateTask() {
         </div>
 
         <!-- 3. Session Template Configuration -->
-        <div class="form-section space-y-3">
-          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">会话执行模板</label>
+        <div class="form-section space-y-3.5">
+          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">会话执行模板</label>
 
           <!-- Project Selector -->
           <div class="form-group flex flex-col gap-1.5">
-            <label for="project-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label for="project-select" class="text-xs font-medium text-[var(--color-text)]">
               关联项目 <span class="text-red-500">*</span>
             </label>
             <UiSelect
@@ -366,7 +366,7 @@ async function handleCreateTask() {
 
           <!-- Agent Backend -->
           <div class="form-group flex flex-col gap-1.5">
-            <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label class="text-xs font-medium text-[var(--color-text)]">
               Agent 后端 <span class="text-red-500">*</span>
             </label>
             <div class="backend-switch flex flex-wrap gap-2" role="radiogroup">
@@ -375,11 +375,11 @@ async function handleCreateTask() {
                 :key="b.backend"
                 type="button"
                 role="radio"
-                class="backend-option px-3 py-1.5 rounded border text-xs font-medium transition-colors select-none"
+                class="backend-option px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
                 :class="[
                   selectedBackend === b.backend
-                    ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 ring-1 ring-blue-600'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800',
+                    ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)] text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]',
                 ]"
                 :aria-checked="selectedBackend === b.backend"
                 @click="selectBackend(b.backend)"
@@ -394,7 +394,7 @@ async function handleCreateTask() {
             v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
             class="form-group flex flex-col gap-1.5"
           >
-            <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label class="text-xs font-medium text-[var(--color-text)]">
               运行模型 <span class="text-red-500">*</span>
             </label>
             <div class="model-select-wrapper">
@@ -410,7 +410,7 @@ async function handleCreateTask() {
 
           <!-- Prompt Preset -->
           <div class="form-group flex flex-col gap-1.5">
-            <label for="prompt-select" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label for="prompt-select" class="text-xs font-medium text-[var(--color-text)]">
               预设提示词模板 (可选)
             </label>
             <UiSelect
@@ -432,9 +432,9 @@ async function handleCreateTask() {
 
           <!-- Prompt Template Textarea -->
           <div class="form-group flex flex-col gap-1.5">
-            <label for="task-prompt" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+            <label for="task-prompt" class="text-xs font-medium text-[var(--color-text)]">
               执行提示词模板 <span class="text-red-500">*</span>
-              <span class="label-hint text-slate-400 font-normal">（每次执行此任务时，Agent 将使用该提示词开启新会话）</span>
+              <span class="label-hint text-[var(--color-text-muted)] font-normal">（每次执行此任务时，Agent 将使用该提示词开启新会话）</span>
             </label>
             <UiTextarea
               id="task-prompt"
@@ -447,15 +447,15 @@ async function handleCreateTask() {
         </div>
 
         <!-- 4. Execution Mode Options -->
-        <div class="form-section space-y-3">
-          <label class="form-section-title text-xs font-medium text-slate-500 dark:text-slate-400">执行方式选项</label>
+        <div class="form-section space-y-3.5">
+          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">执行方式选项</label>
           <div class="schedule-mode-grid grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div
-              class="mode-card p-3 rounded border cursor-pointer select-none transition-colors"
+              class="mode-card p-3 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
               :class="[
                 scheduleType === 'manual'
-                  ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 ring-1 ring-blue-600'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800',
+                  ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                  : 'border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]',
               ]"
               @click="scheduleType = 'manual'"
             >
@@ -465,21 +465,21 @@ async function handleCreateTask() {
                 value="manual"
                 class="sr-only"
               />
-              <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <polygon points="5 3 19 12 5 21 5 3" />
+              <div class="mode-header flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] mb-1">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <polygon points="5 3 13 8 5 13 5 3" />
                 </svg>
                 <span>手动执行</span>
               </div>
-              <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">仅在任务创建完成后，由人工在任务详情页点击按钮立即触发。</p>
+              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">仅在任务创建完成后，由人工在任务详情页点击按钮立即触发。</p>
             </div>
 
             <div
-              class="mode-card p-3 rounded border cursor-pointer select-none transition-colors"
+              class="mode-card p-3 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
               :class="[
                 scheduleType === 'once'
-                  ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 ring-1 ring-blue-600'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800',
+                  ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                  : 'border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]',
               ]"
               @click="scheduleType = 'once'"
             >
@@ -489,22 +489,22 @@ async function handleCreateTask() {
                 value="once"
                 class="sr-only"
               />
-              <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
+              <div class="mode-header flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] mb-1">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <circle cx="8" cy="8" r="6" />
+                  <polyline points="8 4.5 8 8 10.5 9.5" />
                 </svg>
                 <span>定时执行 (单次)</span>
               </div>
-              <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">在设定的未来时间点自动启动并执行一次任务会话。</p>
+              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">在设定的未来时间点自动启动并执行一次任务会话。</p>
             </div>
 
             <div
-              class="mode-card p-3 rounded border cursor-pointer select-none transition-colors"
+              class="mode-card p-3 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
               :class="[
                 scheduleType === 'cron'
-                  ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 ring-1 ring-blue-600'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800',
+                  ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                  : 'border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]',
               ]"
               @click="scheduleType = 'cron'"
             >
@@ -514,21 +514,22 @@ async function handleCreateTask() {
                 value="cron"
                 class="sr-only"
               />
-              <div class="mode-header flex items-center gap-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200 mb-1">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <polyline points="23 4 23 10 17 10" />
-                  <polyline points="1 20 1 14 7 14" />
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              <div class="mode-header flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] mb-1">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M2.5 8a5.5 5.5 0 0 1 9.4-3.9L13.5 6" />
+                  <polyline points="13.5 2.5 13.5 6 10 6" />
+                  <path d="M13.5 8a5.5 5.5 0 0 1-9.4 3.9L2.5 10" />
+                  <polyline points="2.5 13.5 2.5 10 6 10" />
                 </svg>
                 <span>周期执行 (Cron)</span>
               </div>
-              <p class="mode-desc text-[11px] text-slate-400 leading-relaxed">按照预设周期或 Cron 表达式自动循环执行任务并沉淀历史。</p>
+              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">按照预设周期或 Cron 表达式自动循环执行任务并沉淀历史。</p>
             </div>
           </div>
 
           <!-- Once config -->
-          <div v-if="scheduleType === 'once'" class="schedule-config-box p-3 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-1.5">
-            <label for="schedule-datetime" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+          <div v-if="scheduleType === 'once'" class="schedule-config-box p-3.5 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] space-y-1.5">
+            <label for="schedule-datetime" class="text-xs font-medium text-[var(--color-text)]">
               定时触发时间 <span class="text-red-500">*</span>
             </label>
             <UiInput
@@ -541,10 +542,10 @@ async function handleCreateTask() {
           </div>
 
           <!-- Cron config -->
-          <div v-if="scheduleType === 'cron'" class="schedule-config-box p-3 rounded bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2">
+          <div v-if="scheduleType === 'cron'" class="schedule-config-box p-3.5 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] space-y-2.5">
             <div class="cron-row grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="cron-field flex flex-col gap-1.5">
-                <label class="text-xs font-medium text-slate-700 dark:text-slate-300">快速预设周期</label>
+                <label class="text-xs font-medium text-[var(--color-text)]">快速预设周期</label>
                 <UiSelect v-model="cronShortcut" block>
                   <option value="custom">自定义 Cron 表达式</option>
                   <option value="hourly">每小时执行一次 (0 * * * *)</option>
@@ -554,20 +555,20 @@ async function handleCreateTask() {
               </div>
 
               <div class="cron-field flex flex-col gap-1.5">
-                <label for="cron-expr" class="text-xs font-medium text-slate-700 dark:text-slate-300">
+                <label for="cron-expr" class="text-xs font-medium text-[var(--color-text)]">
                   Cron 表达式 (分 时 日 月 周)
                 </label>
                 <UiInput
                   id="cron-expr"
                   v-model="customCronExpr"
-                  class="font-mono"
+                  class="font-mono text-xs"
                   placeholder="0 9 * * *"
                   required
                   block
                 />
               </div>
             </div>
-            <p class="cron-tip text-[11px] text-slate-400">
+            <p class="cron-tip text-[11px] text-[var(--color-text-muted)]">
               示例：<code>0 9 * * *</code> 表示每天 9:00 执行；<code>*/30 * * * *</code> 表示每 30 分钟执行一次。
             </p>
           </div>
@@ -578,12 +579,12 @@ async function handleCreateTask() {
         </UiAlert>
 
         <!-- Actions -->
-        <div class="form-actions flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <UiButton type="button" variant="secondary" class="btn-cancel" @click="emit('cancel')">取消</UiButton>
+        <div class="form-actions flex items-center justify-end gap-3 pt-4 border-t border-[var(--color-border)]">
+          <UiButton type="button" variant="secondary" class="btn-cancel text-xs" @click="emit('cancel')">取消</UiButton>
           <UiButton
             type="submit"
             variant="primary"
-            class="btn-submit"
+            class="btn-submit text-xs font-medium px-4 py-2"
             :disabled="creating || selectedTaskType === 'flow'"
             :loading="creating"
           >
@@ -594,3 +595,7 @@ async function handleCreateTask() {
     </div>
   </div>
 </template>
+
+<style scoped>
+@import './tasks-view.css';
+</style>

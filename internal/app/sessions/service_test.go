@@ -1406,6 +1406,99 @@ func TestHistoryStampsEnvelopeAndReturnsEvents(t *testing.T) {
 	}
 }
 
+// TestHistoryFiltersThinkingAndNonQuestionTools verifies that the history API
+// strips thinking and general tools (e.g. bash, edit), while preserving
+// chat messages, error events, and question interaction tools paired with results.
+func TestHistoryFiltersThinkingAndNonQuestionTools(t *testing.T) {
+	env := newTestEnv(t)
+	session := createNativeSession(t, env, "native-filter")
+	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+
+	events := []agents.NormalizedEvent{
+		{
+			Type:      agents.EventMessage,
+			Backend:   agents.BackendPi,
+			Timestamp: observed,
+			Replayed:  true,
+			Message:   &agents.MessagePayload{Role: "user", Text: "请执行测试并问我问题", Final: true},
+		},
+		{
+			Type:      agents.EventThinking,
+			Backend:   agents.BackendPi,
+			Timestamp: observed.Add(time.Second),
+			Replayed:  true,
+			Thinking:  &agents.ThinkingPayload{Text: "正在思考计划...", Final: true},
+		},
+		{
+			Type:      agents.EventToolCall,
+			Backend:   agents.BackendPi,
+			Timestamp: observed.Add(2 * time.Second),
+			Replayed:  true,
+			ToolCall:  &agents.ToolCallPayload{CallID: "bash-1", Name: "bash"},
+		},
+		{
+			Type:       agents.EventToolResult,
+			Backend:    agents.BackendPi,
+			Timestamp:  observed.Add(3 * time.Second),
+			Replayed:   true,
+			ToolResult: &agents.ToolResultPayload{CallID: "bash-1", Output: "PASS"},
+		},
+		{
+			Type:      agents.EventToolCall,
+			Backend:   agents.BackendPi,
+			Timestamp: observed.Add(4 * time.Second),
+			Replayed:  true,
+			ToolCall:  &agents.ToolCallPayload{CallID: "q-1", Name: "question"},
+		},
+		{
+			Type:       agents.EventToolResult,
+			Backend:    agents.BackendPi,
+			Timestamp:  observed.Add(5 * time.Second),
+			Replayed:   true,
+			ToolResult: &agents.ToolResultPayload{CallID: "q-1", Output: "选 A"},
+		},
+		{
+			Type:      agents.EventMessage,
+			Backend:   agents.BackendPi,
+			Timestamp: observed.Add(6 * time.Second),
+			Replayed:  true,
+			Message:   &agents.MessagePayload{Role: "assistant", Text: "好的，测试完成！", Final: true},
+		},
+	}
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: events}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.History(context.Background(), env.projectID, session.ID)
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+
+	// Should keep: user message, q-1 tool_call, q-1 tool_result, assistant message (4 events total)
+	if len(history.Events) != 4 {
+		t.Fatalf("History returned %d events, want 4. Got: %+v", len(history.Events), history.Events)
+	}
+
+	expectedTypes := []agents.EventType{
+		agents.EventMessage,
+		agents.EventToolCall,
+		agents.EventToolResult,
+		agents.EventMessage,
+	}
+	for i, wantType := range expectedTypes {
+		if history.Events[i].Type != wantType {
+			t.Errorf("history.Events[%d].Type = %s, want %s", i, history.Events[i].Type, wantType)
+		}
+	}
+	if history.Events[1].ToolCall.CallID != "q-1" {
+		t.Errorf("tool_call callId = %s, want q-1", history.Events[1].ToolCall.CallID)
+	}
+	if history.Events[2].ToolResult.CallID != "q-1" {
+		t.Errorf("tool_result callId = %s, want q-1", history.Events[2].ToolResult.CallID)
+	}
+}
+
 // TestHistoryTruncatedFlagPropagates pins that the truncation verdict comes
 // from the adapter that did the bounding, not from the service re-deriving it.
 func TestHistoryTruncatedFlagPropagates(t *testing.T) {

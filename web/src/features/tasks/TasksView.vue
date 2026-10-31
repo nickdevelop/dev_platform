@@ -7,7 +7,7 @@ import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
 import TaskCreatePanel from './TaskCreatePanel.vue'
 import TaskDetailView from './TaskDetailView.vue'
-import { UiButton, UiEmpty } from '../../shared/ui'
+import { UiButton } from '../../shared/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,7 +64,7 @@ function onCancelCreate() {
 </script>
 
 <template>
-  <main class="tasks-workbench flex flex-col h-full min-h-0 overflow-hidden bg-slate-50 dark:bg-slate-950" data-test="tasks-workbench">
+  <main class="tasks-workbench flex flex-col h-full min-h-0 overflow-hidden" data-test="tasks-workbench">
     <!-- 1. Task Creation Panel -->
     <template v-if="isNewRoute">
       <TaskCreatePanel
@@ -83,30 +83,87 @@ function onCancelCreate() {
 
     <!-- 3. Empty Workbench Guidance -->
     <template v-else>
-      <div class="empty-workbench flex items-center justify-center h-full p-8" data-test="empty-workbench">
-        <div class="empty-card max-w-md w-full p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
-          <UiEmpty
-            title="任务中心"
-            description="任务模块支持将 Agent 会话配置为可复用的模板，并支持手动触发、定时触发或周期性自动运行。"
-          >
-            <template #icon>
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+      <div class="empty-workbench flex items-center justify-center h-full p-6 md:p-12 overflow-y-auto" data-test="empty-workbench">
+        <div class="max-w-2xl w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius,6px)] p-8 md:p-10 flex flex-col gap-8">
+          <!-- Header info -->
+          <div class="space-y-2">
+            <div class="inline-flex items-center gap-2 text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] px-2.5 py-1 rounded border border-[var(--color-border)]">
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" />
+                <polyline points="8 4.5 8 8 10.5 9.5" />
               </svg>
-            </template>
-            <template #actions>
-              <UiButton
-                variant="primary"
-                class="btn-new-task-cta"
-                data-test="btn-create-first-task"
-                @click="router.push({ name: 'task-new' })"
-              >
-                + 创建第一个任务
-              </UiButton>
-            </template>
-          </UiEmpty>
+              <span>自动化会话中枢</span>
+            </div>
+            <h1 class="text-xl md:text-2xl font-semibold text-[var(--color-text)] tracking-tight">
+              任务中心
+            </h1>
+            <p class="text-sm text-[var(--color-text-muted)] leading-relaxed max-w-xl">
+              任务模块支持将 Agent 会话配置为可复用的模板，支持手动触发、未来时间点定时执行或标准 Cron 周期性自动化循环运行。
+            </p>
+          </div>
+
+          <!-- Feature trio -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="p-4 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] flex flex-col gap-2">
+              <span class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" class="text-[var(--color-primary)]">
+                  <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" />
+                  <line x1="5.5" y1="6" x2="10.5" y2="6" />
+                  <line x1="5.5" y1="9" x2="8.5" y2="9" />
+                </svg>
+                会话模板化
+              </span>
+              <p class="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                预设项目环境、模型与提示词规则，保障多轮执行的稳定性与一致性。
+              </p>
+            </div>
+
+            <div class="p-4 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] flex flex-col gap-2">
+              <span class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" class="text-[var(--color-primary)]">
+                  <circle cx="8" cy="8" r="6" />
+                  <polyline points="8 4.5 8 8 10.5 9.5" />
+                </svg>
+                灵活调度策略
+              </span>
+              <p class="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                支持手动单次、指定未来时刻运行，或按 Cron 表达式定期巡检。
+              </p>
+            </div>
+
+            <div class="p-4 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] flex flex-col gap-2">
+              <span class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" class="text-[var(--color-primary)]">
+                  <path d="M2.5 4h11v7H5l-2.5 2.5V4z" />
+                </svg>
+                独立运行记录
+              </span>
+              <p class="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                每次执行自动生成完整对话历史与状态沉淀，随时回溯与介入操作。
+              </p>
+            </div>
+          </div>
+
+          <!-- Bottom Action -->
+          <div class="pt-2 border-t border-[var(--color-border)] flex items-center justify-between gap-4 flex-wrap">
+            <span class="text-xs text-[var(--color-text-muted)]">
+              创建后即可在列表中直接执行与排期监控。
+            </span>
+            <UiButton
+              variant="primary"
+              class="btn-new-task-cta px-4 py-2 font-medium text-xs"
+              data-test="btn-create-first-task"
+              @click="router.push({ name: 'task-new' })"
+            >
+              + 创建第一个任务
+            </UiButton>
+          </div>
         </div>
       </div>
     </template>
   </main>
 </template>
+
+<style scoped>
+@import './tasks-view.css';
+</style>

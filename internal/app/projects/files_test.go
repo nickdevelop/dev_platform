@@ -115,9 +115,9 @@ func TestSearchFiles_NonGit(t *testing.T) {
 		t.Fatalf("expected workspace files not found: %v", paths)
 	}
 
-	// Must hide dot files and dot folders
-	if paths[".env"] || paths[".hidden_dir"] || paths[".hidden_dir/secret.js"] {
-		t.Fatalf("hidden items leaked into non-git results: %v", paths)
+	// Must include dot files and dot folders (only .git is skipped)
+	if !paths[".env"] || !paths[".hidden_dir"] || !paths[".hidden_dir/secret.js"] {
+		t.Fatalf("dot items missing from non-git results: %v", paths)
 	}
 
 	// 2. Search with query "helper"
@@ -190,9 +190,12 @@ func TestSearchFiles_GitProject(t *testing.T) {
 		t.Fatalf("expected git files not found: %v", paths)
 	}
 
-	// .gitignore excluded items (debug.log, node_modules) and .git must be filtered
-	if paths["debug.log"] || paths["node_modules/dep.js"] || paths[".git"] || paths[".git/config"] {
-		t.Fatalf("git ignored files leaked into results: %v", paths)
+	// .gitignore items (debug.log, node_modules/dep.js) must be present; only .git must be filtered
+	if !paths["debug.log"] || !paths["node_modules/dep.js"] {
+		t.Fatalf("expected gitignore files not found: %v", paths)
+	}
+	if paths[".git"] || paths[".git/config"] {
+		t.Fatalf(".git metadata directory leaked into results: %v", paths)
 	}
 }
 
@@ -230,20 +233,28 @@ func TestGetFileTree_NonGit(t *testing.T) {
 		t.Fatalf("GetFileTree: %v", err)
 	}
 
-	// README.md, src (dir) -> utils (dir) -> helper.go
-	if len(tree) != 2 {
-		t.Fatalf("expected 2 root items (src dir and README.md), got %d: %+v", len(tree), tree)
+	// In non-git directory without filtering:
+	// dirs: .hidden_dir, src
+	// files: .env, README.md
+	if len(tree) != 4 {
+		t.Fatalf("expected 4 root items (.hidden_dir, src, .env, README.md), got %d: %+v", len(tree), tree)
 	}
 
-	// Directories first: src should be first, then README.md
-	if tree[0].Name != "src" || !tree[0].IsDir {
-		t.Errorf("expected first item to be src directory, got: %+v", tree[0])
+	// Directories first, sorted by name
+	if tree[0].Name != ".hidden_dir" || !tree[0].IsDir {
+		t.Errorf("expected first item to be .hidden_dir, got: %+v", tree[0])
 	}
-	if tree[1].Name != "README.md" || tree[1].IsDir {
-		t.Errorf("expected second item to be README.md file, got: %+v", tree[1])
+	if tree[1].Name != "src" || !tree[1].IsDir {
+		t.Errorf("expected second item to be src, got: %+v", tree[1])
+	}
+	if tree[2].Name != ".env" || tree[2].IsDir {
+		t.Errorf("expected third item to be .env, got: %+v", tree[2])
+	}
+	if tree[3].Name != "README.md" || tree[3].IsDir {
+		t.Errorf("expected fourth item to be README.md, got: %+v", tree[3])
 	}
 
-	if len(tree[0].Children) == 0 {
+	if len(tree[1].Children) == 0 {
 		t.Fatalf("expected src to have children, got none")
 	}
 }

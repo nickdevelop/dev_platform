@@ -96,6 +96,7 @@ function getProjectName(pid: number) {
 
 <template>
   <div class="tasks-sidebar" aria-label="任务列表">
+    <!-- Top dedicated action button -->
     <div class="sidebar-actions">
       <button
         type="button"
@@ -103,10 +104,15 @@ function getProjectName(pid: number) {
         data-test="btn-new-task"
         @click="openCreateView"
       >
-        + 新建
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="8" y1="3" x2="8" y2="13" />
+          <line x1="3" y1="8" x2="13" y2="8" />
+        </svg>
+        <span>新建任务</span>
       </button>
     </div>
 
+    <!-- Search input -->
     <input
       v-model="searchKeyword"
       type="search"
@@ -115,6 +121,7 @@ function getProjectName(pid: number) {
       aria-label="搜索任务名称或描述"
     />
 
+    <!-- Filter dropdowns -->
     <div class="sidebar-filters">
       <UiSelectMenu
         v-model="selectedProjectFilter"
@@ -135,14 +142,20 @@ function getProjectName(pid: number) {
       />
     </div>
 
-    <!-- Task items list: styled consistently with ProjectSessionItem -->
-    <div class="task-list">
-      <p v-if="filteredTasks.length === 0" class="empty-list">暂无匹配任务</p>
+    <!-- Task list items -->
+    <div class="task-list" role="list">
+      <p v-if="filteredTasks.length === 0" class="empty-list">
+        {{ searchKeyword.trim() ? '暂无匹配任务' : '暂无任务，点击上方新建' }}
+      </p>
+
       <div
         v-for="t in filteredTasks"
         :key="t.id"
         class="task-card"
-        :class="{ active: activeTaskId === t.id }"
+        :class="[
+          { active: activeTaskId === t.id },
+          `status-${t.lastRunStatus || 'idle'}`
+        ]"
         data-test="task-card"
         tabindex="0"
         role="button"
@@ -151,32 +164,44 @@ function getProjectName(pid: number) {
         @keydown.enter.prevent="selectTask(t.id)"
         @keydown.space.prevent="selectTask(t.id)"
       >
-        <!-- Row 1: Badges + Title -->
+        <!-- Row 1: Title + Status Pill -->
         <div class="task-row-top">
-          <span class="type-pill" :class="t.taskType">
-            {{ getTaskTypeLabel(t.taskType) }}
-          </span>
-          <span class="status-badge" :class="getRunStatusBadgeClass(t.lastRunStatus)">
+          <span class="task-title" :title="t.title">{{ t.title }}</span>
+          <span
+            class="status-badge"
+            :class="getRunStatusBadgeClass(t.lastRunStatus)"
+          >
             {{ getRunStatusLabel(t.lastRunStatus) }}
           </span>
-          <span class="task-title" :title="t.title">{{ t.title }}</span>
         </div>
 
-        <!-- Row 2: Meta (Project name + Schedule tag) -->
+        <!-- Row 2: Type pill, Project name & Schedule tag -->
         <div class="task-row-bottom">
-          <span class="meta-project" :title="getProjectName(t.projectId)">
-            {{ getProjectName(t.projectId) }}
-          </span>
-          <span class="meta-schedule">
-            {{ getScheduleTypeLabel(t.scheduleType) }}
-          </span>
-          <span v-if="t.scheduleEnabled && t.scheduleType === 'cron'" class="schedule-tag" :title="`周期: ${t.cronExpr}`">
-            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
-              <circle cx="8" cy="8" r="6.5" />
-              <polyline points="8 4 8 8 11 10" />
-            </svg>
-            <span>{{ t.cronExpr }}</span>
-          </span>
+          <div class="flex items-center gap-1.5 min-w-0 overflow-hidden">
+            <span class="type-pill" :class="t.taskType">
+              {{ getTaskTypeLabel(t.taskType) }}
+            </span>
+            <span class="meta-project" :title="getProjectName(t.projectId)">
+              {{ getProjectName(t.projectId) }}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1 shrink-0">
+            <span
+              v-if="t.scheduleEnabled && t.scheduleType === 'cron'"
+              class="schedule-tag"
+              :title="`Cron: ${t.cronExpr}`"
+            >
+              <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" />
+                <polyline points="8 4.5 8 8 10.5 9.5" />
+              </svg>
+              <span>{{ t.cronExpr }}</span>
+            </span>
+            <span v-else class="meta-schedule text-slate-500">
+              {{ getScheduleTypeLabel(t.scheduleType) }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -184,221 +209,5 @@ function getProjectName(pid: number) {
 </template>
 
 <style scoped>
-.tasks-sidebar {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
-}
-
-.sidebar-actions {
-  display: flex;
-  gap: 6px;
-  padding: 0 12px 8px 12px;
-}
-
-.action-btn,
-.new-task-btn {
-  flex: 1;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-radius: var(--radius, 4px);
-  padding: 0 8px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
-  white-space: nowrap;
-}
-
-.action-btn:hover,
-.new-task-btn:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-border-strong);
-  color: var(--color-text);
-}
-
-.search,
-.search-input {
-  margin: 0 12px 6px 12px;
-  padding: 4px 10px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius, 4px);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.12s ease-out;
-}
-
-.search:focus,
-.search-input:focus {
-  border-color: var(--color-accent, #4a8ad6);
-}
-
-.search::placeholder,
-.search-input::placeholder {
-  color: var(--color-text-muted);
-}
-
-.sidebar-filters {
-  display: flex;
-  gap: 6px;
-  padding: 0 12px 8px 12px;
-}
-
-.filter-select {
-  flex: 1;
-  min-width: 0;
-}
-
-.task-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 8px 16px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.empty-list {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  text-align: center;
-  margin: 24px 0;
-}
-
-.task-card {
-  padding: 6px 8px;
-  border-radius: var(--radius, 4px);
-  border-left: 2px solid transparent;
-  background: transparent;
-  color: var(--color-text);
-  cursor: pointer;
-  outline: none;
-  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
-  user-select: none;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.task-card:hover {
-  background: var(--color-surface-muted);
-}
-
-.task-card.active {
-  border-left-color: var(--color-accent, #4a8ad6);
-  background: var(--color-surface-muted);
-  font-weight: 500;
-}
-
-.task-row-top {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-}
-
-.type-pill {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 0 4px;
-  height: 16px;
-  line-height: 16px;
-  border-radius: 3px;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-}
-
-.type-pill.flow {
-  border-color: color-mix(in srgb, var(--color-accent, #4a8ad6) 40%, transparent);
-  color: var(--color-accent, #4a8ad6);
-}
-
-.status-badge {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 0 4px;
-  height: 16px;
-  line-height: 16px;
-  border-radius: 3px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-muted);
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-}
-
-.status-badge.badge-running {
-  background: color-mix(in srgb, var(--color-accent, #4a8ad6) 15%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent, #4a8ad6) 35%, transparent);
-  color: var(--color-accent, #4a8ad6);
-}
-
-.status-badge.badge-success {
-  background: color-mix(in srgb, var(--color-success, #44a282) 15%, transparent);
-  border-color: color-mix(in srgb, var(--color-success, #44a282) 35%, transparent);
-  color: var(--color-success, #44a282);
-}
-
-.status-badge.badge-failed {
-  background: color-mix(in srgb, var(--color-danger, #e5566f) 15%, transparent);
-  border-color: color-mix(in srgb, var(--color-danger, #e5566f) 35%, transparent);
-  color: var(--color-danger, #e5566f);
-}
-
-.task-title {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.task-row-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.meta-project {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 120px;
-}
-
-.meta-schedule {
-  flex-shrink: 0;
-}
-
-.schedule-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-  flex-shrink: 0;
-}
+@import './tasks-view.css';
 </style>

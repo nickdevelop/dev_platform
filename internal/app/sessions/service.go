@@ -751,7 +751,41 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 			_ = s.store.TouchUpdatedAt(row.ID, lastTime)
 		}
 	}
-	return History{Events: events, Truncated: result.Truncated}, nil
+	return History{Events: filterHistoryEvents(events), Truncated: result.Truncated}, nil
+}
+
+// filterHistoryEvents restricts replayed transcript events to messages and
+// user question interactions (the entries rendered in the primary chat panel).
+// Reasoning (thinking) and non-question tool activity are stripped to minimize
+// network payload and client memory.
+func filterHistoryEvents(events []agents.NormalizedEvent) []agents.NormalizedEvent {
+	questionCallIDs := make(map[string]struct{})
+	for _, event := range events {
+		if event.Type == agents.EventToolCall && event.ToolCall != nil && agents.IsQuestionTool(event.ToolCall.Name) {
+			questionCallIDs[event.ToolCall.CallID] = struct{}{}
+		}
+	}
+
+	filtered := make([]agents.NormalizedEvent, 0, len(events))
+	for _, event := range events {
+		switch event.Type {
+		case agents.EventMessage, agents.EventError:
+			filtered = append(filtered, event)
+		case agents.EventToolCall:
+			if event.ToolCall != nil {
+				if _, ok := questionCallIDs[event.ToolCall.CallID]; ok {
+					filtered = append(filtered, event)
+				}
+			}
+		case agents.EventToolResult:
+			if event.ToolResult != nil {
+				if _, ok := questionCallIDs[event.ToolResult.CallID]; ok {
+					filtered = append(filtered, event)
+				}
+			}
+		}
+	}
+	return filtered
 }
 
 // TouchInteraction updates a native session's last interaction time to at.

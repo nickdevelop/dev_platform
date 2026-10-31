@@ -857,12 +857,18 @@ paths:
   /projects/{id}/git/status:
     get:
       summary: Git status of project workspace
-      description: Returns the list of changed, added, or untracked files in the workspace.
+      description: Returns the list of changed, added, or untracked files in the workspace (or a specific commit).
       operationId: getProjectGitStatus
       security:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - name: commit
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional commit hash or ref to inspect changed files in that commit.
       responses:
         '200':
           description: Git status changes.
@@ -884,6 +890,323 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/commits:
+    get:
+      summary: Recent Git commits of project workspace
+      description: Returns recent commits of the project's Git repository.
+      operationId: getProjectGitCommits
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+          description: Maximum number of commits to return.
+      responses:
+        '200':
+          description: List of recent commits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commits]
+                properties:
+                  commits:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GitCommitItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/diff:
+    get:
+      summary: Unified diff of a file in the workspace
+      description: Returns the unified diff and change statistics of a file for working tree changes or a specific commit.
+      operationId: getProjectGitFileDiff
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Relative path of the file to diff.
+        - name: commit
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional commit hash or ref to diff against its parent commit.
+      responses:
+        '200':
+          description: File unified diff and change stats.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitFileDiffResponse'
+        '400':
+          description: Invalid request or missing path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/stage:
+    post:
+      summary: Stage files in git workspace
+      description: Adds specified files or all files to git index.
+      operationId: stageProjectGitFiles
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paths:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Files staged successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/unstage:
+    post:
+      summary: Unstage files in git workspace
+      description: Removes specified files or all files from git index.
+      operationId: unstageProjectGitFiles
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paths:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Files unstaged successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/discard:
+    post:
+      summary: Discard file changes in git workspace
+      description: Restores a tracked file or deletes an untracked file.
+      operationId: discardProjectGitFileChanges
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+      responses:
+        '200':
+          description: Changes discarded successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/commit:
+    post:
+      summary: Commit staged changes in git workspace
+      description: Creates a git commit with provided commit message.
+      operationId: commitProjectGitChanges
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+      responses:
+        '200':
+          description: Commit created successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitCommitItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/git/branches:
+    get:
+      summary: List local branches in git workspace
+      description: Returns all local branches and the currently active branch.
+      operationId: listProjectGitBranches
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Branch list and active branch.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  branches:
+                    type: array
+                    items:
+                      type: string
+                  current:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Switch or create git branch
+      description: Switches to existing branch or creates a new branch.
+      operationId: checkoutProjectGitBranch
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branch
+              properties:
+                branch:
+                  type: string
+                create:
+                  type: boolean
+      responses:
+        '200':
+          description: Branch switched or created successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '500':
           $ref: '#/components/responses/InternalError'
   /agent-backends/{backend}/models:
@@ -5440,6 +5763,43 @@ components:
         status:
           type: string
           enum: [modified, added, deleted, untracked, renamed]
+      additionalProperties: false
+    GitCommitItem:
+      type: object
+      required: [hash, shortHash, message, author, date, timestamp]
+      properties:
+        hash:
+          type: string
+        shortHash:
+          type: string
+        message:
+          type: string
+        author:
+          type: string
+        date:
+          type: string
+        timestamp:
+          type: integer
+          format: int64
+      additionalProperties: false
+    GitFileDiffResponse:
+      type: object
+      required: [path, status, patch, additions, deletions, isBinary]
+      properties:
+        path:
+          type: string
+        oldPath:
+          type: string
+        status:
+          type: string
+        patch:
+          type: string
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        isBinary:
+          type: boolean
       additionalProperties: false
     AgentCommand:
       type: object

@@ -25,9 +25,45 @@ export type GitFileChangeStatus = 'modified' | 'added' | 'deleted' | 'untracked'
 export interface GitStatusItem {
   path: string
   status: GitFileChangeStatus
+  staged?: boolean
+}
+
+export interface GitBranchesResponse {
+  branches: string[]
+  current: string
+}
+
+export interface GitCommitItem {
+  hash: string
+  shortHash: string
+  message: string
+  author: string
+  date: string
+  timestamp: number
+}
+
+export interface GitFileDiffResponse {
+  path: string
+  oldPath?: string
+  status: GitFileChangeStatus | string
+  patch: string
+  additions: number
+  deletions: number
+  isBinary: boolean
 }
 
 export interface FileTab {
   path: string
   name: string
+  mode?: 'view' | 'diff'
+  commitRef?: string
+}
+
+export interface ChangeTreeNode {
+  name: string
+  path: string
+  isDir: boolean
+  status?: GitFileChangeStatus
+  children?: ChangeTreeNode[]
+  changeCount?: number
 }

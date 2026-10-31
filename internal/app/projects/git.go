@@ -1,12 +1,32 @@
 package projects
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// GitCommitItem represents one commit in the git repository.
+type GitCommitItem struct {
+	Hash      string `json:"hash"`
+	ShortHash string `json:"shortHash"`
+	Message   string `json:"message"`
+	Author    string `json:"author"`
+	Date      string `json:"date"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+var safeCommitRefRegex = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$|^HEAD(~[0-9]+)?(\^[0-9]*)?$`)
+
+// isValidCommitRef checks whether a git ref is safe and well-formed.
+func isValidCommitRef(ref string) bool {
+	return safeCommitRefRegex.MatchString(ref)
+}
 
 // gitTimeout bounds every git probe so a hung filesystem cannot hold an API
 // worker. Branch display is best-effort UI data, never worth waiting for.
@@ -34,6 +54,66 @@ func (s *Service) GitInfo(ctx context.Context, projectID uint) (GitInfo, error) 
 		return GitInfo{}, err
 	}
 	return probeGitDir(ctx, row.Path), nil
+}
+
+// GitCommits returns the recent commits of a project's git repository.
+// If the directory is not inside a git work tree, git is unavailable, or the repository
+// has no commits yet, it returns an empty slice without an error.
+func (s *Service) GitCommits(ctx context.Context, projectID uint, limit int) ([]GitCommitItem, error) {
+	row, err := s.load(projectID)
+	if err != nil {
+		return nil, err
+	}
+	if !s.isGitDir(ctx, row.Path) {
+		return []GitCommitItem{}, nil
+	}
+
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 50 {
+		limit = 50
+	}
+
+	// Format: <hash>\x00<shortHash>\x00<authorName>\x00<unixTimestamp>\x00<subject>\n
+	out, err := gitOutputLimit(ctx, row.Path, 1<<20, "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x00%h%x00%an%x00%at%x00%s")
+	if err != nil || strings.TrimSpace(out) == "" {
+		return []GitCommitItem{}, nil
+	}
+
+	var commits []GitCommitItem
+	scanner := bufio.NewScanner(strings.NewReader(out))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\x00")
+		if len(parts) < 5 {
+			continue
+		}
+
+		hash := parts[0]
+		shortHash := parts[1]
+		author := parts[2]
+		ts, _ := strconv.ParseInt(parts[3], 10, 64)
+		subject := parts[4]
+
+		dateStr := ""
+		if ts > 0 {
+			dateStr = time.Unix(ts, 0).Format(time.RFC3339)
+		}
+
+		commits = append(commits, GitCommitItem{
+			Hash:      hash,
+			ShortHash: shortHash,
+			Message:   subject,
+			Author:    author,
+			Date:      dateStr,
+			Timestamp: ts,
+		})
+	}
+
+	return commits, nil
 }
 
 // probeGitDir inspects directory with the git CLI. Any failure — missing git,
