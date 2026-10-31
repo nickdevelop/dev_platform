@@ -25,6 +25,7 @@ playwright-report/
 
 # release.sh output (packages + SHA256SUMS)
 /release/
+*.tar.gz
 
 # Environment / local secrets
 .env
