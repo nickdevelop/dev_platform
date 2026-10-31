@@ -95,16 +95,17 @@ function getProjectName(pid: number) {
 </script>
 
 <template>
-  <div class="tasks-sidebar" aria-label="任务列表">
+  <div class="tasks-sidebar sidebar-panel" aria-label="任务列表">
     <!-- Top dedicated action button -->
     <div class="sidebar-actions">
       <button
         type="button"
         class="action-btn new-task-btn"
         data-test="btn-new-task"
+        title="新建定时或流式任务"
         @click="openCreateView"
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="8" y1="3" x2="8" y2="13" />
           <line x1="3" y1="8" x2="13" y2="8" />
         </svg>
@@ -112,14 +113,33 @@ function getProjectName(pid: number) {
       </button>
     </div>
 
-    <!-- Search input -->
-    <input
-      v-model="searchKeyword"
-      type="search"
-      class="search search-input"
-      placeholder="搜索任务名称或描述"
-      aria-label="搜索任务名称或描述"
-    />
+    <!-- Search input with inset magnifier -->
+    <div class="sidebar-search-bar">
+      <svg class="sidebar-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke-linecap="round" />
+      </svg>
+      <input
+        v-model="searchKeyword"
+        type="search"
+        class="search search-input sidebar-search-input"
+        placeholder="搜索任务名称或描述"
+        aria-label="搜索任务名称或描述"
+      />
+      <button
+        v-if="searchKeyword"
+        type="button"
+        class="sidebar-search-clear"
+        title="清空搜索"
+        aria-label="清空搜索"
+        @click="searchKeyword = ''"
+      >
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="4" x2="12" y2="12" />
+          <line x1="12" y1="4" x2="4" y2="12" />
+        </svg>
+      </button>
+    </div>
 
     <!-- Filter dropdowns -->
     <div class="sidebar-filters">
@@ -143,15 +163,15 @@ function getProjectName(pid: number) {
     </div>
 
     <!-- Task list items -->
-    <div class="task-list" role="list">
-      <p v-if="filteredTasks.length === 0" class="empty-list">
+    <div class="task-list sidebar-list-container" role="list">
+      <p v-if="filteredTasks.length === 0" class="empty-list sidebar-empty">
         {{ searchKeyword.trim() ? '暂无匹配任务' : '暂无任务，点击上方新建' }}
       </p>
 
       <div
         v-for="t in filteredTasks"
         :key="t.id"
-        class="task-card"
+        class="task-card sidebar-card"
         :class="[
           { active: activeTaskId === t.id },
           `status-${t.lastRunStatus || 'idle'}`
@@ -165,8 +185,8 @@ function getProjectName(pid: number) {
         @keydown.space.prevent="selectTask(t.id)"
       >
         <!-- Row 1: Title + Status Pill -->
-        <div class="task-row-top">
-          <span class="task-title" :title="t.title">{{ t.title }}</span>
+        <div class="task-row-top sidebar-card-row-top">
+          <span class="task-title sidebar-card-title" :title="t.title">{{ t.title }}</span>
           <span
             class="status-badge"
             :class="getRunStatusBadgeClass(t.lastRunStatus)"
@@ -176,12 +196,12 @@ function getProjectName(pid: number) {
         </div>
 
         <!-- Row 2: Type pill, Project name & Schedule tag -->
-        <div class="task-row-bottom">
+        <div class="task-row-bottom sidebar-card-row-bottom">
           <div class="flex items-center gap-1.5 min-w-0 overflow-hidden">
             <span class="type-pill" :class="t.taskType">
               {{ getTaskTypeLabel(t.taskType) }}
             </span>
-            <span class="meta-project" :title="getProjectName(t.projectId)">
+            <span class="meta-project sidebar-card-meta" :title="getProjectName(t.projectId)">
               {{ getProjectName(t.projectId) }}
             </span>
           </div>

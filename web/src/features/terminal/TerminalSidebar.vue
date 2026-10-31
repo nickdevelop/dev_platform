@@ -69,25 +69,51 @@ function onConnect(serverId: number) {
 </script>
 
 <template>
-  <div class="terminal-sidebar" aria-label="服务器列表">
+  <div class="terminal-sidebar sidebar-panel" aria-label="服务器列表">
+    <!-- Zone A: Dedicated actions row -->
     <div class="sidebar-actions">
       <button
         type="button"
         class="action-btn create-server-btn"
         data-test="create-server-btn"
+        title="添加新的远程 SSH 服务器连接"
         @click="openCreateDialog"
       >
-        + 新增服务器
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="3" x2="8" y2="13" />
+          <line x1="3" y1="8" x2="13" y2="8" />
+        </svg>
+        <span>新增服务器</span>
       </button>
     </div>
 
-    <input
-      v-model="searchKeyword"
-      type="search"
-      class="search"
-      placeholder="搜索服务器名称或主机"
-      aria-label="搜索服务器名称或主机"
-    />
+    <!-- Zone B: Search input with inset magnifier -->
+    <div class="sidebar-search-bar">
+      <svg class="sidebar-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke-linecap="round" />
+      </svg>
+      <input
+        v-model="searchKeyword"
+        type="search"
+        class="search sidebar-search-input"
+        placeholder="搜索服务器名称或主机"
+        aria-label="搜索服务器名称或主机"
+      />
+      <button
+        v-if="searchKeyword"
+        type="button"
+        class="sidebar-search-clear"
+        title="清空搜索"
+        aria-label="清空搜索"
+        @click="searchKeyword = ''"
+      >
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="4" x2="12" y2="12" />
+          <line x1="12" y1="4" x2="4" y2="12" />
+        </svg>
+      </button>
+    </div>
 
     <div v-if="!terminalStore.isSupported" class="platform-warning flex items-center gap-1.5" role="alert">
       <svg class="shrink-0 text-amber-500" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -98,28 +124,29 @@ function onConnect(serverId: number) {
       <span>该功能仅在 Linux 服务器环境中支持，当前宿主暂不支持本地终端。</span>
     </div>
 
-    <div class="server-list-container">
+    <!-- Zone C: Server list container -->
+    <div class="server-list-container sidebar-list-container">
       <!-- 1. Local Server -->
       <div v-if="localServer" class="server-section">
         <div class="section-title">本地环境</div>
         <div
-          class="server-card local-card"
+          class="server-card local-card sidebar-card group"
           :class="{
             active: terminalStore.activeServerId === 0,
             disabled: !terminalStore.isSupported,
           }"
+          role="button"
+          tabindex="0"
           @click="terminalStore.selectServer(0)"
+          @keydown.enter.prevent="terminalStore.selectServer(0)"
+          @keydown.space.prevent="terminalStore.selectServer(0)"
         >
-          <div class="server-card-main">
-            <div class="server-name-row">
-              <span class="server-name">{{ localServer.name }}</span>
-              <span class="badge local-badge">本机</span>
+          <!-- Row 1: Name + Badge + Connect button -->
+          <div class="sidebar-card-row-top">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+              <span class="server-name sidebar-card-title" :title="localServer.name">{{ localServer.name }}</span>
+              <span class="badge local-badge sidebar-card-badge">本机</span>
             </div>
-            <div class="server-sub">
-              {{ terminalStore.isSupported ? '内置 PTY 终端 Shell' : '当前系统不支持' }}
-            </div>
-          </div>
-          <div class="server-card-actions">
             <button
               type="button"
               class="btn-connect"
@@ -129,6 +156,13 @@ function onConnect(serverId: number) {
             >
               连接
             </button>
+          </div>
+
+          <!-- Row 2: Subtext / Status -->
+          <div class="sidebar-card-row-bottom">
+            <span class="server-sub sidebar-card-meta">
+              {{ terminalStore.isSupported ? '内置 PTY 终端 Shell' : '当前系统不支持' }}
+            </span>
           </div>
         </div>
       </div>
@@ -140,7 +174,7 @@ function onConnect(serverId: number) {
           <span class="count-tag">{{ remoteServers.length }}</span>
         </div>
 
-        <div v-if="remoteServers.length === 0" class="empty-state">
+        <div v-if="remoteServers.length === 0" class="empty-state sidebar-empty">
           <p class="empty-tip">暂无第三方服务器</p>
           <button type="button" class="btn-empty-add" @click="openCreateDialog">
             点击添加远程服务器
@@ -151,51 +185,60 @@ function onConnect(serverId: number) {
           <div
             v-for="srv in remoteServers"
             :key="srv.id"
-            class="server-card"
+            class="server-card sidebar-card group"
             :class="{ active: terminalStore.activeServerId === srv.id }"
+            role="button"
+            tabindex="0"
             @click="terminalStore.selectServer(srv.id)"
+            @keydown.enter.prevent="terminalStore.selectServer(srv.id)"
+            @keydown.space.prevent="terminalStore.selectServer(srv.id)"
           >
-            <div class="server-card-main">
-              <div class="server-name-row">
-                <span class="server-name">{{ srv.name }}</span>
-                <span class="badge" :class="srv.auth_type">
+            <!-- Row 1: Server Name + Auth Badge + Connect button -->
+            <div class="sidebar-card-row-top">
+              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                <span class="server-name sidebar-card-title" :title="srv.name">{{ srv.name }}</span>
+                <span class="badge sidebar-card-badge" :class="srv.auth_type">
                   {{ srv.auth_type === 'key' ? '私钥' : '密码' }}
                 </span>
-                    <button
-                    type="button"
-                    class="btn-connect"
-                    title="打开终端连接"
-                    @click.stop="onConnect(srv.id)"
-                  >
-                    连接
-                  </button>
               </div>
-              <div class="server-sub-row">
-                <span class="server-sub">
-                  {{ srv.username }}@{{ srv.host }}:{{ srv.port }}
-                </span>
-                <button
-                type="button"
-                class="btn-icon"
-                title="编辑"
-                @click.stop="openEditDialog(srv)"
-              >
-                <svg viewBox="0 0 24 24" class="action-icon">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
               <button
                 type="button"
-                class="btn-icon danger"
-                title="删除"
-                @click.stop="openDeleteConfirm(srv)"
+                class="btn-connect"
+                title="打开终端连接"
+                @click.stop="onConnect(srv.id)"
               >
-                <svg viewBox="0 0 24 24" class="action-icon">
-                  <polyline points="3 6 5 6 21 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
+                连接
               </button>
+            </div>
+
+            <!-- Row 2: Host string + Hover Actions (Edit/Delete) -->
+            <div class="sidebar-card-row-bottom">
+              <span class="server-sub sidebar-card-meta" :title="`${srv.username}@${srv.host}:${srv.port}`">
+                {{ srv.username }}@{{ srv.host }}:{{ srv.port }}
+              </span>
+              <div class="server-card-actions sidebar-card-actions" @click.stop>
+                <button
+                  type="button"
+                  class="btn-icon sidebar-icon-btn"
+                  title="编辑服务器配置"
+                  :aria-label="`编辑服务器「${srv.name}」`"
+                  @click.stop="openEditDialog(srv)"
+                >
+                  <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  class="btn-icon danger sidebar-icon-btn"
+                  title="删除服务器配置"
+                  :aria-label="`删除服务器「${srv.name}」`"
+                  @click.stop="openDeleteConfirm(srv)"
+                >
+                  <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
@@ -244,63 +287,6 @@ function onConnect(serverId: number) {
   color: var(--color-text);
 }
 
-.sidebar-actions {
-  display: flex;
-  gap: 6px;
-  padding: 0 12px 8px 12px;
-}
-
-.action-btn,
-.create-server-btn {
-  flex: 1;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-radius: var(--radius, 4px);
-  padding: 0 8px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
-  white-space: nowrap;
-}
-
-.action-btn:hover,
-.create-server-btn:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-border-strong);
-  color: var(--color-text);
-}
-
-.search {
-  margin: 0 12px 8px 12px;
-  padding: 4px 10px;
-  height: 28px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius, 4px);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.12s ease-out;
-}
-
-.search:focus {
-  border-color: var(--color-accent, #4a8ad6);
-}
-
-.search::placeholder {
-  color: var(--color-text-muted);
-}
-
 .platform-warning {
   margin: 0 12px 8px 12px;
   padding: 6px 8px;
@@ -310,16 +296,6 @@ function onConnect(serverId: number) {
   font-size: 11px;
   color: var(--color-warning, #d9a441);
   line-height: 1.4;
-}
-
-.server-list-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 8px 16px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .server-section {
@@ -335,7 +311,7 @@ function onConnect(serverId: number) {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-muted);
-  padding: 0 6px;
+  padding: 0 4px;
   letter-spacing: 0.3px;
 }
 
@@ -352,78 +328,12 @@ function onConnect(serverId: number) {
 .remote-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.server-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--radius, 4px);
-  border-left: 2px solid transparent;
-  background: transparent;
-  color: var(--color-text);
-  cursor: pointer;
-  outline: none;
-  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
-  user-select: none;
-}
-
-.server-card:hover {
-  background: var(--color-surface-muted);
-}
-
-.server-card.active {
-  border-left-color: var(--color-accent, #4a8ad6);
-  background: var(--color-surface-muted);
-  font-weight: 500;
+  gap: 3px;
 }
 
 .server-card.disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.server-card-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.server-name-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.server-name-row .btn-connect {
-  margin-left: auto;
-}
-
-.server-name {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--color-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.server-sub-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.server-sub-row .server-sub {
-  flex: 1;
-  min-width: 0;
 }
 
 .server-sub {
@@ -460,20 +370,6 @@ function onConnect(serverId: number) {
   color: var(--color-text-muted);
 }
 
-.server-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.12s ease-out;
-}
-
-.server-card:hover .server-card-actions,
-.server-card:focus-within .server-card-actions {
-  opacity: 1;
-}
-
 .btn-connect {
   padding: 1px 6px;
   height: 20px;
@@ -504,35 +400,24 @@ function onConnect(serverId: number) {
   border: none;
   color: var(--color-text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 0;
   width: 18px;
   height: 18px;
   border-radius: var(--radius, 4px);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.12s ease-out;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
 .btn-icon:hover {
   color: var(--color-text);
+  background: var(--color-surface);
 }
 
 .btn-icon.danger:hover {
   color: var(--color-danger, #e5566f);
-}
-
-.action-icon {
-  width: 12px;
-  height: 12px;
-}
-
-.empty-state {
-  padding: 16px 8px;
-  text-align: center;
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius, 4px);
+  background: var(--color-danger-soft, #fee2e2);
 }
 
 .empty-tip {

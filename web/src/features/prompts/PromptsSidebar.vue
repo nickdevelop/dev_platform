@@ -12,6 +12,7 @@ const promptsStore = usePromptsStore()
 
 const searchKeyword = ref('')
 const showManageDialog = ref(false)
+const editingPrompt = ref<Prompt | null>(null)
 
 onMounted(async () => {
   await promptsStore.loadPrompts()
@@ -37,26 +38,34 @@ function selectPrompt(id: number) {
 }
 
 function openCreateDialog() {
+  editingPrompt.value = null
+  showManageDialog.value = true
+}
+
+function openEditDialog(prompt: Prompt) {
+  editingPrompt.value = prompt
   showManageDialog.value = true
 }
 
 function onSaved(prompt: Prompt) {
   showManageDialog.value = false
+  editingPrompt.value = null
   selectPrompt(prompt.id)
 }
 </script>
 
 <template>
-  <div class="prompts-sidebar" aria-label="提示词列表">
-    <!-- Top action row: consistent with project and task sidebars -->
+  <div class="prompts-sidebar sidebar-panel" aria-label="提示词列表">
+    <!-- Zone A: Top action row -->
     <div class="sidebar-actions">
       <button
         type="button"
         class="action-btn new-prompt-btn"
         data-test="new-prompt-btn"
+        title="新建提示词模板"
         @click="openCreateDialog"
       >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="8" y1="3" x2="8" y2="13" />
           <line x1="3" y1="8" x2="13" y2="8" />
         </svg>
@@ -64,27 +73,46 @@ function onSaved(prompt: Prompt) {
       </button>
     </div>
 
-    <!-- Search input -->
-    <input
-      v-model="searchKeyword"
-      type="search"
-      class="search"
-      placeholder="搜索提示词名称或内容"
-      aria-label="搜索提示词名称或描述"
-      data-test="prompt-search-input"
-    />
+    <!-- Zone B: Search input with inset magnifier -->
+    <div class="sidebar-search-bar">
+      <svg class="sidebar-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke-linecap="round" />
+      </svg>
+      <input
+        v-model="searchKeyword"
+        type="search"
+        class="search sidebar-search-input"
+        placeholder="搜索提示词名称或内容"
+        aria-label="搜索提示词名称或描述"
+        data-test="prompt-search-input"
+      />
+      <button
+        v-if="searchKeyword"
+        type="button"
+        class="sidebar-search-clear"
+        title="清空搜索"
+        aria-label="清空搜索"
+        @click="searchKeyword = ''"
+      >
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="4" x2="12" y2="12" />
+          <line x1="12" y1="4" x2="4" y2="12" />
+        </svg>
+      </button>
+    </div>
 
-    <!-- Prompts list -->
-    <div class="prompts-list" role="list">
+    <!-- Zone C: Prompts list -->
+    <div class="prompts-list sidebar-list-container" role="list">
       <div
         v-if="promptsStore.loading && promptsStore.prompts.length === 0"
-        class="empty-state"
+        class="empty-state sidebar-empty"
       >
         加载中…
       </div>
       <div
         v-else-if="filteredPrompts.length === 0"
-        class="empty-state"
+        class="empty-state sidebar-empty"
       >
         {{ searchKeyword.trim() ? '未找到匹配的提示词' : '暂无提示词，点击上方新建' }}
       </div>
@@ -93,7 +121,7 @@ function onSaved(prompt: Prompt) {
         v-for="prompt in filteredPrompts"
         :key="prompt.id"
         role="listitem"
-        class="prompt-card"
+        class="prompt-card sidebar-card group"
         :class="{ active: activePromptId === prompt.id }"
         :data-test="`prompt-card-${prompt.id}`"
         tabindex="0"
@@ -102,32 +130,46 @@ function onSaved(prompt: Prompt) {
         @keydown.space.prevent="selectPrompt(prompt.id)"
       >
         <!-- Row 1: Name + Placeholder Pill -->
-        <div class="prompt-card-top">
-          <span class="prompt-card-name" :title="prompt.name">{{ prompt.name }}</span>
+        <div class="prompt-card-top sidebar-card-row-top">
+          <span class="prompt-card-name sidebar-card-title" :title="prompt.name">{{ prompt.name }}</span>
           <span
             v-if="hasUserPromptPlaceholder(prompt.content)"
-            class="placeholder-tag"
+            class="placeholder-tag sidebar-card-badge"
             title="包含 {user_prompt} 动态插值"
           >
             {user_prompt}
           </span>
         </div>
 
-        <!-- Row 2: Description or content preview -->
-        <div class="prompt-card-bottom">
-          <p v-if="prompt.description" class="prompt-card-desc truncate">
+        <!-- Row 2: Description or content preview + Hover Action -->
+        <div class="prompt-card-bottom sidebar-card-row-bottom">
+          <p v-if="prompt.description" class="prompt-card-desc sidebar-card-meta truncate" :title="prompt.description">
             {{ prompt.description }}
           </p>
-          <p v-else class="prompt-card-preview truncate">
+          <p v-else class="prompt-card-preview sidebar-card-meta truncate" :title="prompt.content">
             {{ prompt.content }}
           </p>
+          <div class="prompt-card-actions sidebar-card-actions" @click.stop>
+            <button
+              type="button"
+              class="icon-btn sidebar-icon-btn"
+              title="编辑提示词"
+              :aria-label="`编辑提示词「${prompt.name}」`"
+              @click.stop="openEditDialog(prompt)"
+            >
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
 
     <PromptManageDialog
       v-if="showManageDialog"
-      @close="showManageDialog = false"
+      :prompt="editingPrompt"
+      @close="showManageDialog = false; editingPrompt = null"
       @saved="onSaved"
     />
   </div>
@@ -140,155 +182,21 @@ function onSaved(prompt: Prompt) {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: var(--color-surface, #ffffff);
-}
-
-.sidebar-actions {
-  display: flex;
-  gap: 6px;
-  padding: 0 12px 8px 12px;
-}
-
-.action-btn,
-.new-prompt-btn {
-  flex: 1;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 28px;
-  border: 1px solid var(--color-border, #e2e8f0);
-  background: var(--color-surface, #ffffff);
-  color: var(--color-text, #1e293b);
-  border-radius: var(--radius, 6px);
-  padding: 0 10px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.12s ease-out, border-color 0.12s ease-out, color 0.12s ease-out;
-  white-space: nowrap;
-}
-
-.action-btn:hover,
-.new-prompt-btn:hover {
-  background: var(--color-surface-muted, #f1f5f9);
-  border-color: var(--color-border-strong, #cbd5e1);
-}
-
-.search {
-  margin: 0 12px 8px 12px;
-  padding: 4px 10px;
-  height: 28px;
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: var(--radius, 6px);
-  background: var(--color-surface, #ffffff);
-  color: var(--color-text, #1e293b);
-  font: inherit;
-  font-size: 12px;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.12s ease-out;
-}
-
-.search:focus {
-  border-color: var(--color-primary, #1b6c80);
-}
-
-.search::placeholder {
-  color: var(--color-text-muted, #94a3b8);
-}
-
-.prompts-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 10px 16px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.empty-state {
-  margin: 24px 8px;
-  text-align: center;
-  color: var(--color-text-muted, #64748b);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.prompt-card {
-  padding: 8px 10px;
-  border-radius: var(--radius, 6px);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-left-width: 3px;
-  border-left-color: var(--color-border, #cbd5e1);
-  background: var(--color-surface, #ffffff);
-  color: var(--color-text, #1e293b);
-  cursor: pointer;
-  outline: none;
-  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  user-select: none;
-}
-
-.prompt-card:hover {
-  background: var(--color-surface-muted, #f8fafc);
-  border-color: var(--color-border-strong, #cbd5e1);
-}
-
-.prompt-card.active {
-  background: var(--color-surface-muted, #f1f5f9);
-  border-color: var(--color-border-strong, #cbd5e1);
-  border-left-color: var(--color-primary, #1b6c80);
-}
-
-.prompt-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-}
-
-.prompt-card-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text, #1e293b);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
 }
 
 .placeholder-tag {
-  font-family: var(--font-mono, monospace);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 3px;
+  color: var(--color-accent, #4a8ad6);
   background: var(--color-surface-muted, #f1f5f9);
-  color: var(--color-text-muted, #475569);
-  border: 1px solid var(--color-border, #e2e8f0);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.prompt-card-bottom {
-  display: flex;
-  align-items: center;
-  font-size: 11px;
-  color: var(--color-text-muted, #64748b);
-  line-height: 1.3;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid var(--color-border);
 }
 
 .prompt-card-desc,
 .prompt-card-preview {
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 </style>

@@ -22,7 +22,7 @@ import { useDraftsStore } from '../../stores/drafts'
 import { useChatsStore } from '../../stores/chats'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
-import ProjectTree from '../projects/ProjectTree.vue'
+import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
@@ -46,7 +46,6 @@ const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
 const chats = useChatsStore()
 
-const search = ref('')
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
 
@@ -162,27 +161,6 @@ const isFloating = computed(() => {
 const isSidebarVisible = computed(() => {
   return isDocked.value || isFloating.value
 })
-
-// Whether task-generated sessions are shown in the project tree.
-// Defaults to false (Option B: hidden by default). Persisted in localStorage.
-const SHOW_TASK_SESSIONS_STORAGE_KEY = 'dev-platform-show-task-sessions'
-const showTaskSessions = ref(false)
-try {
-  const saved = localStorage.getItem(SHOW_TASK_SESSIONS_STORAGE_KEY)
-  if (saved !== null) {
-    showTaskSessions.value = saved === 'true'
-  }
-} catch {
-  showTaskSessions.value = false
-}
-
-function onShowTaskSessionsChange() {
-  try {
-    localStorage.setItem(SHOW_TASK_SESSIONS_STORAGE_KEY, String(showTaskSessions.value))
-  } catch {
-    // Persistence is best-effort only.
-  }
-}
 
 const projectId = computed<number | null>(() =>
   route.params.projectId === undefined ? null : Number(route.params.projectId),
@@ -739,42 +717,16 @@ watch(
       <TerminalSidebar v-else-if="terminalMode" />
       <ChatSidebar v-else-if="chatMode" />
       <SettingsNav v-else-if="settingsMode" />
-      <template v-else>
-        <div class="sidebar-actions">
-          <button type="button" class="action-btn register" @click="openManage('register')">打开项目</button>
-          <button type="button" class="action-btn create" @click="openManage('create')">新建项目</button>
-        </div>
-        <input
-          v-model="search"
-          class="search"
-          type="search"
-          placeholder="搜索项目或会话"
-          aria-label="搜索项目或会话"
-        />
-        <div class="sidebar-filter-bar">
-          <label class="filter-task-checkbox">
-            <input
-              v-model="showTaskSessions"
-              type="checkbox"
-              data-test="show-task-sessions"
-              @change="onShowTaskSessionsChange"
-            />
-            <span>显示任务会话</span>
-          </label>
-        </div>
-        <div class="tree">
-          <ProjectTree
-            :active-project-id="projectId"
-            :active-session-id="sessionId"
-            :search="search"
-            :show-task-sessions="showTaskSessions"
-            @open-settings="openSettings"
-            @select-session="openSessionTab"
-            @new-session="openNewSession"
-            @delete-session="onDeleteSession"
-          />
-        </div>
-      </template>
+      <ProjectSidebar
+        v-else
+        :active-project-id="projectId"
+        :active-session-id="sessionId"
+        @manage="openManage($event)"
+        @open-settings="openSettings"
+        @select-session="openSessionTab"
+        @new-session="openNewSession"
+        @delete-session="onDeleteSession"
+      />
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">

@@ -136,9 +136,13 @@ html, body, button, input, select, textarea {
 1. **第一栏：CategoryRail（50px 极窄全局业务轨）**：
    * 仅承载高阶功能出口（项目、会话、任务、提示词、终端、连接、设置）。
    * 图标居中，下方附 11px 单词描述；激活项通过左侧 2px 蓝线贴边。
-2. **第二栏：中间抽屉列表（Drawer）**：
+2. **第二栏：中间抽屉列表（Drawer / Sidebar）**：
    * 支持固定（Pinned）与抽屉浮出（Floating）双模；
-   * 列表项采用标准两行式紧凑布局（标题截断 + 属性元数据），高度统一。
+   * 全平台 6 个菜单（项目、对话、任务、提示词、终端、设置）统一采用 **三段式紧凑架构（Zone A Header & Actions / Zone B Search & Filter / Zone C Entity List）**，底层由 `shared/styles/sidebar.css` 标准化承载；
+   * **Zone A**：高度统一收敛为 26px 极简操作按钮，前置 1.5px 几何矢量加号 SVG 图标（杜绝纯文本 `+`）；设置页移除多余的二级 Header，保持与外壳单头部对齐；
+   * **Zone B**：统一 26px 紧凑搜索栏，内嵌 1.5px 细线条放大镜矢量图标与一键清空按钮；
+   * **Zone C**：列表项采用标准二行式紧凑布局（标题截断 + 属性元数据 + 悬浮淡入的 18×18px 微操作按钮组），高度统一；
+   * **The Move**：激活状态严格为左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）与表面阶梯底色（`var(--surface-muted)`）。
 3. **顶部标签栏：SessionTabs**：
    * 紧贴工作区顶部，消除外边距；
    * 标签项采用直角紧凑 Tab，激活标签底部贴合 2px 实线。

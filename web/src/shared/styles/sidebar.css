@@ -1,0 +1,282 @@
+/* Shared Standard Styles for Column 2 (Sidebar) across all menus
+   Following design-taste-frontend (Data Terminal / App Screens) specifications:
+   - Data over Chrome: flat surfaces, 1px rules, no resting shadows
+   - The Move: active state is strictly a 2px accent line placed on the left edge (border-l-2 border-l-[var(--color-accent)])
+   - Tabular Alignment: font-variant-numeric: tabular-nums for counters and timestamps
+   - Compact 26px Toolbar & Search with 1.5px fine-line vector glyphs
+*/
+
+.sidebar-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+/* Zone A: Top dedicated actions row */
+.sidebar-actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 8px 12px;
+  flex-shrink: 0;
+}
+
+.sidebar-action-btn,
+.sidebar-actions .action-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: var(--radius, 4px);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
+  white-space: nowrap;
+}
+
+.sidebar-action-btn:hover,
+.sidebar-actions .action-btn:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.sidebar-action-btn:active,
+.sidebar-actions .action-btn:active {
+  background: var(--color-surface-muted);
+}
+
+/* Zone B: Compact search bar with inset 1.5px magnifier icon */
+.sidebar-search-bar {
+  position: relative;
+  margin: 0 12px 8px 12px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.sidebar-search-icon {
+  position: absolute;
+  left: 8px;
+  width: 12px;
+  height: 12px;
+  color: var(--color-text-muted);
+  pointer-events: none;
+  stroke-width: 1.8;
+}
+
+.sidebar-search-input,
+.sidebar-search-bar .search,
+.sidebar-panel .search {
+  width: 100%;
+  height: 26px;
+  padding: 0 24px 0 26px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.12s ease-out;
+}
+
+.sidebar-search-input:focus,
+.sidebar-search-bar .search:focus,
+.sidebar-panel .search:focus {
+  border-color: var(--color-accent, #4a8ad6);
+}
+
+.sidebar-search-input::placeholder,
+.sidebar-search-bar .search::placeholder,
+.sidebar-panel .search::placeholder {
+  color: var(--color-text-muted);
+}
+
+.sidebar-search-clear {
+  position: absolute;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
+}
+
+.sidebar-search-clear:hover {
+  color: var(--color-text);
+  background: var(--color-surface-muted);
+}
+
+/* Zone B: Micro filter bar */
+.sidebar-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 6px 12px;
+  margin-top: -2px;
+  flex-shrink: 0;
+}
+
+/* Zone C: Standard card container & items */
+.sidebar-list-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8px 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Standard Compact Entity Card */
+.sidebar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: var(--radius, 4px);
+  border: 1px solid var(--color-border);
+  border-left: 2px solid transparent;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.12s ease-out, border-color 0.12s ease-out;
+  user-select: none;
+  position: relative;
+  text-decoration: none;
+}
+
+.sidebar-card:hover {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong);
+  border-left-color: transparent;
+}
+
+/* The Move: strictly 2px accent indicator flush on the left edge */
+.sidebar-card.active,
+.sidebar-card.selected,
+.sidebar-card.router-link-exact-active {
+  background: var(--color-surface-muted) !important;
+  border-color: var(--color-border) !important;
+  border-left: 2px solid var(--color-accent, #4a8ad6) !important;
+  color: var(--color-text) !important;
+  font-weight: 500;
+}
+
+/* Two-row layout standard */
+.sidebar-card-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sidebar-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-card-badge {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sidebar-card-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.sidebar-card-meta {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.sidebar-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+  flex-shrink: 0;
+}
+
+.sidebar-card:hover .sidebar-card-actions,
+.sidebar-card:focus-within .sidebar-card-actions,
+.sidebar-card.group:hover .sidebar-card-actions {
+  opacity: 1;
+}
+
+.sidebar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out;
+}
+
+.sidebar-icon-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.sidebar-icon-btn.danger:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+/* Empty State Standard */
+.sidebar-empty {
+  margin: 28px 12px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}

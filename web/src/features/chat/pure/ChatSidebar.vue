@@ -122,36 +122,63 @@ async function confirmDeleteGroup() {
 </script>
 
 <template>
-  <div class="chat-sidebar" data-test="chat-sidebar">
+  <div class="chat-sidebar sidebar-panel" data-test="chat-sidebar">
+    <!-- Zone A: Dedicated actions row -->
     <div class="sidebar-actions">
       <button
         type="button"
         class="action-btn new-group-btn"
         data-test="chat-new-group-btn"
+        title="新建独立对话助手"
         @click="openCreateGroup"
       >
-        + 新建助手
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="3" x2="8" y2="13" />
+          <line x1="3" y1="8" x2="13" y2="8" />
+        </svg>
+        <span>新建助手</span>
       </button>
     </div>
 
-    <input
-      v-model="search"
-      type="search"
-      class="search"
-      placeholder="搜索助手"
-      aria-label="搜索助手"
-    />
+    <!-- Zone B: Search input with inset magnifier -->
+    <div class="sidebar-search-bar">
+      <svg class="sidebar-search-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke-linecap="round" />
+      </svg>
+      <input
+        v-model="search"
+        type="search"
+        class="search sidebar-search-input"
+        placeholder="搜索助手"
+        aria-label="搜索助手"
+      />
+      <button
+        v-if="search"
+        type="button"
+        class="sidebar-search-clear"
+        title="清空搜索"
+        aria-label="清空搜索"
+        @click="search = ''"
+      >
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="4" y1="4" x2="12" y2="12" />
+          <line x1="12" y1="4" x2="4" y2="12" />
+        </svg>
+      </button>
+    </div>
 
     <p v-if="chats.listError || chats.groupsError" class="list-error" role="alert">
       {{ chats.listError || chats.groupsError }}
     </p>
 
-    <div class="assistant-list-container" data-test="assistant-list">
+    <!-- Zone C: Assistant List Items -->
+    <div class="assistant-list-container sidebar-list-container" data-test="assistant-list">
       <ul class="assistant-list" aria-label="助手列表">
         <li
           v-for="group in filteredGroups"
           :key="group.id"
-          class="assistant-item"
+          class="assistant-item sidebar-card group"
           :class="{ active: chats.selectedGroupId === group.id }"
           :data-group-id="group.id"
           role="button"
@@ -160,50 +187,53 @@ async function confirmDeleteGroup() {
           @keydown.enter.prevent="selectAssistant(group.id)"
           @keydown.space.prevent="selectAssistant(group.id)"
         >
-          <div class="assistant-avatar" :title="group.name">
-            {{ getAssistantIcon(group) }}
-          </div>
-
-          <div class="assistant-info">
-            <div class="assistant-name-row">
-              <span class="assistant-name truncate" :title="group.name">{{ group.name }}</span>
-              <span class="assistant-count">{{ chatsForGroup(group.id) }}</span>
+          <!-- Row 1: Avatar + Name + Count -->
+          <div class="sidebar-card-row-top">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+              <div class="assistant-avatar" :title="group.name">
+                {{ getAssistantIcon(group) }}
+              </div>
+              <span class="assistant-name sidebar-card-title truncate" :title="group.name">{{ group.name }}</span>
             </div>
-            <p v-if="group.systemPrompt" class="assistant-desc truncate">
-              {{ group.systemPrompt }}
-            </p>
+            <span class="assistant-count sidebar-card-badge">{{ chatsForGroup(group.id) }}</span>
           </div>
 
-          <div class="assistant-actions" @click.stop>
-            <button
-              type="button"
-              class="icon-btn"
-              :aria-label="`编辑助手「${group.name}」`"
-              title="编辑助手"
-              @click.stop="openRenameGroup(group)"
-            >
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="icon-btn danger"
-              :aria-label="`删除助手「${group.name}」`"
-              title="删除助手"
-              @click.stop="onDeleteGroup(group)"
-            >
-              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
-              </svg>
-            </button>
+          <!-- Row 2: Prompt description + Hover Actions -->
+          <div class="sidebar-card-row-bottom">
+            <span class="assistant-desc sidebar-card-meta truncate" :title="group.systemPrompt || '暂无系统提示词'">
+              {{ group.systemPrompt || '无系统提示词' }}
+            </span>
+            <div class="assistant-actions sidebar-card-actions" @click.stop>
+              <button
+                type="button"
+                class="icon-btn sidebar-icon-btn"
+                :aria-label="`编辑助手「${group.name}」`"
+                title="编辑助手"
+                @click.stop="openRenameGroup(group)"
+              >
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="icon-btn danger sidebar-icon-btn"
+                :aria-label="`删除助手「${group.name}」`"
+                title="删除助手"
+                @click.stop="onDeleteGroup(group)"
+              >
+                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M3 4h10M6 4V2.5h4V4M4.5 4v9.5h7V4" />
+                </svg>
+              </button>
+            </div>
           </div>
         </li>
 
         <!-- Ungrouped Conversations entry if any -->
         <li
           v-if="showUngrouped"
-          class="assistant-item ungrouped"
+          class="assistant-item ungrouped sidebar-card"
           :class="{ active: chats.selectedGroupId === 0 }"
           :data-group-id="0"
           role="button"
@@ -212,21 +242,21 @@ async function confirmDeleteGroup() {
           @keydown.enter.prevent="selectAssistant(0)"
           @keydown.space.prevent="selectAssistant(0)"
         >
-          <div class="assistant-avatar ungrouped-avatar" title="未分组对话">
-            #
-          </div>
-          <div class="assistant-info">
-            <div class="assistant-name-row">
-              <span class="assistant-name truncate">未分组对话</span>
-              <span class="assistant-count">{{ ungroupedCount }}</span>
+          <div class="sidebar-card-row-top">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1">
+              <div class="assistant-avatar ungrouped-avatar" title="未分组对话">
+                #
+              </div>
+              <span class="assistant-name sidebar-card-title truncate">未分组对话</span>
             </div>
+            <span class="assistant-count sidebar-card-badge">{{ ungroupedCount }}</span>
           </div>
         </li>
       </ul>
 
       <p
         v-if="!chats.groupsLoading && filteredGroups.length === 0 && !showUngrouped"
-        class="empty"
+        class="empty sidebar-empty"
       >
         {{ query ? '没有匹配的助手。' : '还没有助手，点击「+ 新建助手」开始。' }}
       </p>
@@ -280,59 +310,6 @@ async function confirmDeleteGroup() {
   flex: 1;
   min-height: 0;
   height: 100%;
-  padding: 0 10px 12px;
-  background: var(--color-surface, #ffffff);
-}
-
-.sidebar-actions {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.action-btn {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 12px;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--color-text, #1e293b);
-  background: var(--color-bg, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.action-btn:hover {
-  background: var(--color-surface-muted, #f1f5f9);
-  border-color: var(--color-border-strong, #cbd5e1);
-}
-
-.search {
-  width: 100%;
-  padding: 6px 10px;
-  font-size: 0.8125rem;
-  background: var(--color-bg, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
-  border-radius: 6px;
-  color: var(--color-text, #1e293b);
-  outline: none;
-  margin-bottom: 8px;
-  transition: border-color 0.15s ease;
-}
-
-.search:focus {
-  border-color: var(--color-primary, #3b82f6);
-}
-
-.assistant-list-container {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
 }
 
 .assistant-list {
@@ -341,141 +318,50 @@ async function confirmDeleteGroup() {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.assistant-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  cursor: pointer;
-  border: 1px solid transparent;
-  background: transparent;
-  user-select: none;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.assistant-item:hover {
-  background: var(--color-surface-muted, #f1f5f9);
-}
-
-.assistant-item.active {
-  background: var(--color-surface-muted, #f1f5f9);
-  border-color: var(--color-border, #e2e8f0);
-}
-
-:root[data-theme='dark'] .assistant-item.active {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+  gap: 3px;
 }
 
 .assistant-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: var(--color-bg, #f1f5f9);
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius, 4px);
+  background: var(--color-surface-muted, #f1f5f9);
   color: var(--color-text, #334155);
-  font-size: 0.875rem;
+  font-size: 11px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--color-border);
 }
 
 .ungrouped-avatar {
-  color: var(--color-text-muted, #64748b);
+  color: var(--color-text-muted);
   background: transparent;
 }
 
-.assistant-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.assistant-name-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.assistant-name {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--color-text, #1e293b);
-}
-
 .assistant-count {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted, #64748b);
-  background: var(--color-bg, #f1f5f9);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
   padding: 1px 5px;
-  border-radius: 10px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
 
 .assistant-desc {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted, #64748b);
+  font-size: 11px;
+  color: var(--color-text-muted);
   margin: 0;
   line-height: 1.2;
 }
 
-.assistant-actions {
-  display: none;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-}
-
-.assistant-item:hover .assistant-actions,
-.assistant-item:focus-within .assistant-actions {
-  display: flex;
-}
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted, #64748b);
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.icon-btn:hover {
-  background: var(--color-border, #e2e8f0);
-  color: var(--color-text, #1e293b);
-}
-
-.icon-btn.danger:hover {
-  background: #fee2e2;
-  color: #ef4444;
-}
-
-.empty {
-  padding: 24px 8px;
-  text-align: center;
-  font-size: 0.8125rem;
-  color: var(--color-text-muted, #64748b);
-  margin: 0;
-}
-
 .list-error {
-  padding: 6px 8px;
-  font-size: 0.75rem;
-  color: #ef4444;
-  margin: 0 0 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--color-danger);
+  margin: 0 0 6px;
 }
 </style>

@@ -2,6 +2,7 @@
    code, Noto Sans SC for Chinese. Both are vendored under src/fonts so the
    platform never loads a font from the network. */
 @import './fonts/fonts.css';
+@import './shared/styles/sidebar.css';
 
 @tailwind base;
 @tailwind components;
