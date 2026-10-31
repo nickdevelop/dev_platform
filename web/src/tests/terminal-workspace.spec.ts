@@ -136,4 +136,21 @@ describe('TerminalWorkspace Component', () => {
     expect(store.tabs).toHaveLength(2)
     expect(wrapper.findAll('.terminal-tab-item')).toHaveLength(2)
   })
+
+  it('preserves terminal pane components when visible prop changes', async () => {
+    const { wrapper, store } = setupComponent()
+
+    store.openTerminal(0)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.terminal-pane').exists()).toBe(true)
+
+    // Simulate navigation away from terminal: visible set to false
+    await wrapper.setProps({ visible: false })
+    expect(wrapper.find('.terminal-pane').exists()).toBe(true)
+
+    // Simulate returning to terminal: visible set back to true
+    await wrapper.setProps({ visible: true })
+    expect(wrapper.find('.terminal-pane').exists()).toBe(true)
+  })
 })

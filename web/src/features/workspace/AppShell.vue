@@ -27,6 +27,7 @@ import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
+import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
@@ -797,7 +798,7 @@ watch(
           <p>项目不存在或已移除。</p>
           <RouterLink :to="{ name: 'home' }">返回</RouterLink>
         </div>
-        <RouterView v-else v-slot="{ Component }">
+        <RouterView v-else-if="!terminalMode" v-slot="{ Component }">
           <component
             :is="Component"
             v-if="Component"
@@ -806,6 +807,12 @@ watch(
             @created="onCreated"
           />
         </RouterView>
+        <!-- Terminal workspace kept alive so open tabs and pty/ssh processes never disconnect -->
+        <TerminalWorkspace
+          v-show="terminalMode"
+          :visible="terminalMode"
+          style="width: 100%; height: 100%;"
+        />
       </div>
     </section>
 

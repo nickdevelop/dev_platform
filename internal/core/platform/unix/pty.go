@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
+	"time"
 
 	"github.com/creack/pty"
 )
@@ -22,8 +24,23 @@ func (PTY) Supported() bool {
 
 // PTYSession wraps the master pty file descriptor and child process.
 type PTYSession struct {
-	ptmx *os.File
-	cmd  *exec.Cmd
+	ptmx      *os.File
+	cmd       *exec.Cmd
+	waitOnce  sync.Once
+	waitErr   error
+	waitDone  chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *PTYSession) reap() {
+	s.waitOnce.Do(func() {
+		if s.cmd != nil {
+			s.waitErr = s.cmd.Wait()
+		}
+		if s.waitDone != nil {
+			close(s.waitDone)
+		}
+	})
 }
 
 func (s *PTYSession) Read(p []byte) (int, error) {
@@ -41,20 +58,29 @@ func (s *PTYSession) Write(p []byte) (int, error) {
 }
 
 func (s *PTYSession) Close() error {
-	var errs []error
-	if s.ptmx != nil {
-		if err := s.ptmx.Close(); err != nil {
-			errs = append(errs, err)
+	var err error
+	s.closeOnce.Do(func() {
+		var errs []error
+		if s.ptmx != nil {
+			if cerr := s.ptmx.Close(); cerr != nil {
+				errs = append(errs, cerr)
+			}
+			s.ptmx = nil
 		}
-		s.ptmx = nil
-	}
-	if s.cmd != nil && s.cmd.Process != nil {
-		_ = s.cmd.Process.Kill()
-	}
-	if len(errs) > 0 {
-		return errs[0]
-	}
-	return nil
+		if s.cmd != nil && s.cmd.Process != nil {
+			_ = s.cmd.Process.Kill()
+		}
+		if s.waitDone != nil {
+			select {
+			case <-s.waitDone:
+			case <-time.After(time.Second):
+			}
+		}
+		if len(errs) > 0 {
+			err = errs[0]
+		}
+	})
+	return err
 }
 
 func (s *PTYSession) Resize(rows, cols uint16) error {
@@ -68,10 +94,11 @@ func (s *PTYSession) Resize(rows, cols uint16) error {
 }
 
 func (s *PTYSession) Wait() error {
-	if s.cmd == nil {
+	if s.waitDone == nil {
 		return nil
 	}
-	return s.cmd.Wait()
+	<-s.waitDone
+	return s.waitErr
 }
 
 func (s *PTYSession) Pid() int {
@@ -99,8 +126,11 @@ func (PTY) Start(cmd *exec.Cmd, rows, cols uint16) (*PTYSession, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pty start: %w", err)
 	}
-	return &PTYSession{
-		ptmx: ptmx,
-		cmd:  cmd,
-	}, nil
+	sess := &PTYSession{
+		ptmx:     ptmx,
+		cmd:      cmd,
+		waitDone: make(chan struct{}),
+	}
+	go sess.reap()
+	return sess, nil
 }

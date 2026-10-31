@@ -10,6 +10,7 @@ import type { ChatEntry } from '../state/entry'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
 import { useOpenTabsStore } from '../../../stores/openTabs'
+import { useViewportStore } from '../../../stores/viewport'
 import { useBottomFollow } from '../../../shared/scrollFollow'
 import { UiDialog, UiButton, UiInput, UiAlert, UiEmpty } from '../../../shared/ui'
 import MessageView from '../rendering/MessageView.vue'
@@ -22,6 +23,7 @@ const props = defineProps<{ chatId?: number }>()
 const chats = useChatsStore()
 const models = useModelsStore()
 const openTabs = useOpenTabsStore()
+const viewportStore = useViewportStore()
 const router = useRouter()
 
 const text = ref('')
@@ -79,7 +81,14 @@ const signature = computed(() => {
   return `${activeID.value ?? 'new'}:${messages.value.length}:${open}`
 })
 const follow = useBottomFollow(scroll, signature)
-const onScroll = follow.onScroll
+
+function onScroll() {
+  follow.onScroll()
+  if (props.chatId !== undefined && scroll.value) {
+    viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
+  }
+}
+
 const jump = follow.showJump
 
 const lastAssistantEntryId = computed(() => {
@@ -125,10 +134,37 @@ async function bootstrap() {
     ensureDraftModel()
     return
   }
+
+  const savedScroll = viewportStore.getChatScroll(props.chatId)
+  if (savedScroll && !savedScroll.pinned) {
+    follow.pinned.value = false
+    follow.showJump.value = true
+  } else {
+    follow.pinned.value = true
+    follow.showJump.value = false
+  }
+
   await chats.openChat(props.chatId)
   modelId.value = chats.active?.modelId ?? null
   await nextTick()
-  follow.scrollToBottom(false)
+
+  if (savedScroll && !savedScroll.pinned) {
+    if (scroll.value) {
+      scroll.value.scrollTop = savedScroll.scrollTop
+    }
+    follow.pinned.value = false
+    follow.showJump.value = true
+  } else {
+    follow.scrollToBottom(false)
+  }
+
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      if (savedScroll && !savedScroll.pinned && scroll.value) {
+        scroll.value.scrollTop = savedScroll.scrollTop
+      }
+    })
+  }
 }
 
 onMounted(() => {
@@ -136,6 +172,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (props.chatId !== undefined && scroll.value) {
+    viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
+  }
   if (props.chatId === undefined) {
     if (chats.activeId === null) chats.closeActive()
     return

@@ -4,6 +4,15 @@ import { useTerminalStore } from '../../stores/terminal'
 import TerminalTabItem from './TerminalTabItem.vue'
 import XtermView from './XtermView.vue'
 
+const props = withDefaults(
+  defineProps<{
+    visible?: boolean
+  }>(),
+  {
+    visible: true,
+  },
+)
+
 const terminalStore = useTerminalStore()
 
 const tabs = computed(() => terminalStore.tabs)
@@ -67,6 +76,7 @@ function onQuickConnectLocal() {
           :tab-id="tab.id"
           :server-id="tab.serverId"
           :active="tab.id === activeTabId"
+          :visible="props.visible"
         />
       </div>
     </div>

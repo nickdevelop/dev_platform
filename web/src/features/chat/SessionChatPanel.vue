@@ -27,6 +27,7 @@ import { useSessionInteractions } from './interactions/useSessionInteractions'
 import { useBottomFollow } from '../../shared/scrollFollow'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
+import { useViewportStore } from '../../stores/viewport'
 import type { GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
@@ -77,6 +78,7 @@ const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const interactions = useInteractionsStore()
 const draftsStore = useDraftsStore()
+const viewportStore = useViewportStore()
 const router = useRouter()
 
 let currentSessionId = props.sessionId
@@ -645,9 +647,22 @@ const activityCount = computed(() => {
 // away parks the view. See shared/scrollFollow.
 const logFollow = useBottomFollow(logScroll, logSignature)
 const activityFollow = useBottomFollow(activityScroll, activitySignature)
-const onLogScroll = logFollow.onScroll
+
+function onLogScroll() {
+  logFollow.onScroll()
+  if (props.sessionId && logScroll.value) {
+    viewportStore.saveSessionScroll(props.sessionId, logScroll.value.scrollTop, pinnedToBottom.value)
+  }
+}
+
+function onActivityScroll() {
+  activityFollow.onScroll()
+  if (props.sessionId && activityScroll.value) {
+    viewportStore.saveActivityScroll(props.sessionId, activityScroll.value.scrollTop, activityPinned.value)
+  }
+}
+
 const scrollToBottom = logFollow.scrollToBottom
-const onActivityScroll = activityFollow.onScroll
 const scrollActivityToBottom = activityFollow.scrollToBottom
 const showJumpToLatest = logFollow.showJump
 const pinnedToBottom = logFollow.pinned
@@ -778,6 +793,14 @@ onBeforeUnmount(() => {
   // sessions' streams. The session's own subscriptions stay open so returning
   // via a tab is instant; they are released when the tab closes or the session
   // is deleted.
+  if (currentSessionId) {
+    if (logScroll.value) {
+      viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
+    }
+    if (activityScroll.value) {
+      viewportStore.saveActivityScroll(currentSessionId, activityScroll.value.scrollTop, activityPinned.value)
+    }
+  }
   if (currentSessionId && !isRestoringDraft) {
     draftsStore.setSessionDraft(currentSessionId, {
       messageText: messageText.value,
@@ -810,10 +833,26 @@ async function open() {
   sendError.value = ''
   sessions.error = ''
   modelOk.value = true
-  pinnedToBottom.value = true
-  showJumpToLatest.value = false
-  activityPinned.value = true
-  showJumpActivity.value = false
+
+  const savedLogState = viewportStore.getSessionScroll(props.sessionId)
+  const savedActivityState = viewportStore.getActivityScroll(props.sessionId)
+
+  if (savedLogState && !savedLogState.pinned) {
+    pinnedToBottom.value = false
+    showJumpToLatest.value = true
+  } else {
+    pinnedToBottom.value = true
+    showJumpToLatest.value = false
+  }
+
+  if (savedActivityState && !savedActivityState.pinned) {
+    activityPinned.value = false
+    showJumpActivity.value = true
+  } else {
+    activityPinned.value = true
+    showJumpActivity.value = false
+  }
+
   // The instance list is loaded only to label the conversation's working
   // directory — the user never sees or operates an instance itself.
   await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
@@ -842,11 +881,39 @@ async function open() {
     // picker's cache once its catalog lands (via onModelStatus).
     void loadGit()
     refreshModelLimit()
-    // Opening a session lands on its newest entry, not on the top of a replayed
-    // history.
+    // Opening a session lands on its newest entry, or restores previous scroll
+    // position if the user previously scrolled away from bottom.
     await nextTick()
-    scrollToBottom(false)
-    scrollActivityToBottomReliably(false)
+    if (savedLogState && !savedLogState.pinned) {
+      if (logScroll.value) {
+        logScroll.value.scrollTop = savedLogState.scrollTop
+      }
+      pinnedToBottom.value = false
+      showJumpToLatest.value = true
+    } else {
+      scrollToBottom(false)
+    }
+
+    if (savedActivityState && !savedActivityState.pinned) {
+      if (activityScroll.value) {
+        activityScroll.value.scrollTop = savedActivityState.scrollTop
+      }
+      activityPinned.value = false
+      showJumpActivity.value = true
+    } else {
+      scrollActivityToBottomReliably(false)
+    }
+
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        if (savedLogState && !savedLogState.pinned && logScroll.value) {
+          logScroll.value.scrollTop = savedLogState.scrollTop
+        }
+        if (savedActivityState && !savedActivityState.pinned && activityScroll.value) {
+          activityScroll.value.scrollTop = savedActivityState.scrollTop
+        }
+      })
+    }
   } finally {
     preparing.value = false
   }

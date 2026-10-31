@@ -1450,4 +1450,29 @@ describe('SessionChatPanel scroll following', () => {
       'Work in progress on Alpha',
     )
   })
+
+  it('restores scroll position and pinned state when switching back to session', async () => {
+    stubSessionList([session('sess-1'), session('sess-2')])
+
+    // 1. Mount session 1 and scroll away from bottom
+    const wrapper = mountPanel('sess-1')
+    await flushPromises()
+
+    const el = wrapper.find('[data-test="conversation-scroll"]').element as HTMLElement
+    setGeometry(el, { scrollHeight: 2000, clientHeight: 500 })
+    el.scrollTop = 400
+    await wrapper.find('[data-test="conversation-scroll"]').trigger('scroll')
+
+    // 2. Switch to session 2 (e.g. clicking another tab or switching menu)
+    await wrapper.setProps({ sessionId: 'sess-2' })
+    await flushPromises()
+
+    // 3. Switch back to session 1
+    await wrapper.setProps({ sessionId: 'sess-1' })
+    await flushPromises()
+
+    // 4. Position 400 must be restored, not forced to bottom (2000), and jump button appears
+    expect(el.scrollTop).toBe(400)
+    expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(true)
+  })
 })

@@ -114,7 +114,7 @@
 ```
 web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
-  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, ...）
+  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, viewport, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
   │     └── ui/        ── 平台标准 UI 组件库（纯中性业务解耦设计，基于 Tailwind CSS）：
   │           ├── atomic/    ── 原子组件（UiButton, UiInput, UiTextarea, UiSelect, UiDropdown, UiBadge, UiProgress, UiTooltip, UiTabs, UiAlert, UiEmpty, UiSpinner, UiDivider）
@@ -234,6 +234,7 @@ web/src/
    - 主对话流动态运行状态指示（MessageView kind-running）：移除原有静态“正在运行...”，采用 deriveRunningAction 基于最新活动动态解析动作语义（如“正在思考...”、“执行 <cmd>”、“编辑 <path>”、“读取 <path>”、“搜索 <query>”等）并以微动效卡片实时呈现
    - 右侧活动面板（display="activity"，由右轨预览开关控制）排除问答工具，思考内容直接排版输出（无折叠壳），其他工具统一展示为紧凑单行摘要；同一右轨的文件树开关控制文件树停靠/浮出
    - 会话历史读取瘦身（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务统一对适配器历史事件进行按需瘦身过滤，仅保留主对话视图所需的消息（EventMessage、EventError）以及成对的问答交互工具（IsQuestionTool 识别之 EventToolCall 及配套 EventToolResult），海量思维链 EventThinking 与非问答类工具事件均不透传，进一步压降前后端交互体量
+   - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列与右侧活动面板的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则平滑跟随最新内容。
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 
@@ -297,10 +298,12 @@ web/src/
    - 远程模式：解密 secretStore 凭据，建立 SSH Client Session
                          │
                          ▼
-4. 双向全双工转发 Goroutines
+4. 双向全双工转发 Goroutines 与生命周期治理
    - Goroutine A：循环读取 PTY 字符流 ──► 写入 WebSocket ──► xterm.js 屏幕刷新
    - Goroutine B：循环读取 WebSocket 击键 ──► 写入 PTY 进程 stdin
    - 窗口伸缩：前端 ResizeObserver 捕获尺寸 ──► 发送二进制帧 ──► 调用 PTY.Resize()
+   - 终端工作区常驻保活（Persistent Terminal Workspace）：Web 终端工作区（TerminalWorkspace）在主框架 AppShell 中常驻挂载保活，通过 v-show 与 visible 属性管理显隐状态，避免切换左侧菜单导航时触发组件卸载与 WebSocket 连接断开。切换离开时正在运行的后台命令持续执行，切回时自动触发 FitAddon 自适应尺寸与焦点重获；仅在用户显式在 Tab 栏点击关闭按钮时才销毁连接并释放资源。
+   - Linux PTY 异步进程回收与杜绝僵死（Zombie / Defunct Reaping）：在 core/platform/unix 的 PTYSession 启动时派生专有异步回收协程（cmd.Wait()），并在 Close() 阶段执行优雅终止与等待同步闭环；不论是用户主动退出、断开连接还是进程被 kill，子进程退出状态均由内核及时消费，杜绝任何 <defunct> 僵死进程残留。
 ```
 
 ---

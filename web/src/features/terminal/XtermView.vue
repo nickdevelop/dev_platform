@@ -6,11 +6,17 @@ import 'xterm/css/xterm.css'
 import { buildTerminalWSUrl } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
 
-const props = defineProps<{
-  tabId: string
-  serverId: number
-  active: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    tabId: string
+    serverId: number
+    active: boolean
+    visible?: boolean
+  }>(),
+  {
+    visible: true,
+  },
+)
 
 const terminalStore = useTerminalStore()
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -209,7 +215,7 @@ async function mountTerminal(): Promise<void> {
 
   // Watch size changes
   resizeObserver = new ResizeObserver(() => {
-    if (props.active) {
+    if (props.active && props.visible !== false) {
       handleFit()
     }
   })
@@ -224,16 +230,16 @@ async function mountTerminal(): Promise<void> {
 
   void nextTick(() => {
     handleFit()
-    if (props.active) {
+    if (props.active && props.visible !== false) {
       term?.focus()
     }
   })
 }
 
 watch(
-  () => props.active,
-  (isActive) => {
-    if (isActive) {
+  () => [props.active, props.visible] as const,
+  ([isActive, isVisible]) => {
+    if (isActive && isVisible !== false) {
       void nextTick(() => {
         handleFit()
         term?.focus()
