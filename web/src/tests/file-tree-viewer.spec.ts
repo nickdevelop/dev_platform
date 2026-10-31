@@ -222,6 +222,133 @@ describe('FileSidebar.vue', () => {
     expect(tabs[1].classes()).toContain('is-active')
     expect(wrapper.find('.tree-container').exists()).toBe(true)
   })
+
+  it('renders changes in tree layout and emits diff selection on click', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([
+      {
+        hash: 'c1234567890abcdef',
+        shortHash: 'c123456',
+        message: 'feat: add widgets',
+        author: 'Dev',
+        date: '2026-03-30T10:00:00Z',
+        timestamp: 1774864800,
+      },
+    ])
+    const statusSpy = vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([
+      { path: 'src/components/Widget.vue', status: 'added' },
+      { path: 'src/main.ts', status: 'modified' },
+    ])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+
+    // Switch to Changes tab
+    const tabs = wrapper.findAll('.sidebar-tab')
+    await tabs[0].trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Widget.vue'))
+
+    // The changes should be displayed as a tree with folder 'components' and 'src'
+    expect(wrapper.text()).toContain('components')
+    expect(wrapper.text()).toContain('Widget.vue')
+
+    // Click on a changed file row to emit select with diff mode
+    const widgetRow = wrapper.findAll('.change-tree-row').find((r) => r.text().includes('Widget.vue'))
+    await widgetRow?.trigger('click')
+
+    expect(wrapper.emitted('select')).toBeTruthy()
+    expect(wrapper.emitted('select')?.[0]).toEqual([
+      'src/components/Widget.vue',
+      { mode: 'diff', commitRef: undefined, commitMessage: undefined },
+    ])
+
+    // Change commit via select dropdown
+    const select = wrapper.find('.commit-select')
+    expect(select.exists()).toBe(true)
+    await select.setValue('c1234567890abcdef')
+
+    expect(statusSpy).toHaveBeenCalledWith(1, 'c1234567890abcdef')
+  })
+
+  it('does not render discard dialog initially when tree expands', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
+      { name: 'src', path: 'src', isDir: true },
+    ])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('src'))
+
+    // Dialog should NOT be in the DOM
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
+  })
+
+  it('manages discard dialog flow: open, cancel, and confirm', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([
+      { path: 'file-to-discard.txt', status: 'modified', staged: false },
+    ])
+    const discardSpy = vi.spyOn(filesApi, 'discardGitFile').mockResolvedValue(undefined as any)
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+
+    // Switch to Changes tab
+    const tabs = wrapper.findAll('.sidebar-tab')
+    await tabs[0].trigger('click')
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('file-to-discard.txt'))
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
+
+    // Trigger discard button on the unstaged file
+    const discardBtn = wrapper.find('button[title="放弃更改"]')
+    expect(discardBtn.exists()).toBe(true)
+    await discardBtn.trigger('click')
+    await flushPromises()
+
+    // Dialog is now open
+    const dialog = wrapper.find('[data-test="discard-confirm-dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('file-to-discard.txt')
+
+    // Test cancel
+    const cancelBtn = wrapper.find('[data-test="cancel-discard-btn"]')
+    expect(cancelBtn.exists()).toBe(true)
+    await cancelBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
+    expect(discardSpy).not.toHaveBeenCalled()
+
+    // Test close via header close button
+    await discardBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(true)
+    const closeBtn = wrapper.find('button[aria-label="关闭对话框"]')
+    expect(closeBtn.exists()).toBe(true)
+    await closeBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
+
+    // Open again and confirm
+    await discardBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(true)
+
+    const confirmBtn = wrapper.find('[data-test="confirm-discard-btn"]')
+    expect(confirmBtn.exists()).toBe(true)
+    await confirmBtn.trigger('click')
+    await flushPromises()
+
+    expect(discardSpy).toHaveBeenCalledWith(1, 'file-to-discard.txt')
+    expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
+  })
 })
 
 describe('CodeView.vue', () => {
