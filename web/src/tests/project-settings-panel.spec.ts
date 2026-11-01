@@ -35,19 +35,20 @@ describe('ProjectSettingsPanel', () => {
     expect(wrapper.text()).toContain('/workspace/alpha')
   })
 
-  it('hands the danger-zone actions to the manage dialog with the project', async () => {
+  it('hands the project actions to the manage dialog with the project', async () => {
     const wrapper = mountPanel()
     await flushPromises()
 
     const pick = (label: string) => wrapper.findAll('button').find((item) => item.text() === label)!
-    await pick('重命名').trigger('click')
-    await pick('移动').trigger('click')
+    await pick('编辑项目').trigger('click')
     await pick('解除登记').trigger('click')
     expect(wrapper.findAll('button').some((item) => item.text() === '删除目录')).toBe(false)
+    // Directory move and directory rename are no longer offered.
+    expect(wrapper.findAll('button').some((item) => item.text() === '移动')).toBe(false)
+    expect(wrapper.findAll('button').some((item) => item.text() === '重命名')).toBe(false)
 
     expect(wrapper.emitted('manage')?.map((entry) => entry[0])).toEqual([
-      'rename',
-      'move',
+      'edit',
       'unregister',
     ])
     expect((wrapper.emitted('manage')![0][1] as { id: number }).id).toBe(1)

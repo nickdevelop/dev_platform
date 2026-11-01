@@ -9,7 +9,7 @@
 `dev_platform` 是一个面向团队和个人开发者的**多 Agent 协同 AI 研发工作台**。其核心目标在于解决不同终端 AI Coding Agent（如 OpenCode V2、Pi、DeepSeek CLI）协议各异、交互割裂、缺乏集中管控的问题，提供中性同构的平台层封装：
 
 1. **多后端统一协同**：统一接入异构的 AI Coding Agent，支持开箱即用的多 Agent 实例隔离、生命周期管理与并发会话。
-2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度），右侧面板专职作为纯文件预览面板；当文件预览展开时，文件树展开/收缩自动占用文件预览面板宽度，绝不占用主对话窗口宽度。新建会话表单深度整合工具栏与紧凑 Agent 选择器、权限下拉模式与统一发送按钮。
+2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度），右侧面板专职作为纯文件预览面板；当文件预览展开时，文件树展开/收缩自动占用文件预览面板宽度，绝不占用主对话窗口宽度。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
@@ -131,7 +131,7 @@ web/src/
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
-  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载）、会话卡片项（ProjectSessionItem.vue）、单项目设置、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
+  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、单项目设置（仅保留编辑项目与解除登记，目录移动/重命名操作已移除）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 外观设置（移除深色主题，支持明亮浅色与暖冷色系）、大模型配置、Agent 后端 Tab 隔离与空闲断开配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）

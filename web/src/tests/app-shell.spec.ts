@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { Component } from 'vue'
 import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
+import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
 import ProjectSettingsPanel from '../features/projects/ProjectSettingsPanel.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 import ChatPanel from '../features/chat/pure/ChatPanel.vue'
@@ -79,6 +80,18 @@ describe('three-pane app shell', () => {
     const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
     expect(chat?.attributes('href')).toBe('/chat')
     expect(chat?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('opens the project edit dialog from the project row edit action', async () => {
+    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const tree = wrapper.findComponent(ProjectTree)
+    tree.vm.$emit('edit', 1)
+    await flushPromises()
+
+    const dialog = wrapper.findComponent(ProjectManageDialog)
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.props('kind')).toBe('edit')
+    expect((dialog.props('project') as { id: number }).id).toBe(1)
   })
 
   it('opens the pure chat area from the rail and passes a conversation id', async () => {

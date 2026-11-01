@@ -2,7 +2,7 @@
 // rail is the only way out. It used to render「项目」as an inert button, which
 // trapped the user in /settings with nothing but 设置 and 退出 to click. This
 // proves the real browser flow: platform → settings → back to the project area
-// → open a project page.
+// → open a project's edit dialog.
 //
 // Started via `npm run test:e2e`, which builds the server and provides
 // E2E_PASSWORD and E2E_WORKSPACE_ROOT for an isolated scratch directory.
@@ -68,6 +68,6 @@ test('the project category escapes the settings center back to the project area'
 
   const sidebar = page.getByRole('complementary', { name: '项目导航' })
   await expect(sidebar).toBeVisible()
-  await sidebar.locator('.project-settings').first().click()
-  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
+  await sidebar.locator('[data-test="project-edit"]').first().click()
+  await expect(page.getByRole('dialog')).toContainText('编辑项目')
 })

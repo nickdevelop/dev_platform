@@ -15,7 +15,7 @@ defineProps<{
 
 const emit = defineEmits<{
   manage: [kind: 'register' | 'create']
-  'open-settings': [projectId: number]
+  edit: [projectId: number]
   'open-projects-management': []
   'select-session': [projectId: number, sessionId: string]
   'new-session': [projectId: number]
@@ -130,7 +130,7 @@ function onShowTaskSessionsChange() {
         :active-session-id="activeSessionId"
         :search="search"
         :show-task-sessions="showTaskSessions"
-        @open-settings="emit('open-settings', $event)"
+        @edit="emit('edit', $event)"
         @select-session="(pId, sId) => emit('select-session', pId, sId)"
         @new-session="emit('new-session', $event)"
         @delete-session="(pId, sId) => emit('delete-session', pId, sId)"

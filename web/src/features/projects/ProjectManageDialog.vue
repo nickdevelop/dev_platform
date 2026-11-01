@@ -1,16 +1,15 @@
 <script setup lang="ts">
-// Project management dialog for one action: register, create, move, rename (directory),
-// rename-name (display name) or unregister. Unregister removes the project from the platform
-// (stopping its live agent instances and dropping their sessions) and never touches the
-// directory on disk. Move and rename directory require the typed current project name.
-// The parent owns visibility: it receives `submitted` and `close`.
+// Project management dialog for one action: register, create, edit (display name)
+// or unregister. Unregister removes the project from the platform (stopping its
+// live agent instances and dropping their sessions) and never touches the
+// directory on disk. Directory move and directory rename are deliberately not
+// offered: the platform only edits its own metadata. The parent owns visibility:
+// it receives `submitted` and `close`.
 import { computed, onMounted, ref, watch } from 'vue'
 import { describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
-  moveProject,
   registerProject,
-  renameProject,
   updateProjectName,
   unregisterProject,
   type Project,
@@ -18,7 +17,7 @@ import {
 import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
 import ProxyDirectoryPicker from '../proxies/ProxyDirectoryPicker.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
+type DialogKind = 'register' | 'create' | 'edit' | 'unregister'
 
 const props = defineProps<{
   kind: DialogKind
@@ -37,7 +36,6 @@ const nameInput = ref('')
 const subDirName = ref('')
 const createNewDir = ref(true)
 const showDirPicker = ref(false)
-const confirmNameInput = ref('')
 
 // When user types project name, default the sub directory name to it if user hasn't explicitly diverged
 let subDirManuallyEdited = false
@@ -58,7 +56,7 @@ function onDirectorySelected(path: string) {
 }
 
 onMounted(() => {
-  if (props.kind === 'rename-name' && props.project) {
+  if (props.kind === 'edit' && props.project) {
     nameInput.value = props.project.name
   }
 })
@@ -70,12 +68,8 @@ const dialogTitle = computed(() => {
       return '打开已有项目目录'
     case 'create':
       return '新建项目'
-    case 'move':
-      return `移动项目 ${name}`
-    case 'rename':
-      return `重命名项目目录 ${name}`
-    case 'rename-name':
-      return `修改项目名称 ${name}`
+    case 'edit':
+      return name ? `编辑项目 ${name}` : '编辑项目'
     case 'unregister':
       return '解除项目登记（保留目录）'
   }
@@ -87,22 +81,12 @@ const confirmLabel = computed(() => {
       return '打开'
     case 'create':
       return '确定'
-    case 'move':
-      return '移动'
-    case 'rename':
-      return '重命名目录'
-    case 'rename-name':
+    case 'edit':
       return '保存'
     case 'unregister':
       return '解除登记'
   }
 })
-
-const needsTypedConfirmation = computed(() => props.kind === 'move' || props.kind === 'rename')
-
-const typedNameMatches = computed(
-  () => !!props.project && confirmNameInput.value === props.project.name,
-)
 
 const canSubmit = computed(() => {
   if (submitting.value) return false
@@ -111,10 +95,9 @@ const canSubmit = computed(() => {
     if (createNewDir.value && !subDirName.value.trim()) return false
     return true
   }
-  if (props.kind === 'rename-name') {
+  if (props.kind === 'edit') {
     return nameInput.value.trim() !== ''
   }
-  if (needsTypedConfirmation.value && !typedNameMatches.value) return false
   return true
 })
 
@@ -144,13 +127,7 @@ async function submit() {
         }
         break
       }
-      case 'move':
-        await moveProject(project!.id, pathInput.value.trim(), confirmNameInput.value)
-        break
-      case 'rename':
-        await renameProject(project!.id, nameInput.value.trim(), confirmNameInput.value)
-        break
-      case 'rename-name':
+      case 'edit':
         await updateProjectName(project!.id, nameInput.value.trim())
         break
       case 'unregister':
@@ -252,39 +229,16 @@ async function submit() {
         </div>
       </template>
 
-      <template v-else-if="kind === 'move'">
-        <p class="text-sm text-slate-700 dark:text-slate-300">把项目 {{ project?.name }}（{{ project?.path }}）移动到新位置。</p>
-        <div class="flex flex-col gap-1.5">
-          <label for="dialog-path" class="text-xs font-semibold text-slate-700 dark:text-slate-300">目标完整路径</label>
-          <UiInput id="dialog-path" v-model="pathInput" autocomplete="off" spellcheck="false" block />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="dialog-confirm-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            输入当前项目名“{{ project?.name }}”以确认移动
-          </label>
-          <UiInput id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" autocomplete="off" block />
-        </div>
-      </template>
-
-      <template v-else-if="kind === 'rename-name'">
+      <template v-else-if="kind === 'edit'">
         <div class="flex flex-col gap-1.5">
           <label for="dialog-display-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目显示名称</label>
           <UiInput id="dialog-display-name" v-model="nameInput" autocomplete="off" spellcheck="false" block />
           <p class="hint text-xs text-slate-400">仅修改在平台中展示的项目名称，不会修改磁盘上的物理目录。</p>
         </div>
-      </template>
-
-      <template v-else-if="kind === 'rename'">
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">新目录名</label>
-          <UiInput id="dialog-name" v-model="nameInput" autocomplete="off" spellcheck="false" block />
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label for="dialog-confirm-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            输入当前项目名“{{ project?.name }}”以确认重命名目录
-          </label>
-          <UiInput id="dialog-confirm-name" v-model="confirmNameInput" class="confirm-name" autocomplete="off" block />
-          <p class="hint text-xs text-slate-400">将重命名磁盘上的项目文件夹，同时需要暂停关联的 Agent 实例。</p>
+          <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目路径</span>
+          <code class="project-path font-mono text-xs text-slate-500 dark:text-slate-400 break-all">{{ project?.path }}</code>
+          <p class="hint text-xs text-slate-400">平台只记录该路径，不会移动或重命名磁盘目录。</p>
         </div>
       </template>
 

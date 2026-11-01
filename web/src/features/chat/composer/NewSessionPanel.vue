@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // New session form for the right pane of the shell, laid out like the opencode
-// new-session view: a centered composer holds the first message, and the
-// toolbar inside it carries the agent-backend switch, the model picker and
-// the create action. A session names only an agent backend: the server reuses
+// new-session view: the project and the agent backend each occupy their own row
+// (the backend as a segmented switch), a centered composer holds the first
+// message, and its toolbar carries the model picker and the create action. A
+// session names only an agent backend: the server reuses
 // or starts the project's instance for that backend. The title is never
 // entered here — the server derives it from the first message — so an
 // optional message rides along with the create request and the waiting is
@@ -19,7 +20,7 @@ import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts
 import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
-import AgentSelect from './AgentSelect.vue'
+import AgentSwitch from './AgentSwitch.vue'
 import ApprovalModeSelect from './ApprovalModeSelect.vue'
 import type { ApprovalMode } from '../interactions/autoApproval'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
@@ -73,14 +74,26 @@ const selectedPrompt = computed(() =>
   selectedPromptId.value !== '' ? promptsStore.byId(Number(selectedPromptId.value)) ?? null : null,
 )
 
+const sendShortcut = ref<'enter' | 'ctrl-enter'>('enter')
+
+// The shortcut hint lives inside the input as placeholder text instead of a
+// caption below the composer, so the toolbar stays free of instructional noise.
+const sendShortcutHint = computed(() =>
+  sendShortcut.value === 'enter' ? 'Enter 发送，Shift+Enter 换行' : 'Ctrl+Enter 发送，Enter 换行',
+)
+
+const composerHint = computed(
+  () => `输入 / 使用命令，@ 引用文件或会话 · ${sendShortcutHint.value}`,
+)
+
 const textareaPlaceholder = computed(() => {
   if (selectedPrompt.value) {
     if (hasUserPromptPlaceholder(selectedPrompt.value.content)) {
-      return '输入的内容将替换模版中的 {user_prompt} 并发送给 Agent… (可选，留空则替换为空)'
+      return `输入的内容将替换模版中的 {user_prompt} 并发送给 Agent… (可选，留空则替换为空；${composerHint.value})`
     }
-    return '输入的内容将追加在模版后发送给 Agent… (可选)'
+    return `输入的内容将追加在模版后发送给 Agent… (可选；${composerHint.value})`
   }
-  return '描述会话，例如：帮我检查构建失败的原因… (输入 / 使用快捷命令，@ 引用文件或会话)'
+  return `描述会话，例如：帮我检查构建失败的原因… (${composerHint.value})`
 })
 
 const selectedProjectId = ref<number | null>(initialProjectId)
@@ -135,7 +148,6 @@ const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
 const messageText = ref(initialDraft.messageText ?? '')
 const selectedModel = ref(initialDraft.model ?? '')
 const approvalMode = ref<ApprovalMode>(initialDraft.approvalMode ?? 'default')
-const sendShortcut = ref<'enter' | 'ctrl-enter'>('enter')
 const sendMenuOpen = ref(false)
 const modelOk = ref(false)
 const modelFailed = ref(false)
@@ -173,11 +185,15 @@ watch(selectedProjectId, (newId, oldId) => {
     isRestoringDraft = true
     const targetDraft = draftsStore.getNewSessionDraft(newId)
     messageText.value = targetDraft.messageText || ''
-    const fallbackBackend =
+    const preferredBackend =
       targetDraft.backend ||
       projectsStore.byId(Number(newId))?.defaultBackend ||
-      (selectableBackends.value.length > 0 ? selectableBackends.value[0].backend : '')
-    selectedBackend.value = fallbackBackend
+      firstSelectableBackend()
+    selectedBackend.value = selectableBackends.value.some(
+      (entry) => entry.backend === preferredBackend,
+    )
+      ? preferredBackend
+      : firstSelectableBackend()
     selectedModel.value = targetDraft.model || ''
     selectedPromptId.value = targetDraft.promptId || ''
     approvalMode.value = targetDraft.approvalMode || 'default'
@@ -474,8 +490,27 @@ const firstMessageReady = computed(() => {
 })
 
 // Only platform-enabled backends may be chosen for a new session. The server also
-// enforces this, but hiding them keeps the UI honest.
+// enforces this, but showing them disabled keeps the UI honest.
 const selectableBackends = computed(() => agents.backends.filter((entry) => entry.enabled !== false))
+
+const sortedBackends = computed(() =>
+  [...agents.backends].sort((a, b) => a.order - b.order),
+)
+
+function firstSelectableBackend(): BackendId | '' {
+  return selectableBackends.value[0]?.backend ?? ''
+}
+
+// A restored draft may name a backend the operator has since disabled: fall
+// back to the first selectable one rather than showing an unpressable choice.
+watch(selectableBackends, (list) => {
+  if (selectedBackend.value === '') return
+  if (!list.some((entry) => entry.backend === selectedBackend.value)) {
+    selectedBackend.value = list[0]?.backend ?? ''
+    selectedModel.value = ''
+    modelOk.value = false
+  }
+})
 
 const canCreate = computed(
   () =>
@@ -500,8 +535,11 @@ onMounted(async () => {
   if (!selectedProjectId.value && (projectsStore.projects ?? []).length > 0) {
     selectedProjectId.value = projectsStore.projects[0].id
   }
-  if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
-    selectedBackend.value = selectableBackends.value[0].backend
+  if (
+    selectedBackend.value === '' ||
+    !selectableBackends.value.some((entry) => entry.backend === selectedBackend.value)
+  ) {
+    selectedBackend.value = firstSelectableBackend()
   }
   textareaRef.value?.focus()
 })
@@ -589,6 +627,11 @@ async function createSession() {
               新建项目
             </button>
           </div>
+        </div>
+
+        <div class="agent-selector-group">
+          <span class="agent-label">Agent</span>
+          <AgentSwitch v-model="selectedBackend" :backends="sortedBackends" />
         </div>
 
         <div class="prompt-selector-group">
@@ -683,10 +726,6 @@ async function createSession() {
                 data-test="file-input"
                 @change="onFileInput"
               />
-              <AgentSelect
-                v-model="selectedBackend"
-                :backends="selectableBackends"
-              />
               <ModelSelect
                 v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
@@ -696,9 +735,6 @@ async function createSession() {
                 @status="modelOk = $event"
                 @failed="modelFailed = $event"
               />
-              <span class="composer-hint">
-                {{ sendShortcut === 'enter' ? 'Enter 发送 · Shift+Enter 换行' : 'Ctrl+Enter 发送 · Enter 换行' }}
-              </span>
             </div>
 
             <div class="composer-actions">
@@ -967,50 +1003,21 @@ async function createSession() {
   gap: 0.6rem;
 }
 
-/* Segmented switch for the agent backend: one pill container, one option per
-   backend, the active one raised. A project-disabled backend stays visible
-   but unpressable so the user knows why it cannot be chosen. */
-.backend-switch {
+.agent-selector-group {
   display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 999px;
-  background: var(--color-surface-muted);
-  overflow-x: auto;
-}
-
-.backend-option {
-  flex: 1 1 0;
-  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  white-space: nowrap;
-  padding: 0.4rem 0.9rem;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-text-muted);
-  font: inherit;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.backend-option:hover:not(:disabled):not(.active) {
-  color: var(--color-text);
-}
-
-.backend-option.active {
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
   background: var(--color-surface);
-  border-color: var(--color-accent);
-  color: var(--color-text);
-  font-weight: 600;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
 }
 
-.backend-option:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.agent-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 /* Desktop-style composer: one rounded box holds the input and its toolbar,
@@ -1099,12 +1106,6 @@ async function createSession() {
   font-size: 1.15rem;
   font-weight: 500;
   line-height: 1;
-}
-
-.composer-hint {
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  margin-left: 0.25rem;
 }
 
 .composer-actions {

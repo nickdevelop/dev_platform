@@ -1,5 +1,6 @@
-// Unit tests for the project management dialog: typed-name confirmation gates
-// move and rename; unregister keeps the directory and needs no typed name.
+// Unit tests for the project management dialog: edit prefills and saves the
+// display name only, and unregister keeps the directory. Directory move and
+// directory rename are deliberately not offered any more.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -16,7 +17,7 @@ function stubResponse(status: number, body: unknown = {}) {
   )
 }
 
-function mountDialog(kind: 'move' | 'rename' | 'unregister' | 'register' | 'create') {
+function mountDialog(kind: 'edit' | 'unregister' | 'register' | 'create') {
   return mount(ProjectManageDialog, {
     props: { kind, project: kind === 'register' || kind === 'create' ? null : project },
     attachTo: document.body,
@@ -38,20 +39,40 @@ describe('ProjectManageDialog', () => {
     document.body.innerHTML = ''
   })
 
-  it('requires the typed name for move and rename', async () => {
-    const move = mountDialog('move')
-    await move.find('#dialog-path').setValue('/workspace/moved')
-    expect(confirmButton(move).attributes('disabled')).toBeDefined()
-    await move.find('#dialog-confirm-name').setValue('alpha')
-    expect(confirmButton(move).attributes('disabled')).toBeUndefined()
-    move.unmount()
+  it('prefills the display name and saves it without touching the directory', async () => {
+    stubResponse(200, { ...project, name: 'beta' })
+    const wrapper = mountDialog('edit')
+    await flushPromises()
 
-    const rename = mountDialog('rename')
-    await rename.find('#dialog-name').setValue('beta')
-    expect(confirmButton(rename).attributes('disabled')).toBeDefined()
-    await rename.find('#dialog-confirm-name').setValue('alpha')
-    expect(confirmButton(rename).attributes('disabled')).toBeUndefined()
-    rename.unmount()
+    const nameInput = wrapper.find<HTMLInputElement>('#dialog-display-name')
+    expect(nameInput.element.value).toBe('alpha')
+    expect(wrapper.text()).toContain('/workspace/alpha')
+
+    await nameInput.setValue('beta')
+    await confirmButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/projects/7/name')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ name: 'beta' })
+    expect(wrapper.emitted('submitted')).toEqual([['edit']])
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('does not render directory move or rename controls', async () => {
+    stubResponse(200, { ...project })
+    const wrapper = mountDialog('edit')
+    await flushPromises()
+
+    expect(wrapper.find('#dialog-name').exists()).toBe(false)
+    expect(wrapper.find('#dialog-confirm-name').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('重命名目录')
+    expect(wrapper.text()).not.toContain('目标完整路径')
+    wrapper.unmount()
   })
 
   it('needs no typed name to unregister and reports success', async () => {

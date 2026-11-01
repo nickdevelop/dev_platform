@@ -66,7 +66,7 @@ async function openAgentSettings(page: Page) {
 async function createOpencodeSession(page: Page, title: string) {
   await page.locator('.project-row.selected .project-new-session').click()
   await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
-  await page.locator('.backend-switch [data-backend="opencode-v2"]').click()
+  await page.locator('[data-test="agent-switch"] [data-backend="opencode-v2"]').click()
   await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
 }

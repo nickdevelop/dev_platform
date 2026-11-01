@@ -28,8 +28,9 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  // A project's settings are a workbench tab, not a page the tree navigates to.
-  'open-settings': [projectId: number]
+  // Editing a project opens the shell's single project dialog; the tree never
+  // navigates to a project page.
+  edit: [projectId: number]
   'select-session': [projectId: number, sessionId: string]
   'new-session': [projectId: number]
   'delete-session': [projectId: number, sessionId: string]
@@ -295,6 +296,7 @@ async function confirmDeleteSession() {
     <li v-for="project in visibleProjects" :key="project.id" class="project">
       <div
         class="project-row group flex items-center justify-between px-1.5 py-1.5 rounded transition-colors text-platform-text hover:bg-platform-surface-muted"
+        :class="{ selected: project.id === activeProjectId }"
       >
         <button
           type="button"
@@ -333,14 +335,14 @@ async function confirmDeleteSession() {
           </button>
           <button
             type="button"
-            class="project-settings w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text text-xs transition-colors"
-            :aria-label="`项目设置：${project.name}`"
-            title="项目设置"
-            @click.stop="emit('open-settings', project.id)"
+            class="project-edit w-5 h-5 flex items-center justify-center rounded hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text text-xs transition-colors"
+            :aria-label="`编辑项目：${project.name}`"
+            title="编辑项目"
+            data-test="project-edit"
+            @click.stop="emit('edit', project.id)"
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="2.5" />
-              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 2.5l2.5 2.5-8 8H3v-2.5l8-8z" />
             </svg>
           </button>
         </div>

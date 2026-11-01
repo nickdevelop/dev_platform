@@ -32,7 +32,7 @@ import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
 
-type DialogKind = 'register' | 'create' | 'move' | 'rename' | 'rename-name' | 'unregister'
+type DialogKind = 'register' | 'create' | 'edit' | 'unregister'
 
 const route = useRoute()
 const router = useRouter()
@@ -541,10 +541,12 @@ function togglePinTab(tab: OpenTab) {
   openTabs.togglePin(tabKey(tab))
 }
 
-// A project's gear opens its settings as a tab. The project name in the tree
-// only expands its sessions — there is no project page to navigate to.
-function openSettings(id: number) {
-  void router.push({ name: 'project-settings', params: { projectId: String(id) } })
+// The pencil in a project row opens the shell's single project dialog in edit
+// mode. Project configuration (unregister and other project facts) stays a
+// workbench tab reachable from the project list view.
+function openProjectEdit(id: number) {
+  const project = projects.byId(id)
+  if (project) openManage('edit', project)
 }
 
 function openSessionTab(id: number, sessionId: string) {
@@ -587,8 +589,8 @@ function openManage(kind: DialogKind, project: Project | null = null) {
 }
 
 // A removed project's open pages must not outlive it, so the shell returns home
-// after unregister and drops that project's tabs. Rename and move keep the id
-// and stay where they are.
+// after unregister and drops that project's tabs. Editing keeps the id and the
+// user stays where they are.
 async function onSubmitted(kind: DialogKind) {
   const removed = dialog.value?.project ?? null
   await projects.load()
@@ -729,7 +731,7 @@ watch(
         :active-project-id="projectId"
         :active-session-id="sessionId"
         @manage="openManage($event)"
-        @open-settings="openSettings"
+        @edit="openProjectEdit"
         @select-session="openSessionTab"
         @new-session="openNewSession"
         @delete-session="onDeleteSession"

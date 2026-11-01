@@ -71,7 +71,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
 
   await page.goto(`/projects/${project.id}/settings`)
   await page.locator('.project-row.selected .project-new-session').click()
-  await page.locator('.backend-switch [data-backend="pi"]').click()
+  await page.locator('[data-test="agent-switch"] [data-backend="pi"]').click()
   await page.locator('#first-message').fill('puml-e2e')
   await page.locator('form.create-session button.create').click()
   await expect(sessionRow(page, 'puml-e2e')).toBeVisible()

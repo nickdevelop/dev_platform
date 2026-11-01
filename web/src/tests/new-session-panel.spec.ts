@@ -1,7 +1,8 @@
-// Unit tests for the new session panel: it chooses an agent backend through a
-// segmented switch (never a select, instance, or model field), submits the
-// {backend, message?, model?} body with no title, and reports a failed
-// creation without navigating.
+// Unit tests for the new session panel: the project and the agent backend each
+// occupy their own row, the backend is chosen through a segmented switch (never
+// a select or dropdown), the send-shortcut hint lives inside the textarea as
+// placeholder text, and the {backend, message?, model?} body is submitted with
+// no title. A failed creation is reported without navigating.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -68,12 +69,7 @@ function setup(options: {
 }
 
 async function selectBackend(wrapper: ReturnType<typeof mount>, backend: string) {
-  const trigger = wrapper.find('[data-test="agent-select-trigger"]')
-  if (trigger.exists()) {
-    await trigger.trigger('click')
-    await flushPromises()
-  }
-  const option = wrapper.find(`[data-test="agent-select-menu"] [data-backend="${backend}"]`)
+  const option = wrapper.find(`[data-test="agent-switch"] [data-backend="${backend}"]`)
   if (option.exists()) {
     await option.trigger('click')
     await flushPromises()
@@ -81,7 +77,7 @@ async function selectBackend(wrapper: ReturnType<typeof mount>, backend: string)
 }
 
 function backendButton(wrapper: ReturnType<typeof mount>, backend: string) {
-  return wrapper.find(`[data-test="agent-select-menu"] [data-backend="${backend}"]`)
+  return wrapper.find(`[data-test="agent-switch"] [data-backend="${backend}"]`)
 }
 
 describe('NewSessionPanel', () => {
@@ -97,15 +93,14 @@ describe('NewSessionPanel', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders an agent select and a message composer, without a title or select', async () => {
+  it('renders a segmented agent switch and a message composer, without a title or select', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
-    expect(wrapper.find('[data-test="agent-select"]').exists()).toBe(true)
-    await wrapper.find('[data-test="agent-select-trigger"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="agent-select-menu"] [data-backend="opencode-v2"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="agent-select-menu"] [data-backend="pi"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-switch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-switch"] [data-backend="opencode-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-switch"] [data-backend="pi"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-select"]').exists()).toBe(false)
     expect(wrapper.find('#first-message').exists()).toBe(true)
     expect(wrapper.find('#session-title').exists()).toBe(false)
     expect(wrapper.find('#backend-select').exists()).toBe(false)
@@ -114,6 +109,38 @@ describe('NewSessionPanel', () => {
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="project-select"]').exists()).toBe(true)
     expect(wrapper.find('.approval-mode-select').exists()).toBe(true)
+  })
+
+  it('places the agent switch on its own row directly below the project row', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+
+    const form = wrapper.find('form.create-session')
+    const groups = Array.from(form.element.children)
+      .slice(0, 3)
+      .map((element) => element.className)
+    expect(groups[0]).toContain('project-selector-group')
+    expect(groups[1]).toContain('agent-selector-group')
+    expect(groups[2]).toContain('prompt-selector-group')
+    expect(form.find('.agent-selector-group [data-test="agent-switch"]').exists()).toBe(true)
+    // The agent switch is not part of the composer toolbar any more.
+    expect(form.find('.composer-tools [data-test="agent-switch"]').exists()).toBe(false)
+  })
+
+  it('shows the send shortcut hint inside the textarea placeholder, not below it', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+
+    const placeholder = () => wrapper.find('#first-message').attributes('placeholder') ?? ''
+    expect(placeholder()).toContain('Enter 发送')
+    expect(placeholder()).toContain('Shift+Enter 换行')
+    expect(wrapper.find('.composer-hint').exists()).toBe(false)
+
+    await wrapper.find('[data-test="send-shortcut-toggle"]').trigger('click')
+    await wrapper.find('[data-test="send-shortcut-ctrl-enter"]').trigger('click')
+    await flushPromises()
+    expect(placeholder()).toContain('Ctrl+Enter 发送')
+    expect(placeholder()).toContain('Enter 换行')
   })
 
   it('submits { backend, message } and never a title, instanceId', async () => {
@@ -251,15 +278,15 @@ describe('NewSessionPanel', () => {
     expect(createSpy).not.toHaveBeenCalled()
   })
 
-  it('does not offer a backend disabled platform-wide', async () => {
+  it('shows a backend disabled platform-wide as an unpressable option', async () => {
     const { wrapper } = setup({ piEnabled: false })
     await flushPromises()
 
-    await wrapper.find('[data-test="agent-select-trigger"]').trigger('click')
-    await flushPromises()
-
-    expect(backendButton(wrapper, 'pi').exists()).toBe(false)
+    expect(backendButton(wrapper, 'pi').exists()).toBe(true)
+    expect(backendButton(wrapper, 'pi').attributes('disabled')).toBeDefined()
+    expect(backendButton(wrapper, 'pi').attributes('aria-disabled')).toBe('true')
     expect(backendButton(wrapper, 'opencode-v2').exists()).toBe(true)
+    expect(backendButton(wrapper, 'opencode-v2').attributes('disabled')).toBeUndefined()
 
     await backendButton(wrapper, 'opencode-v2').trigger('click')
     await flushPromises()

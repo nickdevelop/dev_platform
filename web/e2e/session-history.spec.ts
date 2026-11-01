@@ -78,7 +78,7 @@ async function createSession(
   // register their own projects in the same isolated workspace.
   await projectRow(page, projectName).locator('.project-new-session').click()
   await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
-  await page.locator(`.backend-switch [data-backend="${backendName}"]`).click()
+  await page.locator(`[data-test="agent-switch"] [data-backend="${backendName}"]`).click()
   await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
   await expect(sessionRow(page, title)).toBeVisible()

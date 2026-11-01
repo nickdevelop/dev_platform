@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Project settings, opened as a workbench tab: project facts and the
 // danger-zone actions. The manage actions are handed up so the shell owns the
-// single manage dialog.
+// single manage dialog. Directory move and directory rename are not offered:
+// the platform only edits its own project metadata.
 //
 // Backend diagnostics and machine-level agent services live in platform
 // settings (Platform Settings → Agent), because they describe the machine, not
@@ -13,14 +14,14 @@ import { useProjectsStore } from '../../stores/projects'
 const props = defineProps<{ projectId: number }>()
 
 const emit = defineEmits<{
-  manage: [kind: 'move' | 'rename' | 'rename-name' | 'unregister', project: Project]
+  manage: [kind: 'edit' | 'unregister', project: Project]
 }>()
 
 const projectsStore = useProjectsStore()
 
 const project = computed(() => projectsStore.byId(props.projectId) ?? null)
 
-function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
+function manage(kind: 'edit' | 'unregister') {
   if (project.value) emit('manage', kind, project.value)
 }
 </script>
@@ -33,9 +34,7 @@ function manage(kind: 'move' | 'rename' | 'rename-name' | 'unregister') {
         <p class="path">{{ project?.path }}</p>
       </div>
       <div class="actions">
-        <button type="button" @click="manage('rename-name')">修改名称</button>
-        <button type="button" @click="manage('rename')">重命名</button>
-        <button type="button" @click="manage('move')">移动</button>
+        <button type="button" @click="manage('edit')">编辑项目</button>
         <button type="button" class="unregister" @click="manage('unregister')">解除登记</button>
       </div>
     </header>

@@ -1,9 +1,9 @@
 // End-to-end lifecycle: LAN-style login through the real UI against the real
-// Go backend, then a full project lifecycle (register, create, search,
-// rename, move, unregister, logout) inside a temporary scratch directory.
+// Go backend, then a full project lifecycle (create, register, search, edit the
+// display name, unregister, logout) inside a temporary scratch directory.
 // Filesystem effects are asserted directly from the Node side. The platform
-// never deletes project directories, so every removal here must leave them
-// on disk.
+// never deletes or renames project directories, so every removal here must
+// leave them on disk.
 //
 // Started via `npm run test:e2e`, which provides E2E_PASSWORD and
 // E2E_WORKSPACE_ROOT pointing at an isolated scratch directory; the password
@@ -20,10 +20,8 @@ if (!password || !workspaceRoot) {
 }
 
 test('login and drive a project through its full lifecycle', async ({ page, request }) => {
-  // Authorized workspace content: one existing directory to register, and
-  // one parent directory that a project can be moved into.
+  // Authorized workspace content: one existing directory to register.
   mkdirSync(join(workspaceRoot, 'alpha'))
-  mkdirSync(join(workspaceRoot, 'archive'))
 
   // Operator setup: the `request` fixture has its own cookie jar, so the
   // browser context below stays unauthenticated and the login flow is still
@@ -45,25 +43,23 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
 
   const settings = page.getByRole('region', { name: '项目设置' })
   const row = (name: string) => page.locator('.project-row', { hasText: name })
-  // A row click only expands/collapses the project; the gear opens settings.
-  const openSettings = (name: string) => row(name).locator('.project-settings').click()
 
-  // Register an existing directory.
-  await page.getByRole('button', { name: '注册项目', exact: true }).click()
+  // Register an existing directory (no new directory is created).
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
   const registerDialog = page.getByRole('dialog')
-  await registerDialog.getByLabel('目录的绝对路径').fill(join(workspaceRoot, 'alpha'))
-  await registerDialog.getByRole('button', { name: '注册', exact: true }).click()
+  await registerDialog.getByLabel('项目名称').fill('alpha')
+  await registerDialog.getByRole('checkbox').uncheck()
+  await registerDialog.getByLabel('项目路径').fill(join(workspaceRoot, 'alpha'))
+  await registerDialog.getByRole('button', { name: '确定', exact: true }).click()
   const alphaItem = row('alpha')
   await expect(alphaItem).toBeVisible()
-  await openSettings('alpha')
-  await expect(settings).toContainText(join(workspaceRoot, 'alpha'))
 
   // Create a brand-new project directory.
   await page.getByRole('button', { name: '新建项目', exact: true }).click()
   const createDialog = page.getByRole('dialog')
-  await createDialog.getByLabel('父目录的绝对路径').fill(workspaceRoot)
-  await createDialog.getByLabel('项目目录名').fill('beta')
-  await createDialog.getByRole('button', { name: '创建', exact: true }).click()
+  await createDialog.getByLabel('项目名称').fill('beta')
+  await createDialog.getByLabel('项目路径').fill(workspaceRoot)
+  await createDialog.getByRole('button', { name: '确定', exact: true }).click()
   const betaItem = row('beta')
   await expect(betaItem).toBeVisible()
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
@@ -74,43 +70,52 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await expect(alphaItem).toBeVisible()
   await page.getByLabel('搜索项目或会话').fill('')
 
-  // Rename requires typing the project's current name.
-  await openSettings('beta')
-  await settings.getByRole('button', { name: '重命名' }).click()
-  const renameDialog = page.getByRole('dialog')
-  await renameDialog.getByLabel('新目录名').fill('gamma')
-  await renameDialog.getByLabel(/输入当前项目名/).fill('beta')
-  await renameDialog.getByRole('button', { name: '重命名目录', exact: true }).click()
+  // The project row pencil edits only the platform display name; the directory
+  // on disk keeps its original name.
+  await betaItem.hover()
+  await betaItem.locator('[data-test="project-edit"]').click()
+  const editDialog = page.getByRole('dialog')
+  await expect(editDialog).toContainText('编辑项目')
+  await expect(editDialog).toContainText(join(workspaceRoot, 'beta'))
+  await editDialog.getByLabel('项目显示名称').fill('gamma')
+  await editDialog.getByRole('button', { name: '保存', exact: true }).click()
   const gammaItem = row('gamma')
   await expect(gammaItem).toBeVisible()
-  expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(true)
-  expect(existsSync(join(workspaceRoot, 'beta'))).toBe(false)
-
-  // Move requires the typed confirmation as well.
-  await settings.getByRole('button', { name: '移动' }).click()
-  const moveDialog = page.getByRole('dialog')
-  await moveDialog.getByLabel('目标完整路径').fill(join(workspaceRoot, 'archive', 'gamma'))
-  await moveDialog.getByLabel(/输入当前项目名/).fill('gamma')
-  await moveDialog.getByRole('button', { name: '移动', exact: true }).click()
-  await expect(settings).toContainText(join(workspaceRoot, 'archive', 'gamma'))
-  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(true)
+  await expect(betaItem).toBeHidden()
+  expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(false)
 
+  // Resolve ids from the project list so the settings panel can be opened by
+  // URL (the tree row no longer navigates to it).
+  await page.goto('/projects/management')
+  const alphaId = await page
+    .locator('[data-test="project-manage-row"]', { hasText: 'alpha' })
+    .getAttribute('data-project-id')
+  const gammaId = await page
+    .locator('[data-test="project-manage-row"]', { hasText: 'gamma' })
+    .getAttribute('data-project-id')
+  expect(alphaId).toBeTruthy()
+  expect(gammaId).toBeTruthy()
+
   // Unregister removes only the platform record; the directory survives.
-  await openSettings('alpha')
+  await page.goto(`/projects/${alphaId}/settings`)
+  await expect(settings).toBeVisible()
   await settings.getByRole('button', { name: '解除登记' }).click()
   const unregisterDialog = page.getByRole('dialog')
   await expect(unregisterDialog).toContainText('会被完整保留')
   await unregisterDialog.getByRole('button', { name: '解除登记', exact: true }).click()
-  await expect(alphaItem).toBeHidden()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(row('alpha')).toHaveCount(0)
   expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
 
-  // The project moved to archive is unregistered the same way and survives too.
-  await openSettings('gamma')
+  // The edited project is unregistered the same way and its directory survives.
+  await page.goto(`/projects/${gammaId}/settings`)
+  await expect(settings).toBeVisible()
   await settings.getByRole('button', { name: '解除登记' }).click()
   await page.getByRole('dialog').getByRole('button', { name: '解除登记', exact: true }).click()
-  await expect(row('gamma')).toBeHidden()
-  expect(existsSync(join(workspaceRoot, 'archive', 'gamma'))).toBe(true)
+  await expect(page).toHaveURL(/\/$/)
+  await expect(row('gamma')).toHaveCount(0)
+  expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
 
   // Logging out ends the session and returns to the login view.
   await page.getByTitle('退出登录').click()

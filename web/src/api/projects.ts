@@ -30,16 +30,6 @@ export function createProject(parent: string, name: string): Promise<Project> {
   return mutate<Project>('POST', '/projects/create', { parent, name })
 }
 
-// Mirrors #/components/schemas/MoveProjectRequest.
-export function moveProject(id: number, path: string, confirmName: string): Promise<Project> {
-  return mutate<Project>('POST', `/projects/${id}/move`, { path, confirmName })
-}
-
-// Mirrors #/components/schemas/RenameProjectRequest.
-export function renameProject(id: number, name: string, confirmName: string): Promise<Project> {
-  return mutate<Project>('POST', `/projects/${id}/rename`, { name, confirmName })
-}
-
 // Updates only the project's display name without touching the directory on disk.
 export function updateProjectName(id: number, name: string): Promise<Project> {
   return mutate<Project>('POST', `/projects/${id}/name`, { name })

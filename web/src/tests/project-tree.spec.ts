@@ -214,7 +214,7 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('没有匹配的项目')
   })
 
-  it('offers a new session from the project row icon, ahead of the settings icon', async () => {
+  it('offers a new session from the project row icon, ahead of the edit icon', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: 1 })
     await flushPromises()
@@ -224,9 +224,9 @@ describe('ProjectTree', () => {
       .findAll('.project-row button')
       .map((button) => button.classes().join(' '))
     const newSessionIndex = classes.findIndex((value) => value.includes('project-new-session'))
-    const settingsIndex = classes.findIndex((value) => value.includes('project-settings'))
+    const editIndex = classes.findIndex((value) => value.includes('project-edit'))
     expect(newSessionIndex).toBeGreaterThanOrEqual(0)
-    expect(newSessionIndex).toBeLessThan(settingsIndex)
+    expect(newSessionIndex).toBeLessThan(editIndex)
     const newSession = wrapper.find('.project-new-session')
     expect(newSession.attributes('title')).toBe('新建会话')
     expect(newSession.attributes('aria-label')).toBe('新建会话：alpha')
@@ -361,15 +361,15 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('Session A')
   })
 
-  it('opens project settings from the settings control', async () => {
+  it('opens the project edit dialog from the edit control', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: null })
     await flushPromises()
 
-    await wrapper.find('.project-settings').trigger('click')
-    // Settings open as a workbench tab; the tree never navigates to a project
-    // page, because there is none.
-    expect(wrapper.emitted('open-settings')).toEqual([[1]])
+    await wrapper.find('[data-test="project-edit"]').trigger('click')
+    // Editing is handled by the shell's single project dialog; the tree never
+    // navigates to a project page, because there is none.
+    expect(wrapper.emitted('edit')).toEqual([[1]])
     expect(wrapper.emitted('select-project')).toBeUndefined()
   })
 
@@ -384,7 +384,7 @@ describe('ProjectTree', () => {
     await flushPromises()
 
     expect(wrapper.find('.project-toggle').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.emitted('open-settings')).toBeUndefined()
+    expect(wrapper.emitted('edit')).toBeUndefined()
     expect(wrapper.emitted('select-project')).toBeUndefined()
   })
 
