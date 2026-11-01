@@ -167,6 +167,11 @@ func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.Normalized
 		if !ok {
 			return nil
 		}
+		if evTime, ok := ev["time"].(float64); ok && evTime > 0 {
+			sec := int64(evTime) / 1000
+			nsec := (int64(evTime) % 1000) * 1_000_000
+			now = time.Unix(sec, nsec).UTC()
+		}
 		evType, _ := ev["type"].(string)
 		evData, _ := ev["data"].(map[string]any)
 		if evData == nil {

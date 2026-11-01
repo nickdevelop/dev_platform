@@ -549,6 +549,10 @@ function openProjectEdit(id: number) {
   if (project) openManage('edit', project)
 }
 
+function onOpenProjectsManagement() {
+  void router.push({ name: 'projects-management' })
+}
+
 function openSessionTab(id: number, sessionId: string) {
   void router.push({ name: 'session', params: { projectId: String(id), sessionId } })
 }
@@ -732,6 +736,7 @@ watch(
         :active-session-id="sessionId"
         @manage="openManage($event)"
         @edit="openProjectEdit"
+        @open-projects-management="onOpenProjectsManagement"
         @select-session="openSessionTab"
         @new-session="openNewSession"
         @delete-session="onDeleteSession"

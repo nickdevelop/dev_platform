@@ -719,15 +719,16 @@ export function deriveRunningAction(messages: ChatEntry[]): RunningActionInfo {
       }
     }
     if (entry.kind === 'tool_result') {
-      return { label: '正在思考...', kind: 'thinking' }
+      // Do not prematurely reset to "thinking"; continue scanning backwards
+      // so the preceding tool_call action remains visible instead of flashing away.
+      continue
     }
     if (entry.kind === 'message') {
-      if (entry.role === 'assistant') {
-        return { label: '正在思考...', kind: 'thinking' }
-      }
       if (entry.role === 'user') {
         break
       }
+      // Assistant messages in the turn continue scanning backwards for the last tool_call or thinking.
+      continue
     }
   }
 

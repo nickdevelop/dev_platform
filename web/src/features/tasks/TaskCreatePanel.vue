@@ -12,6 +12,7 @@ import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
 import { UiButton, UiInput, UiSelect, UiTextarea, UiAlert } from '../../shared/ui'
+import CronBuilder from '../../shared/components/CronBuilder.vue'
 
 const props = defineProps<{
   initialProjectId?: number
@@ -542,35 +543,8 @@ async function handleCreateTask() {
           </div>
 
           <!-- Cron config -->
-          <div v-if="scheduleType === 'cron'" class="schedule-config-box p-3.5 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] space-y-2.5">
-            <div class="cron-row grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="cron-field flex flex-col gap-1.5">
-                <label class="text-xs font-medium text-[var(--color-text)]">快速预设周期</label>
-                <UiSelect v-model="cronShortcut" block>
-                  <option value="custom">自定义 Cron 表达式</option>
-                  <option value="hourly">每小时执行一次 (0 * * * *)</option>
-                  <option value="daily_9am">每天早上 09:00 (0 9 * * *)</option>
-                  <option value="weekly_mon">每周一早上 09:00 (0 9 * * 1)</option>
-                </UiSelect>
-              </div>
-
-              <div class="cron-field flex flex-col gap-1.5">
-                <label for="cron-expr" class="text-xs font-medium text-[var(--color-text)]">
-                  Cron 表达式 (分 时 日 月 周)
-                </label>
-                <UiInput
-                  id="cron-expr"
-                  v-model="customCronExpr"
-                  class="font-mono text-xs"
-                  placeholder="0 9 * * *"
-                  required
-                  block
-                />
-              </div>
-            </div>
-            <p class="cron-tip text-[11px] text-[var(--color-text-muted)]">
-              示例：<code>0 9 * * *</code> 表示每天 9:00 执行；<code>*/30 * * * *</code> 表示每 30 分钟执行一次。
-            </p>
+          <div v-if="scheduleType === 'cron'" class="schedule-config-box">
+            <CronBuilder id="cron-expr" v-model="customCronExpr" />
           </div>
         </div>
 

@@ -1262,6 +1262,26 @@ describe('sessions store composer model', () => {
 
     expect(sessions.modelFor('s1')).toBe('pi/chosen')
   })
+
+  it('sessionDisplayModel prioritizes session metadata and avoids autoModels fallback', () => {
+    const sessions = useSessionsStore()
+    sessions.setAutoModel('s1', 'fallback-first-model')
+
+    // 1. Without session model or replies, display model should be empty rather than fallback-first-model
+    expect(sessions.sessionDisplayModel('s1')).toBe('')
+    expect(sessions.sessionDisplayModel('s1', '')).toBe('')
+
+    // 2. Uses creation model if present
+    sessions.creationModels['s1'] = 'gpt-4o'
+    expect(sessions.sessionDisplayModel('s1')).toBe('gpt-4o')
+
+    // 3. Explicitly chosen model outranks creation model
+    sessions.setModel('s1', 'claude-3-5-sonnet')
+    expect(sessions.sessionDisplayModel('s1')).toBe('claude-3-5-sonnet')
+
+    // 4. Session entity's own persisted model has highest priority
+    expect(sessions.sessionDisplayModel('s1', 'deepseek/deepseek-chat')).toBe('deepseek/deepseek-chat')
+  })
 })
 
 // A first message admitted at create time rides the create request, so its

@@ -62,10 +62,10 @@ func (r *Store) GetByNative(projectID uint, backend, nativeID string) (database.
 	return row, nil
 }
 
-// List returns a project's indexed sessions in creation order.
+// List returns a project's indexed sessions, ordered by updated_at DESC, created_at DESC, id DESC.
 func (r *Store) List(projectID uint) ([]database.AgentSession, error) {
 	var rows []database.AgentSession
-	if err := r.db.Where("project_id = ?", projectID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
+	if err := r.db.Where("project_id = ?", projectID).Order("updated_at DESC, created_at DESC, id DESC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("sessions: list project %d: %w", projectID, err)
 	}
 	return rows, nil
@@ -130,6 +130,22 @@ func (r *Store) UpdateStatus(id, status string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
 			UpdateColumn("status", status).Error
+	})
+}
+
+// UpdateInstanceID updates only the instance_id column of one row, preserving its updated_at timestamp.
+func (r *Store) UpdateInstanceID(id, instanceID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
+			UpdateColumn("instance_id", instanceID).Error
+	})
+}
+
+// UpdateModel updates only the model column of one row, preserving its updated_at timestamp.
+func (r *Store) UpdateModel(id, model string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
+			UpdateColumn("model", model).Error
 	})
 }
 

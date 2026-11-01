@@ -182,6 +182,8 @@ type StoreRepository interface {
 	Update(row database.AgentSession) error
 	UpdateOnContinue(row database.AgentSession) error
 	UpdateStatus(id, status string) error
+	UpdateInstanceID(id, instanceID string) error
+	UpdateModel(id, model string) error
 	TouchUpdatedAt(id string, at time.Time) error
 	Delete(id string) error
 }
@@ -532,11 +534,8 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 		return CreateOutcome{}, err
 	}
 	if model != "" {
-		if dbRow, getErr := s.store.GetByID(row.ID); getErr == nil {
-			dbRow.Model = model
-			_ = s.store.Update(dbRow)
-			row.Model = model
-		}
+		_ = s.store.UpdateModel(row.ID, model)
+		row.Model = model
 	}
 	outcome := CreateOutcome{Session: row}
 	var imgs []agents.ImageAttachment
@@ -714,10 +713,7 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
 			row.InstanceID = inst.ID
-			if dbRow, getErr := s.store.GetByID(row.ID); getErr == nil {
-				dbRow.InstanceID = inst.ID
-				_ = s.store.Update(dbRow)
-			}
+			_ = s.store.UpdateInstanceID(row.ID, inst.ID)
 			result, err = reader.ListHistory(ctx, agents.ListHistoryRequest{
 				Directory: inst.Directory,
 				SessionID: row.NativeSessionID,

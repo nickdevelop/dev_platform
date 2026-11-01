@@ -122,7 +122,7 @@ describe('deriveRunningAction', () => {
     expect(action.code).toBe('https://example.com')
   })
 
-  it('transitions back to thinking when a tool call has completed but turn is running', () => {
+  it('preserves tool call action when a tool call has completed until next thinking arrives', () => {
     const entries = [
       createEntry({ kind: 'message', role: 'user', text: '执行测试' }),
       createEntry({
@@ -138,7 +138,16 @@ describe('deriveRunningAction', () => {
       }),
     ]
     const action = deriveRunningAction(entries)
-    expect(action).toEqual({ label: '正在思考...', kind: 'thinking' })
+    expect(action.label).toBe('执行')
+    expect(action.code).toBe('npm test')
+
+    // When new thinking arrives after tool execution, switches to thinking
+    const nextEntries = [
+      ...entries,
+      createEntry({ kind: 'thinking', text: '思考下一步...' }),
+    ]
+    const nextAction = deriveRunningAction(nextEntries)
+    expect(nextAction).toEqual({ label: '正在思考...', kind: 'thinking' })
   })
 })
 

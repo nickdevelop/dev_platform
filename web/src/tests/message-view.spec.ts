@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../features/chat/rendering/MessageView.vue'
+import { deriveRunningAction } from '../features/chat/rendering/logModel'
 import { clearDiagramCache, configureEngineLoader, type Engine } from '../plantuml/renderer'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'
@@ -314,6 +315,40 @@ describe('MessageView per-message model', () => {
 
     expect(wrapper.find('[data-test="user-message-time"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="message-time"]').exists()).toBe(true)
+  })
+
+  it('preserves the last tool call running action even after tool_result arrives', () => {
+    const userMsg: ChatEntry = message('user', '请读取文件')
+    const thinking: ChatEntry = { id: 'think-1', kind: 'thinking', role: 'assistant', text: 'thinking...', streaming: false }
+    const toolCall: ChatEntry = {
+      id: 'call-1',
+      kind: 'tool_call',
+      role: 'assistant',
+      name: 'read',
+      input: { path: 'src/main.ts' },
+      text: 'read',
+      streaming: false,
+    }
+    const toolResult: ChatEntry = {
+      id: 'res-1',
+      kind: 'tool_result',
+      role: 'tool',
+      callId: 'call-1',
+      text: 'file content',
+      streaming: false,
+    }
+
+    // When tool_result arrives, it must NOT flash back to "正在思考...",
+    // but keep showing the last tool action (读取 src/main.ts)
+    const actionAfterResult = deriveRunningAction([userMsg, thinking, toolCall, toolResult])
+    expect(actionAfterResult.label).toBe('读取')
+    expect(actionAfterResult.code).toBe('src/main.ts')
+
+    // If a subsequent thinking arrives after tool execution, it switches to "正在思考..."
+    const nextThinking: ChatEntry = { id: 'think-2', kind: 'thinking', role: 'assistant', text: 'analyzing...', streaming: false }
+    const actionAfterNextThinking = deriveRunningAction([userMsg, thinking, toolCall, toolResult, nextThinking])
+    expect(actionAfterNextThinking.label).toBe('正在思考...')
+    expect(actionAfterNextThinking.kind).toBe('thinking')
   })
 })
 

@@ -74,8 +74,7 @@ function formatFullTime(isoString?: string): string {
 }
 
 const modelFull = computed(() => {
-  if (props.session.model) return props.session.model
-  return sessionsStore.modelFor(props.session.id)
+  return sessionsStore.sessionDisplayModel(props.session.id, props.session.model)
 })
 
 const modelLabel = computed(() => {

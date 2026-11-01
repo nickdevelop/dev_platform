@@ -424,6 +424,11 @@ describe('three-pane app shell', () => {
     expect(dockControls.exists()).toBe(true)
     expect(dockControls.find('[data-test="sidebar-pin-btn"]').exists()).toBe(true)
     expect(dockControls.find('[data-test="sidebar-collapse-btn"]').exists()).toBe(true)
+
+    // Clicking settings button navigates to projects-management route
+    await settingsBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.name).toBe('projects-management')
   })
 
   it('keeps one shared sidebar head whose title follows the active column', async () => {

@@ -106,9 +106,19 @@ function isRunning(entry: AgentSession): boolean {
 // backend bumps on send/continue/status change), newest first. Ties keep the
 // server's creation order, because the sort below is stable.
 function sortedFor(projectId: number): AgentSession[] {
-  return [...sessionsFor(projectId)].sort(
-    (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-  )
+  return [...sessionsFor(projectId)].sort((a, b) => {
+    const bUpdated = Date.parse(b.updatedAt)
+    const aUpdated = Date.parse(a.updatedAt)
+    const diff = (isNaN(bUpdated) ? 0 : bUpdated) - (isNaN(aUpdated) ? 0 : aUpdated)
+    if (diff !== 0) return diff
+
+    const bCreated = Date.parse(b.createdAt)
+    const aCreated = Date.parse(a.createdAt)
+    const createDiff = (isNaN(bCreated) ? 0 : bCreated) - (isNaN(aCreated) ? 0 : aCreated)
+    if (createDiff !== 0) return createDiff
+
+    return 0
+  })
 }
 
 const query = computed(() => props.search.trim().toLowerCase())

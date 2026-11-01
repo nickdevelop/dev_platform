@@ -7,6 +7,7 @@ import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
 import { UiFormDialog, UiInput, UiSelect, UiTextarea } from '../../shared/ui'
+import CronBuilder from '../../shared/components/CronBuilder.vue'
 
 const props = defineProps<{
   task?: Task | null
@@ -309,18 +310,8 @@ async function submit() {
       />
     </div>
 
-    <div v-if="scheduleType === 'cron'" class="schedule-subfield flex flex-col gap-1.5 p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)]">
-      <label for="dlg-task-cron" class="text-xs font-medium text-[var(--color-text)]">
-        Cron 表达式 (分 时 日 月 周) <span class="text-red-500">*</span>
-      </label>
-      <UiInput
-        id="dlg-task-cron"
-        v-model="cronExpr"
-        placeholder="0 9 * * *"
-        class="font-mono text-xs"
-        required
-        block
-      />
+    <div v-if="scheduleType === 'cron'" class="schedule-subfield">
+      <CronBuilder id="dlg-task-cron" v-model="cronExpr" />
     </div>
   </UiFormDialog>
 </template>

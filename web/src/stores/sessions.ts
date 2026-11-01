@@ -190,6 +190,20 @@ export const useSessionsStore = defineStore('sessions', {
       if (used !== '') return used
       return state.autoModels[sessionId] ?? ''
     },
+    // sessionDisplayModel is the model displayed in the session roster/items.
+    // Unlike modelFor (which falls back to autoModels so the composer has an input),
+    // sessionDisplayModel represents the session's actual configured/used model
+    // and never falls back to an unselected first model in the picker.
+    sessionDisplayModel: (state) => (sessionId: string, sessionModel?: string): string => {
+      if (sessionModel && sessionModel.trim() !== '') return sessionModel.trim()
+      const explicit = state.selectedModels[sessionId]
+      if (explicit !== undefined && explicit !== '') return explicit
+      const created = state.creationModels[sessionId]
+      if (created !== undefined && created !== '') return created
+      const used = sessionUsedModel(state.messages[sessionId] ?? [])
+      if (used !== '') return used
+      return ''
+    },
     activeSession(state): AgentSession | null {
       return state.sessions.find((entry) => entry.id === state.activeSessionId) ?? null
     },

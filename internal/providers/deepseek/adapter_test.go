@@ -439,6 +439,121 @@ func TestAdapterHistoryReader(t *testing.T) {
 	}
 }
 
+func TestAdapterHistoryReaderMultiPagePaginationAndOrdering(t *testing.T) {
+	// Tests that backwards-paginated dsh pages (newest page returned first,
+	// older pages returned on subsequent iterations with beforeSeq) are assembled
+	// into strictly chronological order (seq 1, 2, 3, 4).
+	records := []map[string]any{
+		{"seq": 1, "type": "user/message", "data": map[string]any{"content": "first message", "source": map[string]any{"kind": "user"}}},
+		{"seq": 2, "type": "assistant/message", "data": map[string]any{"message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "first reply"}}}}},
+		{"seq": 3, "type": "user/message", "data": map[string]any{"content": "second message", "source": map[string]any{"kind": "user"}}},
+		{"seq": 4, "type": "assistant/message", "data": map[string]any{"message": map[string]any{"content": []any{map[string]any{"type": "text", "text": "second reply"}}}}},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/connect" {
+			http.SetCookie(w, &http.Cookie{Name: "dsh-auth", Value: "test"})
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			method := strings.TrimPrefix(r.URL.Path, "/api/")
+			var req rpcRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+
+			w.Header().Set("Content-Type", "application/json")
+			var val any
+
+			switch method {
+			case "session/projections":
+				val = map[string]any{
+					"asOfSeq": 4,
+					"values":  map[string]any{},
+				}
+			case "session/page":
+				argsMap, _ := req.Payload.Args.(map[string]any)
+				reqObj, _ := argsMap["request"].(map[string]any)
+				var beforeSeq *int
+				if bs, ok := reqObj["beforeSeq"].(float64); ok {
+					bInt := int(bs)
+					beforeSeq = &bInt
+				}
+
+				var outRecords []map[string]any
+				hasMore := false
+				if beforeSeq == nil {
+					outRecords = []map[string]any{
+						{"type": "event", "event": records[2]},
+						{"type": "event", "event": records[3]},
+					}
+					hasMore = true
+				} else if *beforeSeq == 3 {
+					// Deliberately return older records in reverse order to ensure sorting handles it
+					outRecords = []map[string]any{
+						{"type": "event", "event": records[1]},
+						{"type": "event", "event": records[0]},
+					}
+					hasMore = false
+				}
+				val = map[string]any{
+					"records": outRecords,
+					"hasMore": hasMore,
+				}
+			default:
+				val = map[string]any{"ok": true}
+			}
+
+			_ = json.NewEncoder(w).Encode(rpcResponse{
+				Type:  "server-response",
+				RPCID: req.RPCID,
+				Result: rpcResult{
+					OK:    true,
+					Value: mustJSON(val),
+				},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "dsh-auth=test")
+	defer client.Close()
+
+	adapter := New(Options{
+		ProcessLauncher: func(ctx context.Context) (*Process, error) {
+			return &Process{
+				client:   client,
+				exitDone: make(chan struct{}),
+			}, nil
+		},
+	})
+
+	res, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
+		Directory: "/data/projects/project1",
+		SessionID: "ses-proj1",
+	})
+	if err != nil {
+		t.Fatalf("ListHistory failed: %v", err)
+	}
+
+	if len(res.Events) != 4 {
+		t.Fatalf("ListHistory returned %d events, want 4", len(res.Events))
+	}
+
+	expectedTexts := []string{"first message", "first reply", "second message", "second reply"}
+	for i, want := range expectedTexts {
+		ev := res.Events[i]
+		if ev.Type != agents.EventMessage || ev.Message == nil || ev.Message.Text != want {
+			t.Errorf("event %d text = %q, want %q", i, ev.Message.Text, want)
+		}
+		if ev.Sequence != uint64(i+1) {
+			t.Errorf("event %d sequence = %d, want %d", i, ev.Sequence, i+1)
+		}
+	}
+}
+
 func TestAdapterPermissionsAndCommands(t *testing.T) {
 	server, client := newMockDSHServer(t)
 	defer server.Close()

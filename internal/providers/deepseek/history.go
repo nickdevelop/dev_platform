@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"devplatform/internal/core/agents"
@@ -65,15 +66,18 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	}
 
 	const pageSize = 100
-	var collectedEvents []agents.NormalizedEvent
 	normalizer := NewSessionEventNormalizer("", "")
 	if m := a.sessionModel(request.SessionID); m != nil {
 		normalizer.SetCurrentModel(m)
 	}
 
-	var beforeSeq *int
-	truncated := false
+	type seqRecord struct {
+		seq   int
+		event json.RawMessage
+	}
+	var allRecords []seqRecord
 
+	var beforeSeq *int
 	for {
 		pageReq := map[string]any{
 			"address": map[string]any{
@@ -99,46 +103,55 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 			break
 		}
 
-		// Parse backwards page
+		minSeqInPage := 0
 		for _, rec := range page.Records {
 			if rec.Type == "event" && len(rec.Event) > 0 {
-				frame := map[string]any{
-					"type":  "event",
-					"event": json.RawMessage(rec.Event),
+				var header struct {
+					Seq int `json:"seq"`
 				}
-				frameBytes, _ := json.Marshal(frame)
-				evs := normalizer.NormalizeFrame(frameBytes)
-				// History replay carries transcript events and context/usage anchors
-				for _, ev := range evs {
-					if ev.Type == agents.EventMessage || ev.Type == agents.EventThinking ||
-						ev.Type == agents.EventToolCall || ev.Type == agents.EventToolResult ||
-						(ev.Type == agents.EventLifecycle && (ev.Lifecycle.Usage != nil || ev.Lifecycle.ContextLimit != nil)) {
-						collectedEvents = append(collectedEvents, ev)
-						if len(collectedEvents) >= agents.MaxHistoryEvents {
-							truncated = true
-							break
-						}
-					}
+				_ = json.Unmarshal(rec.Event, &header)
+				if header.Seq > 0 && (minSeqInPage == 0 || header.Seq < minSeqInPage) {
+					minSeqInPage = header.Seq
 				}
-				if truncated {
-					break
-				}
+				allRecords = append(allRecords, seqRecord{
+					seq:   header.Seq,
+					event: rec.Event,
+				})
 			}
 		}
 
-		if truncated || !page.HasMore {
+		if !page.HasMore || minSeqInPage <= 0 {
 			break
 		}
+		beforeSeq = &minSeqInPage
+	}
 
-		// Find lowest seq for next page query
-		var firstSeq struct {
-			Seq int `json:"seq"`
+	// Sort records strictly by chronological sequence number
+	sort.SliceStable(allRecords, func(i, j int) bool {
+		return allRecords[i].seq < allRecords[j].seq
+	})
+
+	var collectedEvents []agents.NormalizedEvent
+	truncated := false
+	for _, rec := range allRecords {
+		frame := map[string]any{
+			"type":  "event",
+			"event": rec.event,
 		}
-		if err := json.Unmarshal(page.Records[0].Event, &firstSeq); err == nil && firstSeq.Seq > 0 {
-			beforeSeq = &firstSeq.Seq
-		} else {
-			break
+		frameBytes, _ := json.Marshal(frame)
+		evs := normalizer.NormalizeFrame(frameBytes)
+		for _, ev := range evs {
+			if ev.Type == agents.EventMessage || ev.Type == agents.EventThinking ||
+				ev.Type == agents.EventToolCall || ev.Type == agents.EventToolResult ||
+				(ev.Type == agents.EventLifecycle && (ev.Lifecycle.Usage != nil || ev.Lifecycle.ContextLimit != nil)) {
+				collectedEvents = append(collectedEvents, ev)
+			}
 		}
+	}
+
+	if len(collectedEvents) > agents.MaxHistoryEvents {
+		collectedEvents = collectedEvents[len(collectedEvents)-agents.MaxHistoryEvents:]
+		truncated = true
 	}
 
 	// 3. If projections carry context/usage anchor and none was in history, attach an anchor event
