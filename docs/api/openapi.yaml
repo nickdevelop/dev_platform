@@ -205,6 +205,57 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/display-config:
+    get:
+      summary: Get projects display configuration
+      description: Returns the ordering and visibility of projects in the sidebar.
+      operationId: getProjectsDisplayConfig
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Project display configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDisplayConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update projects display configuration
+      description: Updates the ordering and visibility of projects in the sidebar.
+      operationId: updateProjectsDisplayConfig
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectDisplayConfig'
+      responses:
+        '200':
+          description: Configuration saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectDisplayConfig'
+        '400':
+          description: Malformed body.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/create:
     post:
       summary: Create a project directory
@@ -2818,6 +2869,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /settings/agent-general:
+    get:
+      summary: Read global agent settings
+      description: Returns the global agent settings including the system prompt (AGENTS.md).
+      operationId: getAgentGeneral
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The global agent settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentGeneralSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update global agent settings
+      description: Saves the global system prompt and synchronizes it across agent directories.
+      operationId: putAgentGeneral
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentGeneralSettingsInput'
+      responses:
+        '200':
+          description: The saved global agent settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentGeneralSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /agents:
     get:
       summary: List agent backends
@@ -4777,6 +4875,23 @@ components:
           type: string
           description: Canonical absolute directory path of the project.
       additionalProperties: false
+    ProjectDisplayConfig:
+      type: object
+      required:
+        - order
+        - hidden
+      properties:
+        order:
+          type: array
+          items:
+            type: integer
+          description: Ordered list of project IDs.
+        hidden:
+          type: array
+          items:
+            type: integer
+          description: List of hidden project IDs.
+      additionalProperties: false
     TerminalServer:
       type: object
       required:
@@ -5550,6 +5665,25 @@ components:
       properties:
         enabled:
           type: boolean
+      additionalProperties: false
+    AgentGeneralSettings:
+      type: object
+      description: Global configuration applied across all agent backends.
+      required: [systemPrompt]
+      properties:
+        systemPrompt:
+          type: string
+        path:
+          type: string
+        updatedAt:
+          type: string
+      additionalProperties: false
+    AgentGeneralSettingsInput:
+      type: object
+      required: [systemPrompt]
+      properties:
+        systemPrompt:
+          type: string
       additionalProperties: false
     Agent:
       type: object

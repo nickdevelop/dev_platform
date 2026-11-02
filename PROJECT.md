@@ -69,7 +69,7 @@
 |---|---|---|---|
 | **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
-| **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动。 | `service.go`（项目生命周期与预览 Ticket）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
+| **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket 及显示配置持久化）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
 | **`tasks/`** | 计划任务与自动化调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器，支持 5/6/7 位表达式与年份过滤）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
@@ -79,7 +79,7 @@
 | **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态。 | `service.go`（List/Refresh/UpdateModel）、`repository.go`（快照读写与增量合并）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、本机首次免命令行密码设置引导、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出/首次密码设置） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
-| **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长。 | `service.go`（系统偏好与快捷助手开关）、`agents.go`（各 Backend 的配置状态与空闲超时）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；快捷助手开关独立于外观配置存储。 |
+| **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、全局 Agent 系统提示词（AGENTS.md）落盘与跨后端配置同步、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长。 | `service.go`（系统偏好与快捷助手开关）、`general.go`（全局系统提示词文件管理与跨 Agent 同步）、`agents.go`（各 Backend 的配置状态与空闲超时）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；全局提示词以平台数据目录 `dataDir/AGENTS.md` 为唯一权威源，跨平台文件同步写入各后端，不依赖 Windows 受限的软链接；快捷助手开关独立于外观配置存储。 |
 | **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
 | **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v32 迁移链，含 `agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、`chat_groups` 助手扩展字段、`chats.system_prompt` 及服务代理映射表 `service_proxies`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
@@ -103,9 +103,9 @@
 
 | 模块目录 | 适配模式与通信机制 | 职责说明 |
 |---|---|---|
-| **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；管理 Sidecar 与本地服务探测；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
-| **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
-| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
+| **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；管理 Sidecar 与本地服务探测；自动从全局 `~/.config/opencode/AGENTS.md` 同步加载平台级系统规约；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
+| **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 `--append-system-prompt` 原生挂载数据目录全局 `AGENTS.md` 文件指令；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
+| **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min；注入 `DSH_AGENTS_HOME` 原生加载全局指令）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
 
 ---
 
@@ -132,9 +132,9 @@ web/src/
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
-  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、单项目设置（仅保留编辑项目与解除登记，目录移动/重命名操作已移除）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
+  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
-  │     ├── settings/  ── 外观设置（移除深色主题，支持明亮浅色与暖冷色系）、大模型配置、Agent 后端 Tab 隔离与空闲断开配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
+  │     ├── settings/  ── 外观设置（移除深色主题，支持明亮浅色与暖冷色系）、大模型配置、Agent 全局设置（全局系统提示词 AGENTS.md 编辑与落盘同步）、Agent 后端 Tab 隔离与空闲断开配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
   │     ├── tasks/     ── 定时任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）
   │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue，单栏全宽专业模版正文呈现，移除实时合成预览）、提示词侧边栏（PromptsSidebar.vue）
@@ -354,7 +354,35 @@ web/src/
 
 ---
 
-### 6. 快捷助手漂浮对话流（Quick Assistant Flow）
+### 6. 平台级 Agent 全局系统提示词流（Global Agent System Prompt / AGENTS.md）
+
+```
+[ 设置 → Agent → 全局设置 (编辑并保存系统提示词) ]
+                       │
+                       ▼
+1. 平台设置 (internal/app/settings)
+   - 权威落盘：直接写入平台数据目录 dataDir/AGENTS.md，数据库 settings 表持久化双重保障
+   - 跨平台普通文件同步：以标准安全写入（非软链接，彻底杜绝 Windows 1314 特权限制）同步写入 OpenCode 全局路径 ~/.config/opencode/AGENTS.md
+   - REST 接口：GET /api/settings/agent-general 与 PUT /api/settings/agent-general
+                       │
+                       ├──────────────────────────┬──────────────────────────┐
+                       ▼                          ▼                          ▼
+2. OpenCode 适配器 (opencode)             3. Pi 适配器 (pi)             4. DeepSeek 适配器 (deepseek)
+   - 机器级守护服务内建 Watcher 自动热重载   - 启动 RPC 子进程时参数追加：  - 派生 dsh 进程时环境变量注入：
+   - 原生监视 ~/.config/opencode/AGENTS.md   `--append-system-prompt`       `DSH_AGENTS_HOME=<dataDir>`
+   - 会话创建与消息流零代码侵入            指向数据目录 AGENTS.md 文件      - dsh 原生直接加载数据目录指令
+                       │                          │                          │
+                       └──────────────────────────┴──────────────────────────┘
+                                                  │
+                                                  ▼
+5. 会话工作台与主对话流（高信噪比与零注入风险保证）
+   - 系统提示词直接进入各 Agent 内核最高优先级系统级上下文（System / Harness Instructions）
+   - 会话创建与轮次调度零代码侵入，主对话流（用户消息气泡、历史记录回放）100% 保持纯净，绝无拼接与泄露
+```
+
+---
+
+### 7. 快捷助手漂浮对话流（Quick Assistant Flow）
 
 ```
 [ 设置 → 外观 → 开启“显示快捷助手漂浮按钮” ]
@@ -388,7 +416,7 @@ web/src/
 
 ---
 
-### 7. 服务代理与 ContextPath 动态分发流（Service Proxy & Gateway Flow）
+### 8. 服务代理与 ContextPath 动态分发流（Service Proxy & Gateway Flow）
 
 ```
 [ 客户端访问 http://host:port/proxy/:alias/*subpath ]
@@ -417,7 +445,7 @@ web/src/
 
 ---
 
-### 8. 桌面应用双模连接与本地透明代理流（Desktop Dual-Mode & Proxy Flow）
+### 9. 桌面应用双模连接与本地透明代理流（Desktop Dual-Mode & Proxy Flow）
 
 ```
 [ 用户启动桌面客户端 / 进入“设置 → 服务连接”切换服务器 ]

@@ -234,6 +234,8 @@ describe('project management', () => {
         projectsRoute({ projects: [demoProject, secondProject] }),
         projectsRoute({ projects: [demoProject, secondProject] }),
         projectsRoute({ projects: [demoProject, secondProject] }),
+        { method: 'GET', path: '/api/projects/display-config', status: 200, body: { order: [], hidden: [] } },
+        { method: 'GET', path: '/api/projects/display-config', status: 200, body: { order: [], hidden: [] } },
         ...extraRoutes,
       ],
       path,
@@ -278,32 +280,30 @@ describe('project management', () => {
   })
 
   it('unregisters a project without touching its directory and needs no typed name', async () => {
-    const { wrapper, calls, router } = await mountWithProjects(
+    const { wrapper, calls } = await mountWithProjects(
       [
-        ...settingsRoutes(),
         { method: 'POST', path: '/api/projects/1/unregister', status: 204 },
       ],
-      '/projects/1/settings',
+      '/projects/management',
     )
 
-    // The only removal action is unregister; there is no directory deletion.
+    // The only removal action in projects management view is unregister ("解除").
     expect(wrapper.find('button.delete').exists()).toBe(false)
-    const unregisterButton = wrapper.find('button.unregister')
-    expect(unregisterButton.text()).toBe('解除登记')
+    const unregisterButton = wrapper.find('.action-link.text-danger')
+    expect(unregisterButton.text()).toBe('解除')
 
     await unregisterButton.trigger('click')
+    await flushPromises()
     const unregisterDialog = dialog(wrapper)
-    expect(unregisterDialog.attributes('aria-label')).toContain('保留目录')
-    expect(unregisterDialog.text()).toContain('会被完整保留')
+    expect(unregisterDialog.text()).toContain('完全保留')
     expect(unregisterDialog.find('label[for="dialog-confirm-name"]').exists()).toBe(false)
-    const unregisterConfirm = unregisterDialog.find('button.confirm')
-    expect(buttonDisabled(unregisterConfirm.element)).toBe(false)
-    await unregisterConfirm.trigger('click')
+    const unregisterConfirm = unregisterDialog.findAll('button').find((btn) => btn.text() === '解除登记')
+    expect(unregisterConfirm).toBeDefined()
+    expect(buttonDisabled(unregisterConfirm!.element)).toBe(false)
+    await unregisterConfirm!.trigger('click')
     await flushPromises()
     expect(calls.some((call) => call.path === '/api/projects/1/unregister')).toBe(true)
     expect(dialog(wrapper).exists()).toBe(false)
-    // The unregistered project's page is closed and the shell returns home.
-    expect(router.currentRoute.value.name).toBe('home')
   })
 
   it('registers a project directory', async () => {
@@ -327,9 +327,9 @@ describe('project management', () => {
   })
 
   it('moves focus into the dialog when it opens', async () => {
-    const { wrapper } = await mountWithProjects(settingsRoutes(), '/projects/1/settings')
+    const { wrapper } = await mountWithProjects([], '/projects/management')
 
-    await wrapper.find('button.unregister').trigger('click')
+    await wrapper.find('.action-link.text-danger').trigger('click')
     await flushPromises()
 
     expect(document.activeElement).not.toBeNull()

@@ -152,6 +152,16 @@ func (s *Service) List() ([]Project, error) {
 	return s.repo.List()
 }
 
+// GetDisplayConfig returns the sidebar order and visibility configuration for projects.
+func (s *Service) GetDisplayConfig() (DisplayConfig, error) {
+	return s.repo.GetDisplayConfig()
+}
+
+// SetDisplayConfig updates the sidebar order and visibility configuration for projects.
+func (s *Service) SetDisplayConfig(cfg DisplayConfig) error {
+	return s.repo.SetDisplayConfig(cfg)
+}
+
 // Register records an existing directory under an authorized workspace root.
 // The directory is never modified; the canonical path is stored and the name
 // is derived from the directory's basename. A directory already registered is

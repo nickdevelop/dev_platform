@@ -3,14 +3,17 @@
 // failure.
 import { defineStore } from 'pinia'
 import { describeApiError, UnauthorizedError } from '../api/client'
-import { listProjects, type Project } from '../api/projects'
+import {
+  listProjects,
+  getProjectDisplayConfig,
+  updateProjectDisplayConfig,
+  type Project,
+  type ProjectDisplayConfig,
+} from '../api/projects'
 
 const DISPLAY_CONFIG_KEY = 'dev-platform-projects-display-config'
 
-export interface ProjectDisplayConfig {
-  order: number[]
-  hidden: number[]
-}
+export type { ProjectDisplayConfig }
 
 function loadDisplayConfig(): ProjectDisplayConfig {
   try {
@@ -81,14 +84,33 @@ export const useProjectsStore = defineStore('projects', {
     async load() {
       this.loading = true
       try {
-        const list = await listProjects()
+        const [list, displayCfg] = await Promise.all([
+          listProjects(),
+          getProjectDisplayConfig().catch(() => null),
+        ])
         this.projects = list.projects
+        if (displayCfg) {
+          this.displayConfig = {
+            order: Array.isArray(displayCfg.order) ? displayCfg.order : [],
+            hidden: Array.isArray(displayCfg.hidden) ? displayCfg.hidden : [],
+          }
+          saveDisplayConfig(this.displayConfig)
+        }
         this.error = ''
       } catch (error) {
         if (error instanceof UnauthorizedError) return
         this.error = describeApiError(error)
       } finally {
         this.loading = false
+      }
+    },
+
+    async persistDisplayConfig() {
+      saveDisplayConfig(this.displayConfig)
+      try {
+        await updateProjectDisplayConfig(this.displayConfig)
+      } catch {
+        // Best-effort remote persistence; local cache already updated
       }
     },
 
@@ -100,7 +122,7 @@ export const useProjectsStore = defineStore('projects', {
         hidden.add(id)
       }
       this.displayConfig.hidden = Array.from(hidden)
-      saveDisplayConfig(this.displayConfig)
+      void this.persistDisplayConfig()
     },
 
     setProjectVisibility(id: number, visible: boolean) {
@@ -111,7 +133,7 @@ export const useProjectsStore = defineStore('projects', {
         hidden.add(id)
       }
       this.displayConfig.hidden = Array.from(hidden)
-      saveDisplayConfig(this.displayConfig)
+      void this.persistDisplayConfig()
     },
 
     moveProjectUp(id: number) {
@@ -122,7 +144,7 @@ export const useProjectsStore = defineStore('projects', {
       current[index - 1] = current[index]
       current[index] = temp
       this.displayConfig.order = current.map((p) => p.id)
-      saveDisplayConfig(this.displayConfig)
+      void this.persistDisplayConfig()
     },
 
     moveProjectDown(id: number) {
@@ -133,12 +155,12 @@ export const useProjectsStore = defineStore('projects', {
       current[index + 1] = current[index]
       current[index] = temp
       this.displayConfig.order = current.map((p) => p.id)
-      saveDisplayConfig(this.displayConfig)
+      void this.persistDisplayConfig()
     },
 
     reorderProjects(newOrder: number[]) {
       this.displayConfig.order = [...newOrder]
-      saveDisplayConfig(this.displayConfig)
+      void this.persistDisplayConfig()
     },
   },
 })

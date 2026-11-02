@@ -77,6 +77,11 @@ describe('projects management, display ordering, and task dialog minimal mode', 
     const rows = wrapper.findAll('[data-test="project-manage-row"]')
     expect(rows).toHaveLength(2)
 
+    // Verify "项目配置" action button is removed, only "解除" exists
+    const actions = rows[0].find('.col-actions')
+    expect(actions.text()).not.toContain('项目配置')
+    expect(actions.text()).toContain('解除')
+
     // Toggle visibility for Alpha
     const toggle = rows[0].find('[data-test="project-visibility-toggle"]')
     await toggle.trigger('change')

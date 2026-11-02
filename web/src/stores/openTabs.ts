@@ -13,7 +13,6 @@ import { defineStore } from 'pinia'
 
 export type OpenTab =
   | { kind: 'session'; projectId: number; sessionId: string; title: string; pinned?: boolean }
-  | { kind: 'project-settings'; projectId: number; pinned?: boolean }
   | { kind: 'projects-management'; pinned?: boolean }
   // The new-session form is a single strip-wide tab: opening it from any project
   // focuses the same tab, and the form's project picker decides the target.
@@ -31,8 +30,6 @@ export function tabKey(tab: OpenTab): string {
   switch (tab.kind) {
     case 'session':
       return tab.sessionId
-    case 'project-settings':
-      return `settings:${tab.projectId}`
     case 'projects-management':
       return 'projects-management'
     case 'new-session':
@@ -143,7 +140,6 @@ function normalize(entry: unknown): OpenTab | null {
   if (tab.kind === 'projects-management') return { kind: 'projects-management', ...pinned }
   if (tab.kind === 'platform-settings') return { kind: 'platform-settings', ...pinned }
   if (typeof tab.projectId !== 'number') return null
-  if (tab.kind === 'project-settings') return { kind: 'project-settings', projectId: tab.projectId, ...pinned }
   if (tab.kind === 'session' || tab.kind === undefined) {
     if (!isSession(entry)) return null
     // A stored session tab may predate any title being set; only a string title is
@@ -280,22 +276,6 @@ export const useOpenTabsStore = defineStore('openTabs', {
         trim(this.tabs)
       }
       this.setActiveKey(sessionId)
-      persist(this.tabs)
-    },
-
-    // Opens (or brings to front) a project's settings tab — one per project.
-    openProjectSettings(projectId: number) {
-      const existing = this.tabs.find(
-        (tab) => tab.kind === 'project-settings' && tab.projectId === projectId,
-      )
-      if (existing) {
-        this.tabs = pinnedFirst([...this.tabs.filter((tab) => tab !== existing), existing])
-      } else {
-        this.tabs.push({ kind: 'project-settings', projectId })
-        trim(this.tabs)
-        this.tabs = pinnedFirst(this.tabs)
-      }
-      this.setActiveKey(`settings:${projectId}`)
       persist(this.tabs)
     },
 

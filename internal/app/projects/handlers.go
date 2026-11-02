@@ -16,6 +16,8 @@ import (
 // enforcement is installed globally by the platform router.
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects", s.handleList)
+	r.GET("/projects/display-config", s.handleGetDisplayConfig)
+	r.PUT("/projects/display-config", s.handleSetDisplayConfig)
 	r.POST("/projects", s.handleRegister)
 	r.POST("/projects/create", s.handleCreate)
 	r.POST("/projects/:id/move", s.handleMove)
@@ -138,6 +140,30 @@ func (s *Service) handleList(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, projectListResponse{Projects: projects})
+}
+
+// handleGetDisplayConfig returns the sidebar order and visibility configuration for projects.
+func (s *Service) handleGetDisplayConfig(c *gin.Context) {
+	cfg, err := s.GetDisplayConfig()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+// handleSetDisplayConfig updates the sidebar order and visibility configuration for projects.
+func (s *Service) handleSetDisplayConfig(c *gin.Context) {
+	var cfg DisplayConfig
+	if err := c.ShouldBindJSON(&cfg); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	if err := s.SetDisplayConfig(cfg); err != nil {
+		respondError(c, http.StatusInternalServerError, "server_error")
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
 }
 
 // handleRegister registers an existing directory under an authorized root.

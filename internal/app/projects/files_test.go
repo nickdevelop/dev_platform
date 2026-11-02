@@ -16,7 +16,8 @@ import (
 )
 
 type memoryRepo struct {
-	projects map[uint]Project
+	projects      map[uint]Project
+	displayConfig DisplayConfig
 }
 
 func (m *memoryRepo) List() ([]Project, error) {
@@ -59,6 +60,27 @@ func (m *memoryRepo) Update(id uint, name, path string) (Project, error) {
 
 func (m *memoryRepo) RemoveProject(id uint) error {
 	delete(m.projects, id)
+	return nil
+}
+
+func (m *memoryRepo) GetDisplayConfig() (DisplayConfig, error) {
+	if m.displayConfig.Order == nil {
+		m.displayConfig.Order = []uint{}
+	}
+	if m.displayConfig.Hidden == nil {
+		m.displayConfig.Hidden = []uint{}
+	}
+	return m.displayConfig, nil
+}
+
+func (m *memoryRepo) SetDisplayConfig(cfg DisplayConfig) error {
+	if cfg.Order == nil {
+		cfg.Order = []uint{}
+	}
+	if cfg.Hidden == nil {
+		cfg.Hidden = []uint{}
+	}
+	m.displayConfig = cfg
 	return nil
 }
 

@@ -63,14 +63,27 @@ export class DesktopProxy {
     return devPath
   }
 
-  public async start(): Promise<number> {
+  public async start(preferredPort: number = 27182): Promise<number> {
     return new Promise((resolve, reject) => {
-      this.server.listen(0, '127.0.0.1', () => {
-        const addr = this.server.address() as net.AddressInfo
-        this.port = addr.port
-        resolve(this.port)
-      })
-      this.server.on('error', reject)
+      const tryListen = (port: number) => {
+        const onError = (err: any) => {
+          this.server.removeListener('error', onError)
+          if (port !== 0) {
+            // Port might be in use, fallback to random available port
+            tryListen(0)
+          } else {
+            reject(err)
+          }
+        }
+        this.server.once('error', onError)
+        this.server.listen(port, '127.0.0.1', () => {
+          this.server.removeListener('error', onError)
+          const addr = this.server.address() as net.AddressInfo
+          this.port = addr.port
+          resolve(this.port)
+        })
+      }
+      tryListen(preferredPort)
     })
   }
 

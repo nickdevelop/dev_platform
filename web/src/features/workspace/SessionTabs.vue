@@ -37,10 +37,6 @@ const emit = defineEmits<{
 }>()
 
 function label(tab: OpenTab): string {
-  if (tab.kind === 'project-settings') {
-    const project = props.projectNames?.[tab.projectId]
-    return project ? `${project} · 设置` : '项目设置'
-  }
   if (tab.kind === 'projects-management') return '项目管理'
   if (tab.kind === 'new-session') return 'new'
   if (tab.kind === 'new-chat') return '新对话'
@@ -56,7 +52,6 @@ function titleOf(tab: OpenTab): string {
   if (tab.kind === 'platform-settings') return '平台设置'
   if (tab.kind === 'projects-management') return '项目管理'
   if (tab.kind === 'task') return label(tab)
-  if (tab.kind === 'project-settings') return label(tab)
   if (tab.kind === 'chat') return label(tab)
   const project = props.projectNames?.[tab.projectId]
   const name = label(tab)
@@ -64,7 +59,7 @@ function titleOf(tab: OpenTab): string {
 }
 
 function isSettings(tab: OpenTab): boolean {
-  return tab.kind === 'project-settings' || tab.kind === 'platform-settings' || tab.kind === 'projects-management'
+  return tab.kind === 'platform-settings' || tab.kind === 'projects-management'
 }
 
 // The strip's close control label and the pin metadata branch on kind only to

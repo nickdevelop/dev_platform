@@ -16,8 +16,22 @@ export interface ProjectList {
   projects: Project[]
 }
 
+// Mirrors #/components/schemas/ProjectDisplayConfig.
+export interface ProjectDisplayConfig {
+  order: number[]
+  hidden: number[]
+}
+
 export function listProjects(): Promise<ProjectList> {
   return get<ProjectList>('/projects')
+}
+
+export function getProjectDisplayConfig(): Promise<ProjectDisplayConfig> {
+  return get<ProjectDisplayConfig>('/projects/display-config')
+}
+
+export function updateProjectDisplayConfig(config: ProjectDisplayConfig): Promise<ProjectDisplayConfig> {
+  return mutate<ProjectDisplayConfig>('PUT', '/projects/display-config', config)
 }
 
 // Mirrors #/components/schemas/RegisterProjectRequest.

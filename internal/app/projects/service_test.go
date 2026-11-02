@@ -669,3 +669,37 @@ func TestConcurrentMoveTargetCollision(t *testing.T) {
 		t.Errorf("project count = %d, want 2 records preserved", got)
 	}
 }
+
+func TestDisplayConfigPersistence(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+
+	// Initially empty defaults
+	cfg, err := svc.GetDisplayConfig()
+	if err != nil {
+		t.Fatalf("GetDisplayConfig initial: %v", err)
+	}
+	if len(cfg.Order) != 0 || len(cfg.Hidden) != 0 {
+		t.Fatalf("initial config = %+v, want empty order and hidden", cfg)
+	}
+
+	// Save custom display configuration
+	target := DisplayConfig{
+		Order:  []uint{3, 1, 2},
+		Hidden: []uint{1},
+	}
+	if err := svc.SetDisplayConfig(target); err != nil {
+		t.Fatalf("SetDisplayConfig: %v", err)
+	}
+
+	// Verify loaded config matches target
+	loaded, err := svc.GetDisplayConfig()
+	if err != nil {
+		t.Fatalf("GetDisplayConfig after save: %v", err)
+	}
+	if len(loaded.Order) != 3 || loaded.Order[0] != 3 || loaded.Order[1] != 1 || loaded.Order[2] != 2 {
+		t.Errorf("loaded.Order = %v, want [3, 1, 2]", loaded.Order)
+	}
+	if len(loaded.Hidden) != 1 || loaded.Hidden[0] != 1 {
+		t.Errorf("loaded.Hidden = %v, want [1]", loaded.Hidden)
+	}
+}

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useProjectsStore } from '../../stores/projects'
-import { useOpenTabsStore } from '../../stores/openTabs'
 import { updateProjectName, unregisterProject, type Project } from '../../api/projects'
 import { describeApiError } from '../../api/client'
 import { UiButton, UiInput, UiAlert, UiDialog } from '../../shared/ui'
 
 const projectsStore = useProjectsStore()
-const openTabsStore = useOpenTabsStore()
 
 const editingProject = ref<Project | null>(null)
 const editNameInput = ref('')
@@ -33,10 +31,6 @@ function moveUp(id: number) {
 
 function moveDown(id: number) {
   projectsStore.moveProjectDown(id)
-}
-
-function openSingleSettings(projectId: number) {
-  openTabsStore.openProjectSettings(projectId)
 }
 
 function startEditName(project: Project) {
@@ -199,15 +193,6 @@ async function confirmUnregister() {
 
             <!-- Actions -->
             <div class="col-actions actions-cell">
-              <button
-                type="button"
-                class="action-link"
-                title="配置该项目专属模型与参数"
-                @click="openSingleSettings(project.id)"
-              >
-                项目配置
-              </button>
-              <span class="action-divider">·</span>
               <button
                 type="button"
                 class="action-link text-danger"

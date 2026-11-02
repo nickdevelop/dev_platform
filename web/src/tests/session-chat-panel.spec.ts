@@ -160,7 +160,7 @@ function testRouter() {
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'home', component: { render: () => null } },
-      { path: '/projects/:projectId/settings', name: 'project-settings', component: { render: () => null } },
+      { path: '/projects/management', name: 'projects-management', component: { render: () => null } },
       { path: '/projects/:projectId/sessions/:sessionId', name: 'session', component: { render: () => null } },
     ],
   })

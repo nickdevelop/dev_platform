@@ -10,7 +10,6 @@ import type { Component } from 'vue'
 import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
 import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
-import ProjectSettingsPanel from '../features/projects/ProjectSettingsPanel.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 import ChatPanel from '../features/chat/pure/ChatPanel.vue'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
@@ -72,18 +71,17 @@ describe('three-pane app shell', () => {
   })
 
   it('shows the tree, the empty workspace and an enabled Chat category at /', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
 
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
     expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
-    expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)
     const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
     expect(chat?.attributes('href')).toBe('/chat')
     expect(chat?.attributes('disabled')).toBeUndefined()
   })
 
   it('opens the project edit dialog from the project row edit action', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     const tree = wrapper.findComponent(ProjectTree)
     tree.vm.$emit('edit', 1)
     await flushPromises()
@@ -106,42 +104,31 @@ describe('three-pane app shell', () => {
     expect(tabs).toHaveLength(0)
   })
 
-  it('opens project settings as a tab at /projects/:projectId/settings', async () => {
-    const { wrapper, router } = await setup('/projects/1/settings', { ProjectSettingsPanel: true })
+  it('redirects /projects/:projectId/settings to projects-management', async () => {
+    const { router } = await setup('/projects/1/settings')
 
-    expect(wrapper.findComponent(ProjectSettingsPanel).props('projectId')).toBe(1)
-    expect(wrapper.findComponent(ProjectTree).props('activeProjectId')).toBe(1)
-    expect(wrapper.findComponent(ProjectTree).props('activeSessionId')).toBeNull()
-
-    // The settings page is a tab like any other, and it is the active one.
-    const tabs = wrapper.findAll('[data-test="open-tab"]')
-    expect(tabs).toHaveLength(1)
-    expect(tabs[0].attributes('data-tab-key')).toBe('settings:1')
-    expect(tabs[0].attributes('aria-selected')).toBe('true')
-    expect(tabs[0].text()).toContain('alpha · 设置')
-    expect(router.currentRoute.value.name).toBe('project-settings')
+    expect(router.currentRoute.value.name).toBe('projects-management')
   })
 
-  it('opens one settings tab per project however often it is visited', async () => {
+  it('opens one projects-management tab however often it is visited', async () => {
     const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
       SessionChatPanel: true,
-      ProjectSettingsPanel: true,
     })
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(1)
 
-    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await router.push({ name: 'projects-management' })
     await flushPromises()
     await router.push({ name: 'home' })
     await flushPromises()
-    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await router.push({ name: 'projects-management' })
     await flushPromises()
 
     const keys = wrapper.findAll('[data-test="open-tab"]').map((tab) => tab.attributes('data-tab-key'))
-    expect(keys).toEqual(['sess-1', 'settings:1'])
+    expect(keys).toEqual(['sess-1', 'projects-management'])
   })
 
   it('redirects the old project URL to the workbench', async () => {
-    const { router } = await setup('/projects/1', { ProjectSettingsPanel: true })
+    const { router } = await setup('/projects/1')
 
     // A project has no page of its own any more: its settings are a tab, so the
     // stale URL must not render a panel no tab points at.
@@ -159,11 +146,10 @@ describe('three-pane app shell', () => {
     expect(wrapper.findComponent(ProjectTree).props('activeSessionId')).toBe('sess-1')
   })
 
-  it('reports a missing project instead of rendering another project', async () => {
-    const { wrapper } = await setup('/projects/999/settings', { ProjectSettingsPanel: true })
+  it('reports a missing project when session URL targets unknown project', async () => {
+    const { wrapper } = await setup('/projects/999/sessions/sess-1', { SessionChatPanel: true })
 
     expect(wrapper.text()).toContain('项目不存在或已移除')
-    expect(wrapper.findComponent(ProjectSettingsPanel).exists()).toBe(false)
   })
 
   it('keeps the login page outside the shell', async () => {
@@ -238,8 +224,8 @@ describe('three-pane app shell', () => {
     expect(wrapper.find('.pane').classes()).toContain('pane-full')
   })
 
-  it('lets the project settings pane scroll in the content region', async () => {
-    const { wrapper } = await setup('/projects/1', { ProjectSettingsPanel: true })
+  it('lets the projects-management pane scroll in the content region', async () => {
+    const { wrapper } = await setup('/projects/management')
 
     expect(wrapper.find('.pane').classes()).not.toContain('pane-full')
   })
@@ -247,9 +233,8 @@ describe('three-pane app shell', () => {
   it('pins a tab and keeps it when the other tabs are closed', async () => {
     const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
       SessionChatPanel: true,
-      ProjectSettingsPanel: true,
     })
-    await router.push({ name: 'project-settings', params: { projectId: '1' } })
+    await router.push({ name: 'projects-management' })
     await flushPromises()
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(2)
 
@@ -276,7 +261,7 @@ describe('three-pane app shell', () => {
   })
 
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
 
     // 项目 / 对话 / 任务 / 提示词 / 终端 / 设置 / 退出 each carry one inline SVG icon.
     const rail = wrapper.find('nav.category-rail')
@@ -296,7 +281,7 @@ describe('three-pane app shell', () => {
   })
 
   it('collapses the project column from the rail edge handle and persists the choice', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
 
     await wrapper.find('[data-test="rail-edge-toggle"]').trigger('click')
@@ -311,7 +296,7 @@ describe('three-pane app shell', () => {
   })
 
   it('renders rail edge collapse toggle at the border of the first column and toggles the sidebar', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     const edgeToggle = wrapper.find('[data-test="rail-edge-toggle"]')
     expect(edgeToggle.exists()).toBe(true)
     expect(edgeToggle.attributes('title')).toBe('收起侧边栏')
@@ -331,7 +316,7 @@ describe('three-pane app shell', () => {
   })
 
   it('brings the project column back floating when the project category is clicked and auto-collapses on outside click', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     await wrapper.find('[data-test="rail-edge-toggle"]').trigger('click')
     expect(wrapper.find('aside.sidebar').exists()).toBe(false)
 
@@ -363,7 +348,7 @@ describe('three-pane app shell', () => {
   })
 
   it('supports pin/unpin and dock collapse controls on the sidebar', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     const pinBtn = wrapper.find('[data-test="sidebar-pin-btn"]')
     const collapseBtn = wrapper.find('[data-test="sidebar-collapse-btn"]')
 
@@ -397,7 +382,7 @@ describe('three-pane app shell', () => {
   })
 
   it('separates sidebar action buttons into a dedicated row to prevent overlap with dock controls', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper } = await setup('/')
     const sidebar = wrapper.find('aside.sidebar')
     expect(sidebar.exists()).toBe(true)
 
@@ -435,7 +420,6 @@ describe('three-pane app shell', () => {
     // The shell owns the title row for every middle-column list, so all
     // sidebars start at the same height with the same typography.
     const { wrapper, router } = await setup('/', {
-      ProjectSettingsPanel: true,
       TasksSidebar: { template: '<div class="tasks-nav-stub"></div>' },
       PromptsSidebar: { template: '<div class="prompts-nav-stub"></div>' },
       TerminalSidebar: { template: '<div class="terminal-nav-stub"></div>' },
@@ -467,7 +451,7 @@ describe('three-pane app shell', () => {
   })
 
   it('starts with the project column collapsed when the stored choice says so', async () => {
-    const { wrapper } = await setup('/', { ProjectSettingsPanel: true }, () => {
+    const { wrapper } = await setup('/', {}, () => {
       localStorage.setItem('dev-platform-sidebar-v1', 'collapsed')
     })
 
@@ -475,7 +459,7 @@ describe('three-pane app shell', () => {
   })
 
   it('navigates to the settings center from the category rail', async () => {
-    const { wrapper, router } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper, router } = await setup('/')
 
     const settings = wrapper.findAll('a').find((link) => link.text() === '设置')
     expect(settings).toBeTruthy()
@@ -553,7 +537,7 @@ describe('three-pane app shell', () => {
   })
 
   it('marks the project category as current only outside the settings center', async () => {
-    const outside = (await setup('/projects/1', { ProjectSettingsPanel: true })).wrapper
+    const outside = (await setup('/projects/1')).wrapper
     expect(
       outside.findAll('a').find((link) => link.text() === '项目')!.attributes('aria-current'),
     ).toBe('page')
@@ -600,7 +584,7 @@ describe('three-pane app shell', () => {
 
 describe('quick assistant launcher visibility', () => {
   it('mounts the floating button only when the platform toggle is enabled', async () => {
-    const { wrapper, pinia } = await setup('/', { ProjectSettingsPanel: true })
+    const { wrapper, pinia } = await setup('/')
     const settings = useSettingsStore(pinia)
 
     expect(wrapper.find('[data-test="quick-assistant-button"]').exists()).toBe(false)

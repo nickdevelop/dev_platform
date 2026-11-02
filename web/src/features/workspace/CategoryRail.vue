@@ -53,7 +53,6 @@ const projectDestination = computed(() => {
     (tab) =>
       tab.kind === 'session' ||
       tab.kind === 'new-session' ||
-      tab.kind === 'project-settings' ||
       tab.kind === 'projects-management',
   )
   if (workspaceTabs.length > 0) {
@@ -75,9 +74,6 @@ const projectDestination = computed(() => {
         return { name: 'session-new', params: { projectId: String(draft.projectId) } }
       }
       return { name: 'session-new-global' }
-    }
-    if (preferred.kind === 'project-settings') {
-      return { name: 'project-settings', params: { projectId: String(preferred.projectId) } }
     }
     if (preferred.kind === 'session') {
       return { name: 'session', params: { projectId: String(preferred.projectId), sessionId: preferred.sessionId } }

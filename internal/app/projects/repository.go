@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -10,6 +11,15 @@ import (
 	"devplatform/internal/core/agents"
 )
 
+// SettingKeyProjectDisplayConfig is the key used in database.Setting for project display preferences.
+const SettingKeyProjectDisplayConfig = "projects.display_config"
+
+// DisplayConfig captures the project ordering and hidden state in the sidebar.
+type DisplayConfig struct {
+	Order  []uint `json:"order"`
+	Hidden []uint `json:"hidden"`
+}
+
 // Repository persists and retrieves project records and manages project unregistration.
 type Repository interface {
 	List() ([]Project, error)
@@ -17,6 +27,8 @@ type Repository interface {
 	Create(name, path string) (Project, error)
 	Update(id uint, name, path string) (Project, error)
 	RemoveProject(id uint) error
+	GetDisplayConfig() (DisplayConfig, error)
+	SetDisplayConfig(cfg DisplayConfig) error
 }
 
 type gormRepository struct {
@@ -117,4 +129,44 @@ func (r *gormRepository) RemoveProject(id uint) error {
 // projectFromModel maps the persistence model to the JSON-stable DTO.
 func projectFromModel(row database.Project) Project {
 	return Project{ID: row.ID, Name: row.Name, Path: row.Path}
+}
+
+func (r *gormRepository) GetDisplayConfig() (DisplayConfig, error) {
+	var row database.Setting
+	result := r.db.Where("key = ?", SettingKeyProjectDisplayConfig).Limit(1).Find(&row)
+	if result.Error != nil {
+		return DisplayConfig{Order: []uint{}, Hidden: []uint{}}, fmt.Errorf("projects: load display config: %w", result.Error)
+	}
+	if result.RowsAffected == 0 || row.Value == "" {
+		return DisplayConfig{Order: []uint{}, Hidden: []uint{}}, nil
+	}
+	var cfg DisplayConfig
+	if err := json.Unmarshal([]byte(row.Value), &cfg); err != nil {
+		return DisplayConfig{Order: []uint{}, Hidden: []uint{}}, nil
+	}
+	if cfg.Order == nil {
+		cfg.Order = []uint{}
+	}
+	if cfg.Hidden == nil {
+		cfg.Hidden = []uint{}
+	}
+	return cfg, nil
+}
+
+func (r *gormRepository) SetDisplayConfig(cfg DisplayConfig) error {
+	if cfg.Order == nil {
+		cfg.Order = []uint{}
+	}
+	if cfg.Hidden == nil {
+		cfg.Hidden = []uint{}
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("projects: serialize display config: %w", err)
+	}
+	row := database.Setting{Key: SettingKeyProjectDisplayConfig, Value: string(data)}
+	if err := r.db.Save(&row).Error; err != nil {
+		return fmt.Errorf("projects: save display config: %w", err)
+	}
+	return nil
 }

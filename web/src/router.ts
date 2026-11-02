@@ -13,7 +13,6 @@ import { useAuthStore } from './stores/auth'
 import AppShell from './features/workspace/AppShell.vue'
 import EmptyWorkspace from './features/workspace/EmptyWorkspace.vue'
 import LoginView from './views/LoginView.vue'
-import ProjectSettingsPanel from './features/projects/ProjectSettingsPanel.vue'
 import ProjectsManagementView from './features/projects/ProjectsManagementView.vue'
 import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
@@ -52,9 +51,7 @@ export function createAppRouter() {
           },
           {
             path: 'projects/:projectId/settings',
-            name: 'project-settings',
-            component: ProjectSettingsPanel,
-            props: (route) => ({ projectId: Number(route.params.projectId) }),
+            redirect: { name: 'projects-management' },
           },
           {
             path: 'chat',

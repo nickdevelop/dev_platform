@@ -168,10 +168,9 @@ const projectId = computed<number | null>(() =>
 const sessionId = computed<string | null>(() =>
   route.params.sessionId === undefined ? null : String(route.params.sessionId),
 )
-// Which tab the URL is showing. Sessions, project settings, the new-session
+// Which tab the URL is showing. Sessions, the new-session
 // form, task details and the platform settings each map onto their tab key the
 // strip renders.
-const settingsRoute = computed(() => route.name === 'project-settings')
 const projectsManagementRoute = computed(() => route.name === 'projects-management')
 const platformSettingsRoute = computed(
   () => typeof route.name === 'string' && route.name.startsWith('settings-'),
@@ -201,7 +200,7 @@ const projectActive = computed(
     !chatMode.value,
 )
 
-// Tabs belong strictly to the project workspace: sessions, project settings, and
+// Tabs belong strictly to the project workspace: sessions and
 // new session creation. Task detail and platform settings are managed by their own
 // respective centers and do not appear as workspace tabs.
 const workspaceTabs = computed(() =>
@@ -209,7 +208,6 @@ const workspaceTabs = computed(() =>
     (entry) =>
       entry.kind === 'session' ||
       entry.kind === 'new-session' ||
-      entry.kind === 'project-settings' ||
       entry.kind === 'projects-management',
   ),
 )
@@ -225,7 +223,6 @@ const activeKey = computed<string | null>(() => {
   if (!projectActive.value) return null
   if (projectsManagementRoute.value) return 'projects-management'
   if (newSessionRoute.value) return 'new-session'
-  if (settingsRoute.value && projectId.value !== null) return `settings:${projectId.value}`
   return sessionId.value
 })
 
@@ -307,11 +304,11 @@ function syncTabWithRoute() {
       openTabs.openNewSession()
       return
     }
-    if (projectId.value === null) return
-    if (settingsRoute.value) {
-      openTabs.openProjectSettings(projectId.value)
+    if (projectsManagementRoute.value) {
+      openTabs.openProjectsManagement()
       return
     }
+    if (projectId.value === null) return
     if (sessionId.value === null) return
     const known = sessions.sessionById(sessionId.value)
     openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
@@ -395,10 +392,6 @@ function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
   if (tab.kind === 'projects-management') {
     void router.push({ name: 'projects-management' })
-    return
-  }
-  if (tab.kind === 'project-settings') {
-    void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return
   }
   if (tab.kind === 'new-session') {
