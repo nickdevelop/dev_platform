@@ -24,6 +24,9 @@ const appearanceKey = "appearance.config"
 // feature switch never rewrites theme preferences.
 const quickAssistantKey = "quick-assistant.config"
 
+// agentGeneralKey is the settings-table key holding the agent general settings JSON.
+const agentGeneralKey = "agent.general.config"
+
 // ErrInvalidAppearance reports an appearance value outside the allowed set.
 var ErrInvalidAppearance = errors.New("settings: invalid appearance")
 
@@ -102,17 +105,42 @@ type Service struct {
 	catalog *agents.Catalog
 	// platform carries the OS port layer; tests inject the fake.
 	platform platform.Platform
+	// dataDir is the platform data directory where authoritative files like AGENTS.md live.
+	dataDir string
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithDataDir configures the platform data directory for settings.
+func WithDataDir(dir string) Option {
+	return func(s *Service) {
+		s.dataDir = dir
+	}
+}
+
+// WithPlatform configures the OS platform abstraction for settings (useful in tests).
+func WithPlatform(p platform.Platform) Option {
+	return func(s *Service) {
+		if p != nil {
+			s.platform = p
+		}
+	}
 }
 
 // NewService builds the settings service over the platform database and the
 // backend catalog.
-func NewService(db *gorm.DB, catalog *agents.Catalog) *Service {
-	return NewServiceWithRepository(NewGORMRepository(db), catalog)
+func NewService(db *gorm.DB, catalog *agents.Catalog, opts ...Option) *Service {
+	return NewServiceWithRepository(NewGORMRepository(db), catalog, opts...)
 }
 
 // NewServiceWithRepository builds the settings service over a custom repository.
-func NewServiceWithRepository(repo Repository, catalog *agents.Catalog) *Service {
-	return &Service{repo: repo, now: func() time.Time { return time.Now().UTC() }, catalog: catalog, platform: platform.New()}
+func NewServiceWithRepository(repo Repository, catalog *agents.Catalog, opts ...Option) *Service {
+	s := &Service{repo: repo, now: func() time.Time { return time.Now().UTC() }, catalog: catalog, platform: platform.New()}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Appearance returns the saved appearance, or the default when none is saved.

@@ -27,15 +27,38 @@ const pathInputs = reactive<Record<string, string>>({})
 const detections = reactive<Record<string, AgentDetection | null>>({})
 
 // Tab selection state for switching between backends
-const selectedBackend = ref<string>('')
+const selectedBackend = ref<string>('general')
 
 const activeAgent = computed(() => {
-  if (selectedBackend.value) {
+  if (selectedBackend.value && selectedBackend.value !== 'general') {
     const found = settings.agents.find((a) => a.backend === selectedBackend.value)
     if (found) return found
   }
   return settings.agents[0] ?? null
 })
+
+// General agent settings state
+const generalPromptInput = ref<string>('')
+const generalPromptSuccess = ref<boolean>(false)
+
+const generalUpdatedAtLabel = computed(() => {
+  const raw = settings.agentGeneral?.updatedAt
+  if (!raw) return ''
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return `上次保存于 ${parsed.toLocaleString()}`
+})
+
+async function saveGeneralSettings() {
+  generalPromptSuccess.value = false
+  const ok = await settings.saveAgentGeneral(generalPromptInput.value)
+  if (ok) {
+    generalPromptSuccess.value = true
+    setTimeout(() => {
+      generalPromptSuccess.value = false
+    }, 2500)
+  }
+}
 
 // Persisted model snapshots, one per backend.
 const models = reactive<Record<string, ModelInfo[]>>({})
@@ -84,6 +107,9 @@ async function saveIdleTimeout(backend: string) {
 
 onMounted(async () => {
   void settings.loadAgents()
+  void settings.loadAgentGeneral().then(() => {
+    generalPromptInput.value = settings.agentGeneral?.systemPrompt || ''
+  })
   await agents.loadBackends()
   void agents.loadDiagnostics()
   for (const entry of agents.serviceBackends) {
@@ -317,19 +343,36 @@ function cancelStop() {
       aria-label="Agent 代理选择"
     >
       <button
+        type="button"
+        class="agent-tab relative py-2.5 px-4 text-xs font-medium cursor-pointer transition-colors border-b-2 -mb-px flex items-center gap-2 select-none"
+        :class="[
+          selectedBackend === 'general'
+            ? 'border-blue-600 text-blue-600 dark:text-blue-400 font-semibold'
+            : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+        ]"
+        data-agent-tab="general"
+        data-test="agent-tab-general"
+        role="tab"
+        :aria-selected="selectedBackend === 'general'"
+        @click="selectedBackend = 'general'"
+      >
+        <span>全局设置</span>
+      </button>
+
+      <button
         v-for="agent in settings.agents"
         :key="agent.backend"
         type="button"
         class="agent-tab relative py-2.5 px-4 text-xs font-medium cursor-pointer transition-colors border-b-2 -mb-px flex items-center gap-2 select-none"
         :class="[
-          (activeAgent?.backend === agent.backend)
+          (selectedBackend !== 'general' && activeAgent?.backend === agent.backend)
             ? 'border-blue-600 text-blue-600 dark:text-blue-400 font-semibold'
             : 'border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
         ]"
         :data-agent-tab="agent.backend"
         :data-test="`agent-tab-${agent.backend}`"
         role="tab"
-        :aria-selected="activeAgent?.backend === agent.backend"
+        :aria-selected="selectedBackend !== 'general' && activeAgent?.backend === agent.backend"
         @click="selectedBackend = agent.backend"
       >
         <span>{{ label(agent.backend) }}</span>
@@ -341,10 +384,86 @@ function cancelStop() {
       </button>
     </nav>
 
+    <!-- General Settings Card -->
+    <article
+      v-show="selectedBackend === 'general'"
+      class="agent-card p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5"
+      data-agent="general"
+      data-test="agent-card-general"
+    >
+      <header class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
+        <div>
+          <strong class="text-base text-slate-900 dark:text-slate-100 font-semibold">全局通用配置</strong>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            配置跨所有 AI Coding Agent（OpenCode、Pi、DeepSeek 等）生效的通用规则与系统指令。
+          </p>
+        </div>
+      </header>
+
+      <!-- System Prompt / AGENTS.md section -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <label for="agent-general-system-prompt" class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+              全局系统提示词 (AGENTS.md)
+            </label>
+            <span class="text-[11px] text-slate-400 block mt-0.5">
+              作为全局系统规约落盘于平台数据目录，各 Agent 原生作为底层系统级指令加载，绝不污染对话消息流。
+            </span>
+          </div>
+          <span v-if="settings.agentGeneral.path" class="text-[11px] text-slate-400 font-mono" :title="settings.agentGeneral.path">
+            {{ settings.agentGeneral.path }}
+          </span>
+        </div>
+
+        <UiAlert v-if="settings.agentGeneralError" variant="error">
+          {{ settings.agentGeneralError }}
+        </UiAlert>
+
+        <div class="relative">
+          <textarea
+            id="agent-general-system-prompt"
+            v-model="generalPromptInput"
+            rows="10"
+            class="w-full font-mono text-xs p-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder-slate-400 resize-y"
+            placeholder="# 全局规范&#10;&#10;- 与用户交互始终使用简体中文&#10;- 代码、命令原文保持原样，不翻译"
+            data-test="agent-general-prompt-input"
+          ></textarea>
+        </div>
+
+        <div class="flex items-center justify-between pt-1 flex-wrap gap-2">
+          <div class="flex items-center gap-3">
+            <span class="text-[11px] text-slate-400 tabular-nums">
+              {{ (generalPromptInput || '').length }} 字符
+            </span>
+            <span v-if="generalUpdatedAtLabel" class="text-[11px] text-slate-400">
+              {{ generalUpdatedAtLabel }}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <UiButton
+              size="sm"
+              variant="primary"
+              :loading="settings.agentGeneralSaving"
+              data-test="save-agent-general"
+              @click="saveGeneralSettings"
+            >
+              保存全局设置
+            </UiButton>
+          </div>
+        </div>
+
+        <p v-if="generalPromptSuccess" class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium pt-1" data-test="agent-general-success">
+          ✓ 全局系统提示词已成功保存并同步
+        </p>
+      </div>
+    </article>
+
     <!-- Agent backend cards list (isolated by Tab view) -->
     <article
       v-for="agent in settings.agents"
-      v-show="activeAgent?.backend === agent.backend"
+      v-show="selectedBackend !== 'general' && activeAgent?.backend === agent.backend"
       :key="agent.backend"
       class="agent-card p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-5"
       :data-agent="agent.backend"

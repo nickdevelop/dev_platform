@@ -51,7 +51,7 @@ func newFullDependencies(t *testing.T) Dependencies {
 	if err != nil {
 		t.Fatalf("agents.NewCatalog: %v", err)
 	}
-	settingsSvc := settings.NewService(db, catalog)
+	settingsSvc := settings.NewService(db, catalog, settings.WithPlatform(fake.New(fake.WithConfigDir(t.TempDir()))))
 	tasksSvc := tasks.NewService(tasks.NewRepository(db), nil)
 	modelsSvc := modelconfig.NewService(db, nil)
 	chatSvc := chat.NewService(db, modelsSvc)

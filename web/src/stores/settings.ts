@@ -8,15 +8,18 @@ import {
   detectAgent,
   getAppearance,
   getQuickAssistantSettings,
+  getAgentGeneralSettings,
   listAgents,
   putAppearance,
   putQuickAssistantSettings,
+  putAgentGeneralSettings,
   setAgentEnabled,
   setAgentIdleTimeout,
   setAgentMode,
   setAgentPath,
   type AgentDetection,
   type AgentDto,
+  type AgentGeneralSettings,
   type Appearance,
   type QuickAssistantSettings,
 } from '../api/settings'
@@ -45,6 +48,10 @@ export const useSettingsStore = defineStore('settings', {
     agents: [] as AgentDto[],
     agentsLoading: false,
     agentsError: '',
+    agentGeneral: { systemPrompt: '' } as AgentGeneralSettings,
+    agentGeneralLoading: false,
+    agentGeneralSaving: false,
+    agentGeneralError: '',
   }),
 
   actions: {
@@ -187,6 +194,40 @@ export const useSettingsStore = defineStore('settings', {
         if (error instanceof UnauthorizedError) return null
         this.agentsError = describeApiError(error)
         return null
+      }
+    },
+
+    async loadAgentGeneral() {
+      this.agentGeneralLoading = true
+      try {
+        const config = await getAgentGeneralSettings()
+        this.agentGeneral = {
+          systemPrompt: config?.systemPrompt || '',
+          path: config?.path || '',
+          updatedAt: config?.updatedAt || '',
+        }
+        this.agentGeneralError = ''
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.agentGeneralError = describeApiError(error)
+      } finally {
+        this.agentGeneralLoading = false
+      }
+    },
+
+    async saveAgentGeneral(systemPrompt: string): Promise<boolean> {
+      this.agentGeneralSaving = true
+      try {
+        const saved = await putAgentGeneralSettings({ systemPrompt })
+        this.agentGeneral = saved
+        this.agentGeneralError = ''
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentGeneralError = describeApiError(error)
+        return false
+      } finally {
+        this.agentGeneralSaving = false
       }
     },
   },

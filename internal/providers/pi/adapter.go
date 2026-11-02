@@ -64,6 +64,8 @@ type Options struct {
 	// child. An approval extension lives here: pi's core does not request tool
 	// approval, so confirmations only exist when an extension asks for them.
 	Extensions []string
+	// DataDir is the platform data directory where authoritative files like AGENTS.md live.
+	DataDir string
 	// VersionProbe overrides how the CLI version is obtained. When nil the
 	// adapter runs `<executable> --version`. Tests inject a stub so they do
 	// not have to execute a real binary.
@@ -94,6 +96,7 @@ type Adapter struct {
 	env               []string
 	mode              string
 	extensions        []string
+	dataDir           string
 	rpcIdleTimeout    time.Duration
 	rpcReapInterval   time.Duration
 	now               func() time.Time
@@ -140,6 +143,7 @@ func New(options Options) *Adapter {
 		env:               options.Env,
 		mode:              ModeRPC,
 		extensions:        options.Extensions,
+		dataDir:           options.DataDir,
 		rpcIdleTimeout:    options.RPCIdleTimeout,
 		rpcReapInterval:   options.RPCReapInterval,
 		now:               options.Now,

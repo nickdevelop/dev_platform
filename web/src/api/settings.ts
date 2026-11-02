@@ -92,3 +92,20 @@ export function setAgentIdleTimeout(backend: string, minutes: number): Promise<A
 export function detectAgent(backend: string): Promise<AgentDetection> {
   return mutate<AgentDetection>('POST', `/agents/${encodeURIComponent(backend)}/detect`)
 }
+
+// Global Agent settings: shared across all agent backends (system prompt / AGENTS.md).
+export interface AgentGeneralSettings {
+  systemPrompt: string
+  path?: string
+  updatedAt?: string
+}
+
+export function getAgentGeneralSettings(): Promise<AgentGeneralSettings> {
+  return get<AgentGeneralSettings>('/settings/agent-general')
+}
+
+export function putAgentGeneralSettings(
+  settings: { systemPrompt: string },
+): Promise<AgentGeneralSettings> {
+  return mutate<AgentGeneralSettings>('PUT', '/settings/agent-general', settings)
+}

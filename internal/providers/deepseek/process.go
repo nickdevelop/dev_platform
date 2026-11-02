@@ -75,8 +75,15 @@ func StartProcess(ctx context.Context, executable string, workDir string, env []
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	if len(env) > 0 {
-		cmd.Env = env
+	cmdEnv := env
+	if workDir != "" {
+		if len(cmdEnv) == 0 {
+			cmdEnv = os.Environ()
+		}
+		cmdEnv = append(cmdEnv, "DSH_AGENTS_HOME="+workDir)
+	}
+	if len(cmdEnv) > 0 {
+		cmd.Env = cmdEnv
 	}
 
 	if err := platform.New().Process().Configure(cmd); err != nil {

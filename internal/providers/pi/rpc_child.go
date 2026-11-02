@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -64,12 +66,13 @@ const defaultRPCReapInterval = time.Minute
 
 // rpcOptions describes the arguments for one `pi --mode rpc` child.
 type rpcOptions struct {
-	sessionID      string
-	sessionDir     string
-	passSessionDir bool
-	model          string
-	name           string
-	extensions     []string
+	sessionID          string
+	sessionDir         string
+	passSessionDir     bool
+	model              string
+	name               string
+	extensions         []string
+	appendSystemPrompt string
 }
 
 // rpcArgs builds pi's argv for a long-lived RPC session. The session id is the
@@ -90,6 +93,9 @@ func rpcArgs(options rpcOptions) []string {
 	if options.name != "" {
 		args = append(args, "--name", options.name)
 	}
+	if options.appendSystemPrompt != "" {
+		args = append(args, "--append-system-prompt", options.appendSystemPrompt)
+	}
 	for _, extension := range options.extensions {
 		if extension != "" {
 			args = append(args, "--extension", extension)
@@ -102,15 +108,23 @@ func rpcArgs(options rpcOptions) []string {
 // session binding with get_state before returning it. A child that fails
 // before the binding is proved is reaped and reported as an error.
 func (a *Adapter) startRPCChild(inst *instance, sessionID, model, name string) (*rpcChild, error) {
+	appendPrompt := ""
+	if a.dataDir != "" {
+		promptPath := filepath.Join(a.dataDir, "AGENTS.md")
+		if info, err := os.Stat(promptPath); err == nil && !info.IsDir() && info.Size() > 0 {
+			appendPrompt = promptPath
+		}
+	}
 	spec := processSpec{
 		executable: a.execPath(),
 		args: rpcArgs(rpcOptions{
-			sessionID:      sessionID,
-			sessionDir:     a.sessionDir,
-			passSessionDir: a.passSessionDir,
-			model:          model,
-			name:           name,
-			extensions:     a.extensions,
+			sessionID:          sessionID,
+			sessionDir:         a.sessionDir,
+			passSessionDir:     a.passSessionDir,
+			model:              model,
+			name:               name,
+			extensions:         a.extensions,
+			appendSystemPrompt: appendPrompt,
 		}),
 		dir:   inst.directory,
 		env:   a.env,

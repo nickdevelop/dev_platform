@@ -382,4 +382,51 @@ describe('AgentSettings service block', () => {
     expect(putCall?.body).toMatchObject({ minutes: 15 })
     expect(wrapper.find('[data-test="idle-timeout-success"]').text()).toContain('空闲断开时间已成功保存')
   })
+
+  it('renders general settings tab by default and saves system prompt', async () => {
+    const calls = stubFetch({
+      'GET /settings/agent-general': {
+        systemPrompt: '# Initial Instructions\nAlways be helpful.',
+        path: '/tmp/devplatform/AGENTS.md',
+        updatedAt: '2026-11-02T10:00:00Z',
+      },
+      'PUT /settings/agent-general': {
+        systemPrompt: '# Updated Instructions\nBe concise.',
+        path: '/tmp/devplatform/AGENTS.md',
+        updatedAt: '2026-11-02T10:05:00Z',
+      },
+    })
+    const wrapper = await mountView()
+
+    // 1. Check general tab exists and is selected by default
+    const generalTab = wrapper.find('[data-test="agent-tab-general"]')
+    expect(generalTab.exists()).toBe(true)
+    expect(generalTab.attributes('aria-selected')).toBe('true')
+
+    // 2. Check general settings card is rendered with initial prompt
+    const generalCard = wrapper.find('[data-test="agent-card-general"]')
+    expect(generalCard.exists()).toBe(true)
+    const promptInput = wrapper.find('[data-test="agent-general-prompt-input"]')
+    expect(promptInput.exists()).toBe(true)
+    expect((promptInput.element as HTMLTextAreaElement).value).toBe('# Initial Instructions\nAlways be helpful.')
+
+    // 3. Edit system prompt and save
+    await promptInput.setValue('# Updated Instructions\nBe concise.')
+    await wrapper.find('[data-test="save-agent-general"]').trigger('click')
+    await flushPromises()
+
+    const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/settings/agent-general')
+    expect(putCall).toBeDefined()
+    expect(putCall?.body).toMatchObject({ systemPrompt: '# Updated Instructions\nBe concise.' })
+    expect(wrapper.find('[data-test="agent-general-success"]').text()).toContain('全局系统提示词已成功保存并同步')
+
+    // 4. Switch to an agent tab and then switch back to general
+    await wrapper.find('[data-test="agent-tab-pi"]').trigger('click')
+    await flushPromises()
+    expect(generalTab.attributes('aria-selected')).toBe('false')
+
+    await generalTab.trigger('click')
+    await flushPromises()
+    expect(generalTab.attributes('aria-selected')).toBe('true')
+  })
 })

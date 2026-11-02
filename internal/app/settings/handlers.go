@@ -16,6 +16,8 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.PUT("/settings/appearance", s.handlePutAppearance)
 	r.GET("/settings/quick-assistant", s.handleGetQuickAssistant)
 	r.PUT("/settings/quick-assistant", s.handlePutQuickAssistant)
+	r.GET("/settings/agent-general", s.handleGetAgentGeneral)
+	r.PUT("/settings/agent-general", s.handlePutAgentGeneral)
 	r.GET("/agents", s.handleListAgents)
 	r.PUT("/agents/:backend", s.handleSetAgentEnabled)
 	r.PUT("/agents/:backend/path", s.handleSetAgentPath)

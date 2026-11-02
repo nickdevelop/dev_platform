@@ -10,6 +10,10 @@
 #   <DEPLOY_DIR>/data/               数据目录（由 platform.sh 管理，脚本不触碰）
 #   <DEPLOY_DIR>/platform.sh         启停脚本（若存在则用于重启服务）
 #
+# 同时把同一份前端资源同步到已解包的桌面端目录（Electron 的
+# <DESKTOP_APP_DIR>/resources/web），策略是“先清空目录，再整份复制”，
+# 避免残留旧哈希文件。桌面端目录不存在时仅告警跳过。
+#
 # 部署前会把被替换的旧产物备份到 <DEPLOY_DIR>/backups/<时间戳>/，便于回滚。
 # 服务管理：仅当部署时服务正在运行才会重启（未运行则保持停止）；也可用
 # --restart / --no-restart 显式控制。
@@ -21,13 +25,19 @@
 #   ./deploy.sh --deploy-only      只部署现有构建产物（bin/platform + web/dist）
 #   ./deploy.sh --no-restart       部署后不重启服务（即使服务正在运行）
 #   ./deploy.sh --restart          部署后一定重启服务（即使当前未运行）
+#   ./deploy.sh --skip-desktop     不同步桌面端 resources/web
+#   ./deploy.sh --desktop-dir P    指定桌面端解包目录（等价于 DESKTOP_APP_DIR）
 #   ./deploy.sh --verify           部署后探测 /api/health
 #   ./deploy.sh help               显示本帮助
 #
 # Environment overrides:
 #   DEPLOY_DIR       部署目录        (default: /data/tools/devplatform)
 #   DEPLOY_WEB_SUB   前端相对 bin 的子路径 (default: web/dist)
+#   DESKTOP_APP_DIR  已解包的桌面端目录
+#                    (default: /mnt/tool/AI-Dev-Platform-0.1.0-win-x64)
+#   DESKTOP_WEB_SUB  前端资源在桌面端目录下的子路径 (default: resources/web)
 #   SKIP_WEB         置 1 等价于 --skip-web
+#   SKIP_DESKTOP     置 1 等价于 --skip-desktop
 #   PLATFORM_SCRIPT  服务管理脚本    (default: $DEPLOY_DIR/platform.sh)
 #
 set -euo pipefail
@@ -47,7 +57,12 @@ DIST_BIN="$DEPLOY_DIR/bin/$BIN_NAME"
 DIST_WEB="$DEPLOY_DIR/bin/$WEB_SUBDIR"
 PLATFORM_SCRIPT="${PLATFORM_SCRIPT:-$DEPLOY_DIR/platform.sh}"
 
+# 桌面端（Electron）解包目录：其中 resources/web 就是服务端托管的前端资源。
+DESKTOP_APP_DIR="${DESKTOP_APP_DIR:-/mnt/tool/AI-Dev-Platform-0.1.0-win-x64}"
+DESKTOP_WEB="$DESKTOP_APP_DIR/${DESKTOP_WEB_SUB:-resources/web}"
+
 SKIP_WEB="${SKIP_WEB:-0}"
+SKIP_DESKTOP="${SKIP_DESKTOP:-0}"
 BUILD_ONLY=0
 DEPLOY_ONLY=0
 NO_RESTART=0
@@ -173,6 +188,28 @@ deploy() {
   log "已部署前端资源 -> $DIST_WEB"
 }
 
+# ---- 桌面端资源同步 ---------------------------------------------------------
+
+# sync_desktop_web 把本次构建的前端资源同步到已解包的桌面端目录
+# （Electron 的 resources/web）：先清空目标目录，再整份复制，避免残留旧文件。
+# 该路径是发布附属动作：桌面端目录不存在时只告警跳过，不影响主部署结果。
+sync_desktop_web() {
+  if [ "$SKIP_DESKTOP" = "1" ]; then
+    log "按 --skip-desktop 要求，未同步桌面端前端资源"
+    return 0
+  fi
+  if [ ! -d "$DESKTOP_APP_DIR" ]; then
+    log "桌面端目录不存在，跳过前端资源同步: $DESKTOP_APP_DIR"
+    log "如需同步请设置 DESKTOP_APP_DIR，或用 --skip-desktop 静默跳过"
+    return 0
+  fi
+
+  rm -rf "$DESKTOP_WEB"
+  mkdir -p "$DESKTOP_WEB"
+  cp -a "$BUILD_WEB/." "$DESKTOP_WEB/"
+  log "已同步前端资源（先清空后复制）-> $DESKTOP_WEB"
+}
+
 usage() {
   awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
@@ -186,11 +223,15 @@ while [ $# -gt 0 ]; do
     --deploy-only) DEPLOY_ONLY=1; shift ;;
     --no-restart) NO_RESTART=1; shift ;;
     --restart) FORCE_RESTART=1; shift ;;
+    --skip-desktop | --no-desktop) SKIP_DESKTOP=1; shift ;;
     --verify) VERIFY=1; shift ;;
     --dir) [ $# -ge 2 ] || die "--dir 需要一个参数"; DEPLOY_DIR="$2"
       DIST_BIN="$DEPLOY_DIR/bin/$BIN_NAME"
       DIST_WEB="$DEPLOY_DIR/bin/$WEB_SUBDIR"
       PLATFORM_SCRIPT="${PLATFORM_SCRIPT:-$DEPLOY_DIR/platform.sh}"
+      shift 2 ;;
+    --desktop-dir) [ $# -ge 2 ] || die "--desktop-dir 需要一个参数"; DESKTOP_APP_DIR="$2"
+      DESKTOP_WEB="$DESKTOP_APP_DIR/${DESKTOP_WEB_SUB:-resources/web}"
       shift 2 ;;
     -h | --help | help) usage; exit 0 ;;
     *) die "未知参数: $1（见 ./deploy.sh help）" ;;
@@ -201,6 +242,7 @@ require_cmd tar
 
 log "仓库目录: $REPO_DIR"
 log "部署目录: $DEPLOY_DIR"
+[ "$SKIP_DESKTOP" = "1" ] || log "桌面端目录: $DESKTOP_APP_DIR（前端资源 -> $DESKTOP_WEB）"
 
 if [ "$DEPLOY_ONLY" = "1" ]; then
   [ -x "$BUILD_BIN" ] || die "构建产物缺失: bin/$BIN_NAME（请先构建或去掉 --deploy-only）"
@@ -219,6 +261,7 @@ service_running && was_running=1
 
 backup
 deploy
+sync_desktop_web
 
 if [ "$NO_RESTART" = "1" ]; then
   log "按 --no-restart 要求，未重启服务"

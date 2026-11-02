@@ -29,7 +29,13 @@ To build and install into a running checkout in one step, run `./deploy.sh`
 (Linux/WSL): it builds through `cmd/devctl`, then copies `bin/platform` and
 `web/dist` into the deployment directory (`/data/tools/devplatform` by
 default, override with `DEPLOY_DIR` or `--dir`), backing up what it replaces
-under `backups/<timestamp>/`. The data directory is never touched, and the
+under `backups/<timestamp>/`. It also republishes the same `web/dist` into
+an already-unpacked desktop build (`<DESKTOP_APP_DIR>/resources/web`, default
+`/mnt/tool/AI-Dev-Platform-0.1.0-win-x64`), clearing that directory first and
+then copying the fresh build, so no stale hashed assets are left behind
+(override with `DESKTOP_APP_DIR` / `DESKTOP_WEB_SUB` or `--desktop-dir`,
+skip with `--skip-desktop`; a missing desktop directory is only a warning).
+The data directory is never touched, and the
 service is restarted through the deployment's `platform.sh` only when it was
 already running — `--restart` / `--no-restart` force either way, and
 `--build-only`, `--deploy-only`, `--skip-web` and `--verify` (probe

@@ -278,7 +278,7 @@ func runServer(args []string) error {
 	if err != nil {
 		return fmt.Errorf("build backend catalog: %w", err)
 	}
-	settingsService := settings.NewService(db, catalog)
+	settingsService := settings.NewService(db, catalog, settings.WithDataDir(dataDir))
 	// Backend adapters register themselves explicitly here (or through their
 	// own Register helper); there is no package-init side effect, so tests can
 	// build an isolated registry. Until an adapter is registered, starting an
@@ -308,6 +308,8 @@ func runServer(args []string) error {
 		// Extensions lists pi extension paths; the approval gate above and any
 		// operator-provided PI_EXTENSIONS are passed to every RPC child.
 		Extensions: piExtensions,
+		// DataDir is the platform data directory where authoritative files like AGENTS.md live.
+		DataDir: dataDir,
 	})); err != nil {
 		return fmt.Errorf("register pi adapter: %w", err)
 	}
