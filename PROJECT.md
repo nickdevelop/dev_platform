@@ -12,7 +12,7 @@
 2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度），右侧面板专职作为纯文件预览面板；当文件预览展开时，文件树展开/收缩自动占用文件预览面板宽度，绝不占用主对话窗口宽度。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
-5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口，悬浮完全显示，以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的“快捷助手”固定分组，与主 Chat 页面共享模型配置但使用独立事件流。
+5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口（26px 紧凑设计，默认 0.3 半透明，悬浮与展开时高亮过渡），以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的对应助手分组，与主 Chat 页面共享模型配置但使用独立事件流。
 6. **服务代理与 Demo 预览**：提供统一的动态 ContextPath 网关，支持将服务器上的静态文件目录（Directory Serving）或本地监听端口的 HTTP 服务（Port Reverse Proxy）通过平台端口以独立 ContextPath（`/proxy/:alias/`）直接暴露；免登录公开访问，支持外部快速分享与查看 demo，全协议透传并支持 WebSocket 升级（完美兼容 Vite/Webpack 等开发工具的 HMR 热更新）。
 7. **桌面端双模协同**：提供原生桌面客户端外壳（Electron 架构），支持“本地单机自带服务（Sidecar 自动拉起与优雅停机）”与“连接远程云端/团队服务”双模开箱即用与自由切换；主进程内置高性能轻量本地透明反代（Desktop Local Proxy），无缝穿透跨域与 SameSite Cookie 限制，并动态对齐 Origin 保证终端 WebSocket CSWSH 安全校验 100% 契约一致，使前端业务代码与后端服务零侵入同构。
 
@@ -27,7 +27,7 @@
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
 | **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v31，含 Agent 模型快照表与快捷助手固定分组及服务代理映射表 `service_proxies`） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
-| **调度引擎** | `robfig/cron/v3` | 支持标准 5/6 段 Cron 表达式及单次定时调度 |
+| **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
@@ -71,7 +71,7 @@
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动。 | `service.go`（项目生命周期与预览 Ticket）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装）、`completer.go`（调用 OpenAI 兼容端点）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
-| **`tasks/`** | 计划任务与自动化调度引擎。支持标准 5 位 Cron 表达式（配合前端 CronBuilder 可视化生成器）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
+| **`tasks/`** | 计划任务与自动化调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器、执行历史记录。 | `scheduler.go`（后台轮询调度器，支持 5/6/7 位表达式与年份过滤）、`executor.go`（任务派发执行）、`service.go`（任务 CRUD 与状态同步） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
@@ -116,7 +116,7 @@ web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
   ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, viewport, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
-  │     ├── components/── Provider 中性业务通用控件（CronBuilder.vue 可视化 Cron 生成器、RunningIndicator.vue 呼吸态标识、BackendTag.vue、BackendDiagnostics.vue）
+  │     ├── components/── Provider 中性业务通用控件（CronBuilder.vue 可视化 Cron 生成器，支持秒/分/时/日/月/周/年 7 位配置、反解析与后10次执行时间推断；RunningIndicator.vue 呼吸态标识；BackendTag.vue；BackendDiagnostics.vue）
   │     └── ui/        ── 平台标准 UI 组件库（纯中性业务解耦设计，基于 Tailwind CSS）：
   │           ├── atomic/    ── 原子组件（UiButton, UiInput, UiTextarea, UiSelect, UiDropdown, UiBadge, UiProgress, UiTooltip, UiTabs, UiAlert, UiEmpty, UiSpinner, UiDivider）
   │           ├── compound/  ── 复合容器组件（UiDialog, UiFormDialog, UiComposer, UiScrollFollow, UiBubble, UiTree, UiTreeNode）
@@ -153,7 +153,7 @@ web/src/
      - **Zone A 紧凑 Header 与标准化操作区**：标题高度收敛（13px，`font-weight: 600`），右侧集成 22px 微型方圆角停靠与展开控制按钮（`var(--radius, 4px)`）；操作按钮统一收敛为 26px 极简扁平微圆角按钮，前置 1.5px 几何矢量 SVG 加号图标（消除纯字符 `+`）；设置页彻底移除内部冗余二级标题，与外壳单头部绝对对齐。
      - **Zone B 紧凑检索与微过滤**：统一 26px 极简工具栏，内嵌 1.5px 细线放大镜矢量图标与一键清空按钮，移除输入框聚焦外发光（glow / ring）与外层大按钮，大幅释放首屏纵向阅读高度。
      - **Zone C 紧凑列表与导航卡片（Dense Pitch）**：
-       - **层级导航**：项目树由独立的 `ProjectSidebar.vue` 包装，`ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 会话计数 + 悬浮淡入的编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现。
+       - **层级导航**：项目树由独立的 `ProjectSidebar.vue` 包装，`ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 助手名称旁快捷新建对话按钮 + 会话计数 + 悬浮淡入的编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现。
        - **实体列表项排版**（覆盖会话项、助手项、对话项、任务项、提示词项、服务器项、设置项）：全量采用标准紧凑卡片（徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
        - **选中与激活法则（The Move）**：所有列表项激活态严格收敛为**左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）** 与阶梯底色（`var(--surface-muted)`），全平台第二栏彻底清除静止投影（`box-shadow`）与毛玻璃模糊。
        - **色彩预算**：彩色严格控制在 3% 以内，任务与终端状态仅在运行/阻断错误时显色，已完成与常规状态保持中性阶梯底色。

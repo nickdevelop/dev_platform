@@ -81,6 +81,14 @@ function selectAssistant(groupId: number | null) {
   chats.selectedGroupId = groupId
 }
 
+function startAssistantChat(groupId: number) {
+  chats.selectedGroupId = groupId
+  chats.startNewChat(groupId === 0 ? undefined : groupId)
+  if (route.name !== 'chat') {
+    void router.push({ name: 'chat' })
+  }
+}
+
 function openCreateGroup() {
   dialog.value = { type: 'create-group' }
 }
@@ -194,6 +202,19 @@ async function confirmDeleteGroup() {
                 {{ getAssistantIcon(group) }}
               </div>
               <span class="assistant-name sidebar-card-title truncate" :title="group.name">{{ group.name }}</span>
+              <button
+                type="button"
+                class="assistant-new-chat-btn"
+                :aria-label="`在「${group.name}」下新建对话`"
+                :title="`在「${group.name}」下新建对话`"
+                data-test="assistant-new-chat-btn"
+                @click.stop="startAssistantChat(group.id)"
+              >
+                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="8" y1="3" x2="8" y2="13" />
+                  <line x1="3" y1="8" x2="13" y2="8" />
+                </svg>
+              </button>
             </div>
             <span class="assistant-count sidebar-card-badge">{{ chatsForGroup(group.id) }}</span>
           </div>
@@ -248,6 +269,19 @@ async function confirmDeleteGroup() {
                 #
               </div>
               <span class="assistant-name sidebar-card-title truncate">未分组对话</span>
+              <button
+                type="button"
+                class="assistant-new-chat-btn"
+                aria-label="在未分组下新建对话"
+                title="在未分组下新建对话"
+                data-test="assistant-new-chat-btn"
+                @click.stop="startAssistantChat(0)"
+              >
+                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <line x1="8" y1="3" x2="8" y2="13" />
+                  <line x1="3" y1="8" x2="13" y2="8" />
+                </svg>
+              </button>
             </div>
             <span class="assistant-count sidebar-card-badge">{{ ungroupedCount }}</span>
           </div>
@@ -334,6 +368,36 @@ async function confirmDeleteGroup() {
   justify-content: center;
   flex-shrink: 0;
   border: 1px solid var(--color-border);
+}
+
+.assistant-new-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: var(--radius, 4px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.assistant-item:hover .assistant-new-chat-btn,
+.assistant-item:focus-within .assistant-new-chat-btn,
+.assistant-new-chat-btn:focus {
+  opacity: 0.85;
+}
+
+.assistant-new-chat-btn:hover {
+  opacity: 1;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
 .ungrouped-avatar {

@@ -3,13 +3,173 @@ package tasks
 import (
 	"context"
 	"log"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/robfig/cron/v3"
 )
 
-var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+var (
+	cron5Parser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	cron6Parser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	// Backward-compatible alias for 5-field parser
+	cronParser = cron5Parser
+)
+
+type yearSchedule struct {
+	inner    cron.Schedule
+	yearSpec string
+}
+
+func (y *yearSchedule) Next(t time.Time) time.Time {
+	curr := t
+	for i := 0; i < 200; i++ {
+		next := y.inner.Next(curr)
+		if next.IsZero() {
+			return time.Time{}
+		}
+		if matchYear(next.Year(), y.yearSpec) {
+			return next
+		}
+		if isPastMaxYear(next.Year(), y.yearSpec) {
+			return time.Time{}
+		}
+		curr = next
+	}
+	return time.Time{}
+}
+
+func matchYear(year int, spec string) bool {
+	if spec == "*" || spec == "?" {
+		return true
+	}
+	parts := strings.Split(spec, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if strings.Contains(p, "-") {
+			rangeParts := strings.Split(p, "-")
+			if len(rangeParts) == 2 {
+				start, err1 := strconv.Atoi(rangeParts[0])
+				end, err2 := strconv.Atoi(rangeParts[1])
+				if err1 == nil && err2 == nil && year >= start && year <= end {
+					return true
+				}
+			}
+		} else {
+			val, err := strconv.Atoi(p)
+			if err == nil && year == val {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isPastMaxYear(year int, spec string) bool {
+	if spec == "*" || spec == "?" {
+		return false
+	}
+	maxYear := 0
+	parts := strings.Split(spec, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if strings.Contains(p, "-") {
+			rangeParts := strings.Split(p, "-")
+			if len(rangeParts) == 2 {
+				end, err := strconv.Atoi(rangeParts[1])
+				if err == nil && end > maxYear {
+					maxYear = end
+				}
+			}
+		} else {
+			val, err := strconv.Atoi(p)
+			if err == nil && val > maxYear {
+				maxYear = val
+			}
+		}
+	}
+	return maxYear > 0 && year > maxYear
+}
+
+func validateYearSpec(spec string) bool {
+	if spec == "*" || spec == "?" {
+		return true
+	}
+	parts := strings.Split(spec, ",")
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if strings.Contains(p, "-") {
+			rangeParts := strings.Split(p, "-")
+			if len(rangeParts) != 2 {
+				return false
+			}
+			start, err1 := strconv.Atoi(rangeParts[0])
+			end, err2 := strconv.Atoi(rangeParts[1])
+			if err1 != nil || err2 != nil || start > end || start < 1970 || end > 2199 {
+				return false
+			}
+		} else {
+			val, err := strconv.Atoi(p)
+			if err != nil || val < 1970 || val > 2199 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ParseCronSchedule parses 5, 6, or 7-field cron expressions.
+// 5 fields: minute hour day month week
+// 6 fields: second minute hour day month week
+// 7 fields: second minute hour day month week year
+func ParseCronSchedule(expr string) (cron.Schedule, error) {
+	trimmed := strings.TrimSpace(expr)
+	if trimmed == "" {
+		return nil, ErrInvalidCronExpr
+	}
+
+	if strings.HasPrefix(trimmed, "@") {
+		sched, err := cron5Parser.Parse(trimmed)
+		if err != nil {
+			return nil, ErrInvalidCronExpr
+		}
+		return sched, nil
+	}
+
+	fields := strings.Fields(trimmed)
+	switch len(fields) {
+	case 5:
+		sched, err := cron5Parser.Parse(trimmed)
+		if err != nil {
+			return nil, ErrInvalidCronExpr
+		}
+		return sched, nil
+	case 6:
+		sched, err := cron6Parser.Parse(trimmed)
+		if err != nil {
+			return nil, ErrInvalidCronExpr
+		}
+		return sched, nil
+	case 7:
+		yearSpec := fields[6]
+		if !validateYearSpec(yearSpec) {
+			return nil, ErrInvalidCronExpr
+		}
+		sixFieldSpec := strings.Join(fields[:6], " ")
+		sched, err := cron6Parser.Parse(sixFieldSpec)
+		if err != nil {
+			return nil, ErrInvalidCronExpr
+		}
+		if yearSpec == "*" || yearSpec == "?" {
+			return sched, nil
+		}
+		return &yearSchedule{inner: sched, yearSpec: yearSpec}, nil
+	default:
+		return nil, ErrInvalidCronExpr
+	}
+}
 
 // CalculateNextRun computes the next run time after 'from' based on schedule settings.
 func CalculateNextRun(t Task, from time.Time) (*time.Time, error) {
@@ -23,7 +183,7 @@ func CalculateNextRun(t Task, from time.Time) (*time.Time, error) {
 		if t.CronExpr == "" {
 			return nil, ErrInvalidCronExpr
 		}
-		sched, err := cronParser.Parse(t.CronExpr)
+		sched, err := ParseCronSchedule(t.CronExpr)
 		if err != nil {
 			return nil, ErrInvalidCronExpr
 		}
@@ -52,7 +212,7 @@ func ValidateScheduleConfig(t Task) error {
 		if t.CronExpr == "" {
 			return ErrInvalidCronExpr
 		}
-		if _, err := cronParser.Parse(t.CronExpr); err != nil {
+		if _, err := ParseCronSchedule(t.CronExpr); err != nil {
 			return ErrInvalidCronExpr
 		}
 	}

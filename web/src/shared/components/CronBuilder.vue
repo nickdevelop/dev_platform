@@ -1,6 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { UiSelect, UiInput } from '../ui'
+import {
+  buildCron,
+  calculateNextRuns,
+  createDefaultCronStates,
+  describeCron,
+  FIELD_CONFIGS,
+  formatDateTime,
+  parseCron,
+  type CronFieldStates,
+  type FieldState,
+  type FieldType,
+} from '../utils/cronParser'
 
 const props = withDefaults(
   defineProps<{
@@ -9,7 +21,7 @@ const props = withDefaults(
     id?: string
   }>(),
   {
-    modelValue: '0 9 * * *',
+    modelValue: '0 0 9 * * ? *',
     disabled: false,
     id: 'cron-expr',
   },
@@ -19,29 +31,40 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-export type CronMode = 'minute' | 'hour' | 'daily' | 'workday' | 'weekly' | 'monthly' | 'custom'
+export type ActiveTab = 'preset' | 'second' | 'minute' | 'hour' | 'day' | 'month' | 'week' | 'year'
+export type PresetMode = 'daily' | 'workday' | 'weekly' | 'monthly' | 'minute' | 'hour' | 'custom'
 
-const mode = ref<CronMode>('daily')
+const activeTab = ref<ActiveTab>('preset')
+const presetMode = ref<PresetMode>('daily')
 
-// Minute interval mode
+// Minute interval preset
 const minuteInterval = ref<number>(15)
 
-// Hour interval mode
+// Hour interval preset
 const hourInterval = ref<number>(1)
 const hourMinute = ref<number>(0)
 
-// Fixed time: hour & minute
+// Fixed time: hour & minute & second preset
 const selectedHour = ref<number>(9)
 const selectedMinute = ref<number>(0)
+const selectedSecond = ref<number>(0)
 
-// Weekly: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun
+// Weekly preset
 const selectedWeekdays = ref<number[]>([1])
 
-// Monthly: days of month 1-31
+// Monthly preset
 const selectedMonthDays = ref<number[]>([1])
 
-// Custom expression
-const customExpr = ref<string>('0 9 * * *')
+// Full 7-field state
+const states = ref<CronFieldStates>(createDefaultCronStates())
+
+// Manual raw expression
+const manualExpr = ref<string>(props.modelValue || '0 0 9 * * ? *')
+const isManualEditing = ref(false)
+const showNextRuns = ref(true)
+
+const currentYear = new Date().getFullYear()
+const yearsList = Array.from({ length: 11 }, (_, i) => currentYear + i)
 
 const weekdaysList = [
   { value: 1, label: '周一' },
@@ -57,202 +80,267 @@ function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-// Generates 5-part cron expression: "minute hour day month weekday"
-function computeCron(): string {
-  switch (mode.value) {
+// Compute the active cron expression string
+const currentCronExpr = computed<string>(() => {
+  if (isManualEditing.value || presetMode.value === 'custom') {
+    return manualExpr.value.trim()
+  }
+  return buildCron(states.value)
+})
+
+// Human-readable Chinese translation
+const humanReadable = computed(() => {
+  return describeCron(currentCronExpr.value)
+})
+
+// Next 10 run times
+const nextRuns = computed(() => {
+  try {
+    return calculateNextRuns(currentCronExpr.value, 10)
+  } catch {
+    return []
+  }
+})
+
+// Sync states from preset selections
+function applyPresetToStates() {
+  const next = createDefaultCronStates()
+  switch (presetMode.value) {
     case 'minute':
-      return `*/${minuteInterval.value} * * * *`
+      next.second = { type: 'specific', specific: [0] }
+      next.minute = { type: 'step', start: 0, step: minuteInterval.value, specific: [] }
+      next.hour = { type: 'all', specific: [] }
+      next.day = { type: 'all', specific: [] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'none', specific: [] }
+      next.year = { type: 'all', specific: [] }
+      break
     case 'hour':
-      return `${hourMinute.value} */${hourInterval.value} * * *`
+      next.second = { type: 'specific', specific: [0] }
+      next.minute = { type: 'specific', specific: [hourMinute.value] }
+      next.hour = { type: 'step', start: 0, step: hourInterval.value, specific: [] }
+      next.day = { type: 'all', specific: [] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'none', specific: [] }
+      next.year = { type: 'all', specific: [] }
+      break
     case 'daily':
-      return `${selectedMinute.value} ${selectedHour.value} * * *`
+      next.second = { type: 'specific', specific: [selectedSecond.value] }
+      next.minute = { type: 'specific', specific: [selectedMinute.value] }
+      next.hour = { type: 'specific', specific: [selectedHour.value] }
+      next.day = { type: 'all', specific: [] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'none', specific: [] }
+      next.year = { type: 'all', specific: [] }
+      break
     case 'workday':
-      return `${selectedMinute.value} ${selectedHour.value} * * 1-5`
+      next.second = { type: 'specific', specific: [selectedSecond.value] }
+      next.minute = { type: 'specific', specific: [selectedMinute.value] }
+      next.hour = { type: 'specific', specific: [selectedHour.value] }
+      next.day = { type: 'all', specific: [] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'range', start: 1, end: 5, specific: [] }
+      next.year = { type: 'all', specific: [] }
+      break
     case 'weekly': {
       const days = [...selectedWeekdays.value].sort((a, b) => a - b)
-      const dayStr = days.length > 0 ? days.join(',') : '1'
-      return `${selectedMinute.value} ${selectedHour.value} * * ${dayStr}`
+      next.second = { type: 'specific', specific: [selectedSecond.value] }
+      next.minute = { type: 'specific', specific: [selectedMinute.value] }
+      next.hour = { type: 'specific', specific: [selectedHour.value] }
+      next.day = { type: 'none', specific: [] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'specific', specific: days.length > 0 ? days : [1] }
+      next.year = { type: 'all', specific: [] }
+      break
     }
     case 'monthly': {
       const days = [...selectedMonthDays.value].sort((a, b) => a - b)
-      const dayStr = days.length > 0 ? days.join(',') : '1'
-      return `${selectedMinute.value} ${selectedHour.value} ${dayStr} * *`
+      next.second = { type: 'specific', specific: [selectedSecond.value] }
+      next.minute = { type: 'specific', specific: [selectedMinute.value] }
+      next.hour = { type: 'specific', specific: [selectedHour.value] }
+      next.day = { type: 'specific', specific: days.length > 0 ? days : [1] }
+      next.month = { type: 'all', specific: [] }
+      next.week = { type: 'none', specific: [] }
+      next.year = { type: 'all', specific: [] }
+      break
     }
     case 'custom':
-      return customExpr.value.trim()
+      break
   }
+  states.value = next
 }
 
-// Parses human-readable Chinese description
-const humanReadable = computed(() => {
-  const current = (mode.value === 'custom' ? customExpr.value : computeCron()).trim()
-  const parts = current.split(/\s+/)
-  if (parts.length !== 5) {
-    return '格式错误：Cron 表达式必须由 5 个部分组成 (分 时 日 月 周)'
-  }
-
-  const [min, hr, day, mon, week] = parts
-
-  if (min.startsWith('*/') && hr === '*' && day === '*' && mon === '*' && week === '*') {
-    return `每隔 ${min.slice(2)} 分钟执行一次`
-  }
-  if (!min.includes('*') && hr.startsWith('*/') && day === '*' && mon === '*' && week === '*') {
-    return `每隔 ${hr.slice(2)} 小时的第 ${min} 分钟执行一次`
-  }
-  if (day === '*' && mon === '*' && week === '*') {
-    const h = Number(hr)
-    const m = Number(min)
-    if (!isNaN(h) && !isNaN(m)) {
-      return `每天 ${pad2(h)}:${pad2(m)} 执行一次`
-    }
-  }
-  if (day === '*' && mon === '*' && (week === '1-5' || week === '1,2,3,4,5')) {
-    const h = Number(hr)
-    const m = Number(min)
-    if (!isNaN(h) && !isNaN(m)) {
-      return `每周一至周五 (工作日) ${pad2(h)}:${pad2(m)} 执行`
-    }
-  }
-  if (day === '*' && mon === '*' && week !== '*') {
-    const dayNames = week.split(',').map((w) => {
-      const map: Record<string, string> = {
-        '1': '周一', '2': '周二', '3': '周三', '4': '周四', '5': '周五', '6': '周六', '7': '周日', '0': '周日',
-      }
-      return map[w] || `周${w}`
-    })
-    const h = Number(hr)
-    const m = Number(min)
-    if (!isNaN(h) && !isNaN(m)) {
-      return `每周 (${dayNames.join('、')}) ${pad2(h)}:${pad2(m)} 执行`
-    }
-  }
-  if (day !== '*' && mon === '*' && week === '*') {
-    const h = Number(hr)
-    const m = Number(min)
-    if (!isNaN(h) && !isNaN(m)) {
-      return `每月 ${day} 号 ${pad2(h)}:${pad2(m)} 执行`
-    }
-  }
-
-  return `按表达式执行: ${current}`
-})
-
-// Reverse parse incoming cron expression
+// Reverse parse incoming expression into states and detect presets
 function parseIncoming(expr: string) {
   if (!expr || typeof expr !== 'string') return
   const trimmed = expr.trim()
-  const parts = trimmed.split(/\s+/)
-  if (parts.length !== 5) {
-    mode.value = 'custom'
-    customExpr.value = trimmed
+  const parsed = parseCron(trimmed)
+  if (!parsed) {
+    presetMode.value = 'custom'
+    manualExpr.value = trimmed
     return
   }
 
-  const [min, hr, day, mon, week] = parts
+  states.value = parsed
+  manualExpr.value = trimmed
 
-  // 1. Minute interval: */15 * * * *
-  if (min.startsWith('*/') && hr === '*' && day === '*' && mon === '*' && week === '*') {
-    const val = parseInt(min.slice(2), 10)
-    if (!isNaN(val)) {
-      mode.value = 'minute'
-      minuteInterval.value = val
-      return
-    }
-  }
+  // Check if matches known presets
+  const { second, minute, hour, day, month, week, year } = parsed
 
-  // 2. Hour interval: 0 */2 * * *
-  if (!isNaN(Number(min)) && hr.startsWith('*/') && day === '*' && mon === '*' && week === '*') {
-    const val = parseInt(hr.slice(2), 10)
-    if (!isNaN(val)) {
-      mode.value = 'hour'
-      hourInterval.value = val
-      hourMinute.value = Number(min)
-      return
-    }
-  }
+  const isStandardYear = year.type === 'all'
+  const isStandardMonth = month.type === 'all'
+  const isStandardZeroSecond = second.type === 'specific' && second.specific.length === 1 && second.specific[0] === 0
 
-  // 3. Workday: 0 9 * * 1-5
-  if (!isNaN(Number(min)) && !isNaN(Number(hr)) && day === '*' && mon === '*' && (week === '1-5' || week === '1,2,3,4,5')) {
-    mode.value = 'workday'
-    selectedHour.value = Number(hr)
-    selectedMinute.value = Number(min)
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'step' &&
+    hour.type === 'all' &&
+    day.type === 'all'
+  ) {
+    presetMode.value = 'minute'
+    minuteInterval.value = minute.step ?? 15
     return
   }
 
-  // 4. Daily: 0 9 * * *
-  if (!isNaN(Number(min)) && !isNaN(Number(hr)) && day === '*' && mon === '*' && week === '*') {
-    mode.value = 'daily'
-    selectedHour.value = Number(hr)
-    selectedMinute.value = Number(min)
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'specific' &&
+    hour.type === 'step' &&
+    day.type === 'all'
+  ) {
+    presetMode.value = 'hour'
+    hourInterval.value = hour.step ?? 1
+    hourMinute.value = minute.specific[0] ?? 0
     return
   }
 
-  // 5. Weekly: 0 9 * * 1,3,5
-  if (!isNaN(Number(min)) && !isNaN(Number(hr)) && day === '*' && mon === '*' && week !== '*') {
-    const days = week.split(',').map((w) => parseInt(w, 10)).filter((n) => !isNaN(n) && n >= 1 && n <= 7)
-    if (days.length > 0) {
-      mode.value = 'weekly'
-      selectedHour.value = Number(hr)
-      selectedMinute.value = Number(min)
-      selectedWeekdays.value = days
-      return
-    }
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'specific' &&
+    minute.specific.length === 1 &&
+    hour.type === 'specific' &&
+    hour.specific.length === 1 &&
+    day.type === 'all' &&
+    week.type === 'range' &&
+    week.start === 1 &&
+    week.end === 5
+  ) {
+    presetMode.value = 'workday'
+    selectedSecond.value = 0
+    selectedMinute.value = minute.specific[0] ?? 0
+    selectedHour.value = hour.specific[0] ?? 9
+    return
   }
 
-  // 6. Monthly: 0 9 1,15 * *
-  if (!isNaN(Number(min)) && !isNaN(Number(hr)) && day !== '*' && mon === '*' && week === '*') {
-    const days = day.split(',').map((d) => parseInt(d, 10)).filter((n) => !isNaN(n) && n >= 1 && n <= 31)
-    if (days.length > 0) {
-      mode.value = 'monthly'
-      selectedHour.value = Number(hr)
-      selectedMinute.value = Number(min)
-      selectedMonthDays.value = days
-      return
-    }
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'specific' &&
+    minute.specific.length === 1 &&
+    hour.type === 'specific' &&
+    hour.specific.length === 1 &&
+    day.type === 'all' &&
+    (week.type === 'none' || week.type === 'all')
+  ) {
+    presetMode.value = 'daily'
+    selectedSecond.value = 0
+    selectedMinute.value = minute.specific[0] ?? 0
+    selectedHour.value = hour.specific[0] ?? 9
+    return
   }
 
-  // Fallback to custom
-  mode.value = 'custom'
-  customExpr.value = trimmed
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'specific' &&
+    hour.type === 'specific' &&
+    (day.type === 'none' || day.type === 'all') &&
+    week.type === 'specific' &&
+    week.specific.length > 0
+  ) {
+    presetMode.value = 'weekly'
+    selectedSecond.value = 0
+    selectedMinute.value = minute.specific[0] ?? 0
+    selectedHour.value = hour.specific[0] ?? 9
+    selectedWeekdays.value = [...week.specific]
+    return
+  }
+
+  if (
+    isStandardYear &&
+    isStandardMonth &&
+    isStandardZeroSecond &&
+    minute.type === 'specific' &&
+    hour.type === 'specific' &&
+    day.type === 'specific' &&
+    day.specific.length > 0 &&
+    (week.type === 'none' || week.type === 'all')
+  ) {
+    presetMode.value = 'monthly'
+    selectedSecond.value = 0
+    selectedMinute.value = minute.specific[0] ?? 0
+    selectedHour.value = hour.specific[0] ?? 9
+    selectedMonthDays.value = [...day.specific]
+    return
+  }
+
+  // Fallback to custom mode if doesn't match standard preset
+  presetMode.value = 'custom'
 }
 
-// Watch changes to internal state and emit update
-function syncOutput() {
-  const generated = computeCron()
-  if (generated !== props.modelValue) {
-    emit('update:modelValue', generated)
+function emitUpdate() {
+  const expr = currentCronExpr.value
+  if (expr !== props.modelValue) {
+    emit('update:modelValue', expr)
   }
 }
-
-watch([mode, minuteInterval, hourInterval, hourMinute, selectedHour, selectedMinute, selectedWeekdays, selectedMonthDays], () => {
-  if (mode.value !== 'custom') {
-    customExpr.value = computeCron()
-  }
-  syncOutput()
-}, { deep: true })
-
-watch(customExpr, (newVal) => {
-  if (mode.value === 'custom') {
-    syncOutput()
-  }
-})
 
 watch(
   () => props.modelValue,
   (val) => {
-    if (val && val.trim() !== computeCron().trim()) {
+    if (val && val.trim() !== currentCronExpr.value.trim()) {
       parseIncoming(val)
     }
   },
   { immediate: true },
 )
 
+watch(
+  [presetMode, minuteInterval, hourInterval, hourMinute, selectedHour, selectedMinute, selectedSecond, selectedWeekdays, selectedMonthDays],
+  () => {
+    if (presetMode.value !== 'custom') {
+      isManualEditing.value = false
+      applyPresetToStates()
+    }
+    emitUpdate()
+  },
+  { deep: true },
+)
+
+watch(
+  states,
+  () => {
+    if (!isManualEditing.value && presetMode.value !== 'custom') {
+      manualExpr.value = buildCron(states.value)
+    }
+    emitUpdate()
+  },
+  { deep: true },
+)
+
 function onManualInput(e: Event) {
   const val = (e.target as HTMLInputElement).value
-  customExpr.value = val
-  if (mode.value !== 'custom') {
-    mode.value = 'custom'
-  }
+  isManualEditing.value = true
+  manualExpr.value = val
+  parseIncoming(val)
   emit('update:modelValue', val)
 }
 
@@ -266,6 +354,51 @@ function toggleWeekday(val: number) {
     selectedWeekdays.value.push(val)
   }
 }
+
+function toggleSpecific(field: FieldState, val: number) {
+  isManualEditing.value = false
+  if (field.type !== 'specific') {
+    field.type = 'specific'
+    field.specific = [val]
+    return
+  }
+  const idx = field.specific.indexOf(val)
+  if (idx >= 0) {
+    if (field.specific.length > 1) {
+      field.specific.splice(idx, 1)
+    }
+  } else {
+    field.specific.push(val)
+    field.specific.sort((a, b) => a - b)
+  }
+}
+
+function onPresetModeChange(val: PresetMode) {
+  presetMode.value = val
+  if (val !== 'custom') {
+    isManualEditing.value = false
+    applyPresetToStates()
+  }
+}
+
+// When day specifies specific/range/step, week should be 'none' (?), and vice versa
+watch(
+  () => states.value.day.type,
+  (dayType) => {
+    if (activeTab.value === 'day' && dayType !== 'none') {
+      states.value.week.type = 'none'
+    }
+  },
+)
+
+watch(
+  () => states.value.week.type,
+  (weekType) => {
+    if (activeTab.value === 'week' && weekType !== 'none') {
+      states.value.day.type = 'none'
+    }
+  },
+)
 </script>
 
 <template>
@@ -274,27 +407,34 @@ function toggleWeekday(val: number) {
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
       <div class="flex flex-col gap-1.5">
         <label class="font-medium text-[var(--color-text)]">快速生成模式</label>
-        <UiSelect v-model="mode" :disabled="disabled" block data-test="cron-mode-select">
+        <UiSelect
+          :model-value="presetMode"
+          :disabled="disabled"
+          block
+          data-test="cron-mode-select"
+          @update:model-value="(val) => onPresetModeChange(val as PresetMode)"
+        >
           <option value="daily">每天固定时间</option>
           <option value="workday">工作日 (周一至周五)</option>
           <option value="weekly">每周指定天</option>
           <option value="monthly">每月固定日期</option>
           <option value="minute">按分钟循环</option>
           <option value="hour">按小时循环</option>
-          <option value="custom">高级 / 自定义表达式</option>
+          <option value="custom">高级 / 7 字段自定义 (秒、分、时、日、月、周、年)</option>
         </UiSelect>
       </div>
 
       <div class="flex flex-col gap-1.5">
-        <label :for="id" class="font-medium text-[var(--color-text)]">
-          Cron 表达式 (分 时 日 月 周)
+        <label :for="id" class="font-medium text-[var(--color-text)] flex items-center justify-between">
+          <span>Cron 表达式 (秒 分 时 日 月 周 年)</span>
+          <span class="text-[10px] text-[var(--color-text-muted)] font-normal">支持直接粘贴反解析</span>
         </label>
         <UiInput
           :id="id"
-          :model-value="computeCron()"
+          :model-value="currentCronExpr"
           :disabled="disabled"
           class="font-mono text-xs"
-          placeholder="0 9 * * *"
+          placeholder="0 0 9 * * ? *"
           data-test="cron-input"
           block
           @input="onManualInput"
@@ -302,10 +442,41 @@ function toggleWeekday(val: number) {
       </div>
     </div>
 
-    <!-- Mode visual controls -->
-    <div v-if="mode !== 'custom'" class="cron-controls pt-2 border-t border-[var(--color-border)]/60">
+    <!-- Navigation Tabs: Fast Preset vs 7 individual Fields -->
+    <div class="cron-tabs-header flex items-center gap-1 border-b border-[var(--color-border)] pb-1.5 overflow-x-auto text-[11px]">
+      <button
+        type="button"
+        class="tab-btn px-2.5 py-1 rounded transition-colors font-medium shrink-0"
+        :class="activeTab === 'preset' ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'"
+        @click="activeTab = 'preset'"
+      >
+        常用预设
+      </button>
+      <span class="text-[var(--color-border)]">|</span>
+      <button
+        v-for="t in [
+          { key: 'second', label: '秒' },
+          { key: 'minute', label: '分' },
+          { key: 'hour', label: '时' },
+          { key: 'day', label: '日' },
+          { key: 'month', label: '月' },
+          { key: 'week', label: '周' },
+          { key: 'year', label: '年' },
+        ]"
+        :key="t.key"
+        type="button"
+        class="tab-btn px-2 py-0.5 rounded transition-colors shrink-0"
+        :class="activeTab === t.key ? 'bg-[var(--color-primary)] text-white font-medium' : 'text-[var(--color-text)] hover:bg-[var(--color-surface)]'"
+        @click="activeTab = t.key as ActiveTab"
+      >
+        {{ t.label }}
+      </button>
+    </div>
+
+    <!-- Tab 0: Fast Presets -->
+    <div v-if="activeTab === 'preset'" class="cron-controls">
       <!-- 1. Minute mode -->
-      <div v-if="mode === 'minute'" class="flex items-center gap-2">
+      <div v-if="presetMode === 'minute'" class="flex items-center gap-2">
         <span class="text-[var(--color-text-muted)]">每隔</span>
         <UiSelect v-model.number="minuteInterval" :disabled="disabled" class="w-32" data-test="cron-minute-select">
           <option :value="1">1 分钟</option>
@@ -319,7 +490,7 @@ function toggleWeekday(val: number) {
       </div>
 
       <!-- 2. Hour mode -->
-      <div v-else-if="mode === 'hour'" class="flex items-center gap-2 flex-wrap">
+      <div v-else-if="presetMode === 'hour'" class="flex items-center gap-2 flex-wrap">
         <span class="text-[var(--color-text-muted)]">每隔</span>
         <UiSelect v-model.number="hourInterval" :disabled="disabled" class="w-28" data-test="cron-hour-select">
           <option :value="1">1 小时</option>
@@ -337,7 +508,7 @@ function toggleWeekday(val: number) {
       </div>
 
       <!-- 3. Daily / Workday mode -->
-      <div v-else-if="mode === 'daily' || mode === 'workday'" class="flex items-center gap-2">
+      <div v-else-if="presetMode === 'daily' || presetMode === 'workday'" class="flex items-center gap-2">
         <span class="text-[var(--color-text-muted)]">执行时刻：</span>
         <UiSelect v-model.number="selectedHour" :disabled="disabled" class="w-24" data-test="cron-hour-picker">
           <option v-for="h in 24" :key="h - 1" :value="h - 1">{{ pad2(h - 1) }} 时</option>
@@ -349,7 +520,7 @@ function toggleWeekday(val: number) {
       </div>
 
       <!-- 4. Weekly mode -->
-      <div v-else-if="mode === 'weekly'" class="space-y-2">
+      <div v-else-if="presetMode === 'weekly'" class="space-y-2">
         <div class="flex items-center gap-1.5 flex-wrap">
           <button
             v-for="d in weekdaysList"
@@ -378,7 +549,7 @@ function toggleWeekday(val: number) {
       </div>
 
       <!-- 5. Monthly mode -->
-      <div v-else-if="mode === 'monthly'" class="space-y-2">
+      <div v-else-if="presetMode === 'monthly'" class="space-y-2">
         <div class="flex items-center gap-2">
           <span class="text-[var(--color-text-muted)]">每月：</span>
           <UiSelect v-model.number="selectedMonthDays[0]" :disabled="disabled" class="w-28">
@@ -394,17 +565,349 @@ function toggleWeekday(val: number) {
           </UiSelect>
         </div>
       </div>
+
+      <!-- 6. Custom helper hint -->
+      <div v-else class="text-[11px] text-[var(--color-text-muted)]">
+        当前为自定义表达式，可点击上方「秒、分、时、日、月、周、年」标签页直接编辑字段规则，或直接修改表达式。
+      </div>
+    </div>
+
+    <!-- Tab: Second (0-59) -->
+    <div v-else-if="activeTab === 'second'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.second.type" type="radio" value="all" />
+          <span>每秒 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.second.type" type="radio" value="step" />
+          <span>循环从</span>
+          <input v-model.number="states.second.start" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="0" />
+          <span>秒开始，每隔</span>
+          <input v-model.number="states.second.step" type="number" min="1" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="5" />
+          <span>秒执行</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.second.type" type="radio" value="range" />
+          <span>周期从</span>
+          <input v-model.number="states.second.start" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="0" />
+          <span>到</span>
+          <input v-model.number="states.second.end" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="30" />
+          <span>秒</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.second.type" type="radio" value="specific" />
+          <span>指定秒数</span>
+        </label>
+      </div>
+
+      <div v-if="states.second.type === 'specific'" class="grid grid-cols-10 sm:grid-cols-12 gap-1 pt-1 max-h-36 overflow-y-auto">
+        <button
+          v-for="s in 60"
+          :key="s - 1"
+          type="button"
+          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          :class="states.second.specific.includes(s - 1)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.second, s - 1)"
+        >
+          {{ pad2(s - 1) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Minute (0-59) -->
+    <div v-else-if="activeTab === 'minute'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.minute.type" type="radio" value="all" />
+          <span>每分钟 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.minute.type" type="radio" value="step" />
+          <span>循环从</span>
+          <input v-model.number="states.minute.start" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="0" />
+          <span>分开始，每隔</span>
+          <input v-model.number="states.minute.step" type="number" min="1" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="5" />
+          <span>分执行</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.minute.type" type="radio" value="range" />
+          <span>周期从</span>
+          <input v-model.number="states.minute.start" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="0" />
+          <span>到</span>
+          <input v-model.number="states.minute.end" type="number" min="0" max="59" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="30" />
+          <span>分</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.minute.type" type="radio" value="specific" />
+          <span>指定分钟</span>
+        </label>
+      </div>
+
+      <div v-if="states.minute.type === 'specific'" class="grid grid-cols-10 sm:grid-cols-12 gap-1 pt-1 max-h-36 overflow-y-auto">
+        <button
+          v-for="m in 60"
+          :key="m - 1"
+          type="button"
+          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          :class="states.minute.specific.includes(m - 1)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.minute, m - 1)"
+        >
+          {{ pad2(m - 1) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Hour (0-23) -->
+    <div v-else-if="activeTab === 'hour'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.hour.type" type="radio" value="all" />
+          <span>每小时 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.hour.type" type="radio" value="step" />
+          <span>循环从</span>
+          <input v-model.number="states.hour.start" type="number" min="0" max="23" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="0" />
+          <span>点开始，每隔</span>
+          <input v-model.number="states.hour.step" type="number" min="1" max="23" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="2" />
+          <span>小时执行</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.hour.type" type="radio" value="range" />
+          <span>周期从</span>
+          <input v-model.number="states.hour.start" type="number" min="0" max="23" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="9" />
+          <span>到</span>
+          <input v-model.number="states.hour.end" type="number" min="0" max="23" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="18" />
+          <span>点</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.hour.type" type="radio" value="specific" />
+          <span>指定小时</span>
+        </label>
+      </div>
+
+      <div v-if="states.hour.type === 'specific'" class="grid grid-cols-8 sm:grid-cols-12 gap-1 pt-1 max-h-36 overflow-y-auto">
+        <button
+          v-for="h in 24"
+          :key="h - 1"
+          type="button"
+          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          :class="states.hour.specific.includes(h - 1)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.hour, h - 1)"
+        >
+          {{ pad2(h - 1) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Day (1-31) -->
+    <div v-else-if="activeTab === 'day'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.day.type" type="radio" value="all" />
+          <span>每天 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.day.type" type="radio" value="none" />
+          <span>不指定 (?)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.day.type" type="radio" value="step" />
+          <span>从</span>
+          <input v-model.number="states.day.start" type="number" min="1" max="31" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="1" />
+          <span>号开始，每隔</span>
+          <input v-model.number="states.day.step" type="number" min="1" max="31" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="1" />
+          <span>天执行</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.day.type" type="radio" value="specific" />
+          <span>指定日期</span>
+        </label>
+      </div>
+
+      <div v-if="states.day.type === 'specific'" class="grid grid-cols-8 sm:grid-cols-11 gap-1 pt-1 max-h-36 overflow-y-auto">
+        <button
+          v-for="d in 31"
+          :key="d"
+          type="button"
+          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          :class="states.day.specific.includes(d)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.day, d)"
+        >
+          {{ pad2(d) }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Month (1-12) -->
+    <div v-else-if="activeTab === 'month'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.month.type" type="radio" value="all" />
+          <span>每月 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.month.type" type="radio" value="step" />
+          <span>从</span>
+          <input v-model.number="states.month.start" type="number" min="1" max="12" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="1" />
+          <span>月开始，每隔</span>
+          <input v-model.number="states.month.step" type="number" min="1" max="12" class="w-14 px-1 py-0.5 border rounded bg-[var(--color-surface)]" placeholder="1" />
+          <span>个月</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.month.type" type="radio" value="specific" />
+          <span>指定月份</span>
+        </label>
+      </div>
+
+      <div v-if="states.month.type === 'specific'" class="grid grid-cols-6 sm:grid-cols-12 gap-1 pt-1">
+        <button
+          v-for="m in 12"
+          :key="m"
+          type="button"
+          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          :class="states.month.specific.includes(m)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.month, m)"
+        >
+          {{ m }}月
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Week (1-7) -->
+    <div v-else-if="activeTab === 'week'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.week.type" type="radio" value="all" />
+          <span>每周 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.week.type" type="radio" value="none" />
+          <span>不指定 (?)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.week.type" type="radio" value="range" />
+          <span>周期从</span>
+          <select v-model.number="states.week.start" class="px-1 py-0.5 border rounded bg-[var(--color-surface)]">
+            <option v-for="d in weekdaysList" :key="d.value" :value="d.value">{{ d.label }}</option>
+          </select>
+          <span>到</span>
+          <select v-model.number="states.week.end" class="px-1 py-0.5 border rounded bg-[var(--color-surface)]">
+            <option v-for="d in weekdaysList" :key="d.value" :value="d.value">{{ d.label }}</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.week.type" type="radio" value="specific" />
+          <span>指定星期</span>
+        </label>
+      </div>
+
+      <div v-if="states.week.type === 'specific'" class="flex items-center gap-1.5 flex-wrap pt-1">
+        <button
+          v-for="d in weekdaysList"
+          :key="d.value"
+          type="button"
+          class="px-2.5 py-1 text-[11px] rounded border transition-colors"
+          :class="states.week.specific.includes(d.value)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.week, d.value)"
+        >
+          {{ d.label }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Tab: Year (Optional, e.g. 2026-2035) -->
+    <div v-else-if="activeTab === 'year'" class="space-y-2">
+      <div class="flex items-center gap-4 flex-wrap">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.year.type" type="radio" value="all" />
+          <span>每年 (*)</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.year.type" type="radio" value="range" />
+          <span>周期从</span>
+          <input v-model.number="states.year.start" type="number" :min="currentYear" :max="currentYear + 20" class="w-18 px-1 py-0.5 border rounded bg-[var(--color-surface)]" :placeholder="String(currentYear)" />
+          <span>到</span>
+          <input v-model.number="states.year.end" type="number" :min="currentYear" :max="currentYear + 20" class="w-18 px-1 py-0.5 border rounded bg-[var(--color-surface)]" :placeholder="String(currentYear + 5)" />
+          <span>年</span>
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input v-model="states.year.type" type="radio" value="specific" />
+          <span>指定年份</span>
+        </label>
+      </div>
+
+      <div v-if="states.year.type === 'specific'" class="flex items-center gap-1.5 flex-wrap pt-1">
+        <button
+          v-for="y in yearsList"
+          :key="y"
+          type="button"
+          class="px-2 py-0.5 text-[11px] rounded border transition-colors"
+          :class="states.year.specific.includes(y)
+            ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+            : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
+          @click="toggleSpecific(states.year, y)"
+        >
+          {{ y }}
+        </button>
+      </div>
     </div>
 
     <!-- Human readable explanation text -->
-    <div class="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] pt-1">
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" class="shrink-0 text-[var(--color-primary,#2563eb)]" aria-hidden="true">
-        <circle cx="8" cy="8" r="6.5" />
-        <polyline points="8 4 8 8 10.5 10.5" />
-      </svg>
-      <span class="font-medium text-[var(--color-text)]" data-test="cron-explanation">
-        {{ humanReadable }}
-      </span>
+    <div class="flex items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)]/60">
+      <div class="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] min-w-0">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" class="shrink-0 text-[var(--color-primary,#2563eb)]" aria-hidden="true">
+          <circle cx="8" cy="8" r="6.5" />
+          <polyline points="8 4 8 8 10.5 10.5" />
+        </svg>
+        <span class="font-medium text-[var(--color-text)] truncate" data-test="cron-explanation">
+          {{ humanReadable }}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        class="text-[11px] text-[var(--color-primary)] hover:underline shrink-0"
+        @click="showNextRuns = !showNextRuns"
+      >
+        {{ showNextRuns ? '收起后 10 次执行时间' : '查看后 10 次执行时间' }}
+      </button>
+    </div>
+
+    <!-- Next 10 runs forecast panel -->
+    <div v-if="showNextRuns" class="cron-next-runs bg-[var(--color-surface)] p-2.5 rounded border border-[var(--color-border)]/80 space-y-1.5" data-test="cron-next-runs">
+      <div class="flex items-center justify-between text-[11px] font-medium text-[var(--color-text)]">
+        <span>推断后 10 次执行时间：</span>
+        <span class="text-[10px] text-[var(--color-text-muted)] font-normal">基于本地系统时区计算</span>
+      </div>
+
+      <ol v-if="nextRuns.length > 0" class="list-decimal list-inside grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono text-[var(--color-text-muted)]">
+        <li v-for="(run, idx) in nextRuns" :key="idx" class="truncate" :data-test="`next-run-${idx}`">
+          {{ formatDateTime(run) }}
+        </li>
+      </ol>
+      <p v-else class="text-[11px] text-amber-500 py-1">
+        当前表达式在未来 5 年内无法产生执行时刻，请检查字段配置（如已过期的年份或互斥的日/周配置）。
+      </p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.tab-btn {
+  user-select: none;
+}
+</style>

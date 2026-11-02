@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -192,6 +193,7 @@ func TestScheduleValidationAndNextRun(t *testing.T) {
 	ctx := context.Background()
 
 	// 1. Cron scheduling
+	// 1. Valid legacy 5-part cron
 	task, err := svc.Create(ctx, CreateTaskRequest{
 		Title:           "每日定时巡检",
 		TaskType:        TaskTypeStandard,
@@ -208,6 +210,49 @@ func TestScheduleValidationAndNextRun(t *testing.T) {
 	}
 	if task.NextRunAt == nil {
 		t.Fatalf("expected nextRunAt calculated for cron task")
+	}
+
+	// 1.1 Valid 6-part cron (with seconds)
+	task6, err := svc.Create(ctx, CreateTaskRequest{
+		Title:           "6位秒级任务",
+		TaskType:        TaskTypeStandard,
+		ProjectID:       1,
+		Backend:         agents.BackendOpenCodeV2,
+		Model:           "gpt-4o",
+		PromptTemplate:  "秒级测试",
+		ScheduleType:    ScheduleCron,
+		CronExpr:        "0 30 9 * * ?",
+		ScheduleEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create 6-part cron task: %v", err)
+	}
+	if task6.NextRunAt == nil {
+		t.Fatalf("expected nextRunAt calculated for 6-part cron task")
+	}
+
+	// 1.2 Valid 7-part cron (with seconds and year)
+	currentYear := time.Now().Year()
+	futureYear := currentYear + 1
+	task7, err := svc.Create(ctx, CreateTaskRequest{
+		Title:           "7位年度任务",
+		TaskType:        TaskTypeStandard,
+		ProjectID:       1,
+		Backend:         agents.BackendOpenCodeV2,
+		Model:           "gpt-4o",
+		PromptTemplate:  "年度测试",
+		ScheduleType:    ScheduleCron,
+		CronExpr:        "0 0 12 ? * 1-5 " + strconv.Itoa(futureYear),
+		ScheduleEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("create 7-part cron task: %v", err)
+	}
+	if task7.NextRunAt == nil {
+		t.Fatalf("expected nextRunAt calculated for 7-part cron task")
+	}
+	if task7.NextRunAt.Year() != futureYear {
+		t.Fatalf("expected nextRunAt year %d, got %d", futureYear, task7.NextRunAt.Year())
 	}
 
 	// 2. Invalid cron

@@ -178,13 +178,13 @@ watch(open, (value, previous) => {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
+  gap: 3px;
+  padding: 2px;
   border-radius: var(--radius, 6px);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16);
-  opacity: 0.55;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  opacity: 0.3;
   backdrop-filter: blur(8px);
   transition: opacity 0.2s ease, box-shadow 0.15s ease, transform 0.15s ease;
   user-select: none;
@@ -194,7 +194,7 @@ watch(open, (value, previous) => {
 .quick-assistant-toolbar:hover,
 .quick-assistant-toolbar.dragging,
 .quick-assistant-toolbar.open {
-  opacity: 1;
+  opacity: 0.95;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.26);
 }
 
@@ -208,8 +208,8 @@ watch(open, (value, previous) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: var(--radius, 4px);
@@ -231,14 +231,14 @@ watch(open, (value, previous) => {
 }
 
 .assistant-icon-text {
-  font-size: 1.1rem;
+  font-size: 0.8rem;
   font-weight: 600;
   line-height: 1;
 }
 
 .quick-assistant-icon {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
 }
 
 .quick-assistant-popover {

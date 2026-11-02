@@ -111,6 +111,21 @@ describe('pure chat sidebar - assistant list', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('新建助手')
   })
+
+  it('provides a new chat button on assistant name to directly start a conversation', async () => {
+    const { wrapper, router } = await mountSidebar('/chat/1')
+    const chatsStore = useChatsStore()
+
+    const newChatBtn = wrapper.find('[aria-label="在「工作分组」下新建对话"]')
+    expect(newChatBtn.exists()).toBe(true)
+
+    await newChatBtn.trigger('click')
+    await flushPromises()
+
+    expect(chatsStore.selectedGroupId).toBe(10)
+    expect(chatsStore.activeId).toBeNull()
+    expect(router.currentRoute.value.path).toBe('/chat')
+  })
 })
 
 describe('assistant lifecycle and unlocked controls', () => {
