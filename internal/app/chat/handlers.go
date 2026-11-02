@@ -119,11 +119,13 @@ type updateRequest struct {
 }
 
 type groupRequest struct {
-	Name           string `json:"name"`
-	DefaultModelID uint   `json:"defaultModelId"`
-	SystemPrompt   string `json:"systemPrompt"`
-	Icon           string `json:"icon"`
-	ShowInFloat    bool   `json:"showInFloat"`
+	Name                string `json:"name"`
+	DefaultModelID      uint   `json:"defaultModelId"`
+	SystemPrompt        string `json:"systemPrompt"`
+	Icon                string `json:"icon"`
+	ShowInFloat         bool   `json:"showInFloat"`
+	EnablePlatformTools bool   `json:"enablePlatformTools"`
+	MaxToolSteps        int    `json:"maxToolSteps"`
 }
 
 type groupListResponse struct {
@@ -369,11 +371,13 @@ func (s *Service) handleCreateGroup(c *gin.Context) {
 		return
 	}
 	group, err := s.CreateGroup(CreateGroupInput{
-		Name:           req.Name,
-		DefaultModelID: req.DefaultModelID,
-		SystemPrompt:   req.SystemPrompt,
-		Icon:           req.Icon,
-		ShowInFloat:    req.ShowInFloat,
+		Name:                req.Name,
+		DefaultModelID:      req.DefaultModelID,
+		SystemPrompt:        req.SystemPrompt,
+		Icon:                req.Icon,
+		ShowInFloat:         req.ShowInFloat,
+		EnablePlatformTools: req.EnablePlatformTools,
+		MaxToolSteps:        req.MaxToolSteps,
 	})
 	if err != nil {
 		respondServiceError(c, err)
@@ -393,11 +397,13 @@ func (s *Service) handleUpdateGroup(c *gin.Context) {
 		return
 	}
 	group, err := s.UpdateGroup(id, UpdateGroupInput{
-		Name:           req.Name,
-		DefaultModelID: req.DefaultModelID,
-		SystemPrompt:   req.SystemPrompt,
-		Icon:           req.Icon,
-		ShowInFloat:    req.ShowInFloat,
+		Name:                req.Name,
+		DefaultModelID:      req.DefaultModelID,
+		SystemPrompt:        req.SystemPrompt,
+		Icon:                req.Icon,
+		ShowInFloat:         req.ShowInFloat,
+		EnablePlatformTools: req.EnablePlatformTools,
+		MaxToolSteps:        req.MaxToolSteps,
 	})
 	if err != nil {
 		respondServiceError(c, err)

@@ -495,6 +495,12 @@ func TestMigrateExtendsChatGroupsAsAssistants(t *testing.T) {
 	if !db.Migrator().HasColumn(&ChatGroup{}, "show_in_float") {
 		t.Error("chat_groups missing show_in_float column")
 	}
+	if !db.Migrator().HasColumn(&ChatGroup{}, "enable_platform_tools") {
+		t.Error("chat_groups missing enable_platform_tools column")
+	}
+	if !db.Migrator().HasColumn(&ChatGroup{}, "max_tool_steps") {
+		t.Error("chat_groups missing max_tool_steps column")
+	}
 	if !db.Migrator().HasColumn(&Chat{}, "system_prompt") {
 		t.Error("chats missing system_prompt column")
 	}

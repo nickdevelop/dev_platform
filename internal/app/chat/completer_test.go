@@ -134,3 +134,48 @@ func TestOpenAICompleterNonStreamFallback(t *testing.T) {
 		t.Fatalf("text = %q", text)
 	}
 }
+
+func TestOpenAICompleterStreamsToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// 分片返回一个 tool call
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_123\",\"type\":\"function\",\"function\":{\"name\":\"platform_list_projects\",\"arguments\":\"\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"keyword\\\":\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"demo\\\"}\"}}]}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	completer := NewOpenAICompleter()
+	var toolCalls []ToolCall
+	err := completer.Stream(context.Background(), CompletionRequest{
+		BaseURL: server.URL,
+		Model:   "test-model",
+		Messages: []CompletionMessage{
+			{Role: "user", Text: "查项目"},
+		},
+		Tools: []ToolDefinition{
+			{
+				Type: "function",
+				Function: FunctionSchema{
+					Name:        "platform_list_projects",
+					Description: "查询项目",
+				},
+			},
+		},
+	}, func(delta CompletionDelta) error {
+		if len(delta.ToolCalls) > 0 {
+			toolCalls = append(toolCalls, delta.ToolCalls...)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("toolCalls = %+v, want 1", toolCalls)
+	}
+	if toolCalls[0].ID != "call_123" || toolCalls[0].Name != "platform_list_projects" || toolCalls[0].Arguments != `{"keyword":"demo"}` {
+		t.Fatalf("aggregated toolCall mismatch: %+v", toolCalls[0])
+	}
+}

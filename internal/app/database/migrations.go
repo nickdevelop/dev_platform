@@ -336,6 +336,23 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 33, name: "extend_chat_groups_platform_management", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&ChatGroup{}) {
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "enable_platform_tools") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "enable_platform_tools"); err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "max_tool_steps") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "max_tool_steps"); err != nil {
+					return err
+				}
+			}
+			_ = tx.Exec("UPDATE chat_groups SET enable_platform_tools = 0 WHERE enable_platform_tools IS NULL").Error
+			_ = tx.Exec("UPDATE chat_groups SET max_tool_steps = 5 WHERE max_tool_steps IS NULL OR max_tool_steps <= 0").Error
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

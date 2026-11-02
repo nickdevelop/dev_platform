@@ -17,6 +17,8 @@ export interface ChatGroup {
   systemPrompt?: string
   icon?: string
   showInFloat?: boolean
+  enablePlatformTools?: boolean
+  maxToolSteps?: number
   systemKey?: string
   createdAt: string
   updatedAt: string
@@ -32,6 +34,8 @@ export interface ChatGroupInput {
   systemPrompt?: string
   icon?: string
   showInFloat?: boolean
+  enablePlatformTools?: boolean
+  maxToolSteps?: number
 }
 
 export interface Chat {

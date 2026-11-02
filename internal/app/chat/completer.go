@@ -26,9 +26,11 @@ var (
 
 // CompletionMessage is one role/content pair sent upstream.
 type CompletionMessage struct {
-	Role   string
-	Text   string
-	Images []ImageAttachment
+	Role       string
+	Text       string
+	Images     []ImageAttachment
+	ToolCallID string
+	ToolCalls  []ToolCall
 }
 
 // CompletionRequest is one OpenAI-compatible chat completion request.
@@ -37,6 +39,7 @@ type CompletionRequest struct {
 	APIKey   string
 	Model    string
 	Messages []CompletionMessage
+	Tools    []ToolDefinition
 }
 
 // CompletionDelta is one increment reported by the upstream stream.
@@ -44,6 +47,7 @@ type CompletionDelta struct {
 	Text      string
 	Reasoning string
 	Usage     *Usage
+	ToolCalls []ToolCall
 }
 
 // Completer is the upstream chat transport. Tests inject a fake; production
@@ -80,8 +84,22 @@ const maxUpstreamErrorBytes = 500
 const maxSSELineBytes = 4 << 20
 
 type upstreamMessage struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
+	Role       string             `json:"role"`
+	Content    any                `json:"content,omitempty"`
+	ToolCallID string             `json:"tool_call_id,omitempty"`
+	ToolCalls  []upstreamToolCall `json:"tool_calls,omitempty"`
+}
+
+type upstreamToolCall struct {
+	Index    *int                 `json:"index,omitempty"`
+	ID       string               `json:"id,omitempty"`
+	Type     string               `json:"type,omitempty"`
+	Function upstreamToolFunction `json:"function"`
+}
+
+type upstreamToolFunction struct {
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type upstreamContentPart struct {
@@ -95,21 +113,25 @@ type upstreamImageURL struct {
 }
 
 type upstreamRequest struct {
-	Model     string            `json:"model"`
-	Messages  []upstreamMessage `json:"messages"`
-	Stream    bool              `json:"stream"`
-	MaxTokens int               `json:"max_tokens,omitempty"`
+	Model      string            `json:"model"`
+	Messages   []upstreamMessage `json:"messages"`
+	Stream     bool              `json:"stream"`
+	MaxTokens  int               `json:"max_tokens,omitempty"`
+	Tools      []ToolDefinition  `json:"tools,omitempty"`
+	ToolChoice any               `json:"tool_choice,omitempty"`
 }
 
 type upstreamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content          string `json:"content"`
-			ReasoningContent string `json:"reasoning_content"`
-			Reasoning        string `json:"reasoning"`
+			Content          string             `json:"content"`
+			ReasoningContent string             `json:"reasoning_content"`
+			Reasoning        string             `json:"reasoning"`
+			ToolCalls        []upstreamToolCall `json:"tool_calls"`
 		} `json:"delta"`
 		Message struct {
-			Content string `json:"content"`
+			Content   string             `json:"content"`
+			ToolCalls []upstreamToolCall `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage *struct {
@@ -147,6 +169,28 @@ func (c *OpenAICompleter) Stream(ctx context.Context, req CompletionRequest, onD
 	scanner.Buffer(make([]byte, 64*1024), maxSSELineBytes)
 	var fallbackJSON strings.Builder
 	sawSSE := false
+	accumulatedTools := make(map[int]*ToolCall)
+
+	flushTools := func() error {
+		if len(accumulatedTools) == 0 {
+			return nil
+		}
+		maxIdx := -1
+		for idx := range accumulatedTools {
+			if idx > maxIdx {
+				maxIdx = idx
+			}
+		}
+		out := make([]ToolCall, 0, len(accumulatedTools))
+		for i := 0; i <= maxIdx; i++ {
+			if tc, ok := accumulatedTools[i]; ok {
+				out = append(out, *tc)
+			}
+		}
+		accumulatedTools = make(map[int]*ToolCall)
+		return onDelta(CompletionDelta{ToolCalls: out})
+	}
+
 	for scanner.Scan() {
 		line := strings.TrimRight(scanner.Text(), "\r")
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -162,11 +206,37 @@ func (c *OpenAICompleter) Stream(ctx context.Context, req CompletionRequest, onD
 				continue
 			}
 			if payload == "[DONE]" {
-				return nil
+				return flushTools()
 			}
-			delta, done, err := parseChunk(payload)
+			delta, rawCalls, done, err := parseChunk(payload)
 			if err != nil {
 				return err
+			}
+			for _, tc := range rawCalls {
+				idx := 0
+				if tc.Index != nil {
+					idx = *tc.Index
+				}
+				existing, ok := accumulatedTools[idx]
+				if !ok {
+					existing = &ToolCall{
+						Index: idx,
+						ID:    tc.ID,
+						Type:  tc.Type,
+						Name:  tc.Function.Name,
+					}
+					accumulatedTools[idx] = existing
+				}
+				if tc.ID != "" {
+					existing.ID = tc.ID
+				}
+				if tc.Type != "" {
+					existing.Type = tc.Type
+				}
+				if tc.Function.Name != "" {
+					existing.Name = tc.Function.Name
+				}
+				existing.Arguments += tc.Function.Arguments
 			}
 			if delta.Text != "" || delta.Reasoning != "" || delta.Usage != nil {
 				if err := onDelta(delta); err != nil {
@@ -174,7 +244,7 @@ func (c *OpenAICompleter) Stream(ctx context.Context, req CompletionRequest, onD
 				}
 			}
 			if done {
-				return nil
+				return flushTools()
 			}
 			continue
 		}
@@ -190,12 +260,15 @@ func (c *OpenAICompleter) Stream(ctx context.Context, req CompletionRequest, onD
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("%w: %v", ErrUpstreamError, redact(err.Error(), req.APIKey))
 	}
+	if sawSSE {
+		return flushTools()
+	}
 	if !sawSSE && fallbackJSON.Len() > 0 {
 		delta, err := parseNonStreamDocument(fallbackJSON.String())
 		if err != nil {
 			return err
 		}
-		if delta.Text != "" || delta.Reasoning != "" || delta.Usage != nil {
+		if delta.Text != "" || delta.Reasoning != "" || delta.Usage != nil || len(delta.ToolCalls) > 0 {
 			return onDelta(delta)
 		}
 		return nil
@@ -235,6 +308,36 @@ func buildRequest(req CompletionRequest, stream bool, maxTokens int) ([]byte, er
 	}
 	messages := make([]upstreamMessage, 0, len(req.Messages))
 	for _, message := range req.Messages {
+		if message.Role == "tool" {
+			messages = append(messages, upstreamMessage{
+				Role:       "tool",
+				Content:    message.Text,
+				ToolCallID: message.ToolCallID,
+			})
+			continue
+		}
+		if len(message.ToolCalls) > 0 {
+			calls := make([]upstreamToolCall, 0, len(message.ToolCalls))
+			for _, tc := range message.ToolCalls {
+				calls = append(calls, upstreamToolCall{
+					ID:   tc.ID,
+					Type: "function",
+					Function: upstreamToolFunction{
+						Name:      tc.Name,
+						Arguments: tc.Arguments,
+					},
+				})
+			}
+			msg := upstreamMessage{
+				Role:      message.Role,
+				ToolCalls: calls,
+			}
+			if strings.TrimSpace(message.Text) != "" {
+				msg.Content = strings.TrimSpace(message.Text)
+			}
+			messages = append(messages, msg)
+			continue
+		}
 		content := any(strings.TrimSpace(message.Text))
 		if len(message.Images) > 0 {
 			parts := make([]upstreamContentPart, 0, len(message.Images)+1)
@@ -253,12 +356,17 @@ func buildRequest(req CompletionRequest, stream bool, maxTokens int) ([]byte, er
 		}
 		messages = append(messages, upstreamMessage{Role: message.Role, Content: content})
 	}
-	body, err := json.Marshal(upstreamRequest{
+	uReq := upstreamRequest{
 		Model:     req.Model,
 		Messages:  messages,
 		Stream:    stream,
 		MaxTokens: maxTokens,
-	})
+	}
+	if len(req.Tools) > 0 {
+		uReq.Tools = req.Tools
+		uReq.ToolChoice = "auto"
+	}
+	body, err := json.Marshal(uReq)
 	if err != nil {
 		return nil, fmt.Errorf("chat: encode upstream request: %w", err)
 	}
@@ -299,26 +407,30 @@ func upstreamStatusError(response *http.Response, apiKey string) error {
 	return fmt.Errorf("%w: status %d: %s", ErrUpstreamError, response.StatusCode, redact(detail, apiKey))
 }
 
-func parseChunk(payload string) (CompletionDelta, bool, error) {
+func parseChunk(payload string) (CompletionDelta, []upstreamToolCall, bool, error) {
 	var chunk upstreamChunk
 	if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-		return CompletionDelta{}, false, fmt.Errorf("%w: parse stream chunk", ErrUpstreamError)
+		return CompletionDelta{}, nil, false, fmt.Errorf("%w: parse stream chunk", ErrUpstreamError)
 	}
 	if chunk.Error != nil && chunk.Error.Message != "" {
-		return CompletionDelta{}, false, fmt.Errorf("%w: %s", ErrUpstreamError, chunk.Error.Message)
+		return CompletionDelta{}, nil, false, fmt.Errorf("%w: %s", ErrUpstreamError, chunk.Error.Message)
 	}
 	delta := CompletionDelta{}
+	var toolCalls []upstreamToolCall
 	if len(chunk.Choices) > 0 {
 		delta.Text = chunk.Choices[0].Delta.Content
 		delta.Reasoning = chunk.Choices[0].Delta.ReasoningContent
 		if delta.Reasoning == "" {
 			delta.Reasoning = chunk.Choices[0].Delta.Reasoning
 		}
+		if len(chunk.Choices[0].Delta.ToolCalls) > 0 {
+			toolCalls = chunk.Choices[0].Delta.ToolCalls
+		}
 	}
 	if chunk.Usage != nil {
 		delta.Usage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens}
 	}
-	return delta, false, nil
+	return delta, toolCalls, false, nil
 }
 
 func parseNonStreamDocument(payload string) (CompletionDelta, error) {
@@ -331,11 +443,29 @@ func parseNonStreamDocument(payload string) (CompletionDelta, error) {
 	}
 	delta := CompletionDelta{}
 	if len(chunk.Choices) > 0 {
-		delta.Text = chunk.Choices[0].Message.Content
+		choice := chunk.Choices[0]
+		delta.Text = choice.Message.Content
 		if delta.Text == "" {
-			delta.Text = chunk.Choices[0].Delta.Content
+			delta.Text = choice.Delta.Content
 		}
-		delta.Reasoning = chunk.Choices[0].Delta.ReasoningContent
+		delta.Reasoning = choice.Delta.ReasoningContent
+		calls := choice.Message.ToolCalls
+		if len(calls) == 0 {
+			calls = choice.Delta.ToolCalls
+		}
+		for i, c := range calls {
+			idx := i
+			if c.Index != nil {
+				idx = *c.Index
+			}
+			delta.ToolCalls = append(delta.ToolCalls, ToolCall{
+				Index:     idx,
+				ID:        c.ID,
+				Type:      c.Type,
+				Name:      c.Function.Name,
+				Arguments: c.Function.Arguments,
+			})
+		}
 	}
 	if chunk.Usage != nil {
 		delta.Usage = &Usage{Input: chunk.Usage.PromptTokens, Output: chunk.Usage.CompletionTokens}

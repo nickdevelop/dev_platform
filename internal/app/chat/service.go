@@ -56,14 +56,22 @@ func WithRepository(repo Repository) Option {
 	}
 }
 
+// WithToolExecutor replaces the platform tool executor.
+func WithToolExecutor(executor ToolExecutor) Option {
+	return func(s *Service) {
+		s.toolExecutor = executor
+	}
+}
+
 // Service owns pure-chat conversations, their persistence and their in-process
 // generation state.
 type Service struct {
-	repo      Repository
-	models    ModelResolver
-	completer Completer
-	manager   *runManager
-	eventBus  *EventBusManager
+	repo         Repository
+	models       ModelResolver
+	completer    Completer
+	toolExecutor ToolExecutor
+	manager      *runManager
+	eventBus     *EventBusManager
 
 	baseCtx   context.Context
 	cancel    context.CancelFunc
@@ -519,13 +527,63 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 		return
 	}
 
-	streamErr := s.completer.Stream(ctx, request, func(delta CompletionDelta) error {
-		if delta.Usage != nil {
-			s.manager.setUsage(run, delta.Usage)
+	maxSteps := 5
+	if len(request.Tools) > 0 {
+		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.MaxToolSteps > 0 {
+			maxSteps = group.MaxToolSteps
 		}
-		s.manager.emitDelta(run, delta.Text, delta.Reasoning)
-		return nil
-	})
+	}
+
+	currentMessages := append([]CompletionMessage(nil), request.Messages...)
+	var streamErr error
+	stepCount := 0
+
+	for {
+		req := request
+		req.Messages = currentMessages
+		if stepCount >= maxSteps {
+			req.Tools = nil // Exceeded allowed steps, force final text answer
+		}
+
+		var receivedToolCalls []ToolCall
+		streamErr = s.completer.Stream(ctx, req, func(delta CompletionDelta) error {
+			if delta.Usage != nil {
+				s.manager.setUsage(run, delta.Usage)
+			}
+			if len(delta.ToolCalls) > 0 {
+				receivedToolCalls = append(receivedToolCalls, delta.ToolCalls...)
+			}
+			if delta.Text != "" || delta.Reasoning != "" {
+				s.manager.emitDelta(run, delta.Text, delta.Reasoning)
+			}
+			return nil
+		})
+
+		if streamErr != nil {
+			break
+		}
+		if len(receivedToolCalls) == 0 || s.toolExecutor == nil || stepCount >= maxSteps {
+			break
+		}
+
+		currentMessages = append(currentMessages, CompletionMessage{
+			Role:      RoleAssistant,
+			ToolCalls: receivedToolCalls,
+		})
+
+		for _, tc := range receivedToolCalls {
+			toolOutput, execErr := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
+			if execErr != nil {
+				toolOutput = fmt.Sprintf(`{"error": %q}`, execErr.Error())
+			}
+			currentMessages = append(currentMessages, CompletionMessage{
+				Role:       "tool",
+				ToolCallID: tc.ID,
+				Text:       toolOutput,
+			})
+		}
+		stepCount++
+	}
 
 	status, outcome, code, detail := classifyStreamError(ctx, streamErr)
 	view := s.manager.view(run)
@@ -635,11 +693,18 @@ func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.
 		}
 		out = append(out, CompletionMessage{Role: message.Role, Text: message.Text, Images: message.Images})
 	}
+	var tools []ToolDefinition
+	if s.toolExecutor != nil && chat.GroupID != 0 {
+		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.EnablePlatformTools {
+			tools = s.toolExecutor.Definitions()
+		}
+	}
 	return CompletionRequest{
 		BaseURL:  model.BaseURL,
 		APIKey:   model.APIKey,
 		Model:    model.ModelID,
 		Messages: out,
+		Tools:    tools,
 	}, nil
 }
 
@@ -871,12 +936,20 @@ func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
 	if err != nil {
 		return ChatGroup{}, err
 	}
+	maxSteps := input.MaxToolSteps
+	if maxSteps <= 0 {
+		maxSteps = 5
+	} else if maxSteps > 20 {
+		maxSteps = 20
+	}
 	group := ChatGroup{
-		Name:           name,
-		DefaultModelID: input.DefaultModelID,
-		SystemPrompt:   input.SystemPrompt,
-		Icon:           input.Icon,
-		ShowInFloat:    input.ShowInFloat,
+		Name:                name,
+		DefaultModelID:      input.DefaultModelID,
+		SystemPrompt:        input.SystemPrompt,
+		Icon:                input.Icon,
+		ShowInFloat:         input.ShowInFloat,
+		EnablePlatformTools: input.EnablePlatformTools,
+		MaxToolSteps:        maxSteps,
 	}
 	if err := s.repo.CreateGroup(&group); err != nil {
 		return ChatGroup{}, err
@@ -894,11 +967,19 @@ func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error
 	if err != nil {
 		return ChatGroup{}, err
 	}
+	maxSteps := input.MaxToolSteps
+	if maxSteps <= 0 {
+		maxSteps = 5
+	} else if maxSteps > 20 {
+		maxSteps = 20
+	}
 	group.Name = name
 	group.DefaultModelID = input.DefaultModelID
 	group.SystemPrompt = input.SystemPrompt
 	group.Icon = input.Icon
 	group.ShowInFloat = input.ShowInFloat
+	group.EnablePlatformTools = input.EnablePlatformTools
+	group.MaxToolSteps = maxSteps
 	if err := s.repo.UpdateGroup(&group); err != nil {
 		return ChatGroup{}, err
 	}

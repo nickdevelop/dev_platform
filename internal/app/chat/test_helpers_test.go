@@ -96,12 +96,13 @@ func (f *fakeCompleter) Complete(ctx context.Context, req CompletionRequest, max
 	return fn(ctx, req, maxTokens)
 }
 
-func testService(t *testing.T, completer Completer) (*Service, Repository, *fakeResolver) {
+func testService(t *testing.T, completer Completer, extraOpts ...Option) (*Service, Repository, *fakeResolver) {
 	t.Helper()
 	db := openChatTestDB(t)
 	repo := NewGORMRepository(db)
 	resolver := newFakeResolver()
-	service := NewService(db, resolver, WithCompleter(completer))
+	opts := append([]Option{WithCompleter(completer)}, extraOpts...)
+	service := NewService(db, resolver, opts...)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

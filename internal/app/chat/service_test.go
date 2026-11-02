@@ -354,3 +354,107 @@ func waitForTitle(t *testing.T, repo Repository, chatID uint, want string) {
 
 func stringPtr(value string) *string { return &value }
 func uintPtr(value uint) *uint       { return &value }
+
+type fakeToolExecutor struct {
+	executed []string
+}
+
+func (f *fakeToolExecutor) Definitions() []ToolDefinition {
+	return []ToolDefinition{
+		{
+			Type: "function",
+			Function: FunctionSchema{
+				Name:        "platform_list_projects",
+				Description: "查询项目",
+			},
+		},
+	}
+}
+
+func (f *fakeToolExecutor) Execute(ctx context.Context, name string, args string) (string, error) {
+	f.executed = append(f.executed, name)
+	if name == "platform_list_projects" {
+		return `[{"id":1,"name":"test-project"}]`, nil
+	}
+	return "", errors.New("unknown tool")
+}
+
+func TestChatGenerationWithPlatformTools(t *testing.T) {
+	fakeTools := &fakeToolExecutor{}
+	step := 0
+	completer := &fakeCompleter{
+		stream: func(ctx context.Context, req CompletionRequest, onDelta func(CompletionDelta) error) error {
+			if len(req.Tools) > 0 {
+				if step == 0 {
+					step++
+					_ = onDelta(CompletionDelta{
+						ToolCalls: []ToolCall{
+							{ID: "call_1", Name: "platform_list_projects", Arguments: "{}"},
+						},
+					})
+					return nil
+				}
+				_ = onDelta(CompletionDelta{Text: "发现项目: test-project"})
+				return nil
+			}
+			_ = onDelta(CompletionDelta{Text: "纯文本回复"})
+			return nil
+		},
+	}
+
+	service, repo, _ := testService(t, completer, WithToolExecutor(fakeTools))
+
+	// 创建开启平台管理的助手
+	groupA, err := service.CreateGroup(CreateGroupInput{
+		Name:                "平台管家",
+		EnablePlatformTools: true,
+		MaxToolSteps:        5,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup A: %v", err)
+	}
+
+	// 创建未开启平台管理的助手
+	groupB, err := service.CreateGroup(CreateGroupInput{
+		Name:                "普通助手",
+		EnablePlatformTools: false,
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup B: %v", err)
+	}
+
+	// 1. 在 groupA 下创建对话并发送消息
+	chatA, err := service.Create(context.Background(), CreateInput{
+		GroupID: &groupA.ID,
+		ModelID: 1,
+		Text:    "查项目",
+	})
+	if err != nil {
+		t.Fatalf("Create chatA: %v", err)
+	}
+	waitIdle(t, repo, chatA.ID)
+
+	if len(fakeTools.executed) != 1 || fakeTools.executed[0] != "platform_list_projects" {
+		t.Fatalf("expected tool execution [platform_list_projects], got %+v", fakeTools.executed)
+	}
+	msgsA, _ := repo.ListMessages(chatA.ID)
+	if len(msgsA) != 2 || !strings.Contains(msgsA[1].Text, "发现项目: test-project") {
+		t.Fatalf("expected final assistant answer containing tool result, got %+v", msgsA)
+	}
+
+	// 2. 在 groupB 下创建对话并发送消息
+	chatB, err := service.Create(context.Background(), CreateInput{
+		GroupID: &groupB.ID,
+		ModelID: 1,
+		Text:    "你好",
+	})
+	if err != nil {
+		t.Fatalf("Create chatB: %v", err)
+	}
+	waitIdle(t, repo, chatB.ID)
+
+	msgsB, _ := repo.ListMessages(chatB.ID)
+	if len(msgsB) != 2 || msgsB[1].Text != "纯文本回复" {
+		t.Fatalf("expected normal text reply for groupB, got %+v", msgsB)
+	}
+}

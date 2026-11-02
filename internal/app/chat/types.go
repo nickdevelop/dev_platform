@@ -87,15 +87,17 @@ const (
 
 // ChatGroup is the JSON-stable API representation of one pure-chat group / assistant.
 type ChatGroup struct {
-	ID             uint      `json:"id"`
-	Name           string    `json:"name"`
-	DefaultModelID uint      `json:"defaultModelId"`
-	SystemPrompt   string    `json:"systemPrompt"`
-	Icon           string    `json:"icon"`
-	ShowInFloat    bool      `json:"showInFloat"`
-	SystemKey      string    `json:"systemKey,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID                  uint      `json:"id"`
+	Name                string    `json:"name"`
+	DefaultModelID      uint      `json:"defaultModelId"`
+	SystemPrompt        string    `json:"systemPrompt"`
+	Icon                string    `json:"icon"`
+	ShowInFloat         bool      `json:"showInFloat"`
+	EnablePlatformTools bool      `json:"enablePlatformTools"`
+	MaxToolSteps        int       `json:"maxToolSteps"`
+	SystemKey           string    `json:"systemKey,omitempty"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 // ImageAttachment is one user-supplied image in a stable wire shape. Data is
@@ -180,20 +182,24 @@ type UpdateInput struct {
 
 // CreateGroupInput is the body of POST /chat-groups.
 type CreateGroupInput struct {
-	Name           string
-	DefaultModelID uint
-	SystemPrompt   string
-	Icon           string
-	ShowInFloat    bool
+	Name                string
+	DefaultModelID      uint
+	SystemPrompt        string
+	Icon                string
+	ShowInFloat         bool
+	EnablePlatformTools bool
+	MaxToolSteps        int
 }
 
 // UpdateGroupInput is the body of PUT /chat-groups/{id}.
 type UpdateGroupInput struct {
-	Name           string
-	DefaultModelID uint
-	SystemPrompt   string
-	Icon           string
-	ShowInFloat    bool
+	Name                string
+	DefaultModelID      uint
+	SystemPrompt        string
+	Icon                string
+	ShowInFloat         bool
+	EnablePlatformTools bool
+	MaxToolSteps        int
 }
 
 // Snapshot is the state a client needs to render a conversation from scratch.

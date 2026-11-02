@@ -23,6 +23,8 @@ const defaultModelIdInput = ref<number | ''>('')
 const systemPromptInput = ref('')
 const iconInput = ref('')
 const showInFloatInput = ref(false)
+const enablePlatformToolsInput = ref(false)
+const maxToolStepsInput = ref(5)
 
 const error = ref('')
 const submitting = ref(false)
@@ -42,6 +44,8 @@ onMounted(async () => {
     systemPromptInput.value = props.group.systemPrompt ?? ''
     iconInput.value = props.group.icon ?? ''
     showInFloatInput.value = props.group.showInFloat ?? false
+    enablePlatformToolsInput.value = props.group.enablePlatformTools ?? false
+    maxToolStepsInput.value = props.group.maxToolSteps ?? 5
   }
 })
 
@@ -112,6 +116,8 @@ async function onSubmit() {
     systemPrompt: systemPromptInput.value.trim(),
     icon: iconInput.value.trim(),
     showInFloat: showInFloatInput.value,
+    enablePlatformTools: enablePlatformToolsInput.value,
+    maxToolSteps: Math.min(20, Math.max(1, Number(maxToolStepsInput.value) || 5)),
   }
 
   try {
@@ -224,6 +230,32 @@ async function onSubmit() {
           <span class="checkbox-text">在悬浮快捷按钮上显示该助手</span>
         </label>
         <span class="hint-text">勾选后将在全局悬浮按钮中展示专属图标，点击可快速建立对话</span>
+      </div>
+
+      <!-- 平台管理配置 -->
+      <div class="field checkbox-field">
+        <label class="checkbox-label">
+          <input v-model="enablePlatformToolsInput" type="checkbox" class="checkbox-input" />
+          <span class="checkbox-text">开启平台管理权限（平台管家模式）</span>
+        </label>
+        <span class="hint-text">允许该助手通过工具调用操作平台自身资源（如查询项目、增删改查提示词等）</span>
+      </div>
+
+      <!-- 单轮最大工具调用次数 -->
+      <div v-if="enablePlatformToolsInput" class="field">
+        <div class="label-row">
+          <span class="label-text">单轮最大工具调用次数</span>
+          <span class="hint-text">范围 1~20，默认 5 步</span>
+        </div>
+        <input
+          v-model.number="maxToolStepsInput"
+          type="number"
+          min="1"
+          max="20"
+          class="text-input"
+          placeholder="5"
+        />
+        <span class="hint-text">单次对话中最多允许模型连续执行的工具步数，防止死循环</span>
       </div>
 
       <p v-if="error" class="error-msg" role="alert">{{ error }}</p>

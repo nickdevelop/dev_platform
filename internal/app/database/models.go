@@ -250,6 +250,8 @@ type ChatGroup struct {
 	SystemPrompt   string  `gorm:"column:system_prompt;type:text"`
 	Icon           string  `gorm:"column:icon;size:32"`
 	ShowInFloat    bool    `gorm:"column:show_in_float;not null;default:false"`
+	EnablePlatformTools bool `gorm:"column:enable_platform_tools;not null;default:false"`
+	MaxToolSteps        int  `gorm:"column:max_tool_steps;not null;default:5"`
 	// SystemKey was used for legacy platform-reserved groups. It is now kept
 	// nullable and unused as fixed groups are removed.
 	SystemKey *string `gorm:"column:system_key;size:64;uniqueIndex:idx_chat_group_system_key"`

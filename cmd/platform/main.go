@@ -25,6 +25,7 @@ import (
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/platformtools"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
@@ -349,8 +350,12 @@ func runServer(args []string) error {
 	if err != nil {
 		return fmt.Errorf("open secret store: %w", err)
 	}
+	promptRepo := prompts.NewRepository(db)
+	promptService := prompts.NewService(promptRepo)
+	platformTools := platformtools.NewExecutor(projectService, promptService)
+
 	modelConfig := modelconfig.NewService(db, secretStore)
-	chatService := chat.NewService(db, modelConfig)
+	chatService := chat.NewService(db, modelConfig, chat.WithToolExecutor(platformTools))
 	// Cancel in-flight generations before the database closes. Defers unwind
 	// LIFO, so this runs before the database close registered earlier.
 	defer func() {
@@ -375,9 +380,6 @@ func runServer(args []string) error {
 	taskScheduler := tasks.NewScheduler(taskService, 10*time.Second)
 	taskScheduler.Start()
 	defer taskScheduler.Stop()
-
-	promptRepo := prompts.NewRepository(db)
-	promptService := prompts.NewService(promptRepo)
 
 	terminalRepo := terminal.NewRepository(db)
 	terminalService := terminal.NewService(terminalRepo, secretStore, platform.New())
