@@ -493,18 +493,22 @@ describe('activity pane floating button and in-tab popup', () => {
     await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="preview-empty-state"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('true')
+    // Preview pane itself has no collapse/hide button (managed via session tabs layout toggle)
+    expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
-  it('collapses back to preview button on hide click and persists collapsed choice', async () => {
+  it('has no self collapse button in preview pane and persists collapsed choice when collapsed', async () => {
     const wrapper = await mountPanel()
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
 
-    const hideBtn = wrapper.find('[data-test="activity-hide"]')
-    expect(hideBtn.exists()).toBe(true)
-    await hideBtn.trigger('click')
+    // Verify preview pane header does not contain collapse button
+    expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
+
+    // Press Escape to collapse
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
 
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
@@ -515,7 +519,7 @@ describe('activity pane floating button and in-tab popup', () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
   })
 
   it('closes the open popup when Escape key is pressed', async () => {
@@ -753,7 +757,9 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     await flushPromises()
 
     expect(drawer.classes()).toContain('filetree-floating')
+    expect(wrapper.find('[data-test="activity-pane"]').classes()).toContain('has-floating-filetree')
     expect(wrapper.find('[data-test="filetree-backdrop"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="preview-floating-backdrop"]').exists()).toBe(true)
     expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('unpinned')
 
     // Click backdrop to close floating drawer
@@ -769,11 +775,14 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     await flushPromises()
 
     expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-floating')
 
-    // Pin again to dock
+    // Pin directly in workspace pane to dock
     await wrapper.find('[data-test="filetree-pin-btn"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-docked')
+    expect(wrapper.find('[data-test="activity-pane"]').classes()).not.toContain('has-floating-filetree')
+    expect(wrapper.find('[data-test="filetree-backdrop"]').exists()).toBe(false)
     expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('pinned')
 
     // Collapse drawer

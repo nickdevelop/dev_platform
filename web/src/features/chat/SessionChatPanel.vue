@@ -1261,7 +1261,7 @@ async function removeSession() {
           v-if="!props.hideSideRail && !previewCollapsed"
           id="session-preview-pane"
           class="preview-pane activity-pane unified-workspace-pane"
-          :class="{ 'is-resizing': isPreviewResizing }"
+          :class="{ 'is-resizing': isPreviewResizing, 'has-floating-filetree': isFileTreeFloating }"
           :style="{ width: `${previewWidth}px`, flex: `0 0 ${previewWidth}px` }"
           aria-label="文件预览面板"
           data-test="activity-pane"
@@ -1279,6 +1279,14 @@ async function removeSession() {
           <div class="workspace-inner-split">
             <!-- Left Sub-column: Code Preview Section (flex: 1) -->
             <div class="workspace-preview-section">
+              <!-- Backdrop over preview section when file tree is floating, clicking it closes the drawer -->
+              <div
+                v-if="isFileTreeFloating"
+                class="preview-floating-backdrop"
+                data-test="preview-floating-backdrop"
+                @click="closeFloatingFileTree"
+              />
+
               <header class="preview-head activity-head">
                 <div class="preview-tabs-list" role="tablist">
                   <!-- Dynamic Tabs: Opened files only (No fixed 思考与工具 tab) -->
@@ -1330,31 +1338,6 @@ async function removeSession() {
                       <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
                     </svg>
                   </button>
-
-                  <!-- Collapse Preview Panel button (Pure Icon) -->
-                  <button
-                    type="button"
-                    class="head-action-icon-btn activity-toggle"
-                    data-test="activity-hide"
-                    data-test-collapse="activity-collapse"
-                    title="收起预览面板"
-                    aria-label="收起预览面板"
-                    :aria-pressed="(!previewCollapsed).toString()"
-                    @click="setPreviewCollapsed(true)"
-                  >
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="sr-only"
-                    data-test="toggle-preview-btn"
-                    aria-label="收起预览面板"
-                    :aria-pressed="(!previewCollapsed).toString()"
-                    @click="setPreviewCollapsed(true)"
-                  ></button>
                 </div>
               </header>
 
@@ -1644,6 +1627,12 @@ async function removeSession() {
   transition: width 0.18s ease-out;
 }
 
+.preview-pane.has-floating-filetree {
+  /* Lift preview pane above the external filetree backdrop (z-index: 35)
+     so the floating file tree drawer is fully interactive and never covered by backdrop */
+  z-index: 40;
+}
+
 .unified-workspace-pane {
   height: 100%;
 }
@@ -1656,6 +1645,7 @@ async function removeSession() {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  position: relative;
 }
 
 .workspace-preview-section {
@@ -1665,6 +1655,16 @@ async function removeSession() {
   min-width: 0;
   height: 100%;
   overflow: hidden;
+  position: relative;
+}
+
+.preview-floating-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+  z-index: 30;
+  cursor: pointer;
+  animation: backdropFadeIn 0.15s ease-out;
 }
 
 .workspace-filetree-section {
@@ -1938,9 +1938,8 @@ async function removeSession() {
 /* Third Column: File Tree Drawer */
 .filetree-backdrop {
   position: absolute;
-  /* Leave the right rail clickable: the floating drawer starts before it. */
   left: 0;
-  right: var(--chat-rail-offset);
+  right: 0;
   top: 0;
   bottom: 0;
   background: rgba(15, 23, 42, 0.28);
@@ -1980,12 +1979,13 @@ async function removeSession() {
 .filetree-drawer.filetree-floating {
   position: absolute;
   top: 0;
-  right: var(--chat-rail-offset);
+  right: 0;
   bottom: 0;
   width: 290px;
-  z-index: 40;
+  z-index: 50;
   border-radius: 4px 0 0 4px;
   border-left: 1px solid var(--color-border-strong);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
   animation: drawerSlideIn 0.18s ease-out;
 }
 
