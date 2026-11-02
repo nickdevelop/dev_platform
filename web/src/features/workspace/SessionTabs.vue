@@ -11,6 +11,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../../stores/openTabs'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
+import { useActivityPane } from '../chat/pane/useActivityPane'
+
+const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
 
 const props = withDefaults(
   defineProps<{
@@ -227,6 +230,25 @@ onBeforeUnmount(() => {
       +
     </button>
 
+    <div class="tab-trailing-actions">
+      <button
+        type="button"
+        class="tab-action-btn layout-toggle-btn"
+        :class="{ 'is-active': !previewCollapsed }"
+        data-test="toggle-layout-btn"
+        data-test-preview="toggle-preview-btn"
+        :aria-pressed="(!previewCollapsed).toString()"
+        :title="previewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
+        :aria-label="previewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
+        @click="setPreviewCollapsed(!previewCollapsed)"
+      >
+        <svg class="action-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <line x1="15" y1="3" x2="15" y2="21" stroke-width="1.8" />
+        </svg>
+      </button>
+    </div>
+
     <div
       v-if="menu"
       class="tab-menu-backdrop"
@@ -425,5 +447,39 @@ onBeforeUnmount(() => {
   background: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-text);
+}
+
+.tab-trailing-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  flex-shrink: 0;
+}
+
+.tab-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  width: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.tab-action-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.tab-action-btn.is-active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent, #3b82f6);
+  border-color: var(--color-border);
 }
 </style>

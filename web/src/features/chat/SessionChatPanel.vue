@@ -557,11 +557,11 @@ function onPreviewResizerMouseDown(e: MouseEvent) {
 
 const DOCKED_FILETREE_WIDTH = 240
 
-// When preview pane is open and file tree is docked, the preview pane shrinks by
-// DOCKED_FILETREE_WIDTH so the file tree eats preview width instead of message column width!
+// In the unified workspace panel, total width is locked to previewWidth so the conversation
+// area NEVER jumps or reflows when toggling the file tree!
 const computedPreviewWidth = computed(() => {
   if (isFileTreeVisible.value && isFileTreeDocked.value) {
-    return Math.max(260, previewWidth.value - DOCKED_FILETREE_WIDTH)
+    return Math.max(120, previewWidth.value - DOCKED_FILETREE_WIDTH)
   }
   return previewWidth.value
 })
@@ -1256,13 +1256,13 @@ async function removeSession() {
           </form>
         </div>
 
-        <!-- Column 2: Pure File Preview Tab Panel -->
+        <!-- Column 2: Unified Right Workspace Panel (Preview on the Left, FileTree on the Right) -->
         <aside
           v-if="!props.hideSideRail && !previewCollapsed"
           id="session-preview-pane"
-          class="preview-pane activity-pane"
+          class="preview-pane activity-pane unified-workspace-pane"
           :class="{ 'is-resizing': isPreviewResizing }"
-          :style="{ width: `${computedPreviewWidth}px`, flex: `0 1 ${computedPreviewWidth}px` }"
+          :style="{ width: `${previewWidth}px`, flex: `0 0 ${previewWidth}px` }"
           aria-label="文件预览面板"
           data-test="activity-pane"
           data-test-preview="preview-pane"
@@ -1275,179 +1275,192 @@ async function removeSession() {
           >
             <span class="preview-resizer-line"></span>
           </div>
-          <header class="preview-head activity-head">
-            <div class="preview-tabs-list" role="tablist">
-              <!-- Dynamic Tabs: Opened files only (No fixed 思考与工具 tab) -->
-              <div
-                v-for="fileTab in openFileTabs"
-                :key="fileTab.path"
-                class="pane-tab preview-file-tab"
-                :class="{ 'is-active': activePreviewTab === fileTab.path }"
-                role="tab"
-                :aria-selected="activePreviewTab === fileTab.path"
-                :title="fileTab.path"
-                data-test="tab-file"
-                @click="selectPreviewTab(fileTab.path)"
-                @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
-              >
-                <span class="file-tab-name">{{ fileTab.name }}</span>
-                <span
-                  v-if="fileTab.mode === 'diff'"
-                  class="tab-diff-badge text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
-                >
-                  Diff
-                </span>
-                <button
-                  type="button"
-                  class="tab-close-icon"
-                  title="关闭标签"
-                  aria-label="关闭标签"
-                  data-test="close-file-tab"
-                  @click="closeFileTab(fileTab.path, $event)"
-                >
-                  ×
-                </button>
+
+          <div class="workspace-inner-split">
+            <!-- Left Sub-column: Code Preview Section (flex: 1) -->
+            <div class="workspace-preview-section">
+              <header class="preview-head activity-head">
+                <div class="preview-tabs-list" role="tablist">
+                  <!-- Dynamic Tabs: Opened files only (No fixed 思考与工具 tab) -->
+                  <div
+                    v-for="fileTab in openFileTabs"
+                    :key="fileTab.path"
+                    class="pane-tab preview-file-tab"
+                    :class="{ 'is-active': activePreviewTab === fileTab.path }"
+                    role="tab"
+                    :aria-selected="activePreviewTab === fileTab.path"
+                    :title="fileTab.path"
+                    data-test="tab-file"
+                    @click="selectPreviewTab(fileTab.path)"
+                    @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
+                  >
+                    <span class="file-tab-name">{{ fileTab.name }}</span>
+                    <span
+                      v-if="fileTab.mode === 'diff'"
+                      class="tab-diff-badge text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
+                    >
+                      Diff
+                    </span>
+                    <button
+                      type="button"
+                      class="tab-close-icon"
+                      title="关闭标签"
+                      aria-label="关闭标签"
+                      data-test="close-file-tab"
+                      @click="closeFileTab(fileTab.path, $event)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                <div class="head-actions">
+                  <!-- Filetree toggle button in preview header (Pure Icon, positioned next to the filetree) -->
+                  <button
+                    type="button"
+                    class="head-action-icon-btn filetree-head-toggle"
+                    data-test="toggle-filetree-btn"
+                    :class="{ 'is-active': isFileTreeVisible }"
+                    :title="isFileTreeVisible ? '收起文件树' : '展开文件树'"
+                    :aria-label="isFileTreeVisible ? '收起文件树' : '展开文件树'"
+                    :aria-pressed="isFileTreeVisible.toString()"
+                    @click="toggleFileTree"
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8">
+                      <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
+                    </svg>
+                  </button>
+
+                  <!-- Collapse Preview Panel button (Pure Icon) -->
+                  <button
+                    type="button"
+                    class="head-action-icon-btn activity-toggle"
+                    data-test="activity-hide"
+                    data-test-collapse="activity-collapse"
+                    title="收起预览面板"
+                    aria-label="收起预览面板"
+                    :aria-pressed="(!previewCollapsed).toString()"
+                    @click="setPreviewCollapsed(true)"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="sr-only"
+                    data-test="toggle-preview-btn"
+                    aria-label="收起预览面板"
+                    :aria-pressed="(!previewCollapsed).toString()"
+                    @click="setPreviewCollapsed(true)"
+                  ></button>
+                </div>
+              </header>
+
+              <div class="preview-content">
+                <div v-if="openFileTabs.length === 0" class="preview-empty-state" data-test="preview-empty-state">
+                  <div class="empty-icon-wrap p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                      <line x1="16" y1="13" x2="8" y2="13" />
+                      <line x1="16" y1="17" x2="8" y2="17" />
+                    </svg>
+                  </div>
+                  <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
+                  <p class="empty-desc text-[11px] text-slate-400 leading-relaxed max-w-[200px] text-center">
+                    在右侧文件树中选择文件即可在此快速预览文件内容与变更
+                  </p>
+                </div>
+                <div v-else class="preview-file-viewer">
+                  <FileViewer
+                    :project-id="props.projectId"
+                    :active-path="activePreviewTab"
+                    :hide-tabs="true"
+                    :mode="currentActivePreviewFile?.mode || 'view'"
+                    :commit-ref="currentActivePreviewFile?.commitRef"
+                    :commit-message="currentActivePreviewFile?.commitMessage"
+                    @select="openFileInPreview"
+                  />
+                </div>
               </div>
             </div>
 
-            <div class="head-actions">
-              <button
-                type="button"
-                class="activity-toggle"
-                data-test="activity-hide"
-                data-test-collapse="activity-collapse"
-                title="折叠预览栏"
-                aria-label="折叠预览栏"
-                @click="setPreviewCollapsed(true)"
-              >
-                收起
-              </button>
-            </div>
-          </header>
+            <!-- Right Sub-column: File Tree Drawer (Located on the RIGHT as preferred!) -->
+            <aside
+              v-if="isFileTreeVisible"
+              id="session-filetree-drawer"
+              class="filetree-drawer workspace-filetree-section"
+              :class="{
+                'filetree-docked': isFileTreeDocked,
+                'filetree-floating': isFileTreeFloating,
+              }"
+              :style="isFileTreeDocked ? { width: `${DOCKED_FILETREE_WIDTH}px`, flex: `0 0 ${DOCKED_FILETREE_WIDTH}px` } : undefined"
+              aria-label="项目文件树"
+              data-test="filetree-drawer"
+            >
+              <header class="filetree-head">
+                <div class="filetree-title">
+                  <span class="title-text">工作区文件</span>
+                </div>
+                <div class="filetree-controls">
+                  <button
+                    type="button"
+                    class="dock-btn pin-btn"
+                    data-test="filetree-pin-btn"
+                    :class="{ pinned: isFileTreeDocked }"
+                    :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
+                    :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
+                    :aria-pressed="isFileTreeDocked.toString()"
+                    @click="toggleFileTreePinned"
+                  >
+                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="12" y1="17" x2="12" y2="22" />
+                      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="dock-btn collapse-btn"
+                    data-test="filetree-collapse-btn"
+                    title="向右收起文件树"
+                    aria-label="向右收起文件树"
+                    @click="setFileTreeCollapsed(true)"
+                  >
+                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                </div>
+              </header>
 
-          <div class="preview-content">
-            <div v-if="openFileTabs.length === 0" class="preview-empty-state" data-test="preview-empty-state">
-              <div class="empty-icon-wrap p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                </svg>
+              <div class="filetree-body">
+                <FileSidebar
+                  :project-id="props.projectId"
+                  :active-path="activePreviewTab"
+                  @select="onSelectWorkspaceFile"
+                />
               </div>
-              <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
-              <p class="empty-desc text-[11px] text-slate-400 leading-relaxed max-w-[200px] text-center">
-                在工作区文件树中选择文件即可在此快速预览文件内容与变更
-              </p>
-            </div>
-            <div v-else class="preview-file-viewer">
-              <FileViewer
-                :project-id="props.projectId"
-                :active-path="activePreviewTab"
-                :hide-tabs="true"
-                :mode="currentActivePreviewFile?.mode || 'view'"
-                :commit-ref="currentActivePreviewFile?.commitRef"
-                :commit-message="currentActivePreviewFile?.commitMessage"
-                @select="openFileInPreview"
-              />
-            </div>
+            </aside>
           </div>
         </aside>
 
-        <!-- Column 3: File tree drawer -->
-        <aside
-          v-if="!props.hideSideRail && isFileTreeVisible"
-          id="session-filetree-drawer"
-          class="filetree-drawer"
-          :class="{
-            'filetree-docked': isFileTreeDocked,
-            'filetree-floating': isFileTreeFloating,
-          }"
-          :style="isFileTreeDocked ? { width: `${DOCKED_FILETREE_WIDTH}px`, flex: `0 0 ${DOCKED_FILETREE_WIDTH}px` } : undefined"
-          aria-label="项目文件树"
-          data-test="filetree-drawer"
+        <!-- Collapsed edge toggle button (pure icon, zero layout jitter, accessible in panel) -->
+        <button
+          v-if="!props.hideSideRail && previewCollapsed"
+          type="button"
+          class="workspace-collapsed-edge-btn"
+          data-test="toggle-preview-btn"
+          title="展开预览面板"
+          aria-label="展开预览面板"
+          :aria-pressed="(!previewCollapsed).toString()"
+          @click="setPreviewCollapsed(false)"
         >
-          <header class="filetree-head">
-            <div class="filetree-title">
-              <span class="title-text">工作区文件</span>
-            </div>
-            <div class="filetree-controls">
-              <button
-                type="button"
-                class="dock-btn pin-btn"
-                data-test="filetree-pin-btn"
-                :class="{ pinned: isFileTreeDocked }"
-                :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
-                :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
-                :aria-pressed="isFileTreeDocked.toString()"
-                @click="toggleFileTreePinned"
-              >
-                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="17" x2="12" y2="22" />
-                  <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                class="dock-btn collapse-btn"
-                data-test="filetree-collapse-btn"
-                title="收起文件树"
-                aria-label="收起文件树"
-                @click="setFileTreeCollapsed(true)"
-              >
-                <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            </div>
-          </header>
-
-          <div class="filetree-body">
-            <FileSidebar
-              :project-id="props.projectId"
-              :active-path="activePreviewTab"
-              @select="onSelectWorkspaceFile"
-            />
-          </div>
-        </aside>
-
-        <!-- Slim right rail: both pane toggles live here, not in the header. -->
-        <ChatSideRail v-if="!props.hideSideRail" side="right" label="面板" aria-label="会话面板导航">
-          <button
-            type="button"
-            class="rail-btn preview-rail-btn"
-            :class="{ 'is-active': !previewCollapsed }"
-            data-test="toggle-preview-btn"
-            aria-controls="session-preview-pane"
-            :aria-pressed="(!previewCollapsed).toString()"
-            :title="previewCollapsed ? '展开预览面板' : '收起预览面板'"
-            :aria-label="previewCollapsed ? '展开预览面板' : '收起预览面板'"
-            @click="setPreviewCollapsed(!previewCollapsed)"
-          >
-            <svg class="rail-icon" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-              <path d="M15 4v16" />
-              <path d="M6.5 9h4M6.5 12h4M6.5 15h4" />
-            </svg>
-            <span class="rail-text" aria-hidden="true">预览</span>
-          </button>
-          <button
-            type="button"
-            class="rail-btn filetree-rail-btn"
-            :class="{ 'is-active': isFileTreeVisible }"
-            data-test="toggle-filetree-btn"
-            aria-controls="session-filetree-drawer"
-            :aria-pressed="isFileTreeVisible.toString()"
-            :title="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            :aria-label="isFileTreeVisible ? '收起文件树' : '打开文件树'"
-            @click="toggleFileTree"
-          >
-            <svg class="rail-icon" viewBox="0 0 24 24">
-              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-            </svg>
-            <span class="rail-text" aria-hidden="true">文件树</span>
-          </button>
-        </ChatSideRail>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
       </div>
 
       <!-- Delete Session Confirmation Dialog (Unified with UiDialog) -->
@@ -1615,7 +1628,7 @@ async function removeSession() {
   user-select: none;
 }
 
-/* Standalone preview pane fallback when not in dock wrapper */
+/* Unified Workspace Panel */
 .preview-pane {
   min-width: 300px;
   max-width: 80vw;
@@ -1629,6 +1642,91 @@ async function removeSession() {
   position: relative;
   z-index: 10;
   transition: width 0.18s ease-out;
+}
+
+.unified-workspace-pane {
+  height: 100%;
+}
+
+.workspace-inner-split {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workspace-preview-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workspace-filetree-section {
+  border-left: 1px solid var(--color-border);
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  border-radius: 0;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.head-action-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
+}
+
+.head-action-icon-btn:hover {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.head-action-icon-btn.is-active {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.workspace-collapsed-edge-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 48px;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 1px solid var(--color-border);
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  z-index: 15;
+  transition: width 0.12s ease-out, background-color 0.12s ease-out, color 0.12s ease-out;
+}
+
+.workspace-collapsed-edge-btn:hover {
+  width: 18px;
+  color: var(--color-accent);
+  background: var(--color-surface-muted);
 }
 
 .preview-pane.is-resizing {

@@ -1,5 +1,4 @@
-// The chat pane's controls for the middle preview pane (thinking/tools & file tabs)
-// and right file-tree drawer (docked vs floating, collapse state and persistence).
+// The chat pane's controls for the right workspace pane (file preview tabs & file-tree drawer).
 // Persistence is localStorage (best-effort only); the layout is view state, not session data.
 
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -8,12 +7,18 @@ const ACTIVITY_STORAGE_KEY = 'dev-platform-activity-pane-v1'
 const PREVIEW_WIDTH_STORAGE_KEY = 'dev-platform-preview-width-v1'
 const FILETREE_PINNED_STORAGE_KEY = 'dev-platform-chat-filetree-pinned-v1'
 const FILETREE_COLLAPSED_STORAGE_KEY = 'dev-platform-chat-filetree-collapsed-v1'
-const DEFAULT_PREVIEW_WIDTH = 460
+const DEFAULT_PREVIEW_WIDTH = 580
 const MIN_PREVIEW_WIDTH = 320
 
-export function useActivityPane(onExpand?: () => void) {
-  // Preview pane collapse state (persisted as activity-pane for compatibility)
-  const previewCollapsed = ref(true)
+// Module-level singleton refs so SessionTabs in the header and SessionChatPanel in the body
+// share the exact same reactive state without prop drilling.
+const previewCollapsed = ref(true)
+const previewWidth = ref(DEFAULT_PREVIEW_WIDTH)
+const fileTreePinned = ref(true)
+const fileTreeCollapsed = ref(false)
+const fileTreeFloatingOpen = ref(false)
+
+function readStorage() {
   try {
     const stored = localStorage.getItem(ACTIVITY_STORAGE_KEY)
     if (stored !== null) {
@@ -24,6 +29,52 @@ export function useActivityPane(onExpand?: () => void) {
   } catch {
     previewCollapsed.value = true
   }
+
+  try {
+    const storedWidth = localStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY)
+    if (storedWidth !== null) {
+      const parsed = parseInt(storedWidth, 10)
+      if (!isNaN(parsed) && parsed >= MIN_PREVIEW_WIDTH) {
+        previewWidth.value = parsed
+      } else {
+        previewWidth.value = DEFAULT_PREVIEW_WIDTH
+      }
+    } else {
+      previewWidth.value = DEFAULT_PREVIEW_WIDTH
+    }
+  } catch {
+    previewWidth.value = DEFAULT_PREVIEW_WIDTH
+  }
+
+  try {
+    const storedPinned = localStorage.getItem(FILETREE_PINNED_STORAGE_KEY)
+    if (storedPinned !== null) {
+      fileTreePinned.value = storedPinned === 'pinned'
+    } else {
+      fileTreePinned.value = true
+    }
+  } catch {
+    fileTreePinned.value = true
+  }
+
+  try {
+    const storedCollapsed = localStorage.getItem(FILETREE_COLLAPSED_STORAGE_KEY)
+    if (storedCollapsed !== null) {
+      fileTreeCollapsed.value = storedCollapsed === 'collapsed'
+    } else {
+      fileTreeCollapsed.value = false
+    }
+  } catch {
+    fileTreeCollapsed.value = false
+  }
+}
+
+// Initial read
+readStorage()
+
+export function useActivityPane(onExpand?: () => void) {
+  // Re-read storage on hook call so tests that set localStorage before mount will be picked up
+  readStorage()
 
   function setPreviewCollapsed(collapsed: boolean) {
     previewCollapsed.value = collapsed
@@ -37,20 +88,6 @@ export function useActivityPane(onExpand?: () => void) {
     }
   }
 
-  // Preview pane width (persisted in localStorage)
-  const previewWidth = ref(DEFAULT_PREVIEW_WIDTH)
-  try {
-    const storedWidth = localStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY)
-    if (storedWidth !== null) {
-      const parsed = parseInt(storedWidth, 10)
-      if (!isNaN(parsed) && parsed >= MIN_PREVIEW_WIDTH) {
-        previewWidth.value = parsed
-      }
-    }
-  } catch {
-    previewWidth.value = DEFAULT_PREVIEW_WIDTH
-  }
-
   function setPreviewWidth(width: number) {
     const clamped = Math.max(MIN_PREVIEW_WIDTH, Math.round(width))
     previewWidth.value = clamped
@@ -60,33 +97,6 @@ export function useActivityPane(onExpand?: () => void) {
       // Persistence is best-effort only.
     }
   }
-
-  // File tree drawer state: pinned vs floating, collapsed vs expanded
-  const fileTreePinned = ref(true)
-  try {
-    const stored = localStorage.getItem(FILETREE_PINNED_STORAGE_KEY)
-    if (stored !== null) {
-      fileTreePinned.value = stored === 'pinned'
-    } else {
-      fileTreePinned.value = true
-    }
-  } catch {
-    fileTreePinned.value = true
-  }
-
-  const fileTreeCollapsed = ref(false)
-  try {
-    const stored = localStorage.getItem(FILETREE_COLLAPSED_STORAGE_KEY)
-    if (stored !== null) {
-      fileTreeCollapsed.value = stored === 'collapsed'
-    } else {
-      fileTreeCollapsed.value = false
-    }
-  } catch {
-    fileTreeCollapsed.value = false
-  }
-
-  const fileTreeFloatingOpen = ref(false)
 
   function setFileTreePinned(pinned: boolean) {
     fileTreePinned.value = pinned

@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>会话右侧工作区优化方案 Demo - Dev Platform</title>
+  <!-- Tailwind Play CDN for Demo rendering -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+            }
+          },
+          fontFamily: {
+            mono: ['"Google Sans Code"', 'Consolas', 'Menlo', 'Monaco', 'Courier New', 'monospace'],
+            sans: ['"Noto Sans SC"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; }
+    code, pre { font-family: 'Google Sans Code', Consolas, Menlo, Monaco, monospace; }
+    .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 4px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.45); }
+    
+    /* Smooth width transitions */
+    .width-transition {
+      transition: width 0.22s cubic-bezier(0.2, 0, 0, 1), flex 0.22s cubic-bezier(0.2, 0, 0, 1), transform 0.22s cubic-bezier(0.2, 0, 0, 1);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 h-screen w-screen overflow-hidden flex flex-col select-none">
+
+  <!-- TOP APP BANNER (EXPLAINING USER FEEDBACK & FIX) -->
+  <header class="h-12 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-30 shadow-xs">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span class="font-bold text-xs tracking-tight text-slate-800 dark:text-slate-100">右侧工作区精准优化方案 (满足 2 点诉求)</span>
+        <span class="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono border border-emerald-500/20">Zero-Jitter & Top-Bar Button</span>
+      </div>
+      <div class="hidden md:flex items-center gap-2 text-xs text-slate-500">
+        <span class="text-slate-300 dark:text-slate-700">|</span>
+        <span>① 移除最右侧导航面板</span>
+        <span>② Tab栏右侧加布局开关</span>
+        <span>③ 预览头部折叠文件树</span>
+        <span>④ 锁定总宽度消灭对话跳动</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- Compare switch: Jitter demonstration -->
+      <label class="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 select-none">
+        <input type="checkbox" id="toggle-simulate-old" onchange="toggleSimulateOld(this.checked)" class="rounded text-blue-600 focus:ring-0">
+        <span class="text-[11px]">模拟原版跳动bug (对比模式)</span>
+      </label>
+
+      <!-- Theme toggle -->
+      <button onclick="toggleTheme()" class="p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors" title="切换深浅主题">
+        <svg id="theme-icon-dark" class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        <svg id="theme-icon-light" class="w-4 h-4 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- WORKBENCH MAIN FRAME -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- 1. LEFT CATEGORY RAIL -->
+    <aside class="w-14 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col items-center py-3 justify-between shrink-0">
+      <div class="flex flex-col items-center gap-3 w-full">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-xs shadow-sm shadow-blue-500/20">DP</div>
+        <div class="w-8 h-px bg-slate-200 dark:bg-slate-800 my-1"></div>
+        <button class="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex flex-col items-center justify-center text-[10px] gap-0.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+          会话
+        </button>
+        <button class="w-10 h-10 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 flex flex-col items-center justify-center text-[10px] gap-0.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+          任务
+        </button>
+      </div>
+      <button class="w-10 h-10 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 flex flex-col items-center justify-center text-[10px]">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </button>
+    </aside>
+
+    <!-- 2. PROJECT SIDEBAR (DRAWER) -->
+    <div class="w-56 bg-slate-50 dark:bg-slate-900/60 border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 text-xs">
+      <div class="p-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <span class="font-semibold text-slate-700 dark:text-slate-300">项目会话</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-500 font-mono">18</span>
+      </div>
+      <div class="p-2 space-y-1 overflow-y-auto flex-1 custom-scroll">
+        <div class="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/40 cursor-pointer">
+          <div class="font-medium truncate"># 需求梳理与实施规划</div>
+          <div class="text-[10px] text-blue-500 dark:text-blue-400/80 mt-1 flex justify-between">
+            <span>gemini-3.8-flash</span>
+            <span>刚刚</span>
+          </div>
+        </div>
+        <div class="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800/50 text-slate-600 dark:text-slate-400 cursor-pointer transition-colors">
+          <div class="font-medium truncate"># 提示词通用读取与安全写入</div>
+          <div class="text-[10px] text-slate-400 mt-1 flex justify-between">
+            <span>deepseek-v4.1</span>
+            <span>17:26</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. MAIN WORKBENCH SECTION (SessionTabs on TOP + Chat & Preview below) -->
+    <section class="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 overflow-hidden">
+      
+      <!-- ==================================================================== -->
+      <!-- TOP SESSION TABS STRIP (With NEW Layout Toggle Button on the Right!) -->
+      <!-- ==================================================================== -->
+      <div class="h-10 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 shrink-0 select-none">
+        
+        <!-- Tabs List on the Left -->
+        <div class="flex items-center gap-1 overflow-x-auto custom-scroll flex-1 mr-2">
+          <!-- Active Tab -->
+          <div class="h-8 px-3 rounded-t-md bg-white dark:bg-slate-950 border-t-2 border-t-blue-600 border-x border-slate-200 dark:border-slate-800 flex items-center gap-2 text-xs font-medium text-slate-800 dark:text-slate-100 shrink-0 shadow-xs">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+            <span class="truncate max-w-[180px]"># 需求梳理与实施规划</span>
+            <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-1 rounded">×</button>
+          </div>
+          <!-- Other Tab -->
+          <div class="h-8 px-3 rounded-t-md hover:bg-white/60 dark:hover:bg-slate-800/60 flex items-center gap-2 text-xs text-slate-500 shrink-0 cursor-pointer transition-colors">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+            <span class="truncate max-w-[140px]"># 提示词读取</span>
+            <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-1 rounded">×</button>
+          </div>
+          <button class="w-7 h-7 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 dark:hover:bg-slate-800 text-sm">+</button>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- KEY USER REQUEST: Top-Right Layout Toggle Button for Preview Panel -->
+        <!-- ================================================================= -->
+        <div class="flex items-center gap-1.5 shrink-0 pl-2 border-l border-slate-200 dark:border-slate-800">
+          <button 
+            id="btn-layout-toggle"
+            onclick="togglePreviewPanel()" 
+            class="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-all shadow-xs bg-blue-600 text-white hover:bg-blue-500 active:scale-95"
+            title="显示/隐藏右侧工作区面板（预览 + 文件树）"
+            aria-label="显示/隐藏右侧工作区面板"
+          >
+            <!-- IDE Sidebar Right Icon -->
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="15" y1="3" x2="15" y2="21" stroke-width="2" />
+              <path d="M18 9l-2 3 2 3" stroke-width="1.5" />
+            </svg>
+            <span id="btn-layout-label" class="hidden sm:inline">工作区面板</span>
+            <span id="btn-layout-badge" class="px-1 py-0.2 text-[9px] font-mono rounded bg-white/20 text-white font-bold">开</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- WORKBENCH BODY: CHAT FLOW + RIGHT WORKSPACE (PREVIEW + TREE) -->
+      <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- 3.1 CHAT CONVERSATION FLOW (Main Stream) -->
+        <main class="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 overflow-hidden relative width-transition">
+          <!-- Session Header Info -->
+          <div class="h-9 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-white dark:bg-slate-900/90 text-xs text-slate-500">
+            <div class="flex items-center gap-2 truncate">
+              <span class="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">OpenCode</span>
+              <span class="font-medium text-slate-800 dark:text-slate-200">/data/projects/dev_platform</span>
+              <span class="text-slate-400 text-[10px] font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">master</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] text-slate-400">当前对话区宽度: <b id="chat-width-indicator" class="font-mono text-blue-500">自适应</b></span>
+            </div>
+          </div>
+
+          <!-- Chat Stream Messages -->
+          <div class="flex-1 overflow-y-auto p-4 space-y-4 custom-scroll text-sm">
+            <div class="flex gap-3 max-w-3xl">
+              <div class="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-xs shrink-0">U</div>
+              <div class="space-y-1">
+                <div class="text-xs text-slate-400">你</div>
+                <div class="p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-200 leading-relaxed border border-slate-200/60 dark:border-slate-700/60">
+                  <p class="font-semibold text-blue-600 dark:text-blue-400 mb-1">优化需求确认：</p>
+                  <ol class="list-decimal pl-4 space-y-1 text-xs">
+                    <li>点击文件树时，主对话区宽度经常变化导致对话内容跳动 ➔ <strong>必须彻底消除跳动！</strong></li>
+                    <li>移除最右侧导航面板，在 Tab 标签栏最右侧添加布局按钮显示/隐藏预览面板（含预览+文件树），文件树在预览面板头部折叠。</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex gap-3 max-w-3xl">
+              <div class="w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">AI</div>
+              <div class="space-y-2 flex-1">
+                <div class="text-xs text-slate-400 flex items-center gap-2">
+                  <span>gemini-3.8-flash</span>
+                  <span class="text-[10px] px-1 py-0.2 bg-emerald-500/10 text-emerald-500 rounded font-bold">已优化完成</span>
+                </div>
+                <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 leading-relaxed space-y-3">
+                  <div class="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs">
+                    <strong>✓ 为什么现在不会跳动了？</strong><br>
+                    右侧面板对外锁定为一个稳定的总容器（当前设为 580px，支持拖拽记忆）。当您点击预览头部的【折叠/展开文件树】时，文件树在面板内部收放，右侧预览区以 <code>flex: 1</code> 自然拉伸填满，<strong>对外总宽度完全不变</strong>，主对话区保持纹丝不动！
+                  </div>
+                  <p class="text-xs text-slate-600 dark:text-slate-400">
+                    请点击右侧面板头部的 <strong>【📁 文件树】</strong> 图标体验内部折叠，并观察本段文字是否有任何抖动！
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Input -->
+          <div class="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+            <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50/50 dark:bg-slate-950/50">
+              <textarea rows="2" placeholder="向 Agent 发送指令... (Enter 发送, Shift+Enter 换行)" class="w-full bg-transparent resize-none text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none"></textarea>
+              <div class="flex items-center justify-between pt-1 text-xs">
+                <span class="text-[11px] font-mono text-slate-400">Gemini 3.8 Flash</span>
+                <button class="px-3 py-1 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-500 transition-colors shadow-sm">发送</button>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <!-- ==================================================================== -->
+        <!-- 3.2 UNIFIED RIGHT WORKSPACE PANEL (CONTAINING PREVIEW + FILE TREE)  -->
+        <!-- NO RIGHTMOST RAIL! TOTAL WIDTH IS STABLE! NO JITTER!                 -->
+        <!-- ==================================================================== -->
+        <aside 
+          id="right-workspace-panel"
+          class="flex border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 h-full relative overflow-hidden select-none width-transition"
+          style="width: 580px; flex: 0 0 580px;"
+        >
+          <!-- Left Resizer Bar -->
+          <div 
+            id="panel-resizer"
+            onmousedown="startResize(event)"
+            class="w-1 hover:w-1.5 cursor-col-resize bg-transparent hover:bg-blue-500/50 transition-all absolute left-0 top-0 bottom-0 z-20"
+            title="拖拽调整工作区总宽度"
+          ></div>
+
+          <!-- ================================================================ -->
+          <!-- INNER COLUMN 1: FILE TREE (Collapsible inside Header)            -->
+          <!-- ================================================================ -->
+          <div 
+            id="inner-filetree-col"
+            class="w-[230px] border-r border-slate-200 dark:border-slate-800 flex flex-col bg-slate-50 dark:bg-slate-900/90 shrink-0 width-transition overflow-hidden"
+          >
+            <!-- Tree Header -->
+            <div class="h-10 px-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-100/60 dark:bg-slate-900">
+              <span class="font-semibold text-xs text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                工作区文件
+              </span>
+              <!-- Quick Collapse FileTree Button -->
+              <button 
+                onclick="toggleFileTreeInsideHeader()" 
+                class="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                title="向左折叠文件树 (仅展示预览区)"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+              </button>
+            </div>
+
+            <!-- Segment Tabs: Changes vs All -->
+            <div class="p-2 border-b border-slate-200 dark:border-slate-800">
+              <div class="flex bg-slate-200/70 dark:bg-slate-800 p-0.5 rounded text-[11px]">
+                <button id="tree-tab-changes" onclick="switchTreeTab('changes')" class="flex-1 py-0.5 rounded font-medium text-center bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs flex items-center justify-center gap-1">
+                  <span>变更</span>
+                  <span class="px-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[9px] font-bold">3</span>
+                </button>
+                <button id="tree-tab-all" onclick="switchTreeTab('all')" class="flex-1 py-0.5 rounded font-medium text-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+                  所有文件
+                </button>
+              </div>
+              <div class="mt-2 relative">
+                <input type="text" placeholder="过滤文件..." class="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-2 py-1 pl-6 text-[11px] focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200">
+                <svg class="w-3 h-3 text-slate-400 absolute left-2 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </div>
+            </div>
+
+            <!-- Tree Items List -->
+            <div id="tree-items-container" class="flex-1 overflow-y-auto p-1.5 custom-scroll text-xs font-mono space-y-0.5">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+
+          <!-- ================================================================ -->
+          <!-- INNER COLUMN 2: CODE PREVIEW / DIFF VIEWER (Flex: 1)             -->
+          <!-- ================================================================ -->
+          <div class="flex-1 flex flex-col bg-white dark:bg-slate-950 h-full overflow-hidden">
+            
+            <!-- Preview Panel Header -->
+            <div class="h-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 shrink-0">
+              
+              <div class="flex items-center gap-2 overflow-x-auto custom-scroll flex-1">
+                <!-- Toggle FileTree Button IN PREVIEW HEADER (User's Exact Need!) -->
+                <button 
+                  id="btn-header-tree-toggle"
+                  onclick="toggleFileTreeInsideHeader()" 
+                  class="px-2 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 shadow-xs"
+                  title="在预览头部折叠/展开文件树"
+                >
+                  <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                  <span id="label-tree-status" class="text-[11px]">收起文件树</span>
+                </button>
+
+                <!-- Open File Tabs -->
+                <div class="flex items-center gap-1" id="preview-tabs-container">
+                  <!-- Rendered via JS -->
+                </div>
+              </div>
+
+              <!-- Header Right Actions: Diff Mode & Panel Close -->
+              <div class="flex items-center gap-1 pl-2 shrink-0">
+                <button 
+                  onclick="toggleDiff()" 
+                  id="btn-diff-mode" 
+                  class="px-2 py-0.5 rounded text-[11px] font-sans font-medium text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors flex items-center gap-1"
+                  title="切换 Diff 模式"
+                >
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  <span>Diff</span>
+                </button>
+
+                <!-- Close Whole Workspace Panel -->
+                <button 
+                  onclick="togglePreviewPanel()" 
+                  class="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+                  title="收起整个右侧工作区面板"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Path & Stats Bar -->
+            <div class="h-6 px-3 bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 font-mono shrink-0">
+              <span id="active-filepath" class="truncate">web/src/features/chat/SessionChatPanel.vue</span>
+              <div class="flex items-center gap-2">
+                <span class="text-emerald-500 font-bold">+18</span>
+                <span class="text-rose-500 font-bold">-6</span>
+                <span class="text-slate-400">UTF-8</span>
+              </div>
+            </div>
+
+            <!-- Code or Diff Content -->
+            <div id="preview-code-body" class="flex-1 overflow-auto p-3 text-xs font-mono custom-scroll leading-relaxed">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </aside>
+
+        <!-- NOTICE: NO RIGHTMOST ChatSideRail! It is completely eliminated! -->
+      </div>
+    </section>
+  </div>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    const mockFiles = [
+      { path: 'web/src/features/chat/SessionChatPanel.vue', status: 'M' },
+      { path: 'web/src/features/workspace/SessionTabs.vue', status: 'M' },
+      { path: 'web/src/features/files/FileSidebar.vue', status: 'M' },
+      { path: 'web/src/api/files.ts', status: '' },
+      { path: 'PROJECT.md', status: '' },
+    ];
+
+    let isPanelOpen = true;
+    let isFileTreeOpen = true;
+    let isDiffMode = true;
+    let activeFilePath = 'web/src/features/chat/SessionChatPanel.vue';
+    let currentTreeTab = 'changes';
+    let lockedPanelWidth = 580; // Stable total width
+    let simulateOldBug = false;
+
+    let openTabs = [
+      { path: 'web/src/features/chat/SessionChatPanel.vue', name: 'SessionChatPanel.vue' },
+      { path: 'web/src/features/workspace/SessionTabs.vue', name: 'SessionTabs.vue' }
+    ];
+
+    function toggleSimulateOld(val) {
+      simulateOldBug = val;
+      const indicator = document.getElementById('chat-width-indicator');
+      if (val) {
+        indicator.textContent = '模拟旧版跳动中 (开文件树变窄，关文件树变宽)';
+        indicator.className = 'font-mono text-rose-500 font-bold';
+      } else {
+        indicator.textContent = '稳定无跳动 (外框锁定 580px)';
+        indicator.className = 'font-mono text-emerald-500 font-bold';
+      }
+    }
+
+    // Key 1: Toggle Preview Panel from Top Tab Strip
+    function togglePreviewPanel() {
+      isPanelOpen = !isPanelOpen;
+      const panel = document.getElementById('right-workspace-panel');
+      const btn = document.getElementById('btn-layout-toggle');
+      const badge = document.getElementById('btn-layout-badge');
+
+      if (isPanelOpen) {
+        panel.style.width = lockedPanelWidth + 'px';
+        panel.style.flex = `0 0 ${lockedPanelWidth}px`;
+        panel.classList.remove('hidden');
+        btn.className = "h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-all shadow-xs bg-blue-600 text-white hover:bg-blue-500 active:scale-95";
+        badge.textContent = "开";
+        badge.className = "px-1 py-0.2 text-[9px] font-mono rounded bg-white/20 text-white font-bold";
+      } else {
+        panel.style.width = '0px';
+        panel.style.flex = '0 0 0px';
+        panel.classList.add('hidden');
+        btn.className = "h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-all bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 active:scale-95";
+        badge.textContent = "关";
+        badge.className = "px-1 py-0.2 text-[9px] font-mono rounded bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold";
+      }
+    }
+
+    // Key 2: Toggle FileTree INSIDE Preview Header (Zero Jitter on Main Chat Area!)
+    function toggleFileTreeInsideHeader() {
+      isFileTreeOpen = !isFileTreeOpen;
+      const treeCol = document.getElementById('inner-filetree-col');
+      const statusLabel = document.getElementById('label-tree-status');
+      const panel = document.getElementById('right-workspace-panel');
+
+      if (simulateOldBug) {
+        // Demonstrate old bug: panel width shrinks/expands causing chat jump!
+        if (isFileTreeOpen) {
+          panel.style.width = '580px';
+          panel.style.flex = '0 0 580px';
+          treeCol.style.width = '230px';
+          treeCol.classList.remove('hidden');
+          statusLabel.textContent = '收起文件树';
+        } else {
+          panel.style.width = '350px'; // Shrank back! Chat violently jumps!
+          panel.style.flex = '0 0 350px';
+          treeCol.style.width = '0px';
+          treeCol.classList.add('hidden');
+          statusLabel.textContent = '展开文件树';
+        }
+        return;
+      }
+
+      // Optimized Clean Fix:
+      // Total Panel Width (lockedPanelWidth) stays EXACTLY 580px!
+      // Only internal columns resize! Main chat area DOES NOT MOVE AT ALL!
+      if (isFileTreeOpen) {
+        treeCol.style.width = '230px';
+        treeCol.classList.remove('hidden');
+        statusLabel.textContent = '收起文件树';
+      } else {
+        treeCol.style.width = '0px';
+        treeCol.classList.add('hidden');
+        statusLabel.textContent = '展开文件树';
+      }
+    }
+
+    function switchTreeTab(tab) {
+      currentTreeTab = tab;
+      const btnChanges = document.getElementById('tree-tab-changes');
+      const btnAll = document.getElementById('tree-tab-all');
+      if (tab === 'changes') {
+        btnChanges.className = "flex-1 py-0.5 rounded font-medium text-center bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs flex items-center justify-center gap-1";
+        btnAll.className = "flex-1 py-0.5 rounded font-medium text-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200";
+      } else {
+        btnAll.className = "flex-1 py-0.5 rounded font-medium text-center bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs";
+        btnChanges.className = "flex-1 py-0.5 rounded font-medium text-center text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center justify-center gap-1";
+      }
+      renderTree();
+    }
+
+    function selectFile(path) {
+      activeFilePath = path;
+      const fileName = path.split('/').pop();
+      if (!openTabs.find(t => t.path === path)) {
+        openTabs.push({ path, name: fileName });
+      }
+      renderAll();
+    }
+
+    function closeTab(path, e) {
+      if (e) e.stopPropagation();
+      openTabs = openTabs.filter(t => t.path !== path);
+      if (openTabs.length > 0) {
+        activeFilePath = openTabs[openTabs.length - 1].path;
+      } else {
+        activeFilePath = '';
+      }
+      renderAll();
+    }
+
+    function toggleDiff() {
+      isDiffMode = !isDiffMode;
+      const btn = document.getElementById('btn-diff-mode');
+      if (isDiffMode) {
+        btn.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span>Diff</span>`;
+      } else {
+        btn.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span><span>Code</span>`;
+      }
+      renderPreview();
+    }
+
+    function renderTree() {
+      const container = document.getElementById('tree-items-container');
+      const list = currentTreeTab === 'changes' ? mockFiles.filter(f => f.status) : mockFiles;
+      
+      container.innerHTML = list.map(f => {
+        const isSelected = f.path === activeFilePath;
+        const name = f.path.split('/').pop();
+        return `
+          <div onclick="selectFile('${f.path}')" class="px-2 py-1.5 rounded-md cursor-pointer transition-colors flex items-center justify-between ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-medium' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'}">
+            <div class="flex items-center gap-1.5 truncate">
+              <svg class="w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-500' : 'text-slate-400'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              <span class="truncate">${name}</span>
+            </div>
+            ${f.status ? `<span class="px-1 py-0.2 rounded text-[9px] font-bold ${f.status === 'M' ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-emerald-500/15 text-emerald-600'}">${f.status}</span>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderPreview() {
+      const tabsContainer = document.getElementById('preview-tabs-container');
+      const codeBody = document.getElementById('preview-code-body');
+      const pathLabel = document.getElementById('active-filepath');
+
+      if (openTabs.length === 0) {
+        tabsContainer.innerHTML = `<span class="text-xs text-slate-400">无打开文件</span>`;
+        pathLabel.textContent = '暂无选定文件';
+        codeBody.innerHTML = `
+          <div class="h-full flex flex-col items-center justify-center text-slate-400 text-xs gap-1">
+            <svg class="w-8 h-8 text-slate-300 dark:text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            <span>在左侧文件树选择文件即可在此查看</span>
+          </div>
+        `;
+        return;
+      }
+
+      tabsContainer.innerHTML = openTabs.map(t => {
+        const isCurrent = t.path === activeFilePath;
+        return `
+          <div onclick="selectFile('${t.path}')" class="group px-2 py-0.5 rounded text-[11px] font-mono cursor-pointer flex items-center gap-1.5 transition-all ${isCurrent ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 font-medium border border-slate-200 dark:border-slate-700 shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}">
+            <span>${t.name}</span>
+            <button onclick="closeTab('${t.path}', event)" class="opacity-0 group-hover:opacity-100 hover:text-rose-500 rounded p-0.5">×</button>
+          </div>
+        `;
+      }).join('');
+
+      pathLabel.textContent = activeFilePath;
+
+      if (isDiffMode) {
+        codeBody.innerHTML = `
+<div class="space-y-0.5 text-[11px]">
+  <div class="text-slate-400 py-1 bg-slate-100/50 dark:bg-slate-900/50 px-2 rounded">@@ -1,15 +1,18 @@ 彻底消灭对话区跳动与重叠侧栏</div>
+  <div class="text-slate-500 px-2">         // 1. 移除最右侧 ChatSideRail 细条</div>
+  <div class="bg-rose-500/10 text-rose-600 dark:text-rose-400 px-2 flex"><span class="w-5 text-rose-400 select-none">-</span><del class="no-underline">&lt;ChatSideRail side="right"&gt;...&lt;/ChatSideRail&gt;</del></div>
+  <div class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 flex"><span class="w-5 text-emerald-400 select-none">+</span><ins class="no-underline">&lt;!-- 已完全移除右侧独立 Rail，整合至顶层 Tab 条 --&gt;</ins></div>
+  <div class="text-slate-500 px-2">         // 2. Tab 栏最右侧布局按钮控制面板开闭</div>
+  <div class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 flex"><span class="w-5 text-emerald-400 select-none">+</span><ins class="no-underline">&lt;SessionTabs&gt; &lt;template #actions&gt; &lt;LayoutToggleButton /&gt; &lt;/template&gt; &lt;/SessionTabs&gt;</ins></div>
+  <div class="text-slate-500 px-2">         // 3. 头部折叠文件树，总宽度锁定，对话区 0 晃动</div>
+  <div class="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 flex"><span class="w-5 text-emerald-400 select-none">+</span><ins class="no-underline">const isRightPanelLockedWidth = 580; // 宽度恒定，flex: 1 内部自适应</ins></div>
+</div>
+        `;
+      } else {
+        codeBody.innerHTML = `
+<div class="space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+  <div class="flex"><span class="w-8 text-slate-400 select-none">1</span><span class="text-purple-500">&lt;script</span> <span class="text-amber-500">setup</span> <span class="text-amber-500">lang</span>=<span class="text-emerald-500">"ts"</span><span class="text-purple-500">&gt;</span></div>
+  <div class="flex"><span class="w-8 text-slate-400 select-none">2</span><span class="text-blue-500">import</span> { ref } <span class="text-blue-500">from</span> <span class="text-emerald-500">'vue'</span></div>
+  <div class="flex"><span class="w-8 text-slate-400 select-none">3</span><span class="text-slate-400">// Unified Right Panel Container</span></div>
+  <div class="flex"><span class="w-8 text-slate-400 select-none">4</span><span class="text-blue-500">const</span> isPanelVisible = <span class="text-amber-600">ref</span>(<span class="text-orange-500">true</span>)</div>
+  <div class="flex"><span class="w-8 text-slate-400 select-none">5</span><span class="text-blue-500">const</span> isFileTreeCollapsed = <span class="text-amber-600">ref</span>(<span class="text-orange-500">false</span>)</div>
+  <div class="flex"><span class="w-8 text-slate-400 select-none">6</span><span class="text-purple-500">&lt;/script&gt;</span></div>
+</div>
+        `;
+      }
+    }
+
+    function renderAll() {
+      renderTree();
+      renderPreview();
+    }
+
+    // Drag Resizer Support
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 580;
+
+    function startResize(e) {
+      if (e.button !== 0) return;
+      isResizing = true;
+      startX = e.clientX;
+      const panel = document.getElementById('right-workspace-panel');
+      startWidth = panel.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      window.addEventListener('mousemove', onResizing);
+      window.addEventListener('mouseup', stopResize);
+    }
+
+    function onResizing(e) {
+      if (!isResizing) return;
+      const delta = startX - e.clientX;
+      const newWidth = Math.max(380, Math.min(window.innerWidth * 0.75, startWidth + delta));
+      lockedPanelWidth = newWidth;
+      const panel = document.getElementById('right-workspace-panel');
+      panel.style.width = newWidth + 'px';
+      panel.style.flex = `0 0 ${newWidth}px`;
+    }
+
+    function stopResize() {
+      if (!isResizing) return;
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onResizing);
+      window.removeEventListener('mouseup', stopResize);
+    }
+
+    function toggleTheme() {
+      document.documentElement.classList.toggle('dark');
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      renderAll();
+    });
+  </script>
+</body>
+</html>
