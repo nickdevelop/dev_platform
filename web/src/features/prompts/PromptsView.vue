@@ -180,12 +180,14 @@ async function copyTemplate(text: string) {
       </section>
 
       <!-- Edit Dialog -->
-      <PromptManageDialog
-        v-if="showEditDialog"
-        :prompt="activePrompt"
-        @close="showEditDialog = false"
-        @saved="onSaved"
-      />
+      <Teleport to="body">
+        <PromptManageDialog
+          v-if="showEditDialog"
+          :prompt="activePrompt"
+          @close="showEditDialog = false"
+          @saved="onSaved"
+        />
+      </Teleport>
     </div>
 
     <!-- Empty Workspace State -->

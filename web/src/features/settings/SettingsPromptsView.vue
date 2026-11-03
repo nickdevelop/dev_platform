@@ -274,13 +274,15 @@ function formatDate(iso: string): string {
     </div>
 
     <!-- Create / Edit Dialog -->
-    <PromptManageDialog
-      v-if="showEditDialog"
-      :prompt="editingPrompt"
-      :default-type="activeTab === 'flow' ? 'flow' : 'role'"
-      @close="showEditDialog = false"
-      @saved="showEditDialog = false"
-    />
+    <Teleport to="body">
+      <PromptManageDialog
+        v-if="showEditDialog"
+        :prompt="editingPrompt"
+        :default-type="activeTab === 'flow' ? 'flow' : 'role'"
+        @close="showEditDialog = false"
+        @saved="showEditDialog = false"
+      />
+    </Teleport>
   </section>
 </template>
 

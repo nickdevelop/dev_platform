@@ -2,11 +2,13 @@
 // SettingsRolesView: Global Agent Role Management in Platform Settings.
 // Conforms to design-taste-frontend (App Screens) guidelines:
 // flat surfaces, zero resting shadows, data-first typography, quiet controls.
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRolesStore } from '../../stores/roles'
 import { usePromptsStore } from '../../stores/prompts'
 import { useModelsStore } from '../../stores/models'
+import { listAgentBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
+import { cachedModels, rememberModels } from '../../shared/modelCache'
 import type { AgentRole, CreateRolePayload, UpdateRolePayload } from '../../api/roles'
 import {
   UiButton,
@@ -36,6 +38,9 @@ const formName = ref('')
 const formDescription = ref('')
 const formBackend = ref('llm')
 const formModel = ref('')
+const isCustomModel = ref(false)
+const loadingModels = ref(false)
+const agentBackendModels = ref<Record<string, ModelInfo[]>>({})
 const formColor = ref(defaultColors[0])
 const formPromptSource = ref<'prompt' | 'custom'>('prompt')
 const formPromptId = ref<number | 0>(0)
@@ -73,10 +78,73 @@ const promptSelectOptions = computed<SelectMenuItem<number | 0>[]>(() => {
   for (const p of rolePrompts.value) {
     items.push({
       value: p.id,
-      label: `${p.name} (${p.description || '无描述'})`,
+      label: p.name,
+      sublabel: p.description
+        ? (p.description.length > 50 ? p.description.slice(0, 47) + '…' : p.description)
+        : undefined,
     })
   }
   return items
+})
+
+async function fetchModelsForBackend(backend: string) {
+  if (backend === 'llm') return
+  if (agentBackendModels.value[backend] && agentBackendModels.value[backend].length > 0) return
+  const cached = cachedModels(backend as BackendId)
+  if (cached && cached.length > 0) {
+    agentBackendModels.value[backend] = cached
+  }
+  loadingModels.value = true
+  try {
+    const res = await listAgentBackendModels(backend as BackendId)
+    const enabledModels = (res.models || []).filter((m) => m.enabled !== false)
+    agentBackendModels.value[backend] = enabledModels
+    rememberModels(backend as BackendId, enabledModels)
+  } catch {
+    // Keep cached models if available
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+const modelSelectOptions = computed<SelectMenuItem<string>[]>(() => {
+  if (formBackend.value === 'llm') {
+    const items: SelectMenuItem<string>[] = []
+    for (const svc of (modelsStore.services || [])) {
+      if (!svc.enabled) continue
+      for (const m of (svc.models || [])) {
+        if (m.usable && m.supportsText) {
+          items.push({
+            value: m.modelId,
+            label: m.name ? `${m.name} (${m.modelId})` : m.modelId,
+            sublabel: svc.name,
+          })
+        }
+      }
+    }
+    return items
+  }
+
+  const list = agentBackendModels.value[formBackend.value] || cachedModels(formBackend.value as BackendId) || []
+  return list
+    .filter((m) => m.enabled !== false)
+    .map((m) => ({
+      value: m.id,
+      label: m.name || m.id,
+      sublabel: m.id !== m.name ? m.id : undefined,
+    }))
+})
+
+watch(formBackend, async (newBackend) => {
+  if (newBackend !== 'llm') {
+    await fetchModelsForBackend(newBackend)
+  }
+  const opts = modelSelectOptions.value
+  if (!isCustomModel.value) {
+    if (opts.length > 0 && !opts.some((opt) => opt.value === formModel.value)) {
+      formModel.value = opts[0].value
+    }
+  }
 })
 
 const selectedPromptPreview = computed(() => {
@@ -96,8 +164,10 @@ function openCreateDialog() {
   formName.value = ''
   formDescription.value = ''
   formBackend.value = 'llm'
-  formModel.value = ''
-  formColor.value = defaultColors[rolesStore.roles.length % defaultColors.length]
+  isCustomModel.value = false
+  const defaultOpts = modelSelectOptions.value
+  formModel.value = defaultOpts.length > 0 ? defaultOpts[0].value : ''
+  formColor.value = defaultColors[(rolesStore.roles || []).length % defaultColors.length]
   formPromptSource.value = rolePrompts.value.length > 0 ? 'prompt' : 'custom'
   formPromptId.value = rolePrompts.value.length > 0 ? rolePrompts.value[0].id : 0
   formCustomPrompt.value = ''
@@ -112,6 +182,10 @@ function openEditDialog(role: AgentRole) {
   formBackend.value = role.backend || 'llm'
   formModel.value = role.model
   formColor.value = role.color || defaultColors[0]
+  if (role.backend && role.backend !== 'llm') {
+    void fetchModelsForBackend(role.backend)
+  }
+  isCustomModel.value = false
   if (role.promptId && role.promptId > 0) {
     formPromptSource.value = 'prompt'
     formPromptId.value = role.promptId
@@ -225,7 +299,7 @@ function goToPromptsSetting() {
       </div>
 
       <div class="text-xs text-[var(--color-text-muted)] font-mono tabular-nums">
-        共 {{ rolesStore.roles.length }} 个专家角色
+        共 {{ (rolesStore.roles || []).length }} 个专家角色
       </div>
     </div>
 
@@ -328,173 +402,196 @@ function goToPromptsSetting() {
     </div>
 
     <!-- Create / Edit Dialog -->
-    <UiDialog
-      v-if="showEditDialog"
-      :title="editingRoleId ? '编辑专家角色' : '新建专家角色'"
-      width-class="w-full max-w-xl"
-      @close="showEditDialog = false"
-    >
-      <form class="space-y-4" @submit.prevent="handleSaveRole">
-        <UiAlert v-if="dialogError" variant="error">
-          {{ dialogError }}
-        </UiAlert>
+    <Teleport to="body">
+      <UiDialog
+        v-if="showEditDialog"
+        :title="editingRoleId ? '编辑专家角色' : '新建专家角色'"
+        width-class="w-full max-w-xl"
+        @close="showEditDialog = false"
+      >
+        <form class="space-y-4" @submit.prevent="handleSaveRole">
+          <UiAlert v-if="dialogError" variant="error">
+            {{ dialogError }}
+          </UiAlert>
 
-        <!-- 1. Name & Color -->
-        <div class="grid grid-cols-3 gap-3">
-          <div class="col-span-2 space-y-1.5">
-            <label class="text-xs font-medium text-[var(--color-text)]">角色名称 <span class="text-red-500">*</span></label>
-            <UiInput
-              v-model="formName"
-              placeholder="例如：系统架构师、前端专家、审查员"
-              required
-              autofocus
-              block
-            />
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-[var(--color-text)]">标识色彩</label>
-            <div class="flex items-center gap-1.5 pt-2">
-              <button
-                v-for="color in defaultColors"
-                :key="color"
-                type="button"
-                class="w-5 h-5 rounded-full border transition-transform"
-                :class="[formColor === color ? 'scale-110 border-white ring-2 ring-blue-500/50' : 'border-transparent opacity-70 hover:opacity-100']"
-                :style="{ backgroundColor: color }"
-                @click="formColor = color"
+          <!-- 1. Name & Color -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2 space-y-1.5">
+              <label class="text-xs font-medium text-[var(--color-text)]">角色名称 <span class="text-red-500">*</span></label>
+              <UiInput
+                v-model="formName"
+                placeholder="例如：系统架构师、前端专家、审查员"
+                required
+                autofocus
+                block
               />
             </div>
-          </div>
-        </div>
 
-        <!-- 2. Description -->
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-[var(--color-text)]">角色职责说明</label>
-          <UiInput
-            v-model="formDescription"
-            placeholder="说明该角色的专业特长与工作边界，中控编排器派发任务时将以此为依据"
-            block
-          />
-        </div>
-
-        <!-- 3. Backend & Model -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-[var(--color-text)]">执行后端</label>
-            <select
-              v-model="formBackend"
-              class="w-full text-xs h-8 px-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
-            >
-              <option value="llm">llm (纯通用模型)</option>
-              <option value="opencode">opencode (Coding Agent)</option>
-              <option value="pi">pi (轻量 Agent)</option>
-              <option value="deepseek">deepseek (DSH Agent)</option>
-            </select>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium text-[var(--color-text)]">模型名称 <span class="text-red-500">*</span></label>
-            <UiInput
-              v-model="formModel"
-              placeholder="例如：gpt-4o、claude-3-5-sonnet"
-              required
-              block
-            />
-          </div>
-        </div>
-
-        <!-- 4. Prompt Source Selection (Reference Prompt vs Custom) -->
-        <div class="space-y-2 pt-2 border-t border-[var(--color-border)]">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-medium text-[var(--color-text)]">提示词配置方式</label>
-            <div class="flex items-center gap-3 text-xs">
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  v-model="formPromptSource"
-                  type="radio"
-                  value="prompt"
-                  class="text-[var(--color-primary)]"
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium text-[var(--color-text)]">标识色彩</label>
+              <div class="flex items-center gap-1.5 pt-2">
+                <button
+                  v-for="color in defaultColors"
+                  :key="color"
+                  type="button"
+                  class="w-5 h-5 rounded-full border transition-transform"
+                  :class="[formColor === color ? 'scale-110 border-white ring-2 ring-blue-500/50' : 'border-transparent opacity-70 hover:opacity-100']"
+                  :style="{ backgroundColor: color }"
+                  @click="formColor = color"
                 />
-                <span>引用提示词管理 (推荐)</span>
-              </label>
-              <label class="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  v-model="formPromptSource"
-                  type="radio"
-                  value="custom"
-                  class="text-[var(--color-primary)]"
-                />
-                <span>自定义提示词</span>
-              </label>
+              </div>
             </div>
           </div>
 
-          <!-- Prompt Reference Dropdown -->
-          <div v-if="formPromptSource === 'prompt'" class="space-y-2">
-            <div class="flex items-center gap-2">
-              <div class="flex-1">
+          <!-- 2. Description -->
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-[var(--color-text)]">角色职责说明</label>
+            <UiInput
+              v-model="formDescription"
+              placeholder="说明该角色的专业特长与工作边界，中控编排器派发任务时将以此为依据"
+              block
+            />
+          </div>
+
+          <!-- 3. Backend & Model -->
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium text-[var(--color-text)]">执行后端</label>
+              <select
+                v-model="formBackend"
+                class="w-full text-xs h-8 px-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
+              >
+                <option value="llm">llm (纯通用模型)</option>
+                <option value="opencode">opencode (Coding Agent)</option>
+                <option value="pi">pi (轻量 Agent)</option>
+                <option value="deepseek">deepseek (DSH Agent)</option>
+              </select>
+            </div>
+
+            <div class="space-y-1.5 min-w-0">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-medium text-[var(--color-text)]">模型名称 <span class="text-red-500">*</span></label>
+                <button
+                  type="button"
+                  class="text-[11px] text-[var(--color-primary)] hover:underline"
+                  @click="isCustomModel = !isCustomModel"
+                >
+                  {{ isCustomModel ? '从候选列表选择' : '自定义输入' }}
+                </button>
+              </div>
+
+              <div v-if="!isCustomModel && modelSelectOptions.length > 0">
                 <UiSelectMenu
-                  v-model="formPromptId"
-                  :options="promptSelectOptions"
-                  placeholder="选择角色类提示词…"
+                  v-model="formModel"
+                  :options="modelSelectOptions"
+                  placeholder="选择模型…"
+                  size="sm"
                   block
                 />
               </div>
-              <UiButton
-                type="button"
-                variant="secondary"
-                class="text-xs px-2.5 py-1 whitespace-nowrap"
-                @click="goToPromptsSetting"
-              >
-                管理提示词
-              </UiButton>
-            </div>
-
-            <!-- Preview of selected prompt content -->
-            <div v-if="selectedPromptPreview" class="space-y-1">
-              <span class="text-[11px] text-[var(--color-text-muted)]">提示词实时预览:</span>
-              <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2.5 rounded border border-[var(--color-border)] max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                {{ selectedPromptPreview }}
+              <div v-else>
+                <UiInput
+                  v-model="formModel"
+                  placeholder="例如：gpt-4o、claude-3-5-sonnet"
+                  required
+                  block
+                />
               </div>
             </div>
-            <p v-else class="text-xs text-[var(--color-text-muted)]">
-              请选择一个提示词。引用的提示词在提示词管理中更新后，角色将自动同步生效。
-            </p>
           </div>
 
-          <!-- Custom Textarea -->
-          <div v-else class="space-y-1">
-            <UiTextarea
-              v-model="formCustomPrompt"
-              placeholder="设定该角色的系统人设、技能准则与输出要求…"
-              :rows="5"
-            />
-          </div>
-        </div>
+          <!-- 4. Prompt Source Selection (Reference Prompt vs Custom) -->
+          <div class="space-y-2 pt-2 border-t border-[var(--color-border)]">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium text-[var(--color-text)]">提示词配置方式</label>
+              <div class="flex items-center gap-3 text-xs">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    v-model="formPromptSource"
+                    type="radio"
+                    value="prompt"
+                    class="text-[var(--color-primary)]"
+                  />
+                  <span>引用提示词管理 (推荐)</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    v-model="formPromptSource"
+                    type="radio"
+                    value="custom"
+                    class="text-[var(--color-primary)]"
+                  />
+                  <span>自定义提示词</span>
+                </label>
+              </div>
+            </div>
 
-        <!-- Actions -->
-        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--color-border)]">
-          <UiButton
-            type="button"
-            variant="secondary"
-            class="text-xs px-3 py-1.5"
-            @click="showEditDialog = false"
-          >
-            取消
-          </UiButton>
-          <UiButton
-            type="submit"
-            variant="primary"
-            class="text-xs px-4 py-1.5"
-            :loading="submitting"
-            :disabled="submitting"
-          >
-            {{ editingRoleId ? '保存更新' : '立即创建' }}
-          </UiButton>
-        </div>
-      </form>
-    </UiDialog>
+            <!-- Prompt Reference Dropdown -->
+            <div v-if="formPromptSource === 'prompt'" class="space-y-2">
+              <div class="flex items-center gap-2">
+                <div class="flex-1 min-w-0">
+                  <UiSelectMenu
+                    v-model="formPromptId"
+                    :options="promptSelectOptions"
+                    placeholder="选择角色类提示词…"
+                    block
+                  />
+                </div>
+                <UiButton
+                  type="button"
+                  variant="secondary"
+                  class="text-xs px-2.5 py-1 whitespace-nowrap shrink-0"
+                  @click="goToPromptsSetting"
+                >
+                  管理提示词
+                </UiButton>
+              </div>
+
+              <!-- Preview of selected prompt content -->
+              <div v-if="selectedPromptPreview" class="space-y-1">
+                <span class="text-[11px] text-[var(--color-text-muted)]">提示词实时预览:</span>
+                <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2.5 rounded border border-[var(--color-border)] max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                  {{ selectedPromptPreview }}
+                </div>
+              </div>
+              <p v-else class="text-xs text-[var(--color-text-muted)]">
+                请选择一个提示词。引用的提示词在提示词管理中更新后，角色将自动同步生效。
+              </p>
+            </div>
+
+            <!-- Custom Textarea -->
+            <div v-else class="space-y-1">
+              <UiTextarea
+                v-model="formCustomPrompt"
+                placeholder="设定该角色的系统人设、技能准则与输出要求…"
+                :rows="5"
+              />
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--color-border)]">
+            <UiButton
+              type="button"
+              variant="secondary"
+              class="text-xs px-3 py-1.5"
+              @click="showEditDialog = false"
+            >
+              取消
+            </UiButton>
+            <UiButton
+              type="submit"
+              variant="primary"
+              class="text-xs px-4 py-1.5"
+              :loading="submitting"
+              :disabled="submitting"
+            >
+              {{ editingRoleId ? '保存更新' : '立即创建' }}
+            </UiButton>
+          </div>
+        </form>
+      </UiDialog>
+    </Teleport>
   </section>
 </template>
 

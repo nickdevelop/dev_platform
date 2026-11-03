@@ -2,18 +2,29 @@
 // Task Creation Panel: structured with clean session template fields,
 // task type selector and execution mode configuration.
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { BackendId } from '../../api/agents'
 import type { ScheduleType, TaskType, FlowRoleInput } from '../../api/tasks'
+import type { AgentRole } from '../../api/roles'
 import { createTaskRole } from '../../api/tasks'
 import ModelSelect from '../chat/composer/ModelSelect.vue'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { usePromptsStore } from '../../stores/prompts'
 import { useRolesStore } from '../../stores/roles'
+import { useModelsStore } from '../../stores/models'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
-import { UiButton, UiInput, UiSelect, UiTextarea, UiAlert } from '../../shared/ui'
+import {
+  UiButton,
+  UiInput,
+  UiSelect,
+  UiTextarea,
+  UiAlert,
+  UiSelectMenu,
+  type SelectMenuItem,
+} from '../../shared/ui'
 import CronBuilder from '../../shared/components/CronBuilder.vue'
 
 const props = defineProps<{
@@ -25,10 +36,12 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+const router = useRouter()
 const agentsStore = useAgentsStore()
 const projectsStore = useProjectsStore()
 const promptsStore = usePromptsStore()
 const rolesStore = useRolesStore()
+const modelsStore = useModelsStore()
 const tasksStore = useTasksStore()
 const draftsStore = useDraftsStore()
 
@@ -51,55 +64,66 @@ const modelOk = ref(false)
 const promptText = ref(draft.promptText ?? '')
 const selectedPromptId = ref<number | ''>(draft.promptId ?? '')
 
-// Collaborative Flow Configuration
-const orchestratorModel = ref(draft.model || 'gpt-4o')
-const flowRoles = ref<FlowRoleInput[]>([
-  {
-    name: '架构师',
-    description: '负责系统架构方案设计、模块拆解与接口规约',
-    backend: 'llm',
-    model: 'gpt-4o',
-    systemPrompt: '你是一名资深系统架构师，负责分析需求并制定清晰架构方案。',
-    color: '#8b5cf6',
-  },
-  {
-    name: '开发专家',
-    description: '负责按照设计方案编写与修改工作区代码',
-    backend: 'opencode',
-    model: 'gpt-4o',
-    systemPrompt: '你是一名经验丰富的全栈工程师，擅长编写健壮、规范的代码并进行自测。',
-    color: '#3b82f6',
-  },
-])
+// Collaborative Flow Configuration: Orchestrator Model from System Chat Models
+const chatModelOptions = computed<SelectMenuItem<string>[]>(() => {
+  const items: SelectMenuItem<string>[] = []
+  for (const svc of (modelsStore.services || [])) {
+    if (!svc.enabled) continue
+    for (const m of (svc.models || [])) {
+      if (m.usable && m.supportsText) {
+        items.push({
+          value: m.modelId,
+          label: m.name ? `${m.name} (${m.modelId})` : m.modelId,
+          sublabel: svc.name,
+        })
+      }
+    }
+  }
+  return items
+})
 
-function addFlowRole() {
-  const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
-  flowRoles.value.push({
-    name: `专家${flowRoles.value.length + 1}`,
-    description: '专业子任务执行',
-    backend: 'llm',
-    model: orchestratorModel.value || 'gpt-4o',
-    systemPrompt: '请高质量完成指派的子任务并反馈结果。',
-    color: colors[flowRoles.value.length % colors.length],
-  })
+const orchestratorModel = ref(draft.model || '')
+
+// Roles strictly selected from Role Management
+const selectedRoleIds = ref<number[]>([])
+
+const selectedRoles = computed<AgentRole[]>(() => {
+  return selectedRoleIds.value
+    .map((id) => rolesStore.byId(id))
+    .filter((r): r is AgentRole => !!r)
+})
+
+const availableRoleOptions = computed<SelectMenuItem<number | 0>[]>(() => {
+  const items: SelectMenuItem<number | 0>[] = [
+    { value: 0, label: '+ 从角色管理选择专家加入…' },
+  ]
+  for (const r of (rolesStore.roles || [])) {
+    if (!selectedRoleIds.value.includes(r.id)) {
+      items.push({
+        value: r.id,
+        label: `${r.name} (${r.backend} / ${r.model})`,
+        sublabel: r.description || undefined,
+      })
+    }
+  }
+  return items
+})
+
+function addRole(roleId: number) {
+  if (roleId && !selectedRoleIds.value.includes(roleId)) {
+    selectedRoleIds.value.push(roleId)
+  }
 }
 
-function addRoleFromLibrary(roleId: number) {
-  const role = rolesStore.byId(roleId)
-  if (!role) return
-  flowRoles.value.push({
-    name: role.name,
-    description: role.description,
-    backend: role.backend,
-    model: role.model,
-    promptId: role.promptId,
-    systemPrompt: role.systemPrompt,
-    color: role.color || '#3b82f6',
-  })
+function removeRole(roleId: number) {
+  const idx = selectedRoleIds.value.indexOf(roleId)
+  if (idx !== -1) {
+    selectedRoleIds.value.splice(idx, 1)
+  }
 }
 
-function removeFlowRole(idx: number) {
-  flowRoles.value.splice(idx, 1)
+function goToSettingsRoles() {
+  void router.push({ name: 'settings-roles' })
 }
 
 // Execution Mode / Schedule Info
@@ -173,6 +197,7 @@ onMounted(async () => {
     agentsStore.loadBackends(),
     promptsStore.loadPrompts(),
     rolesStore.loadRoles(),
+    modelsStore.load(),
   ])
 
   if (!selectedProjectId.value && projectsStore.projects.length > 0) {
@@ -180,6 +205,12 @@ onMounted(async () => {
   }
   if (selectedBackend.value === '' && selectableBackends.value.length > 0) {
     selectedBackend.value = selectableBackends.value[0].backend
+  }
+  if (!orchestratorModel.value && chatModelOptions.value.length > 0) {
+    orchestratorModel.value = chatModelOptions.value[0].value
+  }
+  if (selectedRoleIds.value.length === 0 && (rolesStore.roles || []).length > 0) {
+    selectedRoleIds.value = (rolesStore.roles || []).slice(0, 2).map((r) => r.id)
   }
 })
 
@@ -239,15 +270,15 @@ async function handleCreateTask() {
   // 1. Collaborative Flow Task Creation
   if (selectedTaskType.value === 'flow') {
     if (!orchestratorModel.value.trim()) {
-      errorMessage.value = '请输入或选择中控编排模型'
+      errorMessage.value = '请选择中控编排模型'
       return
     }
     if (!promptText.value.trim()) {
       errorMessage.value = '请填写多 Agent 协同流程的整体目标'
       return
     }
-    if (flowRoles.value.length === 0) {
-      errorMessage.value = '协同流程必须至少包含一个 Agent 角色'
+    if (selectedRoles.value.length === 0) {
+      errorMessage.value = '协同流程必须从角色管理中至少选择一个 Agent 角色'
       return
     }
 
@@ -271,8 +302,16 @@ async function handleCreateTask() {
       })
 
       // Batch create initial configured roles
-      for (const r of flowRoles.value) {
-        await createTaskRole(created.id, r)
+      for (const r of selectedRoles.value) {
+        await createTaskRole(created.id, {
+          name: r.name,
+          description: r.description,
+          backend: r.backend,
+          model: r.model,
+          promptId: r.promptId,
+          systemPrompt: r.systemPrompt,
+          color: r.color,
+        })
       }
 
       emit('created', created.id)
@@ -473,17 +512,41 @@ async function handleCreateTask() {
 
           <!-- Orchestrator Model Input -->
           <div class="form-group flex flex-col gap-1.5">
-            <label for="orchestrator-model" class="text-xs font-medium text-[var(--color-text)]">
-              中控调度大脑模型 <span class="text-red-500">*</span>
-              <span class="label-hint text-[var(--color-text-muted)] font-normal">（用于拆解任务、决策分工与调度各角色的决策大模型）</span>
-            </label>
-            <UiInput
-              id="orchestrator-model"
-              v-model="orchestratorModel"
-              placeholder="例如：gpt-4o、claude-3-5-sonnet、deepseek-chat"
-              required
-              block
-            />
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium text-[var(--color-text)]">
+                中控调度大脑模型 <span class="text-red-500">*</span>
+                <span class="label-hint text-[var(--color-text-muted)] font-normal">（从系统配置的 Chat 模型中选择中控大脑）</span>
+              </label>
+              <button
+                type="button"
+                class="text-[11px] text-[var(--color-primary)] hover:underline"
+                @click="router.push({ name: 'settings-models' })"
+              >
+                配置模型…
+              </button>
+            </div>
+            <div v-if="chatModelOptions.length > 0">
+              <UiSelectMenu
+                v-model="orchestratorModel"
+                :options="chatModelOptions"
+                placeholder="请选择中控调度大脑模型…"
+                block
+              />
+            </div>
+            <div
+              v-else
+              class="p-3 text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded flex items-center justify-between gap-2"
+            >
+              <span>尚未在平台中配置可用的 Chat 文本模型，请先前往设置添加模型服务。</span>
+              <UiButton
+                type="button"
+                variant="secondary"
+                class="text-xs px-2.5 py-1 shrink-0"
+                @click="router.push({ name: 'settings-models' })"
+              >
+                前往配置
+              </UiButton>
+            </div>
           </div>
 
           <!-- Goal / Global Prompt Textarea -->
@@ -501,103 +564,119 @@ async function handleCreateTask() {
             />
           </div>
 
-          <!-- Configured Agent Roles List -->
+          <!-- Configured Agent Roles List (Selected from Role Management) -->
           <div class="roles-config-section pt-2 space-y-3">
             <div class="flex items-center justify-between gap-3">
               <label class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-2">
-                <span>团队协同角色分工</span>
+                <span>团队协同分工角色 <span class="text-red-500">*</span></span>
                 <span class="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-500 font-mono border border-blue-500/20">
-                  {{ flowRoles.length }} 个角色
+                  已选用 {{ selectedRoles.length }} 个角色
                 </span>
               </label>
               <div class="flex items-center gap-2">
-                <select
-                  v-if="rolesStore.roles.length > 0"
-                  class="text-xs h-6 px-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none cursor-pointer"
-                  @change="(e) => {
-                    const target = e.target as HTMLSelectElement;
-                    const val = Number(target.value);
-                    if (val) {
-                      addRoleFromLibrary(val);
-                      target.value = '';
-                    }
-                  }"
-                >
-                  <option value="">+ 从角色库选择加入</option>
-                  <option v-for="role in rolesStore.roles" :key="role.id" :value="role.id">
-                    {{ role.name }} ({{ role.backend }} / {{ role.model }})
-                  </option>
-                </select>
                 <button
                   type="button"
                   class="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1 font-medium"
-                  @click="addFlowRole"
+                  @click="goToSettingsRoles"
                 >
-                  + 自定义角色
+                  管理角色库
                 </button>
               </div>
             </div>
 
-            <!-- Role Cards Grid -->
-            <div class="grid grid-cols-1 gap-2.5">
+            <!-- Role Selector Dropdown -->
+            <div v-if="availableRoleOptions.length > 1" class="max-w-md">
+              <UiSelectMenu
+                :model-value="0"
+                :options="availableRoleOptions"
+                placeholder="从角色管理中选择角色加入协同…"
+                size="sm"
+                block
+                @update:model-value="(val) => { if (val) addRole(Number(val)) }"
+              />
+            </div>
+
+            <!-- Selected Roles Cards Grid -->
+            <div v-if="selectedRoles.length > 0" class="grid grid-cols-1 gap-2.5">
               <div
-                v-for="(r, idx) in flowRoles"
-                :key="idx"
-                class="p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] space-y-2"
+                v-for="r in selectedRoles"
+                :key="r.id"
+                class="p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] flex items-start justify-between gap-3"
               >
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2">
-                    <span
-                      class="w-2.5 h-2.5 rounded-full shrink-0"
-                      :style="{ backgroundColor: r.color || '#3b82f6' }"
-                    />
-                    <input
-                      v-model="r.name"
-                      class="text-xs font-semibold bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] focus:outline-none text-[var(--color-text)] px-1 py-0.5"
-                      placeholder="角色名称"
-                      required
-                    />
-                    <select
-                      v-model="r.backend"
-                      class="text-[11px] h-6 px-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none font-mono"
-                    >
-                      <option value="llm">llm (纯大模型)</option>
-                      <option value="opencode">opencode</option>
-                      <option value="pi">pi</option>
-                      <option value="deepseek">deepseek</option>
-                    </select>
-                    <input
-                      v-model="r.model"
-                      class="text-[11px] h-6 px-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none font-mono w-32"
-                      placeholder="分配模型"
-                      required
-                    />
+                <div class="flex items-start gap-2.5 min-w-0 flex-1">
+                  <span
+                    class="w-3 h-3 rounded-full shrink-0 mt-1"
+                    :style="{ backgroundColor: r.color || '#3b82f6' }"
+                  />
+                  <div class="space-y-1 min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-xs font-semibold text-[var(--color-text)]">
+                        {{ r.name }}
+                      </span>
+                      <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                        {{ r.backend }}
+                      </span>
+                      <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                        {{ r.model }}
+                      </span>
+                    </div>
+                    <p v-if="r.description" class="text-[11px] text-[var(--color-text-muted)] line-clamp-1 leading-relaxed">
+                      {{ r.description }}
+                    </p>
                   </div>
-
-                  <button
-                    v-if="flowRoles.length > 1"
-                    type="button"
-                    class="text-[11px] text-red-500 hover:text-red-600 p-1"
-                    title="移除该角色"
-                    @click="removeFlowRole(idx)"
-                  >
-                    移除
-                  </button>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                  <input
-                    v-model="r.description"
-                    class="p-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-[11px] focus:outline-none focus:border-[var(--color-primary)]"
-                    placeholder="角色职责描述（供中控识别）"
-                  />
-                  <input
-                    v-model="r.systemPrompt"
-                    class="p-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-[11px] focus:outline-none focus:border-[var(--color-primary)] font-mono"
-                    placeholder="角色专属系统提示词 (System Prompt)"
-                  />
-                </div>
+                <button
+                  type="button"
+                  class="text-[11px] text-red-500 hover:text-red-600 px-1.5 py-0.5 rounded shrink-0 transition-colors"
+                  title="移除该角色"
+                  @click="removeRole(r.id)"
+                >
+                  移除
+                </button>
               </div>
+            </div>
+
+            <!-- Empty selected state -->
+            <div
+              v-else-if="(rolesStore.roles || []).length > 0"
+              class="p-6 text-center rounded-[var(--radius,6px)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 space-y-2"
+            >
+              <div class="text-xs font-medium text-[var(--color-text)]">尚未选择协同专家角色</div>
+              <p class="text-[11px] text-[var(--color-text-muted)] max-w-sm mx-auto">
+                协同流程需要多位专家配合推进。请从上方的角色管理下拉菜单中选择加入本任务的角色。
+              </p>
+              <div class="flex items-center justify-center gap-1.5 flex-wrap pt-2">
+                <button
+                  v-for="r in (rolesStore.roles || [])"
+                  :key="r.id"
+                  type="button"
+                  class="text-xs px-2.5 py-1 rounded bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-primary)] text-[var(--color-text)] inline-flex items-center gap-1.5 transition-colors"
+                  @click="addRole(r.id)"
+                >
+                  <span class="w-2 h-2 rounded-full" :style="{ backgroundColor: r.color || '#3b82f6' }" />
+                  <span>+ {{ r.name }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Empty role store state -->
+            <div
+              v-else
+              class="p-6 text-center rounded-[var(--radius,6px)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 space-y-2"
+            >
+              <div class="text-xs font-medium text-[var(--color-text)]">角色管理中暂无专家角色</div>
+              <p class="text-[11px] text-[var(--color-text-muted)] max-w-sm mx-auto">
+                请先前往角色管理创建团队角色（支持设定人设提示词、执行后端与模型），创建后即可在协同流程中选用。
+              </p>
+              <UiButton
+                type="button"
+                variant="primary"
+                class="text-xs px-3 py-1 mt-1"
+                @click="goToSettingsRoles"
+              >
+                前往角色管理配置专家
+              </UiButton>
             </div>
           </div>
         </div>

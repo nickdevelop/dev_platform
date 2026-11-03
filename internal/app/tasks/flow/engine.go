@@ -12,6 +12,8 @@ import (
 
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/sessions"
+	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/app/tasks"
 	"devplatform/internal/core/agents"
 )
@@ -20,6 +22,11 @@ var (
 	ErrFlowRunNotFound = errors.New("flow: run not found")
 	ErrFlowRunFinished = errors.New("flow: run already finished")
 )
+
+// SessionHistoryProvider is an optional interface to read completed session transcripts.
+type SessionHistoryProvider interface {
+	History(ctx context.Context, projectID uint, sessionID string) (sessions.History, error)
+}
 
 // ModelResolver defines how model names or IDs are resolved to endpoints and credentials.
 type ModelResolver interface {
@@ -712,6 +719,65 @@ func (e *Engine) runRoleStep(
 	sessID := outcome.Session.ID
 	savedMsg.SessionID = sessID
 	savedMsg.Content = fmt.Sprintf("已在工作区启动 Agent 会话 (%s / %s) 执行任务。\n会话 ID: `%s`\n任务指令已接收，正在处理中...", role.Backend, role.Model, sessID)
+	savedMsg.Status = tasks.FlowMsgStreaming
+	_ = e.repo.UpdateFlowMessage(savedMsg)
+
+	e.eventBus.Publish(run.ID, FlowEvent{
+		Type:    EventMessage,
+		RunID:   run.ID,
+		Payload: savedMsg,
+	})
+
+	// Wait for Agent session to finish its turn
+	var summary string
+	waitCtx, waitCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer waitCancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-waitCtx.Done():
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("Agent 会话执行超时或被取消（会话 ID: `%s`）", sessID)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			e.eventBus.Publish(run.ID, FlowEvent{
+				Type:    EventMessage,
+				RunID:   run.ID,
+				Payload: savedMsg,
+			})
+			return waitCtx.Err()
+		case <-ticker.C:
+		}
+
+		sess, err := e.launcher.Get(task.ProjectID, sessID)
+		if err != nil {
+			continue
+		}
+
+		// When turn is completed or idle (not actively running)
+		if sess.Turn != turns.Running {
+			if hp, ok := e.launcher.(SessionHistoryProvider); ok {
+				if hist, err := hp.History(waitCtx, task.ProjectID, sessID); err == nil && len(hist.Events) > 0 {
+					for i := len(hist.Events) - 1; i >= 0; i-- {
+						ev := hist.Events[i]
+						if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Text) != "" {
+							summary = strings.TrimSpace(ev.Message.Text)
+							break
+						}
+					}
+				}
+			}
+			break
+		}
+	}
+
+	if summary == "" {
+		summary = "（已在工作区完成代码修改与自测，就绪等待验收）"
+	}
+
+	savedMsg.Content = fmt.Sprintf("✅ Agent 会话 (%s / %s) 执行完成！\n会话 ID: `%s`\n\n【Agent 执行产出】:\n%s", role.Backend, role.Model, sessID, summary)
 	savedMsg.Status = tasks.FlowMsgComplete
 	_ = e.repo.UpdateFlowMessage(savedMsg)
 

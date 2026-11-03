@@ -5,6 +5,10 @@ import FlowRoleBadge from '../features/tasks/flow/FlowRoleBadge.vue'
 import FlowMessageItem from '../features/tasks/flow/FlowMessageItem.vue'
 import FlowRoleManager from '../features/tasks/flow/FlowRoleManager.vue'
 import FlowChatView from '../features/tasks/flow/FlowChatView.vue'
+import TaskCreatePanel from '../features/tasks/TaskCreatePanel.vue'
+import { useModelsStore } from '../stores/models'
+import { useRolesStore } from '../stores/roles'
+import { installTestCSRF } from './csrf-fixture'
 import type { Task, FlowRole, FlowMessage, FlowRun } from '../api/tasks'
 
 describe('Collaborative Flow Tasks Unit Tests', () => {
@@ -210,5 +214,124 @@ describe('Collaborative Flow Tasks Unit Tests', () => {
     expect(wrapper.text()).toContain('多 Agent 协同测试任务')
     expect(wrapper.find('[data-test="flow-messages-area"]').exists()).toBe(true)
     expect(wrapper.find('textarea').exists()).toBe(true)
+  })
+
+  it('TaskCreatePanel flow mode selects orchestrator model from chat models and roles from role library', async () => {
+    setActivePinia(createPinia())
+    installTestCSRF('csrf-token')
+
+    const modelsStore = useModelsStore()
+    modelsStore.services = [
+      {
+        id: 1,
+        name: 'OpenAI 官方服务',
+        enabled: true,
+        baseUrl: 'https://api.openai.com/v1',
+        hasKey: true,
+        secretRef: 'sec-1',
+        models: [
+          {
+            id: 101,
+            serviceId: 1,
+            modelId: 'gpt-4o',
+            name: 'GPT-4o 旗舰模型',
+            usable: true,
+            supportsText: true,
+            supportsImage: true,
+            supportsTools: true,
+            contextTokens: 128000,
+            outputTokens: 4096,
+            enabled: true,
+          },
+        ],
+      },
+      {
+        id: 2,
+        name: 'DeepSeek',
+        enabled: true,
+        baseUrl: 'https://api.deepseek.com',
+        hasKey: true,
+        secretRef: 'sec-2',
+        models: [
+          {
+            id: 201,
+            serviceId: 2,
+            modelId: 'deepseek-chat',
+            name: 'DeepSeek-V3',
+            usable: true,
+            supportsText: true,
+            supportsImage: false,
+            supportsTools: true,
+            contextTokens: 64000,
+            outputTokens: 4096,
+            enabled: true,
+          },
+        ],
+      },
+    ]
+
+    const rolesStore = useRolesStore()
+    rolesStore.roles = [
+      {
+        id: 1,
+        name: '前端架构师',
+        description: '负责前端系统架构规约',
+        backend: 'llm',
+        model: 'gpt-4o',
+        promptId: 0,
+        systemPrompt: '前端专家人设',
+        color: '#3b82f6',
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 2,
+        name: '代码开发工程师',
+        description: '负责工作区代码落地与自测',
+        backend: 'opencode',
+        model: 'gpt-4o',
+        promptId: 0,
+        systemPrompt: '资深全栈工程师',
+        color: '#10b981',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+
+    const wrapper = mount(TaskCreatePanel, {
+      props: { initialProjectId: 1 },
+      global: {
+        stubs: {
+          Teleport: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    // Switch to Collaborative Flow Task type
+    const flowCard = wrapper.findAll('.type-card')[1]
+    await flowCard.trigger('click')
+    await flushPromises()
+
+    // 1. Verify orchestrator model selector is present with options
+    expect(wrapper.text()).toContain('中控调度大脑模型')
+    expect(wrapper.find('#orchestrator-model').exists()).toBe(false) // No longer a raw text input
+
+    // 2. Verify roles are loaded from role library and displayed
+    expect(wrapper.text()).toContain('团队协同分工角色')
+    expect(wrapper.text()).toContain('前端架构师')
+    expect(wrapper.text()).toContain('代码开发工程师')
+
+    // 3. Test removing a role
+    const removeButtons = wrapper.findAll('button').filter((b) => b.text() === '移除')
+    expect(removeButtons.length).toBe(2)
+    await removeButtons[0].trigger('click')
+    await flushPromises()
+
+    // Now 1 role remains
+    expect(wrapper.text()).toContain('已选用 1 个角色')
+    const remainingCards = wrapper.findAll('.roles-config-section .grid > div')
+    expect(remainingCards.length).toBe(1)
+    expect(remainingCards[0].text()).toContain('代码开发工程师')
   })
 })
