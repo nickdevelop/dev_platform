@@ -2,6 +2,7 @@ package flow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -13,7 +14,6 @@ import (
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/sessions"
-	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/app/tasks"
 	"devplatform/internal/core/agents"
 )
@@ -41,12 +41,9 @@ type Completer interface {
 
 // SessionLauncher abstracts dispatching coding agent sessions in real project workspaces.
 type SessionLauncher interface {
-	Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (any, error)
-}
-
-// SessionLauncherGetter is an optional interface to check session completion.
-type SessionLauncherOutcome interface {
-	Get(projectID uint, sessionID string) (any, error)
+	Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
+	Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error)
+	Get(projectID uint, sessionID string) (sessions.Session, error)
 }
 
 // TaskRepository abstracts database operations for tasks, roles, runs and flow messages.
@@ -63,7 +60,7 @@ type TaskRepository interface {
 	ListFlowMessages(runID uint) ([]tasks.FlowMessage, error)
 }
 
-// Engine coordinates multi-agent collaborative workflows.
+// Engine coordinates multi-agent collaborative workflows driven by the orchestrator brain.
 type Engine struct {
 	repo      TaskRepository
 	launcher  tasks.SessionLauncher
@@ -180,7 +177,7 @@ func (e *Engine) StartRun(ctx context.Context, task tasks.Task, triggerType stri
 		ProjectID:         task.ProjectID,
 		Status:            tasks.FlowRunRunning,
 		CurrentStep:       0,
-		MaxSteps:          15,
+		MaxSteps:          20,
 		OrchestratorModel: task.OrchestratorModel,
 		TriggerType:       triggerType,
 		Prompt:            prompt,
@@ -321,6 +318,7 @@ func (e *Engine) triggerLoop(runID uint) {
 	}()
 }
 
+// executeLoop runs the ReAct orchestrator loop driven by Function Calling tools.
 func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 	lock := e.getRunLock(runID)
 	lock.Lock()
@@ -349,7 +347,7 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 				RunID:      run.ID,
 				SenderType: tasks.SenderSystem,
 				SenderName: "系统提示",
-				Content:    fmt.Sprintf("流程已执行达到最大步数上限 (%d 步)，中控已挂起。请在群聊中输入指令干预或确认是否结束。", run.MaxSteps),
+				Content:    fmt.Sprintf("流程已执行达到最大步数上限 (%d 步)，中枢大脑已挂起。请在群聊中输入指令干预或确认是否结束。", run.MaxSteps),
 				Status:     tasks.FlowMsgComplete,
 				CreatedAt:  now,
 				UpdatedAt:  now,
@@ -379,8 +377,8 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			return
 		}
 
-		// 1. Orchestrator Turn: Think & Dispatch
-		orchestratorResponse, err := e.runOrchestratorStep(ctx, run, task, roles)
+		// 1. Orchestrator Step: Think & Call Tools
+		stepOutcome, err := e.runOrchestratorStep(ctx, run, task, roles)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -404,31 +402,8 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			return
 		}
 
-		// 2. Analyze Orchestrator Output: Check if finished or @mentioned a role
-		isFinished := strings.Contains(orchestratorResponse, "[流程完成]") ||
-			strings.Contains(orchestratorResponse, "[任务完成]") ||
-			strings.Contains(orchestratorResponse, "【流程完成】") ||
-			strings.Contains(orchestratorResponse, "【任务完成】")
-
-		matches := mentionRegex.FindAllStringSubmatch(orchestratorResponse, -1)
-		var targetRole *tasks.FlowRole
-		if len(matches) > 0 {
-			for _, m := range matches {
-				candidateName := strings.TrimSpace(m[1])
-				for _, r := range roles {
-					if strings.EqualFold(r.Name, candidateName) {
-						targetRole = &r
-						break
-					}
-				}
-				if targetRole != nil {
-					break
-				}
-			}
-		}
-
-		if isFinished || targetRole == nil {
-			// Flow achieved goal or concluded
+		// 2. Handle Step Outcome
+		if stepOutcome.Finished {
 			now := time.Now().UTC()
 			run.Status = tasks.FlowRunCompleted
 			run.FinishedAt = &now
@@ -448,27 +423,69 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			return
 		}
 
-		// 3. Dispatch to Target Role
-		err = e.runRoleStep(ctx, run, task, *targetRole, orchestratorResponse)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
+		if stepOutcome.WaitingUser {
+			now := time.Now().UTC()
+			run.Status = tasks.FlowRunWaitingUser
+			run.UpdatedAt = now
+			_ = e.repo.UpdateFlowRun(run)
+
+			e.eventBus.Publish(run.ID, FlowEvent{
+				Type:  EventStatus,
+				RunID: run.ID,
+				Payload: FlowStatusPayload{
+					Status:      string(tasks.FlowRunWaitingUser),
+					CurrentStep: run.CurrentStep,
+				},
+			})
+			return
+		}
+
+		// 3. Fallback text parsing if no tool was invoked (backward compatibility)
+		if !stepOutcome.ToolInvoked {
+			isFinished := strings.Contains(stepOutcome.Content, "[流程完成]") ||
+				strings.Contains(stepOutcome.Content, "[任务完成]") ||
+				strings.Contains(stepOutcome.Content, "【流程完成】") ||
+				strings.Contains(stepOutcome.Content, "【任务完成】")
+
+			matches := mentionRegex.FindAllStringSubmatch(stepOutcome.Content, -1)
+			var targetRole *tasks.FlowRole
+			if len(matches) > 0 {
+				for _, m := range matches {
+					candidateName := strings.TrimSpace(m[1])
+					for _, r := range roles {
+						if strings.EqualFold(r.Name, candidateName) {
+							targetRole = &r
+							break
+						}
+					}
+					if targetRole != nil {
+						break
+					}
+				}
+			}
+
+			if isFinished || targetRole == nil {
+				now := time.Now().UTC()
+				run.Status = tasks.FlowRunCompleted
+				run.FinishedAt = &now
+				_ = e.repo.UpdateFlowRun(run)
+
+				task.LastRunStatus = tasks.RunSuccess
+				_ = e.repo.Update(task)
+
+				e.eventBus.Publish(run.ID, FlowEvent{
+					Type:  EventStatus,
+					RunID: run.ID,
+					Payload: FlowStatusPayload{
+						Status:      string(tasks.FlowRunCompleted),
+						CurrentStep: run.CurrentStep,
+					},
+				})
 				return
 			}
-			log.Printf("flow: role step failed: %v", err)
-			// Agent failure feedback into chat as agent message
-			now := time.Now().UTC()
-			failMsg := tasks.FlowMessage{
-				RunID:      run.ID,
-				SenderType: tasks.SenderAgent,
-				SenderName: targetRole.Name,
-				RoleID:     targetRole.ID,
-				Content:    fmt.Sprintf("❌ 执行遇到异常: %v", err),
-				Status:     tasks.FlowMsgFailed,
-				CreatedAt:  now,
-				UpdatedAt:  now,
-			}
-			savedFail, _ := e.repo.CreateFlowMessage(failMsg)
-			e.eventBus.Publish(run.ID, FlowEvent{Type: EventMessage, RunID: run.ID, Payload: savedFail})
+
+			// Dispatch text to target role
+			_ = e.executeRoleStep(ctx, run, task, *targetRole, stepOutcome.Content, "")
 		}
 
 		// Increment step counter
@@ -485,45 +502,65 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 	}
 }
 
+type orchestratorStepOutcome struct {
+	Content     string
+	ToolInvoked bool
+	Finished    bool
+	WaitingUser bool
+}
+
 func (e *Engine) runOrchestratorStep(
 	ctx context.Context,
 	run tasks.FlowRun,
 	task tasks.Task,
 	roles []tasks.FlowRole,
-) (string, error) {
-	// Resolve orchestrator model credentials
+) (orchestratorStepOutcome, error) {
 	resolvedModel, err := e.resolver.ResolveModelByNameOrID(run.OrchestratorModel)
 	if err != nil {
-		return "", fmt.Errorf("resolve orchestrator model (%s): %w", run.OrchestratorModel, err)
+		return orchestratorStepOutcome{}, fmt.Errorf("resolve orchestrator model (%s): %w", run.OrchestratorModel, err)
+	}
+
+	// Load existing messages to discover active role sessions
+	messages, err := e.repo.ListFlowMessages(run.ID)
+	if err != nil {
+		return orchestratorStepOutcome{}, fmt.Errorf("list flow messages: %w", err)
+	}
+
+	roleSessions := make(map[string]string) // roleName -> latest sessionID
+	for i := len(messages) - 1; i >= 0; i-- {
+		m := messages[i]
+		if m.SenderType == tasks.SenderAgent && m.SessionID != "" && roleSessions[m.SenderName] == "" {
+			roleSessions[m.SenderName] = m.SessionID
+		}
 	}
 
 	// Build Orchestrator System Prompt
 	roleDescriptions := make([]string, 0, len(roles))
 	for _, r := range roles {
+		extra := ""
+		if sessID := roleSessions[r.Name]; sessID != "" {
+			extra = fmt.Sprintf(", 当前已有会话 ID: `%s`（可继续追问对话）", sessID)
+		}
 		roleDescriptions = append(roleDescriptions, fmt.Sprintf(
-			"- @%s (后端类型: %s, 模型: %s): %s。专业设定: %s",
-			r.Name, r.Backend, r.Model, r.Description, r.SystemPrompt,
+			"- @%s (后端类型: %s, 模型: %s%s): %s。专业设定: %s",
+			r.Name, r.Backend, r.Model, extra, r.Description, r.SystemPrompt,
 		))
 	}
 
 	sysPrompt := fmt.Sprintf(`你是一个软件开发团队的【中控调度大脑】(Orchestrator)。
-你的职责是统揽全局，分析用户的总体目标，拆解执行计划，调度团队中的专业 Agent 角色分工执行，并在各角色执行完成后进行结果评估与验收。
+你的职责是统揽全局，分析用户的总体目标，拆解执行计划，通过内置的流程工具调度团队中的专业 Agent 角色分工执行，并在各角色执行完成后进行结果评估与验收。
 
 【当前团队可用角色列表】
 %s
 
-【调度与交互规范】
+【中枢大脑工作规范】
 1. 界面以类似团队 IM 群聊形式呈现给用户。你的每次发言应当清晰阐明分析思路或下一步规划。
-2. 派发任务时，请务必以 "@角色名" 明确指派具体哪位成员执行，并在 @ 后面清晰列出给该角色的具体任务输入、需求细节与上下文依赖。
-3. 每次派发请尽量只聚焦 @ 一个核心角色进行单步推进，避免混乱。
-4. 当所有子任务执行完成、代码或目标已达成、并经你检验合格后，请给出最终总结报告，并在发言末尾包含明确标志：[任务完成]。
+2. 调度角色时，请使用工具 flow_dispatch_role 明确指派具体哪位角色执行（传入 role_name 与 instruction）。
+   - 如果该角色已有会话，你可以传入 session_id 继续向该会话发送消息（多轮连续对话）。
+   - flow_dispatch_role 工具会自动监听该角色的执行流并在完成后返回其产出摘要。
+3. 如果需要用户人工决策、澄清疑问或进行敏感确认，请调用 flow_ask_user 工具。
+4. 当所有子任务执行完成、代码或目标已达成、并经你检验合格后，请调用 flow_complete_task 提交最终成果总结。
 5. 保持严谨、专业、高效。`, strings.Join(roleDescriptions, "\n"))
-
-	// Load chat history
-	messages, err := e.repo.ListFlowMessages(run.ID)
-	if err != nil {
-		return "", fmt.Errorf("list flow messages: %w", err)
-	}
 
 	completionMessages := []chat.CompletionMessage{
 		{
@@ -548,7 +585,6 @@ func (e *Engine) runOrchestratorStep(
 		})
 	}
 
-	// Create placeholder message for orchestrator in DB
 	now := time.Now().UTC()
 	initMsg := tasks.FlowMessage{
 		RunID:      run.ID,
@@ -561,7 +597,7 @@ func (e *Engine) runOrchestratorStep(
 	}
 	savedMsg, err := e.repo.CreateFlowMessage(initMsg)
 	if err != nil {
-		return "", err
+		return orchestratorStepOutcome{}, err
 	}
 
 	req := chat.CompletionRequest{
@@ -569,9 +605,12 @@ func (e *Engine) runOrchestratorStep(
 		APIKey:   resolvedModel.APIKey,
 		Model:    resolvedModel.ModelID,
 		Messages: completionMessages,
+		Tools:    FlowTools(),
 	}
 
 	var sb strings.Builder
+	var receivedToolCalls []chat.ToolCall
+
 	onDelta := func(delta chat.CompletionDelta) error {
 		if delta.Text != "" {
 			sb.WriteString(delta.Text)
@@ -586,6 +625,9 @@ func (e *Engine) runOrchestratorStep(
 				},
 			})
 		}
+		if len(delta.ToolCalls) > 0 {
+			receivedToolCalls = append(receivedToolCalls, delta.ToolCalls...)
+		}
 		return nil
 	}
 
@@ -593,7 +635,7 @@ func (e *Engine) runOrchestratorStep(
 		savedMsg.Status = tasks.FlowMsgFailed
 		savedMsg.Content = sb.String()
 		_ = e.repo.UpdateFlowMessage(savedMsg)
-		return "", err
+		return orchestratorStepOutcome{}, err
 	}
 
 	fullContent := sb.String()
@@ -607,18 +649,117 @@ func (e *Engine) runOrchestratorStep(
 		Payload: savedMsg,
 	})
 
-	return fullContent, nil
+	outcome := orchestratorStepOutcome{
+		Content: fullContent,
+	}
+
+	if len(receivedToolCalls) == 0 {
+		return outcome, nil
+	}
+
+	outcome.ToolInvoked = true
+
+	// Execute received tool calls
+	for _, tc := range receivedToolCalls {
+		switch tc.Name {
+		case ToolCompleteTask:
+			var args CompleteTaskArgs
+			_ = json.Unmarshal([]byte(tc.Arguments), &args)
+			outcome.Finished = true
+			if strings.TrimSpace(args.Summary) != "" {
+				now := time.Now().UTC()
+				summaryMsg := tasks.FlowMessage{
+					RunID:      run.ID,
+					SenderType: tasks.SenderSystem,
+					SenderName: "任务验收",
+					Content:    fmt.Sprintf("🎉 任务顺利完成！\n\n【验收总结】:\n%s", args.Summary),
+					Status:     tasks.FlowMsgComplete,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				}
+				savedSummary, _ := e.repo.CreateFlowMessage(summaryMsg)
+				e.eventBus.Publish(run.ID, FlowEvent{Type: EventMessage, RunID: run.ID, Payload: savedSummary})
+			}
+			return outcome, nil
+
+		case ToolAskUser:
+			var args AskUserArgs
+			_ = json.Unmarshal([]byte(tc.Arguments), &args)
+			outcome.WaitingUser = true
+			if strings.TrimSpace(args.Question) != "" {
+				now := time.Now().UTC()
+				questionMsg := tasks.FlowMessage{
+					RunID:      run.ID,
+					SenderType: tasks.SenderOrchestrator,
+					SenderName: "中控调度员",
+					Content:    fmt.Sprintf("❓ 需要用户确认:\n%s", args.Question),
+					Status:     tasks.FlowMsgComplete,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				}
+				savedQ, _ := e.repo.CreateFlowMessage(questionMsg)
+				e.eventBus.Publish(run.ID, FlowEvent{Type: EventMessage, RunID: run.ID, Payload: savedQ})
+			}
+			return outcome, nil
+
+		case ToolDispatchRole:
+			var args DispatchRoleArgs
+			_ = json.Unmarshal([]byte(tc.Arguments), &args)
+			var targetRole *tasks.FlowRole
+			for _, r := range roles {
+				if strings.EqualFold(r.Name, args.RoleName) {
+					targetRole = &r
+					break
+				}
+			}
+			if targetRole == nil {
+				// Role not found, record system feedback
+				now := time.Now().UTC()
+				errFeedback := tasks.FlowMessage{
+					RunID:      run.ID,
+					SenderType: tasks.SenderSystem,
+					SenderName: "系统错误",
+					Content:    fmt.Sprintf("调度失败: 未找到名为 %q 的角色", args.RoleName),
+					Status:     tasks.FlowMsgFailed,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				}
+				savedErr, _ := e.repo.CreateFlowMessage(errFeedback)
+				e.eventBus.Publish(run.ID, FlowEvent{Type: EventMessage, RunID: run.ID, Payload: savedErr})
+				continue
+			}
+
+			if err := e.executeRoleStep(ctx, run, task, *targetRole, args.Instruction, args.SessionID); err != nil {
+				log.Printf("flow: execute role %s failed: %v", targetRole.Name, err)
+			}
+
+		case ToolWaitSession:
+			var args WaitSessionArgs
+			_ = json.Unmarshal([]byte(tc.Arguments), &args)
+			if args.SessionID != "" && e.launcher != nil {
+				timeout := time.Duration(args.TimeoutSeconds) * time.Second
+				if timeout <= 0 {
+					timeout = 5 * time.Minute
+				}
+				telemetry := NewTelemetryBus(e.launcher, e.eventBus, run.ID)
+				_, _ = telemetry.CollectSessionTurn(ctx, task.ProjectID, args.SessionID, "Agent", 0, timeout)
+				telemetry.Close()
+			}
+		}
+	}
+
+	return outcome, nil
 }
 
-func (e *Engine) runRoleStep(
+func (e *Engine) executeRoleStep(
 	ctx context.Context,
 	run tasks.FlowRun,
 	task tasks.Task,
 	role tasks.FlowRole,
-	dispatchContent string,
+	instruction string,
+	existingSessionID string,
 ) error {
 	now := time.Now().UTC()
-	// Create placeholder message for role in chat
 	initMsg := tasks.FlowMessage{
 		RunID:      run.ID,
 		SenderType: tasks.SenderAgent,
@@ -640,12 +781,14 @@ func (e *Engine) runRoleStep(
 		Payload: savedMsg,
 	})
 
-	// Check if this role is a pure LLM or an agent backend
+	// Check if this role is a pure LLM or a Coding Agent backend
 	if strings.EqualFold(string(role.Backend), "llm") || role.Backend == "" {
-		// Pure LLM Execution via Completer
 		resolvedModel, err := e.resolver.ResolveModelByNameOrID(role.Model)
 		if err != nil {
-			return fmt.Errorf("resolve role model (%s): %w", role.Model, err)
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("解析模型失败: %v", err)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			return err
 		}
 
 		req := chat.CompletionRequest{
@@ -653,14 +796,8 @@ func (e *Engine) runRoleStep(
 			APIKey:  resolvedModel.APIKey,
 			Model:   resolvedModel.ModelID,
 			Messages: []chat.CompletionMessage{
-				{
-					Role: "system",
-					Text: role.SystemPrompt,
-				},
-				{
-					Role: "user",
-					Text: dispatchContent,
-				},
+				{Role: "system", Text: role.SystemPrompt},
+				{Role: "user", Text: instruction},
 			},
 		}
 
@@ -700,27 +837,46 @@ func (e *Engine) runRoleStep(
 		return nil
 	}
 
-	// Coding Agent Execution (e.g. opencode, pi, deepseek) via SessionLauncher in the workspace
+	// Coding Agent execution via telemetry bus
 	if e.launcher == nil {
+		savedMsg.Status = tasks.FlowMsgFailed
+		savedMsg.Content = "未配置 Agent 会话服务"
+		_ = e.repo.UpdateFlowMessage(savedMsg)
 		return errors.New("coding agent session launcher not configured")
 	}
 
-	sessionTitle := fmt.Sprintf("[%s协同] %s 步骤 %d", task.Title, role.Name, run.CurrentStep+1)
-	combinedPrompt := fmt.Sprintf("%s\n\n【角色指派任务】:\n%s", role.SystemPrompt, dispatchContent)
-
-	outcome, err := e.launcher.Create(ctx, task.ProjectID, role.Backend, sessionTitle, combinedPrompt, role.Model)
-	if err != nil {
-		savedMsg.Status = tasks.FlowMsgFailed
-		savedMsg.Content = fmt.Sprintf("启动 Agent 会话失败: %v", err)
+	var sessID string
+	if existingSessionID != "" {
+		// Reuse existing session for multi-turn dialogue
+		sessID = existingSessionID
+		savedMsg.SessionID = sessID
+		savedMsg.Content = fmt.Sprintf("正在复用已有 Agent 会话 (`%s`) 进行交互...", sessID)
 		_ = e.repo.UpdateFlowMessage(savedMsg)
-		return fmt.Errorf("launch agent session: %w", err)
-	}
 
-	sessID := outcome.Session.ID
-	savedMsg.SessionID = sessID
-	savedMsg.Content = fmt.Sprintf("已在工作区启动 Agent 会话 (%s / %s) 执行任务。\n会话 ID: `%s`\n任务指令已接收，正在处理中...", role.Backend, role.Model, sessID)
-	savedMsg.Status = tasks.FlowMsgStreaming
-	_ = e.repo.UpdateFlowMessage(savedMsg)
+		_, err := e.launcher.Send(ctx, task.ProjectID, sessID, instruction, role.Model)
+		if err != nil {
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("向会话 `%s` 发送指令失败: %v", sessID, err)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			return err
+		}
+	} else {
+		// Launch new native session
+		sessionTitle := fmt.Sprintf("[%s协同] %s 步骤 %d", task.Title, role.Name, run.CurrentStep+1)
+		combinedPrompt := fmt.Sprintf("%s\n\n【角色指派任务】:\n%s", role.SystemPrompt, instruction)
+
+		outcome, err := e.launcher.Create(ctx, task.ProjectID, role.Backend, sessionTitle, combinedPrompt, role.Model)
+		if err != nil {
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("启动 Agent 会话失败: %v", err)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			return fmt.Errorf("launch agent session: %w", err)
+		}
+		sessID = outcome.Session.ID
+		savedMsg.SessionID = sessID
+		savedMsg.Content = fmt.Sprintf("已在工作区启动 Agent 会话 (%s / %s)。\n会话 ID: `%s`\n正在监听执行数据流...", role.Backend, role.Model, sessID)
+		_ = e.repo.UpdateFlowMessage(savedMsg)
+	}
 
 	e.eventBus.Publish(run.ID, FlowEvent{
 		Type:    EventMessage,
@@ -728,113 +884,20 @@ func (e *Engine) runRoleStep(
 		Payload: savedMsg,
 	})
 
-	// Wait for Agent session to finish its turn using a two-phase state machine
-	// (Waiting to start -> Running -> Settled back to Idle) to avoid fast-break race conditions.
-	var summary string
-	waitCtx, waitCancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer waitCancel()
+	// Collect session turn stream and aggregate final outcome
+	telemetry := NewTelemetryBus(e.launcher, e.eventBus, run.ID)
+	defer telemetry.Close()
 
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	startTime := time.Now()
-	startGracePeriod := 45 * time.Second
-	hasObservedRunning := false
-
-	hp, hasHistoryProvider := e.launcher.(SessionHistoryProvider)
-
-	for {
-		select {
-		case <-waitCtx.Done():
-			savedMsg.Status = tasks.FlowMsgFailed
-			savedMsg.Content = fmt.Sprintf("Agent 会话执行超时或被取消（会话 ID: `%s`）", sessID)
-			_ = e.repo.UpdateFlowMessage(savedMsg)
-			e.eventBus.Publish(run.ID, FlowEvent{
-				Type:    EventMessage,
-				RunID:   run.ID,
-				Payload: savedMsg,
-			})
-			return waitCtx.Err()
-		case <-ticker.C:
-		}
-
-		sess, err := e.launcher.Get(task.ProjectID, sessID)
-		if err != nil {
-			continue
-		}
-
-		// Handle explicit abnormal session termination
-		if sess.Status == sessions.SessionStopped || sess.Status == sessions.SessionDisconnected {
-			savedMsg.Status = tasks.FlowMsgFailed
-			savedMsg.Content = fmt.Sprintf("Agent 会话异常终止（状态: %s，会话 ID: `%s`）", sess.Status, sessID)
-			_ = e.repo.UpdateFlowMessage(savedMsg)
-			e.eventBus.Publish(run.ID, FlowEvent{
-				Type:    EventMessage,
-				RunID:   run.ID,
-				Payload: savedMsg,
-			})
-			return fmt.Errorf("agent session terminated with status: %s", sess.Status)
-		}
-
-		if sess.Turn == turns.Running {
-			hasObservedRunning = true
-			continue
-		}
-
-		// Turn is currently not Running (Idle or initial state)
-		if hasObservedRunning {
-			// Phase 2 complete: Agent was actively executing and has now settled back to idle
-			if hasHistoryProvider {
-				if hist, err := hp.History(waitCtx, task.ProjectID, sessID); err == nil && len(hist.Events) > 0 {
-					for i := len(hist.Events) - 1; i >= 0; i-- {
-						ev := hist.Events[i]
-						if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Text) != "" {
-							summary = strings.TrimSpace(ev.Message.Text)
-							break
-						}
-					}
-				}
-			}
-			break
-		}
-
-		// Has not yet observed Running:
-		if hasHistoryProvider {
-			// Check if a response is already generated (very fast turn or race where running state was transient)
-			if hist, err := hp.History(waitCtx, task.ProjectID, sessID); err == nil && len(hist.Events) > 0 {
-				for i := len(hist.Events) - 1; i >= 0; i-- {
-					ev := hist.Events[i]
-					if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Text) != "" {
-						summary = strings.TrimSpace(ev.Message.Text)
-						break
-					}
-				}
-				if summary != "" {
-					break
-				}
-			}
-
-			// If still within startup grace period and no output yet, continue waiting for agent to launch and enter Running
-			if time.Since(startTime) < startGracePeriod {
-				continue
-			}
-
-			// Exceeded startup grace period without running state or output
-			savedMsg.Status = tasks.FlowMsgFailed
-			savedMsg.Content = fmt.Sprintf("Agent 会话未能在预期时间内启动响应（会话 ID: `%s`）", sessID)
-			_ = e.repo.UpdateFlowMessage(savedMsg)
-			e.eventBus.Publish(run.ID, FlowEvent{
-				Type:    EventMessage,
-				RunID:   run.ID,
-				Payload: savedMsg,
-			})
-			return fmt.Errorf("agent session failed to start within %v", startGracePeriod)
-		} else {
-			// For lightweight test stubs without history provider, break immediately
-			break
-		}
+	turnOutcome, err := telemetry.CollectSessionTurn(ctx, task.ProjectID, sessID, role.Name, savedMsg.ID, 10*time.Minute)
+	if err != nil {
+		savedMsg.Status = tasks.FlowMsgFailed
+		savedMsg.Content = fmt.Sprintf("❌ Agent 执行异常（会话 ID: `%s`）: %v", sessID, err)
+		_ = e.repo.UpdateFlowMessage(savedMsg)
+		e.eventBus.Publish(run.ID, FlowEvent{Type: EventMessage, RunID: run.ID, Payload: savedMsg})
+		return err
 	}
 
+	summary := turnOutcome.Summary
 	if summary == "" {
 		summary = "（已在工作区完成代码修改与自测，就绪等待验收）"
 	}

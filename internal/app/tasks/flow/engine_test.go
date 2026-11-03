@@ -500,3 +500,127 @@ func TestFlowEngineWaitsForDelayedAgentSession(t *testing.T) {
 		t.Fatalf("expected real assistant output in message content, got: %s", agentMsg.Content)
 	}
 }
+
+type fakeToolCompleter struct {
+	mu   sync.Mutex
+	step int
+}
+
+func (f *fakeToolCompleter) Stream(ctx context.Context, req chat.CompletionRequest, onDelta func(chat.CompletionDelta) error) error {
+	f.mu.Lock()
+	step := f.step
+	f.step++
+	f.mu.Unlock()
+
+	if step == 0 {
+		_ = onDelta(chat.CompletionDelta{Text: "正在分析整体方案，指派开发工程师进行核心编码。"})
+		argsJSON := `{"role_name":"开发工程师","instruction":"编写用户认证模块核心逻辑"}`
+		_ = onDelta(chat.CompletionDelta{
+			ToolCalls: []chat.ToolCall{
+				{
+					ID:        "call_1",
+					Type:      "function",
+					Name:      ToolDispatchRole,
+					Arguments: argsJSON,
+				},
+			},
+		})
+		return nil
+	}
+
+	if step == 1 {
+		_ = onDelta(chat.CompletionDelta{Text: "开发工程师产出质量合格，满足验收标准。"})
+		argsJSON := `{"summary":"用户认证模块已全部开发完毕并验收通过"}`
+		_ = onDelta(chat.CompletionDelta{
+			ToolCalls: []chat.ToolCall{
+				{
+					ID:        "call_2",
+					Type:      "function",
+					Name:      ToolCompleteTask,
+					Arguments: argsJSON,
+				},
+			},
+		})
+		return nil
+	}
+
+	return nil
+}
+
+func (f *fakeToolCompleter) Complete(ctx context.Context, req chat.CompletionRequest, maxTokens int) (string, *chat.Usage, error) {
+	return "ok", &chat.Usage{}, nil
+}
+
+func TestFlowEngineToolCallingOrchestration(t *testing.T) {
+	repo := newFakeTaskRepo()
+	task := tasks.Task{
+		ID:                30,
+		Title:             "基于内置大脑ToolCalling协同流程",
+		TaskType:          tasks.TaskTypeFlow,
+		ProjectID:         1,
+		OrchestratorModel: "gpt-4o",
+	}
+	repo.task = task
+	repo.roles = []tasks.FlowRole{
+		{
+			ID:           1,
+			TaskID:       30,
+			Name:         "开发工程师",
+			Backend:      agents.BackendOpenCodeV2,
+			Model:        "gpt-4o",
+			SystemPrompt: "你是资深开发工程师",
+		},
+	}
+
+	resolver := &fakeModelResolver{
+		model: modelconfig.ResolvedModel{ModelID: "gpt-4o"},
+	}
+	completer := &fakeToolCompleter{}
+	launcher := &fakeDelayedSessionLauncher{}
+	bus := NewEventBus()
+	engine := NewEngine(repo, launcher, resolver, completer, bus)
+
+	run, err := engine.StartRun(context.Background(), task, "manual", "实现认证模块")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	completed := false
+	for time.Now().Before(deadline) {
+		r, err := repo.GetFlowRun(run.ID)
+		if err == nil && r.Status == tasks.FlowRunCompleted {
+			completed = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !completed {
+		t.Fatal("timed out waiting for flow run to complete via tool calling")
+	}
+
+	msgs, err := repo.ListFlowMessages(run.ID)
+	if err != nil {
+		t.Fatalf("ListFlowMessages: %v", err)
+	}
+
+	hasRoleFeedback := false
+	hasCompletionSummary := false
+	for _, m := range msgs {
+		if m.SenderType == tasks.SenderAgent && m.SenderName == "开发工程师" {
+			hasRoleFeedback = true
+		}
+		if m.SenderType == tasks.SenderSystem && strings.Contains(m.Content, "用户认证模块已全部开发完毕并验收通过") {
+			hasCompletionSummary = true
+		}
+	}
+
+	if !hasRoleFeedback {
+		t.Error("expected role feedback message in flow history")
+	}
+	if !hasCompletionSummary {
+		t.Error("expected completion summary message in flow history")
+	}
+}
+

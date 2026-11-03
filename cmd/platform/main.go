@@ -354,7 +354,7 @@ func runServer(args []string) error {
 	}
 	promptRepo := prompts.NewRepository(db)
 	promptService := prompts.NewService(promptRepo)
-	platformTools := platformtools.NewExecutor(projectService, promptService)
+	platformTools := platformtools.NewExecutor(projectService, promptService, sessionService)
 
 	rolesRepo := roles.NewRepository(db)
 	rolesService := roles.NewService(rolesRepo, promptService)

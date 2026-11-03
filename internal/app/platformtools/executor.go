@@ -9,19 +9,31 @@ import (
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
+	"devplatform/internal/app/sessions"
 )
+
+// SessionLister abstracts querying sessions for platform tools.
+type SessionLister interface {
+	List(projectID uint) ([]sessions.Session, error)
+}
 
 // Executor implements chat.ToolExecutor to provide platform management capabilities.
 type Executor struct {
 	projects *projects.Service
 	prompts  *prompts.Service
+	sessions SessionLister
 }
 
 // NewExecutor creates a new platform tool executor.
-func NewExecutor(projects *projects.Service, prompts *prompts.Service) *Executor {
+func NewExecutor(projects *projects.Service, prompts *prompts.Service, sessionLister ...SessionLister) *Executor {
+	var sl SessionLister
+	if len(sessionLister) > 0 {
+		sl = sessionLister[0]
+	}
 	return &Executor{
 		projects: projects,
 		prompts:  prompts,
+		sessions: sl,
 	}
 }
 
@@ -150,6 +162,22 @@ func (e *Executor) Definitions() []chat.ToolDefinition {
 				}`),
 			},
 		},
+		{
+			Type: "function",
+			Function: chat.FunctionSchema{
+				Name:        "platform_list_sessions",
+				Description: "查询指定项目中的所有 AI Agent 会话列表，支持查看会话 ID、标题、模型、运行状态等信息",
+				Parameters: json.RawMessage(`{
+					"type": "object",
+					"properties": {
+						"project_id": {
+							"type": "integer",
+							"description": "可选：项目唯一数字 ID。如果未提供，将自动使用系统中的首个有效项目"
+						}
+					}
+				}`),
+			},
+		},
 	}
 }
 
@@ -160,6 +188,8 @@ func (e *Executor) Execute(ctx context.Context, name string, argumentsJSON strin
 		return e.listProjects(argumentsJSON)
 	case "platform_list_prompts":
 		return e.listPrompts(argumentsJSON)
+	case "platform_list_sessions":
+		return e.listSessions(argumentsJSON)
 	case "platform_get_prompt":
 		return e.getPrompt(argumentsJSON)
 	case "platform_create_prompt":
@@ -342,3 +372,57 @@ func (e *Executor) deletePrompt(argsJSON string) (string, error) {
 	}
 	return fmt.Sprintf(`{"deleted":true,"id":%d}`, args.ID), nil
 }
+
+type listSessionsArgs struct {
+	ProjectID uint `json:"project_id"`
+}
+
+type sessionOverview struct {
+	ID        string `json:"id"`
+	ProjectID uint   `json:"projectId"`
+	Backend   string `json:"backend"`
+	Title     string `json:"title,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Status    string `json:"status"`
+	Turn      string `json:"turn"`
+}
+
+func (e *Executor) listSessions(argsJSON string) (string, error) {
+	if e.sessions == nil {
+		return `{"sessions":[],"message":"会话服务未挂载"}`, nil
+	}
+	var args listSessionsArgs
+	if strings.TrimSpace(argsJSON) != "" {
+		_ = json.Unmarshal([]byte(argsJSON), &args)
+	}
+	projectID := args.ProjectID
+	if projectID == 0 {
+		allProjects, err := e.projects.List()
+		if err != nil || len(allProjects) == 0 {
+			return `{"sessions":[],"message":"系统中无有效项目"}`, nil
+		}
+		projectID = allProjects[0].ID
+	}
+	list, err := e.sessions.List(projectID)
+	if err != nil {
+		return "", fmt.Errorf("list sessions for project %d: %w", projectID, err)
+	}
+	out := make([]sessionOverview, 0, len(list))
+	for _, s := range list {
+		out = append(out, sessionOverview{
+			ID:        s.ID,
+			ProjectID: s.ProjectID,
+			Backend:   string(s.Backend),
+			Title:     s.Title,
+			Model:     s.Model,
+			Status:    string(s.Status),
+			Turn:      string(s.Turn),
+		})
+	}
+	bytes, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+

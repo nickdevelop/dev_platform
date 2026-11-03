@@ -40,8 +40,8 @@ func TestExecutorDefinitions(t *testing.T) {
 	executor := NewExecutor(projectSvc, promptSvc)
 
 	defs := executor.Definitions()
-	if len(defs) != 6 {
-		t.Fatalf("expected 6 tool definitions, got %d", len(defs))
+	if len(defs) != 7 {
+		t.Fatalf("expected 7 tool definitions, got %d", len(defs))
 	}
 
 	toolNames := make(map[string]bool)
@@ -58,6 +58,7 @@ func TestExecutorDefinitions(t *testing.T) {
 	expectedTools := []string{
 		"platform_list_projects",
 		"platform_list_prompts",
+		"platform_list_sessions",
 		"platform_get_prompt",
 		"platform_create_prompt",
 		"platform_update_prompt",

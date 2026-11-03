@@ -71,8 +71,8 @@
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket 及显示配置持久化）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
-| **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）与提示词模板管理（`prompts.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects` 与 `prompts` 领域服务，不直接接触数据库与底层进程。 |
-| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌多 Agent 协同流程引擎（`internal/app/tasks/flow/`：`Engine`、`EventBus`），通过中控大模型自主拆解目标并在群聊中以 `@角色名` 派发子任务，支持纯 LLM 与 Coding Agent 多角色混合闭环执行，提供 SSE 多路流式广播与人机群聊交互介入。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（中控 Think-Act-Observe 协同调度引擎）、`flow/event_bus.go`（协同流多路 SSE 事件总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中控推断通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
+| **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）、提示词模板管理（`prompts.Service`）以及会话索引查询（`sessions.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`、`platform_list_sessions`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，使 Chat 中的轻量级 Agent 能够自主查询与管理平台项目、会话与提示词，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects`、`prompts` 与 `sessions` 领域服务，不直接接触数据库与底层进程。 |
+| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；配备独立的流程数据采集总线（`TelemetryBus`），实现对下游 Agent 会话数据流的实时采集转发与轮次终结 Promise 自动汇聚。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流多路 SSE 事件总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
@@ -344,7 +344,7 @@ web/src/
 
 ### 5. 多 Agent 协同流程与 IM 群聊调度流（Collaborative Flow Task & Multi-Agent IM Turn Flow）
 
-面向复杂复合研发场景，平台提供以大模型作为中枢中控、多个专业 Agent 角色分工闭环执行的协同工作流系统：
+面向复杂复合研发场景，平台提供以平台内置 AI 大脑作为中枢调度核心、多个专业 Agent 角色分工闭环执行的协同工作流系统：
 
 ```
 [ 用户在任务中心创建/触发多 Agent 协同流程任务 ]
@@ -355,41 +355,46 @@ web/src/
    - 建立专属 SSE 长连接: GET /api/tasks/flows/:runId/events
                       │
                       ▼
-2. 协同流程引擎 (internal/app/tasks/flow/engine.go)
-   - 提取协同总目标，初始化 FlowRun 与首条用户消息
-   - 启动 Think-Act-Observe 自主调度状态机
+2. 协同流程中枢引擎 (internal/app/tasks/flow/engine.go)
+   - 提取协同总目标，初始化 FlowRun 与首条用户目标消息
+   - 启动基于 Function Calling 工具驱动的 ReAct 自主调度状态机
                       │
                       ▼
-3. 中控大脑规划思考 (Orchestrator Step)
-   - 动态装配可用角色清单（角色名、专长描述、后端类型、模型、系统提示词）
-   - 调用中控大模型流式生成分析与规划发言
-   - 经 EventBus 广播 flow.message.chunk 实时打字机动画
-   - 规范化派发：中控发言中使用 `@<角色名> <具体任务要求与依赖上下文>`
+3. 内置大脑规划与工具决策 (Orchestrator Step / FlowTools)
+   - 动态装配可用角色清单（角色名、职责、后端、模型、系统提示词及历史会话 ID）
+   - 调用中控模型流式生成分析与规划，经 EventBus 广播打字机动画
+   - 自主决策并发起标准 Function Calls 工具调用：
+       • flow_dispatch_role: 指派角色执行（支持新建会话或传入 session_id 复用会话多轮连续对话）
+       • flow_wait_session:  显式等待角色会话执行完毕并汇总结果
+       • flow_ask_user:      遇到重大疑问或需人工确认时向群聊提问并挂起
+       • flow_complete_task: 所有子任务合格且目标达成时提交最终报告
                       │
                       ├─────────────────────────────────────────┐
                       ▼                                         ▼
-         【A. 纯文本/推理型角色 (llm)】              【B. 工作区 Coding Agent 角色】
+         【A. 纯推理型角色 (llm)】                   【B. 工作区 Coding Agent 角色】
          - 依赖 chat.Completer                      - 依赖 sessions.SessionLauncher
-         - 携带角色 SystemPrompt 与指派任务        - 在项目工作区派生专属 Agent 会话
-         - 流式补全输出分析、架构或评审报告        - 实际修改代码文件、执行命令自测
+         - 携带角色设定与当前任务指令              - 启动或复用项目工作区 Agent 会话
+         - 流式补全输出分析或设计方案              - 真实修改文件、运行自测
                       │                                         │
-                      └─────────────────────────────────────────┘
-                                         │
-                                         ▼ (角色反馈结果回传)
-4. 角色反馈落盘与群聊呈现 (FlowMessage: sender_type='agent')
-   - 群聊追加该角色的回复气泡（显示专属头像与角色色彩徽标，支持完整 Markdown 排版、列表、代码块复制与代码段内保护）
-   - 若关联真实工作区会话，采用【两阶段防竞态状态机（等待启动 -> 进入 Running -> 沉降回 Idle）】可靠感知 Agent 真实执行结束，并在适配器层（如 deepseek）建立新会话主动通知关注通道，杜绝冷启动与网络延迟下的瞬间假完成；执行完成后自动回填产出总结，消息附带查看底层 Agent 日志抽屉卡片
-                                         │
-                                         ▼
-5. 中控大脑闭环决策 (Orchestrator Evaluation)
-   - 评估角色执行结果是否符合预期：
-       • 若需后续推进：@下一个角色继续分工
-       • 若达成预期总目标：中控输出总结汇报并在发言末尾声明 `[任务完成]`，标记 FlowRun 为 completed
-       • 若达到最大步数限制 (默认 15 步)：状态置为 waiting_user 挂起，等待用户输入介入
-                                         │
-                                         ▼
+                      └────────────────────┬────────────────────┘
+                                           │
+                                           ▼
+4. 流程数据采集总线 (internal/app/tasks/flow/telemetry_bus.go)
+   - 挂接各 Agent 会话事件流（PipeLiveStream），实时将流式增量推送到群聊前端
+   - 两阶段状态机监听（Running -> Idle），会话结束时自动提取最终回复/错误摘要
+   - 封装为结构化 TurnOutcome，以 tool 响应形式确定性回填给中枢大脑
+                                           │
+                                           ▼
+5. 中枢大脑闭环评估与验收 (Orchestrator Evaluation)
+   - 观察工具回传的角色执行产出，决定推进方向：
+       • 需继续推进：调用 flow_dispatch_role 指派下一个角色或对同一角色继续追问
+       • 目标圆满达成：调用 flow_complete_task 提交最终成果总结，标记 FlowRun 为 completed
+       • 需用户决策：调用 flow_ask_user 挂起流程为 waiting_user
+       • 达到最大步数上限 (默认 20 步)：自动挂起等待人工干预
+                                           │
+                                           ▼
 6. 人机协同介入 (Human-in-the-Loop)
-   - 用户在 IM 对话底部随时发言插话，作为最高优先级指令唤醒中控进入重规划
+   - 用户在 IM 对话底部随时发言插话，作为最高优先级指令唤醒中枢大脑进入重规划
 ```
 
 ---
