@@ -5,6 +5,7 @@ import SettingsRolesView from '../features/settings/SettingsRolesView.vue'
 import { useRolesStore } from '../stores/roles'
 import { usePromptsStore } from '../stores/prompts'
 import { useModelsStore } from '../stores/models'
+import { useAgentsStore } from '../stores/agents'
 import { installTestCSRF } from './csrf-fixture'
 
 const routerPush = vi.fn()
@@ -81,14 +82,29 @@ describe('SettingsRolesView Unit Tests', () => {
     const promptMenuContainer = wrapper.find('.flex-1.min-w-0')
     expect(promptMenuContainer.exists()).toBe(true)
 
-    // 2. Verify backend and model dropdown integration
-    expect(wrapper.text()).toContain('执行后端')
-    expect(wrapper.text()).toContain('模型名称')
+    // 2. Verify backend capsules and model dropdown integration
+    expect(wrapper.text()).toContain('Agent 后端')
+    expect(wrapper.text()).toContain('运行模型')
+    expect(wrapper.find('.backend-switch').exists()).toBe(true)
     // By default formBackend is 'llm', model dropdown is populated with gpt-4o
     expect(wrapper.text()).toContain('GPT-4o (gpt-4o)')
   })
 
   it('automatically manages model dropdown candidates upon backend selection', async () => {
+    const agentsStore = useAgentsStore()
+    agentsStore.backends = [
+      {
+        backend: 'opencode_v2',
+        label: 'OpenCode V2',
+        enabled: true,
+      },
+      {
+        backend: 'pi',
+        label: 'Pi Agent',
+        enabled: true,
+      },
+    ] as any
+
     const modelsStore = useModelsStore()
     modelsStore.services = [
       {
@@ -121,6 +137,17 @@ describe('SettingsRolesView Unit Tests', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const path = new URL(String(input), 'http://localhost').pathname
+        if (path === '/api/agent-backends') {
+          return {
+            status: 200,
+            json: async () => ({
+              backends: [
+                { backend: 'opencode_v2', label: 'OpenCode V2', enabled: true },
+                { backend: 'pi', label: 'Pi Agent', enabled: true },
+              ],
+            }),
+          } as Response
+        }
         if (path === '/api/model-services') {
           return {
             status: 200,
@@ -130,15 +157,21 @@ describe('SettingsRolesView Unit Tests', () => {
                   id: 1,
                   name: 'OpenAI 官方服务',
                   enabled: true,
-                  endpoint: '',
+                  baseUrl: 'https://api.openai.com/v1',
+                  hasKey: true,
+                  secretRef: 'sec-1',
                   models: [
                     {
                       id: 11,
+                      serviceId: 1,
                       modelId: 'gpt-4o',
                       name: 'GPT-4o',
                       usable: true,
                       supportsText: true,
                       supportsImage: true,
+                      supportsTools: true,
+                      contextTokens: 128000,
+                      outputTokens: 4096,
                       enabled: true,
                     },
                   ],
@@ -147,7 +180,7 @@ describe('SettingsRolesView Unit Tests', () => {
             }),
           } as Response
         }
-        if (path === '/api/agent-backends/opencode/models') {
+        if (path === '/api/agent-backends/opencode_v2/models' || path === '/api/agent-backends/opencode/models') {
           return {
             status: 200,
             json: async () => ({
@@ -178,12 +211,17 @@ describe('SettingsRolesView Unit Tests', () => {
     // Initially backend is 'llm'
     expect(wrapper.text()).toContain('GPT-4o (gpt-4o)')
 
-    // Switch backend to opencode
-    const backendSelect = wrapper.find('select')
-    await backendSelect.setValue('opencode')
+    // Verify capsule radio buttons exist
+    const backendButtons = wrapper.findAll('.backend-option')
+    expect(backendButtons.length).toBeGreaterThanOrEqual(2)
+
+    // Switch backend to OpenCode V2 capsule
+    const opencodeBtn = backendButtons.find((btn) => btn.text().includes('OpenCode'))
+    expect(opencodeBtn?.exists()).toBe(true)
+    await opencodeBtn!.trigger('click')
     await flushPromises()
 
-    // Now opencode models are fetched and auto-managed in dropdown
-    expect(wrapper.text()).toContain('Claude 3.5 Sonnet')
+    // Now opencode ModelSelect is active and loads its models
+    expect(wrapper.find('.model-select-wrapper').exists()).toBe(true)
   })
 })

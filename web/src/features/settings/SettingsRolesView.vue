@@ -7,6 +7,8 @@ import { useRouter } from 'vue-router'
 import { useRolesStore } from '../../stores/roles'
 import { usePromptsStore } from '../../stores/prompts'
 import { useModelsStore } from '../../stores/models'
+import { useAgentsStore } from '../../stores/agents'
+import ModelSelect from '../chat/composer/ModelSelect.vue'
 import { listAgentBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
 import { cachedModels, rememberModels } from '../../shared/modelCache'
 import type { AgentRole, CreateRolePayload, UpdateRolePayload } from '../../api/roles'
@@ -24,6 +26,7 @@ const router = useRouter()
 const rolesStore = useRolesStore()
 const promptsStore = usePromptsStore()
 const modelsStore = useModelsStore()
+const agentsStore = useAgentsStore()
 
 const keyword = ref('')
 const showEditDialog = ref(false)
@@ -51,6 +54,7 @@ onMounted(async () => {
     rolesStore.loadRoles(),
     promptsStore.loadPrompts(),
     modelsStore.load(),
+    agentsStore.loadBackends(),
   ])
 })
 
@@ -65,6 +69,37 @@ const filteredRoles = computed(() => {
       r.model.toLowerCase().includes(kw),
   )
 })
+
+interface BackendChoice {
+  id: string
+  label: string
+}
+
+const selectableBackends = computed<BackendChoice[]>(() => {
+  const list: BackendChoice[] = [
+    { id: 'llm', label: '通用大模型 (LLM)' },
+  ]
+  for (const b of (agentsStore.backends || [])) {
+    if (b.enabled !== false) {
+      list.push({
+        id: b.backend,
+        label: b.label || b.backend,
+      })
+    }
+  }
+  return list
+})
+
+function selectBackend(backend: string) {
+  if (formBackend.value === backend) return
+  formBackend.value = backend
+  if (backend === 'llm') {
+    const opts = llmModelSelectOptions.value
+    formModel.value = opts.length > 0 ? opts[0].value : ''
+  } else {
+    formModel.value = ''
+  }
+}
 
 // Only role-type prompts are suggested for agent role personas
 const rolePrompts = computed(() => {
@@ -87,64 +122,21 @@ const promptSelectOptions = computed<SelectMenuItem<number | 0>[]>(() => {
   return items
 })
 
-async function fetchModelsForBackend(backend: string) {
-  if (backend === 'llm') return
-  if (agentBackendModels.value[backend] && agentBackendModels.value[backend].length > 0) return
-  const cached = cachedModels(backend as BackendId)
-  if (cached && cached.length > 0) {
-    agentBackendModels.value[backend] = cached
-  }
-  loadingModels.value = true
-  try {
-    const res = await listAgentBackendModels(backend as BackendId)
-    const enabledModels = (res.models || []).filter((m) => m.enabled !== false)
-    agentBackendModels.value[backend] = enabledModels
-    rememberModels(backend as BackendId, enabledModels)
-  } catch {
-    // Keep cached models if available
-  } finally {
-    loadingModels.value = false
-  }
-}
-
-const modelSelectOptions = computed<SelectMenuItem<string>[]>(() => {
-  if (formBackend.value === 'llm') {
-    const items: SelectMenuItem<string>[] = []
-    for (const svc of (modelsStore.services || [])) {
-      if (!svc.enabled) continue
-      for (const m of (svc.models || [])) {
-        if (m.usable && m.supportsText) {
-          items.push({
-            value: m.modelId,
-            label: m.name ? `${m.name} (${m.modelId})` : m.modelId,
-            sublabel: svc.name,
-          })
-        }
+const llmModelSelectOptions = computed<SelectMenuItem<string>[]>(() => {
+  const items: SelectMenuItem<string>[] = []
+  for (const svc of (modelsStore.services || [])) {
+    if (!svc.enabled) continue
+    for (const m of (svc.models || [])) {
+      if (m.usable && m.supportsText) {
+        items.push({
+          value: m.modelId,
+          label: m.name ? `${m.name} (${m.modelId})` : m.modelId,
+          sublabel: svc.name,
+        })
       }
     }
-    return items
   }
-
-  const list = agentBackendModels.value[formBackend.value] || cachedModels(formBackend.value as BackendId) || []
-  return list
-    .filter((m) => m.enabled !== false)
-    .map((m) => ({
-      value: m.id,
-      label: m.name || m.id,
-      sublabel: m.id !== m.name ? m.id : undefined,
-    }))
-})
-
-watch(formBackend, async (newBackend) => {
-  if (newBackend !== 'llm') {
-    await fetchModelsForBackend(newBackend)
-  }
-  const opts = modelSelectOptions.value
-  if (!isCustomModel.value) {
-    if (opts.length > 0 && !opts.some((opt) => opt.value === formModel.value)) {
-      formModel.value = opts[0].value
-    }
-  }
+  return items
 })
 
 const selectedPromptPreview = computed(() => {
@@ -165,7 +157,7 @@ function openCreateDialog() {
   formDescription.value = ''
   formBackend.value = 'llm'
   isCustomModel.value = false
-  const defaultOpts = modelSelectOptions.value
+  const defaultOpts = llmModelSelectOptions.value
   formModel.value = defaultOpts.length > 0 ? defaultOpts[0].value : ''
   formColor.value = defaultColors[(rolesStore.roles || []).length % defaultColors.length]
   formPromptSource.value = rolePrompts.value.length > 0 ? 'prompt' : 'custom'
@@ -182,9 +174,6 @@ function openEditDialog(role: AgentRole) {
   formBackend.value = role.backend || 'llm'
   formModel.value = role.model
   formColor.value = role.color || defaultColors[0]
-  if (role.backend && role.backend !== 'llm') {
-    void fetchModelsForBackend(role.backend)
-  }
   isCustomModel.value = false
   if (role.promptId && role.promptId > 0) {
     formPromptSource.value = 'prompt'
@@ -453,24 +442,39 @@ function goToPromptsSetting() {
             />
           </div>
 
-          <!-- 3. Backend & Model -->
-          <div class="grid grid-cols-2 gap-3">
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium text-[var(--color-text)]">执行后端</label>
-              <select
-                v-model="formBackend"
-                class="w-full text-xs h-8 px-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none focus:border-[var(--color-primary)] font-mono"
-              >
-                <option value="llm">llm (纯通用模型)</option>
-                <option value="opencode">opencode (Coding Agent)</option>
-                <option value="pi">pi (轻量 Agent)</option>
-                <option value="deepseek">deepseek (DSH Agent)</option>
-              </select>
+          <!-- 3. Backend & Model Selection (Aligned with TaskCreatePanel) -->
+          <div class="space-y-3">
+            <!-- Agent Backend Selection (Capsule Radio Group) -->
+            <div class="form-group flex flex-col gap-1.5">
+              <label class="text-xs font-medium text-[var(--color-text)]">
+                Agent 后端 <span class="text-red-500">*</span>
+              </label>
+              <div class="backend-switch flex flex-wrap gap-2" role="radiogroup">
+                <button
+                  v-for="b in selectableBackends"
+                  :key="b.id"
+                  type="button"
+                  role="radio"
+                  class="backend-option px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
+                  :class="[
+                    formBackend === b.id
+                      ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)] text-[var(--color-primary)] font-semibold'
+                      : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]',
+                  ]"
+                  :aria-checked="formBackend === b.id"
+                  @click="selectBackend(b.id)"
+                >
+                  <span class="backend-name">{{ b.label }}</span>
+                </button>
+              </div>
             </div>
 
-            <div class="space-y-1.5 min-w-0">
+            <!-- Model Selection (ModelSelect for Agent backends, UiSelectMenu for LLM) -->
+            <div class="form-group flex flex-col gap-1.5 min-w-0">
               <div class="flex items-center justify-between">
-                <label class="text-xs font-medium text-[var(--color-text)]">模型名称 <span class="text-red-500">*</span></label>
+                <label class="text-xs font-medium text-[var(--color-text)]">
+                  运行模型 <span class="text-red-500">*</span>
+                </label>
                 <button
                   type="button"
                   class="text-[11px] text-[var(--color-primary)] hover:underline"
@@ -480,12 +484,30 @@ function goToPromptsSetting() {
                 </button>
               </div>
 
-              <div v-if="!isCustomModel && modelSelectOptions.length > 0">
+              <!-- Custom text input mode -->
+              <div v-if="isCustomModel">
+                <UiInput
+                  v-model="formModel"
+                  placeholder="输入模型名称，例如：gpt-4o、claude-3-5-sonnet"
+                  required
+                  block
+                />
+              </div>
+              <!-- When Agent backend: reuse platform standard ModelSelect -->
+              <div v-else-if="formBackend !== 'llm'" class="model-select-wrapper">
+                <ModelSelect
+                  v-model="formModel"
+                  :key="formBackend"
+                  :backend="(formBackend as BackendId)"
+                  :model-selection="true"
+                />
+              </div>
+              <!-- When LLM backend: dropdown of platform chat models -->
+              <div v-else-if="llmModelSelectOptions.length > 0">
                 <UiSelectMenu
                   v-model="formModel"
-                  :options="modelSelectOptions"
-                  placeholder="选择模型…"
-                  size="sm"
+                  :options="llmModelSelectOptions"
+                  placeholder="请选择通用大模型…"
                   block
                 />
               </div>
