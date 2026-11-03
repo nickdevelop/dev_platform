@@ -72,16 +72,22 @@ type Adapter struct {
 }
 
 type subscription struct {
-	ctx    context.Context
-	ch     chan agents.NormalizedEvent
-	cancel context.CancelFunc
-	once   sync.Once
-	mu     sync.RWMutex
-	closed bool
+	ctx      context.Context
+	ch       chan agents.NormalizedEvent
+	cancel   context.CancelFunc
+	followCh chan string
+	once     sync.Once
+	mu       sync.RWMutex
+	closed   bool
 }
 
 func newSubscription(ctx context.Context, ch chan agents.NormalizedEvent, cancel context.CancelFunc) *subscription {
-	return &subscription{ctx: ctx, ch: ch, cancel: cancel}
+	return &subscription{
+		ctx:      ctx,
+		ch:       ch,
+		cancel:   cancel,
+		followCh: make(chan string, 32),
+	}
 }
 
 func (s *subscription) close() {
@@ -94,6 +100,18 @@ func (s *subscription) close() {
 		close(s.ch)
 		s.mu.Unlock()
 	})
+}
+
+func (s *subscription) notifySession(sessionID string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return
+	}
+	select {
+	case s.followCh <- sessionID:
+	default:
+	}
 }
 
 // send delivers one event to the subscriber. It reports false when the
@@ -548,6 +566,9 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		}, nil)
 	}
 
+	// Immediately notify all active subscriptions of this instance to follow the newly created session
+	a.notifySubscribersOfSession(instanceID, sessionID)
+
 	return &agents.SessionRef{
 		InstanceID: instanceID,
 		Backend:    agents.BackendDeepSeek,
@@ -816,6 +837,10 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 			select {
 			case <-subCtx.Done():
 				return
+			case newSessID := <-sub.followCh:
+				if newSessID != "" {
+					followSession(newSessID)
+				}
 			case controlMsg, ok := <-controlCh:
 				if !ok {
 					// Control stream ended; keep the instance subscription alive until context cancels
@@ -851,6 +876,16 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 	}()
 
 	return outCh, nil
+}
+
+func (a *Adapter) notifySubscribersOfSession(instanceID, sessionID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if subs, ok := a.subscribers[instanceID]; ok {
+		for sub := range subs {
+			sub.notifySession(sessionID)
+		}
+	}
 }
 
 // Interrupt cancels the current turn of the session.

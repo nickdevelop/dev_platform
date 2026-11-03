@@ -26,7 +26,7 @@ const isCompletedFlag = computed(() => {
   return c.includes('[任务完成]') || c.includes('[流程完成]') || c.includes('【任务完成】') || c.includes('【流程完成】')
 })
 
-// Highlight @mentions in raw markdown content
+// Highlight @mentions in raw markdown content without corrupting code blocks
 const formattedContent = computed(() => {
   let text = props.message.content || ''
   // If streaming and empty
@@ -34,12 +34,26 @@ const formattedContent = computed(() => {
     return '<span class="inline-block animate-pulse text-[var(--color-text-muted)] font-mono text-xs">正在思考中…</span>'
   }
 
-  // Pre-process @role mentions into highlighted spans before markdown rendering
+  // Pre-process @role mentions into highlighted spans before markdown rendering,
+  // but protect code blocks (both fenced ``` and inline `) from being replaced.
   if (props.roles && props.roles.length > 0) {
+    const codeBlocks: string[] = []
+    // 1. Temporarily stash fenced code blocks and inline code
+    text = text.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, (match) => {
+      codeBlocks.push(match)
+      return `__CODE_BLOCK_PLACEHOLDER_${codeBlocks.length - 1}__`
+    })
+
+    // 2. Replace @mentions in ordinary markdown text
     for (const r of props.roles) {
       const regex = new RegExp(`@(${r.name})`, 'g')
       text = text.replace(regex, `<span class="mention-role-tag font-semibold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1 py-0.5 rounded border border-[var(--color-primary)]/20">@$1</span>`)
     }
+
+    // 3. Restore code blocks verbatim
+    text = text.replace(/__CODE_BLOCK_PLACEHOLDER_(\d+)__/g, (_, idx) => {
+      return codeBlocks[Number(idx)] || ''
+    })
   }
 
   return renderMarkdown(text)
@@ -55,6 +69,42 @@ function formatTime(iso: string): string {
 function handleOpenSession() {
   if (props.message.sessionId) {
     emit('openSession', props.message.sessionId)
+  }
+}
+
+async function handleMarkdownClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const copyBtn = target?.closest('.code-copy-btn') as HTMLButtonElement | null
+  if (!copyBtn) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const wrapper = copyBtn.closest('.code-block-wrapper')
+  const pre = wrapper?.querySelector('pre')
+  const code = pre?.querySelector('code')
+  const text = (code?.textContent || pre?.textContent || '').replace(/\n$/, '')
+  if (!text) return
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    copyBtn.classList.add('is-copied')
+    window.setTimeout(() => {
+      copyBtn.classList.remove('is-copied')
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy code snippet:', err)
   }
 }
 </script>
@@ -165,7 +215,7 @@ function handleOpenSession() {
         </div>
 
         <!-- Markdown Content -->
-        <div class="msg-content markdown-body select-text" v-html="formattedContent" />
+        <div class="msg-content markdown-body select-text" v-html="formattedContent" @click="handleMarkdownClick" />
 
         <!-- Attached Session Card if coding agent was spawned -->
         <div
@@ -196,23 +246,223 @@ function handleOpenSession() {
 </template>
 
 <style scoped>
-.msg-bubble :deep(pre) {
+/* 1. Markdown General Typography */
+.markdown-body :deep(p) {
+  margin: 0 0 0.5rem;
+  line-height: 1.6;
+}
+
+.markdown-body :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.markdown-body :deep(h1),
+.markdown-body :deep(h2),
+.markdown-body :deep(h3),
+.markdown-body :deep(h4) {
+  margin: 0.75rem 0 0.35rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-text);
+}
+
+.markdown-body :deep(h1) {
+  font-size: 1.15rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.3rem;
+}
+
+.markdown-body :deep(h2) {
+  font-size: 1.05rem;
+}
+
+.markdown-body :deep(h3) {
+  font-size: 0.95rem;
+}
+
+.markdown-body :deep(h4) {
+  font-size: 0.88rem;
+}
+
+/* 2. Lists */
+.markdown-body :deep(ul),
+.markdown-body :deep(ol) {
+  margin: 0.25rem 0 0.5rem;
+  padding-left: 1.35rem;
+}
+
+.markdown-body :deep(ul) {
+  list-style-type: disc;
+}
+
+.markdown-body :deep(ol) {
+  list-style-type: decimal;
+}
+
+.markdown-body :deep(li) {
+  margin-bottom: 0.2rem;
+  line-height: 1.5;
+}
+
+.markdown-body :deep(li > p) {
+  margin-bottom: 0.2rem;
+}
+
+/* 3. Inline Code and Code Blocks */
+.markdown-body :deep(code) {
+  background: var(--color-surface-muted, rgba(125, 125, 125, 0.12));
+  border: 1px solid var(--color-border, rgba(125, 125, 125, 0.2));
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  color: var(--color-text);
+}
+
+.markdown-body :deep(pre) {
   margin: 0.5rem 0;
   padding: 0.75rem;
   background-color: var(--color-surface-muted, #1a1e27);
-  border-radius: var(--radius, 4px);
+  border-radius: var(--radius, 6px);
   border: 1px solid var(--color-border, #282e3d);
-  font-family: monospace;
-  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
   overflow-x: auto;
 }
 
-.msg-bubble :deep(code) {
-  font-family: monospace;
-  font-size: 11px;
+.markdown-body :deep(pre code) {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre;
 }
 
-.flow-msg-item.flex-row-reverse .msg-bubble :deep(p) {
-  color: #fff;
+/* Code block wrapper with floating copy button */
+.markdown-body :deep(.code-block-wrapper) {
+  position: relative;
+  margin: 0.5rem 0;
+}
+
+.markdown-body :deep(.code-block-wrapper pre) {
+  margin: 0;
+  padding-top: 1.85rem;
+}
+
+.markdown-body :deep(.code-copy-btn) {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+}
+
+.markdown-body :deep(.code-copy-btn:hover) {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  border-color: var(--color-border-strong, var(--color-primary));
+}
+
+.markdown-body :deep(.code-copy-btn .code-copy-icon) {
+  width: 0.82rem;
+  height: 0.82rem;
+  flex-shrink: 0;
+}
+
+.markdown-body :deep(.code-copy-btn .code-copy-icon-copied),
+.markdown-body :deep(.code-copy-btn .code-copied-text) {
+  display: none;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied) {
+  background: var(--color-success-soft, rgba(22, 163, 74, 0.1));
+  border-color: var(--color-success, #16a34a);
+  color: var(--color-success, #16a34a);
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-idle),
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-text) {
+  display: none;
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-copied) {
+  display: inline-block;
+  color: var(--color-success, #16a34a);
+}
+
+.markdown-body :deep(.code-copy-btn.is-copied .code-copied-text) {
+  display: inline;
+}
+
+/* 4. Blockquotes */
+.markdown-body :deep(blockquote) {
+  margin: 0.5rem 0;
+  padding: 0.35rem 0.75rem;
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-primary-soft, rgba(37, 99, 235, 0.05));
+  color: var(--color-text-muted);
+  border-radius: 0 4px 4px 0;
+}
+
+/* 5. Tables */
+.markdown-body :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.85em;
+}
+
+.markdown-body :deep(th),
+.markdown-body :deep(td) {
+  border: 1px solid var(--color-border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+
+.markdown-body :deep(th) {
+  background: var(--color-surface-muted);
+  font-weight: 600;
+}
+
+/* 6. Links */
+.markdown-body :deep(a) {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* 7. User Bubble Color Overrides (white text on primary background) */
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(p),
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(li),
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(h1),
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(h2),
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(h3),
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(h4) {
+  color: #ffffff;
+}
+
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(code) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.flow-msg-item.flex-row-reverse .msg-bubble :deep(a) {
+  color: #ffffff;
+  text-decoration: underline;
 }
 </style>

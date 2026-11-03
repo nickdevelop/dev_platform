@@ -334,4 +334,65 @@ describe('Collaborative Flow Tasks Unit Tests', () => {
     expect(remainingCards.length).toBe(1)
     expect(remainingCards[0].text()).toContain('代码开发工程师')
   })
+
+  it('FlowMessageItem renders rich markdown with lists, headings, and code block copy button', async () => {
+    const roles: FlowRole[] = [
+      {
+        id: 1,
+        taskId: 10,
+        name: '架构师',
+        backend: 'llm',
+        model: 'gpt-4o',
+        color: '#8b5cf6',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+
+    const markdownMsg: FlowMessage = {
+      id: 3,
+      runId: 100,
+      senderType: 'agent',
+      senderName: '架构师',
+      roleId: 1,
+      content: `## 阶段计划
+通知 @架构师 注意如下规范：
+1. 第一步：定义接口
+2. 第二步：编写测试
+
+\`\`\`ts
+// Code should preserve @架构师 verbatim
+const author = "@架构师"
+\`\`\`
+`,
+      status: 'complete',
+      createdAt: '2026-11-03T10:02:00Z',
+      updatedAt: '2026-11-03T10:02:00Z',
+    }
+
+    const wrapper = mount(FlowMessageItem, {
+      props: { message: markdownMsg, roles },
+    })
+
+    // Check heading and list rendering
+    expect(wrapper.find('h2').exists()).toBe(true)
+    expect(wrapper.find('h2').text()).toBe('阶段计划')
+    expect(wrapper.find('ol').exists()).toBe(true)
+    expect(wrapper.findAll('li').length).toBe(2)
+
+    // Check code block and copy button
+    const codeWrapper = wrapper.find('.code-block-wrapper')
+    expect(codeWrapper.exists()).toBe(true)
+    const copyBtn = codeWrapper.find('.code-copy-btn')
+    expect(copyBtn.exists()).toBe(true)
+
+    // Code inside ``` must preserve raw @架构师 without being replaced into mention span
+    const codeEl = wrapper.find('pre code')
+    expect(codeEl.text()).toContain('const author = "@架构师"')
+
+    // Regular text outside code should have mention span
+    const mentions = wrapper.findAll('.mention-role-tag')
+    expect(mentions.length).toBe(1)
+    expect(mentions[0].text()).toBe('@架构师')
+  })
 })

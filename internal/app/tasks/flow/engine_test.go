@@ -11,6 +11,7 @@ import (
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/sessions"
+	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/app/tasks"
 	"devplatform/internal/core/agents"
 )
@@ -355,5 +356,147 @@ func TestFlowEngineCancel(t *testing.T) {
 	}
 	if updated.Status != tasks.FlowRunCancelled {
 		t.Fatalf("expected cancelled, got %s", updated.Status)
+	}
+}
+
+type fakeDelayedSessionLauncher struct {
+	mu        sync.Mutex
+	callCount int
+	events    []agents.NormalizedEvent
+}
+
+func (f *fakeDelayedSessionLauncher) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
+	return sessions.CreateOutcome{
+		Session: sessions.Session{
+			ID:        "delayed_sess_1",
+			ProjectID: projectID,
+			Backend:   backend,
+			Status:    sessions.SessionActive,
+		},
+	}, nil
+}
+
+func (f *fakeDelayedSessionLauncher) Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error) {
+	return sessions.Session{ID: sessionID}, nil
+}
+
+func (f *fakeDelayedSessionLauncher) Get(projectID uint, sessionID string) (sessions.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.callCount++
+
+	turnState := turns.Idle
+	if f.callCount == 2 {
+		// Second call enters Running
+		turnState = turns.Running
+	} else if f.callCount >= 3 {
+		// Third call settles back to Idle with finished history
+		turnState = turns.Idle
+		if len(f.events) == 0 {
+			f.events = []agents.NormalizedEvent{
+				{
+					Type: agents.EventMessage,
+					Message: &agents.MessagePayload{
+						Role: "assistant",
+						Text: "已完成所有前端模块重构并执行单元测试通过。",
+					},
+				},
+			}
+		}
+	}
+
+	return sessions.Session{
+		ID:        sessionID,
+		ProjectID: projectID,
+		Backend:   agents.BackendDeepSeek,
+		Status:    sessions.SessionActive,
+		Turn:      turnState,
+	}, nil
+}
+
+func (f *fakeDelayedSessionLauncher) Delete(projectID uint, sessionID string) error {
+	return nil
+}
+
+func (f *fakeDelayedSessionLauncher) History(ctx context.Context, projectID uint, sessionID string) (sessions.History, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return sessions.History{
+		Events: f.events,
+	}, nil
+}
+
+func TestFlowEngineWaitsForDelayedAgentSession(t *testing.T) {
+	repo := newFakeTaskRepo()
+	task := tasks.Task{
+		ID:                20,
+		Title:             "延迟启动多Agent流程",
+		TaskType:          tasks.TaskTypeFlow,
+		ProjectID:         1,
+		OrchestratorModel: "gpt-4o",
+	}
+	repo.task = task
+	repo.roles = []tasks.FlowRole{
+		{
+			ID:           1,
+			TaskID:       20,
+			Name:         "DSH开发者",
+			Backend:      agents.BackendDeepSeek,
+			Model:        "deepseek-chat",
+			SystemPrompt: "你是代码开发专家",
+		},
+	}
+
+	resolver := &fakeModelResolver{
+		model: modelconfig.ResolvedModel{ModelID: "gpt-4o"},
+	}
+	completer := &fakeCompleter{
+		responses: []string{
+			"开始分工：@DSH开发者 请执行前端重构",
+			"【任务完成】所有工作已就绪。",
+		},
+	}
+	launcher := &fakeDelayedSessionLauncher{}
+	engine := NewEngine(repo, launcher, resolver, completer, nil)
+
+	run, err := engine.StartRun(context.Background(), task, "manual", "任务目标")
+	if err != nil {
+		t.Fatalf("StartRun: %v", err)
+	}
+
+	// Wait briefly for step execution to finish
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		r, _ := repo.GetFlowRun(run.ID)
+		if r.Status == tasks.FlowRunCompleted || r.Status == tasks.FlowRunFailed {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	msgs, err := repo.ListFlowMessages(run.ID)
+	if err != nil {
+		t.Fatalf("ListFlowMessages: %v", err)
+	}
+
+	// Verify that the agent message contains the actual assistant summary
+	var agentMsg *tasks.FlowMessage
+	for _, m := range msgs {
+		if m.SenderType == tasks.SenderAgent {
+			agentMsg = &m
+			break
+		}
+	}
+
+	if agentMsg == nil {
+		t.Fatal("expected agent message in flow chat")
+	}
+
+	if agentMsg.Status != tasks.FlowMsgComplete {
+		t.Fatalf("expected agent message complete, got %s", agentMsg.Status)
+	}
+
+	if !strings.Contains(agentMsg.Content, "已完成所有前端模块重构并执行单元测试通过") {
+		t.Fatalf("expected real assistant output in message content, got: %s", agentMsg.Content)
 	}
 }

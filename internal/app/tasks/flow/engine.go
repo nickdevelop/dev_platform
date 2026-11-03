@@ -728,13 +728,20 @@ func (e *Engine) runRoleStep(
 		Payload: savedMsg,
 	})
 
-	// Wait for Agent session to finish its turn
+	// Wait for Agent session to finish its turn using a two-phase state machine
+	// (Waiting to start -> Running -> Settled back to Idle) to avoid fast-break race conditions.
 	var summary string
 	waitCtx, waitCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer waitCancel()
 
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+
+	startTime := time.Now()
+	startGracePeriod := 45 * time.Second
+	hasObservedRunning := false
+
+	hp, hasHistoryProvider := e.launcher.(SessionHistoryProvider)
 
 	for {
 		select {
@@ -756,9 +763,28 @@ func (e *Engine) runRoleStep(
 			continue
 		}
 
-		// When turn is completed or idle (not actively running)
-		if sess.Turn != turns.Running {
-			if hp, ok := e.launcher.(SessionHistoryProvider); ok {
+		// Handle explicit abnormal session termination
+		if sess.Status == sessions.SessionStopped || sess.Status == sessions.SessionDisconnected {
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("Agent 会话异常终止（状态: %s，会话 ID: `%s`）", sess.Status, sessID)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			e.eventBus.Publish(run.ID, FlowEvent{
+				Type:    EventMessage,
+				RunID:   run.ID,
+				Payload: savedMsg,
+			})
+			return fmt.Errorf("agent session terminated with status: %s", sess.Status)
+		}
+
+		if sess.Turn == turns.Running {
+			hasObservedRunning = true
+			continue
+		}
+
+		// Turn is currently not Running (Idle or initial state)
+		if hasObservedRunning {
+			// Phase 2 complete: Agent was actively executing and has now settled back to idle
+			if hasHistoryProvider {
 				if hist, err := hp.History(waitCtx, task.ProjectID, sessID); err == nil && len(hist.Events) > 0 {
 					for i := len(hist.Events) - 1; i >= 0; i-- {
 						ev := hist.Events[i]
@@ -769,6 +795,42 @@ func (e *Engine) runRoleStep(
 					}
 				}
 			}
+			break
+		}
+
+		// Has not yet observed Running:
+		if hasHistoryProvider {
+			// Check if a response is already generated (very fast turn or race where running state was transient)
+			if hist, err := hp.History(waitCtx, task.ProjectID, sessID); err == nil && len(hist.Events) > 0 {
+				for i := len(hist.Events) - 1; i >= 0; i-- {
+					ev := hist.Events[i]
+					if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" && strings.TrimSpace(ev.Message.Text) != "" {
+						summary = strings.TrimSpace(ev.Message.Text)
+						break
+					}
+				}
+				if summary != "" {
+					break
+				}
+			}
+
+			// If still within startup grace period and no output yet, continue waiting for agent to launch and enter Running
+			if time.Since(startTime) < startGracePeriod {
+				continue
+			}
+
+			// Exceeded startup grace period without running state or output
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = fmt.Sprintf("Agent 会话未能在预期时间内启动响应（会话 ID: `%s`）", sessID)
+			_ = e.repo.UpdateFlowMessage(savedMsg)
+			e.eventBus.Publish(run.ID, FlowEvent{
+				Type:    EventMessage,
+				RunID:   run.ID,
+				Payload: savedMsg,
+			})
+			return fmt.Errorf("agent session failed to start within %v", startGracePeriod)
+		} else {
+			// For lightweight test stubs without history provider, break immediately
 			break
 		}
 	}
