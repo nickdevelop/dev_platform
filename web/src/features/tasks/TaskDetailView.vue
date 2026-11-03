@@ -209,7 +209,7 @@ async function copyPromptTemplate() {
         </button>
       </div>
       <div class="flex-1 min-h-0">
-        <FlowChatView :task="task" />
+        <FlowChatView :key="task.id" :task="task" />
       </div>
     </template>
 

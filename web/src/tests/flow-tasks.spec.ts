@@ -8,6 +8,7 @@ import FlowChatView from '../features/tasks/flow/FlowChatView.vue'
 import TaskCreatePanel from '../features/tasks/TaskCreatePanel.vue'
 import { useModelsStore } from '../stores/models'
 import { useRolesStore } from '../stores/roles'
+import { useTasksStore } from '../stores/tasks'
 import { installTestCSRF } from './csrf-fixture'
 import type { Task, FlowRole, FlowMessage, FlowRun } from '../api/tasks'
 
@@ -394,5 +395,114 @@ const author = "@架构师"
     const mentions = wrapper.findAll('.mention-role-tag')
     expect(mentions.length).toBe(1)
     expect(mentions[0].text()).toBe('@架构师')
+  })
+
+  it('FlowChatView resets run state and does not bleed messages/status from another task when switched to an unexecuted task', async () => {
+    setActivePinia(createPinia())
+    const tasksStore = useTasksStore()
+
+    const taskFailed: Task = {
+      id: 2,
+      title: '梳理AI知识库需求',
+      description: '',
+      taskType: 'flow',
+      projectId: 1,
+      backend: 'opencode',
+      model: 'ankki-code-plus',
+      orchestratorModel: 'ankki-code-plus',
+      promptTemplate: '',
+      scheduleType: 'manual',
+      scheduleEnabled: false,
+      status: 'active',
+      createdAt: '2026-11-03T10:00:00Z',
+      updatedAt: '2026-11-03T10:00:00Z',
+    }
+
+    const taskUnexecuted: Task = {
+      id: 1,
+      title: '团队会议室在线预约功能',
+      description: '',
+      taskType: 'flow',
+      projectId: 1,
+      backend: 'opencode',
+      model: 'ankki-code-plus',
+      orchestratorModel: 'ankki-code-plus',
+      promptTemplate: '',
+      scheduleType: 'manual',
+      scheduleEnabled: false,
+      status: 'active',
+      createdAt: '2026-11-03T10:00:00Z',
+      updatedAt: '2026-11-03T10:00:00Z',
+    }
+
+    const failedRun: FlowRun = {
+      id: 201,
+      taskId: 2,
+      projectId: 1,
+      status: 'failed',
+      currentStep: 0,
+      maxSteps: 20,
+      orchestratorModel: 'ankki-code-plus',
+      triggerType: 'manual',
+      createdAt: '2026-11-03T10:00:00Z',
+      updatedAt: '2026-11-03T10:00:00Z',
+    }
+
+    const failedMessages: FlowMessage[] = [
+      {
+        id: 1,
+        runId: 201,
+        senderType: 'user',
+        senderName: '用户',
+        content: '梳理AI知识库需求',
+        status: 'complete',
+        createdAt: '2026-11-03T10:00:00Z',
+        updatedAt: '2026-11-03T10:00:00Z',
+      },
+    ]
+
+    // Setup store mock state for task 2
+    tasksStore.flowRuns[2] = [failedRun]
+    tasksStore.flowMessages[201] = failedMessages
+    tasksStore.activeFlowRun = failedRun
+
+    // Mock store methods
+    vi.spyOn(tasksStore, 'loadRoles').mockImplementation(async () => [])
+    vi.spyOn(tasksStore, 'loadFlowRuns').mockImplementation(async (taskId: number) => {
+      return tasksStore.flowRuns[taskId] || []
+    })
+    vi.spyOn(tasksStore, 'loadFlowRun').mockImplementation(async (runId: number) => {
+      if (runId === 201) return failedRun
+      return null
+    })
+    vi.spyOn(tasksStore, 'loadFlowMessages').mockImplementation(async (runId: number) => {
+      return tasksStore.flowMessages[runId] || []
+    })
+    vi.spyOn(tasksStore, 'connectFlowEvents').mockImplementation(() => {})
+    vi.spyOn(tasksStore, 'disconnectFlowEvents').mockImplementation(() => {})
+
+    // 1. Mount FlowChatView with task 2 (the failed one)
+    const wrapper = mount(FlowChatView, {
+      props: { task: taskFailed },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('梳理AI知识库需求')
+    expect(wrapper.text()).toContain('执行失败')
+    expect(wrapper.find('[data-test="btn-rerun-flow"]').text()).toBe('重新启动')
+
+    // 2. Switch to task 1 (the unexecuted one with no runs)
+    await wrapper.setProps({ task: taskUnexecuted })
+    await flushPromises()
+
+    // 3. Assert: Task 1 should have clean unexecuted state, no bleed of task 2
+    expect(wrapper.text()).toContain('团队会议室在线预约功能')
+    expect(wrapper.text()).not.toContain('梳理AI知识库需求')
+    expect(wrapper.text()).not.toContain('执行失败')
+    expect(wrapper.find('[data-test="flow-status-idle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="flow-status-idle"]').text()).toContain('未执行')
+    expect(wrapper.find('[data-test="btn-rerun-flow"]').text()).toBe('启动协同流程')
+    expect(wrapper.text()).toContain('流程尚未启动')
+    expect(wrapper.text()).toContain('步骤: 0 / 20')
   })
 })

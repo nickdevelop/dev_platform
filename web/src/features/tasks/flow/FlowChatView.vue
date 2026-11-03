@@ -34,7 +34,13 @@ const showSessionDialog = ref(false)
 
 const roles = computed<FlowRole[]>(() => tasksStore.rolesByTaskId(props.task.id))
 const flowRuns = computed(() => tasksStore.flowRunsByTaskId(props.task.id))
-const activeRun = computed(() => tasksStore.activeFlowRun)
+const activeRun = computed(() => {
+  const run = tasksStore.activeFlowRun
+  if (!run || run.taskId !== props.task.id) {
+    return null
+  }
+  return run
+})
 const messages = computed(() => {
   if (!activeRun.value) return []
   return tasksStore.messagesByRunId(activeRun.value.id)
@@ -74,6 +80,9 @@ watch(
 )
 
 async function initializeRun(runId?: number) {
+  if (tasksStore.activeFlowRun?.id) {
+    tasksStore.disconnectFlowEvents(tasksStore.activeFlowRun.id)
+  }
   await tasksStore.loadRoles(props.task.id)
   const runs = await tasksStore.loadFlowRuns(props.task.id)
 
@@ -84,28 +93,40 @@ async function initializeRun(runId?: number) {
 
   if (targetId) {
     await selectRun(targetId)
+  } else {
+    tasksStore.resetActiveFlowRun()
   }
 }
 
 async function selectRun(runId: number) {
-  if (activeRun.value?.id) {
-    tasksStore.disconnectFlowEvents(activeRun.value.id)
+  if (tasksStore.activeFlowRun?.id) {
+    tasksStore.disconnectFlowEvents(tasksStore.activeFlowRun.id)
   }
   const run = await tasksStore.loadFlowRun(runId)
-  if (run) {
+  if (run && run.taskId === props.task.id) {
     await tasksStore.loadFlowMessages(run.id)
     tasksStore.connectFlowEvents(run.id)
     scrollToBottom()
   }
 }
 
+watch(
+  () => props.task.id,
+  async (newTaskId, oldTaskId) => {
+    if (newTaskId && newTaskId !== oldTaskId) {
+      userInput.value = ''
+      await initializeRun()
+    }
+  },
+)
+
 onMounted(async () => {
   await initializeRun(props.runId)
 })
 
 onBeforeUnmount(() => {
-  if (activeRun.value?.id) {
-    tasksStore.disconnectFlowEvents(activeRun.value.id)
+  if (tasksStore.activeFlowRun?.id) {
+    tasksStore.disconnectFlowEvents(tasksStore.activeFlowRun.id)
   }
 })
 
@@ -205,9 +226,12 @@ function getRoleById(roleId?: number): FlowRole | null {
           </div>
           <div class="flex items-center gap-3 text-[11px] text-[var(--color-text-muted)] font-mono">
             <span>工作区: {{ projectName }}</span>
-            <span v-if="activeRun">中控模型: {{ activeRun.orchestratorModel }}</span>
+            <span>中控模型: {{ activeRun?.orchestratorModel || task.orchestratorModel || task.model || '-' }}</span>
             <span v-if="activeRun" class="text-amber-500 font-semibold">
               步骤: {{ activeRun.currentStep }} / {{ activeRun.maxSteps }}
+            </span>
+            <span v-else class="text-slate-400">
+              步骤: 0 / {{ task.maxSteps || 20 }}
             </span>
           </div>
         </div>
@@ -243,6 +267,14 @@ function getRoleById(roleId?: number): FlowRole | null {
           <span v-else-if="isFailed">执行失败</span>
           <span v-else-if="isCancelled">已手动中止</span>
         </span>
+        <span
+          v-else
+          class="status-pill text-xs px-2 py-0.5 rounded font-mono font-medium flex items-center gap-1.5 border bg-slate-500/10 text-slate-500 border-slate-500/30"
+          data-test="flow-status-idle"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-400" />
+          <span>未执行</span>
+        </span>
 
         <!-- Cancel button when running -->
         <UiButton
@@ -256,7 +288,7 @@ function getRoleById(roleId?: number): FlowRole | null {
           中止执行
         </UiButton>
 
-        <!-- Rerun button when not running -->
+        <!-- Rerun or Start button when not running -->
         <UiButton
           v-else
           variant="primary"
@@ -264,7 +296,7 @@ function getRoleById(roleId?: number): FlowRole | null {
           data-test="btn-rerun-flow"
           @click="handleRestart"
         >
-          重新启动
+          {{ activeRun ? '重新启动' : '启动协同流程' }}
         </UiButton>
 
         <!-- Role management button -->

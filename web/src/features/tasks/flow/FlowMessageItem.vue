@@ -174,7 +174,7 @@ async function handleMarkdownClick(event: MouseEvent) {
         <template v-if="!isUser">
           <span v-if="isOrchestrator" class="font-semibold text-blue-500 flex items-center gap-1">
             <span>平台中控</span>
-            <span class="text-[10px] px-1 py-0.2 rounded bg-blue-500/10 border border-blue-500/20 font-mono">调度中枢</span>
+            <span class="text-[10px] px-1 py-0.2 rounded bg-blue-500/10 border border-blue-500/20 font-mono">AI内置大脑</span>
           </span>
           <FlowRoleBadge
             v-else

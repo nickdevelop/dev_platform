@@ -340,5 +340,12 @@ export const useTasksStore = defineStore('tasks', {
         activeFlowEventSources.delete(runId)
       }
     },
+
+    resetActiveFlowRun() {
+      if (this.activeFlowRun?.id) {
+        this.disconnectFlowEvents(this.activeFlowRun.id)
+      }
+      this.activeFlowRun = null
+    },
   },
 })
