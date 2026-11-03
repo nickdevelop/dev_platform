@@ -326,6 +326,7 @@ type Task struct {
 	NextRunAt       *time.Time `gorm:"column:next_run_at"`
 	LastRunStatus   string     `gorm:"column:last_run_status"` // "idle" | "running" | "success" | "failed"
 	Status          string     `gorm:"column:status;not null;default:'active'"` // "active" | "disabled"
+	OrchestratorModel string   `gorm:"column:orchestrator_model"`
 
 	// Deprecated fields retained for historical schema migration compatibility
 	FlowType        string     `gorm:"column:flow_type"`
@@ -410,4 +411,65 @@ type ServiceProxy struct {
 
 // TableName pins the table name for ServiceProxy.
 func (ServiceProxy) TableName() string { return "service_proxies" }
+
+// FlowRole defines an agent role in a collaborative flow task.
+// Table: flow_roles.
+type FlowRole struct {
+	ID           uint      `gorm:"primaryKey;column:id"`
+	TaskID       uint      `gorm:"column:task_id;not null;default:0;index"`
+	Name         string    `gorm:"column:name;not null"`
+	Description  string    `gorm:"column:description"`
+	Backend      string    `gorm:"column:backend;not null"`
+	Model        string    `gorm:"column:model;not null"`
+	SystemPrompt string    `gorm:"column:system_prompt;type:text"`
+	Icon         string    `gorm:"column:icon;size:32"`
+	Color        string    `gorm:"column:color;size:32"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName pins the table name for FlowRole.
+func (FlowRole) TableName() string { return "flow_roles" }
+
+// FlowRun records one concrete execution run of a collaborative flow task.
+// Table: flow_runs.
+type FlowRun struct {
+	ID                uint       `gorm:"primaryKey;column:id"`
+	TaskID            uint       `gorm:"column:task_id;not null;index"`
+	ProjectID         uint       `gorm:"column:project_id;not null;index"`
+	Status            string     `gorm:"column:status;not null;default:'running'"` // "running" | "waiting_user" | "completed" | "failed" | "cancelled"
+	CurrentStep       int        `gorm:"column:current_step;not null;default:0"`
+	MaxSteps          int        `gorm:"column:max_steps;not null;default:15"`
+	OrchestratorModel string     `gorm:"column:orchestrator_model;not null"`
+	TriggerType       string     `gorm:"column:trigger_type;not null;default:'manual'"` // "manual" | "once" | "cron"
+	Prompt            string     `gorm:"column:prompt;type:text"`
+	Error             string     `gorm:"column:error"`
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	FinishedAt        *time.Time `gorm:"column:finished_at"`
+}
+
+// TableName pins the table name for FlowRun.
+func (FlowRun) TableName() string { return "flow_runs" }
+
+// FlowMessage is one persisted message inside a collaborative flow conversation (IM stream).
+// Table: flow_messages.
+type FlowMessage struct {
+	ID           uint      `gorm:"primaryKey;column:id"`
+	RunID        uint      `gorm:"column:run_id;not null;index"`
+	SenderType   string    `gorm:"column:sender_type;not null"` // "user" | "orchestrator" | "agent" | "system"
+	SenderName   string    `gorm:"column:sender_name;not null"`
+	RoleID       uint      `gorm:"column:role_id;not null;default:0"`
+	TargetRoleID uint      `gorm:"column:target_role_id;not null;default:0"`
+	Content      string    `gorm:"column:content;type:text"`
+	Reasoning    string    `gorm:"column:reasoning;type:text"`
+	SessionID    string    `gorm:"column:session_id"` // related agent session id if coding agent was dispatched
+	Status       string    `gorm:"column:status;not null;default:'complete'"` // "pending" | "streaming" | "complete" | "failed"
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName pins the table name for FlowMessage.
+func (FlowMessage) TableName() string { return "flow_messages" }
+
 

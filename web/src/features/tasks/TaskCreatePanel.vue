@@ -3,7 +3,8 @@
 // task type selector and execution mode configuration.
 import { computed, onMounted, ref, watch } from 'vue'
 import type { BackendId } from '../../api/agents'
-import type { ScheduleType, TaskType } from '../../api/tasks'
+import type { ScheduleType, TaskType, FlowRoleInput } from '../../api/tasks'
+import { createTaskRole } from '../../api/tasks'
 import ModelSelect from '../chat/composer/ModelSelect.vue'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
@@ -47,6 +48,43 @@ const selectedModel = ref(draft.model ?? '')
 const modelOk = ref(false)
 const promptText = ref(draft.promptText ?? '')
 const selectedPromptId = ref<number | ''>(draft.promptId ?? '')
+
+// Collaborative Flow Configuration
+const orchestratorModel = ref(draft.model || 'gpt-4o')
+const flowRoles = ref<FlowRoleInput[]>([
+  {
+    name: '架构师',
+    description: '负责系统架构方案设计、模块拆解与接口规约',
+    backend: 'llm',
+    model: 'gpt-4o',
+    systemPrompt: '你是一名资深系统架构师，负责分析需求并制定清晰架构方案。',
+    color: '#8b5cf6',
+  },
+  {
+    name: '开发专家',
+    description: '负责按照设计方案编写与修改工作区代码',
+    backend: 'opencode',
+    model: 'gpt-4o',
+    systemPrompt: '你是一名经验丰富的全栈工程师，擅长编写健壮、规范的代码并进行自测。',
+    color: '#3b82f6',
+  },
+])
+
+function addFlowRole() {
+  const colors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
+  flowRoles.value.push({
+    name: `专家${flowRoles.value.length + 1}`,
+    description: '专业子任务执行',
+    backend: 'llm',
+    model: orchestratorModel.value || 'gpt-4o',
+    systemPrompt: '请高质量完成指派的子任务并反馈结果。',
+    color: colors[flowRoles.value.length % colors.length],
+  })
+}
+
+function removeFlowRole(idx: number) {
+  flowRoles.value.splice(idx, 1)
+}
 
 // Execution Mode / Schedule Info
 const scheduleType = ref<ScheduleType>(draft.scheduleType ?? 'manual')
@@ -146,29 +184,12 @@ function onPromptTemplateChange() {
 }
 
 async function handleCreateTask() {
-  if (selectedTaskType.value === 'flow') {
-    errorMessage.value = '流程任务功能正在扩展中，敬请期待！'
-    return
-  }
-
   if (!title.value.trim()) {
     errorMessage.value = '请输入任务名称'
     return
   }
   if (!selectedProjectId.value) {
     errorMessage.value = '请选择关联项目'
-    return
-  }
-  if (!selectedBackend.value) {
-    errorMessage.value = '请选择 Agent 后端'
-    return
-  }
-  if (selectedCapabilities.value?.modelSelection && !selectedModel.value) {
-    errorMessage.value = '请选择使用的模型'
-    return
-  }
-  if (!promptText.value.trim() && !selectedPrompt.value) {
-    errorMessage.value = '请填写执行提示词模板'
     return
   }
 
@@ -196,6 +217,69 @@ async function handleCreateTask() {
     }
     cronExpr = customCronExpr.value.trim()
     scheduleEnabled = true
+  }
+
+  // 1. Collaborative Flow Task Creation
+  if (selectedTaskType.value === 'flow') {
+    if (!orchestratorModel.value.trim()) {
+      errorMessage.value = '请输入或选择中控编排模型'
+      return
+    }
+    if (!promptText.value.trim()) {
+      errorMessage.value = '请填写多 Agent 协同流程的整体目标'
+      return
+    }
+    if (flowRoles.value.length === 0) {
+      errorMessage.value = '协同流程必须至少包含一个 Agent 角色'
+      return
+    }
+
+    creating.value = true
+    errorMessage.value = ''
+    try {
+      const defaultBackend = (selectableBackends.value[0]?.backend as BackendId) || 'opencode'
+      const created = await tasksStore.createTask({
+        title: title.value.trim(),
+        description: description.value.trim(),
+        taskType: 'flow',
+        projectId: selectedProjectId.value,
+        backend: defaultBackend,
+        model: orchestratorModel.value.trim(),
+        orchestratorModel: orchestratorModel.value.trim(),
+        promptTemplate: promptText.value.trim(),
+        scheduleType: scheduleType.value,
+        scheduledAt,
+        cronExpr,
+        scheduleEnabled,
+      })
+
+      // Batch create initial configured roles
+      for (const r of flowRoles.value) {
+        await createTaskRole(created.id, r)
+      }
+
+      emit('created', created.id)
+      draftsStore.clearTaskCreateDraft()
+    } catch (err: any) {
+      errorMessage.value = err.message || '创建协同流程任务失败'
+    } finally {
+      creating.value = false
+    }
+    return
+  }
+
+  // 2. Standard Session Template Task Creation
+  if (!selectedBackend.value) {
+    errorMessage.value = '请选择 Agent 后端'
+    return
+  }
+  if (selectedCapabilities.value?.modelSelection && !selectedModel.value) {
+    errorMessage.value = '请选择使用的模型'
+    return
+  }
+  if (!promptText.value.trim() && !selectedPrompt.value) {
+    errorMessage.value = '请填写执行提示词模板'
+    return
   }
 
   const finalPrompt = selectedPrompt.value
@@ -284,28 +368,26 @@ async function handleCreateTask() {
             </div>
 
             <div
-              class="type-card disabled-card flex items-start gap-3 p-3.5 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors opacity-60"
+              class="type-card flex items-start gap-3 p-3.5 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
               :class="[
                 selectedTaskType === 'flow'
                   ? 'active border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
-                  : 'border-[var(--color-border)]',
+                  : 'border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]',
               ]"
               @click="selectedTaskType = 'flow'"
             >
-              <div class="type-icon text-[var(--color-text-muted)] shrink-0 mt-0.5">
+              <div class="type-icon text-[var(--color-primary)] shrink-0 mt-0.5">
                 <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <rect x="2" y="2" width="4" height="4" rx="1" />
-                  <rect x="10" y="2" width="4" height="4" rx="1" />
-                  <rect x="6" y="10" width="4" height="4" rx="1" />
-                  <path d="M4 6v2a2 2 0 0 0 2 2h2m4-4v2a2 2 0 0 1-2 2H8" />
+                  <circle cx="8" cy="8" r="3" />
+                  <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
                 </svg>
               </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">流程任务</span>
-                  <span class="type-pill flow">扩展槽</span>
+                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">多 Agent 协同流程任务</span>
+                  <span class="type-pill flow font-semibold">团队协同</span>
                 </div>
-                <p class="type-desc text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">多阶段工作流与复杂节点编排引擎（后续插件扩展预留）。</p>
+                <p class="type-desc text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">平台中控自主调度与派发多 Agent 角色，以 IM 群聊形式闭环协同达成研发目标。</p>
               </div>
             </div>
           </div>
@@ -339,8 +421,153 @@ async function handleCreateTask() {
           </div>
         </div>
 
-        <!-- 3. Session Template Configuration -->
-        <div class="form-section space-y-3.5">
+        <!-- 3. Session Template Configuration / Flow Orchestrator Configuration -->
+        <!-- 3A. Flow Task Specific Configuration -->
+        <div v-if="selectedTaskType === 'flow'" class="form-section space-y-4">
+          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)] flex items-center gap-1.5">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+              <circle cx="8" cy="8" r="3" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
+            </svg>
+            <span>协同中控与目标配置</span>
+          </label>
+
+          <!-- Project Selector -->
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="flow-project-select" class="text-xs font-medium text-[var(--color-text)]">
+              工作区项目 <span class="text-red-500">*</span>
+            </label>
+            <UiSelect
+              id="flow-project-select"
+              v-model="selectedProjectId"
+              required
+              block
+            >
+              <option :value="null" disabled>请选择项目工作区…</option>
+              <option
+                v-for="p in projectsStore.projects ?? []"
+                :key="p.id"
+                :value="p.id"
+              >
+                {{ p.name }} ({{ p.path }})
+              </option>
+            </UiSelect>
+          </div>
+
+          <!-- Orchestrator Model Input -->
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="orchestrator-model" class="text-xs font-medium text-[var(--color-text)]">
+              中控调度大脑模型 <span class="text-red-500">*</span>
+              <span class="label-hint text-[var(--color-text-muted)] font-normal">（用于拆解任务、决策分工与调度各角色的决策大模型）</span>
+            </label>
+            <UiInput
+              id="orchestrator-model"
+              v-model="orchestratorModel"
+              placeholder="例如：gpt-4o、claude-3-5-sonnet、deepseek-chat"
+              required
+              block
+            />
+          </div>
+
+          <!-- Goal / Global Prompt Textarea -->
+          <div class="form-group flex flex-col gap-1.5">
+            <label for="flow-goal" class="text-xs font-medium text-[var(--color-text)]">
+              协同总目标与研发要求 <span class="text-red-500">*</span>
+              <span class="label-hint text-[var(--color-text-muted)] font-normal">（输入要达成的总目标，中控将在群聊中据此拆解并指派角色）</span>
+            </label>
+            <UiTextarea
+              id="flow-goal"
+              v-model="promptText"
+              :rows="4"
+              placeholder="例如：请对当前项目的工作区代码进行架构梳理，由架构师输出模块设计方案，再由开发专家编写对应代码并进行自测验证…"
+              required
+            />
+          </div>
+
+          <!-- Configured Agent Roles List -->
+          <div class="roles-config-section pt-2 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <label class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-2">
+                <span>团队协同角色分工</span>
+                <span class="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-500 font-mono border border-blue-500/20">
+                  {{ flowRoles.length }} 个角色
+                </span>
+              </label>
+              <button
+                type="button"
+                class="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1 font-medium"
+                @click="addFlowRole"
+              >
+                + 添加角色
+              </button>
+            </div>
+
+            <!-- Role Cards Grid -->
+            <div class="grid grid-cols-1 gap-2.5">
+              <div
+                v-for="(r, idx) in flowRoles"
+                :key="idx"
+                class="p-3 rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] space-y-2"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <span
+                      class="w-2.5 h-2.5 rounded-full shrink-0"
+                      :style="{ backgroundColor: r.color || '#3b82f6' }"
+                    />
+                    <input
+                      v-model="r.name"
+                      class="text-xs font-semibold bg-transparent border-b border-[var(--color-border)] focus:border-[var(--color-primary)] focus:outline-none text-[var(--color-text)] px-1 py-0.5"
+                      placeholder="角色名称"
+                      required
+                    />
+                    <select
+                      v-model="r.backend"
+                      class="text-[11px] h-6 px-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none font-mono"
+                    >
+                      <option value="llm">llm (纯大模型)</option>
+                      <option value="opencode">opencode</option>
+                      <option value="pi">pi</option>
+                      <option value="deepseek">deepseek</option>
+                    </select>
+                    <input
+                      v-model="r.model"
+                      class="text-[11px] h-6 px-2 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none font-mono w-32"
+                      placeholder="分配模型"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    v-if="flowRoles.length > 1"
+                    type="button"
+                    class="text-[11px] text-red-500 hover:text-red-600 p-1"
+                    title="移除该角色"
+                    @click="removeFlowRole(idx)"
+                  >
+                    移除
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                  <input
+                    v-model="r.description"
+                    class="p-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-[11px] focus:outline-none focus:border-[var(--color-primary)]"
+                    placeholder="角色职责描述（供中控识别）"
+                  />
+                  <input
+                    v-model="r.systemPrompt"
+                    class="p-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] text-[11px] focus:outline-none focus:border-[var(--color-primary)] font-mono"
+                    placeholder="角色专属系统提示词 (System Prompt)"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3B. Standard Session Template Configuration -->
+        <div v-else class="form-section space-y-3.5">
           <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">会话执行模板</label>
 
           <!-- Project Selector -->
@@ -559,10 +786,10 @@ async function handleCreateTask() {
             type="submit"
             variant="primary"
             class="btn-submit text-xs font-medium px-4 py-2"
-            :disabled="creating || selectedTaskType === 'flow'"
+            :disabled="creating"
             :loading="creating"
           >
-            {{ creating ? '创建中…' : '创建任务' }}
+            {{ creating ? '创建中…' : (selectedTaskType === 'flow' ? '创建协同流程' : '创建任务') }}
           </UiButton>
         </div>
       </form>

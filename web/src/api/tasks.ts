@@ -16,6 +16,7 @@ export interface Task {
   backend: BackendId
   model: string
   promptTemplate: string
+  orchestratorModel?: string
   scheduleType: ScheduleType
   scheduledAt?: string
   cronExpr?: string
@@ -49,6 +50,7 @@ export interface CreateTaskPayload {
   backend: BackendId
   model: string
   promptTemplate: string
+  orchestratorModel?: string
   scheduleType?: ScheduleType
   scheduledAt?: string
   cronExpr?: string
@@ -62,6 +64,7 @@ export interface UpdateTaskPayload {
   backend?: BackendId
   model?: string
   promptTemplate?: string
+  orchestratorModel?: string
   scheduleType?: ScheduleType
   scheduledAt?: string
   cronExpr?: string
@@ -121,3 +124,108 @@ export async function listTaskSessionIds(projectId?: number): Promise<string[]> 
 }
 
 export const getTaskSessionIds = listTaskSessionIds
+
+// Collaborative Flow Role & Execution models
+export interface FlowRole {
+  id: number
+  taskId: number
+  name: string
+  description?: string
+  backend: string
+  model: string
+  systemPrompt?: string
+  icon?: string
+  color?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FlowRoleInput {
+  name: string
+  description?: string
+  backend: string
+  model: string
+  systemPrompt?: string
+  icon?: string
+  color?: string
+}
+
+export type FlowRunStatus = 'running' | 'waiting_user' | 'completed' | 'failed' | 'cancelled'
+
+export interface FlowRun {
+  id: number
+  taskId: number
+  projectId: number
+  status: FlowRunStatus
+  currentStep: number
+  maxSteps: number
+  orchestratorModel: string
+  triggerType: string
+  prompt?: string
+  error?: string
+  createdAt: string
+  updatedAt: string
+  finishedAt?: string
+}
+
+export type FlowSenderType = 'user' | 'orchestrator' | 'agent' | 'system'
+export type FlowMessageStatus = 'pending' | 'streaming' | 'complete' | 'failed'
+
+export interface FlowMessage {
+  id: number
+  runId: number
+  senderType: FlowSenderType
+  senderName: string
+  roleId?: number
+  targetRoleId?: number
+  content: string
+  reasoning?: string
+  sessionId?: string
+  status: FlowMessageStatus
+  createdAt: string
+  updatedAt: string
+}
+
+export async function listTaskRoles(taskId: number): Promise<FlowRole[]> {
+  const res = await get<{ roles: FlowRole[] }>(`/tasks/${taskId}/roles`)
+  return res.roles
+}
+
+export async function createTaskRole(taskId: number, payload: FlowRoleInput): Promise<FlowRole> {
+  return mutate<FlowRole>('POST', `/tasks/${taskId}/roles`, payload)
+}
+
+export async function updateTaskRole(
+  taskId: number,
+  roleId: number,
+  payload: FlowRoleInput,
+): Promise<FlowRole> {
+  return mutate<FlowRole>('PUT', `/tasks/${taskId}/roles/${roleId}`, payload)
+}
+
+export async function deleteTaskRole(taskId: number, roleId: number): Promise<void> {
+  await mutate<void>('DELETE', `/tasks/${taskId}/roles/${roleId}`)
+}
+
+export async function listTaskFlowRuns(taskId: number): Promise<FlowRun[]> {
+  const res = await get<{ runs: FlowRun[] }>(`/tasks/${taskId}/flows`)
+  return res.runs
+}
+
+export async function getFlowRun(runId: number): Promise<FlowRun> {
+  return get<FlowRun>(`/tasks/flows/${runId}`)
+}
+
+export async function listFlowMessages(runId: number): Promise<FlowMessage[]> {
+  const res = await get<{ messages: FlowMessage[] }>(`/tasks/flows/${runId}/messages`)
+  return res.messages
+}
+
+export async function postFlowMessage(runId: number, content: string): Promise<FlowMessage> {
+  return mutate<FlowMessage>('POST', `/tasks/flows/${runId}/messages`, { content })
+}
+
+export async function cancelFlowRun(runId: number): Promise<{ ok: boolean }> {
+  return mutate<{ ok: boolean }>('POST', `/tasks/flows/${runId}/cancel`, {})
+}
+

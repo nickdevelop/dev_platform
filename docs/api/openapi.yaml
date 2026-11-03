@@ -3883,6 +3883,383 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /tasks/{id}/roles:
+    get:
+      summary: List agent roles for a collaborative flow task
+      description: Returns all configured agent roles for the specified flow task.
+      operationId: listTaskRoles
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the task.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of roles.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [roles]
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlowRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Create a new agent role for a task
+      description: Creates and associates an agent role with the specified flow task.
+      operationId: createTaskRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the task.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowRoleInput'
+      responses:
+        '201':
+          description: Created role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/roles/{roleId}:
+    put:
+      summary: Update an agent role
+      description: Updates the configuration of an existing agent role.
+      operationId: updateTaskRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the task.
+          schema:
+            type: integer
+            format: int64
+        - name: roleId
+          in: path
+          required: true
+          description: Identifier of the role.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FlowRoleInput'
+      responses:
+        '200':
+          description: Updated role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowRole'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Role not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete an agent role
+      description: Removes an agent role configuration from the task.
+      operationId: deleteTaskRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the task.
+          schema:
+            type: integer
+            format: int64
+        - name: roleId
+          in: path
+          required: true
+          description: Identifier of the role.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Role deleted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Role not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/{id}/flows:
+    get:
+      summary: List collaborative flow runs for a task
+      description: Returns all flow runs for the specified collaborative flow task.
+      operationId: listTaskFlowRuns
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the task.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of flow runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlowRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/flows/{runId}:
+    get:
+      summary: Get details of a flow run
+      description: Returns the status and metadata of a collaborative flow run.
+      operationId: getFlowRun
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: Identifier of the flow run.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Flow run details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowRun'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Flow run not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/flows/{runId}/messages:
+    get:
+      summary: List chat messages of a collaborative flow run
+      description: Returns all IM messages exchanged during the flow run in chronological order.
+      operationId: listFlowMessages
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: Identifier of the flow run.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of flow messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FlowMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      summary: Post a user message to the flow chat
+      description: Appends a user message to the collaborative chat and prompts the orchestrator.
+      operationId: postFlowMessage
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: Identifier of the flow run.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  description: The text content of the message.
+      responses:
+        '201':
+          description: Created message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlowMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/flows/{runId}/cancel:
+    post:
+      summary: Cancel an active collaborative flow run
+      description: Aborts the active execution loop of a collaborative flow run.
+      operationId: cancelFlowRun
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: Identifier of the flow run.
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Flow run cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /tasks/flows/{runId}/events:
+    get:
+      summary: Subscribe to realtime SSE events of a flow run
+      description: Opens an event stream pushing incremental tokens, message updates, and status changes.
+      operationId: streamFlowEvents
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: runId
+          in: path
+          required: true
+          description: Identifier of the flow run.
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Server-Sent Events stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Flow run not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /terminal/status:
     get:
       summary: Get terminal host status
@@ -6175,6 +6552,131 @@ components:
           type: string
         scheduleEnabled:
           type: boolean
+      additionalProperties: false
+    FlowRole:
+      type: object
+      required: [id, taskId, name, backend, model]
+      properties:
+        id:
+          type: integer
+          format: int64
+        taskId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        backend:
+          type: string
+        model:
+          type: string
+        systemPrompt:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    FlowRoleInput:
+      type: object
+      required: [name, backend, model]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        backend:
+          type: string
+        model:
+          type: string
+        systemPrompt:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+      additionalProperties: false
+    FlowRun:
+      type: object
+      required: [id, taskId, projectId, status, currentStep, maxSteps, orchestratorModel, triggerType]
+      properties:
+        id:
+          type: integer
+          format: int64
+        taskId:
+          type: integer
+          format: int64
+        projectId:
+          type: integer
+          format: int64
+        status:
+          type: string
+          enum: [running, waiting_user, completed, failed, cancelled]
+        currentStep:
+          type: integer
+        maxSteps:
+          type: integer
+        orchestratorModel:
+          type: string
+        triggerType:
+          type: string
+        prompt:
+          type: string
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    FlowMessage:
+      type: object
+      required: [id, runId, senderType, senderName, content, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        runId:
+          type: integer
+          format: int64
+        senderType:
+          type: string
+          enum: [user, orchestrator, agent, system]
+        senderName:
+          type: string
+        roleId:
+          type: integer
+          format: int64
+        targetRoleId:
+          type: integer
+          format: int64
+        content:
+          type: string
+        reasoning:
+          type: string
+        sessionId:
+          type: string
+        status:
+          type: string
+          enum: [pending, streaming, complete, failed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
       additionalProperties: false
     ChatImage:
       type: object

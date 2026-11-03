@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -342,6 +343,45 @@ func (s *Service) ResolveModel(id uint) (ResolvedModel, error) {
 		ContextTokens: model.ContextTokens,
 		OutputTokens:  model.OutputTokens,
 	}, nil
+}
+
+// ResolveModelByNameOrID resolves a model by its uint ID string or wire model_id / name.
+func (s *Service) ResolveModelByNameOrID(ref string) (ResolvedModel, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ResolvedModel{}, ErrInvalidModel
+	}
+	// Try parsing as numeric ID first
+	if id, err := strconv.ParseUint(ref, 10, 64); err == nil && id > 0 {
+		resolved, err := s.ResolveModel(uint(id))
+		if err == nil {
+			return resolved, nil
+		}
+	}
+
+	// Search among all enabled services and models
+	services, err := s.repo.ListServices()
+	if err != nil {
+		return ResolvedModel{}, err
+	}
+	for _, svc := range services {
+		if !svc.Enabled {
+			continue
+		}
+		models, err := s.repo.ListModelsByService(svc.ID)
+		if err != nil {
+			continue
+		}
+		for _, m := range models {
+			if !m.Enabled || !m.SupportsText {
+				continue
+			}
+			if strings.EqualFold(m.ModelID, ref) || strings.EqualFold(m.Name, ref) {
+				return s.ResolveModel(m.ID)
+			}
+		}
+	}
+	return ResolvedModel{}, fmt.Errorf("%w: %s", ErrModelNotFound, ref)
 }
 
 // storeKey generates a reference and stores the value.

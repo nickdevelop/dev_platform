@@ -34,6 +34,7 @@ import (
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
+	"devplatform/internal/app/tasks/flow"
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
@@ -366,6 +367,8 @@ func runServer(args []string) error {
 
 	taskRepo := tasks.NewRepository(db)
 	taskService := tasks.NewService(taskRepo, sessionService)
+	flowEngine := flow.NewEngine(taskRepo, sessionService, modelConfig, chat.NewOpenAICompleter(), flow.NewEventBus())
+	taskService.SetFlowController(flowEngine)
 
 	// Reconcile orphaned instances and tasks left in running states from a prior process.
 	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 5*time.Second)

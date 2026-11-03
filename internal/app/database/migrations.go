@@ -353,6 +353,31 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 34, name: "create_flow_tasks_tables", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&FlowRole{}) {
+			if err := tx.Migrator().CreateTable(&FlowRole{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&FlowRun{}) {
+			if err := tx.Migrator().CreateTable(&FlowRun{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&FlowMessage{}) {
+			if err := tx.Migrator().CreateTable(&FlowMessage{}); err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable(&Task{}) {
+			if !tx.Migrator().HasColumn(&Task{}, "orchestrator_model") {
+				if err := tx.Migrator().AddColumn(&Task{}, "orchestrator_model"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

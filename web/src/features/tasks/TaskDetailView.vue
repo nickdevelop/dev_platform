@@ -15,6 +15,8 @@ import {
 } from './status'
 import TaskChatDialog from './TaskChatDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
+import FlowChatView from './flow/FlowChatView.vue'
+import FlowRoleManager from './flow/FlowRoleManager.vue'
 import { UiButton, UiBadge, UiAlert } from '../../shared/ui'
 
 const props = defineProps<{
@@ -32,6 +34,7 @@ const triggering = ref(false)
 const actionError = ref('')
 const showEditDialog = ref(false)
 const copiedTemplate = ref(false)
+const flowViewMode = ref<'chat' | 'overview'>('chat')
 
 // Session Dialog State
 const activeSessionId = ref<string | null>(null)
@@ -41,6 +44,8 @@ const showChatDialog = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const task = computed<Task | null>(() => tasksStore.byId(props.taskId) ?? null)
+const isFlowTask = computed(() => task.value?.taskType === 'flow')
+const roles = computed(() => (task.value ? tasksStore.rolesByTaskId(task.value.id) : []))
 
 const taskRuns = computed<TaskRun[]>(() => tasksStore.runsByTaskId(props.taskId))
 
@@ -178,94 +183,139 @@ async function copyPromptTemplate() {
 </script>
 
 <template>
-  <div v-if="task" class="task-detail-container h-full overflow-y-auto p-6 md:p-8 space-y-6 bg-[var(--color-bg)]" data-test="task-detail-view">
-    <!-- 1. Header Summary Panel -->
-    <header class="detail-header p-6 rounded-[var(--radius,6px)] bg-[var(--color-surface)] border border-[var(--color-border)] flex items-start justify-between gap-6 flex-wrap">
-      <div class="header-main flex-1 min-w-[280px] space-y-3">
-        <!-- Badges row -->
-        <div class="badge-row flex items-center gap-2 flex-wrap">
-          <span class="type-pill" :class="task.taskType">
-            {{ getTaskTypeLabel(task.taskType) }}
-          </span>
-          <span
-            class="status-badge"
-            :class="getRunStatusBadgeClass(task.lastRunStatus)"
-          >
-            {{ getRunStatusLabel(task.lastRunStatus) }}
-          </span>
-          <span v-if="task.scheduleEnabled" class="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" />
-              <polyline points="8 4.5 8 8 10.5 9.5" />
-            </svg>
-            <span>{{ getScheduleTypeLabel(task.scheduleType) }}已激活</span>
+  <div v-if="task" class="task-detail-wrapper h-full min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg)]">
+    <!-- 1. If Collaborative Flow Task in 'chat' mode, show FlowChatView -->
+    <template v-if="isFlowTask && flowViewMode === 'chat'">
+      <div class="flow-header-tabs px-4 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between text-xs select-none shrink-0">
+        <div class="flex items-center gap-2 text-[var(--color-text-muted)]">
+          <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+          <span class="font-semibold text-[var(--color-text)]">多 Agent 团队协同工作台</span>
+          <span class="text-[11px] text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-2">
+            中控自主派发 · 角色分工反馈 · IM 协同闭环
           </span>
         </div>
-
-        <!-- Task title & description -->
-        <div>
-          <h1 class="task-title text-xl md:text-2xl font-semibold text-[var(--color-text)] tracking-tight">
-            {{ task.title }}
-          </h1>
-          <p v-if="task.description" class="task-desc text-xs md:text-sm text-[var(--color-text-muted)] mt-1 leading-relaxed">
-            {{ task.description }}
-          </p>
-        </div>
-
-        <!-- Meta info row -->
-        <div class="meta-row flex items-center gap-5 text-xs text-[var(--color-text-muted)] pt-1 flex-wrap">
-          <div class="meta-item flex items-center gap-1.5">
-            <span class="text-slate-400">关联项目:</span>
-            <span class="font-medium text-[var(--color-text)]">{{ projectName }}</span>
-          </div>
-          <div class="meta-item flex items-center gap-1.5">
-            <span class="text-slate-400">Agent:</span>
-            <BackendTag :backend="task.backend" />
-          </div>
-          <div class="meta-item flex items-center gap-1.5">
-            <span class="text-slate-400">运行模型:</span>
-            <code class="px-1.5 py-0.5 bg-[var(--color-surface-muted)] text-[var(--color-text)] rounded border border-[var(--color-border)] font-mono text-[11px]">{{ task.model }}</code>
-          </div>
-          <div class="meta-item flex items-center gap-1.5">
-            <span class="text-slate-400">调度类型:</span>
-            <span class="font-medium text-[var(--color-text)]">{{ getScheduleTypeLabel(task.scheduleType) }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Action buttons -->
-      <div class="header-actions flex items-center gap-2.5 shrink-0">
-        <UiButton
-          variant="primary"
-          class="btn-trigger px-3.5 py-1.5 text-xs font-medium"
-          :disabled="triggering"
-          :loading="triggering"
-          data-test="btn-trigger-task"
-          @click="handleManualTrigger"
+        <button
+          type="button"
+          class="px-2.5 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text)] hover:border-[var(--color-primary)] transition-colors text-xs flex items-center gap-1.5"
+          data-test="btn-switch-flow-overview"
+          @click="flowViewMode = 'overview'"
         >
-          <svg v-if="!triggering" class="mr-1.5 inline-block" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <polygon points="5 3 13 8 5 13 5 3" />
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="8" cy="8" r="6" />
+            <line x1="8" y1="5" x2="8" y2="8" />
+            <circle cx="8" cy="11" r="0.75" fill="currentColor" />
           </svg>
-          {{ triggering ? '启动执行中…' : '手动执行' }}
-        </UiButton>
-        <UiButton
-          variant="secondary"
-          class="btn-edit px-3 py-1.5 text-xs"
-          data-test="btn-edit-task"
-          @click="showEditDialog = true"
-        >
-          编辑配置
-        </UiButton>
-        <UiButton
-          variant="danger"
-          class="btn-delete px-3 py-1.5 text-xs"
-          data-test="btn-delete-task"
-          @click="handleDelete"
-        >
-          删除
-        </UiButton>
+          <span>任务配置与指标</span>
+        </button>
       </div>
-    </header>
+      <div class="flex-1 min-h-0">
+        <FlowChatView :task="task" />
+      </div>
+    </template>
+
+    <!-- 2. Standard Task Detail View OR Flow Task in 'overview' mode -->
+    <div
+      v-else
+      class="task-detail-container flex-1 min-h-0 overflow-y-auto p-6 md:p-8 space-y-6 bg-[var(--color-bg)]"
+      data-test="task-detail-view"
+    >
+      <!-- 1. Header Summary Panel -->
+      <header class="detail-header p-6 rounded-[var(--radius,6px)] bg-[var(--color-surface)] border border-[var(--color-border)] flex items-start justify-between gap-6 flex-wrap">
+        <div class="header-main flex-1 min-w-[280px] space-y-3">
+          <!-- Badges row -->
+          <div class="badge-row flex items-center gap-2 flex-wrap">
+            <span class="type-pill" :class="task.taskType">
+              {{ getTaskTypeLabel(task.taskType) }}
+            </span>
+            <span
+              class="status-badge"
+              :class="getRunStatusBadgeClass(task.lastRunStatus)"
+            >
+              {{ getRunStatusLabel(task.lastRunStatus) }}
+            </span>
+            <span v-if="task.scheduleEnabled" class="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+              <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" />
+                <polyline points="8 4.5 8 8 10.5 9.5" />
+              </svg>
+              <span>{{ getScheduleTypeLabel(task.scheduleType) }}已激活</span>
+            </span>
+          </div>
+
+          <!-- Task title & description -->
+          <div>
+            <h1 class="task-title text-xl md:text-2xl font-semibold text-[var(--color-text)] tracking-tight">
+              {{ task.title }}
+            </h1>
+            <p v-if="task.description" class="task-desc text-xs md:text-sm text-[var(--color-text-muted)] mt-1 leading-relaxed">
+              {{ task.description }}
+            </p>
+          </div>
+
+          <!-- Meta info row -->
+          <div class="meta-row flex items-center gap-5 text-xs text-[var(--color-text-muted)] pt-1 flex-wrap">
+            <div class="meta-item flex items-center gap-1.5">
+              <span class="text-slate-400">关联项目:</span>
+              <span class="font-medium text-[var(--color-text)]">{{ projectName }}</span>
+            </div>
+            <div class="meta-item flex items-center gap-1.5">
+              <span class="text-slate-400">Agent:</span>
+              <BackendTag :backend="task.backend" />
+            </div>
+            <div class="meta-item flex items-center gap-1.5">
+              <span class="text-slate-400">运行模型:</span>
+              <code class="px-1.5 py-0.5 bg-[var(--color-surface-muted)] text-[var(--color-text)] rounded border border-[var(--color-border)] font-mono text-[11px]">{{ task.model }}</code>
+            </div>
+            <div class="meta-item flex items-center gap-1.5">
+              <span class="text-slate-400">调度类型:</span>
+              <span class="font-medium text-[var(--color-text)]">{{ getScheduleTypeLabel(task.scheduleType) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="header-actions flex items-center gap-2.5 shrink-0">
+          <UiButton
+            v-if="isFlowTask"
+            variant="primary"
+            class="btn-enter-chat px-3.5 py-1.5 text-xs font-semibold"
+            data-test="btn-enter-flow-chat"
+            @click="flowViewMode = 'chat'"
+          >
+            进入协同群聊
+          </UiButton>
+          <UiButton
+            v-else
+            variant="primary"
+            class="btn-trigger px-3.5 py-1.5 text-xs font-medium"
+            :disabled="triggering"
+            :loading="triggering"
+            data-test="btn-trigger-task"
+            @click="handleManualTrigger"
+          >
+            <svg v-if="!triggering" class="mr-1.5 inline-block" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polygon points="5 3 13 8 5 13 5 3" />
+            </svg>
+            {{ triggering ? '启动执行中…' : '手动执行' }}
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            class="btn-edit px-3 py-1.5 text-xs"
+            data-test="btn-edit-task"
+            @click="showEditDialog = true"
+          >
+            编辑配置
+          </UiButton>
+          <UiButton
+            variant="danger"
+            class="btn-delete px-3 py-1.5 text-xs"
+            data-test="btn-delete-task"
+            @click="handleDelete"
+          >
+            删除
+          </UiButton>
+        </div>
+      </header>
 
     <!-- Error Alert banner if present -->
     <UiAlert v-if="actionError" variant="error" class="action-error-bar">
@@ -352,6 +402,15 @@ async function copyPromptTemplate() {
           </span>
         </div>
       </div>
+    </section>
+
+    <!-- Flow Roles Management if Collaborative Flow Task -->
+    <section v-if="isFlowTask" class="section-card p-6 rounded-[var(--radius,6px)] bg-[var(--color-surface)] border border-[var(--color-border)]">
+      <FlowRoleManager
+        :task-id="task.id"
+        :roles="roles"
+        @updated="tasksStore.loadRoles(task.id)"
+      />
     </section>
 
     <!-- 4. Execution History Table (app-screens §7: sentence-case, right-aligned numbers, no zebra) -->
@@ -481,15 +540,16 @@ async function copyPromptTemplate() {
       @saved="() => { showEditDialog = false; refreshData() }"
     />
 
-    <TaskChatDialog
-      v-if="showChatDialog && activeSessionId && task"
-      :title="`任务会话 [${viewingRun?.triggerType || '执行'}] - ${task.title}`"
-      :project-id="task.projectId"
-      :session-id="activeSessionId"
-      :backend="task.backend"
-      :model="task.model"
-      @close="showChatDialog = false"
-    />
+      <TaskChatDialog
+        v-if="showChatDialog && activeSessionId && task"
+        :title="`任务会话 [${viewingRun?.triggerType || '执行'}] - ${task.title}`"
+        :project-id="task.projectId"
+        :session-id="activeSessionId"
+        :backend="task.backend"
+        :model="task.model"
+        @close="showChatDialog = false"
+      />
+    </div>
   </div>
 </template>
 

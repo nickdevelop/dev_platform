@@ -76,7 +76,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&database.Task{}, &database.TaskRun{}); err != nil {
+	if err := db.AutoMigrate(&database.Task{}, &database.TaskRun{}, &database.FlowRole{}, &database.FlowRun{}, &database.FlowMessage{}); err != nil {
 		t.Fatalf("migrate task & runs: %v", err)
 	}
 	return db
@@ -167,22 +167,83 @@ func TestStandardTaskLifecycleAndRuns(t *testing.T) {
 	}
 }
 
-func TestFlowTaskExtensionPoint(t *testing.T) {
+func TestCollaborativeFlowTaskLifecycle(t *testing.T) {
 	db := setupTestDB(t)
 	launcher := &fakeSessionLauncher{}
 	svc := NewService(NewRepository(db), launcher)
 	ctx := context.Background()
 
-	// Flow task should be intercepted by validator
-	_, err := svc.Create(ctx, CreateTaskRequest{
-		Title:     "流程编排任务",
-		TaskType:  TaskTypeFlow,
-		ProjectID: 1,
-		Backend:   agents.BackendOpenCodeV2,
-		Model:     "gpt-4o",
+	// 1. Create a Collaborative Flow Task
+	task, err := svc.Create(ctx, CreateTaskRequest{
+		Title:             "多Agent协同任务原型",
+		Description:       "架构设计与代码实现闭环",
+		TaskType:          TaskTypeFlow,
+		ProjectID:         1,
+		Model:             "gpt-4o",
+		OrchestratorModel: "gpt-4o",
+		PromptTemplate:    "实现一个多Agent流程协同原型",
 	})
-	if err == nil || err != ErrFlowTasksNotImplementedYet {
-		t.Fatalf("expected ErrFlowTasksNotImplementedYet, got %v", err)
+	if err != nil {
+		t.Fatalf("create flow task: %v", err)
+	}
+	if task.TaskType != TaskTypeFlow {
+		t.Fatalf("expected task type flow, got %s", task.TaskType)
+	}
+
+	// 2. Add Roles
+	role1, err := svc.CreateRole(FlowRole{
+		TaskID:       task.ID,
+		Name:         "架构师",
+		Description:  "负责架构规划与模块拆解",
+		Backend:      "llm",
+		Model:        "gpt-4o",
+		SystemPrompt: "你是一名资深架构师...",
+	})
+	if err != nil {
+		t.Fatalf("create role 1: %v", err)
+	}
+	if role1.ID == 0 {
+		t.Fatalf("expected non-zero role ID")
+	}
+
+	role2, err := svc.CreateRole(FlowRole{
+		TaskID:       task.ID,
+		Name:         "编码专家",
+		Description:  "负责代码编写与实现",
+		Backend:      agents.BackendOpenCodeV2,
+		Model:        "gpt-4o",
+		SystemPrompt: "你是一名资深开发工程师...",
+	})
+	if err != nil {
+		t.Fatalf("create role 2: %v", err)
+	}
+
+	// 3. List Roles
+	roles, err := svc.ListRoles(task.ID)
+	if err != nil {
+		t.Fatalf("list roles: %v", err)
+	}
+	if len(roles) != 2 {
+		t.Fatalf("expected 2 roles, got %d", len(roles))
+	}
+
+	// 4. Update Role
+	role1.Description = "负责全局架构与接口规约"
+	updatedRole, err := svc.UpdateRole(role1.ID, role1)
+	if err != nil {
+		t.Fatalf("update role: %v", err)
+	}
+	if updatedRole.Description != "负责全局架构与接口规约" {
+		t.Fatalf("expected updated description, got %s", updatedRole.Description)
+	}
+
+	// 5. Delete Role
+	if err := svc.DeleteRole(role2.ID); err != nil {
+		t.Fatalf("delete role: %v", err)
+	}
+	rolesAfterDel, err := svc.ListRoles(task.ID)
+	if err != nil || len(rolesAfterDel) != 1 {
+		t.Fatalf("expected 1 role after deletion, got %d", len(rolesAfterDel))
 	}
 }
 

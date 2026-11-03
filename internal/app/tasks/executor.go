@@ -93,31 +93,93 @@ func (e *StandardTaskExecutor) Execute(ctx context.Context, task Task, triggerTy
 	return createdRun, nil
 }
 
-// FlowTaskExecutor represents the extension point for workflow / DAG tasks.
-type FlowTaskExecutor struct{}
-
-// NewFlowTaskExecutor creates a FlowTaskExecutor stub.
-func NewFlowTaskExecutor() *FlowTaskExecutor {
-	return &FlowTaskExecutor{}
+// FlowStarter defines the capability to initiate a collaborative flow run.
+type FlowStarter interface {
+	StartRun(ctx context.Context, task Task, triggerType string, initialPrompt string) (FlowRun, error)
 }
 
-// Validate checks whether the flow task is valid (placeholder).
+// FlowTaskExecutor represents the executor for collaborative multi-agent flow tasks.
+type FlowTaskExecutor struct {
+	flowStarter FlowStarter
+	repo        *Repository
+}
+
+// NewFlowTaskExecutor creates a FlowTaskExecutor.
+func NewFlowTaskExecutor(flowStarter FlowStarter, repo *Repository) *FlowTaskExecutor {
+	return &FlowTaskExecutor{
+		flowStarter: flowStarter,
+		repo:        repo,
+	}
+}
+
+// Validate checks whether the flow task fields are valid.
 func (e *FlowTaskExecutor) Validate(t Task) error {
-	return ErrFlowTasksNotImplementedYet
+	if strings.TrimSpace(t.Title) == "" {
+		return errors.New("tasks: title is required")
+	}
+	if t.ProjectID == 0 {
+		return errors.New("tasks: project is required")
+	}
+	if strings.TrimSpace(t.OrchestratorModel) == "" && strings.TrimSpace(t.Model) == "" {
+		return ErrOrchestratorModelRequired
+	}
+	if e.repo != nil && t.ID > 0 {
+		roles, err := e.repo.ListRoles(t.ID)
+		if err == nil && len(roles) == 0 {
+			return ErrNoRolesConfigured
+		}
+	}
+	return nil
 }
 
-// Execute fails with not implemented yet.
+// Execute triggers execution of a collaborative flow task.
 func (e *FlowTaskExecutor) Execute(ctx context.Context, task Task, triggerType string) (TaskRun, error) {
-	return TaskRun{}, ErrFlowTasksNotImplementedYet
+	if e.flowStarter == nil {
+		return TaskRun{}, errors.New("tasks: flow engine not configured")
+	}
+
+	if triggerType == "" {
+		triggerType = "manual"
+	}
+
+	now := time.Now().UTC()
+	task.LastRunAt = &now
+	task.LastRunStatus = RunExecuting
+
+	run, err := e.flowStarter.StartRun(ctx, task, triggerType, task.PromptTemplate)
+	if err != nil {
+		task.LastRunStatus = RunFailed
+		_ = e.repo.Update(task)
+		return TaskRun{}, fmt.Errorf("tasks: execute start flow run: %w", err)
+	}
+
+	taskRun := TaskRun{
+		TaskID:      task.ID,
+		SessionID:   fmt.Sprintf("flow_%d", run.ID),
+		TriggerType: triggerType,
+		Status:      "running",
+		Prompt:      run.Prompt,
+		TriggeredAt: now,
+	}
+	createdRun, err := e.repo.CreateRun(taskRun)
+	if err != nil {
+		return TaskRun{}, fmt.Errorf("tasks: create task run for flow: %w", err)
+	}
+
+	return createdRun, nil
 }
 
 // ResolveExecutor returns the appropriate TaskExecutor based on TaskType.
-func ResolveExecutor(taskType TaskType, launcher SessionLauncher, repo *Repository) (TaskExecutor, error) {
+func ResolveExecutor(taskType TaskType, launcher SessionLauncher, repo *Repository, flowStarter ...FlowStarter) (TaskExecutor, error) {
 	switch taskType {
 	case TaskTypeStandard, "":
 		return NewStandardTaskExecutor(launcher, repo), nil
 	case TaskTypeFlow:
-		return NewFlowTaskExecutor(), nil
+		var starter FlowStarter
+		if len(flowStarter) > 0 {
+			starter = flowStarter[0]
+		}
+		return NewFlowTaskExecutor(starter, repo), nil
 	default:
 		return nil, ErrInvalidTaskType
 	}

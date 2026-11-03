@@ -30,24 +30,25 @@ type ListFilter struct {
 
 func toDB(t Task) database.Task {
 	return database.Task{
-		ID:              t.ID,
-		Title:           t.Title,
-		Description:     t.Description,
-		TaskType:        string(t.TaskType),
-		ProjectID:       t.ProjectID,
-		Backend:         string(t.Backend),
-		Model:           t.Model,
-		PromptTemplate:  t.PromptTemplate,
-		ScheduleType:    string(t.ScheduleType),
-		ScheduledAt:     t.ScheduledAt,
-		CronExpr:        t.CronExpr,
-		ScheduleEnabled: t.ScheduleEnabled,
-		LastRunAt:       t.LastRunAt,
-		NextRunAt:       t.NextRunAt,
-		LastRunStatus:   string(t.LastRunStatus),
-		Status:          string(t.Status),
-		CreatedAt:       t.CreatedAt,
-		UpdatedAt:       t.UpdatedAt,
+		ID:                t.ID,
+		Title:             t.Title,
+		Description:       t.Description,
+		TaskType:          string(t.TaskType),
+		ProjectID:         t.ProjectID,
+		Backend:           string(t.Backend),
+		Model:             t.Model,
+		PromptTemplate:    t.PromptTemplate,
+		OrchestratorModel: t.OrchestratorModel,
+		ScheduleType:      string(t.ScheduleType),
+		ScheduledAt:       t.ScheduledAt,
+		CronExpr:          t.CronExpr,
+		ScheduleEnabled:   t.ScheduleEnabled,
+		LastRunAt:         t.LastRunAt,
+		NextRunAt:         t.NextRunAt,
+		LastRunStatus:     string(t.LastRunStatus),
+		Status:            string(t.Status),
+		CreatedAt:         t.CreatedAt,
+		UpdatedAt:         t.UpdatedAt,
 	}
 }
 
@@ -66,24 +67,25 @@ func fromDB(row database.Task) Task {
 	}
 
 	return Task{
-		ID:              row.ID,
-		Title:           row.Title,
-		Description:     row.Description,
-		TaskType:        tt,
-		ProjectID:       row.ProjectID,
-		Backend:         agents.BackendID(row.Backend),
-		Model:           row.Model,
-		PromptTemplate:  row.PromptTemplate,
-		ScheduleType:    st,
-		ScheduledAt:     row.ScheduledAt,
-		CronExpr:        row.CronExpr,
-		ScheduleEnabled: row.ScheduleEnabled,
-		LastRunAt:       row.LastRunAt,
-		NextRunAt:       row.NextRunAt,
-		LastRunStatus:   RunStatus(row.LastRunStatus),
-		Status:          status,
-		CreatedAt:       row.CreatedAt,
-		UpdatedAt:       row.UpdatedAt,
+		ID:                row.ID,
+		Title:             row.Title,
+		Description:       row.Description,
+		TaskType:          tt,
+		ProjectID:         row.ProjectID,
+		Backend:           agents.BackendID(row.Backend),
+		Model:             row.Model,
+		PromptTemplate:    row.PromptTemplate,
+		OrchestratorModel: row.OrchestratorModel,
+		ScheduleType:      st,
+		ScheduledAt:       row.ScheduledAt,
+		CronExpr:          row.CronExpr,
+		ScheduleEnabled:   row.ScheduleEnabled,
+		LastRunAt:         row.LastRunAt,
+		NextRunAt:         row.NextRunAt,
+		LastRunStatus:     RunStatus(row.LastRunStatus),
+		Status:            status,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
 	}
 }
 
@@ -118,8 +120,9 @@ func (r *Repository) Update(t Task) error {
 		"project_id":       row.ProjectID,
 		"backend":          row.Backend,
 		"model":            row.Model,
-		"prompt_template":  row.PromptTemplate,
-		"schedule_type":    row.ScheduleType,
+		"prompt_template":    row.PromptTemplate,
+		"orchestrator_model": row.OrchestratorModel,
+		"schedule_type":      row.ScheduleType,
 		"scheduled_at":     row.ScheduledAt,
 		"cron_expr":        row.CronExpr,
 		"schedule_enabled": row.ScheduleEnabled,
@@ -279,5 +282,284 @@ func (r *Repository) ReconcileOrphaned(now time.Time) (int64, error) {
 			"error":       "interrupted by platform restart",
 			"finished_at": &now,
 		})
-	return res.RowsAffected, res.Error
+	if res.Error != nil {
+		return res.RowsAffected, res.Error
+	}
+
+	// Also reconcile any orphaned flow runs
+	flowRes := r.db.Model(&database.FlowRun{}).
+		Where("status = ?", "running").
+		Updates(map[string]any{
+			"status":      string(FlowRunFailed),
+			"error":       "interrupted by platform restart",
+			"finished_at": &now,
+		})
+
+	return res.RowsAffected + flowRes.RowsAffected, flowRes.Error
 }
+
+func roleToDB(r FlowRole) database.FlowRole {
+	return database.FlowRole{
+		ID:           r.ID,
+		TaskID:       r.TaskID,
+		Name:         r.Name,
+		Description:  r.Description,
+		Backend:      string(r.Backend),
+		Model:        r.Model,
+		SystemPrompt: r.SystemPrompt,
+		Icon:         r.Icon,
+		Color:        r.Color,
+		CreatedAt:    r.CreatedAt,
+		UpdatedAt:    r.UpdatedAt,
+	}
+}
+
+func roleFromDB(row database.FlowRole) FlowRole {
+	return FlowRole{
+		ID:           row.ID,
+		TaskID:       row.TaskID,
+		Name:         row.Name,
+		Description:  row.Description,
+		Backend:      agents.BackendID(row.Backend),
+		Model:        row.Model,
+		SystemPrompt: row.SystemPrompt,
+		Icon:         row.Icon,
+		Color:        row.Color,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}
+}
+
+// ListRoles queries roles configured for a task (or global roles if taskID == 0).
+// If taskID > 0, it returns roles specific to the task as well as global templates (task_id = 0).
+func (r *Repository) ListRoles(taskID uint) ([]FlowRole, error) {
+	var rows []database.FlowRole
+	query := r.db.Model(&database.FlowRole{})
+	if taskID > 0 {
+		query = query.Where("task_id = ? OR task_id = 0", taskID)
+	} else {
+		query = query.Where("task_id = 0")
+	}
+	if err := query.Order("id asc").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]FlowRole, len(rows))
+	for i, row := range rows {
+		out[i] = roleFromDB(row)
+	}
+	return out, nil
+}
+
+// GetRole finds a flow role by ID.
+func (r *Repository) GetRole(id uint) (FlowRole, error) {
+	var row database.FlowRole
+	if err := r.db.First(&row, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return FlowRole{}, ErrRoleNotFound
+		}
+		return FlowRole{}, err
+	}
+	return roleFromDB(row), nil
+}
+
+// CreateRole inserts a new flow role.
+func (r *Repository) CreateRole(role FlowRole) (FlowRole, error) {
+	row := roleToDB(role)
+	if err := r.db.Create(&row).Error; err != nil {
+		return FlowRole{}, err
+	}
+	return roleFromDB(row), nil
+}
+
+// UpdateRole updates an existing flow role.
+func (r *Repository) UpdateRole(role FlowRole) error {
+	row := roleToDB(role)
+	res := r.db.Model(&database.FlowRole{}).Where("id = ?", role.ID).Updates(map[string]any{
+		"name":          row.Name,
+		"description":   row.Description,
+		"backend":       row.Backend,
+		"model":         row.Model,
+		"system_prompt": row.SystemPrompt,
+		"icon":          row.Icon,
+		"color":         row.Color,
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrRoleNotFound
+	}
+	return nil
+}
+
+// DeleteRole removes a flow role by ID.
+func (r *Repository) DeleteRole(id uint) error {
+	res := r.db.Delete(&database.FlowRole{}, "id = ?", id)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrRoleNotFound
+	}
+	return nil
+}
+
+func flowRunToDB(r FlowRun) database.FlowRun {
+	return database.FlowRun{
+		ID:                r.ID,
+		TaskID:            r.TaskID,
+		ProjectID:         r.ProjectID,
+		Status:            string(r.Status),
+		CurrentStep:       r.CurrentStep,
+		MaxSteps:          r.MaxSteps,
+		OrchestratorModel: r.OrchestratorModel,
+		TriggerType:       r.TriggerType,
+		Prompt:            r.Prompt,
+		Error:             r.Error,
+		CreatedAt:         r.CreatedAt,
+		UpdatedAt:         r.UpdatedAt,
+		FinishedAt:        r.FinishedAt,
+	}
+}
+
+func flowRunFromDB(row database.FlowRun) FlowRun {
+	return FlowRun{
+		ID:                row.ID,
+		TaskID:            row.TaskID,
+		ProjectID:         row.ProjectID,
+		Status:            FlowRunStatus(row.Status),
+		CurrentStep:       row.CurrentStep,
+		MaxSteps:          row.MaxSteps,
+		OrchestratorModel: row.OrchestratorModel,
+		TriggerType:       row.TriggerType,
+		Prompt:            row.Prompt,
+		Error:             row.Error,
+		CreatedAt:         row.CreatedAt,
+		UpdatedAt:         row.UpdatedAt,
+		FinishedAt:        row.FinishedAt,
+	}
+}
+
+// CreateFlowRun inserts a new FlowRun.
+func (r *Repository) CreateFlowRun(run FlowRun) (FlowRun, error) {
+	row := flowRunToDB(run)
+	if err := r.db.Create(&row).Error; err != nil {
+		return FlowRun{}, err
+	}
+	return flowRunFromDB(row), nil
+}
+
+// GetFlowRun retrieves a FlowRun by ID.
+func (r *Repository) GetFlowRun(id uint) (FlowRun, error) {
+	var row database.FlowRun
+	if err := r.db.First(&row, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return FlowRun{}, ErrFlowRunNotFound
+		}
+		return FlowRun{}, err
+	}
+	return flowRunFromDB(row), nil
+}
+
+// UpdateFlowRun updates fields of an existing FlowRun.
+func (r *Repository) UpdateFlowRun(run FlowRun) error {
+	row := flowRunToDB(run)
+	return r.db.Model(&database.FlowRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+		"status":       row.Status,
+		"current_step": row.CurrentStep,
+		"error":        row.Error,
+		"finished_at":  row.FinishedAt,
+	}).Error
+}
+
+// ListFlowRuns returns all flow runs for a task.
+func (r *Repository) ListFlowRuns(taskID uint) ([]FlowRun, error) {
+	var rows []database.FlowRun
+	err := r.db.Where("task_id = ?", taskID).Order("id desc").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FlowRun, len(rows))
+	for i, row := range rows {
+		out[i] = flowRunFromDB(row)
+	}
+	return out, nil
+}
+
+func flowMsgToDB(m FlowMessage) database.FlowMessage {
+	return database.FlowMessage{
+		ID:           m.ID,
+		RunID:        m.RunID,
+		SenderType:   string(m.SenderType),
+		SenderName:   m.SenderName,
+		RoleID:       m.RoleID,
+		TargetRoleID: m.TargetRoleID,
+		Content:      m.Content,
+		Reasoning:    m.Reasoning,
+		SessionID:    m.SessionID,
+		Status:       string(m.Status),
+		CreatedAt:    m.CreatedAt,
+		UpdatedAt:    m.UpdatedAt,
+	}
+}
+
+func flowMsgFromDB(row database.FlowMessage) FlowMessage {
+	return FlowMessage{
+		ID:           row.ID,
+		RunID:        row.RunID,
+		SenderType:   FlowSenderType(row.SenderType),
+		SenderName:   row.SenderName,
+		RoleID:       row.RoleID,
+		TargetRoleID: row.TargetRoleID,
+		Content:      row.Content,
+		Reasoning:    row.Reasoning,
+		SessionID:    row.SessionID,
+		Status:       FlowMessageStatus(row.Status),
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+	}
+}
+
+// CreateFlowMessage inserts a new FlowMessage.
+func (r *Repository) CreateFlowMessage(msg FlowMessage) (FlowMessage, error) {
+	row := flowMsgToDB(msg)
+	if err := r.db.Create(&row).Error; err != nil {
+		return FlowMessage{}, err
+	}
+	return flowMsgFromDB(row), nil
+}
+
+// UpdateFlowMessage updates a FlowMessage.
+func (r *Repository) UpdateFlowMessage(msg FlowMessage) error {
+	row := flowMsgToDB(msg)
+	return r.db.Model(&database.FlowMessage{}).Where("id = ?", msg.ID).Updates(map[string]any{
+		"content":    row.Content,
+		"reasoning":  row.Reasoning,
+		"session_id": row.SessionID,
+		"status":     row.Status,
+	}).Error
+}
+
+// ListFlowMessages returns all messages for a given run in chronological order.
+func (r *Repository) ListFlowMessages(runID uint) ([]FlowMessage, error) {
+	var rows []database.FlowMessage
+	err := r.db.Where("run_id = ?", runID).Order("id asc").Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FlowMessage, len(rows))
+	for i, row := range rows {
+		out[i] = flowMsgFromDB(row)
+	}
+	return out, nil
+}
+
+// GetFlowMessage retrieves a FlowMessage by ID.
+func (r *Repository) GetFlowMessage(id uint) (FlowMessage, error) {
+	var row database.FlowMessage
+	if err := r.db.First(&row, "id = ?", id).Error; err != nil {
+		return FlowMessage{}, err
+	}
+	return flowMsgFromDB(row), nil
+}
+

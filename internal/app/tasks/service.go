@@ -18,10 +18,19 @@ type SessionLauncher interface {
 	Delete(projectID uint, sessionID string) error
 }
 
+// FlowController defines operations to interact with active collaborative flows.
+type FlowController interface {
+	StartRun(ctx context.Context, task Task, triggerType string, initialPrompt string) (FlowRun, error)
+	PostUserMessage(ctx context.Context, runID uint, content string) (FlowMessage, error)
+	CancelRun(runID uint) error
+	SubscribeEvents(runID uint) (<-chan FlowEvent, func())
+}
+
 // Service manages task lifecycles, execution dispatch, and scheduling.
 type Service struct {
-	repo     *Repository
-	sessions SessionLauncher
+	repo           *Repository
+	sessions       SessionLauncher
+	flowController FlowController
 }
 
 // NewService creates a new tasks service.
@@ -32,34 +41,46 @@ func NewService(repo *Repository, sessionLauncher SessionLauncher) *Service {
 	}
 }
 
+// SetFlowController injects the collaborative flow controller.
+func (s *Service) SetFlowController(controller FlowController) {
+	s.flowController = controller
+}
+
+// FlowController returns the active flow controller.
+func (s *Service) FlowController() FlowController {
+	return s.flowController
+}
+
 // CreateTaskRequest carries arguments to create a task.
 type CreateTaskRequest struct {
-	Title           string           `json:"title"`
-	Description     string           `json:"description"`
-	TaskType        TaskType         `json:"taskType"`
-	ProjectID       uint             `json:"projectId"`
-	Backend         agents.BackendID `json:"backend"`
-	Model           string           `json:"model"`
-	PromptTemplate  string           `json:"promptTemplate"`
-	ScheduleType    ScheduleType     `json:"scheduleType"`
-	ScheduledAt     *time.Time       `json:"scheduledAt"`
-	CronExpr        string           `json:"cronExpr"`
-	ScheduleEnabled bool             `json:"scheduleEnabled"`
+	Title             string           `json:"title"`
+	Description       string           `json:"description"`
+	TaskType          TaskType         `json:"taskType"`
+	ProjectID         uint             `json:"projectId"`
+	Backend           agents.BackendID `json:"backend"`
+	Model             string           `json:"model"`
+	PromptTemplate    string           `json:"promptTemplate"`
+	OrchestratorModel string           `json:"orchestratorModel"`
+	ScheduleType      ScheduleType     `json:"scheduleType"`
+	ScheduledAt       *time.Time       `json:"scheduledAt"`
+	CronExpr          string           `json:"cronExpr"`
+	ScheduleEnabled   bool             `json:"scheduleEnabled"`
 }
 
 // UpdateTaskRequest carries arguments to update task properties.
 type UpdateTaskRequest struct {
-	Title           *string           `json:"title"`
-	Description     *string           `json:"description"`
-	ProjectID       *uint             `json:"projectId"`
-	Backend         *agents.BackendID `json:"backend"`
-	Model           *string           `json:"model"`
-	PromptTemplate  *string           `json:"promptTemplate"`
-	ScheduleType    *ScheduleType     `json:"scheduleType"`
-	ScheduledAt     *time.Time        `json:"scheduledAt"`
-	CronExpr        *string           `json:"cronExpr"`
-	ScheduleEnabled *bool             `json:"scheduleEnabled"`
-	Status          *TaskStatus       `json:"status"`
+	Title             *string           `json:"title"`
+	Description       *string           `json:"description"`
+	ProjectID         *uint             `json:"projectId"`
+	Backend           *agents.BackendID `json:"backend"`
+	Model             *string           `json:"model"`
+	PromptTemplate    *string           `json:"promptTemplate"`
+	OrchestratorModel *string           `json:"orchestratorModel"`
+	ScheduleType      *ScheduleType     `json:"scheduleType"`
+	ScheduledAt       *time.Time        `json:"scheduledAt"`
+	CronExpr          *string           `json:"cronExpr"`
+	ScheduleEnabled   *bool             `json:"scheduleEnabled"`
+	Status            *TaskStatus       `json:"status"`
 }
 
 // Create creates a new task (session template).
@@ -73,24 +94,30 @@ func (s *Service) Create(ctx context.Context, req CreateTaskRequest) (Task, erro
 		st = ScheduleManual
 	}
 
+	orchestratorModel := strings.TrimSpace(req.OrchestratorModel)
+	if orchestratorModel == "" && tt == TaskTypeFlow {
+		orchestratorModel = strings.TrimSpace(req.Model)
+	}
+
 	t := Task{
-		Title:           strings.TrimSpace(req.Title),
-		Description:     strings.TrimSpace(req.Description),
-		TaskType:        tt,
-		ProjectID:       req.ProjectID,
-		Backend:         req.Backend,
-		Model:           strings.TrimSpace(req.Model),
-		PromptTemplate:  strings.TrimSpace(req.PromptTemplate),
-		ScheduleType:    st,
-		ScheduledAt:     req.ScheduledAt,
-		CronExpr:        strings.TrimSpace(req.CronExpr),
-		ScheduleEnabled: req.ScheduleEnabled,
-		LastRunStatus:   RunIdle,
-		Status:          StatusActive,
+		Title:             strings.TrimSpace(req.Title),
+		Description:       strings.TrimSpace(req.Description),
+		TaskType:          tt,
+		ProjectID:         req.ProjectID,
+		Backend:           req.Backend,
+		Model:             strings.TrimSpace(req.Model),
+		PromptTemplate:    strings.TrimSpace(req.PromptTemplate),
+		OrchestratorModel: orchestratorModel,
+		ScheduleType:      st,
+		ScheduledAt:       req.ScheduledAt,
+		CronExpr:          strings.TrimSpace(req.CronExpr),
+		ScheduleEnabled:   req.ScheduleEnabled,
+		LastRunStatus:     RunIdle,
+		Status:            StatusActive,
 	}
 
 	// Validate task with its executor
-	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo)
+	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo, s.flowController)
 	if err != nil {
 		return Task{}, err
 	}
@@ -189,6 +216,9 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateTaskRequest) (T
 	if req.PromptTemplate != nil {
 		t.PromptTemplate = strings.TrimSpace(*req.PromptTemplate)
 	}
+	if req.OrchestratorModel != nil {
+		t.OrchestratorModel = strings.TrimSpace(*req.OrchestratorModel)
+	}
 	if req.ScheduleType != nil {
 		t.ScheduleType = *req.ScheduleType
 	}
@@ -263,7 +293,7 @@ func (s *Service) TriggerExecution(ctx context.Context, id uint, triggerType ...
 		trig = triggerType[0]
 	}
 
-	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo)
+	executor, err := ResolveExecutor(t.TaskType, s.sessions, s.repo, s.flowController)
 	if err != nil {
 		return TaskRun{}, err
 	}
@@ -372,3 +402,111 @@ func (s *Service) GetTaskSessionIDs(projectID uint) ([]string, error) {
 func (s *Service) ReconcileOrphans(ctx context.Context) (int64, error) {
 	return s.repo.ReconcileOrphaned(time.Now().UTC())
 }
+
+// ListRoles queries roles for a task.
+func (s *Service) ListRoles(taskID uint) ([]FlowRole, error) {
+	return s.repo.ListRoles(taskID)
+}
+
+// GetRole finds a role by ID.
+func (s *Service) GetRole(id uint) (FlowRole, error) {
+	return s.repo.GetRole(id)
+}
+
+// CreateRole adds a new role.
+func (s *Service) CreateRole(role FlowRole) (FlowRole, error) {
+	if strings.TrimSpace(role.Name) == "" {
+		return FlowRole{}, errors.New("tasks: role name cannot be empty")
+	}
+	if strings.TrimSpace(role.Model) == "" {
+		return FlowRole{}, errors.New("tasks: role model cannot be empty")
+	}
+	now := time.Now().UTC()
+	role.CreatedAt = now
+	role.UpdatedAt = now
+	return s.repo.CreateRole(role)
+}
+
+// UpdateRole updates an existing role.
+func (s *Service) UpdateRole(id uint, role FlowRole) (FlowRole, error) {
+	if strings.TrimSpace(role.Name) == "" {
+		return FlowRole{}, errors.New("tasks: role name cannot be empty")
+	}
+	if strings.TrimSpace(role.Model) == "" {
+		return FlowRole{}, errors.New("tasks: role model cannot be empty")
+	}
+	role.ID = id
+	role.UpdatedAt = time.Now().UTC()
+	if err := s.repo.UpdateRole(role); err != nil {
+		return FlowRole{}, err
+	}
+	return s.repo.GetRole(id)
+}
+
+// DeleteRole removes a role.
+func (s *Service) DeleteRole(id uint) error {
+	return s.repo.DeleteRole(id)
+}
+
+// GetFlowRun retrieves a collaborative flow run by ID.
+func (s *Service) GetFlowRun(id uint) (FlowRun, error) {
+	return s.repo.GetFlowRun(id)
+}
+
+// ListFlowRuns retrieves all flow runs for a task.
+func (s *Service) ListFlowRuns(taskID uint) ([]FlowRun, error) {
+	return s.repo.ListFlowRuns(taskID)
+}
+
+// ListFlowMessages retrieves all chat messages for a flow run.
+func (s *Service) ListFlowMessages(runID uint) ([]FlowMessage, error) {
+	return s.repo.ListFlowMessages(runID)
+}
+
+// PostUserFlowMessage records user input and nudges the orchestrator.
+func (s *Service) PostUserFlowMessage(ctx context.Context, runID uint, content string) (FlowMessage, error) {
+	if strings.TrimSpace(content) == "" {
+		return FlowMessage{}, errors.New("tasks: message content cannot be empty")
+	}
+	if s.flowController != nil {
+		return s.flowController.PostUserMessage(ctx, runID, content)
+	}
+
+	now := time.Now().UTC()
+	msg := FlowMessage{
+		RunID:      runID,
+		SenderType: SenderUser,
+		SenderName: "用户",
+		Content:    content,
+		Status:     FlowMsgComplete,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	return s.repo.CreateFlowMessage(msg)
+}
+
+// CancelFlowRun aborts an active flow run.
+func (s *Service) CancelFlowRun(runID uint) error {
+	if s.flowController != nil {
+		return s.flowController.CancelRun(runID)
+	}
+	run, err := s.repo.GetFlowRun(runID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	run.Status = FlowRunCancelled
+	run.FinishedAt = &now
+	return s.repo.UpdateFlowRun(run)
+}
+
+// SubscribeFlowEvents opens an event stream for a flow run.
+func (s *Service) SubscribeFlowEvents(runID uint) (<-chan FlowEvent, func(), error) {
+	if s.flowController == nil {
+		return nil, nil, errors.New("tasks: flow engine not configured")
+	}
+	ch, unsub := s.flowController.SubscribeEvents(runID)
+	return ch, unsub, nil
+}
+
+
