@@ -8,6 +8,7 @@ import { USER_PROMPT_PLACEHOLDER } from './promptTemplate'
 
 const props = defineProps<{
   prompt?: Prompt | null
+  defaultType?: 'role' | 'flow'
 }>()
 
 const emit = defineEmits<{
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 const promptsStore = usePromptsStore()
 
 const name = ref(props.prompt?.name ?? '')
+const type = ref<'role' | 'flow'>(props.prompt?.type ?? props.defaultType ?? 'role')
 const description = ref(props.prompt?.description ?? '')
 const content = ref(props.prompt?.content ?? '')
 const contentTextareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -65,12 +67,14 @@ async function submit() {
     if (isEditing.value && props.prompt) {
       saved = await promptsStore.updatePrompt(props.prompt.id, {
         name: name.value.trim(),
+        type: type.value,
         description: description.value.trim(),
         content: content.value,
       })
     } else {
       saved = await promptsStore.createPrompt({
         name: name.value.trim(),
+        type: type.value,
         description: description.value.trim(),
         content: content.value,
       })
@@ -112,7 +116,61 @@ async function submit() {
         />
       </div>
 
-      <!-- 2. Description -->
+      <!-- 2. Type -->
+      <div class="space-y-1.5">
+        <label class="text-xs font-medium text-[var(--color-text)]">
+          提示词类型 <span class="text-red-500">*</span>
+        </label>
+        <div class="grid grid-cols-2 gap-2">
+          <label
+            class="flex flex-col p-2.5 rounded-[var(--radius,6px)] border cursor-pointer transition-colors"
+            :class="[
+              type === 'role'
+                ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                : 'border-[var(--color-border)] hover:border-[var(--color-primary)] bg-[var(--color-surface)]',
+            ]"
+          >
+            <div class="flex items-center gap-2">
+              <input
+                v-model="type"
+                type="radio"
+                value="role"
+                name="prompt-type"
+                class="text-[var(--color-primary)]"
+              />
+              <span class="text-xs font-medium text-[var(--color-text)]">角色类 (Role)</span>
+            </div>
+            <span class="text-[11px] text-[var(--color-text-muted)] mt-1 leading-normal">
+              定义智能体人设、思考范式与专业准则
+            </span>
+          </label>
+
+          <label
+            class="flex flex-col p-2.5 rounded-[var(--radius,6px)] border cursor-pointer transition-colors"
+            :class="[
+              type === 'flow'
+                ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
+                : 'border-[var(--color-border)] hover:border-[var(--color-primary)] bg-[var(--color-surface)]',
+            ]"
+          >
+            <div class="flex items-center gap-2">
+              <input
+                v-model="type"
+                type="radio"
+                value="flow"
+                name="prompt-type"
+                class="text-[var(--color-primary)]"
+              />
+              <span class="text-xs font-medium text-[var(--color-text)]">流程类 (Flow)</span>
+            </div>
+            <span class="text-[11px] text-[var(--color-text-muted)] mt-1 leading-normal">
+              定义多步骤协同规范、任务拆解与工作流程
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 3. Description -->
       <div class="space-y-1.5">
         <label for="prompt-desc" class="text-xs font-medium text-[var(--color-text)]">
           描述 / 用途说明

@@ -406,6 +406,7 @@ describe('NewSessionPanel', () => {
       {
         id: 10,
         name: '代码审查',
+        type: 'role',
         description: '审查代码',
         content: '请对以下代码进行审查：\n\n{user_prompt}\n\n给出优化建议。',
         createdAt: '',
@@ -437,6 +438,7 @@ describe('NewSessionPanel', () => {
       {
         id: 20,
         name: '系统自检',
+        type: 'role',
         description: '系统体检',
         content: '执行完整自检：{user_prompt}',
         createdAt: '',
@@ -467,6 +469,7 @@ describe('NewSessionPanel', () => {
       {
         id: 10,
         name: '代码审查',
+        type: 'role',
         description: '审查代码',
         content: '审查：{user_prompt}',
         createdAt: '',

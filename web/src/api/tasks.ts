@@ -133,6 +133,7 @@ export interface FlowRole {
   description?: string
   backend: string
   model: string
+  promptId?: number
   systemPrompt?: string
   icon?: string
   color?: string
@@ -145,6 +146,7 @@ export interface FlowRoleInput {
   description?: string
   backend: string
   model: string
+  promptId?: number
   systemPrompt?: string
   icon?: string
   color?: string

@@ -115,7 +115,7 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     // Zone C: Navigation list with standard cards
     expect(wrapper.find('.settings-links').exists()).toBe(true)
     const links = wrapper.findAll('.settings-link')
-    expect(links.length).toBe(5)
+    expect(links.length).toBe(7)
     expect(links[0].classes()).toContain('sidebar-card')
   })
 })

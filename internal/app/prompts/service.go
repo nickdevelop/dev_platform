@@ -25,6 +25,7 @@ func (s *Service) Create(req CreatePromptRequest) (Prompt, error) {
 	now := time.Now().UTC()
 	return s.repo.Create(Prompt{
 		Name:        name,
+		Type:        NormalizePromptType(req.Type),
 		Description: strings.TrimSpace(req.Description),
 		Content:     req.Content,
 		CreatedAt:   now,
@@ -36,8 +37,8 @@ func (s *Service) Get(id uint) (Prompt, error) {
 	return s.repo.Get(id)
 }
 
-func (s *Service) List(keyword string) ([]Prompt, error) {
-	return s.repo.List(keyword)
+func (s *Service) List(keyword string, promptType string) ([]Prompt, error) {
+	return s.repo.List(keyword, promptType)
 }
 
 func (s *Service) Update(id uint, req UpdatePromptRequest) (Prompt, error) {
@@ -52,6 +53,9 @@ func (s *Service) Update(id uint, req UpdatePromptRequest) (Prompt, error) {
 			return Prompt{}, ErrInvalidPromptName
 		}
 		existing.Name = name
+	}
+	if req.Type != nil {
+		existing.Type = NormalizePromptType(*req.Type)
 	}
 	if req.Description != nil {
 		existing.Description = strings.TrimSpace(*req.Description)

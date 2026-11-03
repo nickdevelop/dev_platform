@@ -8,6 +8,7 @@ import {
   updatePrompt,
   deletePrompt,
   type Prompt,
+  type PromptType,
   type CreatePromptPayload,
   type UpdatePromptPayload,
 } from '../api/prompts'
@@ -18,18 +19,21 @@ export const usePromptsStore = defineStore('prompts', {
     currentPrompt: null as Prompt | null,
     loading: false,
     error: '',
+    selectedType: '' as PromptType | '',
   }),
 
   getters: {
     byId: (state) => (id: number): Prompt | undefined =>
       state.prompts.find((p) => p.id === id),
+    rolePrompts: (state) => state.prompts.filter((p) => p.type === 'role'),
+    flowPrompts: (state) => state.prompts.filter((p) => p.type === 'flow'),
   },
 
   actions: {
-    async loadPrompts(keyword?: string) {
+    async loadPrompts(keyword?: string, type?: PromptType) {
       this.loading = true
       try {
-        this.prompts = await listPrompts(keyword)
+        this.prompts = await listPrompts(keyword, type)
         this.error = ''
       } catch (error) {
         if (error instanceof UnauthorizedError) return

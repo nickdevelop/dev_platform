@@ -180,6 +180,7 @@ func (r *gormRepository) UpdateGroup(group *ChatGroup) error {
 	res := r.db.Model(&database.ChatGroup{}).Where("id = ?", group.ID).Updates(map[string]any{
 		"name":                  group.Name,
 		"default_model_id":      group.DefaultModelID,
+		"prompt_id":             group.PromptID,
 		"system_prompt":        group.SystemPrompt,
 		"icon":                  group.Icon,
 		"show_in_float":         group.ShowInFloat,
@@ -453,6 +454,7 @@ func chatFromRow(row database.Chat) Chat {
 		Title:        row.Title,
 		ModelID:      row.ModelID,
 		ModelName:    row.ModelName,
+		PromptID:     row.PromptID,
 		SystemPrompt: row.SystemPrompt,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
@@ -466,6 +468,7 @@ func chatToRow(chat Chat) database.Chat {
 		Title:        chat.Title,
 		ModelID:      chat.ModelID,
 		ModelName:    chat.ModelName,
+		PromptID:     chat.PromptID,
 		SystemPrompt: chat.SystemPrompt,
 	}
 }
@@ -522,6 +525,7 @@ func chatGroupFromRow(row database.ChatGroup) ChatGroup {
 		ID:                  row.ID,
 		Name:                row.Name,
 		DefaultModelID:      row.DefaultModelID,
+		PromptID:            row.PromptID,
 		SystemPrompt:        row.SystemPrompt,
 		Icon:                row.Icon,
 		ShowInFloat:         row.ShowInFloat,
@@ -541,6 +545,7 @@ func chatGroupToRow(group ChatGroup) database.ChatGroup {
 		ID:                  group.ID,
 		Name:                group.Name,
 		DefaultModelID:      group.DefaultModelID,
+		PromptID:            group.PromptID,
 		SystemPrompt:        group.SystemPrompt,
 		Icon:                group.Icon,
 		ShowInFloat:         group.ShowInFloat,

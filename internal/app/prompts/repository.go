@@ -21,6 +21,7 @@ func toDB(p Prompt) database.Prompt {
 	return database.Prompt{
 		ID:          p.ID,
 		Name:        p.Name,
+		Type:        string(NormalizePromptType(p.Type)),
 		Description: p.Description,
 		Content:     p.Content,
 		CreatedAt:   p.CreatedAt,
@@ -32,6 +33,7 @@ func fromDB(row database.Prompt) Prompt {
 	return Prompt{
 		ID:          row.ID,
 		Name:        row.Name,
+		Type:        NormalizePromptType(PromptType(row.Type)),
 		Description: row.Description,
 		Content:     row.Content,
 		CreatedAt:   row.CreatedAt,
@@ -61,12 +63,15 @@ func (r *Repository) Get(id uint) (Prompt, error) {
 	return fromDB(row), nil
 }
 
-func (r *Repository) List(keyword string) ([]Prompt, error) {
+func (r *Repository) List(keyword string, promptType string) ([]Prompt, error) {
 	var rows []database.Prompt
 	q := r.db.Model(&database.Prompt{})
 	if strings.TrimSpace(keyword) != "" {
 		pattern := "%" + strings.TrimSpace(keyword) + "%"
 		q = q.Where("name LIKE ? OR description LIKE ?", pattern, pattern)
+	}
+	if strings.TrimSpace(promptType) != "" {
+		q = q.Where("type = ?", strings.TrimSpace(promptType))
 	}
 	if err := q.Order("id DESC").Find(&rows).Error; err != nil {
 		return nil, err

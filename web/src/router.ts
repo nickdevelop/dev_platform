@@ -19,6 +19,8 @@ import SessionChatPanel from './features/chat/SessionChatPanel.vue'
 import ChatPanel from './features/chat/pure/ChatPanel.vue'
 import SettingsView from './features/settings/SettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
+import SettingsRolesView from './features/settings/SettingsRolesView.vue'
+import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
 import TasksView from './features/tasks/TasksView.vue'
@@ -73,6 +75,8 @@ export function createAppRouter() {
             children: [
               { path: '', redirect: { name: 'settings-appearance' } },
               { path: 'appearance', name: 'settings-appearance', component: AppearanceSettings },
+              { path: 'roles', name: 'settings-roles', component: SettingsRolesView },
+              { path: 'prompts', name: 'settings-prompts', component: SettingsPromptsView },
               { path: 'models', name: 'settings-models', component: ModelSettings },
               { path: 'agents', name: 'settings-agents', component: AgentSettings },
               { path: 'proxies', name: 'settings-proxies', component: ProxySettings },
@@ -99,15 +103,11 @@ export function createAppRouter() {
           },
           {
             path: 'prompts',
-            name: 'prompts',
-            component: PromptsView,
-            meta: { prompts: true, fullHeight: true },
+            redirect: { name: 'settings-prompts' },
           },
           {
             path: 'prompts/:promptId',
-            name: 'prompt-detail',
-            component: PromptsView,
-            meta: { prompts: true, fullHeight: true },
+            redirect: { name: 'settings-prompts' },
           },
           {
             path: 'terminal',

@@ -378,6 +378,54 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 35, name: "prompt_types_and_roles_management", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&Prompt{}) {
+			if !tx.Migrator().HasColumn(&Prompt{}, "type") {
+				if err := tx.Migrator().AddColumn(&Prompt{}, "type"); err != nil {
+					return err
+				}
+			}
+			_ = tx.Exec("UPDATE prompts SET type = 'role' WHERE type IS NULL OR type = ''").Error
+		}
+
+		if !tx.Migrator().HasTable(&AgentRole{}) {
+			if err := tx.Migrator().CreateTable(&AgentRole{}); err != nil {
+				return err
+			}
+		}
+
+		if tx.Migrator().HasTable(&FlowRole{}) {
+			_ = tx.Exec(`
+				INSERT INTO agent_roles (id, name, description, backend, model, prompt_id, system_prompt, icon, color, created_at, updated_at)
+				SELECT id, name, description, backend, model, 0, system_prompt, icon, color, created_at, updated_at
+				FROM flow_roles
+				WHERE id NOT IN (SELECT id FROM agent_roles)
+			`).Error
+			if !tx.Migrator().HasColumn(&FlowRole{}, "prompt_id") {
+				_ = tx.Migrator().AddColumn(&FlowRole{}, "prompt_id")
+			}
+		}
+
+		if tx.Migrator().HasTable(&ChatGroup{}) {
+			if !tx.Migrator().HasColumn(&ChatGroup{}, "prompt_id") {
+				if err := tx.Migrator().AddColumn(&ChatGroup{}, "prompt_id"); err != nil {
+					return err
+				}
+			}
+			_ = tx.Exec("UPDATE chat_groups SET prompt_id = 0 WHERE prompt_id IS NULL").Error
+		}
+
+		if tx.Migrator().HasTable(&Chat{}) {
+			if !tx.Migrator().HasColumn(&Chat{}, "prompt_id") {
+				if err := tx.Migrator().AddColumn(&Chat{}, "prompt_id"); err != nil {
+					return err
+				}
+			}
+			_ = tx.Exec("UPDATE chats SET prompt_id = 0 WHERE prompt_id IS NULL").Error
+		}
+
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

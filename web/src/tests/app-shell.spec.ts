@@ -263,9 +263,10 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/')
 
-    // 项目 / 对话 / 任务 / 提示词 / 终端 / 设置 / 退出 each carry one inline SVG icon.
+    // 项目 / 对话 / 任务 / 终端 / 设置 / 退出 each carry one inline SVG icon.
+    // 提示词管理与角色管理收拢在设置中心内。
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(6)
     // The icons are decorative: the labels stay as the entries' readable text.
     // Chat is a first-level peer immediately below projects, not nested in the
     // project tree, because both are primary work areas.
@@ -273,7 +274,6 @@ describe('three-pane app shell', () => {
       '项目',
       '对话',
       '任务',
-      '提示词',
       '终端',
       '设置',
       '退出',
@@ -433,15 +433,15 @@ describe('three-pane app shell', () => {
     await flushPromises()
     expect(title()).toBe('任务')
 
-    await router.push('/prompts')
-    await flushPromises()
-    expect(title()).toBe('提示词')
-
     await router.push('/terminal')
     await flushPromises()
     expect(title()).toBe('服务器')
 
     await router.push('/settings/appearance')
+    await flushPromises()
+    expect(title()).toBe('设置')
+
+    await router.push('/settings/prompts')
     await flushPromises()
     expect(title()).toBe('设置')
 
@@ -551,14 +551,14 @@ describe('three-pane app shell', () => {
   })
 
   it('isolates the prompts center so workspace session tabs do not display over prompts', async () => {
-    const { wrapper } = await setup('/prompts', {
-      PromptsView: true,
-      PromptsSidebar: { template: '<div class="prompts-nav-stub"></div>' },
+    const { wrapper } = await setup('/settings/prompts', {
+      SettingsView: true,
+      SettingsNav: { template: '<div class="settings-nav-stub"></div>' },
     })
 
-    // The middle column carries the prompts list in the prompts center.
-    expect(wrapper.find('.prompts-nav-stub').exists()).toBe(true)
-    // The workspace tab strip is isolated and not rendered in prompts mode.
+    // The middle column carries the settings nav in the settings center.
+    expect(wrapper.find('.settings-nav-stub').exists()).toBe(true)
+    // The workspace tab strip is isolated and not rendered in settings mode.
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 

@@ -89,7 +89,7 @@ describe('prompts store', () => {
     })
     const store = initStore()
     store.prompts = [
-      { id: 1, name: 'Old Name', description: 'Old Desc', content: 'Old Content', createdAt: '', updatedAt: '' },
+      { id: 1, name: 'Old Name', type: 'role', description: 'Old Desc', content: 'Old Content', createdAt: '', updatedAt: '' },
     ]
     store.currentPrompt = store.prompts[0]
 
@@ -106,8 +106,8 @@ describe('prompts store', () => {
     })
     const store = initStore()
     store.prompts = [
-      { id: 1, name: 'P1', description: '', content: '', createdAt: '', updatedAt: '' },
-      { id: 2, name: 'P2', description: '', content: '', createdAt: '', updatedAt: '' },
+      { id: 1, name: 'P1', type: 'role', description: '', content: '', createdAt: '', updatedAt: '' },
+      { id: 2, name: 'P2', type: 'role', description: '', content: '', createdAt: '', updatedAt: '' },
     ]
     store.currentPrompt = store.prompts[0]
 

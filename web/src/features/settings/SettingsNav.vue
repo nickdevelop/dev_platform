@@ -15,6 +15,18 @@ const links = [
     icon: 'palette',
   },
   {
+    name: 'settings-roles',
+    label: '角色管理',
+    desc: '协同专家与智能体分工',
+    icon: 'users',
+  },
+  {
+    name: 'settings-prompts',
+    label: '提示词管理',
+    desc: '角色提示词与流程范式',
+    icon: 'prompt',
+  },
+  {
     name: 'settings-models',
     label: '模型',
     desc: '服务端点与可用模型',
@@ -62,6 +74,18 @@ const links = [
                 <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
                 <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
                 <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C21.437 6.208 17.199 2 12 2z" />
+              </svg>
+              <!-- Users / Roles -->
+              <svg v-else-if="link.icon === 'users'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <!-- Prompt / Prompts -->
+              <svg v-else-if="link.icon === 'prompt'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
               <!-- Cube / Models -->
               <svg v-else-if="link.icon === 'cube'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

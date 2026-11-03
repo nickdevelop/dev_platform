@@ -1,9 +1,12 @@
 // API client for Prompt Management.
 import { get, mutate } from './client'
 
+export type PromptType = 'role' | 'flow'
+
 export interface Prompt {
   id: number
   name: string
+  type: PromptType
   description: string
   content: string
   createdAt: string
@@ -12,12 +15,14 @@ export interface Prompt {
 
 export interface CreatePromptPayload {
   name: string
+  type?: PromptType
   description?: string
   content: string
 }
 
 export interface UpdatePromptPayload {
   name?: string
+  type?: PromptType
   description?: string
   content?: string
 }
@@ -26,9 +31,12 @@ interface PromptListResponse {
   prompts: Prompt[]
 }
 
-export async function listPrompts(keyword?: string): Promise<Prompt[]> {
-  const query = keyword ? `?q=${encodeURIComponent(keyword)}` : ''
-  const res = await get<PromptListResponse>(`/prompts${query}`)
+export async function listPrompts(keyword?: string, type?: PromptType): Promise<Prompt[]> {
+  const params = new URLSearchParams()
+  if (keyword) params.append('q', keyword)
+  if (type) params.append('type', type)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  const res = await get<PromptListResponse>(`/prompts${qs}`)
   return res.prompts
 }
 

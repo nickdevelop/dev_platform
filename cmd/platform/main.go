@@ -29,6 +29,7 @@ import (
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
+	"devplatform/internal/app/roles"
 	platformruntime "devplatform/internal/app/runtime"
 	"devplatform/internal/app/secrets"
 	"devplatform/internal/app/sessions"
@@ -355,8 +356,11 @@ func runServer(args []string) error {
 	promptService := prompts.NewService(promptRepo)
 	platformTools := platformtools.NewExecutor(projectService, promptService)
 
+	rolesRepo := roles.NewRepository(db)
+	rolesService := roles.NewService(rolesRepo, promptService)
+
 	modelConfig := modelconfig.NewService(db, secretStore)
-	chatService := chat.NewService(db, modelConfig, chat.WithToolExecutor(platformTools))
+	chatService := chat.NewService(db, modelConfig, chat.WithToolExecutor(platformTools), chat.WithPromptReader(promptService))
 	// Cancel in-flight generations before the database closes. Defers unwind
 	// LIFO, so this runs before the database close registered earlier.
 	defer func() {
@@ -414,6 +418,7 @@ func runServer(args []string) error {
 		Sessions:      sessionService,
 		Tasks:         taskService,
 		Prompts:       promptService,
+		Roles:         rolesService,
 		Terminal:      terminalService,
 		Chats:         chatService,
 		Proxy:         proxyService,

@@ -224,7 +224,7 @@ func (e *Executor) listPrompts(argsJSON string) (string, error) {
 	if strings.TrimSpace(argsJSON) != "" {
 		_ = json.Unmarshal([]byte(argsJSON), &args)
 	}
-	allPrompts, err := e.prompts.List(strings.TrimSpace(args.Keyword))
+	allPrompts, err := e.prompts.List(strings.TrimSpace(args.Keyword), "")
 	if err != nil {
 		return "", fmt.Errorf("list prompts: %w", err)
 	}

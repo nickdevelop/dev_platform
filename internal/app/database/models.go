@@ -247,6 +247,7 @@ type ChatGroup struct {
 	ID             uint    `gorm:"primaryKey;column:id"`
 	Name           string  `gorm:"column:name;not null"`
 	DefaultModelID uint    `gorm:"column:default_model_id;not null;default:0"`
+	PromptID       uint    `gorm:"column:prompt_id;not null;default:0;index:idx_chat_groups_prompt"`
 	SystemPrompt   string  `gorm:"column:system_prompt;type:text"`
 	Icon           string  `gorm:"column:icon;size:32"`
 	ShowInFloat    bool    `gorm:"column:show_in_float;not null;default:false"`
@@ -273,6 +274,7 @@ type Chat struct {
 	Title        string `gorm:"column:title;not null"`
 	ModelID      uint   `gorm:"column:model_id;not null"`
 	ModelName    string `gorm:"column:model_name;not null"`
+	PromptID     uint   `gorm:"column:prompt_id;not null;default:0"`
 	SystemPrompt string `gorm:"column:system_prompt;type:text"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time `gorm:"index:idx_chats_updated"`
@@ -369,6 +371,7 @@ func (TaskRun) TableName() string { return "task_runs" }
 type Prompt struct {
 	ID          uint      `gorm:"primaryKey;column:id"`
 	Name        string    `gorm:"column:name;not null;uniqueIndex"`
+	Type        string    `gorm:"column:type;not null;default:'role';index:idx_prompts_type"`
 	Description string    `gorm:"column:description"`
 	Content     string    `gorm:"column:content;type:text;not null"`
 	CreatedAt   time.Time
@@ -412,6 +415,25 @@ type ServiceProxy struct {
 // TableName pins the table name for ServiceProxy.
 func (ServiceProxy) TableName() string { return "service_proxies" }
 
+// AgentRole defines a global agent role in the platform.
+// Table: agent_roles.
+type AgentRole struct {
+	ID           uint      `gorm:"primaryKey;column:id"`
+	Name         string    `gorm:"column:name;not null"`
+	Description  string    `gorm:"column:description"`
+	Backend      string    `gorm:"column:backend;not null"`
+	Model        string    `gorm:"column:model;not null"`
+	PromptID     uint      `gorm:"column:prompt_id;not null;default:0;index"`
+	SystemPrompt string    `gorm:"column:system_prompt;type:text"`
+	Icon         string    `gorm:"column:icon;size:32"`
+	Color        string    `gorm:"column:color;size:32"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName pins the table name for AgentRole.
+func (AgentRole) TableName() string { return "agent_roles" }
+
 // FlowRole defines an agent role in a collaborative flow task.
 // Table: flow_roles.
 type FlowRole struct {
@@ -421,6 +443,7 @@ type FlowRole struct {
 	Description  string    `gorm:"column:description"`
 	Backend      string    `gorm:"column:backend;not null"`
 	Model        string    `gorm:"column:model;not null"`
+	PromptID     uint      `gorm:"column:prompt_id;not null;default:0;index"`
 	SystemPrompt string    `gorm:"column:system_prompt;type:text"`
 	Icon         string    `gorm:"column:icon;size:32"`
 	Color        string    `gorm:"column:color;size:32"`

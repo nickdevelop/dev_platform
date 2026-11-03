@@ -25,7 +25,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v34，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置，以及多 Agent 协同流程支持：包含 `flow_roles` 角色表、`flow_runs` 协同实例表、`flow_messages` 群聊消息表与 `tasks.orchestrator_model`） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v35，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
@@ -82,7 +82,9 @@
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、全局 Agent 系统提示词（AGENTS.md）落盘与跨后端配置同步、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长。 | `service.go`（系统偏好与快捷助手开关）、`general.go`（全局系统提示词文件管理与跨 Agent 同步）、`agents.go`（各 Backend 的配置状态与空闲超时）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；全局提示词以平台数据目录 `dataDir/AGENTS.md` 为唯一权威源，跨平台文件同步写入各后端，不依赖 Windows 受限的软链接；快捷助手开关独立于外观配置存储。 |
 | **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v34 迁移链，含 `agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、`chat_groups` 助手扩展字段及平台管理权限 `enable_platform_tools` 和最大步数 `max_tool_steps`、`chats.system_prompt`、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`prompts/`** | 平台提示词模板管理。管理角色类（`role`）与流程类（`flow`）模板，支持 `{user_prompt}` 变量占位符、多维度关键词与分类筛选，供角色管理、纯对话助手及多 Agent 协同流程作为统一权威源引用。 | `model.go`（模型定义）、`service.go`（CRUD 与分类过滤）、`repository.go`（持久化存储）、`handlers.go`（REST 路由） | 供平台各中心与 `platformtools` 组合调用。 |
+| **`roles/`** | 全局专家角色管理。将多 Agent 协同流程中的角色抽取为平台一等实体，统一人设名称、职责描述、执行引擎（Backend）、分配模型（Model）与标识色彩；统一关联并动态同步提示词库中的角色类提示词，供多 Agent 协同流程与对话助手按需选用与复用。 | `model.go`（角色模型与 DTO）、`service.go`（角色 CRUD 与提示词动态同步）、`repository.go`（持久化存储与平滑兼容转换）、`handlers.go`（REST API 路由） | 依赖 `core/agents` 契约与 `prompts.Service` 接口，与具体后端实现解耦。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v35 迁移链，含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -132,13 +134,13 @@ web/src/
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 提示词 → 终端）、会话 Tab
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、会话 Tab
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
-  │     ├── settings/  ── 外观设置（移除深色主题，支持明亮浅色与暖冷色系）、大模型配置、Agent 全局设置（全局系统提示词 AGENTS.md 编辑与落盘同步）、Agent 后端 Tab 隔离与空闲断开配置、服务代理设置（ProxySettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
+  │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、大模型配置（ModelSettings.vue）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
-  │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡与 @高亮、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板）
-  │     ├── prompts/   ── 提示词模板库管理（PromptsView.vue，单栏全宽专业模版正文呈现，移除实时合成预览）、提示词侧边栏（PromptsSidebar.vue）
+  │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建、支持从角色库一键导入角色与选择流程提示词）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡与 @高亮、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板，支持从全局角色库导入专家角色并统一引用提示词）
+  │     ├── prompts/   ── 提示词管理核心组件与模版逻辑（PromptManageDialog.vue 支持角色类与流程类单选区分、promptTemplate.ts 变量槽替换）
   │     └── files/     ── 文件查看器（FileViewer.vue，支持普通查看与 Diff 双模式）、变更树组件（ChangeTree.vue，树形层级展示变动文件，支持暂存/取消暂存/放弃修改悬浮操作）、本地分支选择器（BranchSelector.vue，支持分支切换与快速新建）、Git 提交操作栏（GitCommitBar.vue，支持 Ctrl+Enter 快捷提交与自动暂存闭环）、Diff 预览器（DiffViewer.vue，Unified Diff 高亮对比与双列行号）、Markdown/PlantUML/图片 Artifact 预览、HTML 源码高亮与“🌐 预览”独立弹窗沙箱预览（HtmlArtifactView.vue、HtmlPreviewModal.vue）
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```

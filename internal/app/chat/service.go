@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/prompts"
 	"devplatform/internal/core/textutil"
 )
 
@@ -63,6 +64,18 @@ func WithToolExecutor(executor ToolExecutor) Option {
 	}
 }
 
+// PromptReader decouples prompt retrieval for chat system prompts.
+type PromptReader interface {
+	Get(id uint) (prompts.Prompt, error)
+}
+
+// WithPromptReader injects a prompt reader for resolving referenced prompts.
+func WithPromptReader(reader PromptReader) Option {
+	return func(s *Service) {
+		s.promptReader = reader
+	}
+}
+
 // Service owns pure-chat conversations, their persistence and their in-process
 // generation state.
 type Service struct {
@@ -70,6 +83,7 @@ type Service struct {
 	models       ModelResolver
 	completer    Completer
 	toolExecutor ToolExecutor
+	promptReader PromptReader
 	manager      *runManager
 	eventBus     *EventBusManager
 
@@ -177,6 +191,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 
 	var (
 		groupID      uint
+		promptID     uint
 		systemPrompt string
 		modelID      = input.ModelID
 	)
@@ -186,7 +201,13 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 			return Chat{}, err
 		}
 		groupID = *input.GroupID
+		promptID = group.PromptID
 		systemPrompt = group.SystemPrompt
+		if group.PromptID > 0 && s.promptReader != nil {
+			if p, err := s.promptReader.Get(group.PromptID); err == nil && strings.TrimSpace(p.Content) != "" {
+				systemPrompt = p.Content
+			}
+		}
 		if modelID == 0 && group.DefaultModelID != 0 {
 			modelID = group.DefaultModelID
 		}
@@ -206,6 +227,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Chat, error) {
 		Title:        fallbackTitle(text),
 		ModelID:      model.ID,
 		ModelName:    model.Name,
+		PromptID:     promptID,
 		SystemPrompt: systemPrompt,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -673,10 +695,16 @@ func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.
 		return CompletionRequest{}, err
 	}
 	out := make([]CompletionMessage, 0, len(messages)+1)
-	if strings.TrimSpace(chat.SystemPrompt) != "" {
+	systemPromptText := chat.SystemPrompt
+	if chat.PromptID > 0 && s.promptReader != nil {
+		if p, err := s.promptReader.Get(chat.PromptID); err == nil && strings.TrimSpace(p.Content) != "" {
+			systemPromptText = p.Content
+		}
+	}
+	if strings.TrimSpace(systemPromptText) != "" {
 		out = append(out, CompletionMessage{
 			Role: "system",
-			Text: strings.TrimSpace(chat.SystemPrompt),
+			Text: strings.TrimSpace(systemPromptText),
 		})
 	}
 	for _, message := range messages {
@@ -927,7 +955,20 @@ func normalizeGroupName(raw string) (string, error) {
 
 // ListGroups returns all chat conversation groups.
 func (s *Service) ListGroups() ([]ChatGroup, error) {
-	return s.repo.ListGroups()
+	groups, err := s.repo.ListGroups()
+	if err != nil {
+		return nil, err
+	}
+	if s.promptReader != nil {
+		for i := range groups {
+			if groups[i].PromptID > 0 {
+				if p, err := s.promptReader.Get(groups[i].PromptID); err == nil && strings.TrimSpace(p.Content) != "" {
+					groups[i].SystemPrompt = p.Content
+				}
+			}
+		}
+	}
+	return groups, nil
 }
 
 // CreateGroup creates a new chat conversation group / assistant.
@@ -942,10 +983,17 @@ func (s *Service) CreateGroup(input CreateGroupInput) (ChatGroup, error) {
 	} else if maxSteps > 20 {
 		maxSteps = 20
 	}
+	systemPrompt := input.SystemPrompt
+	if input.PromptID > 0 && s.promptReader != nil {
+		if p, err := s.promptReader.Get(input.PromptID); err == nil && strings.TrimSpace(p.Content) != "" {
+			systemPrompt = p.Content
+		}
+	}
 	group := ChatGroup{
 		Name:                name,
 		DefaultModelID:      input.DefaultModelID,
-		SystemPrompt:        input.SystemPrompt,
+		PromptID:            input.PromptID,
+		SystemPrompt:        systemPrompt,
 		Icon:                input.Icon,
 		ShowInFloat:         input.ShowInFloat,
 		EnablePlatformTools: input.EnablePlatformTools,
@@ -975,7 +1023,14 @@ func (s *Service) UpdateGroup(id uint, input UpdateGroupInput) (ChatGroup, error
 	}
 	group.Name = name
 	group.DefaultModelID = input.DefaultModelID
-	group.SystemPrompt = input.SystemPrompt
+	group.PromptID = input.PromptID
+	if input.PromptID > 0 && s.promptReader != nil {
+		if p, err := s.promptReader.Get(input.PromptID); err == nil && strings.TrimSpace(p.Content) != "" {
+			group.SystemPrompt = p.Content
+		}
+	} else {
+		group.SystemPrompt = input.SystemPrompt
+	}
 	group.Icon = input.Icon
 	group.ShowInFloat = input.ShowInFloat
 	group.EnablePlatformTools = input.EnablePlatformTools

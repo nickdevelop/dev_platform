@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -306,6 +307,7 @@ func roleToDB(r FlowRole) database.FlowRole {
 		Description:  r.Description,
 		Backend:      string(r.Backend),
 		Model:        r.Model,
+		PromptID:     r.PromptID,
 		SystemPrompt: r.SystemPrompt,
 		Icon:         r.Icon,
 		Color:        r.Color,
@@ -322,6 +324,7 @@ func roleFromDB(row database.FlowRole) FlowRole {
 		Description:  row.Description,
 		Backend:      agents.BackendID(row.Backend),
 		Model:        row.Model,
+		PromptID:     row.PromptID,
 		SystemPrompt: row.SystemPrompt,
 		Icon:         row.Icon,
 		Color:        row.Color,
@@ -343,23 +346,90 @@ func (r *Repository) ListRoles(taskID uint) ([]FlowRole, error) {
 	if err := query.Order("id asc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		var agentRoles []database.AgentRole
+		if err := r.db.Model(&database.AgentRole{}).Order("id asc").Find(&agentRoles).Error; err == nil && len(agentRoles) > 0 {
+			out := make([]FlowRole, len(agentRoles))
+			for i, ar := range agentRoles {
+				out[i] = FlowRole{
+					ID:           ar.ID,
+					TaskID:       0,
+					Name:         ar.Name,
+					Description:  ar.Description,
+					Backend:      agents.BackendID(ar.Backend),
+					Model:        ar.Model,
+					PromptID:     ar.PromptID,
+					SystemPrompt: ar.SystemPrompt,
+					Icon:         ar.Icon,
+					Color:        ar.Color,
+					CreatedAt:    ar.CreatedAt,
+					UpdatedAt:    ar.UpdatedAt,
+				}
+			}
+			r.enrichRolesWithPrompt(out)
+			return out, nil
+		}
+	}
 	out := make([]FlowRole, len(rows))
 	for i, row := range rows {
 		out[i] = roleFromDB(row)
 	}
+	r.enrichRolesWithPrompt(out)
 	return out, nil
+}
+
+func (r *Repository) enrichRolesWithPrompt(roles []FlowRole) {
+	for i := range roles {
+		if roles[i].PromptID > 0 {
+			var p database.Prompt
+			if err := r.db.First(&p, "id = ?", roles[i].PromptID).Error; err == nil && strings.TrimSpace(p.Content) != "" {
+				roles[i].SystemPrompt = p.Content
+			}
+		}
+	}
 }
 
 // GetRole finds a flow role by ID.
 func (r *Repository) GetRole(id uint) (FlowRole, error) {
 	var row database.FlowRole
 	if err := r.db.First(&row, "id = ?", id).Error; err != nil {
+		var ar database.AgentRole
+		if err2 := r.db.First(&ar, "id = ?", id).Error; err2 == nil {
+			role := FlowRole{
+				ID:           ar.ID,
+				TaskID:       0,
+				Name:         ar.Name,
+				Description:  ar.Description,
+				Backend:      agents.BackendID(ar.Backend),
+				Model:        ar.Model,
+				PromptID:     ar.PromptID,
+				SystemPrompt: ar.SystemPrompt,
+				Icon:         ar.Icon,
+				Color:        ar.Color,
+				CreatedAt:    ar.CreatedAt,
+				UpdatedAt:    ar.UpdatedAt,
+			}
+			if role.PromptID > 0 {
+				var p database.Prompt
+				if err := r.db.First(&p, "id = ?", role.PromptID).Error; err == nil && strings.TrimSpace(p.Content) != "" {
+					role.SystemPrompt = p.Content
+				}
+			}
+			return role, nil
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return FlowRole{}, ErrRoleNotFound
 		}
 		return FlowRole{}, err
 	}
-	return roleFromDB(row), nil
+	role := roleFromDB(row)
+	if role.PromptID > 0 {
+		var p database.Prompt
+		if err := r.db.First(&p, "id = ?", role.PromptID).Error; err == nil && strings.TrimSpace(p.Content) != "" {
+			role.SystemPrompt = p.Content
+		}
+	}
+	return role, nil
 }
 
 // CreateRole inserts a new flow role.
@@ -379,6 +449,7 @@ func (r *Repository) UpdateRole(role FlowRole) error {
 		"description":   row.Description,
 		"backend":       row.Backend,
 		"model":         row.Model,
+		"prompt_id":     row.PromptID,
 		"system_prompt": row.SystemPrompt,
 		"icon":          row.Icon,
 		"color":         row.Color,

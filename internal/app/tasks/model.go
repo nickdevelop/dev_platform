@@ -90,6 +90,7 @@ type FlowRole struct {
 	Description  string           `json:"description"`
 	Backend      agents.BackendID `json:"backend"`
 	Model        string           `json:"model"`
+	PromptID     uint             `json:"promptId"`
 	SystemPrompt string           `json:"systemPrompt"`
 	Icon         string           `json:"icon,omitempty"`
 	Color        string           `json:"color,omitempty"`

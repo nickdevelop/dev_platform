@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import type { ChatGroup } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
+import { usePromptsStore } from '../../../stores/prompts'
 import { UiButton, UiDialog, UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 
 const props = defineProps<{
@@ -17,9 +18,12 @@ const emit = defineEmits<{
 
 const chats = useChatsStore()
 const models = useModelsStore()
+const promptsStore = usePromptsStore()
 
 const nameInput = ref('')
 const defaultModelIdInput = ref<number | ''>('')
+const promptSource = ref<'prompt' | 'custom'>('prompt')
+const promptIdInput = ref<number | 0>(0)
 const systemPromptInput = ref('')
 const iconInput = ref('')
 const showInFloatInput = ref(false)
@@ -38,15 +42,53 @@ onMounted(async () => {
   if (models.services.length === 0) {
     void models.load()
   }
+  if (promptsStore.prompts.length === 0) {
+    await promptsStore.loadPrompts()
+  }
   if (props.mode === 'rename' && props.group) {
     nameInput.value = props.group.name
     defaultModelIdInput.value = props.group.defaultModelId ? props.group.defaultModelId : ''
-    systemPromptInput.value = props.group.systemPrompt ?? ''
+    if (props.group.promptId && props.group.promptId > 0) {
+      promptSource.value = 'prompt'
+      promptIdInput.value = props.group.promptId
+      systemPromptInput.value = ''
+    } else {
+      promptSource.value = props.group.systemPrompt ? 'custom' : 'prompt'
+      promptIdInput.value = 0
+      systemPromptInput.value = props.group.systemPrompt ?? ''
+    }
     iconInput.value = props.group.icon ?? ''
     showInFloatInput.value = props.group.showInFloat ?? false
     enablePlatformToolsInput.value = props.group.enablePlatformTools ?? false
     maxToolStepsInput.value = props.group.maxToolSteps ?? 5
+  } else {
+    const roles = (promptsStore.prompts || []).filter((p) => p.type === 'role')
+    if (roles.length > 0) {
+      promptSource.value = 'prompt'
+      promptIdInput.value = roles[0].id
+    }
   }
+})
+
+const rolePrompts = computed(() => (promptsStore.prompts || []).filter((p) => p.type === 'role'))
+
+const promptSelectOptions = computed<SelectMenuItem<number | 0>[]>(() => {
+  const items: SelectMenuItem<number | 0>[] = [
+    { value: 0, label: '请选择角色类提示词…' },
+  ]
+  for (const p of rolePrompts.value) {
+    items.push({
+      value: p.id,
+      label: `${p.name} (${p.description || '无描述'})`,
+    })
+  }
+  return items
+})
+
+const selectedPromptPreview = computed(() => {
+  if (!promptIdInput.value) return ''
+  const p = promptsStore.byId(promptIdInput.value)
+  return p ? p.content : ''
 })
 
 const usableModels = computed(() =>
@@ -110,10 +152,13 @@ async function onSubmit() {
 
   submitting.value = true
   error.value = ''
+  const promptId = promptSource.value === 'prompt' ? Number(promptIdInput.value) || 0 : 0
+  const systemPrompt = promptSource.value === 'custom' ? systemPromptInput.value.trim() : ''
   const payload = {
     name,
     defaultModelId: typeof defaultModelIdInput.value === 'number' ? defaultModelIdInput.value : 0,
-    systemPrompt: systemPromptInput.value.trim(),
+    promptId,
+    systemPrompt,
     icon: iconInput.value.trim(),
     showInFloat: showInFloatInput.value,
     enablePlatformTools: enablePlatformToolsInput.value,
@@ -211,17 +256,61 @@ async function onSubmit() {
         <span class="hint-text">在当前助手下新建对话时默认选中的模型</span>
       </div>
 
-      <!-- 系统提示词 -->
-      <label class="field">
-        <span class="label-text">系统提示词 (System Prompt)</span>
-        <textarea
-          v-model="systemPromptInput"
-          class="text-input textarea-input"
-          rows="4"
-          placeholder="例如：你是一个严谨的代码审查助手，请从代码规范和潜在漏洞角度给出分析意见…"
-        ></textarea>
-        <span class="hint-text">新建对话时将注入模型上下文，不在对话消息气泡中体现</span>
-      </label>
+      <!-- 系统提示词配置 -->
+      <div class="field prompt-config-field">
+        <div class="flex items-center justify-between pb-1">
+          <span class="label-text">系统提示词 (System Prompt)</span>
+          <div class="flex items-center gap-3 text-xs">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input
+                v-model="promptSource"
+                type="radio"
+                value="prompt"
+                class="accent-[var(--color-primary)]"
+              />
+              <span>引用提示词管理 (推荐)</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input
+                v-model="promptSource"
+                type="radio"
+                value="custom"
+                class="accent-[var(--color-primary)]"
+              />
+              <span>自定义输入</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 引用提示词模式 -->
+        <div v-if="promptSource === 'prompt'" class="space-y-2 pt-1">
+          <UiSelectMenu
+            v-model="promptIdInput"
+            class="text-input-menu"
+            :options="promptSelectOptions"
+            placeholder="请选择角色类提示词…"
+            block
+          />
+          <div v-if="selectedPromptPreview" class="prompt-preview-box">
+            <div class="text-[11px] text-[var(--color-text-muted)] mb-1">提示词内容预览:</div>
+            <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2.5 rounded border border-[var(--color-border)] max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+              {{ selectedPromptPreview }}
+            </div>
+          </div>
+          <span class="hint-text">统一引用平台提示词库。当提示词在平台设置中更新后，本助手将自动同步最新人设</span>
+        </div>
+
+        <!-- 手动输入模式 -->
+        <div v-else class="space-y-1 pt-1">
+          <textarea
+            v-model="systemPromptInput"
+            class="text-input textarea-input"
+            rows="4"
+            placeholder="例如：你是一个严谨的代码审查助手，请从代码规范和潜在漏洞角度给出分析意见…"
+          ></textarea>
+          <span class="hint-text">新建对话时将注入模型上下文，不在对话消息气泡中体现</span>
+        </div>
+      </div>
 
       <!-- 浮窗显示开关 -->
       <div class="field checkbox-field">

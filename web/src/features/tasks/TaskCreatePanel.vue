@@ -9,6 +9,7 @@ import ModelSelect from '../chat/composer/ModelSelect.vue'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { usePromptsStore } from '../../stores/prompts'
+import { useRolesStore } from '../../stores/roles'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
@@ -27,6 +28,7 @@ const emit = defineEmits<{
 const agentsStore = useAgentsStore()
 const projectsStore = useProjectsStore()
 const promptsStore = usePromptsStore()
+const rolesStore = useRolesStore()
 const tasksStore = useTasksStore()
 const draftsStore = useDraftsStore()
 
@@ -79,6 +81,20 @@ function addFlowRole() {
     model: orchestratorModel.value || 'gpt-4o',
     systemPrompt: '请高质量完成指派的子任务并反馈结果。',
     color: colors[flowRoles.value.length % colors.length],
+  })
+}
+
+function addRoleFromLibrary(roleId: number) {
+  const role = rolesStore.byId(roleId)
+  if (!role) return
+  flowRoles.value.push({
+    name: role.name,
+    description: role.description,
+    backend: role.backend,
+    model: role.model,
+    promptId: role.promptId,
+    systemPrompt: role.systemPrompt,
+    color: role.color || '#3b82f6',
   })
 }
 
@@ -156,6 +172,7 @@ onMounted(async () => {
     projectsStore.load(),
     agentsStore.loadBackends(),
     promptsStore.loadPrompts(),
+    rolesStore.loadRoles(),
   ])
 
   if (!selectedProjectId.value && projectsStore.projects.length > 0) {
@@ -493,13 +510,32 @@ async function handleCreateTask() {
                   {{ flowRoles.length }} 个角色
                 </span>
               </label>
-              <button
-                type="button"
-                class="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1 font-medium"
-                @click="addFlowRole"
-              >
-                + 添加角色
-              </button>
+              <div class="flex items-center gap-2">
+                <select
+                  v-if="rolesStore.roles.length > 0"
+                  class="text-xs h-6 px-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-text)] focus:outline-none cursor-pointer"
+                  @change="(e) => {
+                    const target = e.target as HTMLSelectElement;
+                    const val = Number(target.value);
+                    if (val) {
+                      addRoleFromLibrary(val);
+                      target.value = '';
+                    }
+                  }"
+                >
+                  <option value="">+ 从角色库选择加入</option>
+                  <option v-for="role in rolesStore.roles" :key="role.id" :value="role.id">
+                    {{ role.name }} ({{ role.backend }} / {{ role.model }})
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="text-xs text-[var(--color-primary)] hover:underline inline-flex items-center gap-1 font-medium"
+                  @click="addFlowRole"
+                >
+                  + 自定义角色
+                </button>
+              </div>
             </div>
 
             <!-- Role Cards Grid -->

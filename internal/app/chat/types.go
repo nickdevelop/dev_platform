@@ -90,6 +90,7 @@ type ChatGroup struct {
 	ID                  uint      `json:"id"`
 	Name                string    `json:"name"`
 	DefaultModelID      uint      `json:"defaultModelId"`
+	PromptID            uint      `json:"promptId"`
 	SystemPrompt        string    `json:"systemPrompt"`
 	Icon                string    `json:"icon"`
 	ShowInFloat         bool      `json:"showInFloat"`
@@ -126,6 +127,7 @@ type Chat struct {
 	Title        string    `json:"title"`
 	ModelID      uint      `json:"modelId"`
 	ModelName    string    `json:"modelName"`
+	PromptID     uint      `json:"promptId"`
 	SystemPrompt string    `json:"-"`
 	Running      bool      `json:"running"`
 	CreatedAt    time.Time `json:"createdAt"`
@@ -184,6 +186,7 @@ type UpdateInput struct {
 type CreateGroupInput struct {
 	Name                string
 	DefaultModelID      uint
+	PromptID            uint
 	SystemPrompt        string
 	Icon                string
 	ShowInFloat         bool
@@ -195,6 +198,7 @@ type CreateGroupInput struct {
 type UpdateGroupInput struct {
 	Name                string
 	DefaultModelID      uint
+	PromptID            uint
 	SystemPrompt        string
 	Icon                string
 	ShowInFloat         bool

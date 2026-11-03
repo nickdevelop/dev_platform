@@ -15,6 +15,7 @@ import (
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
+	"devplatform/internal/app/roles"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
@@ -84,6 +85,8 @@ type Dependencies struct {
 	Tasks *tasks.Service
 	// Prompts manages reusable prompt templates.
 	Prompts *prompts.Service
+	// Roles manages reusable agent roles.
+	Roles *roles.Service
 	// Terminal manages server connections and interactive terminal sessions.
 	Terminal *terminal.Service
 	// Chats manages global, non-agent conversations that call an
@@ -165,6 +168,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Prompts != nil {
 			deps.Prompts.RegisterRoutes(protected)
+		}
+		if deps.Roles != nil {
+			deps.Roles.RegisterRoutes(protected)
 		}
 		if deps.Terminal != nil {
 			deps.Terminal.RegisterRoutes(protected)

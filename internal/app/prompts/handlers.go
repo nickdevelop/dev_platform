@@ -38,7 +38,8 @@ func parsePromptID(c *gin.Context) (uint, bool) {
 
 func (s *Service) handleList(c *gin.Context) {
 	keyword := c.Query("q")
-	list, err := s.List(keyword)
+	promptType := c.Query("type")
+	list, err := s.List(keyword, promptType)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "server_error")
 		return

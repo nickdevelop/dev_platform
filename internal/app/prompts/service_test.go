@@ -84,15 +84,34 @@ func TestPromptServiceCRUD(t *testing.T) {
 	}
 
 	// List
-	list, err := svc.List("")
+	list, err := svc.List("", "")
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list all: len=%d, err=%v", len(list), err)
 	}
 
 	// List with filter
-	listFiltered, err := svc.List("Commit")
+	listFiltered, err := svc.List("Commit", "")
 	if err != nil || len(listFiltered) != 1 || listFiltered[0].ID != p2.ID {
 		t.Fatalf("list filtered: %+v, err=%v", listFiltered, err)
+	}
+
+	// List with type filter
+	flowType := PromptTypeFlow
+	_, err = svc.Create(CreatePromptRequest{
+		Name:    "Deployment Flow",
+		Type:    flowType,
+		Content: "Deployment steps",
+	})
+	if err != nil {
+		t.Fatalf("create flow prompt: %v", err)
+	}
+	flowList, err := svc.List("", string(PromptTypeFlow))
+	if err != nil || len(flowList) != 1 {
+		t.Fatalf("expected 1 flow prompt, got %d, err=%v", len(flowList), err)
+	}
+	roleList, err := svc.List("", string(PromptTypeRole))
+	if err != nil || len(roleList) != 2 {
+		t.Fatalf("expected 2 role prompts, got %d, err=%v", len(roleList), err)
 	}
 
 	// Update

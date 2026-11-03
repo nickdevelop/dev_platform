@@ -121,6 +121,7 @@ type updateRequest struct {
 type groupRequest struct {
 	Name                string `json:"name"`
 	DefaultModelID      uint   `json:"defaultModelId"`
+	PromptID            uint   `json:"promptId"`
 	SystemPrompt        string `json:"systemPrompt"`
 	Icon                string `json:"icon"`
 	ShowInFloat         bool   `json:"showInFloat"`
@@ -373,6 +374,7 @@ func (s *Service) handleCreateGroup(c *gin.Context) {
 	group, err := s.CreateGroup(CreateGroupInput{
 		Name:                req.Name,
 		DefaultModelID:      req.DefaultModelID,
+		PromptID:            req.PromptID,
 		SystemPrompt:        req.SystemPrompt,
 		Icon:                req.Icon,
 		ShowInFloat:         req.ShowInFloat,
@@ -399,6 +401,7 @@ func (s *Service) handleUpdateGroup(c *gin.Context) {
 	group, err := s.UpdateGroup(id, UpdateGroupInput{
 		Name:                req.Name,
 		DefaultModelID:      req.DefaultModelID,
+		PromptID:            req.PromptID,
 		SystemPrompt:        req.SystemPrompt,
 		Icon:                req.Icon,
 		ShowInFloat:         req.ShowInFloat,

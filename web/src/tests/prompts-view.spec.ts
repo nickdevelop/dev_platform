@@ -31,6 +31,7 @@ describe('Prompts UI Components', () => {
     const createSpy = vi.spyOn(store, 'createPrompt').mockResolvedValue({
       id: 1,
       name: '测试模板',
+      type: 'role',
       description: '描述',
       content: 'Hello {user_prompt}',
       createdAt: '',
@@ -69,8 +70,8 @@ describe('Prompts UI Components', () => {
   it('PromptsSidebar displays list, supports filtering, and opens create dialog', async () => {
     const store = usePromptsStore()
     store.prompts = [
-      { id: 1, name: 'Code Review', description: 'Review code', content: '{user_prompt}', createdAt: '', updatedAt: '' },
-      { id: 2, name: 'Commit Helper', description: 'Write git commit', content: 'commit', createdAt: '', updatedAt: '' },
+      { id: 1, name: 'Code Review', type: 'role', description: 'Review code', content: '{user_prompt}', createdAt: '', updatedAt: '' },
+      { id: 2, name: 'Commit Helper', type: 'role', description: 'Write git commit', content: 'commit', createdAt: '', updatedAt: '' },
     ]
     vi.spyOn(store, 'loadPrompts').mockResolvedValue(undefined as never)
     routeParams.promptId = '1'
@@ -109,6 +110,7 @@ describe('Prompts UI Components', () => {
       {
         id: 1,
         name: '代码审查',
+        type: 'role',
         description: '审查代码',
         content: '请审查：\n\n{user_prompt}\n\n谢谢。',
         createdAt: '2026-10-18T10:00:00Z',

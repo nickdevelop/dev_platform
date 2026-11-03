@@ -14,6 +14,7 @@ export interface ChatGroup {
   id: number
   name: string
   defaultModelId?: number
+  promptId?: number
   systemPrompt?: string
   icon?: string
   showInFloat?: boolean
@@ -31,6 +32,7 @@ export interface ChatGroupList {
 export interface ChatGroupInput {
   name: string
   defaultModelId?: number
+  promptId?: number
   systemPrompt?: string
   icon?: string
   showInFloat?: boolean
@@ -41,6 +43,7 @@ export interface ChatGroupInput {
 export interface Chat {
   id: number
   groupId?: number
+  promptId?: number
   title: string
   modelId: number
   modelName: string
