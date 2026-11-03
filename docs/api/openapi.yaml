@@ -2116,12 +2116,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /events/{uuid}:
+  /events/bus/{uuid}:
     get:
-      summary: Connect to multiplexed client event bus stream
+      summary: Connect to unified client event bus stream
       description: >-
-        Streams normalized events for all sessions subscribed to this client bus UUID as Server-Sent Events (text/event-stream).
-      operationId: connectEventBus
+        Streams multiplexed Server-Sent Events for all subscribed channels (sessions, chat, tasks) for this client bus UUID.
+      operationId: connectUnifiedEventBus
       security:
         - cookieAuth: []
       parameters:
@@ -2133,7 +2133,7 @@ paths:
             type: string
       responses:
         '200':
-          description: Server-Sent Event stream of normalized events.
+          description: Server-Sent Event stream of multiplexed envelopes.
           content:
             text/event-stream:
               schema:
@@ -2142,12 +2142,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /events/{uuid}/subscriptions:
+  /events/bus/{uuid}/subscriptions:
     post:
-      summary: Subscribe a session to the client event bus
+      summary: Subscribe a target to the unified event bus
       description: >-
-        Attaches a session to the client event bus and returns its current turn and interaction snapshot.
-      operationId: subscribeEventBusSession
+        Attaches a channel and target (session, chat, task flow run) to the client event bus, optionally returning an initial snapshot.
+      operationId: subscribeUnifiedEventBus
       security:
         - cookieAuth: []
       parameters:
@@ -2164,33 +2164,42 @@ paths:
           application/json:
             schema:
               type: object
-              required: [projectId, sessionId]
+              required: [channel, targetId]
               properties:
+                channel:
+                  type: string
+                  description: Channel category ("sessions", "chat", "tasks").
+                targetId:
+                  type: string
+                  description: Target identifier (sessionId, chatId, runId).
                 projectId:
                   type: integer
-                sessionId:
-                  type: string
+                  description: Project identifier (required for sessions).
                 lastEventId:
                   type: integer
+                  description: Last received event sequence (optional).
       responses:
         '200':
-          description: Subscription snapshot.
+          description: Subscription established with optional snapshot.
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  channel:
+                    type: string
+                  targetId:
+                    type: string
+                  snapshot:
+                    type: object
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Session not found.
-        '409':
-          description: Instance not running or capability unsupported.
     get:
-      summary: List session subscriptions on the client event bus
-      description: Lists all sessions currently subscribed to the given event bus.
-      operationId: listEventBusSubscriptions
+      summary: List subscriptions on the unified event bus
+      description: Lists all channels and target IDs currently subscribed to the given event bus.
+      operationId: listUnifiedEventBusSubscriptions
       security:
         - cookieAuth: []
       parameters:
@@ -2202,25 +2211,27 @@ paths:
             type: string
       responses:
         '200':
-          description: List of subscribed session IDs.
+          description: Map of channels to lists of subscribed target IDs.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   subscriptions:
-                    type: array
-                    items:
-                      type: string
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: string
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /events/{uuid}/subscriptions/{sessionId}:
+  /events/bus/{uuid}/subscriptions/{channel}/{targetId}:
     delete:
-      summary: Unsubscribe a session from the client event bus
-      description: Detaches a session from the client event bus.
-      operationId: unsubscribeEventBusSession
+      summary: Unsubscribe a target from the unified event bus
+      description: Detaches a channel and target from the client event bus.
+      operationId: unsubscribeUnifiedEventBus
       security:
         - cookieAuth: []
       parameters:
@@ -2229,138 +2240,16 @@ paths:
           required: true
           schema:
             type: string
-        - name: sessionId
+        - name: channel
           in: path
           required: true
           schema:
             type: string
-        - $ref: '#/components/parameters/CSRFToken'
-      responses:
-        '200':
-          description: Successfully unsubscribed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /chat-events/{uuid}:
-    get:
-      summary: Connect to pure-chat multiplexed client event bus stream
-      description: >-
-        Streams events for all chats subscribed to this client bus UUID as Server-Sent Events (text/event-stream).
-      operationId: connectChatEventBus
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          description: Unique client event bus identifier.
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Server-Sent Event stream of chat events.
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /chat-events/{uuid}/subscriptions:
-    post:
-      summary: Subscribe a chat to the client event bus
-      description: >-
-        Attaches a conversation to the client event bus and returns its current snapshot.
-      operationId: subscribeChatEventBus
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          description: Unique client event bus identifier.
-          schema:
-            type: string
-        - $ref: '#/components/parameters/CSRFToken'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [chatId]
-              properties:
-                chatId:
-                  type: integer
-      responses:
-        '200':
-          description: Chat snapshot.
-          content:
-            application/json:
-              schema:
-                type: object
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Chat not found.
-    get:
-      summary: List chat subscriptions on the client event bus
-      description: Lists all chat IDs currently subscribed to the given event bus.
-      operationId: listChatEventBusSubscriptions
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          description: Unique client event bus identifier.
-          schema:
-            type: string
-      responses:
-        '200':
-          description: List of subscribed chat IDs.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  subscriptions:
-                    type: array
-                    items:
-                      type: integer
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-  /chat-events/{uuid}/subscriptions/{id}:
-    delete:
-      summary: Unsubscribe a chat from the client event bus
-      description: Detaches a conversation from the client event bus.
-      operationId: unsubscribeChatEventBus
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: uuid
+        - name: targetId
           in: path
           required: true
           schema:
             type: string
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
         - $ref: '#/components/parameters/CSRFToken'
       responses:
         '200':
@@ -4222,41 +4111,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /tasks/flows/{runId}/events:
-    get:
-      summary: Subscribe to realtime SSE events of a flow run
-      description: Opens an event stream pushing incremental tokens, message updates, and status changes.
-      operationId: streamFlowEvents
-      security:
-        - cookieAuth: []
-      parameters:
-        - name: runId
-          in: path
-          required: true
-          description: Identifier of the flow run.
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '200':
-          description: Server-Sent Events stream.
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Flow run not found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
 

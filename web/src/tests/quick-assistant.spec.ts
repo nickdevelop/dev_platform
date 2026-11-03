@@ -385,7 +385,7 @@ describe('quick assistant launcher', () => {
 
     expect(quick.chatId).toBe(202)
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(FakeEventSource.instances[0]?.url).toContain('/api/chat-events/')
+    expect(FakeEventSource.instances[0]?.url).toContain('/api/events/bus/')
 
     FakeEventSource.instances[0].dispatch('snapshot', {
       type: 'snapshot',

@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/app/events"
 )
 
 func TestChatRoutes(t *testing.T) {
@@ -130,8 +132,14 @@ func TestChatBusRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	completer := &fakeCompleter{}
 	service, _, _ := testService(t, completer)
+	eventsMgr := events.NewManager()
+	eventsService := events.NewService(eventsMgr)
+	eventsMgr.RegisterHandler(events.ChannelChat, service)
+	service.SetEventsManager(eventsMgr)
+
 	router := gin.New()
 	service.RegisterRoutes(router)
+	eventsService.RegisterRoutes(router)
 
 	// Create a chat first
 	chat, err := service.Create(context.Background(), CreateInput{
@@ -144,44 +152,49 @@ func TestChatBusRoutes(t *testing.T) {
 
 	busUUID := "bus-handlers-test-uuid"
 
-	// 1. POST /chat-events/:uuid/subscriptions
-	subPayload := `{"chatId":` + strconv.FormatUint(uint64(chat.ID), 10) + `}`
+	// 1. POST /events/bus/:uuid/subscriptions
+	subPayload := `{"channel":"chat","targetId":"` + strconv.FormatUint(uint64(chat.ID), 10) + `"}`
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/chat-events/"+busUUID+"/subscriptions", strings.NewReader(subPayload))
+	request := httptest.NewRequest(http.MethodPost, "/events/bus/"+busUUID+"/subscriptions", strings.NewReader(subPayload))
 	request.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("subscribe code = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
-	var snap Snapshot
-	if err := json.Unmarshal(recorder.Body.Bytes(), &snap); err != nil {
+	var resp struct {
+		Channel  string    `json:"channel"`
+		TargetID string    `json:"targetId"`
+		Snapshot *Snapshot `json:"snapshot"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode snapshot: %v", err)
 	}
-	if snap.Conversation.ID != chat.ID {
-		t.Errorf("got snapshot chat ID %d, want %d", snap.Conversation.ID, chat.ID)
+	if resp.Snapshot == nil || resp.Snapshot.Conversation.ID != chat.ID {
+		t.Errorf("got snapshot chat ID %v, want %d", resp.Snapshot, chat.ID)
 	}
 
-	// 2. GET /chat-events/:uuid/subscriptions
+	// 2. GET /events/bus/:uuid/subscriptions
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/chat-events/"+busUUID+"/subscriptions", nil)
+	request = httptest.NewRequest(http.MethodGet, "/events/bus/"+busUUID+"/subscriptions", nil)
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("list subs code = %d, body = %s", recorder.Code, recorder.Body.String())
 	}
 	var listResp struct {
-		Subscriptions []uint `json:"subscriptions"`
+		Subscriptions map[string][]string `json:"subscriptions"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("decode list subs: %v", err)
 	}
-	if len(listResp.Subscriptions) != 1 || listResp.Subscriptions[0] != chat.ID {
-		t.Errorf("got subscriptions %v, want [%d]", listResp.Subscriptions, chat.ID)
+	chatSubs := listResp.Subscriptions["chat"]
+	if len(chatSubs) != 1 || chatSubs[0] != strconv.FormatUint(uint64(chat.ID), 10) {
+		t.Errorf("got subscriptions %v, want [%d]", chatSubs, chat.ID)
 	}
 
-	// 3. DELETE /chat-events/:uuid/subscriptions/:id
+	// 3. DELETE /events/bus/:uuid/subscriptions/:channel/:targetId
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodDelete, "/chat-events/"+busUUID+"/subscriptions/"+strconv.FormatUint(uint64(chat.ID), 10), nil)
+	request = httptest.NewRequest(http.MethodDelete, "/events/bus/"+busUUID+"/subscriptions/chat/"+strconv.FormatUint(uint64(chat.ID), 10), nil)
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("unsubscribe code = %d, body = %s", recorder.Code, recorder.Body.String())
@@ -189,12 +202,15 @@ func TestChatBusRoutes(t *testing.T) {
 
 	// Verify subscriptions empty
 	recorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/chat-events/"+busUUID+"/subscriptions", nil)
+	request = httptest.NewRequest(http.MethodGet, "/events/bus/"+busUUID+"/subscriptions", nil)
 	router.ServeHTTP(recorder, request)
-	if err := json.Unmarshal(recorder.Body.Bytes(), &listResp); err != nil {
+	var afterResp struct {
+		Subscriptions map[string][]string `json:"subscriptions"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &afterResp); err != nil {
 		t.Fatalf("decode list subs after delete: %v", err)
 	}
-	if len(listResp.Subscriptions) != 0 {
-		t.Errorf("expected 0 subs, got %v", listResp.Subscriptions)
+	if len(afterResp.Subscriptions["chat"]) != 0 {
+		t.Errorf("expected 0 subs, got %v", afterResp.Subscriptions["chat"])
 	}
 }

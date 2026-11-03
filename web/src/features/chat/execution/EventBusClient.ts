@@ -79,13 +79,13 @@ async function resubscribeActiveSessions(store: StreamStore) {
     const id = getBusId()
     try {
       const snapshot = await subscribeEventBusSession(id, projectId, sid, lastEventIdNum)
-      if (snapshot.turn) {
+      if (snapshot?.turn) {
         store.applyTurn(sid, snapshot.turn)
       }
-      if (snapshot.interactions) {
+      if (snapshot?.interactions) {
         store.applyInteractionSnapshot(sid, snapshot.interactions)
       }
-      if (snapshot.resync) {
+      if (snapshot?.resync) {
         void store.rebuildFromHistory(projectId, sid)
       }
     } catch {
@@ -290,13 +290,13 @@ export async function subscribeSessionOnBus(
   const snapshot = await subscribeEventBusSession(id, projectId, sessionId, lastEventIdNum)
 
   // Apply the authoritative initial snapshot
-  if (snapshot.turn) {
+  if (snapshot?.turn) {
     store.applyTurn(sessionId, snapshot.turn)
   }
-  if (snapshot.interactions) {
+  if (snapshot?.interactions) {
     store.applyInteractionSnapshot(sessionId, snapshot.interactions)
   }
-  if (snapshot.resync) {
+  if (snapshot?.resync) {
     void store.rebuildFromHistory(projectId, sessionId)
   }
 

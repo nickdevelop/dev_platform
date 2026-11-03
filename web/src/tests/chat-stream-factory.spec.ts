@@ -112,7 +112,7 @@ describe('chat stream factory', () => {
     secondStream.open(2)
 
     expect(FakeEventSource.instances).toHaveLength(1)
-    expect(FakeEventSource.instances[0].url).toBe('/api/chat-events/test-bus-factory')
+    expect(FakeEventSource.instances[0].url).toBe('/api/events/bus/test-bus-factory')
 
     firstStream.close()
     // Bus connection remains active because secondStream is still listening

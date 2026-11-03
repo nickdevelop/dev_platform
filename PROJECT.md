@@ -23,7 +23,7 @@
 | 层次 | 核心技术 / 依赖 | 架构职责与说明 |
 |---|---|---|
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
-| **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、SSE（Server-Sent Events）长连接多路广播 |
+| **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
 | **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v35，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
@@ -67,12 +67,13 @@
 
 | 模块目录 | 核心职责与功能边界 | 关键入口与核心文件 | 协作与边界约束 |
 |---|---|---|---|
-| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、多路复用事件广播总线、人机交互决策仲裁、SSE 长连接响应、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳。 | `service.go`（会话主逻辑）、`handlers.go`（HTTP/SSE 处理）、`event_bus.go`（事件总线）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
+| **`events/`** | **统一多路复用事件网关**。平台级统一事件中枢与 SSE 网关服务（`UnifiedEventBusManager`）。下行事件多路复用统一收敛至单连接 `/api/events/bus/:uuid`，解耦具体业务领域（支持 `sessions`、`chat`、`tasks`、`system` 频道），通过动态主题订阅接口（`POST/DELETE .../subscriptions`）实现各业务页面即插即拔；统一心跳保活（15s keep-alive）与客户端断开内存垃圾回收（GC TTL 60s）；彻底取代原先各业务烟囱式独立建长连接的历史架构，与前端 SharedWorker 协同彻底消灭浏览器同域名 6 连接耗尽假死问题。 | `service.go`（服务封装与依赖编排）、`bus.go`（多路复用总线与心跳调度）、`handlers.go`（统一 SSE 与订阅 REST API）、`models.go`（通用信封协议 `EventEnvelope` 与 `ChannelHandler` 契约） | 纯通用同构层，定义 `ChannelHandler` 接口供各业务领域实现快照与生命周期钩子，不直接耦合底层 Agent 或特定业务逻辑。 |
+| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、人机交互决策仲裁、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳；下行状态事件与交互快照统一接入全局事件网关（`events.Manager`，channel: `sessions`），废除原私有 bus 路由。 | `service.go`（会话主逻辑与 ChannelHandler 实现）、`handlers.go`（HTTP 路由处理）、`event_bus.go`（实例流监听与事件转发）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket 及显示配置持久化）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
-| **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；采用多路复用事件总线架构（ChatEventBus），多个对话或组件（主面板与快捷助手）共用单条长连接。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件总线） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线与 Agent Session 总线平级独立。 |
+| **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；下行生成增量与消息事件统一接入全局事件网关（`events.Manager`，channel: `chat`），废除原 `/api/chat-events/:uuid*` 私有总线路由。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件适配器） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线统一由 `events.Manager` 调度。 |
 | **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）、提示词模板管理（`prompts.Service`）以及会话索引查询（`sessions.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`、`platform_list_sessions`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，使 Chat 中的轻量级 Agent 能够自主查询与管理平台项目、会话与提示词，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects`、`prompts` 与 `sessions` 领域服务，不直接接触数据库与底层进程。 |
-| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；配备独立的流程数据采集总线（`TelemetryBus`），实现对下游 Agent 会话数据流的实时采集转发与轮次终结 Promise 自动汇聚。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流多路 SSE 事件总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
+| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；配备独立的流程数据采集总线（`TelemetryBus`），实现对下游 Agent 会话数据流的实时采集转发与轮次终结 Promise 自动汇聚；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
@@ -229,10 +230,10 @@ web/src/
        • EventTurn (ended, completed/failed/cancelled)
            │
            ▼
-5. 多路复用事件总线 (internal/app/sessions/event_bus.go)
-   - 将标准化事件广播至对应的 sessionID 订阅通道
+5. 统一事件网关接入 (internal/app/events/ & internal/app/sessions/event_bus.go)
+   - 将标准化事件以 channel="sessions", targetId=sessionID 封装并广播至平台统一事件网关
            │
-           ▼ (HTTP SSE 流持续推送，传输体积下降 90% 以上)
+           ▼ (经 /api/events/bus/:uuid 单连接由前端 SharedWorker 跨标签页共享多路复用分发)
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
    - 问答交互工具与纯净对话流（MessageView display="messages"），完整承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
@@ -333,10 +334,10 @@ web/src/
    - 调用 completer.go 发起带 context 的流式 HTTP 调用
                     │
                     ▼ (SSE 数据切分与事件总线分发)
-3. 多路复用事件推送 (internal/app/chat/event_bus.go)
+3. 统一网关事件推送 (internal/app/events/ & internal/app/chat/service.go)
    - stream.go 以 SSE 格式逐块切分并持久化 Assistant 消息
-   - 经 event_bus.go 聚合至客户端级单一 SSE 管道 (/api/chat-events/:uuid)
-   - 前端通过 ChatEventBusClient 维护单条长连接，主面板与快捷助手等多组件基于 chatId 动态订阅，消除每会话独立连接开销
+   - 经 events.Manager 聚合至全局单一 SSE 管道 (/api/events/bus/:uuid，channel="chat")
+   - 前端通过统一事件总线（UnifiedEventBusClient / SharedWorker）跨标签页复用单条长连接，主面板与快捷助手基于 chatId 动态订阅，消除每会话独立连接开销
    - 若对话无标题，触发 core/textutil/title.go 自动提炼标题并落库
 ```
 
@@ -352,7 +353,7 @@ web/src/
                       ▼
 1. Web 前端 (features/tasks/flow/FlowChatView.vue)
    - 展现为团队协同 IM 群聊对话流
-   - 建立专属 SSE 长连接: GET /api/tasks/flows/:runId/events
+   - 经由统一事件网关（channel="tasks", targetId=runId）多路复用订阅流式事件，不再独占独立长连接
                       │
                       ▼
 2. 协同流程中枢引擎 (internal/app/tasks/flow/engine.go)
@@ -570,6 +571,58 @@ web/src/
    - Auth store 状态更新为已登录，路由无缝跳转至主工作区 (home)
    - 命令行 platform set-password 保留作为无浏览器/无头服务器运维的兼容兜底
 ```
+
+---
+
+### 11. 全平台统一事件总线与跨标签页连接收敛体系（Unified Event Bus & SharedWorker Architecture）
+
+针对浏览器对同域名并发长连接限制（最多 6 个）导致的“长连接过多引发页面假死/请求挂起”顽疾，平台在传输层构建了全局统一的事件网关体系，彻底消灭分散的烟囱式长连接：
+
+```
+【多标签页浏览器环境】                                               【服务端传输与领域层】
+ ┌──────────────────────────────────────────────┐                ┌───────────────────────────────┐
+ │ 标签页 A (Tasks)   标签页 B (Chat/Session)    │                │ 领域服务                      │
+ │      │                  │                    │                │ (sessions / chat / tasks)     │
+ │      └────────┬─────────┘                    │                └──────────────┬────────────────┘
+ │               │ 内部消息通道 (MessagePort)     │                               │ 内部发布领域事件
+ │               ▼                              │                               ▼
+ │ ┌──────────────────────────────────────────┐ │                ┌───────────────────────────────┐
+ │ │  SharedWorker 共享线程                   │ │ 全浏览器唯一   │  全局统一事件网关             │
+ │ │  (event-bus.worker.ts)                   │ │   SSE 长连接   │  (internal/app/events/)       │
+ │ │  - 维持唯一直连长连接                     │◄╞═══════════════╡│  - 维护 clientBus 映射        │
+ │ │  - 跨页合并订阅 / 去重广播                │ │  (/api/events/ │  - 统一动态订阅 / 退订中枢    │
+ │ └──────────────────────────────────────────┘ │   bus/:uuid)   └───────────────────────────────┘
+ └──────────────────────────────────────────────┘
+ ┌──────────────────────────────────────────────┐                ┌───────────────────────────────┐
+ │ 控制台终端面板 (Terminal Pane)                │ 专用独立 WS   │  PTY 终端管理器               │
+ │ (按需开启，关闭即销毁)                        │◄══════════════╡│  (/api/terminal/:id)          │
+ └──────────────────────────────────────────────┘                └───────────────────────────────┘
+```
+
+- **核心架构原则**：
+  1. **终端物理隔离**：控制台终端（PTY）包含高频 ANSI 控制字符与流式键盘输入，维持独立的物理 WebSocket，严防海量终端日志阻塞业务指令与推送通道。
+  2. **下行统一多路复用**：除终端外的所有业务状态推送（工作台会话 `sessions`、纯对话 `chat`、协同流程任务 `tasks` 及系统通知 `system`），全部多路复用收敛到单一 SSE 管道：`GET /api/events/bus/:uuid`。
+  3. **前端 SharedWorker 跨页单连接共享**：前端引入 `web/src/shared/events/event-bus.worker.ts`。无论用户在浏览器中打开多少个标签页，整个浏览器进程与后端**始终只保持 1 条 SSE 物理连接**；各标签页通过 `MessagePort` 接入该 Worker，由 Worker 实现跨页订阅合并去重与精准消息分发。
+  4. **优雅降级（Graceful Degradation）**：针对不支持 SharedWorker 的特殊无痕模式沙箱或 Vitest 测试环境，前端自适应降级为单标签页主线程直连，对外保持 100% 相同的前端调用契约。
+  5. **统一信封协议（EventEnvelope）**：下行数据统一格式：
+     ```json
+     {
+       "busId": "bus-uuid",
+       "channel": "sessions" | "chat" | "tasks" | "system",
+       "targetId": "s1" | "1024",
+       "eventType": "delta" | "status" | "turn" | "interactions" | ...,
+       "timestamp": 1700000000000,
+       "payload": { ... }
+     }
+     ```
+  6. **安全规范对齐与轻量快照重连（策略 A）**：
+     - 动态订阅/退订接口（`POST/DELETE /api/events/bus/:uuid/subscriptions`）保持在主线程通过 `client.ts` 的 `mutate()` 发送，严格受 CSRF 传输层双提交令牌与 Session 会话保护。
+     - 当客户端因网络波动重连成功时（触发 `reconnected`），各业务 Store 对当前正处于激活展示态的实体（如当前会话、当前流程任务）主动调用现有 HTTP GET 接口刷新一次全量快照，实现零后端内存堆积的高可靠断线自愈。
+  7. **废弃旧路由（零兼容包袱）**：
+     已彻底废除并移除原各自烟囱式构建的私有总线与长连接端点：
+     - 原会话总线：`/api/events/:uuid`、`/api/events/:uuid/subscriptions`
+     - 原纯对话总线：`/api/chat-events/:uuid`、`/api/chat-events/:uuid/subscriptions`
+     - 原协同流程任务端点：`/api/tasks/flows/:runId/events`
 
 ---
 

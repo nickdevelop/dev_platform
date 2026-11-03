@@ -3,9 +3,11 @@ package chat
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/core/textutil"
@@ -86,11 +89,38 @@ type Service struct {
 	promptReader PromptReader
 	manager      *runManager
 	eventBus     *EventBusManager
+	eventsMgr    *events.Manager
 
 	baseCtx   context.Context
 	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	closeOnce sync.Once
+}
+
+// WithEventsManager configures the chat service with the unified event manager.
+func WithEventsManager(mgr *events.Manager) Option {
+	return func(s *Service) {
+		s.SetEventsManager(mgr)
+	}
+}
+
+// SetEventsManager attaches the platform-wide unified event manager.
+func (s *Service) SetEventsManager(mgr *events.Manager) {
+	s.eventsMgr = mgr
+}
+
+// OnSubscribe implements events.ChannelHandler for the "chat" channel.
+func (s *Service) OnSubscribe(ctx context.Context, busID string, req events.SubscribeRequest) (any, error) {
+	chatID, err := strconv.ParseUint(req.TargetID, 10, 64)
+	if err != nil || chatID == 0 {
+		return nil, events.ErrInvalidRequest
+	}
+	return s.Snapshot(uint(chatID))
+}
+
+// OnUnsubscribe implements events.ChannelHandler for the "chat" channel.
+func (s *Service) OnUnsubscribe(ctx context.Context, busID string, channel string, targetID string) error {
+	return nil
 }
 
 // NewService builds the chat service over the platform database.
@@ -110,7 +140,21 @@ func NewServiceWithRepository(repo Repository, models ModelResolver, opts ...Opt
 		cancel:    cancel,
 	}
 	service.eventBus = NewEventBusManager(service)
-	service.manager.onBroadcast = service.eventBus.Broadcast
+	service.manager.onBroadcast = func(event Event) {
+		service.eventBus.Broadcast(event)
+		if service.eventsMgr != nil {
+			payload, err := json.Marshal(event)
+			if err == nil {
+				service.eventsMgr.Broadcast(events.EventEnvelope{
+					Channel:   events.ChannelChat,
+					TargetID:  strconv.FormatUint(uint64(event.ChatID), 10),
+					EventType: event.Type,
+					Timestamp: events.NowMillis(),
+					Payload:   payload,
+				})
+			}
+		}
+	}
 	for _, opt := range opts {
 		opt(service)
 	}

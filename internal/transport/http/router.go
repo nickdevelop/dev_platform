@@ -10,6 +10,7 @@ import (
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
@@ -94,6 +95,8 @@ type Dependencies struct {
 	// the chat routes are served under /api/chats behind RequireSession and
 	// carry the larger image-message body limit.
 	Chats *chat.Service
+	// Events manages platform-wide multiplexed real-time SSE event bus streaming.
+	Events *events.Service
 	// Proxy manages contextpath exposure for local directories and ports.
 	Proxy *proxy.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
@@ -184,6 +187,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 			// middleware.
 			chats := authenticated.Group("", limitRequestBody(maxImageRequestBodyBytes))
 			deps.Chats.RegisterRoutes(chats)
+		}
+		if deps.Events != nil {
+			deps.Events.RegisterRoutes(authenticated)
 		}
 	}
 

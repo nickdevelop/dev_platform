@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 )
 
@@ -66,11 +67,12 @@ type ClientBus struct {
 
 // EventBusManager manages all active client event buses.
 type EventBusManager struct {
-	mu      sync.RWMutex
-	buses   map[string]*ClientBus
-	service *Service
-	gcTTL   time.Duration
-	bufSize int
+	mu        sync.RWMutex
+	buses     map[string]*ClientBus
+	service   *Service
+	eventsMgr *events.Manager
+	gcTTL     time.Duration
+	bufSize   int
 }
 
 // NewEventBusManager creates a new event bus manager.
@@ -237,6 +239,15 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 			case bus.out <- busEnvelope{id: 0, eventType: "resync", data: resyncData}:
 			default:
 			}
+			if m.eventsMgr != nil {
+				m.eventsMgr.PushToBus(uuid, events.EventEnvelope{
+					Channel:   events.ChannelSessions,
+					TargetID:  row.ID,
+					EventType: "resync",
+					Timestamp: events.NowMillis(),
+					Payload:   resyncData,
+				})
+			}
 		} else {
 			for _, ev := range replay {
 				if !matchesSessionRow(sub, ev) {
@@ -255,6 +266,16 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 				select {
 				case bus.out <- busEnvelope{id: ev.Sequence, eventType: string(ev.Type), data: payload}:
 				default:
+				}
+				if m.eventsMgr != nil {
+					m.eventsMgr.PushToBus(uuid, events.EventEnvelope{
+						ID:        ev.Sequence,
+						Channel:   events.ChannelSessions,
+						TargetID:  row.ID,
+						EventType: string(ev.Type),
+						Timestamp: events.NowMillis(),
+						Payload:   payload,
+					})
 				}
 			}
 		}
@@ -300,12 +321,12 @@ func matchesSessionRow(sub *busSessionSub, ev agents.NormalizedEvent) bool {
 }
 
 // forwardInstanceEvents continuously forwards events for an instance to the bus out channel.
-func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string, events <-chan agents.NormalizedEvent) {
+func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string, normEvents <-chan agents.NormalizedEvent) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case ev, ok := <-events:
+		case ev, ok := <-normEvents:
 			if !ok {
 				return
 			}
@@ -332,6 +353,16 @@ func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string
 					select {
 					case b.out <- busEnvelope{id: cloned.Sequence, eventType: string(cloned.Type), data: payload}:
 					default:
+					}
+					if b.mgr.eventsMgr != nil {
+						b.mgr.eventsMgr.Broadcast(events.EventEnvelope{
+							ID:        cloned.Sequence,
+							Channel:   events.ChannelSessions,
+							TargetID:  sub.sessionID,
+							EventType: string(cloned.Type),
+							Timestamp: events.NowMillis(),
+							Payload:   payload,
+						})
 					}
 				}
 			}
@@ -501,6 +532,15 @@ func (m *EventBusManager) BroadcastTurnEnded(nativeSessionID string) {
 					select {
 					case bus.out <- busEnvelope{id: 0, eventType: string(cloned.Type), data: payload}:
 					default:
+					}
+					if m.eventsMgr != nil {
+						m.eventsMgr.Broadcast(events.EventEnvelope{
+							Channel:   events.ChannelSessions,
+							TargetID:  sub.sessionID,
+							EventType: string(cloned.Type),
+							Timestamp: events.NowMillis(),
+							Payload:   payload,
+						})
 					}
 				}
 			}

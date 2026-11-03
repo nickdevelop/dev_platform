@@ -1,13 +1,10 @@
 package tasks
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,7 +34,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		tasks.GET("/flows/:runId/messages", s.handleListFlowMessages)
 		tasks.POST("/flows/:runId/messages", s.handlePostFlowMessage)
 		tasks.POST("/flows/:runId/cancel", s.handleCancelFlowRun)
-		tasks.GET("/flows/:runId/events", s.handleFlowEvents)
 	}
 }
 
@@ -425,54 +421,5 @@ func (s *Service) handleCancelFlowRun(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
-func (s *Service) handleFlowEvents(c *gin.Context) {
-	runID, ok := parseRunID(c)
-	if !ok {
-		return
-	}
-
-	_, err := s.GetFlowRun(runID)
-	if err != nil {
-		if errors.Is(err, ErrFlowRunNotFound) {
-			respondError(c, http.StatusNotFound, "flow_run_not_found")
-			return
-		}
-		respondError(c, http.StatusInternalServerError, "server_error")
-		return
-	}
-
-	eventCh, unsubscribe, err := s.SubscribeFlowEvents(runID)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, "flow_engine_unavailable")
-		return
-	}
-	defer unsubscribe()
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
-	c.Writer.Flush()
-
-	ctx := c.Request.Context()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case evt, ok := <-eventCh:
-			if !ok {
-				return
-			}
-			dataBytes, err := json.Marshal(evt.Payload)
-			if err != nil {
-				continue
-			}
-			_, _ = fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", evt.Type, string(dataBytes))
-			c.Writer.Flush()
-		}
-	}
 }
 

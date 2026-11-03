@@ -3,9 +3,12 @@ package tasks
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/core/agents"
 )
@@ -31,13 +34,17 @@ type Service struct {
 	repo           *Repository
 	sessions       SessionLauncher
 	flowController FlowController
+	eventsMgr      *events.Manager
+	flowSubs       map[uint]func()
+	subMu          sync.Mutex
 }
 
 // NewService creates a new tasks service.
 func NewService(repo *Repository, sessionLauncher SessionLauncher) *Service {
 	return &Service{
-		repo:     repo,
-		sessions: sessionLauncher,
+		repo:      repo,
+		sessions:  sessionLauncher,
+		flowSubs:  make(map[uint]func()),
 	}
 }
 
@@ -508,5 +515,64 @@ func (s *Service) SubscribeFlowEvents(runID uint) (<-chan FlowEvent, func(), err
 	ch, unsub := s.flowController.SubscribeEvents(runID)
 	return ch, unsub, nil
 }
+
+// SetEventsManager attaches the platform-wide unified event manager.
+func (s *Service) SetEventsManager(mgr *events.Manager) {
+	s.eventsMgr = mgr
+}
+
+func (s *Service) ensureFlowSubscription(runID uint) {
+	if s.flowController == nil || s.eventsMgr == nil {
+		return
+	}
+
+	s.subMu.Lock()
+	defer s.subMu.Unlock()
+
+	if _, exists := s.flowSubs[runID]; exists {
+		return
+	}
+
+	ch, unsub := s.flowController.SubscribeEvents(runID)
+	s.flowSubs[runID] = unsub
+
+	go func() {
+		defer func() {
+			s.subMu.Lock()
+			delete(s.flowSubs, runID)
+			s.subMu.Unlock()
+			unsub()
+		}()
+
+		runIDStr := strconv.FormatUint(uint64(runID), 10)
+		for ev := range ch {
+			if s.eventsMgr != nil {
+				_ = s.eventsMgr.BroadcastPayload(
+					events.ChannelTasks,
+					runIDStr,
+					string(ev.Type),
+					ev.Payload,
+				)
+			}
+		}
+	}()
+}
+
+// OnSubscribe implements events.ChannelHandler for the "tasks" channel.
+func (s *Service) OnSubscribe(ctx context.Context, busID string, req events.SubscribeRequest) (any, error) {
+	runID, err := strconv.ParseUint(req.TargetID, 10, 64)
+	if err != nil || runID == 0 {
+		return nil, events.ErrInvalidRequest
+	}
+
+	s.ensureFlowSubscription(uint(runID))
+	return s.GetFlowRun(uint(runID))
+}
+
+// OnUnsubscribe implements events.ChannelHandler for the "tasks" channel.
+func (s *Service) OnUnsubscribe(ctx context.Context, busID string, channel string, targetID string) error {
+	return nil
+}
+
 
 

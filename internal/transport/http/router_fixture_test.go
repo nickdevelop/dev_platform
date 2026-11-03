@@ -16,6 +16,7 @@ import (
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/projects"
@@ -55,6 +56,16 @@ func newFullDependencies(t *testing.T) Dependencies {
 	tasksSvc := tasks.NewService(tasks.NewRepository(db), nil)
 	modelsSvc := modelconfig.NewService(db, nil)
 	chatSvc := chat.NewService(db, modelsSvc)
+	sessionSvc := sessions.NewService(db, registry, instSvc)
+
+	eventsMgr := events.NewManager()
+	eventsSvc := events.NewService(eventsMgr)
+	eventsMgr.RegisterHandler(events.ChannelSessions, sessionSvc)
+	eventsMgr.RegisterHandler(events.ChannelChat, chatSvc)
+	eventsMgr.RegisterHandler(events.ChannelTasks, tasksSvc)
+	sessionSvc.SetEventsManager(eventsMgr)
+	chatSvc.SetEventsManager(eventsMgr)
+	tasksSvc.SetEventsManager(eventsMgr)
 
 	return Dependencies{
 		Auth:          authSvc,
@@ -64,10 +75,11 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Instances:     instSvc,
 		AgentServices: agentservices.NewService(nil),
 		AgentModels:   agentmodels.NewService(db, registry),
-		Sessions:      sessions.NewService(db, registry, instSvc),
+		Sessions:      sessionSvc,
 		Tasks:         tasksSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
 		Chats:         chatSvc,
+		Events:        eventsSvc,
 		Proxy:         proxy.NewService(proxy.NewRepository(db)),
 	}
 }

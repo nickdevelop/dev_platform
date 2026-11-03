@@ -145,17 +145,17 @@ describe('ChatEventBusClient', () => {
 
     await subscribeChatOnBus(first.store, 1)
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(MockEventSource.instances[0].url).toBe('/api/chat-events/test-chat-bus-uuid')
-    expect(fetchCalls[0].url).toBe('/api/chat-events/test-chat-bus-uuid/subscriptions')
-    expect(fetchCalls[0].body).toEqual({ chatId: 1 })
+    expect(MockEventSource.instances[0].url).toBe('/api/events/bus/test-chat-bus-uuid')
+    expect(fetchCalls[0].url).toBe('/api/events/bus/test-chat-bus-uuid/subscriptions')
+    expect(fetchCalls[0].body).toEqual({ channel: 'chat', targetId: '1' })
     expect(first.calls).toHaveLength(1)
     expect(first.calls[0].method).toBe('snapshot')
 
     // Second chat subscription reuses the same EventSource
     await subscribeChatOnBus(second.store, 2)
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(fetchCalls[1].url).toBe('/api/chat-events/test-chat-bus-uuid/subscriptions')
-    expect(fetchCalls[1].body).toEqual({ chatId: 2 })
+    expect(fetchCalls[1].url).toBe('/api/events/bus/test-chat-bus-uuid/subscriptions')
+    expect(fetchCalls[1].body).toEqual({ channel: 'chat', targetId: '2' })
     expect(second.calls).toHaveLength(1)
     expect(second.calls[0].method).toBe('snapshot')
 
@@ -211,14 +211,14 @@ describe('ChatEventBusClient', () => {
 
     // Unsubscribe chat 1
     await unsubscribeChatFromBus(first.store, 1)
-    expect(fetchCalls.some((c) => c.method === 'DELETE' && c.url.includes('/subscriptions/1'))).toBe(true)
+    expect(fetchCalls.some((c) => c.method === 'DELETE' && c.url.includes('/subscriptions/chat/1'))).toBe(true)
     expect(source.closed).toBe(false)
     expect(hasSubscribedChat(1)).toBe(false)
     expect(hasSubscribedChat(2)).toBe(true)
 
     // Unsubscribe chat 2
     await unsubscribeChatFromBus(second.store, 2)
-    expect(fetchCalls.some((c) => c.method === 'DELETE' && c.url.includes('/subscriptions/2'))).toBe(true)
+    expect(fetchCalls.some((c) => c.method === 'DELETE' && c.url.includes('/subscriptions/chat/2'))).toBe(true)
     expect(hasSubscribedChat(2)).toBe(false)
 
     // Closing bus closes the connection

@@ -123,7 +123,7 @@ describe('chats store stream mapping', () => {
     await chats.openChat(1)
 
     const source = FakeEventSource.instances[0]
-    expect(source.url).toContain('/api/chat-events/')
+    expect(source.url).toContain('/api/events/bus/')
     source.dispatch('snapshot', { type: 'snapshot', chatId: 1, timestamp: '', snapshot: snapshot() })
 
     expect(chats.activeId).toBe(1)

@@ -138,17 +138,17 @@ describe('EventBusClient', () => {
     await subscribeSessionOnBus(store, 1, 's1')
 
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(MockEventSource.instances[0].url).toBe('/api/events/test-bus-uuid-123')
-    expect(fetchCalls[0].url).toBe('/api/events/test-bus-uuid-123/subscriptions')
-    expect(fetchCalls[0].body).toEqual({ projectId: 1, sessionId: 's1' })
+    expect(MockEventSource.instances[0].url).toBe('/api/events/bus/test-bus-uuid-123')
+    expect(fetchCalls[0].url).toBe('/api/events/bus/test-bus-uuid-123/subscriptions')
+    expect(fetchCalls[0].body).toEqual({ channel: 'sessions', targetId: 's1', projectId: 1 })
 
     // 2. Subscribe session 2 on the same window
     await subscribeSessionOnBus(store, 1, 's2')
 
     // Still only ONE EventSource instance
     expect(MockEventSource.instances).toHaveLength(1)
-    expect(fetchCalls[1].url).toBe('/api/events/test-bus-uuid-123/subscriptions')
-    expect(fetchCalls[1].body).toEqual({ projectId: 1, sessionId: 's2' })
+    expect(fetchCalls[1].url).toBe('/api/events/bus/test-bus-uuid-123/subscriptions')
+    expect(fetchCalls[1].body).toEqual({ channel: 'sessions', targetId: 's2', projectId: 1 })
 
     // 3. Subscribe session 3
     await subscribeSessionOnBus(store, 1, 's3')
@@ -217,7 +217,7 @@ describe('EventBusClient', () => {
     await unsubscribeSessionFromBus(store, 's1')
 
     expect(fetchCalls[1].method).toBe('DELETE')
-    expect(fetchCalls[1].url).toBe('/api/events/test-bus-uuid-123/subscriptions/s1')
+    expect(fetchCalls[1].url).toBe('/api/events/bus/test-bus-uuid-123/subscriptions/sessions/s1')
     expect(store.streamStatus['s1']).toBe('idle')
   })
 

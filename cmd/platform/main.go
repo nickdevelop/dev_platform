@@ -23,6 +23,7 @@ import (
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/platformtools"
@@ -395,6 +396,15 @@ func runServer(args []string) error {
 	proxyRepo := proxy.NewRepository(db)
 	proxyService := proxy.NewService(proxyRepo)
 
+	eventsMgr := events.NewManager()
+	eventsService := events.NewService(eventsMgr)
+	eventsMgr.RegisterHandler(events.ChannelSessions, sessionService)
+	eventsMgr.RegisterHandler(events.ChannelChat, chatService)
+	eventsMgr.RegisterHandler(events.ChannelTasks, taskService)
+	sessionService.SetEventsManager(eventsMgr)
+	chatService.SetEventsManager(eventsMgr)
+	taskService.SetEventsManager(eventsMgr)
+
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
 	// process outlives the platform (finding 1). Defers unwind LIFO, so this
@@ -421,6 +431,7 @@ func runServer(args []string) error {
 		Roles:         rolesService,
 		Terminal:      terminalService,
 		Chats:         chatService,
+		Events:        eventsService,
 		Proxy:         proxyService,
 		WebDir:        webDir,
 	})

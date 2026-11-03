@@ -4,6 +4,7 @@
 // carries the session cookie.
 
 import { get, mutate } from './client'
+import { subscribeEventBus, unsubscribeEventBus } from './events'
 import type { ImageAttachment, MessageUsage } from './messageTypes'
 
 export type ChatRole = 'user' | 'assistant'
@@ -182,26 +183,31 @@ export function chatEventsPath(id: number): string {
 
 // chatEventBusPath is the multiplexed SSE endpoint for pure chat.
 export function chatEventBusPath(uuid: string): string {
-  return `/api/chat-events/${encodeURIComponent(uuid)}`
+  return `/api/events/bus/${encodeURIComponent(uuid)}`
 }
 
-export function subscribeChatEventBus(
+export async function subscribeChatEventBus(
   uuid: string,
   chatId: number,
 ): Promise<ChatSnapshot> {
-  return mutate<ChatSnapshot>('POST', `/chat-events/${encodeURIComponent(uuid)}/subscriptions`, {
-    chatId,
+  const res = await subscribeEventBus<ChatSnapshot>(uuid, {
+    channel: 'chat',
+    targetId: String(chatId),
   })
+  if (res && res.snapshot) {
+    return res.snapshot
+  }
+  if (res && (res as any).conversation) {
+    return res as unknown as ChatSnapshot
+  }
+  return undefined as unknown as ChatSnapshot
 }
 
 export function unsubscribeChatEventBus(
   uuid: string,
   chatId: number,
 ): Promise<{ success: boolean }> {
-  return mutate<{ success: boolean }>(
-    'DELETE',
-    `/chat-events/${encodeURIComponent(uuid)}/subscriptions/${encodeURIComponent(String(chatId))}`,
-  )
+  return unsubscribeEventBus(uuid, 'chat', String(chatId))
 }
 
 export function listChatEventBusSubscriptions(

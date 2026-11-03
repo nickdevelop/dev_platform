@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/events"
 	"devplatform/internal/core/agents"
 )
 
@@ -147,57 +148,69 @@ func TestEventBusHTTPHandlers(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-http")
 
+	eventsMgr := events.NewManager()
+	eventsService := events.NewService(eventsMgr)
+	eventsMgr.RegisterHandler(events.ChannelSessions, env.svc)
+	env.svc.SetEventsManager(eventsMgr)
+
 	r := gin.New()
 	api := r.Group("/api")
 	env.svc.RegisterRoutes(api)
+	eventsService.RegisterRoutes(api)
 
 	busID := "test-http-bus-uuid"
 
-	// 1. POST /api/events/:uuid/subscriptions
+	// 1. POST /api/events/bus/:uuid/subscriptions
 	body, _ := json.Marshal(map[string]any{
+		"channel":   events.ChannelSessions,
+		"targetId":  session.ID,
 		"projectId": env.projectID,
-		"sessionId": session.ID,
 	})
-	req := httptest.NewRequest(http.MethodPost, "/api/events/"+busID+"/subscriptions", bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/api/events/bus/"+busID+"/subscriptions", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /api/events/:uuid/subscriptions returned %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("POST /api/events/bus/:uuid/subscriptions returned %d: %s", rec.Code, rec.Body.String())
 	}
 
-	var snapshot SubscriptionSnapshot
-	if err := json.Unmarshal(rec.Body.Bytes(), &snapshot); err != nil {
+	var resp struct {
+		Channel  string                `json:"channel"`
+		TargetID string                `json:"targetId"`
+		Snapshot *SubscriptionSnapshot `json:"snapshot"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal snapshot: %v", err)
 	}
-	if snapshot.SessionID != session.ID {
-		t.Errorf("snapshot SessionID = %q, want %q", snapshot.SessionID, session.ID)
+	if resp.Snapshot == nil || resp.Snapshot.SessionID != session.ID {
+		t.Errorf("snapshot SessionID = %+v, want %q", resp.Snapshot, session.ID)
 	}
-	if snapshot.Turn == nil || snapshot.Turn.Phase != agents.TurnEnded {
-		t.Errorf("snapshot Turn = %+v, want Phase=ended", snapshot.Turn)
+	if resp.Snapshot.Turn == nil || resp.Snapshot.Turn.Phase != agents.TurnEnded {
+		t.Errorf("snapshot Turn = %+v, want Phase=ended", resp.Snapshot.Turn)
 	}
 
-	// 2. GET /api/events/:uuid/subscriptions
-	reqList := httptest.NewRequest(http.MethodGet, "/api/events/"+busID+"/subscriptions", nil)
+	// 2. GET /api/events/bus/:uuid/subscriptions
+	reqList := httptest.NewRequest(http.MethodGet, "/api/events/bus/"+busID+"/subscriptions", nil)
 	recList := httptest.NewRecorder()
 	r.ServeHTTP(recList, reqList)
 
 	if recList.Code != http.StatusOK {
-		t.Fatalf("GET /api/events/:uuid/subscriptions returned %d: %s", recList.Code, recList.Body.String())
+		t.Fatalf("GET /api/events/bus/:uuid/subscriptions returned %d: %s", recList.Code, recList.Body.String())
 	}
 	var listResp struct {
-		Subscriptions []string `json:"subscriptions"`
+		Subscriptions map[string][]string `json:"subscriptions"`
 	}
 	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
 		t.Fatalf("unmarshal list: %v", err)
 	}
-	if len(listResp.Subscriptions) != 1 || listResp.Subscriptions[0] != session.ID {
-		t.Errorf("list subscriptions = %v, want [%s]", listResp.Subscriptions, session.ID)
+	sessSubs := listResp.Subscriptions["sessions"]
+	if len(sessSubs) != 1 || sessSubs[0] != session.ID {
+		t.Errorf("list subscriptions = %v, want [%s]", sessSubs, session.ID)
 	}
 
-	// 3. DELETE /api/events/:uuid/subscriptions/:sessionId
-	reqDel := httptest.NewRequest(http.MethodDelete, "/api/events/"+busID+"/subscriptions/"+session.ID, nil)
+	// 3. DELETE /api/events/bus/:uuid/subscriptions/:channel/:targetId
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/events/bus/"+busID+"/subscriptions/sessions/"+session.ID, nil)
 	recDel := httptest.NewRecorder()
 	r.ServeHTTP(recDel, reqDel)
 
@@ -208,8 +221,11 @@ func TestEventBusHTTPHandlers(t *testing.T) {
 	// 4. Verify list is now empty
 	recListAfter := httptest.NewRecorder()
 	r.ServeHTTP(recListAfter, reqList)
-	_ = json.Unmarshal(recListAfter.Body.Bytes(), &listResp)
-	if len(listResp.Subscriptions) != 0 {
-		t.Errorf("after delete, subscriptions = %v, want []", listResp.Subscriptions)
+	var listRespAfter struct {
+		Subscriptions map[string][]string `json:"subscriptions"`
+	}
+	_ = json.Unmarshal(recListAfter.Body.Bytes(), &listRespAfter)
+	if len(listRespAfter.Subscriptions["sessions"]) != 0 {
+		t.Errorf("after delete, subscriptions = %v, want []", listRespAfter.Subscriptions["sessions"])
 	}
 }

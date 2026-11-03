@@ -30,8 +30,11 @@ import {
   type FlowMessage,
 } from '../api/tasks'
 import { tabKey, useOpenTabsStore } from './openTabs'
+import { unifiedEventBus } from '../shared/events/UnifiedEventBusClient'
+import type { EventEnvelope } from '../api/events'
 
-const activeFlowEventSources = new Map<number, EventSource>()
+const activeFlowListeners = new Map<number, (env: EventEnvelope) => void>()
+let flowReconnectCleanup: (() => void) | null = null
 
 export const useTasksStore = defineStore('tasks', {
   state: () => ({
@@ -250,94 +253,87 @@ export const useTasksStore = defineStore('tasks', {
 
     connectFlowEvents(runId: number) {
       this.disconnectFlowEvents(runId)
-      const es = new EventSource(`/api/tasks/flows/${runId}/events`)
-      activeFlowEventSources.set(runId, es)
 
-      es.addEventListener('chunk', (e: MessageEvent) => {
+      const handleFlowEvent = (env: EventEnvelope) => {
         try {
-          const payload = JSON.parse(e.data) as {
-            messageId: number
-            senderName: string
-            senderType: 'user' | 'orchestrator' | 'agent' | 'system'
-            chunk: string
-          }
-          if (!this.flowMessages[runId]) {
-            this.flowMessages[runId] = []
-          }
-          const list = this.flowMessages[runId]
-          const existing = list.find((m) => m.id === payload.messageId)
-          if (existing) {
-            existing.content += payload.chunk
-          } else {
-            list.push({
-              id: payload.messageId,
-              runId,
-              senderType: payload.senderType,
-              senderName: payload.senderName,
-              content: payload.chunk,
-              status: 'streaming',
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            })
-          }
-        } catch (err) {
-          console.error('Failed to parse flow chunk event', err)
-        }
-      })
+          const payload = env.payload as any
+          if (!payload) return
 
-      es.addEventListener('message', (e: MessageEvent) => {
-        try {
-          const msg = JSON.parse(e.data) as FlowMessage
-          if (!this.flowMessages[runId]) {
-            this.flowMessages[runId] = []
-          }
-          const list = this.flowMessages[runId]
-          const idx = list.findIndex((m) => m.id === msg.id)
-          if (idx !== -1) {
-            list[idx] = msg
-          } else {
-            list.push(msg)
-          }
-        } catch (err) {
-          console.error('Failed to parse flow message event', err)
-        }
-      })
-
-      es.addEventListener('status', (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data) as {
-            status: FlowRun['status']
-            currentStep: number
-            error?: string
-          }
-          if (this.activeFlowRun && this.activeFlowRun.id === runId) {
-            this.activeFlowRun.status = payload.status
-            this.activeFlowRun.currentStep = payload.currentStep
-            if (payload.error) this.activeFlowRun.error = payload.error
-          }
-          for (const taskId in this.flowRuns) {
-            const r = this.flowRuns[taskId]?.find((item) => item.id === runId)
-            if (r) {
-              r.status = payload.status
-              r.currentStep = payload.currentStep
-              if (payload.error) r.error = payload.error
+          if (env.eventType === 'chunk') {
+            if (!this.flowMessages[runId]) {
+              this.flowMessages[runId] = []
+            }
+            const list = this.flowMessages[runId]
+            const existing = list.find((m) => m.id === payload.messageId)
+            if (existing) {
+              existing.content += payload.chunk
+            } else {
+              list.push({
+                id: payload.messageId,
+                runId,
+                senderType: payload.senderType,
+                senderName: payload.senderName,
+                content: payload.chunk,
+                status: 'streaming',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              })
+            }
+          } else if (env.eventType === 'message') {
+            const msg = payload as FlowMessage
+            if (!this.flowMessages[runId]) {
+              this.flowMessages[runId] = []
+            }
+            const list = this.flowMessages[runId]
+            const idx = list.findIndex((m) => m.id === msg.id)
+            if (idx !== -1) {
+              list[idx] = msg
+            } else {
+              list.push(msg)
+            }
+          } else if (env.eventType === 'status') {
+            if (this.activeFlowRun && this.activeFlowRun.id === runId) {
+              this.activeFlowRun.status = payload.status
+              this.activeFlowRun.currentStep = payload.currentStep
+              if (payload.error) this.activeFlowRun.error = payload.error
+            }
+            for (const taskId in this.flowRuns) {
+              const r = this.flowRuns[taskId]?.find((item) => item.id === runId)
+              if (r) {
+                r.status = payload.status
+                r.currentStep = payload.currentStep
+                if (payload.error) r.error = payload.error
+              }
             }
           }
         } catch (err) {
-          console.error('Failed to parse flow status event', err)
+          console.error('Failed to parse unified flow event', err)
         }
-      })
+      }
 
-      es.onerror = () => {
-        // SSE error / auto reconnect
+      activeFlowListeners.set(runId, handleFlowEvent)
+      void unifiedEventBus.subscribe('tasks', String(runId), handleFlowEvent)
+
+      // Strategy A: auto refresh snapshot on reconnect
+      if (!flowReconnectCleanup) {
+        flowReconnectCleanup = unifiedEventBus.onReconnect(() => {
+          if (this.activeFlowRun?.id) {
+            void this.loadFlowRun(this.activeFlowRun.id)
+            void this.loadFlowMessages(this.activeFlowRun.id)
+          }
+        })
       }
     },
 
     disconnectFlowEvents(runId: number) {
-      const es = activeFlowEventSources.get(runId)
-      if (es) {
-        es.close()
-        activeFlowEventSources.delete(runId)
+      const listener = activeFlowListeners.get(runId)
+      if (listener) {
+        void unifiedEventBus.unsubscribe('tasks', String(runId), listener)
+        activeFlowListeners.delete(runId)
+      }
+      if (activeFlowListeners.size === 0 && flowReconnectCleanup) {
+        flowReconnectCleanup()
+        flowReconnectCleanup = null
       }
     },
 

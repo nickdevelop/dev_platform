@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/sessions/store"
 	"devplatform/internal/app/sessions/turns"
@@ -216,6 +217,8 @@ type Service struct {
 	// eventBus manages multiplexed client event streams.
 	eventBus *EventBusManager
 
+	eventsMgr *events.Manager
+
 	reconcileInterval time.Duration
 	stopReconcile     chan struct{}
 	reconcileDone     chan struct{}
@@ -266,6 +269,31 @@ func WithCatalog(catalog *agents.Catalog) Option {
 	return func(s *Service) {
 		s.catalog = catalog
 	}
+}
+
+// WithEventsManager wires the unified event bus manager into the session service.
+func WithEventsManager(mgr *events.Manager) Option {
+	return func(s *Service) {
+		s.SetEventsManager(mgr)
+	}
+}
+
+// SetEventsManager attaches the platform-wide unified event manager to the session service.
+func (s *Service) SetEventsManager(mgr *events.Manager) {
+	s.eventsMgr = mgr
+	if s.eventBus != nil {
+		s.eventBus.eventsMgr = mgr
+	}
+}
+
+// OnSubscribe implements events.ChannelHandler for the "sessions" channel.
+func (s *Service) OnSubscribe(ctx context.Context, busID string, req events.SubscribeRequest) (any, error) {
+	return s.eventBus.SubscribeSession(ctx, busID, req.ProjectID, req.TargetID, req.LastEventID)
+}
+
+// OnUnsubscribe implements events.ChannelHandler for the "sessions" channel.
+func (s *Service) OnUnsubscribe(ctx context.Context, busID string, channel string, targetID string) error {
+	return s.eventBus.UnsubscribeSession(busID, targetID)
 }
 
 // ServiceGate reports whether a backend's machine-level service is available.
