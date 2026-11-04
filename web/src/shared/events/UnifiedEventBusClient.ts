@@ -17,7 +17,9 @@ export type EventHandler = (envelope: EventEnvelope) => void
 export type StatusListener = (status: StreamStatus) => void
 export type ReconnectListener = () => void
 
-class UnifiedEventBusClient {
+const stallMs = 3000
+
+export class UnifiedEventBusClient {
   private busId: string = ''
   private worker: SharedWorker | null = null
   private workerPort: MessagePort | null = null
@@ -36,9 +38,9 @@ class UnifiedEventBusClient {
   // Check whether we have already connected at least once to distinguish initial connect from reconnect
   private hasConnected = false
 
-  constructor() {
-    this.initTransport()
-  }
+  // Stall repair timer
+  private repairTimer: ReturnType<typeof setTimeout> | null = null
+  private hasRepaired = false
 
   public getBusId(): string {
     if (!this.busId) {
@@ -57,18 +59,45 @@ class UnifiedEventBusClient {
 
   public resetBusId() {
     this.busId = ''
-    this.hasConnected = false
+    this.close()
     this.activeSubs.clear()
     this.handlers.clear()
-    if (this.localSource) {
-      this.localSource.close()
-      this.localSource = null
-    }
-    this.status = 'idle'
   }
 
   public getStatus(): StreamStatus {
     return this.status
+  }
+
+  public clearRepair() {
+    if (this.repairTimer) {
+      clearTimeout(this.repairTimer)
+      this.repairTimer = null
+    }
+  }
+
+  public ensureConnection(): EventSource | null {
+    this.ensureTransport()
+    return this.localSource
+  }
+
+  public close(): void {
+    this.clearRepair()
+    this.hasRepaired = false
+    this.handlers.clear()
+    this.activeSubs.clear()
+    if (this.localSource) {
+      this.localSource.close()
+      this.localSource = null
+    }
+    if (this.workerPort) {
+      try {
+        this.workerPort.postMessage({ type: 'disconnect' })
+      } catch {
+        // Ignore
+      }
+    }
+    this.hasConnected = false
+    this.setStatus('idle')
   }
 
   public onStatusChange(listener: StatusListener): () => void {
@@ -86,7 +115,7 @@ class UnifiedEventBusClient {
     }
   }
 
-  private setStatus(newStatus: StreamStatus) {
+  public setStatus(newStatus: StreamStatus) {
     if (this.status === newStatus) return
     const prevStatus = this.status
     this.status = newStatus
@@ -100,6 +129,8 @@ class UnifiedEventBusClient {
     }
 
     if (newStatus === 'open') {
+      this.clearRepair()
+      this.hasRepaired = false
       if (this.hasConnected && prevStatus === 'reconnecting') {
         // Reconnection occurred: trigger strategy A lightweight snapshot refresh
         for (const listener of this.reconnectListeners) {
@@ -114,7 +145,18 @@ class UnifiedEventBusClient {
     }
   }
 
-  private initTransport() {
+  private ensureTransport() {
+    if (this.workerPort) return
+    if (this.localSource && this.localSource.readyState !== EventSource.CLOSED) {
+      if (this.status === 'reconnecting') {
+        // Stale reconnecting connection: drop and re-dial fresh
+        this.localSource.close()
+        this.localSource = null
+      } else {
+        return
+      }
+    }
+
     // Only attempt SharedWorker in a standard browser window environment (skip under Vitest/Node)
     const isBrowser =
       typeof window !== 'undefined' &&
@@ -174,7 +216,12 @@ class UnifiedEventBusClient {
     if (typeof EventSource === 'undefined') return
 
     if (this.localSource && this.localSource.readyState !== EventSource.CLOSED) {
-      return
+      if (this.status === 'reconnecting') {
+        this.localSource.close()
+        this.localSource = null
+      } else {
+        return
+      }
     }
 
     const id = this.getBusId()
@@ -184,39 +231,70 @@ class UnifiedEventBusClient {
     this.localSource = es
 
     es.onopen = () => {
+      this.clearRepair()
+      this.hasRepaired = false
       this.setStatus('open')
     }
 
     es.onerror = () => {
       if (es.readyState === EventSource.CLOSED) {
+        this.clearRepair()
         this.setStatus('error')
         this.localSource = null
       } else {
         this.setStatus('reconnecting')
+        if (this.hasRepaired || this.repairTimer) return
+        this.repairTimer = setTimeout(() => {
+          this.repairTimer = null
+          if (this.status !== 'reconnecting') return
+          this.hasRepaired = true
+          if (this.localSource) {
+            this.localSource.close()
+            this.localSource = null
+          }
+          this.ensureTransport()
+        }, stallMs)
       }
     }
 
     es.addEventListener('ready', () => {
+      this.clearRepair()
+      this.hasRepaired = false
       this.setStatus('open')
     })
 
     const knownEvents = [
       'delta',
       'message',
+      'thinking',
+      'tool_call',
+      'tool_result',
       'turn',
       'interactions',
+      'interaction',
       'resync',
       'status_change',
       'step_update',
       'chunk',
       'status',
+      'conversation',
+      'snapshot',
+      'message_update',
+      'closed',
+      'error',
+      'unknown',
+      'lifecycle',
     ]
 
     for (const evt of knownEvents) {
       es.addEventListener(evt, (e) => {
         try {
-          const parsed = JSON.parse(e.data) as EventEnvelope
-          this.dispatchEnvelope(parsed)
+          const raw = JSON.parse(e.data)
+          if (raw && typeof raw === 'object' && 'channel' in raw && 'targetId' in raw) {
+            this.dispatchEnvelope(raw as EventEnvelope)
+          } else {
+            this.dispatchRawFrame(evt, raw, (e as any).lastEventId)
+          }
         } catch {
           // Ignore
         }
@@ -225,15 +303,56 @@ class UnifiedEventBusClient {
 
     es.onmessage = (e) => {
       try {
-        const parsed = JSON.parse(e.data) as EventEnvelope
-        this.dispatchEnvelope(parsed)
+        const raw = JSON.parse(e.data)
+        if (raw && typeof raw === 'object' && 'channel' in raw && 'targetId' in raw) {
+          this.dispatchEnvelope(raw as EventEnvelope)
+        } else {
+          this.dispatchRawFrame('message', raw, (e as any).lastEventId)
+        }
       } catch {
         // Ignore
       }
     }
   }
 
-  private dispatchEnvelope(env: EventEnvelope) {
+  private dispatchRawFrame(evtType: string, raw: any, lastEventId?: string) {
+    if (raw && typeof raw.chatId === 'number') {
+      this.dispatchEnvelope({
+        channel: 'chat',
+        targetId: String(raw.chatId),
+        eventType: raw.type || evtType,
+        timestamp: Date.now(),
+        payload: raw,
+      })
+      return
+    }
+
+    if (raw && typeof raw.sessionId === 'string') {
+      this.dispatchEnvelope({
+        id: lastEventId ? parseInt(lastEventId, 10) : raw.sequence,
+        channel: 'sessions',
+        targetId: raw.sessionId,
+        eventType: raw.type || evtType,
+        timestamp: Date.now(),
+        payload: raw,
+      })
+      return
+    }
+
+    // Broadcast frames (e.g. resync or interactions with no target wrapper)
+    for (const subKey of this.activeSubs) {
+      const [channel, targetId] = subKey.split(':')
+      this.dispatchEnvelope({
+        channel,
+        targetId,
+        eventType: evtType,
+        timestamp: Date.now(),
+        payload: raw,
+      })
+    }
+  }
+
+  public dispatchEnvelope(env: EventEnvelope) {
     if (!env || !env.channel) return
     const key = `${env.channel}:${env.targetId}`
     const targetHandlers = this.handlers.get(key)
@@ -247,7 +366,6 @@ class UnifiedEventBusClient {
       }
     }
 
-    // Also dispatch to wildcard listeners if any
     const wildcardHandlers = this.handlers.get(`${env.channel}:*`)
     if (wildcardHandlers) {
       for (const handler of wildcardHandlers) {
@@ -260,7 +378,6 @@ class UnifiedEventBusClient {
     }
   }
 
-  // subscribe attaches a channel & targetId, registers with backend and returns initial snapshot
   public async subscribe<T = unknown>(
     channel: string,
     targetId: string,
@@ -269,24 +386,21 @@ class UnifiedEventBusClient {
   ): Promise<T | undefined> {
     const key = `${channel}:${targetId}`
 
-    // 1. Register handler locally
     if (!this.handlers.has(key)) {
       this.handlers.set(key, new Set())
     }
     this.handlers.get(key)!.add(onEvent)
 
-    // 2. Notify SharedWorker if present
+    this.ensureTransport()
+
     if (this.workerPort) {
       this.workerPort.postMessage({
         type: 'register_sub',
         channel,
         targetId,
       })
-    } else {
-      this.initLocalEventSource()
     }
 
-    // 3. Register subscription with backend via standard transport (carrying CSRF & cookies)
     const id = this.getBusId()
     const body: SubscribeBusBody = {
       channel,
@@ -297,11 +411,12 @@ class UnifiedEventBusClient {
     }
 
     this.activeSubs.add(key)
-    const res = await subscribeEventBus<T>(id, body)
-    return res.snapshot
+    const res = await subscribeEventBus<any>(id, body)
+    const anyRes = res as any
+    const snapshot = res?.snapshot ?? (anyRes?.conversation || anyRes?.turn ? anyRes : undefined)
+    return snapshot as T
   }
 
-  // unsubscribe removes a handler and, if no listeners remain in this tab, detaches from backend
   public async unsubscribe(
     channel: string,
     targetId: string,
@@ -320,7 +435,6 @@ class UnifiedEventBusClient {
       this.handlers.delete(key)
     }
 
-    // If no handlers left in this tab for this key, unregister from worker and backend
     if (!this.handlers.has(key)) {
       this.activeSubs.delete(key)
       if (this.workerPort) {
