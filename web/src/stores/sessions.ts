@@ -529,8 +529,18 @@ export const useSessionsStore = defineStore('sessions', {
       // settled (or never streamed) renders nothing but a blank bubble, so it
       // is dropped rather than pushed.
       if (text === '' && (!images || images.length === 0)) return
+      const entryId = nextEntryID(sessionId, sequence, 'message')
+      const existing = list.find((item) => item.id === entryId)
+      if (existing) {
+        if (text !== '') existing.text = text
+        existing.streaming = !final
+        if (model) existing.model = model
+        if (final && usage) existing.usage = usage
+        if (timestamp && !existing.timestamp) existing.timestamp = timestamp
+        return
+      }
       list.push({
-        id: nextEntryID(sessionId, sequence, 'message'),
+        id: entryId,
         kind: 'message',
         role,
         text,

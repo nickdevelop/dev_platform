@@ -330,19 +330,6 @@ export class UnifiedEventBusClient {
         }
       })
     }
-
-    es.onmessage = (e) => {
-      try {
-        const raw = JSON.parse(e.data)
-        if (raw && typeof raw === 'object' && 'channel' in raw && 'targetId' in raw) {
-          this.dispatchEnvelope(raw as EventEnvelope)
-        } else {
-          this.dispatchRawFrame('message', raw, (e as any).lastEventId)
-        }
-      } catch {
-        // Ignore
-      }
-    }
   }
 
   private dispatchRawFrame(evtType: string, raw: any, lastEventId?: string) {

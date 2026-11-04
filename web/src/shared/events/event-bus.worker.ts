@@ -74,8 +74,6 @@ function ensureEventSource(busIdToUse: string) {
     }
   }
 
-  es.onmessage = handleIncomingFrame
-
   const knownEventTypes = [
     'delta',
     'message',
