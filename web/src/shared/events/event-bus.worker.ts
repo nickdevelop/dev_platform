@@ -1,31 +1,12 @@
 // SharedWorker for multiplexed Server-Sent Events across browser tabs.
 // It maintains exactly ONE EventSource connection to /api/events/bus/:uuid
-// and dispatches incoming envelopes to connected browser tabs based on subscriptions.
-
-interface TabSubscription {
-  channel: string
-  targetId: string
-}
+// and dispatches incoming envelopes to all connected browser tabs.
 
 const ports = new Set<MessagePort>()
 let eventSource: EventSource | null = null
-let busId: string = ''
+let currentBusId: string = ''
 let connectionStatus: 'idle' | 'connecting' | 'open' | 'error' | 'reconnecting' = 'idle'
 let closeTimer: ReturnType<typeof setTimeout> | null = null
-
-// portToSubs maps each port to the set of "channel:targetId" strings it is listening to.
-const portToSubs = new Map<MessagePort, Set<string>>()
-
-function getOrCreateBusId(): string {
-  if (!busId) {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-      busId = crypto.randomUUID()
-    } else {
-      busId = `bus-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-    }
-  }
-  return busId
-}
 
 function broadcastToAll(message: unknown) {
   for (const port of ports) {
@@ -33,45 +14,43 @@ function broadcastToAll(message: unknown) {
       port.postMessage(message)
     } catch {
       ports.delete(port)
-      portToSubs.delete(port)
     }
   }
 }
 
-function broadcastEnvelope(envelope: { channel: string; targetId: string; eventType: string }) {
-  const subKey = `${envelope.channel}:${envelope.targetId}`
-  for (const [port, subs] of portToSubs.entries()) {
-    if (envelope.channel === 'system' || subs.has(subKey) || subs.has(`${envelope.channel}:*`)) {
-      try {
-        port.postMessage({ type: 'event', envelope })
-      } catch {
-        ports.delete(port)
-        portToSubs.delete(port)
-      }
-    }
-  }
-}
-
-function ensureEventSource() {
+function ensureEventSource(busIdToUse: string) {
   if (closeTimer) {
     clearTimeout(closeTimer)
     closeTimer = null
+  }
+
+  // If busId changed, close existing connection to reopen with the authoritative one
+  if (busIdToUse && currentBusId && currentBusId !== busIdToUse && eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+
+  if (busIdToUse) {
+    currentBusId = busIdToUse
   }
 
   if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
     return
   }
 
-  const id = getOrCreateBusId()
-  connectionStatus = 'connecting'
-  broadcastToAll({ type: 'status', status: connectionStatus, busId: id })
+  if (!currentBusId) {
+    return
+  }
 
-  const es = new EventSource(`/api/events/bus/${encodeURIComponent(id)}`)
+  connectionStatus = 'connecting'
+  broadcastToAll({ type: 'status', status: connectionStatus, busId: currentBusId })
+
+  const es = new EventSource(`/api/events/bus/${encodeURIComponent(currentBusId)}`)
   eventSource = es
 
   es.onopen = () => {
     connectionStatus = 'open'
-    broadcastToAll({ type: 'status', status: connectionStatus, busId: id })
+    broadcastToAll({ type: 'status', status: connectionStatus, busId: currentBusId })
   }
 
   es.onerror = () => {
@@ -81,61 +60,54 @@ function ensureEventSource() {
     } else {
       connectionStatus = 'reconnecting'
     }
-    broadcastToAll({ type: 'status', status: connectionStatus, busId: id })
+    broadcastToAll({ type: 'status', status: connectionStatus, busId: currentBusId })
   }
 
-  // Handle ready frame
-  es.addEventListener('ready', (event) => {
-    connectionStatus = 'open'
-    broadcastToAll({ type: 'status', status: connectionStatus, busId: id })
+  // Forward all received envelopes to all connected tabs without dropping frames.
+  // The tabs themselves do precise local filtering by channel and targetId.
+  const handleIncomingFrame = (event: MessageEvent) => {
     try {
-      const data = JSON.parse(event.data)
-      broadcastEnvelope(data)
+      const envelope = JSON.parse(event.data)
+      broadcastToAll({ type: 'event', envelope })
     } catch {
-      // Ignore
+      // Ignore unparseable
     }
-  })
+  }
 
-  // Listen to all standard event types or fallback to onmessage
+  es.onmessage = handleIncomingFrame
+
   const knownEventTypes = [
     'delta',
     'message',
+    'thinking',
+    'tool_call',
+    'tool_result',
     'turn',
     'interactions',
+    'interaction',
     'resync',
     'status_change',
     'step_update',
     'chunk',
     'status',
+    'conversation',
+    'snapshot',
+    'message_update',
+    'closed',
+    'error',
+    'ready',
   ]
 
   for (const evtType of knownEventTypes) {
-    es.addEventListener(evtType, (event) => {
-      try {
-        const env = JSON.parse(event.data)
-        broadcastEnvelope(env)
-      } catch {
-        // Ignore unparseable
-      }
-    })
-  }
-
-  es.onmessage = (event) => {
-    try {
-      const env = JSON.parse(event.data)
-      broadcastEnvelope(env)
-    } catch {
-      // Ignore unparseable
-    }
+    es.addEventListener(evtType, handleIncomingFrame)
   }
 }
 
 function handleTabDisconnect(port: MessagePort) {
   ports.delete(port)
-  portToSubs.delete(port)
 
   if (ports.size === 0) {
-    // If no tabs remain, schedule disconnect after 5 seconds
+    // If no tabs remain, schedule disconnect after 5 seconds to free backend resources
     closeTimer = setTimeout(() => {
       closeTimer = null
       if (ports.size === 0 && eventSource) {
@@ -156,33 +128,21 @@ ctx.onconnect = (event: MessageEvent) => {
   if (!port) return
 
   ports.add(port)
-  portToSubs.set(port, new Set())
-
-  // Send initial busId and connection status to the newly connected tab
-  const id = getOrCreateBusId()
-  port.postMessage({ type: 'init', busId: id, status: connectionStatus })
-
-  ensureEventSource()
 
   port.onmessage = (msgEvent: MessageEvent) => {
     const data = msgEvent.data as
-      | { type: 'register_sub'; channel: string; targetId: string }
-      | { type: 'unregister_sub'; channel: string; targetId: string }
+      | { type: 'init_bus'; busId: string }
       | { type: 'ping' }
       | { type: 'disconnect' }
 
     if (!data || !data.type) return
 
-    if (data.type === 'register_sub') {
-      const subs = portToSubs.get(port)
-      if (subs) {
-        subs.add(`${data.channel}:${data.targetId}`)
+    if (data.type === 'init_bus') {
+      if (data.busId) {
+        currentBusId = data.busId
+        ensureEventSource(data.busId)
       }
-    } else if (data.type === 'unregister_sub') {
-      const subs = portToSubs.get(port)
-      if (subs) {
-        subs.delete(`${data.channel}:${data.targetId}`)
-      }
+      port.postMessage({ type: 'init', busId: currentBusId, status: connectionStatus })
     } else if (data.type === 'disconnect') {
       handleTabDisconnect(port)
     }

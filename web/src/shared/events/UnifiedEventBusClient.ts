@@ -44,10 +44,23 @@ export class UnifiedEventBusClient {
 
   public getBusId(): string {
     if (!this.busId) {
-      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        this.busId = crypto.randomUUID()
+      const cached =
+        typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('dev_platform_bus_id') : null
+      if (cached) {
+        this.busId = cached
       } else {
-        this.busId = `bus-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          this.busId = crypto.randomUUID()
+        } else {
+          this.busId = `bus-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        }
+        if (typeof sessionStorage !== 'undefined') {
+          try {
+            sessionStorage.setItem('dev_platform_bus_id', this.busId)
+          } catch {
+            // Ignore storage restrictions
+          }
+        }
       }
     }
     return this.busId
@@ -55,10 +68,24 @@ export class UnifiedEventBusClient {
 
   public setBusId(id: string) {
     this.busId = id
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.setItem('dev_platform_bus_id', id)
+      } catch {
+        // Ignore
+      }
+    }
   }
 
   public resetBusId() {
     this.busId = ''
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.removeItem('dev_platform_bus_id')
+      } catch {
+        // Ignore
+      }
+    }
     this.close()
     this.activeSubs.clear()
     this.handlers.clear()
@@ -195,6 +222,9 @@ export class UnifiedEventBusClient {
         }
 
         port.start()
+
+        // Send authoritative busId to worker immediately
+        port.postMessage({ type: 'init_bus', busId: this.getBusId() })
 
         // Clean up on tab close
         window.addEventListener('beforeunload', () => {

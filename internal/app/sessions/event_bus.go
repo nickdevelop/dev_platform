@@ -355,7 +355,7 @@ func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string
 					default:
 					}
 					if b.mgr.eventsMgr != nil {
-						b.mgr.eventsMgr.Broadcast(events.EventEnvelope{
+						b.mgr.eventsMgr.PushToBus(b.id, events.EventEnvelope{
 							ID:        cloned.Sequence,
 							Channel:   events.ChannelSessions,
 							TargetID:  sub.sessionID,
