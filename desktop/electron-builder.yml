@@ -3,8 +3,10 @@ productName: AI-Dev-Platform
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
 directories:
   output: dist-package
+  buildResources: build
 files:
   - dist/**/*
+  - assets/**/*
   - package.json
 extraResources:
   - from: ../bin
@@ -14,16 +16,19 @@ extraResources:
   - from: ../web/dist
     to: web
 linux:
+  icon: build/icon.png
   target:
     - AppImage
     - tar.gz
   category: Development
 win:
+  icon: build/icon.ico
   signAndEditExecutable: false
   target:
     - nsis
     - zip
 mac:
+  icon: build/icon.icns
   target:
     - dmg
     - zip

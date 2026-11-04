@@ -185,14 +185,18 @@ web/src/
 
 | 模块文件 | 核心职责与架构说明 |
 |---|---|
-| **`desktop/src/main/index.ts`** | Electron 主进程入口。负责单实例锁校验（防止重复运行）、主窗口几何尺寸管理、系统生命周期监控（`before-quit` 级联停机）、统一 IPC 通道分发及窗口级快捷键注册。 |
+| **`desktop/src/main/index.ts`** | Electron 主进程入口。负责单实例锁校验（防止重复运行）、主窗口几何尺寸与应用图标配置管理、系统生命周期监控（`before-quit` 级联停机）、统一 IPC 通道分发及窗口级快捷键注册。 |
+| **`desktop/src/main/icon.ts`** | 桌面端图标路径调度器。提供自适应环境感知（兼容未打包开发调试态、纯 Node.js 测试态及 asar 生产打包态），安全解析窗口与任务栏应用图标路径。 |
 | **`desktop/src/main/shortcuts.ts`** | 桌面端窗口快捷键调度器。通过 `webContents` 的 `before-input-event` 在输入事件下发前置阶段精确捕获快捷键，在移除应用菜单栏后稳定支持 `Ctrl+R` / `Cmd+R`（普通重载）、`Ctrl+Shift+R` / `Cmd+Shift+R`（忽略缓存强制重载）及 `F5` 刷新。 |
 | **`desktop/src/main/service-manager.ts`** | 本地 Go 服务端（Sidecar）生命周期调度器。在本地模式下派生 `bin/platform` 子进程，监听回环地址随机端口（`-listen 127.0.0.1:0`），自动从日志中探测绑定端口并做 `/api/health` 可达性校验；应用关闭时发送 SIGTERM 优雅退出，并在 5 秒超时后兜底回收，彻底消除孤儿进程。 |
 | **`desktop/src/main/proxy.ts`** | 本地透明反向代理（Desktop Local Proxy）。主进程在 `127.0.0.1:DESKTOP_PORT` 启动轻量高性能代理，前端无论连接本地还是远程后端均访问该同源端口；代理负责 HTTP/SSE 请求透明转发、静态文件与 SPA 路由直接响应，并在 WebSocket 握手时自动重写 Host 与 Origin，保证终端 `checkSameOrigin` 与 CSRF 双提交校验 100% 同构兼容。 |
 | **`desktop/src/main/connection-store.ts`** | 多环境连接配置与安全凭据管理。持久化存储“本地单机内置服务”及“远程服务器”连接列表，利用 Electron 原生 `safeStorage`（系统 Keychain / DPAPI）对敏感凭据进行操作系统级硬件加密存储。 |
 | **`desktop/src/preload/index.ts`** | Preload 安全上下文隔离网桥。向渲染进程安全暴露只读中立契约 `window.desktopAPI`，包含获取连接、保存配置、切换连接、连通性探测及原生目录对话框。 |
 
-**发布打包**：`./release.sh`（`make release`）一次产出两类产物并统一生成 `SHA256SUMS`：① Web 服务端包（Linux amd64/arm64、Windows amd64，内含二进制 + `web/dist` + 运维指南）；② 桌面安装包（`electron-builder`：Linux AppImage/tar.gz、Windows zip），包内以 extraResources 内嵌同架构 Go sidecar（`resources/bin/platform*`）与 `web/dist`，安装后即可本地自带后端运行。桌面应用版本默认为 `desktop/package.json` 的 `version`；发布标签为语义化版本（如 `./release.sh v0.2.0`）时自动对该版本。`web/dist` 只构建一次、两类产物共用；`--skip-desktop` / `--skip-server` 可只构建其中一类。
+**发布打包与图标规范**：
+- **发布产物**：`./release.sh`（`make release`）一次产出两类产物并统一生成 `SHA256SUMS`：① Web 服务端包（Linux amd64/arm64、Windows amd64，内含二进制 + `web/dist` + 运维指南）；② 桌面安装包（`electron-builder`：Linux AppImage/tar.gz、Windows zip），包内以 extraResources 内嵌同架构 Go sidecar（`resources/bin/platform*`）与 `web/dist`，安装后即可本地自带后端运行。桌面应用版本默认为 `desktop/package.json` 的 `version`；发布标签为语义化版本（如 `./release.sh v0.2.0`）时自动对该版本。`web/dist` 只构建一次、两类产物共用；`--skip-desktop` / `--skip-server` 可只构建其中一类。
+- **跨平台应用图标（Desktop）**：打包资源统一收敛于 `desktop/build/`（`icon.png` 对应 Linux，多尺寸 `icon.ico` 对应 Windows，`icon.icns` 对应 macOS），由 `electron-builder` 注入各平台可执行文件与快捷方式；运行时窗口图标位于 `desktop/assets/icon.png`，由 `files` 字段打包进 `app.asar` 并在主进程中加载。
+- **浏览器标签页图标（Web Favicon）**：存放在 `web/public/`（`favicon.ico` 与 `favicon.png`），经 Vite 构建自动分发至 `web/dist/`，由 `web/index.html` 声明并在 Go 静态服务与桌面透明代理中直出。
 
 ---
 

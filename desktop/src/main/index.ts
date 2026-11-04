@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu } from 'electron'
 import * as path from 'node:path'
+import * as fs from 'node:fs'
 import * as http from 'node:http'
 import * as https from 'node:https'
 import * as url from 'node:url'
@@ -7,6 +8,7 @@ import { LocalServiceManager } from './service-manager'
 import { ConnectionStore } from './connection-store'
 import { DesktopProxy } from './proxy'
 import { registerWindowShortcuts } from './shortcuts'
+import { getAppIconPath } from './icon'
 import { DesktopStatus, ServerConnection, TestConnectionResult } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -183,12 +185,14 @@ function registerIpcHandlers() {
 }
 
 async function createWindow(proxyPort: number) {
+  const iconPath = getAppIconPath()
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 650,
     title: 'AI-Dev-Platform',
+    ...(iconPath ? { icon: iconPath } : {}),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
