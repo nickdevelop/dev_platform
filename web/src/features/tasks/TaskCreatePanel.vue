@@ -166,6 +166,7 @@ watch(
 )
 
 const creating = ref(false)
+const initializing = ref(true)
 const errorMessage = ref('')
 
 const selectableBackends = computed(() =>
@@ -212,6 +213,15 @@ onMounted(async () => {
   if (selectedRoleIds.value.length === 0 && (rolesStore.roles || []).length > 0) {
     selectedRoleIds.value = (rolesStore.roles || []).slice(0, 2).map((r) => r.id)
   }
+
+  // Clear expired schedule time from persisted draft
+  if (scheduledAtDate.value) {
+    const t = new Date(scheduledAtDate.value).getTime()
+    if (isNaN(t) || t <= Date.now()) {
+      scheduledAtDate.value = ''
+    }
+  }
+  initializing.value = false
 })
 
 function selectBackend(backend: BackendId) {
@@ -232,6 +242,10 @@ function onPromptTemplateChange() {
 }
 
 async function handleCreateTask() {
+  if (initializing.value) {
+    errorMessage.value = '配置正在加载中，请稍候…'
+    return
+  }
   if (!title.value.trim()) {
     errorMessage.value = '请输入任务名称'
     return
@@ -253,7 +267,7 @@ async function handleCreateTask() {
     }
     const targetDate = new Date(scheduledAtDate.value)
     if (isNaN(targetDate.getTime()) || targetDate.getTime() <= Date.now()) {
-      errorMessage.value = '定时执行时间必须为未来时间'
+      errorMessage.value = '定时执行时间已过期，请选择未来的时间点'
       return
     }
     scheduledAt = targetDate.toISOString()

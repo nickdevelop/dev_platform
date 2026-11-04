@@ -327,6 +327,13 @@ func TestChatListGroupFilterHTTP(t *testing.T) {
 		t.Fatalf("empty group returned %+v", listed)
 	}
 
+	req = httptest.NewRequest(http.MethodGet, "/api/chats?groupId=0&limit=10", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /api/chats?groupId=0: %d, want 200: %s", w.Code, w.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/api/chats?groupId=abc", nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)

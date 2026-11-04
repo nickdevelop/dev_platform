@@ -200,10 +200,13 @@ func (s *Service) List(limit, offset int) ([]Chat, int, error) {
 }
 
 // ListByGroup returns conversations in one group ordered by most recent
-// activity. The group must exist; an unknown group is a 404, not an empty page.
+// activity. When groupID is 0, it returns ungrouped conversations. For groupID > 0,
+// the group must exist; an unknown group is a 404, not an empty page.
 func (s *Service) ListByGroup(groupID uint, limit, offset int) ([]Chat, int, error) {
-	if _, err := s.repo.GetGroup(groupID); err != nil {
-		return nil, 0, err
+	if groupID > 0 {
+		if _, err := s.repo.GetGroup(groupID); err != nil {
+			return nil, 0, err
+		}
 	}
 	chats, total, err := s.repo.ListChatsByGroup(groupID, limit, offset)
 	if err != nil {

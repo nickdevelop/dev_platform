@@ -108,12 +108,32 @@ describe('ChatHistoryPane', () => {
     expect(router.currentRoute.value.name).toBe('chat')
   })
 
-  it('opens delete conversation confirmation dialog', async () => {
-    const { wrapper } = await mountPane('/chat')
+  it('opens delete conversation confirmation dialog and calls deleteChat on confirm', async () => {
+    const { wrapper, chatsStore } = await mountPane('/chat')
+    const deleteSpy = vi.spyOn(chatsStore, 'deleteChat').mockResolvedValue(true)
 
     await wrapper.find('[data-chat-id="1"] button[title="删除对话"]').trigger('click')
     const dialog = wrapper.find('[data-test="delete-chat-dialog"]')
     expect(dialog.exists()).toBe(true)
     expect(dialog.text()).toContain('确定要删除对话「工作周报讨论」吗？')
+
+    await wrapper.find('[data-test="confirm-delete-chat"]').trigger('click')
+    await flushPromises()
+
+    expect(deleteSpy).toHaveBeenCalledWith(1)
+  })
+
+  it('renders load more button when hasMoreChats is true and triggers loadMoreChats', async () => {
+    const { wrapper, chatsStore } = await mountPane('/chat')
+    chatsStore.total = 100 // larger than chats.length (4)
+    await flushPromises()
+
+    const loadMoreBtn = wrapper.find('[data-test="load-more-chats-btn"]')
+    expect(loadMoreBtn.exists()).toBe(true)
+    expect(loadMoreBtn.text()).toContain('加载更多')
+
+    const loadMoreSpy = vi.spyOn(chatsStore, 'loadMoreChats').mockResolvedValue()
+    await loadMoreBtn.trigger('click')
+    expect(loadMoreSpy).toHaveBeenCalled()
   })
 })

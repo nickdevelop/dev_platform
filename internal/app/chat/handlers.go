@@ -142,7 +142,7 @@ func (s *Service) handleList(c *gin.Context) {
 	)
 	if rawGroup := c.Query("groupId"); rawGroup != "" {
 		groupID, parseErr := strconv.ParseUint(rawGroup, 10, 64)
-		if parseErr != nil || groupID == 0 {
+		if parseErr != nil {
 			respondError(c, http.StatusBadRequest, "invalid_request")
 			return
 		}

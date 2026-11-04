@@ -129,7 +129,7 @@ export function listChats(limit?: number, offset?: number, groupId?: number): Pr
   const params = new URLSearchParams()
   if (limit !== undefined && limit > 0) params.set('limit', String(limit))
   if (offset !== undefined && offset > 0) params.set('offset', String(offset))
-  if (groupId !== undefined && groupId > 0) params.set('groupId', String(groupId))
+  if (groupId !== undefined && groupId >= 0) params.set('groupId', String(groupId))
   const query = params.toString()
   return get<ChatList>(`/chats${query ? `?${query}` : ''}`)
 }

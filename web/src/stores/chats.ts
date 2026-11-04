@@ -45,6 +45,9 @@ export const useChatsStore = defineStore('chats', {
     chats: [] as Chat[],
     total: 0,
     loading: false,
+    chatsLoadingMore: false,
+    chatsOffset: 0,
+    loadedGroupId: null as number | null,
     listError: '',
     listRequest: 0,
     // Bumped when another surface (the quick-assistant popover) creates or
@@ -69,6 +72,7 @@ export const useChatsStore = defineStore('chats', {
   }),
 
   getters: {
+    hasMoreChats: (state) => state.chats.length < state.total,
     floatingAssistants: (state) => state.groups.filter((g) => g.showInFloat === true),
     selectedGroup: (state) =>
       state.selectedGroupId !== null
@@ -120,17 +124,22 @@ export const useChatsStore = defineStore('chats', {
       this.listNonce++
     },
 
-    async loadChats() {
+    async loadChats(groupId?: number) {
       const request = ++this.listRequest
       this.loading = true
+      this.chatsOffset = 0
+      const targetGroupId = groupId !== undefined ? groupId : (this.selectedGroupId ?? undefined)
+      this.loadedGroupId = targetGroupId ?? null
       try {
-        const result = await listChats(200, 0)
+        const result = await listChats(20, 0, targetGroupId)
         if (request !== this.listRequest) return
-        this.chats = result.chats
-        this.total = result.total
+        const rawChats = Array.isArray(result?.chats) ? result.chats : []
+        this.chats = rawChats
+        this.total = typeof result?.total === 'number' ? result.total : rawChats.length
+        this.chatsOffset = rawChats.length
         this.listError = ''
         if (this.activeId !== null) {
-          const found = result.chats.find((chat) => chat.id === this.activeId)
+          const found = rawChats.find((chat) => chat.id === this.activeId)
           if (found) this.active = found
         }
       } catch (error) {
@@ -139,6 +148,26 @@ export const useChatsStore = defineStore('chats', {
         this.listError = describeApiError(error)
       } finally {
         if (request === this.listRequest) this.loading = false
+      }
+    },
+
+    async loadMoreChats() {
+      if (this.chatsLoadingMore || this.chats.length >= this.total) return
+      this.chatsLoadingMore = true
+      try {
+        const result = await listChats(20, this.chatsOffset, this.loadedGroupId ?? undefined)
+        const incoming = Array.isArray(result?.chats) ? result.chats : []
+        this.total = typeof result?.total === 'number' ? result.total : this.total
+        const existingIds = new Set(this.chats.map((c) => c.id))
+        const newChats = incoming.filter((c) => !existingIds.has(c.id))
+        this.chats = [...this.chats, ...newChats]
+        this.chatsOffset += incoming.length
+        this.listError = ''
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.listError = describeApiError(error)
+      } finally {
+        this.chatsLoadingMore = false
       }
     },
 
@@ -421,9 +450,7 @@ export const useChatsStore = defineStore('chats', {
       }
     },
 
-    async removeActive(): Promise<boolean> {
-      const chatId = this.activeId
-      if (chatId === null) return false
+    async deleteChat(chatId: number): Promise<boolean> {
       this.actionError = ''
       try {
         await deleteChat(chatId)
@@ -433,9 +460,20 @@ export const useChatsStore = defineStore('chats', {
         return false
       }
       this.chats = this.chats.filter((chat) => chat.id !== chatId)
-      this.messages = { ...this.messages, [chatId]: [] }
-      this.startNewChat()
+      if (this.total > 0) this.total--
+      const messages = { ...this.messages }
+      delete messages[chatId]
+      this.messages = messages
+      if (this.activeId === chatId) {
+        this.startNewChat()
+      }
       return true
+    },
+
+    async removeActive(): Promise<boolean> {
+      const chatId = this.activeId
+      if (chatId === null) return false
+      return this.deleteChat(chatId)
     },
 
     // --- Stream callbacks -------------------------------------------------

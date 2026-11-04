@@ -157,7 +157,7 @@ web/src/
      - **Zone A 紧凑 Header 与标准化操作区**：标题高度收敛（13px，`font-weight: 600`），右侧集成 22px 微型方圆角停靠与展开控制按钮（`var(--radius, 4px)`）；操作按钮统一收敛为 26px 极简扁平微圆角按钮，前置 1.5px 几何矢量 SVG 加号图标（消除纯字符 `+`）；设置页彻底移除内部冗余二级标题，与外壳单头部绝对对齐。
      - **Zone B 紧凑检索与微过滤**：统一 26px 极简工具栏，内嵌 1.5px 细线放大镜矢量图标与一键清空按钮，移除输入框聚焦外发光（glow / ring）与外层大按钮，大幅释放首屏纵向阅读高度。
      - **Zone C 紧凑列表与导航卡片（Dense Pitch）**：
-       - **层级导航**：项目树由独立的 `ProjectSidebar.vue` 包装，`ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 助手名称旁快捷新建对话按钮 + 会话计数 + 悬浮淡入的编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现。
+       - **层级导航**：项目树由独立的 `ProjectSidebar.vue` 包装，`ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 助手名称旁快捷新建对话按钮 + 会话计数 + 悬浮淡入的编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现；对话清单严格按当前选中助手（包含未分组与指定助手）按需分页拉取，底部支持“加载更多”按需追加，保障大量对话场景下的流畅度，并支持单会话删除（Pinia store `deleteChat` 级联自愈）。
        - **实体列表项排版**（覆盖会话项、助手项、对话项、任务项、提示词项、服务器项、设置项）：全量采用标准紧凑卡片（徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
        - **选中与激活法则（The Move）**：所有列表项激活态严格收敛为**左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）** 与阶梯底色（`var(--surface-muted)`），全平台第二栏彻底清除静止投影（`box-shadow`）与毛玻璃模糊。
        - **色彩预算**：彩色严格控制在 3% 以内，任务与终端状态仅在运行/阻断错误时显色，已完成与常规状态保持中性阶梯底色。
@@ -195,7 +195,7 @@ web/src/
 
 **发布打包与图标规范**：
 - **发布产物**：`./release.sh`（`make release`）一次产出两类产物并统一生成 `SHA256SUMS`：① Web 服务端包（Linux amd64/arm64、Windows amd64，内含二进制 + `web/dist` + 运维指南）；② 桌面安装包（`electron-builder`：Linux AppImage/tar.gz、Windows zip），包内以 extraResources 内嵌同架构 Go sidecar（`resources/bin/platform*`）与 `web/dist`，安装后即可本地自带后端运行。桌面应用版本默认为 `desktop/package.json` 的 `version`；发布标签为语义化版本（如 `./release.sh v0.2.0`）时自动对该版本。`web/dist` 只构建一次、两类产物共用；`--skip-desktop` / `--skip-server` 可只构建其中一类。
-- **跨平台应用图标（Desktop）**：打包资源统一收敛于 `desktop/build/`（`icon.png` 对应 Linux，多尺寸 `icon.ico` 对应 Windows，`icon.icns` 对应 macOS），由 `electron-builder` 注入各平台可执行文件与快捷方式；运行时窗口图标位于 `desktop/assets/icon.png`，由 `files` 字段打包进 `app.asar` 并在主进程中加载。
+- **跨平台应用图标（Desktop）**：打包资源统一收敛于 `desktop/build/`（`icon.png` 对应 Linux，多尺寸 `icon.ico` 对应 Windows，`icon.icns` 对应 macOS），由 `electron-builder` 注入各平台可执行文件与快捷方式；运行时窗口图标位于 `desktop/assets/icon.png`，由 `files` 字段打包进 `app.asar` 并在主进程中加载。Windows 产物针对 Linux 交叉构建环境缺失 Wine 的问题，通过 `afterPack` 钩子（`desktop/scripts/after-pack.js`）利用纯 JavaScript PE 资源库 `resedit` 原生改写 `AI-Dev-Platform.exe` 的 PE 图标资源组（Group ID 1 / 1033），确保生成的可执行文件脱离 Electron 默认图标。
 - **浏览器标签页图标（Web Favicon）**：存放在 `web/public/`（`favicon.ico` 与 `favicon.png`），经 Vite 构建自动分发至 `web/dist/`，由 `web/index.html` 声明并在 Go 静态服务与桌面透明代理中直出。
 
 ---

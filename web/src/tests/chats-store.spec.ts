@@ -280,4 +280,46 @@ describe('chats store mutations', () => {
     // Chats in this group should also be removed
     expect(chats.chats.some((c) => c.groupId === 11)).toBe(false)
   })
+
+  it('deletes a chat by id through deleteChat action', async () => {
+    stubFetch(async (url, init) => {
+      if (url === '/api/chats/42' && init?.method === 'DELETE') {
+        return undefined
+      }
+      return {}
+    })
+
+    const chats = useChatsStore()
+    chats.chats = [chat({ id: 42, title: '待删除对话' }), chat({ id: 99, title: '保留对话' })]
+    chats.total = 2
+    chats.messages[42] = [{ id: 'msg-1', kind: 'message', role: 'assistant', text: 'hello', streaming: false }]
+
+    const ok = await chats.deleteChat(42)
+    expect(ok).toBe(true)
+    expect(chats.chats.map((c) => c.id)).toEqual([99])
+    expect(chats.total).toBe(1)
+    expect(chats.messages[42]).toBeUndefined()
+  })
+
+  it('paginates chats via loadMoreChats', async () => {
+    stubFetch(async (url) => {
+      if (url.includes('/api/chats')) {
+        return {
+          chats: [chat({ id: 101, title: '第2页对话' })],
+          total: 2,
+        }
+      }
+      return {}
+    })
+
+    const chats = useChatsStore()
+    chats.chats = [chat({ id: 1, title: '第1页对话' })]
+    chats.total = 2
+    chats.chatsOffset = 1
+
+    await chats.loadMoreChats()
+    expect(chats.chats).toHaveLength(2)
+    expect(chats.chats[1].id).toBe(101)
+    expect(chats.hasMoreChats).toBe(false)
+  })
 })

@@ -130,6 +130,12 @@ function stubFetch() {
     if (url === '/api/chats/1' && init?.method === 'DELETE') {
       return { status: 204, json: async () => undefined } as Response
     }
+    if (url.startsWith('/api/chats/groups')) {
+      return { status: 200, json: async () => ({ groups: [] }) } as Response
+    }
+    if (url.startsWith('/api/chats?') || url === '/api/chats') {
+      return { status: 200, json: async () => ({ chats: [chat()], total: 1 }) } as Response
+    }
     return { status: 200, json: async () => chat() } as Response
   })
   vi.stubGlobal('fetch', spy)

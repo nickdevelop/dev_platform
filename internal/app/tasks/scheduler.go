@@ -175,7 +175,7 @@ func ParseCronSchedule(expr string) (cron.Schedule, error) {
 func CalculateNextRun(t Task, from time.Time) (*time.Time, error) {
 	switch t.ScheduleType {
 	case ScheduleOnce:
-		if t.ScheduledAt != nil && t.ScheduledAt.After(from) {
+		if t.ScheduledAt != nil && t.ScheduledAt.After(from.Add(-30*time.Second)) {
 			return t.ScheduledAt, nil
 		}
 		return nil, nil
@@ -205,7 +205,7 @@ func ValidateScheduleConfig(t Task) error {
 
 	switch t.ScheduleType {
 	case ScheduleOnce:
-		if t.ScheduledAt == nil || t.ScheduledAt.Before(time.Now()) {
+		if t.ScheduledAt == nil || t.ScheduledAt.Before(time.Now().Add(-30*time.Second)) {
 			return ErrInvalidScheduleTime
 		}
 	case ScheduleCron:
