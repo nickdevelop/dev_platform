@@ -185,7 +185,8 @@ web/src/
 
 | 模块文件 | 核心职责与架构说明 |
 |---|---|
-| **`desktop/src/main/index.ts`** | Electron 主进程入口。负责单实例锁校验（防止重复运行）、主窗口几何尺寸管理、系统生命周期监控（`before-quit` 级联停机）、统一 IPC 通道分发。 |
+| **`desktop/src/main/index.ts`** | Electron 主进程入口。负责单实例锁校验（防止重复运行）、主窗口几何尺寸管理、系统生命周期监控（`before-quit` 级联停机）、统一 IPC 通道分发及窗口级快捷键注册。 |
+| **`desktop/src/main/shortcuts.ts`** | 桌面端窗口快捷键调度器。通过 `webContents` 的 `before-input-event` 在输入事件下发前置阶段精确捕获快捷键，在移除应用菜单栏后稳定支持 `Ctrl+R` / `Cmd+R`（普通重载）、`Ctrl+Shift+R` / `Cmd+Shift+R`（忽略缓存强制重载）及 `F5` 刷新。 |
 | **`desktop/src/main/service-manager.ts`** | 本地 Go 服务端（Sidecar）生命周期调度器。在本地模式下派生 `bin/platform` 子进程，监听回环地址随机端口（`-listen 127.0.0.1:0`），自动从日志中探测绑定端口并做 `/api/health` 可达性校验；应用关闭时发送 SIGTERM 优雅退出，并在 5 秒超时后兜底回收，彻底消除孤儿进程。 |
 | **`desktop/src/main/proxy.ts`** | 本地透明反向代理（Desktop Local Proxy）。主进程在 `127.0.0.1:DESKTOP_PORT` 启动轻量高性能代理，前端无论连接本地还是远程后端均访问该同源端口；代理负责 HTTP/SSE 请求透明转发、静态文件与 SPA 路由直接响应，并在 WebSocket 握手时自动重写 Host 与 Origin，保证终端 `checkSameOrigin` 与 CSRF 双提交校验 100% 同构兼容。 |
 | **`desktop/src/main/connection-store.ts`** | 多环境连接配置与安全凭据管理。持久化存储“本地单机内置服务”及“远程服务器”连接列表，利用 Electron 原生 `safeStorage`（系统 Keychain / DPAPI）对敏感凭据进行操作系统级硬件加密存储。 |

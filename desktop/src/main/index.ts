@@ -6,6 +6,7 @@ import * as url from 'node:url'
 import { LocalServiceManager } from './service-manager'
 import { ConnectionStore } from './connection-store'
 import { DesktopProxy } from './proxy'
+import { registerWindowShortcuts } from './shortcuts'
 import { DesktopStatus, ServerConnection, TestConnectionResult } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
@@ -198,6 +199,7 @@ async function createWindow(proxyPort: number) {
   })
 
   mainWindow.removeMenu()
+  registerWindowShortcuts(mainWindow)
 
   mainWindow.on('closed', () => {
     mainWindow = null
