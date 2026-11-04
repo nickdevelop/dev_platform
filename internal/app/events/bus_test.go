@@ -183,3 +183,65 @@ func TestManagerGC(t *testing.T) {
 		t.Fatalf("expected bus %s to be garbage collected", busID)
 	}
 }
+
+func TestClientBusBufferOverflowAndCriticalEvents(t *testing.T) {
+	mgr := NewManager()
+	busID := "test-bus-overflow"
+	bus := mgr.GetOrCreate(busID)
+
+	// Subscribe to a channel
+	_, err := mgr.Subscribe(context.Background(), busID, SubscribeRequest{
+		Channel:  ChannelSessions,
+		TargetID: "s1",
+	})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+
+	// 1. Fill the buffer to capacity
+	bufCap := cap(bus.out)
+	for i := 0; i < bufCap; i++ {
+		bus.out <- EventEnvelope{
+			Channel:   ChannelSessions,
+			TargetID:  "s1",
+			EventType: "delta",
+		}
+	}
+
+	if bus.DroppedCount() != 0 {
+		t.Fatalf("expected 0 dropped before overflow, got %d", bus.DroppedCount())
+	}
+
+	// 2. Broadcast a non-critical event when buffer is full; should be dropped immediately
+	mgr.Broadcast(EventEnvelope{
+		Channel:   ChannelSessions,
+		TargetID:  "s1",
+		EventType: "delta",
+	})
+
+	if bus.DroppedCount() != 1 {
+		t.Fatalf("expected 1 dropped event, got %d", bus.DroppedCount())
+	}
+
+	// 3. Test critical event: when a consumer frees space within 50ms, the critical event enters successfully
+	doneCh := make(chan struct{})
+	go func() {
+		// Wait 15ms then drain one item
+		time.Sleep(15 * time.Millisecond)
+		<-bus.out
+		close(doneCh)
+	}()
+
+	mgr.Broadcast(EventEnvelope{
+		Channel:   ChannelSessions,
+		TargetID:  "s1",
+		EventType: "turn_ended",
+	})
+
+	<-doneCh
+
+	// The turn_ended event should have entered without being dropped
+	if bus.DroppedCount() != 1 {
+		t.Fatalf("critical event should have enqueued, but dropped count increased to %d", bus.DroppedCount())
+	}
+}

@@ -327,20 +327,21 @@ type Task struct {
 	LastRunAt       *time.Time `gorm:"column:last_run_at"`
 	NextRunAt       *time.Time `gorm:"column:next_run_at"`
 	LastRunStatus   string     `gorm:"column:last_run_status"` // "idle" | "running" | "success" | "failed"
-	Status          string     `gorm:"column:status;not null;default:'active'"` // "active" | "disabled"
-	OrchestratorModel string   `gorm:"column:orchestrator_model"`
+	Status            string     `gorm:"column:status;not null;default:'active'"` // "active" | "disabled"
+	OrchestratorModel string     `gorm:"column:orchestrator_model"`
 
-	// Deprecated fields retained for historical schema migration compatibility
-	FlowType        string     `gorm:"column:flow_type"`
-	CurrentStep     int        `gorm:"column:current_step"`
-	StepStatus      string     `gorm:"column:step_status"`
-	IsConfirmed     bool       `gorm:"column:is_confirmed"`
-	StepsData       string     `gorm:"column:steps_data;type:text"`
-	ActiveSessionID string     `gorm:"column:active_session_id;index"`
-	ExecutionPrompt string     `gorm:"column:execution_prompt;type:text"`
+	// Deprecated: Retained strictly for historical GORM schema migration reflection (versions 21 & 25).
+	// Domain logic in internal/app/tasks MUST NOT read or write these fields.
+	FlowType        string `gorm:"column:flow_type"`
+	CurrentStep     int    `gorm:"column:current_step"`
+	StepStatus      string `gorm:"column:step_status"`
+	IsConfirmed     bool   `gorm:"column:is_confirmed"`
+	StepsData       string `gorm:"column:steps_data;type:text"`
+	ActiveSessionID string `gorm:"column:active_session_id;index"`
+	ExecutionPrompt string `gorm:"column:execution_prompt;type:text"`
 
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // TableName pins the table name for Task.

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,14 +25,20 @@ var (
 
 // ClientBus is an event pipeline for a single client (identified by UUID).
 type ClientBus struct {
-	id         string
-	mgr        *Manager
-	mu         sync.Mutex
-	subs       map[string]map[string]struct{} // channel -> set of targetIDs
-	out        chan EventEnvelope
-	active     bool
-	gcTimer    *time.Timer
-	connCancel context.CancelFunc
+	id           string
+	mgr          *Manager
+	mu           sync.Mutex
+	subs         map[string]map[string]struct{} // channel -> set of targetIDs
+	out          chan EventEnvelope
+	active       bool
+	gcTimer      *time.Timer
+	connCancel   context.CancelFunc
+	droppedCount atomic.Uint64
+}
+
+// DroppedCount returns the total number of events dropped due to buffer overflow.
+func (b *ClientBus) DroppedCount() uint64 {
+	return b.droppedCount.Load()
 }
 
 // close tears down subscriptions and channel of the bus.
@@ -248,6 +256,46 @@ func (m *Manager) ListSubscriptions(uuid string) (map[string][]string, error) {
 	return res, nil
 }
 
+// isCriticalEventType identifies events critical to state machine integrity and human interactions.
+func isCriticalEventType(eventType string) bool {
+	switch eventType {
+	case "ready", "turn_started", "turn_ended", "interaction_requested", "interaction_resolved",
+		"session_lifecycle", "status_change", "task_finished", "flow_completed", "error", "stream_error":
+		return true
+	default:
+		return false
+	}
+}
+
+// enqueue attempts to deliver an envelope to the client bus output channel.
+// Non-critical events are dropped if the channel is full.
+// Critical events wait briefly (up to 50ms) for space before dropping, and drops are logged and counted.
+func (b *ClientBus) enqueue(env EventEnvelope) {
+	select {
+	case b.out <- env:
+		return
+	default:
+	}
+
+	// Buffer is currently full.
+	if isCriticalEventType(env.EventType) {
+		timer := time.NewTimer(50 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case b.out <- env:
+			return
+		case <-timer.C:
+		}
+	}
+
+	// Increment dropped counter and log warning.
+	count := b.droppedCount.Add(1)
+	if count == 1 || count%50 == 0 {
+		log.Printf("[EventBus] bus %s buffer full (%d), dropped %s event on channel %s/%s (total dropped: %d)",
+			b.id, cap(b.out), env.EventType, env.Channel, env.TargetID, count)
+	}
+}
+
 // PushToBus direct-delivers an event to a specific client bus.
 func (m *Manager) PushToBus(uuid string, env EventEnvelope) {
 	m.mu.RLock()
@@ -259,10 +307,7 @@ func (m *Manager) PushToBus(uuid string, env EventEnvelope) {
 	if env.Timestamp == 0 {
 		env.Timestamp = NowMillis()
 	}
-	select {
-	case bus.out <- env:
-	default:
-	}
+	bus.enqueue(env)
 }
 
 // Broadcast sends an event to all client buses that subscribed to (channel, targetID).
@@ -276,11 +321,7 @@ func (m *Manager) Broadcast(env EventEnvelope) {
 
 	for _, bus := range m.buses {
 		if bus.hasSubscription(env.Channel, env.TargetID) {
-			select {
-			case bus.out <- env:
-			default:
-				// If full, drop oldest or silently skip to avoid blocking other buses
-			}
+			bus.enqueue(env)
 		}
 	}
 }

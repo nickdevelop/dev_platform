@@ -1,28 +1,17 @@
 package opencode
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"devplatform/internal/core/agents"
-	"devplatform/internal/core/platform"
 )
 
 // Compile-time proof that the opencode adapter satisfies the platform contract.
@@ -38,8 +27,7 @@ const (
 	streamRetryMax = 5 * time.Second
 	// defaultStreamIdleTimeout is how long a silent-but-open event stream may
 	// go without delivering an event before the adapter treats it as dead and
-	// reconnects. It bounds a hung connection that never sends and never
-	// closes.
+	// reconnects.
 	defaultStreamIdleTimeout = 60 * time.Second
 	// maxStartupOutputBytes bounds captured server output used for diagnostics.
 	maxStartupOutputBytes = 8 * 1024
@@ -51,35 +39,23 @@ type Options struct {
 	// Executable is the opencode binary name or path. Defaults to "opencode".
 	Executable string
 	// ResolveExecutable, when set, is consulted at each use to obtain the
-	// current binary path (the platform-level agent setting). An empty result
-	// falls back to Executable.
+	// current binary path (the platform-level agent setting).
 	ResolveExecutable func() string
-	// Hostname is the loopback host the per-instance server binds. Defaults
-	// to 127.0.0.1.
+	// Hostname is the loopback host the per-instance server binds. Defaults to 127.0.0.1.
 	Hostname string
-	// StartupTimeout bounds how long StartInstance waits for the server to
-	// answer /api/info. Defaults to 20s.
+	// StartupTimeout bounds how long StartInstance waits for the server to answer /api/info.
 	StartupTimeout time.Duration
-	// StreamIdleTimeout bounds how long the event stream may go silent before
-	// the adapter reconnects. Defaults to 60s.
+	// StreamIdleTimeout bounds how long the event stream may go silent before reconnecting.
 	StreamIdleTimeout time.Duration
-	// VersionProbe overrides how the CLI version is obtained. When nil the
-	// adapter runs `<executable> --version`. Tests inject a stub so they do
-	// not have to execute a real binary.
+	// VersionProbe overrides how the CLI version is obtained.
 	VersionProbe func(ctx context.Context) (string, error)
 	// Now overrides the clock; tests set it for deterministic timestamps.
 	Now func() time.Time
 	// NewID overrides identifier generation; tests may make it deterministic.
 	NewID func() (string, error)
-	// ServiceFile overrides the desktop registration file path used to
-	// discover an already-running `opencode serve --service`
-	// (XDG_STATE_HOME/opencode/service.json by default). Tests point it at a
-	// temp file.
+	// ServiceFile overrides the desktop registration file path.
 	ServiceFile string
-	// ServiceDirectory is the working directory the service is started in when
-	// the operator starts it from the platform settings. The service is
-	// machine-wide and serves no project of its own, so this is a neutral
-	// scratch directory (the platform data directory), not a project path.
+	// ServiceDirectory is the working directory the service is started in.
 	ServiceDirectory string
 }
 
@@ -99,9 +75,7 @@ type Adapter struct {
 	versionProbe      func(ctx context.Context) (string, error)
 	serviceFilePath   string
 	serviceDirectory  string
-	// watchInterval bounds how often watchShared re-probes the service. Tests
-	// shorten it; production keeps the default.
-	watchInterval time.Duration
+	watchInterval     time.Duration
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -111,26 +85,19 @@ type Adapter struct {
 	sharedStop func(context.Context) error
 }
 
-// launchResult is a started opencode server: the client bound to it, its
-// endpoint, the teardown hook that terminates the process, and a channel that
-// closes when the server process exits. done is nil for launchers that have no
-// process (for example a test double), in which case no process watcher runs.
+// launchResult is a started opencode server.
 type launchResult struct {
 	client   *Client
 	endpoint string
-	// pid is the launched process's id, so a stop requested from the settings
-	// page can report what it stopped.
-	pid  int
-	done <-chan struct{}
-	stop func(context.Context) error
+	pid      int
+	done     <-chan struct{}
+	stop     func(context.Context) error
 }
 
-// launcher starts one server in a directory. It is a field so tests can inject
-// a fake without launching a process.
+// launcher starts one server in a directory.
 type launcher func(ctx context.Context, directory string) (*launchResult, error)
 
-// Register installs a default opencode adapter (executable "opencode") into the
-// registry. Callers needing custom options use New and Registry.Register.
+// Register installs a default opencode adapter into the registry.
 func Register(registry *agents.Registry) error {
 	if registry == nil {
 		return errors.New("opencode: registry is required")
@@ -179,9 +146,6 @@ func New(options Options) *Adapter {
 	return adapter
 }
 
-// execPath is the executable to run: the runtime override when one resolves,
-// otherwise the configured default. It keeps a manual agent path effective for
-// every launch without rebuilding the adapter.
 func (a *Adapter) execPath() string {
 	if a.resolveExecutable != nil {
 		if path := a.resolveExecutable(); path != "" {
@@ -191,11 +155,7 @@ func (a *Adapter) execPath() string {
 	return a.executable
 }
 
-// Capabilities declares what the v2 API actually supports. Streaming
-// (session.text.delta), session discovery/create/continue, model selection
-// (session.create model + session.switchModel), tool call/result events
-// (session.tool.*), and tool confirmation (permission.asked + reply, form.* +
-// reply via the opencode-only PermissionReplier extension) are all available.
+// Capabilities declares what the v2 API actually supports.
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
@@ -211,8 +171,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 	}
 }
 
-// Probe reports whether the opencode binary is resolvable. It never starts a
-// server.
+// Probe reports whether the opencode binary is resolvable.
 func (a *Adapter) Probe(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -232,31 +191,7 @@ func (a *Adapter) Probe(ctx context.Context) error {
 	return nil
 }
 
-// runVersionCommand asks the CLI for its version with a short timeout. The
-// same binary serves the v2 API, so the CLI version is also the API version.
-func (a *Adapter) runVersionCommand(ctx context.Context) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	command, err := a.backendCommand(ctx, "--version")
-	if err != nil {
-		return "", err
-	}
-	out, err := command.Output()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-		return "", fmt.Errorf("%w: %s", err, truncate(string(exitErr.Stderr)))
-	}
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-// Diagnostics runs the opencode pre-flight checks: executable presence, CLI
-// version support against the tested range, and API reachability of every
-// running instance. It never starts anything, honors ctx, and every message
-// is actionable and redacted. A missing binary short-circuits the report:
-// without it there is nothing left to probe.
+// Diagnostics runs the opencode pre-flight checks.
 func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
 	supported := Descriptor.SupportedVersion()
 	report := agents.BackendDiagnostics{
@@ -290,144 +225,11 @@ func (a *Adapter) Diagnostics(ctx context.Context) agents.BackendDiagnostics {
 	return report
 }
 
-// checkVersion classifies the CLI version against the tested range. An
-// undeterminable or unsupported version is a warning, not an error: the
-// backend may still work, and the instance lifecycle reports any real
-// start failure.
-func (a *Adapter) checkVersion(ctx context.Context, supported agents.SupportedVersion) (string, agents.Diagnostic) {
-	raw, err := a.versionProbe(ctx)
-	if err != nil {
-		return "", agents.Diagnostic{
-			Kind:    agents.DiagnosticVersion,
-			Status:  agents.DiagnosticWarning,
-			Message: fmt.Sprintf("could not determine the opencode CLI version (%s); the tested version is %s", redactSecrets(err.Error()), supported.Tested),
-		}
-	}
-	parsed, ok := agents.ParseVersion(raw)
-	if !ok {
-		return "", agents.Diagnostic{
-			Kind:    agents.DiagnosticVersion,
-			Status:  agents.DiagnosticWarning,
-			Message: fmt.Sprintf("opencode reported an unparseable version %q; the tested version is %s", truncate(redactSecrets(raw)), supported.Tested),
-		}
-	}
-	if !parsed.InRange(supported) {
-		return parsed.String(), agents.Diagnostic{
-			Kind:    agents.DiagnosticVersion,
-			Status:  agents.DiagnosticWarning,
-			Message: fmt.Sprintf("opencode CLI %s is outside the tested range [%s, %s); the tested version is %s; upgrade or downgrade opencode if sessions fail", parsed, supported.Minimum, supported.Maximum, supported.Tested),
-			Detail:  truncate(redactSecrets(raw)),
-		}
-	}
-	return parsed.String(), agents.Diagnostic{
-		Kind:    agents.DiagnosticVersion,
-		Status:  agents.DiagnosticOK,
-		Message: fmt.Sprintf("opencode CLI %s is within the tested range [%s, %s)", parsed, supported.Minimum, supported.Maximum),
-		Detail:  truncate(redactSecrets(raw)),
-	}
-}
-
-// runningTarget is one instance the API check probes.
-type runningTarget struct {
-	id       string
-	endpoint string
-	client   *Client
-}
-
-// checkAPI probes the shared server with GET /api/info. Instances share one
-// server, so endpoints are deduplicated; with no instances the shared server
-// itself is probed when present.
-func (a *Adapter) checkAPI(ctx context.Context, supported agents.SupportedVersion) agents.Diagnostic {
-	a.mu.Lock()
-	seen := make(map[string]string)
-	for id, inst := range a.instances {
-		if _, ok := seen[inst.endpoint]; !ok {
-			seen[inst.endpoint] = id
-		}
-		_ = inst
-	}
-	a.mu.Unlock()
-	a.sharedMu.Lock()
-	sharedClient := (*Client)(nil)
-	sharedEndpoint := ""
-	if a.shared != nil {
-		sharedClient = a.shared.client
-		sharedEndpoint = a.shared.endpoint
-	}
-	a.sharedMu.Unlock()
-	targets := make([]runningTarget, 0, len(seen)+1)
-	for endpoint, id := range seen {
-		var client *Client
-		if sharedClient != nil && endpoint == sharedEndpoint {
-			client = sharedClient
-		} else {
-			continue
-		}
-		targets = append(targets, runningTarget{id: id, endpoint: endpoint, client: client})
-	}
-	if len(targets) == 0 && sharedClient != nil {
-		targets = append(targets, runningTarget{id: "shared", endpoint: sharedEndpoint, client: sharedClient})
-	}
-	sort.Slice(targets, func(i, j int) bool { return targets[i].id < targets[j].id })
-
-	if len(targets) == 0 {
-		return agents.Diagnostic{
-			Kind:    agents.DiagnosticAPI,
-			Status:  agents.DiagnosticOK,
-			Message: "no running opencode instances to probe",
-		}
-	}
-
-	var unreachable, mismatched []string
-	for _, target := range targets {
-		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		info, err := target.client.Info(probeCtx)
-		cancel()
-		if err != nil {
-			unreachable = append(unreachable, fmt.Sprintf("instance %s at %s (%s)", target.id, target.endpoint, redactSecrets(err.Error())))
-			continue
-		}
-		parsed, ok := agents.ParseVersion(info.Version)
-		if !ok {
-			// Never treat an unparseable server version as compatible: the
-			// instance cannot be verified, so surface it as a warning.
-			mismatched = append(mismatched, fmt.Sprintf("instance %s reported an unparseable API version %q", target.id, truncate(redactSecrets(info.Version))))
-			continue
-		}
-		if !parsed.InRange(supported) {
-			mismatched = append(mismatched, fmt.Sprintf("instance %s reports API version %s", target.id, parsed))
-		}
-	}
-	if len(unreachable) > 0 {
-		return agents.Diagnostic{
-			Kind:    agents.DiagnosticAPI,
-			Status:  agents.DiagnosticError,
-			Message: fmt.Sprintf("opencode service 不可达（%s）；请到平台设置 → Agent 检测并启动", strings.Join(unreachable, "; ")),
-		}
-	}
-	if len(mismatched) > 0 {
-		return agents.Diagnostic{
-			Kind:    agents.DiagnosticAPI,
-			Status:  agents.DiagnosticWarning,
-			Message: fmt.Sprintf("%s; outside the tested range [%s, %s)", strings.Join(mismatched, "; "), supported.Minimum, supported.Maximum),
-		}
-	}
-	return agents.Diagnostic{
-		Kind:    agents.DiagnosticAPI,
-		Status:  agents.DiagnosticOK,
-		Message: fmt.Sprintf("%d running instance(s) answered the API probe", len(targets)),
-	}
-}
-
-// capabilitiesOf returns a pointer copy so reports cannot alias the adapter.
 func capabilitiesOf(capabilities agents.Capabilities) *agents.Capabilities {
 	return &capabilities
 }
 
-// StartInstance validates the directory and binary, ensures the shared
-// machine-wide server, and registers a running instance bound to it. The
-// server process is shared across directories; per-instance state (sessions,
-// subscriptions) stays isolated.
+// StartInstance registers a running instance bound to the shared server.
 func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanceRequest) (*agents.Instance, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -456,8 +258,8 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		return nil, fmt.Errorf("opencode: allocate instance id: %w", err)
 	}
 
-	now := a.now()
 	instanceCtx, cancel := context.WithCancel(context.Background())
+	now := a.now()
 	inst := &instance{
 		id:            id,
 		directory:     request.Directory,
@@ -480,9 +282,6 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	a.instances[id] = inst
 	a.mu.Unlock()
 
-	// The shared server lifetime is observed by watchShared; per-instance
-	// process watching is intentionally gone.
-
 	return &agents.Instance{
 		ID:        id,
 		Backend:   agents.BackendOpenCodeV2,
@@ -494,8 +293,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 	}, nil
 }
 
-// watchProcess is retained for rollback reference. The shared model observes
-// the server via watchShared instead of one watcher per instance.
+// watchProcess is retained for rollback reference.
 func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
 	select {
 	case <-inst.ctx.Done():
@@ -513,11 +311,7 @@ func (a *Adapter) watchProcess(inst *instance, procDone <-chan struct{}) {
 	inst.fail("opencode server process exited unexpectedly")
 }
 
-// StopInstance detaches the instance and closes its event stream. The
-// machine-wide opencode service is never touched: it also serves the desktop
-// client and manually started servers, so stopping the platform's own instance
-// stops nothing but that instance. An instance that is already gone is a
-// successful stop.
+// StopInstance detaches the instance and closes its event stream.
 func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -534,9 +328,7 @@ func (a *Adapter) StopInstance(ctx context.Context, instanceID string) error {
 	return inst.stop(ctx)
 }
 
-// Subscribe returns the instance's normalized event stream. It opens the
-// backend stream on first use. The channel closes when the caller's context
-// ends or the instance stops.
+// Subscribe returns the instance's normalized event stream.
 func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -598,8 +390,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 	}, nil
 }
 
-// ContinueSession re-attaches to an existing native session and refreshes its
-// title from the server.
+// ContinueSession re-attaches to an existing native session and refreshes its title.
 func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*agents.SessionRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -637,8 +428,7 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	}, nil
 }
 
-// SendMessage admits one user turn on the session. It returns once the server
-// accepted the message; replies and tool activity arrive on the subscription.
+// SendMessage admits one user turn on the session.
 func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, message agents.SendMessageRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -667,8 +457,6 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		if err := inst.client.SwitchModel(ctx, ref.SessionID, model); err != nil {
 			return fmt.Errorf("opencode: switch model for session %q: %w", ref.SessionID, err)
 		}
-		// The switch took effect, so the session's live messages now run this
-		// model; remember it before the turn's events can arrive.
 		inst.setSessionModel(ref.SessionID, model)
 	}
 	if err := inst.client.Prompt(ctx, ref.SessionID, message.Text, message.Images); err != nil {
@@ -692,7 +480,6 @@ func (a *Adapter) ListSessions(ctx context.Context, instanceID string) ([]agents
 	return nil, ErrSessionDiscoveryUnsupported
 }
 
-// getInstance returns a registered instance or an error.
 func (a *Adapter) getInstance(instanceID string) (*instance, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -715,8 +502,7 @@ type instance struct {
 	done       chan struct{}
 	now        func() time.Time
 	streamIdle time.Duration
-	// sleep is a test seam for the reconnect backoff; when nil, wait is used.
-	sleep func(time.Duration) bool
+	sleep      func(time.Duration) bool
 
 	mu            sync.Mutex
 	closed        bool
@@ -724,19 +510,12 @@ type instance struct {
 	seq           uint64
 	subs          map[*subscriber]struct{}
 	sessions      map[string]string
-	// sessionModels records the model each session currently runs, learned when
-	// the session is created, continued or listed, and refreshed on a switch.
-	// Live assistant events carry no model of their own, so the adapter stamps
-	// them with this; replayed history uses each message's own model instead.
 	sessionModels map[string]agents.MessageModel
 	toolCalls     map[string]toolCallInfo
-	// turns maps each native session to the id of its open turn, and turnSeq
-	// mints turn ids unique within the instance.
-	turns   map[string]string
-	turnSeq uint64
+	turns         map[string]string
+	turnSeq       uint64
 }
 
-// ensureRunning reports whether the instance can accept work.
 func (inst *instance) ensureRunning() error {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
@@ -746,14 +525,12 @@ func (inst *instance) ensureRunning() error {
 	return nil
 }
 
-// isClosed reports whether the instance has been stopped.
 func (inst *instance) isClosed() bool {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	return inst.closed
 }
 
-// active reports whether the instance is still streaming.
 func (inst *instance) active() bool {
 	if inst.ctx.Err() != nil {
 		return false
@@ -761,7 +538,6 @@ func (inst *instance) active() bool {
 	return !inst.isClosed()
 }
 
-// stop closes the instance's stream, tears down its server and is idempotent.
 func (inst *instance) stop(ctx context.Context) error {
 	inst.mu.Lock()
 	if inst.closed {
@@ -779,11 +555,6 @@ func (inst *instance) stop(ctx context.Context) error {
 	return nil
 }
 
-// fail marks the instance failed after its backend went away without a stop.
-// It publishes an instance-scoped lifecycle event carrying the failed state so
-// the platform's applyLifecycle accepts the transition (running -> failed) and
-// dependent sessions reconcile to disconnected, then tears the instance down
-// exactly like a stop. It is idempotent.
 func (inst *instance) fail(detail string) {
 	event := inst.event("")
 	event.Type = agents.EventLifecycle
@@ -801,8 +572,6 @@ func (inst *instance) fail(detail string) {
 	inst.cancel()
 }
 
-// registerSession remembers a native session so its events are routed to this
-// instance. A non-empty title replaces a previously remembered empty one.
 func (inst *instance) registerSession(sessionID, title string) {
 	if sessionID == "" {
 		return
@@ -814,7 +583,6 @@ func (inst *instance) registerSession(sessionID, title string) {
 	inst.mu.Unlock()
 }
 
-// knownSession reports whether a session belongs to this instance.
 func (inst *instance) knownSession(sessionID string) bool {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
@@ -822,9 +590,6 @@ func (inst *instance) knownSession(sessionID string) bool {
 	return ok
 }
 
-// setSessionModel records the model a session currently runs, keyed by the
-// native session id. It is learned from session create/continue/list and
-// refreshed when the platform switches the model for a turn.
 func (inst *instance) setSessionModel(sessionID string, ref ModelRef) {
 	model := messageModel(ref)
 	if sessionID == "" || model == nil {
@@ -835,7 +600,6 @@ func (inst *instance) setSessionModel(sessionID string, ref ModelRef) {
 	inst.mu.Unlock()
 }
 
-// sessionModel returns the session's current model, or nil when none is known.
 func (inst *instance) sessionModel(sessionID string) *agents.MessageModel {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
@@ -846,9 +610,6 @@ func (inst *instance) sessionModel(sessionID string) *agents.MessageModel {
 	return &model
 }
 
-// messageModel converts a native ModelRef into the platform's MessageModel,
-// using the provider/model id form the rest of the platform speaks. A ref with
-// no id is not a model and yields nil.
 func messageModel(ref ModelRef) *agents.MessageModel {
 	if ref.ID == "" {
 		return nil
@@ -858,24 +619,6 @@ func messageModel(ref ModelRef) *agents.MessageModel {
 		id = ref.ProviderID + "/" + ref.ID
 	}
 	return &agents.MessageModel{ID: id, Provider: ref.ProviderID, Variant: ref.Variant}
-}
-
-// addSubscriber registers a subscriber unless the instance is already closed.
-func (inst *instance) addSubscriber(sub *subscriber) error {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	if inst.closed {
-		return fmt.Errorf("opencode: instance %q is not running", inst.id)
-	}
-	inst.subs[sub] = struct{}{}
-	return nil
-}
-
-// removeSubscriber drops a finished subscriber.
-func (inst *instance) removeSubscriber(sub *subscriber) {
-	inst.mu.Lock()
-	delete(inst.subs, sub)
-	inst.mu.Unlock()
 }
 
 // DetectTurn reports whether the native session is actively running a turn.
@@ -903,895 +646,6 @@ func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, 
 	return active[ref.SessionID], nil
 }
 
-
-// ensureStream starts the instance's single backend event reader on first use.
-func (inst *instance) ensureStream() {
-	inst.mu.Lock()
-	if inst.streamStarted || inst.closed {
-		inst.mu.Unlock()
-		return
-	}
-	inst.streamStarted = true
-	inst.mu.Unlock()
-	go inst.runStream()
-}
-
-// publish stamps the envelope, assigns the next per-instance sequence and
-// delivers the event to every current subscriber.
-func (inst *instance) publish(event agents.NormalizedEvent) {
-	inst.mu.Lock()
-	if inst.closed {
-		inst.mu.Unlock()
-		return
-	}
-	inst.seq++
-	event.Sequence = inst.seq
-	event.InstanceID = inst.id
-	event.Backend = agents.BackendOpenCodeV2
-	if event.Timestamp.IsZero() {
-		event.Timestamp = inst.now()
-	}
-	subs := make([]*subscriber, 0, len(inst.subs))
-	for sub := range inst.subs {
-		subs = append(subs, sub)
-	}
-	inst.mu.Unlock()
-
-	for _, sub := range subs {
-		select {
-		case sub.stash <- event:
-		case <-sub.done:
-		}
-	}
-}
-
-// runStream reads the server's SSE stream, reconnects with backoff after a
-// drop, and reports each error without affecting any other instance. The
-// backoff is reset only when a connection actually delivered an event, so a
-// server that accepts and immediately closes the stream backs off up to the
-// cap instead of hammering it at the minimum delay. A malformed payload is
-// reported with the malformed_event code so the UI can tell a bad stream from
-// a dead server.
-func (inst *instance) runStream() {
-	backoff := streamRetryMin
-	for {
-		if !inst.active() {
-			return
-		}
-		events, err := inst.consume()
-		if !inst.active() {
-			return
-		}
-		if err != nil {
-			code := "stream_error"
-			if errors.Is(err, errMalformedEvent) {
-				code = "malformed_event"
-			}
-			inst.publishStreamError(code, err)
-		}
-		if events > 0 {
-			// A connection that delivered events was healthy; reset so a
-			// long-lived stream that later drops reconnects promptly.
-			backoff = streamRetryMin
-		}
-		if !inst.pause(backoff) {
-			return
-		}
-		backoff = nextBackoff(backoff)
-	}
-}
-
-// consume opens one event-stream connection, guards it with an idle watchdog,
-// and drains it. It returns the number of events read and the terminating
-// error. A silent-but-open stream is canceled by the watchdog and reported as
-// an error so runStream reconnects instead of blocking forever.
-func (inst *instance) consume() (int, error) {
-	attemptCtx, cancel := context.WithCancel(inst.ctx)
-	defer cancel()
-
-	activity := make(chan struct{}, 1)
-	watchdogDone := make(chan struct{})
-	if inst.streamIdle > 0 {
-		go func() {
-			defer close(watchdogDone)
-			timer := time.NewTimer(inst.streamIdle)
-			defer timer.Stop()
-			for {
-				select {
-				case <-attemptCtx.Done():
-					return
-				case <-activity:
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
-					timer.Reset(inst.streamIdle)
-				case <-timer.C:
-					// No data within the idle window: force the blocked
-					// read to unblock so the stream reconnects.
-					cancel()
-					return
-				}
-			}
-		}()
-	} else {
-		close(watchdogDone)
-	}
-
-	stream, err := inst.client.Events(attemptCtx)
-	if err != nil {
-		cancel()
-		<-watchdogDone
-		return 0, err
-	}
-	// Every line from the server — heartbeat comments included — resets the
-	// idle watchdog. opencode sends ": heartbeat" every few seconds while a
-	// turn is quiet, so only decoded events would let a healthy stream look
-	// silent and be wrongly canceled.
-	stream.SetActivity(func() {
-		select {
-		case activity <- struct{}{}:
-		default:
-		}
-	})
-	events, err := inst.pump(stream)
-	_ = stream.Close()
-	cancel()
-	<-watchdogDone
-	return events, err
-}
-
-// pump reads one stream to completion, normalizing and publishing each event.
-// It returns the number of events read so the caller can tell a healthy
-// connection from one that closed without ever producing data.
-func (inst *instance) pump(stream *EventStream) (int, error) {
-	events := 0
-	for {
-		event, err := stream.Next()
-		if err != nil {
-			return events, err
-		}
-		events++
-		for _, normalized := range inst.normalize(event) {
-			inst.publish(normalized)
-		}
-	}
-}
-
-// pause sleeps for the backoff through the test seam when set, otherwise using
-// the instance's cancellation-aware wait. It reports false when the instance
-// ended.
-func (inst *instance) pause(d time.Duration) bool {
-	if inst.sleep != nil {
-		return inst.sleep(d)
-	}
-	return inst.wait(d)
-}
-
-// wait sleeps for the backoff or returns false when the instance ended.
-func (inst *instance) wait(d time.Duration) bool {
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return true
-	case <-inst.done:
-		return false
-	case <-inst.ctx.Done():
-		return false
-	}
-}
-
-// nextBackoff doubles the delay up to the cap.
-func nextBackoff(current time.Duration) time.Duration {
-	next := current * 2
-	if next > streamRetryMax {
-		next = streamRetryMax
-	}
-	return next
-}
-
-// publishStreamError surfaces an instance-level stream failure with the given
-// diagnostic code. The contract requires a session id on error events, so
-// when a session is known the error is attached to it; otherwise it is
-// reported as an instance-scoped lifecycle event, which is valid without a
-// session id.
-func (inst *instance) publishStreamError(code string, err error) {
-	message := truncate(redactSecrets(err.Error()))
-	inst.mu.Lock()
-	sessionID := ""
-	for id := range inst.sessions {
-		sessionID = id
-		break
-	}
-	inst.mu.Unlock()
-
-	if sessionID != "" {
-		inst.publish(inst.errorEvent(sessionID, code, message))
-		return
-	}
-	event := inst.event("")
-	event.Type = agents.EventLifecycle
-	event.Lifecycle = &agents.LifecycleEvent{State: code, Detail: message}
-	inst.publish(event)
-}
-
-// event builds an envelope populated with the instance identity. Sequence is
-// assigned later, centrally, at publish time.
-func (inst *instance) event(sessionID string) agents.NormalizedEvent {
-	return agents.NormalizedEvent{
-		InstanceID: inst.id,
-		SessionID:  sessionID,
-		Backend:    agents.BackendOpenCodeV2,
-		Timestamp:  inst.now(),
-	}
-}
-
-// turnEvent builds a turn boundary of the session.
-func (inst *instance) turnEvent(sessionID string, payload agents.TurnPayload) agents.NormalizedEvent {
-	event := inst.event(sessionID)
-	event.Type = agents.EventTurn
-	event.Turn = &payload
-	return event
-}
-
-// turnStarted opens a new turn of the session and remembers its id so the
-// matching end event carries it.
-func (inst *instance) turnStarted(sessionID string) agents.NormalizedEvent {
-	inst.mu.Lock()
-	inst.turnSeq++
-	id := fmt.Sprintf("%s-turn-%d", inst.id, inst.turnSeq)
-	inst.turns[sessionID] = id
-	inst.mu.Unlock()
-	return inst.turnEvent(sessionID, agents.TurnPayload{ID: id, Phase: agents.TurnStarted})
-}
-
-// turnEnded closes the session's open turn. It reports false when no turn is
-// open: the stream joined mid-turn, so there is no running state to settle.
-func (inst *instance) turnEnded(sessionID string, outcome agents.TurnOutcome) ([]agents.NormalizedEvent, bool) {
-	inst.mu.Lock()
-	id, open := inst.turns[sessionID]
-	if open {
-		delete(inst.turns, sessionID)
-	}
-	inst.mu.Unlock()
-	if !open {
-		return nil, false
-	}
-	return []agents.NormalizedEvent{inst.turnEvent(sessionID, agents.TurnPayload{ID: id, Phase: agents.TurnEnded, Outcome: outcome})}, true
-}
-
-// interactionEvent builds an interaction boundary of the session.
-func (inst *instance) interactionEvent(sessionID string, payload agents.InteractionPayload) agents.NormalizedEvent {
-	event := inst.event(sessionID)
-	event.Type = agents.EventInteraction
-	event.Interaction = &payload
-	return event
-}
-
-// resolvedInteraction settles one pending interaction. An event without an id
-// cannot name what it settles, so it is preserved as unknown instead.
-func (inst *instance) resolvedInteraction(sessionID string, kind agents.InteractionKind, id string, event *Event) []agents.NormalizedEvent {
-	if id == "" {
-		return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
-	}
-	return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
-		ID:    id,
-		Kind:  kind,
-		Phase: agents.InteractionResolved,
-	})}
-}
-
-// requestID returns the native id of a permission or form event: requestID when
-// present, otherwise the generic id field.
-func (data eventData) requestID() string {
-	if data.RequestID != "" {
-		return data.RequestID
-	}
-	return data.ID
-}
-
-// errorEvent builds a typed error event.
-func (inst *instance) errorEvent(sessionID, code, message string) agents.NormalizedEvent {
-	event := inst.event(sessionID)
-	event.Type = agents.EventError
-	event.Error = &agents.ErrorPayload{Code: code, Message: truncate(redactSecrets(message))}
-	return event
-}
-
-// lifecycleEvent builds a session-scoped lifecycle event.
-func (inst *instance) lifecycleEvent(sessionID, state, detail string) agents.NormalizedEvent {
-	event := inst.event(sessionID)
-	event.Type = agents.EventLifecycle
-	event.Lifecycle = &agents.LifecycleEvent{State: state, Detail: truncate(detail)}
-	return event
-}
-
-// unknown preserves an event the adapter could not normalize, byte for byte, up
-// to the contract's raw-blob bound. An oversized body is trimmed so the event
-// still validates — an unbounded Raw would be rejected downstream and the event
-// lost entirely, whereas a bounded one still tells the reader an unrecognized
-// event arrived.
-func (inst *instance) unknown(event *Event, sessionID string) agents.NormalizedEvent {
-	out := inst.event(sessionID)
-	out.Type = agents.EventUnknown
-	out.Raw = boundRaw(event.Raw())
-	return out
-}
-
-// owns reports whether an event belongs to this instance: its session was seen
-// before, or its location matches the instance directory (and the session is
-// then learned).
-func (inst *instance) owns(event *Event, sessionID string) bool {
-	if sessionID == "" {
-		return false
-	}
-	if inst.knownSession(sessionID) {
-		return true
-	}
-	if event.Location != nil && sameDirectory(event.Location.Directory, inst.directory) {
-		inst.registerSession(sessionID, "")
-		return true
-	}
-	return false
-}
-
-// normalize maps one opencode event onto the normalized union. Events for other
-// locations or sessions are ignored; a known session's unmapped event is
-// preserved as EventUnknown.
-func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
-	data := decodeEventData(event.Data)
-	sessionID := data.SessionID
-	if sessionID == "" && data.Form != nil && data.Form.SessionID != "" {
-		sessionID = data.Form.SessionID
-	}
-	if !inst.owns(event, sessionID) {
-		return nil
-	}
-
-	switch event.Type {
-	case "session.text.delta":
-		out := inst.event(sessionID)
-		out.Type = agents.EventMessage
-		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Delta, Final: false, Model: inst.sessionModel(sessionID)}
-		return []agents.NormalizedEvent{out}
-
-	case "session.text.ended":
-		// Always carry the part's full text: opencode ends each text part with
-		// a complete snapshot, so a consumer that joined after the deltas
-		// streamed — a chat pane opened while create-with-first-message
-		// already started the turn — converges on the whole block instead of
-		// keeping a truncated prefix. Consumers replace on final instead of
-		// concatenating.
-		out := inst.event(sessionID)
-		out.Type = agents.EventMessage
-		out.Message = &agents.MessagePayload{Role: "assistant", Text: data.Text, Final: true, Model: inst.sessionModel(sessionID)}
-		return []agents.NormalizedEvent{out}
-
-	case "session.text.started":
-		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "text_started", "")}
-
-	// Reasoning streams under its own event family and becomes its own kind of
-	// entry: the deltas carry it and reasoning.ended closes the block with its
-	// full snapshot. No event is emitted for reasoning.started, because nothing
-	// consumes a start marker — the workbench opens the block on the first
-	// chunk.
-	case "session.reasoning.started":
-		return nil
-
-	case "session.reasoning.delta":
-		out := inst.event(sessionID)
-		out.Type = agents.EventThinking
-		out.Thinking = &agents.ThinkingPayload{Text: data.Delta, Final: false}
-		return []agents.NormalizedEvent{out}
-
-	case "session.reasoning.ended":
-		// The same full-snapshot rule as session.text.ended: the ended event
-		// always carries the block's whole text so a late subscriber converges.
-		out := inst.event(sessionID)
-		out.Type = agents.EventThinking
-		out.Thinking = &agents.ThinkingPayload{Text: data.Text, Final: true}
-		return []agents.NormalizedEvent{out}
-
-	case "session.tool.input.started":
-		inst.rememberTool(sessionID, data.AssistantMessageID, data.ID, data.Name, nil)
-		return nil
-
-	case "session.tool.called":
-		out := inst.event(sessionID)
-		out.Type = agents.EventToolCall
-		tool := inst.getTool(sessionID, data.AssistantMessageID, data.ID)
-		name := tool.name
-		if name == "" {
-			name = data.Name
-		}
-		prunedInput := agents.PruneToolInput(name, data.Input)
-		inst.rememberTool(sessionID, data.AssistantMessageID, data.ID, name, data.Input)
-		out.ToolCall = &agents.ToolCallPayload{
-			CallID: data.ID,
-			Name:   name,
-			Input:  prunedInput,
-		}
-		return []agents.NormalizedEvent{out}
-
-	case "session.tool.success":
-		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
-		out := inst.event(sessionID)
-		out.Type = agents.EventToolResult
-		summary := agents.SummarizeToolResult(info.name, info.input, flattenContent(data.Content), false)
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: false}
-		return []agents.NormalizedEvent{out}
-
-	case "session.tool.failed":
-		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
-		out := inst.event(sessionID)
-		out.Type = agents.EventToolResult
-		errMsg := structuredErrorMessage(data, data.Content)
-		summary := agents.SummarizeToolResult(info.name, info.input, errMsg, true)
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: true}
-		return []agents.NormalizedEvent{out}
-
-	case "session.execution.started":
-		return []agents.NormalizedEvent{inst.turnStarted(sessionID)}
-
-	case "session.execution.succeeded":
-		turn, _ := inst.turnEnded(sessionID, agents.TurnCompleted)
-		return turn
-
-	case "session.execution.interrupted":
-		turn, _ := inst.turnEnded(sessionID, agents.TurnCancelled)
-		return turn
-
-	case "session.execution.failed":
-		// The turn ends before its error is reported, so consumers never see a
-		// failure while the turn still looks open.
-		turn, _ := inst.turnEnded(sessionID, agents.TurnFailed)
-		return append(turn, inst.errorEvent(sessionID, errorCode(event.Type), structuredErrorMessage(data, nil)))
-
-	case "session.step.failed", "session.error":
-		return []agents.NormalizedEvent{inst.errorEvent(sessionID, errorCode(event.Type), structuredErrorMessage(data, nil))}
-
-	case "permission.asked":
-		id := data.requestID()
-		if id == "" {
-			return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
-		}
-		var resources []string
-		_ = json.Unmarshal(data.Resources, &resources)
-		if resources == nil {
-			resources = []string{}
-		}
-		return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
-			ID:    id,
-			Kind:  agents.InteractionPermission,
-			Phase: agents.InteractionRequested,
-			Permission: &agents.PermissionRequest{
-				ID:        id,
-				SessionID: sessionID,
-				Action:    data.Action,
-				Resources: resources,
-				Message:   data.Message,
-			},
-		})}
-
-	case "permission.replied":
-		return inst.resolvedInteraction(sessionID, agents.InteractionPermission, data.requestID(), event)
-
-	case "form.created":
-		if data.Form == nil || data.Form.ID == "" {
-			return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
-		}
-		return []agents.NormalizedEvent{inst.interactionEvent(sessionID, agents.InteractionPayload{
-			ID:    data.Form.ID,
-			Kind:  agents.InteractionForm,
-			Phase: agents.InteractionRequested,
-			Form: &agents.FormInfo{
-				ID:        data.Form.ID,
-				SessionID: sessionID,
-				Title:     data.Form.Title,
-				Fields:    data.Form.Fields,
-			},
-		})}
-
-	case "form.replied", "form.cancelled":
-		id := data.requestID()
-		if id == "" && data.Form != nil {
-			id = data.Form.ID
-		}
-		return inst.resolvedInteraction(sessionID, agents.InteractionForm, id, event)
-
-	case "session.retry.scheduled":
-		return []agents.NormalizedEvent{inst.errorEvent(sessionID, "retry_scheduled", retryMessage(data))}
-
-	case "session.created":
-		inst.registerSession(sessionID, data.Title)
-		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, "created", data.Title)}
-
-	case "session.updated", "session.renamed", "session.moved", "session.deleted",
-		"session.forked", "session.instructions.updated", "session.skill.activated",
-		"session.step.started", "session.step.streamed",
-		"session.compaction.started", "session.compaction.ended",
-		"session.revert.staged", "session.revert.cleared", "session.revert.committed":
-		return []agents.NormalizedEvent{inst.lifecycleEvent(sessionID, lifecycleState(event.Type), lifecycleDetail(data))}
-
-	case "session.step.ended":
-		// A finished step reports the turn's token usage; it becomes the
-		// workbench's freshest context anchor. The usage rides the lifecycle
-		// event because no message renders for a step boundary.
-		lifecycle := inst.lifecycleEvent(sessionID, lifecycleState(event.Type), lifecycleDetail(data))
-		lifecycle.Lifecycle.Usage = data.Tokens.Usage()
-		return []agents.NormalizedEvent{lifecycle}
-
-	default:
-		return []agents.NormalizedEvent{inst.unknown(event, sessionID)}
-	}
-}
-
-type toolCallInfo struct {
-	name  string
-	input []byte
-}
-
-// rememberTool records a tool's name and input until its result is emitted.
-func (inst *instance) rememberTool(sessionID, messageID, toolID, name string, input []byte) {
-	if toolID == "" {
-		return
-	}
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	key := toolKey(sessionID, messageID, toolID)
-	existing := inst.toolCalls[key]
-	if name == "" {
-		name = existing.name
-	}
-	if len(input) == 0 {
-		input = existing.input
-	}
-	inst.toolCalls[key] = toolCallInfo{name: name, input: input}
-}
-
-// getTool returns a recorded tool info, if any.
-func (inst *instance) getTool(sessionID, messageID, toolID string) toolCallInfo {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	return inst.toolCalls[toolKey(sessionID, messageID, toolID)]
-}
-
-// forgetTool drops a tool's recorded info once it finishes and returns it.
-func (inst *instance) forgetTool(sessionID, messageID, toolID string) toolCallInfo {
-	inst.mu.Lock()
-	defer inst.mu.Unlock()
-	key := toolKey(sessionID, messageID, toolID)
-	info := inst.toolCalls[key]
-	delete(inst.toolCalls, key)
-	return info
-}
-
-// toolKey scopes adapter-side tool bookkeeping to one message's tool.
-func toolKey(sessionID, messageID, toolID string) string {
-	return sessionID + "|" + messageID + "|" + toolID
-}
-
-// subscriber is one consumer of an instance's stream. stash is written by
-// publishers and never closed; out is owned and closed by forward.
-type subscriber struct {
-	stash chan agents.NormalizedEvent
-	out   chan agents.NormalizedEvent
-	done  chan struct{}
-	once  sync.Once
-}
-
-func newSubscriber() *subscriber {
-	return &subscriber{
-		stash: make(chan agents.NormalizedEvent, 64),
-		out:   make(chan agents.NormalizedEvent, 64),
-		done:  make(chan struct{}),
-	}
-}
-
-// drainTimeout bounds how long forward waits to flush an already-queued event
-// to a consumer at teardown, so a terminal event is not lost while a gone
-// consumer can never block the goroutine forever.
-const drainTimeout = 100 * time.Millisecond
-
-// forward copies the subscriber's stash to its output and closes the output
-// when the subscription ends. On teardown it flushes events already queued
-// (for example a terminal `failed` lifecycle published immediately before the
-// instance was torn down) so the consumer sees them before the channel closes.
-func (s *subscriber) forward() {
-	defer close(s.out)
-	for {
-		select {
-		case event := <-s.stash:
-			select {
-			case s.out <- event:
-			case <-s.done:
-				// The subscription ended, but this event was already read
-				// from the stash: deliver it (bounded) before flushing the
-				// rest, so a terminal event is never dropped.
-				s.deliver(event)
-				s.flush()
-				return
-			}
-		case <-s.done:
-			s.flush()
-			return
-		}
-	}
-}
-
-// deliver sends one event to the output, giving up after drainTimeout so a
-// gone consumer cannot wedge the goroutine.
-func (s *subscriber) deliver(event agents.NormalizedEvent) {
-	select {
-	case s.out <- event:
-	case <-time.After(drainTimeout):
-	}
-}
-
-// flush delivers the subscriber's already-queued events to its output.
-func (s *subscriber) flush() {
-	for {
-		select {
-		case event := <-s.stash:
-			s.deliver(event)
-		default:
-			return
-		}
-	}
-}
-
-// watch closes the subscriber when either the caller's context ends or the
-// instance stops, then unregisters it.
-func (s *subscriber) watch(ctx context.Context, inst *instance) {
-	select {
-	case <-ctx.Done():
-	case <-inst.done:
-	}
-	s.once.Do(func() { close(s.done) })
-	inst.removeSubscriber(s)
-}
-
-// eventData is the union of the data bodies the adapter inspects. Unknown
-// fields are ignored.
-type eventData struct {
-	SessionID          string           `json:"sessionID"`
-	AssistantMessageID string           `json:"assistantMessageID"`
-	Delta              string           `json:"delta"`
-	Text               string           `json:"text"`
-	ID                 string           `json:"id"`
-	Name               string           `json:"name"`
-	Input              json.RawMessage  `json:"input"`
-	Content            json.RawMessage  `json:"content"`
-	Metadata           json.RawMessage  `json:"metadata"`
-	Error              *structuredError `json:"error"`
-	Title              string           `json:"title"`
-	Reason             string           `json:"reason"`
-	Attempt            int              `json:"attempt"`
-	// Tokens carries a finished step's token usage (session.step.ended).
-	// Absent on every other event; a zero total is treated as unknown.
-	Tokens *WireTokens `json:"tokens"`
-	// RequestID, Action, Resources and Message describe a permission request
-	// (permission.asked); Form describes a question form (form.created).
-	RequestID string          `json:"requestID"`
-	Action    string          `json:"action"`
-	Resources json.RawMessage `json:"resources"`
-	Message   string          `json:"message"`
-	Form      *nativeFormInfo `json:"form"`
-}
-
-// nativeFormInfo mirrors the form object of form.created.
-type nativeFormInfo struct {
-	ID        string          `json:"id"`
-	SessionID string          `json:"sessionID"`
-	Title     string          `json:"title"`
-	Fields    json.RawMessage `json:"fields"`
-}
-
-// structuredError mirrors Session.StructuredError.
-type structuredError struct {
-	Type    string `json:"type"`
-	Message string `json:"message"`
-	Status  int    `json:"status"`
-}
-
-// decodeEventData parses an event body into the union; a malformed body yields
-// the zero value and is later preserved as EventUnknown.
-func decodeEventData(raw json.RawMessage) eventData {
-	var data eventData
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &data)
-	}
-	return data
-}
-
-// errorCode classifies a failure event type.
-func errorCode(eventType string) string {
-	switch eventType {
-	case "session.error":
-		return "session_error"
-	case "session.step.failed":
-		return "step_failed"
-	default:
-		return "execution_failed"
-	}
-}
-
-// lifecycleDetail chooses human-readable context for a lifecycle event.
-func lifecycleDetail(data eventData) string {
-	if data.Title != "" {
-		return data.Title
-	}
-	return data.Reason
-}
-
-// structuredErrorMessage extracts a failure's message, falling back to content.
-func structuredErrorMessage(data eventData, content json.RawMessage) string {
-	if data.Error != nil {
-		if data.Error.Message != "" {
-			return data.Error.Message
-		}
-		if data.Error.Type != "" {
-			return data.Error.Type
-		}
-	}
-	if len(content) > 0 {
-		if text := flattenContent(content); text != "" {
-			return text
-		}
-	}
-	return "opencode reported a failure"
-}
-
-// retryMessage renders a scheduled-retry event.
-func retryMessage(data eventData) string {
-	message := structuredErrorMessage(data, nil)
-	if data.Attempt > 0 {
-		return fmt.Sprintf("retry attempt %d: %s", data.Attempt, message)
-	}
-	return message
-}
-
-// lifecycleState converts a native event type into a lifecycle state name.
-func lifecycleState(eventType string) string {
-	return strings.ReplaceAll(strings.TrimPrefix(eventType, "session."), ".", "_")
-}
-
-// boundedMetadata keeps only a size-bounded metadata body carrying edit file
-// diffs; anything larger or without files is dropped so the event stays small.
-func boundedMetadata(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 || len(raw) > agents.MaxRawEventBytes {
-		return nil
-	}
-	meta := agents.ParseToolResultMetadata(raw)
-	if meta == nil || len(meta.Files) == 0 {
-		return nil
-	}
-	return append(json.RawMessage(nil), raw...)
-}
-
-// boundRaw copies a backend event body, capped at the contract's raw-blob bound
-// (MaxRawEventBytes). It backs off to a UTF-8 rune boundary so the trim never
-// splits a multi-byte character. The wire read tolerates far larger lines (see
-// maxStreamLineBytes); this keeps the *normalized* event within the contract.
-func boundRaw(raw []byte) json.RawMessage {
-	if len(raw) <= agents.MaxRawEventBytes {
-		return append(json.RawMessage(nil), raw...)
-	}
-	cut := agents.MaxRawEventBytes
-	for cut > 0 && !utf8.RuneStart(raw[cut]) {
-		cut--
-	}
-	return append(json.RawMessage(nil), raw[:cut]...)
-}
-
-// maxToolOutputBytes limits the text payload carried inside a NormalizedEvent's
-// ToolResult. It prevents multi-megabyte payloads (e.g. read calls returning
-// large files or inlined image Base64 data) from overwhelming memory, network,
-// or frontend rendering, while comfortably accommodating normal large outputs
-// (such as long diffs or test logs up to 256KiB).
-const maxToolOutputBytes = 256 * 1024 // 256KB
-
-var dataURIPattern = regexp.MustCompile(`data:image/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\s]{200,}`)
-
-// formatByteSize formats a byte count into a human-readable string.
-func formatByteSize(bytes int) string {
-	switch {
-	case bytes >= 1024*1024:
-		return fmt.Sprintf("%.2f MB", float64(bytes)/(1024*1024))
-	case bytes >= 1024:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
-	default:
-		return fmt.Sprintf("%d 字节", bytes)
-	}
-}
-
-// compactDataURIs replaces long inlined data URI image payloads with a concise summary.
-func compactDataURIs(text string) string {
-	if !strings.Contains(text, "data:image/") {
-		return text
-	}
-	return dataURIPattern.ReplaceAllStringFunc(text, func(match string) string {
-		return fmt.Sprintf("[图片数据 (base64, 约 %s)]", formatByteSize(len(match)))
-	})
-}
-
-// summarizeToolOutput compacts tool result strings so multi-megabyte payloads
-// never overwhelm the event stream or client memory.
-func summarizeToolOutput(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	cleaned := compactDataURIs(raw)
-	if len(cleaned) <= maxToolOutputBytes {
-		return cleaned
-	}
-	cut := maxToolOutputBytes
-	for cut > 0 && !utf8.RuneStart(cleaned[cut]) {
-		cut--
-	}
-	lines := strings.Count(raw, "\n") + 1
-	return fmt.Sprintf("%s\n\n... [工具输出过长，已截断展示；原始内容共 %s，约 %d 行]",
-		cleaned[:cut],
-		formatByteSize(len(raw)),
-		lines,
-	)
-}
-
-// flattenContent renders a tool result content value (string, text blocks or a
-// wrapped object) as display text, compacted to a safe size.
-func flattenContent(raw json.RawMessage) string {
-	text := flattenRawContent(raw)
-	return summarizeToolOutput(text)
-}
-
-func flattenRawContent(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return text
-	}
-	var blocks []json.RawMessage
-	if err := json.Unmarshal(raw, &blocks); err == nil {
-		parts := make([]string, 0, len(blocks))
-		for _, block := range blocks {
-			if rendered := flattenRawContent(block); rendered != "" {
-				parts = append(parts, rendered)
-			}
-		}
-		return strings.Join(parts, "\n")
-	}
-	var object struct {
-		Text    string          `json:"text"`
-		Output  string          `json:"output"`
-		Message string          `json:"message"`
-		Content json.RawMessage `json:"content"`
-	}
-	if err := json.Unmarshal(raw, &object); err == nil {
-		if object.Text != "" {
-			return object.Text
-		}
-		if len(object.Content) > 0 {
-			if rendered := flattenRawContent(object.Content); rendered != "" {
-				return rendered
-			}
-		}
-		if object.Output != "" {
-			return object.Output
-		}
-		if object.Message != "" {
-			return object.Message
-		}
-	}
-	return truncate(string(raw))
-}
-
-// parseModelRef parses "provider/model#variant" into the API's ModelRef. The
-// provider is required: the API identifies models by provider and id.
 func parseModelRef(value string) (ModelRef, error) {
 	if strings.TrimSpace(value) == "" {
 		return ModelRef{}, errors.New("opencode: model is required")
@@ -1814,8 +668,6 @@ func parseModelRef(value string) (ModelRef, error) {
 	return ModelRef{ID: id, ProviderID: provider, Variant: variant}, nil
 }
 
-// sameDirectory compares two directories after cleaning and symlink-resolving
-// them, so routing is not fooled by a trailing slash or a symlinked root.
 func sameDirectory(a, b string) bool {
 	if a == b {
 		return true
@@ -1828,8 +680,6 @@ func sameDirectory(a, b string) bool {
 	return resolvedA == resolvedB
 }
 
-// truncate bounds a diagnostic string. It backs off to a UTF-8 rune boundary so
-// a multi-byte character is never split into invalid bytes.
 func truncate(value string) string {
 	if len(value) <= maxEventBytes {
 		return value
@@ -1841,228 +691,7 @@ func truncate(value string) string {
 	return value[:cut] + "…(truncated)"
 }
 
-// freePort asks the OS for an unused loopback port.
-func freePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, fmt.Errorf("opencode: find free port: %w", err)
-	}
-	defer listener.Close()
-	address, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return 0, errors.New("opencode: unexpected listener address")
-	}
-	return address.Port, nil
-}
-
-// randomPassword returns a 256-bit base64url server password.
-func randomPassword() (string, error) {
-	var buf [32]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", fmt.Errorf("opencode: generate server password: %w", err)
-	}
-	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
-}
-
-// launchServer starts `opencode serve` on a loopback port with a generated
-// password (passed via the environment, never argv), waits for /api/info, and
-// returns a handle whose stop kills the process group.
-func (a *Adapter) launchServer(ctx context.Context, directory string) (*launchResult, error) {
-	port, err := freePort()
-	if err != nil {
-		return nil, err
-	}
-	password, err := randomPassword()
-	if err != nil {
-		return nil, err
-	}
-
-	// exec.Command, not CommandContext: the server must outlive the start
-	// request. Teardown is owned by the returned stop hook; a canceled start
-	// context is honored by waitReady.
-	command, err := a.backendCommand(context.Background(), "serve", "--hostname", a.hostname, "--port", strconv.Itoa(port))
-	if err != nil {
-		return nil, err
-	}
-	command.Dir = directory
-	command.Env = append(os.Environ(), "OPENCODE_SERVER_PASSWORD="+password)
-	output := &limitedWriter{limit: maxStartupOutputBytes}
-	command.Stdout = output
-	command.Stderr = output
-	if err := platform.New().Process().Configure(command); err != nil {
-		return nil, fmt.Errorf("opencode: configure server process: %w", err)
-	}
-	command.WaitDelay = 2 * time.Second
-
-	if err := command.Start(); err != nil {
-		return nil, fmt.Errorf("opencode: start server process: %w", err)
-	}
-	// Enroll the server in platform supervision (the Windows Job Object);
-	// a server the platform cannot supervise must not be left behind.
-	if err := platform.New().Process().Attach(command.Process); err != nil {
-		_ = platform.New().Process().Terminate(command.Process.Pid)
-		_ = command.Wait()
-		return nil, fmt.Errorf("opencode: supervise server process: %w", err)
-	}
-	process := &launchedProcess{cmd: command, done: make(chan struct{})}
-	go process.wait()
-
-	endpoint := "http://" + net.JoinHostPort(a.hostname, strconv.Itoa(port))
-	client, err := NewClient(ClientOptions{BaseURL: endpoint, Username: defaultUsername, Password: password})
-	if err != nil {
-		_ = platform.New().Process().Terminate(command.Process.Pid)
-		_ = process.wait()
-		return nil, err
-	}
-	if err := a.waitReady(ctx, process, client); err != nil {
-		_ = platform.New().Process().Terminate(command.Process.Pid)
-		_ = process.wait()
-		// Redact the exact generated password (which may appear in a
-		// non-key=value shape) as well as generic credential shapes.
-		return nil, fmt.Errorf("%w: %s", err, client.redact(output.String()))
-	}
-
-	return &launchResult{
-		client:   client,
-		endpoint: endpoint,
-		done:     process.done,
-		stop: func(stopCtx context.Context) error {
-			_ = platform.New().Process().Terminate(command.Process.Pid)
-			waited := make(chan error, 1)
-			go func() { waited <- process.wait() }()
-			select {
-			case <-waited:
-			case <-stopCtx.Done():
-			case <-time.After(3 * time.Second):
-			}
-			return nil
-		},
-	}, nil
-}
-
-// waitReady polls /api/info until the server answers, the process exits, the
-// context ends, or the startup deadline passes.
-func (a *Adapter) waitReady(ctx context.Context, process *launchedProcess, client *Client) error {
-	deadline := time.NewTimer(a.startupTimeout)
-	defer deadline.Stop()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	probe := func() error {
-		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		_, err := client.Info(probeCtx)
-		return err
-	}
-	if err := probe(); err != nil {
-		var apiErr *APIError
-		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("opencode: server rejected generated credentials: %w", err)
-		}
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline.C:
-			return errors.New("opencode: server did not become ready in time")
-		case <-process.done:
-			return errors.New("opencode: server exited before becoming ready")
-		case <-ticker.C:
-			if err := probe(); err == nil {
-				return nil
-			}
-		}
-	}
-}
-
-// launchedProcess reaps a child exactly once and exposes its completion.
-type launchedProcess struct {
-	cmd  *exec.Cmd
-	once sync.Once
-	err  error
-	done chan struct{}
-}
-
-// wait reaps the child once and closes done. Concurrent callers block until the
-// single reap completes.
-func (p *launchedProcess) wait() error {
-	p.once.Do(func() {
-		p.err = p.cmd.Wait()
-		close(p.done)
-	})
-	<-p.done
-	return p.err
-}
-
-// limitedWriter captures at most limit bytes and always reports the full write
-// so a chatty child never blocks. It is safe for concurrent use.
-type limitedWriter struct {
-	mu      sync.Mutex
-	buffer  bytes.Buffer
-	limit   int
-	written int
-}
-
-// Write appends up to the limit and discards the remainder.
-func (l *limitedWriter) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if l.written < l.limit {
-		remaining := l.limit - l.written
-		chunk := p
-		if len(chunk) > remaining {
-			chunk = chunk[:remaining]
-		}
-		n, err := l.buffer.Write(chunk)
-		l.written += n
-		if err != nil {
-			return n, err
-		}
-	}
-	return len(p), nil
-}
-
-// String returns the captured output.
-func (l *limitedWriter) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.buffer.String()
-}
-
-// newUUID returns an RFC 4122 version 4 UUID as a lowercase string.
-func newUUID() (string, error) {
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return "", err
-	}
-	buf[6] = (buf[6] & 0x0f) | 0x40
-	buf[8] = (buf[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
-}
-
-// isMultimodalModel reports whether a model is known to accept image inputs.
-func isMultimodalModel(modelID string) bool {
-	id := strings.ToLower(modelID)
-	indicators := []string{
-		"gpt-4o", "gpt-4-turbo", "gpt-4-vision",
-		"claude-3", "claude-3.5", "claude-3-5", "claude-3.7", "claude-3-7",
-		"gemini", "vision", "vl", "pixtral", "llava", "omni",
-	}
-	for _, ind := range indicators {
-		if strings.Contains(id, ind) {
-			return true
-		}
-	}
-	return false
-}
-
-// ListModels returns the models the machine-wide server offers for a working
-// directory, identified as provider/model with each variant listed under its
-// model. The platform calls it only for an explicit manual refresh and persists
-// the result. An empty directory is the platform-wide scope: the shared service
-// then uses its own default context, so no project has to be involved.
+// ListModels returns the models the machine-wide server offers.
 func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -2087,8 +716,6 @@ func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.Mo
 		for _, variant := range record.Variants {
 			model.Variants = append(model.Variants, variant.ID)
 		}
-		// The server reports the context window per model (Model.Info.limit);
-		// a non-positive value is treated as unknown rather than a limit.
 		if record.Limit != nil && record.Limit.Context > 0 {
 			limit := record.Limit.Context
 			model.ContextLimit = &limit
@@ -2098,8 +725,7 @@ func (a *Adapter) ListModels(ctx context.Context, directory string) ([]agents.Mo
 	return models, nil
 }
 
-// Interrupt ends the running turn of one session through the server's
-// interrupt route. The instance and its other sessions keep running.
+// Interrupt ends the running turn of one session through the server's interrupt route.
 func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	if err := ctx.Err(); err != nil {
 		return err

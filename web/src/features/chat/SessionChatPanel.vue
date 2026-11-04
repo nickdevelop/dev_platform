@@ -52,11 +52,6 @@ import { dispatchSlashCommand } from './composer/slashActionDispatcher'
 import { getSessionHistory, executeCommand, compactSession } from '../../api/sessions'
 import type { ImageAttachment } from '../../api/messageTypes'
 import {
-  VALID_IMAGE_TYPES,
-  imageAttachmentFromFile,
-  imageValidationError,
-} from './composer/imageFiles'
-import {
   type ApprovalMode,
   getPersistedApprovalMode,
   setPersistedApprovalMode,
@@ -64,10 +59,9 @@ import {
 import { useAutoApproval } from './interactions/useAutoApproval'
 import {
   type SendShortcut,
-  getPersistedSendShortcut,
-  setPersistedSendShortcut,
-  shouldSubmitOnKeydown,
 } from './composer/sendShortcut'
+import { useAttachmentUploader } from './composer/useAttachmentUploader'
+import { useComposerKeyboard } from './composer/useComposerKeyboard'
 import FileSidebar from '../files/FileSidebar.vue'
 import FileViewer from '../files/FileViewer.vue'
 import { UiButton, UiDialog } from '../../shared/ui'
@@ -264,33 +258,18 @@ function onCompositionEnd() {
 const approvalMode = ref<ApprovalMode>(
   (initialSessionDraft.approvalMode as ApprovalMode | undefined) || getPersistedApprovalMode(),
 )
-const sendShortcut = ref<SendShortcut>(getPersistedSendShortcut())
-const sendMenuOpen = ref(false)
 
-function toggleSendMenu() {
-  sendMenuOpen.value = !sendMenuOpen.value
-}
-
-function setShortcut(shortcut: SendShortcut) {
-  sendShortcut.value = shortcut
-  setPersistedSendShortcut(shortcut)
-  sendMenuOpen.value = false
-}
-
-function onWindowClick(event: MouseEvent) {
-  if (!sendMenuOpen.value) return
-  const target = event.target as Element | null
-  if (target && !target.closest('.send-split-group')) {
-    sendMenuOpen.value = false
-  }
-}
+const {
+  sendShortcut,
+  sendMenuOpen,
+  toggleSendMenu,
+  setShortcut,
+  onWindowClick,
+  handleKeydown: onComposerKeydown,
+} = useComposerKeyboard(() => void onSubmit())
 
 function onTextareaKeydown(event: KeyboardEvent) {
-  if (dropdown.onKeydown(event)) return
-  if (shouldSubmitOnKeydown(event, sendShortcut.value)) {
-    event.preventDefault()
-    void onSubmit()
-  }
+  onComposerKeydown(event, dropdown.onKeydown(event))
 }
 
 const composerPlaceholder = computed(() => {
@@ -306,9 +285,24 @@ const sendButtonTitle = computed(() => {
 })
 
 // Image attachments support
-const attachedImages = ref<ImageAttachment[]>(
-  Array.isArray(initialSessionDraft.attachedImages) ? [...initialSessionDraft.attachedImages] : [],
-)
+const {
+  attachedImages,
+  previewModalImage,
+  fileInputRef,
+  removeImage,
+  openImagePreview,
+  triggerFileInput,
+  handleUploadedFiles,
+  onFileInput: handleFileInput,
+  onPaste,
+  onDragOver,
+  onDrop: handleDrop,
+} = useAttachmentUploader({
+  initialImages: initialSessionDraft.attachedImages,
+  onNotice: (msg) => {
+    toolNotice.value = msg
+  },
+})
 
 watch(approvalMode, (val) => {
   setPersistedApprovalMode(val)
@@ -332,9 +326,6 @@ watch(
   },
   { deep: true },
 )
-
-const previewModalImage = ref<ImageAttachment | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const currentModelSupportsImages = computed<boolean>(() => {
   const session = activeSession.value
@@ -360,120 +351,11 @@ const currentModelSupportsImages = computed<boolean>(() => {
   )
 })
 
-const MAX_IMAGES_COUNT = 10
-
-function removeImage(id: string) {
-  attachedImages.value = attachedImages.value.filter((img) => img.id !== id)
-}
-
-function openImagePreview(img: ImageAttachment) {
-  previewModalImage.value = img
-}
-
-function triggerFileInput() {
-  fileInputRef.value?.click()
-}
-
-const MAX_TEXT_FILE_SIZE_BYTES = 1024 * 1024 // 1MB
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string) || '')
-    reader.onerror = () => reject(reader.error)
-    reader.readAsText(file)
-  })
-}
-
-async function addImageFiles(files: FileList | File[]) {
-  const list = Array.from(files)
-  for (const file of list) {
-    if (attachedImages.value.length >= MAX_IMAGES_COUNT) {
-      toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
-      break
-    }
-    const validationError = imageValidationError(file)
-    if (validationError !== null) {
-      toolNotice.value = validationError
-      continue
-    }
-    try {
-      attachedImages.value.push(await imageAttachmentFromFile(file))
-    } catch {
-      toolNotice.value = `读取图片失败: ${file.name || '未命名图片'}`
-    }
-  }
-}
-
-async function handleUploadedFiles(files: FileList | File[]) {
-  const list = Array.from(files)
-  const imageFiles: File[] = []
-  const textFiles: File[] = []
-
-  for (const file of list) {
-    if (file.type.startsWith('image/') || VALID_IMAGE_TYPES[file.type]) {
-      imageFiles.push(file)
-    } else {
-      textFiles.push(file)
-    }
-  }
-
-  if (imageFiles.length > 0) {
-    await addImageFiles(imageFiles)
-  }
-
-  for (const file of textFiles) {
-    if (file.size > MAX_TEXT_FILE_SIZE_BYTES) {
-      toolNotice.value = `文本文件超过 1MB 限制: ${file.name}`
-      continue
-    }
-    try {
-      const text = await readFileAsText(file)
-      const prefix = messageText.value.trim() ? '\n\n' : ''
-      messageText.value += `${prefix}--- 文件: ${file.name} ---\n${text}\n---`
-    } catch {
-      toolNotice.value = `读取文件失败: ${file.name}`
-    }
-  }
-}
-
 function onFileInput(event: Event) {
-  const target = event.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    void handleUploadedFiles(target.files)
-    target.value = ''
-  }
-}
-
-function onPaste(event: ClipboardEvent) {
-  const items = event.clipboardData?.items
-  if (!items) return
-  const imageFiles: File[] = []
-  for (const item of Array.from(items)) {
-    if (item.kind === 'file' && item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        const ext = file.type.split('/')[1]?.split('+')[0] || 'png'
-        const rawName = file.name || ''
-        const isGeneric = !rawName || rawName === 'image.png' || rawName === 'blob' || !rawName.includes('.')
-        const name = isGeneric ? `pasted-image-${Date.now()}.${ext}` : rawName
-        imageFiles.push(new File([file], name, { type: file.type }))
-      }
-    }
-  }
-  if (imageFiles.length > 0) {
-    event.preventDefault()
-    void addImageFiles(imageFiles)
-  }
-}
-
-function onDragOver(event: DragEvent) {
-  if (
-    event.dataTransfer?.types?.includes('Files') ||
-    event.dataTransfer?.types?.includes('text/plain')
-  ) {
-    event.dataTransfer.dropEffect = 'copy'
-  }
+  handleFileInput(event, (snippet) => {
+    const prefix = messageText.value.trim() ? '\n\n' : ''
+    messageText.value += `${prefix}${snippet}`
+  })
 }
 
 function onDrop(event: DragEvent) {
@@ -485,10 +367,10 @@ function onDrop(event: DragEvent) {
     return
   }
 
-  const files = event.dataTransfer?.files
-  if (files && files.length > 0) {
-    void handleUploadedFiles(files)
-  }
+  handleDrop(event, (snippet) => {
+    const prefix = messageText.value.trim() ? '\n\n' : ''
+    messageText.value += `${prefix}${snippet}`
+  })
 }
 // Scrolling follows the newest entry only while the user is at the bottom;
 // both panes share that rule through shared/scrollFollow. The log scrolls by

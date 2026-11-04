@@ -17,7 +17,7 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
-import { getSessionHistory, type BackendId, type ImageAttachment, type ImageMediaType } from '../../../api/sessions'
+import { getSessionHistory, type BackendId, type ImageAttachment } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
 import AgentSwitch from './AgentSwitch.vue'
@@ -31,6 +31,8 @@ import { SessionMentionSource } from './dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './sessionMentionResolver'
 import ComposerImageTray from './ComposerImageTray.vue'
 import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
+import { useAttachmentUploader } from './useAttachmentUploader'
+import { useComposerKeyboard } from './useComposerKeyboard'
 
 const props = defineProps<{ projectId?: number }>()
 
@@ -74,13 +76,14 @@ const selectedPrompt = computed(() =>
   selectedPromptId.value !== '' ? promptsStore.byId(Number(selectedPromptId.value)) ?? null : null,
 )
 
-const sendShortcut = ref<'enter' | 'ctrl-enter'>('enter')
-
-// The shortcut hint lives inside the input as placeholder text instead of a
-// caption below the composer, so the toolbar stays free of instructional noise.
-const sendShortcutHint = computed(() =>
-  sendShortcut.value === 'enter' ? 'Enter 发送，Shift+Enter 换行' : 'Ctrl+Enter 发送，Enter 换行',
-)
+const {
+  sendShortcut,
+  sendMenuOpen,
+  sendShortcutHint,
+  toggleSendMenu,
+  setShortcut: chooseSendShortcut,
+  handleKeydown: onComposerKeydown,
+} = useComposerKeyboard(() => void createSession())
 
 const composerHint = computed(
   () => `输入 / 使用命令，@ 引用文件或会话 · ${sendShortcutHint.value}`,
@@ -148,22 +151,12 @@ const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
 const messageText = ref(initialDraft.messageText ?? '')
 const selectedModel = ref(initialDraft.model ?? '')
 const approvalMode = ref<ApprovalMode>(initialDraft.approvalMode ?? 'default')
-const sendMenuOpen = ref(false)
 const modelOk = ref(false)
 const modelFailed = ref(false)
 const creating = ref(false)
 const composerBox = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const toolNotice = ref('')
-
-function toggleSendMenu() {
-  sendMenuOpen.value = !sendMenuOpen.value
-}
-
-function chooseSendShortcut(shortcut: 'enter' | 'ctrl-enter') {
-  sendShortcut.value = shortcut
-  sendMenuOpen.value = false
-}
 
 watch(selectedProjectId, (newId, oldId) => {
   if (oldId && oldId !== newId) {
@@ -286,24 +279,28 @@ function onCompositionEnd() {
 }
 
 function onTextareaKeydown(event: KeyboardEvent) {
-  if (dropdown.onKeydown(event)) return
-  if (sendShortcut.value === 'enter') {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      void createSession()
-    }
-  } else {
-    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault()
-      void createSession()
-    }
-  }
+  onComposerKeydown(event, dropdown.onKeydown(event))
 }
 
 // Image and file attachment support
-const attachedImages = ref<ImageAttachment[]>(
-  Array.isArray(initialDraft.attachedImages) ? [...initialDraft.attachedImages] : [],
-)
+const {
+  attachedImages,
+  previewModalImage,
+  fileInputRef,
+  removeImage,
+  openImagePreview,
+  triggerFileInput,
+  handleUploadedFiles,
+  onFileInput: handleFileInput,
+  onPaste,
+  onDragOver,
+  onDrop: handleDrop,
+} = useAttachmentUploader({
+  initialImages: initialDraft.attachedImages,
+  onNotice: (msg) => {
+    toolNotice.value = msg
+  },
+})
 
 watch(
   attachedImages,
@@ -313,160 +310,19 @@ watch(
   },
   { deep: true },
 )
-const previewModalImage = ref<ImageAttachment | null>(null)
-const fileInputRef = ref<HTMLInputElement | null>(null)
-
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
-const MAX_TEXT_FILE_SIZE_BYTES = 1024 * 1024 // 1MB
-const MAX_IMAGES_COUNT = 10
-const VALID_IMAGE_TYPES: Record<string, ImageMediaType> = {
-  'image/jpeg': 'image/jpeg',
-  'image/png': 'image/png',
-  'image/webp': 'image/webp',
-  'image/gif': 'image/gif',
-}
-
-function removeImage(id: string) {
-  attachedImages.value = attachedImages.value.filter((img) => img.id !== id)
-}
-
-function openImagePreview(img: ImageAttachment) {
-  previewModalImage.value = img
-}
-
-function triggerFileInput() {
-  fileInputRef.value?.click()
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      const commaIndex = result.indexOf(',')
-      resolve(commaIndex !== -1 ? result.slice(commaIndex + 1) : result)
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(file)
-  })
-}
-
-function readFileAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve((reader.result as string) || '')
-    reader.onerror = () => reject(reader.error)
-    reader.readAsText(file)
-  })
-}
-
-async function addImageFiles(files: FileList | File[]) {
-  const list = Array.from(files)
-  for (const file of list) {
-    if (attachedImages.value.length >= MAX_IMAGES_COUNT) {
-      toolNotice.value = `单次最多添加 ${MAX_IMAGES_COUNT} 张图片`
-      break
-    }
-    const cleanType = (file.type || '').split(';')[0].trim().toLowerCase()
-    const mediaType = VALID_IMAGE_TYPES[cleanType]
-    if (!mediaType) {
-      toolNotice.value = `不支持的文件类型: ${file.name || '未命名图片'} (仅支持 PNG/JPEG/WebP/GIF)`
-      continue
-    }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toolNotice.value = `图片超过 5MB 限制: ${file.name || '未命名图片'}`
-      continue
-    }
-
-    try {
-      const base64 = await readFileAsBase64(file)
-      const fileName = file.name || `image-${Date.now()}.png`
-      attachedImages.value.push({
-        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: fileName,
-        mediaType,
-        data: base64,
-        size: file.size,
-      })
-    } catch {
-      toolNotice.value = `读取图片失败: ${file.name || '未命名图片'}`
-    }
-  }
-}
-
-async function handleUploadedFiles(files: FileList | File[]) {
-  const list = Array.from(files)
-  const imageFiles: File[] = []
-  const textFiles: File[] = []
-
-  for (const file of list) {
-    if (file.type.startsWith('image/') || VALID_IMAGE_TYPES[file.type]) {
-      imageFiles.push(file)
-    } else {
-      textFiles.push(file)
-    }
-  }
-
-  if (imageFiles.length > 0) {
-    await addImageFiles(imageFiles)
-  }
-
-  for (const file of textFiles) {
-    if (file.size > MAX_TEXT_FILE_SIZE_BYTES) {
-      toolNotice.value = `文本文件超过 1MB 限制: ${file.name}`
-      continue
-    }
-    try {
-      const text = await readFileAsText(file)
-      const prefix = messageText.value.trim() ? '\n\n' : ''
-      messageText.value += `${prefix}--- 文件: ${file.name} ---\n${text}\n---`
-    } catch {
-      toolNotice.value = `读取文件失败: ${file.name}`
-    }
-  }
-}
 
 function onFileInput(event: Event) {
-  const target = event.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    void handleUploadedFiles(target.files)
-    target.value = ''
-  }
-}
-
-function onPaste(event: ClipboardEvent) {
-  const items = event.clipboardData?.items
-  if (!items) return
-  const imageFiles: File[] = []
-  for (const item of Array.from(items)) {
-    if (item.kind === 'file' && item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        const ext = file.type.split('/')[1]?.split('+')[0] || 'png'
-        const rawName = file.name || ''
-        const isGeneric = !rawName || rawName === 'image.png' || rawName === 'blob' || !rawName.includes('.')
-        const name = isGeneric ? `pasted-image-${Date.now()}.${ext}` : rawName
-        imageFiles.push(new File([file], name, { type: file.type }))
-      }
-    }
-  }
-  if (imageFiles.length > 0) {
-    event.preventDefault()
-    void addImageFiles(imageFiles)
-  }
-}
-
-function onDragOver(event: DragEvent) {
-  if (event.dataTransfer?.types?.includes('Files')) {
-    event.dataTransfer.dropEffect = 'copy'
-  }
+  handleFileInput(event, (snippet) => {
+    const prefix = messageText.value.trim() ? '\n\n' : ''
+    messageText.value += `${prefix}${snippet}`
+  })
 }
 
 function onDrop(event: DragEvent) {
-  const files = event.dataTransfer?.files
-  if (files && files.length > 0) {
-    void handleUploadedFiles(files)
-  }
+  handleDrop(event, (snippet) => {
+    const prefix = messageText.value.trim() ? '\n\n' : ''
+    messageText.value += `${prefix}${snippet}`
+  })
 }
 
 const hasContent = computed(
