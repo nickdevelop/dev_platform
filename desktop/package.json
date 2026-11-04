@@ -17,6 +17,7 @@
     "@types/node": "^22.13.0",
     "electron": "^34.2.0",
     "electron-builder": "^25.1.8",
+    "resedit": "^3.1.0",
     "typescript": "^5.7.3"
   }
 }

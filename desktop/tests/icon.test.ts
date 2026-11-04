@@ -25,6 +25,12 @@ describe('Application Icons and Assets', () => {
   const desktopRoot = findDesktopRoot(__dirname)
   const projectRoot = path.resolve(desktopRoot, '..')
 
+  it('provides the high-resolution source logo ai_dev_logo.png', () => {
+    const sourceLogo = path.join(projectRoot, 'ai_dev_logo.png')
+    assert.ok(fs.existsSync(sourceLogo), 'ai_dev_logo.png must exist at project root')
+    assert.ok(fs.statSync(sourceLogo).size > 100000, 'ai_dev_logo.png should be high-resolution')
+  })
+
   it('provides all required desktop build icons', () => {
     const buildPng = path.join(desktopRoot, 'build', 'icon.png')
     const buildIco = path.join(desktopRoot, 'build', 'icon.ico')
@@ -63,15 +69,35 @@ describe('Application Icons and Assets', () => {
     assert.ok(resolvedPath!.endsWith('icon.png'), 'resolved icon path should end with icon.png')
   })
 
-  it('declares icon configurations and assets packaging in electron-builder.yml', () => {
+  it('declares icon configurations and afterPack hook in electron-builder.yml', () => {
     const configPath = path.join(desktopRoot, 'electron-builder.yml')
     assert.ok(fs.existsSync(configPath), 'electron-builder.yml must exist')
     const content = fs.readFileSync(configPath, 'utf-8')
 
+    assert.ok(content.includes('afterPack: scripts/after-pack.js'), 'electron-builder.yml should declare afterPack hook')
     assert.ok(content.includes('assets/**/*'), 'files should bundle assets directory')
     assert.ok(content.includes('buildResources: build'), 'buildResources should point to build')
     assert.ok(content.includes('icon: build/icon.png'), 'linux should configure build/icon.png')
     assert.ok(content.includes('icon: build/icon.ico'), 'win should configure build/icon.ico')
     assert.ok(content.includes('icon: build/icon.icns'), 'mac should configure build/icon.icns')
+  })
+
+  it('provides the afterPack Windows PE icon patcher script', () => {
+    const scriptPath = path.join(desktopRoot, 'scripts', 'after-pack.js')
+    assert.ok(fs.existsSync(scriptPath), 'desktop/scripts/after-pack.js must exist')
+    const afterPackModule = require(scriptPath)
+    assert.strictEqual(typeof afterPackModule, 'function', 'afterPack should export a function')
+    assert.strictEqual(typeof afterPackModule.patchWindowsExeIcon, 'function', 'patchWindowsExeIcon should be exported')
+  })
+
+  it('validates patchWindowsExeIcon handles missing files safely', async () => {
+    const scriptPath = path.join(desktopRoot, 'scripts', 'after-pack.js')
+    const { patchWindowsExeIcon } = require(scriptPath)
+    await assert.rejects(
+      async () => {
+        await patchWindowsExeIcon('/non/existent/path.exe', '/non/existent/icon.ico')
+      },
+      /Target executable not found/,
+    )
   })
 })

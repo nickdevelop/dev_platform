@@ -1,6 +1,7 @@
 appId: com.devplatform.desktop
 productName: AI-Dev-Platform
 artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+afterPack: scripts/after-pack.js
 directories:
   output: dist-package
   buildResources: build

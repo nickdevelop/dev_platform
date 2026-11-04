@@ -3,7 +3,7 @@
 // Displays the conversation list for the currently selected assistant,
 // with an assistant selector at the top, a quick "new chat" action, search,
 // and per-conversation management (move, delete).
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { Chat } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
@@ -66,11 +66,12 @@ const query = computed(() => search.value.trim().toLowerCase())
 
 const filteredChats = computed<Chat[]>(() => {
   const groupId = selectedAssistantId.value
+  const chatList = chats.chats || []
   let list: Chat[]
   if (groupId === 0) {
-    list = chats.chats.filter((c) => !c.groupId || c.groupId === 0)
+    list = chatList.filter((c) => !c.groupId || c.groupId === 0)
   } else {
-    list = chats.chats.filter((c) => c.groupId === groupId)
+    list = chatList.filter((c) => c.groupId === groupId)
   }
 
   const q = query.value
@@ -85,6 +86,27 @@ const filteredChats = computed<Chat[]>(() => {
     return tB - tA
   })
 })
+
+watch(
+  () => selectedAssistantId.value,
+  (groupId) => {
+    if (chats.loadedGroupId !== groupId) {
+      void chats.loadChats(groupId)
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => chats.listNonce,
+  () => {
+    void chats.loadChats(selectedAssistantId.value)
+  },
+)
+
+async function loadMore() {
+  await chats.loadMoreChats()
+}
 
 function onAssistantChange(event: Event) {
   const target = event.target as HTMLSelectElement
@@ -254,6 +276,23 @@ function formatChatTime(isoString?: string): string {
           </div>
         </li>
       </ul>
+
+      <div v-if="filteredChats.length > 0" class="more-actions-wrap">
+        <button
+          v-if="chats.hasMoreChats"
+          type="button"
+          class="load-more-btn"
+          data-test="load-more-chats-btn"
+          :disabled="chats.chatsLoadingMore"
+          @click="loadMore"
+        >
+          <span v-if="chats.chatsLoadingMore" class="loading-spinner" />
+          <span>{{ chats.chatsLoadingMore ? '正在加载…' : '加载更多' }}</span>
+        </button>
+        <div v-else-if="!query && (chats.chats?.length || 0) > 0" class="no-more-text">
+          已显示全部 {{ chats.total }} 条对话
+        </div>
+      </div>
 
       <div v-else class="empty-state">
         <p class="empty-text">
@@ -532,5 +571,63 @@ function formatChatTime(isoString?: string): string {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+.more-actions-wrap {
+  padding: 8px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.load-more-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #64748b);
+  background: var(--color-bg, #f8fafc);
+  border: 1px dashed var(--color-border, #e2e8f0);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.load-more-btn:hover:not(:disabled) {
+  color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  background: var(--color-surface, #ffffff);
+}
+
+.load-more-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.no-more-text {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted, #94a3b8);
+  text-align: center;
+  padding: 4px 0;
 }
 </style>
