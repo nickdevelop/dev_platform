@@ -8,9 +8,9 @@ import (
 )
 
 // Compile-time proof that the pi adapter implements the optional approval
-// extension. Whether the platform actually offers the control is governed by
-// Capabilities().ToolConfirmation, which RPC mode declares and CLI mode does
-// not.
+// extension. The capability is always declared: an operator-supplied extension
+// can raise a confirm dialog through the RPC extension UI channel. The platform
+// itself installs no approval extension, so the default pi session never asks.
 var _ agents.PermissionReplier = (*Adapter)(nil)
 
 // ListPermissions returns the session's pending tool confirmations. pi has no

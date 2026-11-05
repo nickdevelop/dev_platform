@@ -108,7 +108,7 @@
 | 模块目录 | 适配模式与通信机制 | 职责说明 |
 |---|---|---|
 | **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；内部按单一职责严格拆分为：`adapter.go`（核心适配契约与实例状态管理）、`server.go`（服务子进程启动/健康检查/端口与密码探测）、`stream.go`（SSE 事件流消费泵与多 Subscriber 广播分发）、`normalize.go`（原生事件清洗规整化与工具输出截断折叠）；自动从全局 `~/.config/opencode/AGENTS.md` 同步加载平台级系统规约；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
-| **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 `--append-system-prompt` 原生挂载数据目录全局 `AGENTS.md` 文件指令；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接工具确认扩展。 |
+| **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 `--append-system-prompt` 原生挂载数据目录全局 `AGENTS.md` 文件指令；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接扩展 UI 的 `confirm` → 权限确认映射。pi core 无内置工具审批，平台默认不注入审批扩展，行为与 CLI 一致；仅当 operator 通过 `PI_EXTENSIONS` 提供扩展时才可能出现确认卡片。 |
 | **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min；注入 `DSH_AGENTS_HOME` 原生加载全局指令）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
 
 ---

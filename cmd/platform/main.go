@@ -291,26 +291,13 @@ func runServer(args []string) error {
 	// Register the installed backends. Registration only constructs the
 	// adapter; it never probes or starts a backend, so a missing binary is
 	// reported when an instance is started, not at boot.
-	piMode := settingsService.AgentMode(agents.BackendPi)
 	piExtensions := splitList(os.Getenv("PI_EXTENSIONS"))
-	// The bundled approval extension is what makes RPC-mode tool confirmation
-	// real: pi core never asks on its own. Install it only for RPC so CLI mode
-	// keeps its exact previous behavior.
-	if piMode == pi.ModeRPC {
-		extensionPath, err := pi.EnsureApprovalExtension(filepath.Join(dataDir, "pi-extensions"))
-		if err != nil {
-			return fmt.Errorf("install pi approval extension: %w", err)
-		}
-		piExtensions = append(piExtensions, extensionPath)
-	}
 	if err := registry.Register(agents.BackendPi, pi.New(pi.Options{
 		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendPi) },
-		// Mode selects the pi transport; empty falls back to the CLI default.
-		// The operator can switch it from Platform Settings and restart to roll
-		// back RPC without a deployment.
-		Mode: piMode,
-		// Extensions lists pi extension paths; the approval gate above and any
-		// operator-provided PI_EXTENSIONS are passed to every RPC child.
+		// Extensions lists operator-provided pi extensions, passed to every RPC
+		// child. The platform deliberately installs no approval extension of
+		// its own: pi core has no built-in tool approval, so platform sessions
+		// keep the same default behavior as the CLI.
 		Extensions: piExtensions,
 		// DataDir is the platform data directory where authoritative files like AGENTS.md live.
 		DataDir: dataDir,

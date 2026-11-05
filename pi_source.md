@@ -140,6 +140,7 @@ pi 是一个**极简、可扩展的 agent harness（智能体运行框架）**�
 
 - **文档（最系统）**：`packages/coding-agent/docs/`（42 文件）。重点：`how-pi-works.md`（agent loop/context/session/interfaces/extensions 总览）、`index.md`、`quickstart.md`、`usage.md`、`cli.md`、`json.md`、`rpc.md`、`rpc-commands.md`、`sdk.md`、`extensions.md`、`skills.md`、`prompt-templates.md`、`themes.md`、`packages.md`、`configuration.md`、`settings.md`、`session-format.md`、`sessions.md`、`message-types.md`、`compaction.md`、`models.md`、`providers.md`、`custom-provider.md`、`virtual-models.md`、`mcp.md`、`codemode.md`、`security.md`、`containerization.md`。
 - **示例**：`packages/coding-agent/examples/sdk/01-minimal.ts` … `14-codemode-mcp.ts`；扩展示例 80 个在 `examples/extensions/`（`plan-mode/`、`subagent/`、`sandbox/`、`permission-gate.ts`、`dynamic-tools.ts`、`todo.ts`、`git-checkpoint.ts`…）。
+- **工具审批**：pi core 默认**不**在每次工具调用前请求审批（`docs/security.md`）；审批只能由扩展在 `tool_call` 钩子里通过 `ctx.ui.confirm` 发起，`examples/extensions/permission-gate.ts` 只是示例，不是默认加载项。RPC 模式下 `confirm` 走 `extension_ui_request` / `extension_ui_response` 子协议，客户端不回复时扩展会一直等待（除非带 timeout）。
 - **测试用例**（行为规格）：`packages/coding-agent/test/`（约 205 项，文件名即功能地图）；夹具 `test/fixtures/`、`test/suite/harness.ts`。
 - **本仓库自用 pi 资源**：`.pi/extensions/`、`.pi/skills/{add-llm-provider,interactive-testing,release}.md`、`.pi/prompts/*`。
 - **打包/供应链**：`packages/coding-agent/install-lock/`、`nix/package.nix`、`nix/model-catalog.json`、`flake.nix`。

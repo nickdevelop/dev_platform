@@ -34,7 +34,6 @@ func newRPCAdapter(t *testing.T, sessionDir, scenario string, mutate ...func(*Op
 	options := Options{
 		Executable:     rpcExecutable(t),
 		SessionDir:     sessionDir,
-		Mode:           ModeRPC,
 		Env:            append(os.Environ(), "PI_RPC_STUB=1", "PI_RPC_STUB_SCENARIO="+scenario),
 		RPCIdleTimeout: -1,
 	}
@@ -126,10 +125,9 @@ func TestRPCSendMessageStreamsEvents(t *testing.T) {
 	}
 }
 
-// TestRPCCapabilitiesToolConfirmation pins that only RPC mode advertises tool
-// confirmation.
 // TestRPCCapabilitiesToolConfirmation verifies pi declares tool confirmation
-// unconditionally now that it runs exclusively in RPC mode.
+// unconditionally: the RPC extension UI channel can carry an operator
+// extension's confirm, even though the platform installs no gate itself.
 func TestRPCCapabilitiesToolConfirmation(t *testing.T) {
 	rpc := newRPCAdapter(t, "", "")
 	if !rpc.Capabilities().ToolConfirmation {
@@ -766,8 +764,8 @@ type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
-// TestRPCArgsIncludeExtensions checks extension paths (the bundled approval
-// gate) are passed to every RPC child.
+// TestRPCArgsIncludeExtensions checks operator extension paths are passed to
+// every RPC child.
 func TestRPCArgsIncludeExtensions(t *testing.T) {
 	args := rpcArgs(rpcOptions{sessionID: "sess", extensions: []string{"/tmp/a.ts", ""}})
 	if !containsSequence(args, "--extension", "/tmp/a.ts") {
@@ -778,39 +776,6 @@ func TestRPCArgsIncludeExtensions(t *testing.T) {
 	}
 	if !containsSequence(args, "--mode", "rpc") || !containsSequence(args, "--session-id", "sess") {
 		t.Errorf("rpcArgs() = %q, want --mode rpc --session-id sess", args)
-	}
-}
-
-// TestEnsureApprovalExtensionIdempotent checks the bundled extension is written
-// once and returned on later calls without rewriting.
-func TestEnsureApprovalExtensionIdempotent(t *testing.T) {
-	dir := t.TempDir()
-	path, err := EnsureApprovalExtension(dir)
-	if err != nil {
-		t.Fatalf("EnsureApprovalExtension() error = %v", err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat extension: %v", err)
-	}
-	firstMod := info.ModTime()
-
-	again, err := EnsureApprovalExtension(dir)
-	if err != nil {
-		t.Fatalf("second EnsureApprovalExtension() error = %v", err)
-	}
-	if again != path {
-		t.Errorf("path = %q, want %q", again, path)
-	}
-	info, err = os.Stat(again)
-	if err != nil {
-		t.Fatalf("stat extension: %v", err)
-	}
-	if !info.ModTime().Equal(firstMod) {
-		t.Error("extension was rewritten on the second call; want idempotent")
-	}
-	if _, err := EnsureApprovalExtension(""); err == nil {
-		t.Error("EnsureApprovalExtension(empty) = nil, want error")
 	}
 }
 

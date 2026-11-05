@@ -64,7 +64,7 @@ func newRPCConn(writer io.Writer, parser *parser, emit func(agents.NormalizedEve
 
 // readLoop reads stdout records until EOF or an I/O error and returns it.
 // Malformed or oversized records become error events and do not end the loop,
-// matching the one-shot JSON reader's resilience.
+// matching the event parser's resilience.
 func (c *rpcConn) readLoop(r io.Reader) error {
 	return scanLines(r, maxStreamRecordBytes,
 		func(line []byte) { c.dispatch(line) },

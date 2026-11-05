@@ -31,7 +31,10 @@ import (
 
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/settings"
+	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/pi"
 )
 
 // listenLogPattern matches the "platform listening on <addr>" startup line.
@@ -356,5 +359,36 @@ func TestServerShutsDownGracefullyOnSigterm(t *testing.T) {
 	}
 	if !strings.Contains(p.logs.String(), "shutting down") {
 		t.Errorf("logs do not show the graceful shutdown path:\n%s", p.logs.String())
+	}
+}
+
+// TestServerDoesNotInstallPiApprovalExtension pins the pi CLI-parity contract:
+// even when a legacy data directory still carries agents.config.pi.mode=rpc,
+// boot must not write or pass the removed bundled approval gate. pi core has no
+// built-in approval, so the platform deliberately installs no gate of its own.
+func TestServerDoesNotInstallPiApprovalExtension(t *testing.T) {
+	bin := buildPlatformServer(t)
+	dataDir := prepareDataDir(t, "unused-here")
+
+	db, err := database.Open(dataDir)
+	if err != nil {
+		t.Fatalf("database.Open: %v", err)
+	}
+	catalog, err := agents.NewCatalog(pi.Descriptor)
+	if err != nil {
+		t.Fatalf("agents.NewCatalog: %v", err)
+	}
+	if _, err := settings.NewService(db, catalog).SetAgentMode(agents.BackendPi, "rpc"); err != nil {
+		t.Fatalf("SetAgentMode: %v", err)
+	}
+	if sqlDB, dbErr := db.DB(); dbErr == nil {
+		_ = sqlDB.Close()
+	}
+
+	startServer(t, bin, dataDir, "127.0.0.1:0")
+
+	gate := filepath.Join(dataDir, "pi-extensions", "pi-platform-approval.ts")
+	if _, statErr := os.Stat(gate); !os.IsNotExist(statErr) {
+		t.Errorf("platform wrote the removed pi approval extension at %s (stat error: %v)", gate, statErr)
 	}
 }

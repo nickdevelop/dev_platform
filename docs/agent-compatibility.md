@@ -55,7 +55,7 @@ The session stop route (`POST …/sessions/{sessionId}/stop`) is gated by `inter
 instead; see *Turns, stop and interaction events* below.
 | `modelSelection` | ⚠️ — session-create `model` is accepted (verified); per-message switching via `session.switchModel` is **provisional** (see below). | ⚠️ — the `--model` flag is passed through, and `set_model` command switches model; real model resolution is **provisional**. | ✅ — `session/modelCatalog` and per-session `session/selectModel`. Verified. |
 | `toolCallEvents` | ✅ — `session.tool.*` normalized into tool call/result events. Verified against the mock server. | ✅ — `tool_execution_start/update/end` records. Verified against the fake stub. | ✅ — `tool/call`, `tool/result`, `tool/ptc-dispatch` normalized into tool call/result events. Verified. |
-| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ in RPC mode — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`); the platform installs a bundled approval extension so pi actually asks. | ✅ — `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events and replies travel back through `$events/result`. Verified against a mock dsh event stream; a live dsh round trip is **provisional** (see below). |
+| `toolConfirmation` | ✅ — `permission.asked` / `form.*` arrive as normalized `interaction` events; answers go through the opencode-only `agents.PermissionReplier` extension. | ✅ — `extension_ui_request` `confirm` becomes a `PermissionRequest` (`agents.PermissionReplier`). pi core has no built-in tool approval and the platform installs no approval extension, so a default session never asks; an operator-supplied `PI_EXTENSIONS` extension can still raise a confirm. | ✅ — `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events and replies travel back through `$events/result`. Verified against a mock dsh event stream; a live dsh round trip is **provisional** (see below). |
 | `sessionHistory` | ✅ — `GET /api/session/{id}/message` read back and normalized (user text, assistant reasoning/text/tool blocks). Verified against the mock server. | ✅ — the adapter re-reads the session's own on-disk JSONL transcript, mapping `model_change` to message models. Verified. | ✅ — `session/page` and `session/projections` read back and normalized. Verified. |
 | `rawEvents` | ✅ — the shared server's untouched SSE stream is proxied for the workbench's backend-specific views (`GET /api/projects/{id}/sessions/{sessionId}/raw-events`). | ❌ — no untouched event stream is exposed. | ❌ — no untouched event stream is exposed. |
 | `slashCommands` | ✅ — Platform-designed commands (action/prompt); functional `compact` dispatched to `agents.SessionCompactor`. | ✅ — Platform-designed commands (action/prompt); functional `compact` dispatched to `agents.SessionCompactor`. | ✅ — Platform-designed commands (action/prompt); functional `compact` dispatched to `agents.SessionCompactor`. |
@@ -97,11 +97,13 @@ The pi adapter operates strictly in RPC mode (`pi --mode rpc`):
 - **Events**: stdout JSONL: response records correlated by id, session events normalized into platform events.
 - **Interrupt**: `abort` command over stdin (process-group kill as backstop).
 - **Stop**: closes child stdin for an orderly shutdown, bounded then process-group killed.
-- **Tool confirmation**: supported through the extension UI subprotocol and the bundled approval extension (`internal/providers/pi/extension/approval.ts`).
+- **Tool confirmation**: the extension UI subprotocol maps an extension's `confirm` to a `PermissionRequest`. pi core has no built-in tool approval, and the platform installs no approval extension, so by default no tool call asks — the same behavior as running `pi` in a terminal. An operator can still provide an approval extension through `PI_EXTENSIONS`.
 - **Same-session concurrency**: serialized per session; a prompt during a run is queued with `followUp`.
 
 Operator-supplied pi extensions can be added with the `PI_EXTENSIONS`
-environment variable (comma-separated paths).
+environment variable (comma-separated paths). Since pi itself never asks before
+a tool call, an extension is the only way to get confirmations; without one the
+platform shows no permission card, matching the CLI.
 
 ### deepseek transport (Shared Host mode)
 

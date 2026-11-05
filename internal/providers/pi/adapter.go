@@ -30,17 +30,6 @@ var (
 // loads a whole conversation into memory.
 const maxSessionScanBytes = 4 * 1024 * 1024
 
-// Operating modes for the pi adapter. CLI is the one-shot `pi --mode json`
-// process per prompt; RPC is a long-lived `pi --mode rpc` child per active
-// session. CLI remains the default until RPC has soaked, and the switch is the
-// rollback lever if a protocol drift breaks RPC.
-const (
-	// ModeCLI drives pi with one `--mode json` process per prompt.
-	ModeCLI = "cli"
-	// ModeRPC drives pi with one long-lived `--mode rpc` child per session.
-	ModeRPC = "rpc"
-)
-
 // Options configures the pi adapter. The zero value is usable when the `pi`
 // binary is on PATH: it uses pi's own default session directory.
 type Options struct {
@@ -58,11 +47,10 @@ type Options struct {
 	// Env overrides the child environment. The zero value inherits the parent
 	// process environment.
 	Env []string
-	// Mode selects the transport: ModeCLI (default) or ModeRPC.
-	Mode string
-	// Extensions lists pi extension paths passed as --extension to every RPC
-	// child. An approval extension lives here: pi's core does not request tool
-	// approval, so confirmations only exist when an extension asks for them.
+	// Extensions lists operator-supplied pi extension paths passed as
+	// --extension to every RPC child. pi's core does not request tool approval,
+	// so a confirmation only exists when an extension asks for one; the
+	// platform installs no such extension itself.
 	Extensions []string
 	// DataDir is the platform data directory where authoritative files like AGENTS.md live.
 	DataDir string
@@ -85,16 +73,14 @@ type Options struct {
 
 // Adapter implements agents.AgentAdapter for the pi CLI. Each instance is a
 // logical handle (id + authorized directory) that owns the directory, the
-// live prompt processes or per-session RPC children, and the normalized event
-// fan-out. In CLI mode pi is a one-shot process per prompt; in RPC mode each
-// active session gets a long-lived child (see rpc_child.go).
+// per-session RPC children, and the normalized event fan-out. Each active
+// session gets a long-lived `pi --mode rpc` child (see rpc_child.go).
 type Adapter struct {
 	executable        string
 	resolveExecutable func() string
 	sessionDir        string
 	passSessionDir    bool
 	env               []string
-	mode              string
 	extensions        []string
 	dataDir           string
 	rpcIdleTimeout    time.Duration
@@ -141,7 +127,6 @@ func New(options Options) *Adapter {
 		resolveExecutable: options.ResolveExecutable,
 		sessionDir:        options.SessionDir,
 		env:               options.Env,
-		mode:              ModeRPC,
 		extensions:        options.Extensions,
 		dataDir:           options.DataDir,
 		rpcIdleTimeout:    options.RPCIdleTimeout,
@@ -190,12 +175,12 @@ func (a *Adapter) execPath() string {
 	return a.executable
 }
 
-// Capabilities declares what this adapter supports. It targets pi's event
-// stream, which both `--mode json` and `--mode rpc` share: streaming text
-// deltas, tool call/result records and on-disk session files. Tool
-// confirmation requires the extension UI subprotocol, which only exists in
-// RPC mode, so it is declared exactly when the adapter runs in RPC mode and an
-// approval extension can ask for confirmation.
+// Capabilities declares what this adapter supports. It targets pi's RPC event
+// stream: streaming text deltas, tool call/result records and on-disk session
+// files. Tool confirmation is declared because the extension UI subprotocol can
+// surface an extension's confirm dialog as a permission request; pi core has no
+// built-in approval and the platform installs no approval extension, so a
+// session only asks when an operator-supplied extension requests it.
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
@@ -493,11 +478,10 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	return &ref, nil
 }
 
-// SendMessage delivers one user turn to a session. In CLI mode it launches one
-// `pi --mode json` process for the turn; in RPC mode it ensures the session's
-// long-lived child is running and sends a prompt command. In both modes it
-// returns once the turn is accepted; the reply, tool activity and diagnostics
-// arrive on the subscription stream.
+// SendMessage delivers one user turn to a session. It ensures the session's
+// long-lived RPC child is running and sends a prompt command, then returns once
+// the turn is accepted; the reply, tool activity and diagnostics arrive on the
+// subscription stream.
 func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, message agents.SendMessageRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -649,9 +633,8 @@ func (a *Adapter) anyChild() *rpcChild {
 	return nil
 }
 
-// Interrupt ends the running prompt of one session. In CLI mode the process is
-// killed and its turn settles as aborted; in RPC mode an abort command asks pi
-// to cancel gracefully, with the process-group kill reserved as a backstop. The
+// Interrupt ends the running prompt of one session. An abort command asks pi to
+// cancel gracefully, with the process-group kill reserved as a backstop. The
 // instance and its other sessions keep running. A session with no running
 // prompt is a no-op.
 func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
@@ -1254,36 +1237,6 @@ func (s *subscriber) watch(ctx context.Context, inst *instance) {
 	inst.removeSubscriber(s)
 }
 
-// promptOptions describes the arguments for one `pi --mode json` invocation.
-type promptOptions struct {
-	sessionID      string
-	sessionDir     string
-	passSessionDir bool
-	model          string
-	name           string
-	text           string
-}
-
-// promptArgs builds pi's argv for a one-shot prompt. The message is passed as a
-// single argv element after `--`, so leading dashes in user text can never be
-// interpreted as options and nothing is ever handed to a shell.
-func promptArgs(options promptOptions) []string {
-	args := []string{"--mode", "json"}
-	if options.sessionDir != "" && options.passSessionDir {
-		args = append(args, "--session-dir", options.sessionDir)
-	}
-	if options.sessionID != "" {
-		args = append(args, "--session-id", options.sessionID)
-	}
-	if options.model != "" {
-		args = append(args, "--model", options.model)
-	}
-	if options.name != "" {
-		args = append(args, "--name", options.name)
-	}
-	return append(args, "--", options.text)
-}
-
 // sessionDirName reproduces pi's session-folder naming: the leading separator
 // is removed and path separators and colons become dashes, wrapped in double
 // dashes. For /data/projects/demo it yields --data-projects-demo--.
@@ -1416,4 +1369,3 @@ func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, 
 	}
 	return child.isStreaming(), nil
 }
-

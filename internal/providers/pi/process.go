@@ -22,9 +22,9 @@ type processSpec struct {
 	args       []string
 	dir        string
 	env        []string
-	// stdin requests a writable stdin pipe. It is set for RPC children,
-	// which receive commands on stdin; one-shot JSON-mode prompts leave it
-	// unset and inherit an empty stdin.
+	// stdin requests a writable stdin pipe. It is set for RPC children, which
+	// receive commands on stdin; one-shot helper processes (version, model
+	// list) leave it unset and inherit an empty stdin.
 	stdin bool
 }
 

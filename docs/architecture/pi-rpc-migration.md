@@ -4,19 +4,19 @@
 
 ## 实施状态
 
-RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `internal/providers/pi/` 下的 `rpc_*.go`、`permissions.go`、`extension/approval.ts`，以及 `rpc_test.go`、`rpc_stub_test.go` 与 `testdata/rpc/session.jsonl` 回放用例）。当前 `Mode` 默认仍为 `"cli"`，等待 dev 环境 RPC 浸泡达标后再翻转默认值（Phase 3 的最后一步），因此本文其余部分仍按“计划”措辞保留，作为尚未完成事项的清单。已完成部分：
+RPC 传输、工具确认与收尾增强已实现并有测试覆盖（详见 `internal/providers/pi/` 下的 `rpc_*.go`、`permissions.go`，以及 `rpc_test.go`、`rpc_stub_test.go` 与 `testdata/rpc/session.jsonl` 回放用例）。迁移已完成并有两项后续反转：**CLI 模式已移除，pi 仅以 RPC 运行，`Mode` 选项/设置一并删除**；**平台内置审批扩展已移除**——pi core 没有内置工具审批，平台默认也不注入审批 gate，因此默认行为与 CLI 一致。仅保留 `extension_ui_request` `confirm` → `PermissionRequest` 的通用映射，operator 仍可通过 `PI_EXTENSIONS` 提供自己的扩展。已完成部分：
 
-- Phase 0：`Mode` 选项（默认 `cli`）、Platform Settings 的 per-backend `mode`（`PUT /api/settings/agents/:backend/mode`，重启生效）、test-only RPC stub、RPC 记录回放 fixture（`testdata/rpc/session.jsonl`：握手部分取自真实 pi 1.1.0 录制，单轮事件按协议形状补全）。未包含“用真实 provider 录制的完整流式 fixture”（当前环境该 provider 无法完成回合）。
-- Phase 1：`rpc_child.go` / `rpc_conn.go` / `rpc_commands.go` 传输内核、惰性启动、同 session 串行 + `followUp` 入队、有序停机、崩溃后同 session id 重启、空闲回收、`abort` 中断；`SendMessage`/`Interrupt`/`StopInstance` 按模式分派；CLI 路径与既有测试保持不变。
-- Phase 2：`extension_ui_request` `confirm` → `agents.PermissionRequest`，`PermissionReplier`（`ListPermissions`/`ReplyPermission`），`once`/`reject`/`always` 映射与会话级 `always` 规则记忆，过期回复 `agents.ErrReplyExpired`；RPC 模式翻转 `Capabilities.ToolConfirmation`；平台随 RPC 模式自动安装自带的审批扩展。
-- Phase 3：子进程存活时 `ListModels` 走 `get_available_models`（`--list-models` 兜底）、会话改名走 `set_session_name`、模型切换走 `set_model`。
+- Phase 0：test-only RPC stub、RPC 记录回放 fixture（`testdata/rpc/session.jsonl`：握手部分取自真实 pi 1.1.0 录制，单轮事件按协议形状补全）。最初的 `Mode` 选项与 Platform Settings per-backend `mode` 已随 CLI 模式一起删除。未包含“用真实 provider 录制的完整流式 fixture”（当前环境该 provider 无法完成回合）。
+- Phase 1：`rpc_child.go` / `rpc_conn.go` / `rpc_commands.go` 传输内核、惰性启动、同 session 串行 + `followUp` 入队、有序停机、崩溃后同 session id 重启、空闲回收、`abort` 中断；`SendMessage`/`Interrupt`/`StopInstance` 直接走 RPC，CLI 路径已删除。
+- Phase 2：`extension_ui_request` `confirm` → `agents.PermissionRequest`，`PermissionReplier`（`ListPermissions`/`ReplyPermission`），`once`/`reject`/`always` 映射与会话级 `always` 规则记忆，过期回复 `agents.ErrReplyExpired`；`Capabilities.ToolConfirmation` 固定为 `true`（表达协议支持）。平台不再安装审批扩展；默认会话不弹确认，与 CLI 一致。
+- Phase 3：子进程存活时 `ListModels` 走 `get_available_models`（`--list-models` 兜底）、会话改名走 `set_session_name`、模型切换走 `set_model`；CLI 路径最终已移除。
 
 对照本文的名词： `rpc_child.go` 对应“子进程生命周期”，`rpc_conn.go` 对应“严格 LF 分帧与按 id 关联”，`rpc_commands.go` 对应“命令构造与响应解析”。
 
 参考资料：
 
 - pi 协议文档：`rpc.md`、`rpc-commands.md`、`json.md`、`rpc-extension-ui.md`（随 pi 安装的 `docs/`）
-- 现有适配器：`internal/providers/pi/`（CLI 模式实现）
+- 现有适配器：`internal/providers/pi/`（RPC 模式实现）
 - 平台契约：`internal/core/agents/contracts.go`、`internal/core/agents/extensions.go`
 - 分层规则：`docs/architecture/backend-boundaries.md`
 
@@ -80,10 +80,10 @@ Instance（逻辑句柄，结构不变）
 - 现状 CLI 模式允许同会话并行多条 prompt（各自独立进程）；RPC 下子进程一次只跑一个 run。
 - 方案：子进程忙碌时（`get_state.isStreaming`）第二条 prompt 以 `streamingBehavior: "followUp"` 入队——这正是 RPC 的排队语义，事件流自然回放，无需平台自建队列。
 
-### 决策 4：工具确认 = "传输 + 审批扩展"两件事
+### 决策 4：工具确认 = "传输 + 扩展 UI" 两件事
 
 - 前提：pi 核心默认**不**在工具调用前请求批准（pi `docs/security.md` 明确）。RPC 只提供 extension UI 子协议通道：`extension_ui_request`（`confirm`/`select` 对话框，带 id 与可选 timeout）→ 客户端回 `extension_ui_response`。
-- 因此 Phase 2 需为 pi 会话配置一个审批扩展（pi 审批类 package 或平台自带的小扩展），确认请求才有来源。
+- 因此确认请求只能来自扩展。平台**不再**内置审批扩展：默认会话不弹确认，与 CLI 一致；需要审批时由 operator 通过 `PI_EXTENSIONS` 提供。
 - 决策映射：`once` → `confirmed: true`；`reject` → `confirmed: false`；`always` 是 yes/no 对话框没有的语义 → 平台侧按会话记忆审批规则（记录在 adapter 的 sessionState），后续工具命中规则直接放行。
 - 过期回答返回 `agents.ErrReplyExpired`（HTTP 409 路径已存在，opencode 侧已验证）。
 - `ListPermissions` 基于适配器侧 pending 表实现；pi 无原生列表命令。
@@ -99,10 +99,10 @@ Instance（逻辑句柄，结构不变）
 
 ## 四、分阶段实施
 
-### Phase 0 — 协议资产与回滚开关（约 0.5 天）
+### Phase 0 — 协议资产（约 0.5 天）
 
 1. 用真实 pi 1.1.x 录制 RPC 会话 fixture（golden stdin/stdout 流），存入 `internal/providers/pi/testdata/rpc/`。
-2. `pi.Options` 增加 `Mode` 字段（`"cli"` | `"rpc"`，默认 `"cli"`），settings 页可按后端切换——**保底回滚手段**，出问题一键切回 CLI，无需回滚部署。
+2. ~~`pi.Options` 增加 `Mode` 字段~~（已反转：CLI 路径与 `Mode` 均已删除，RPC 为唯一传输；回滚改为回退二进制/提交）。
 3. 新增 test-only RPC stub 可执行文件（模拟 pi：脚本化响应/事件序列），供全部单测注入（沿用现有测试用 stub executable 的模式）。
 
 ### Phase 1 — RPC 传输内核（约 2–3 天，行为等价替换）
@@ -118,14 +118,14 @@ Instance（逻辑句柄，结构不变）
 
 1. 解析 `extension_ui_request`（`confirm` / `select`）→ 归一化为 `agents.PermissionRequest` 发布。
 2. 实现 `PermissionReplier`：`ReplyPermission` → 回写 `extension_ui_response`（匹配 id）；`ListPermissions` 返回待决列表；过期 → `ErrReplyExpired`。
-3. 平台侧配置审批扩展并为 pi 会话默认启用；翻转 `Capabilities.ToolConfirmation: true`。
-4. 验收：workbench 中 pi 会话出现与 opencode 同级的权限卡片，回复走现有 HTTP 回复端点，过期回复 409。
+3. ~~平台侧配置审批扩展并为 pi 会话默认启用~~（已反转：平台不再安装审批扩展；`Capabilities.ToolConfirmation` 固定为 `true`，仅表达 extension UI 协议支持）。
+4. 验收（仅针对 operator 提供的审批扩展）：confirm 能形成权限卡片，回复走现有 HTTP 回复端点，过期回复 409；默认无扩展时不应出现卡片。
 
 ### Phase 3 — 收尾与增强（约 1 天，可选）
 
 1. 子进程存活时 `ListModels` 走 `get_available_models`（带缓存），保留 `--list-models` 兜底。
 2. 会话改名走 `set_session_name`，替换现在每次发送携带 `--name` 的做法。
-3. dev 环境以 RPC 模式浸泡若干天（观察延迟、僵尸进程、崩溃重启率），达标后把 `Mode` 默认值切到 `"rpc"`；保留 CLI 路径一个发布周期后移除。
+3. ~~dev 环境以 RPC 模式浸泡后切默认值~~（已完成：RPC 成为唯一模式，CLI 路径移除）。
 
 ## 五、风险与对策
 
@@ -136,12 +136,12 @@ Instance（逻辑句柄，结构不变）
 | 同会话并发语义变化（CLI 允许并行 prompt） | followUp 入队（更合理的排队语义）；Phase 1 动工前与产品确认 |
 | extension UI 弹窗无客户端响应而阻塞 | pi 侧 timeout 自动解析默认值；平台侧对无订阅者的 confirm 默认 `rejected` |
 | 子进程崩溃丢回合 | `process_exit` 错误事件 + 同 session-id 重启续聊；磁盘会话文件兜底 |
-| 回滚 | `Mode` 开关默认 `"cli"`；浸泡达标后才翻转默认值并保留开关一个发布周期 |
+| 回滚 | 回退提交/二进制；`Mode` 开关已随 CLI 路径删除，不再作为回滚手段 |
 
 ## 六、验收标准
 
 1. 现有全部单测在 RPC stub 下通过；新增分帧/命令关联/崩溃重启/空闲回收单测。
-2. e2e：新建会话 → 流式回复 → 工具事件 → 中断（走 `abort`）→ 停止实例（有序停机）→ 会话发现与历史回放结果与 CLI 模式一致。
-3. 工具确认：pi 会话权限卡片弹出、回复生效、过期回复返回 409。
+2. e2e：新建会话 → 流式回复 → 工具事件 → 中断（走 `abort`）→ 停止实例（有序停机）→ 会话发现与历史回放结果与历史 CLI 行为一致。
+3. 工具确认：operator 扩展的 confirm 能形成卡片、回复生效、过期回复返回 409；无扩展时默认不弹。
 4. 资源：空闲 10 分钟后无常驻 pi 进程残留；并发 5 会话稳定运行。
 5. 文档同步：本文件改为事实描述；`docs/agent-compatibility.md` 更新 pi 行（能力矩阵 `ToolConfirmation: true`、协议说明）；`docs/architecture/backend-boundaries.md` 无需改动（异构层实现细节不出包）。
