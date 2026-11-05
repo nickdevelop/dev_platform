@@ -354,13 +354,19 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		return append(events, out)
 
 	case "tool_execution_start":
-		p.rememberTool(event.ToolCallID, event.ToolName, event.Args)
+		name := event.ToolName
+		args := event.Args
+		if agents.ClassifyTool(name) == agents.ActionQuestion {
+			name = agents.StandardToolQuestion
+			args = agents.NormalizeQuestionToolInput(args)
+		}
+		p.rememberTool(event.ToolCallID, name, args)
 		out := p.event()
 		out.Type = agents.EventToolCall
 		out.ToolCall = &agents.ToolCallPayload{
 			CallID: event.ToolCallID,
-			Name:   event.ToolName,
-			Input:  agents.PruneToolInput(event.ToolName, event.Args),
+			Name:   name,
+			Input:  agents.PruneToolInput(name, args),
 		}
 		return []agents.NormalizedEvent{out}
 

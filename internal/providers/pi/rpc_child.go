@@ -29,6 +29,7 @@ type rpcChild struct {
 	parser  *parser
 	stderr  *parser
 	pending *piPermissions
+	forms   *piFormManager
 
 	lastUsed  atomic.Int64 // unix nanoseconds
 	streaming atomic.Bool
@@ -149,6 +150,7 @@ func (a *Adapter) startRPCChild(inst *instance, sessionID, model, name string) (
 		parser:    parser,
 		stderr:    newParser(inst.id, sessionID, a.now),
 		pending:   newPiPermissions(),
+		forms:     newPiFormManager(),
 		done:      make(chan struct{}),
 		model:     model,
 		name:      name,
@@ -255,35 +257,200 @@ func (c *rpcChild) run() {
 	}
 }
 
-// handleExtensionUI answers the extension UI subprotocol. Only `confirm`
-// maps onto the platform's tool approval contract; other dialogs are left
-// unanswered here and auto-cancelled by the connection so pi never blocks.
+// handleExtensionUI answers the extension UI subprotocol. `confirm` maps onto
+// the platform's tool approval contract; `select` and `input` map onto question
+// forms so questionnaires are never auto-cancelled.
 func (c *rpcChild) handleExtensionUI(request *rpcExtensionUIRequest) bool {
-	if request.Method != "confirm" {
-		return false
-	}
-	key := confirmKey(request.Title, request.Message)
-	if c.adapter.sessionApproved(c.inst.id, c.sessionID, key) {
-		// A previous "always" already covers this request: answer without
-		// surfacing a card.
-		confirmed := true
-		_ = c.conn.respondExtensionUI(rpcExtensionUIResponse{Type: "extension_ui_response", ID: request.ID, Confirmed: &confirmed})
+	if request.Method == "confirm" {
+		key := confirmKey(request.Title, request.Message)
+		if c.adapter.sessionApproved(c.inst.id, c.sessionID, key) {
+			// A previous "always" already covers this request: answer without
+			// surfacing a card.
+			confirmed := true
+			_ = c.conn.respondExtensionUI(rpcExtensionUIResponse{Type: "extension_ui_response", ID: request.ID, Confirmed: &confirmed})
+			return true
+		}
+		permission := agents.PermissionRequest{
+			ID:        request.ID,
+			SessionID: c.sessionID,
+			Action:    request.Title,
+			Message:   request.Message,
+		}
+		c.pending.add(permission)
+		c.publishInteraction(agents.InteractionPayload{
+			ID:         request.ID,
+			Kind:       agents.InteractionPermission,
+			Phase:      agents.InteractionRequested,
+			Permission: &permission,
+		})
 		return true
 	}
-	permission := agents.PermissionRequest{
-		ID:        request.ID,
-		SessionID: c.sessionID,
-		Action:    request.Title,
-		Message:   request.Message,
+
+	if request.Method == "select" || request.Method == "input" {
+		return c.handleDialogQuestion(request)
 	}
-	c.pending.add(permission)
+
+	return false
+}
+
+// handleDialogQuestion maps select/input dialog requests to active or standalone question forms.
+func (c *rpcChild) handleDialogQuestion(request *rpcExtensionUIRequest) bool {
+	// 1. Check if an active questionnaire tool form is already registered
+	form := c.forms.findActiveQuestionnaireForm()
+	if form != nil {
+		form.mu.Lock()
+		defer form.mu.Unlock()
+
+		if form.submitted {
+			// The user already answered the full questionnaire: immediately reply with this question's answer
+			ans := form.answers[form.currentWaitIndex]
+			response := rpcExtensionUIResponse{Type: "extension_ui_response", ID: request.ID, Value: &ans}
+			_ = c.respond(response)
+			form.currentWaitIndex++
+			if form.currentWaitIndex >= len(form.items) {
+				c.forms.remove(form.info.ID)
+			}
+			return true
+		}
+
+		// User hasn't submitted yet: record the pending dialog request so ReplyForm can answer it
+		form.pendingRequestID = request.ID
+		form.pendingMethod = request.Method
+		return true
+	}
+
+	// 2. Standalone select/input dialog: wrap as a single-question form
+	info := buildStandaloneForm(c.sessionID, request)
+	c.forms.addStandaloneForm(info)
 	c.publishInteraction(agents.InteractionPayload{
-		ID:         request.ID,
-		Kind:       agents.InteractionPermission,
-		Phase:      agents.InteractionRequested,
-		Permission: &permission,
+		ID:    request.ID,
+		Kind:  agents.InteractionForm,
+		Phase: agents.InteractionRequested,
+		Form:  &info,
 	})
 	return true
+}
+
+// buildStandaloneForm wraps a standalone select or input request as a FormInfo.
+func buildStandaloneForm(sessionID string, request *rpcExtensionUIRequest) agents.FormInfo {
+	title := strings.TrimSpace(request.Title)
+	if title == "" {
+		title = "请回答"
+	}
+
+	var fields []formField
+	if request.Method == "select" {
+		opts := make([]formOption, 0, len(request.Options))
+		for _, o := range request.Options {
+			opts = append(opts, formOption{Value: o, Label: o})
+		}
+		fields = append(fields, formField{
+			Key:      request.ID,
+			Type:     "string",
+			Title:    title,
+			Required: true,
+			Options:  opts,
+			Custom:   true,
+		})
+	} else {
+		fields = append(fields, formField{
+			Key:         request.ID,
+			Type:        "string",
+			Title:       title,
+			Description: strings.TrimSpace(request.Placeholder),
+			Required:    true,
+		})
+	}
+
+	encoded, _ := json.Marshal(fields)
+	return agents.FormInfo{
+		ID:        request.ID,
+		SessionID: sessionID,
+		Title:     title,
+		Fields:    encoded,
+	}
+}
+
+// listForms returns pending question forms that have not yet been submitted.
+func (c *rpcChild) listForms() []agents.FormInfo {
+	return c.forms.list(c.sessionID)
+}
+
+// replyForm submits answers to a pending question form.
+func (c *rpcChild) replyForm(formID string, answer map[string]any) error {
+	form := c.forms.get(formID)
+	if form == nil {
+		return fmt.Errorf("%w: pi: form %q is not pending", agents.ErrReplyExpired, formID)
+	}
+
+	form.mu.Lock()
+	defer form.mu.Unlock()
+
+	if form.submitted {
+		return fmt.Errorf("%w: pi: form %q is already answered", agents.ErrReplyExpired, formID)
+	}
+
+	if form.standalone {
+		val := ""
+		for _, v := range answer {
+			values := extractAnswerValues(v)
+			if len(values) > 0 {
+				val = values[0]
+				break
+			}
+		}
+		response := rpcExtensionUIResponse{Type: "extension_ui_response", ID: form.pendingRequestID, Value: &val}
+		_ = c.respond(response)
+		c.forms.remove(formID)
+		c.publishInteraction(agents.InteractionPayload{
+			ID:    formID,
+			Kind:  agents.InteractionForm,
+			Phase: agents.InteractionResolved,
+		})
+		c.touch()
+		return nil
+	}
+
+	// Questionnaire form: translate answers for each question item
+	for idx, item := range form.items {
+		key := strings.TrimSpace(item.ID)
+		if key == "" {
+			key = fmt.Sprintf("q%d", idx)
+		}
+		raw := answer[key]
+		if raw == nil {
+			if v, ok := answer[fmt.Sprintf("%d", idx)]; ok {
+				raw = v
+			} else if v, ok := answer[item.Header]; ok {
+				raw = v
+			} else if v, ok := answer[item.Question]; ok {
+				raw = v
+			}
+		}
+		form.answers[idx] = formatQuestionAnswer(item, raw)
+	}
+	form.submitted = true
+
+	// If pi is actively waiting on a dialog request, answer it now
+	if form.pendingRequestID != "" {
+		ans := form.answers[form.currentWaitIndex]
+		response := rpcExtensionUIResponse{Type: "extension_ui_response", ID: form.pendingRequestID, Value: &ans}
+		_ = c.respond(response)
+		form.pendingRequestID = ""
+		form.currentWaitIndex++
+	}
+
+	if form.currentWaitIndex >= len(form.items) {
+		c.forms.remove(formID)
+	}
+
+	c.publishInteraction(agents.InteractionPayload{
+		ID:    formID,
+		Kind:  agents.InteractionForm,
+		Phase: agents.InteractionResolved,
+	})
+	c.touch()
+	return nil
 }
 
 // publishInteraction emits one interaction boundary of the child's session.
@@ -330,7 +497,36 @@ func (c *rpcChild) isStreaming() bool { return c.streaming.Load() }
 
 // observe tracks run state from turn boundaries so followUp queuing and idle
 // reclamation see a run start and settle without an extra get_state round trip.
+// It also watches tool calls to register questionnaire forms.
 func (c *rpcChild) observe(event agents.NormalizedEvent) {
+	if event.Type == agents.EventToolCall && event.ToolCall != nil {
+		if event.ToolCall.Name == agents.StandardToolQuestion {
+			var payload agents.StandardQuestionPayload
+			if err := json.Unmarshal(event.ToolCall.Input, &payload); err == nil && len(payload.Questions) > 0 {
+				formInfo, err := buildQuestionnaireForm(c.sessionID, event.ToolCall.CallID, payload.Questions)
+				if err == nil {
+					c.forms.addQuestionnaireForm(formInfo, payload.Questions)
+					c.publishInteraction(agents.InteractionPayload{
+						ID:    event.ToolCall.CallID,
+						Kind:  agents.InteractionForm,
+						Phase: agents.InteractionRequested,
+						Form:  &formInfo,
+					})
+				}
+			}
+		}
+		return
+	}
+	if event.Type == agents.EventToolResult && event.ToolResult != nil {
+		if removed := c.forms.remove(event.ToolResult.CallID); removed != nil {
+			c.publishInteraction(agents.InteractionPayload{
+				ID:    event.ToolResult.CallID,
+				Kind:  agents.InteractionForm,
+				Phase: agents.InteractionResolved,
+			})
+		}
+		return
+	}
 	if event.Type != agents.EventTurn || event.Turn == nil {
 		return
 	}
@@ -496,6 +692,9 @@ func (c *rpcChild) shutdown(ctx context.Context) {
 func (c *rpcChild) kill() {
 	for _, id := range c.pending.drain() {
 		c.publishInteraction(agents.InteractionPayload{ID: id, Kind: agents.InteractionPermission, Phase: agents.InteractionResolved})
+	}
+	for _, id := range c.forms.drain() {
+		c.publishInteraction(agents.InteractionPayload{ID: id, Kind: agents.InteractionForm, Phase: agents.InteractionResolved})
 	}
 	c.proc.kill()
 }

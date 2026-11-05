@@ -80,9 +80,7 @@ func (a *Adapter) ReplyPermission(ctx context.Context, ref agents.SessionRef, re
 	return nil
 }
 
-// ListForms returns pending question forms. pi's approval subprotocol can emit
-// select/input/editor dialogs, but the platform only maps confirm onto tool
-// approval today, so there are no forms to report.
+// ListForms returns pending question forms for the given session.
 func (a *Adapter) ListForms(ctx context.Context, ref agents.SessionRef) ([]agents.FormInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -90,11 +88,18 @@ func (a *Adapter) ListForms(ctx context.Context, ref agents.SessionRef) ([]agent
 	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
-	return []agents.FormInfo{}, nil
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	child := inst.child(ref.SessionID)
+	if child == nil {
+		return []agents.FormInfo{}, nil
+	}
+	return child.listForms(), nil
 }
 
-// ReplyForm answers a pending question form. pi never surfaces one through the
-// adapter today, so every reply is expired.
+// ReplyForm submits answers to a pending question form.
 func (a *Adapter) ReplyForm(ctx context.Context, ref agents.SessionRef, formID string, answer map[string]any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -102,5 +107,16 @@ func (a *Adapter) ReplyForm(ctx context.Context, ref agents.SessionRef, formID s
 	if err := ref.Validate(); err != nil {
 		return err
 	}
-	return fmt.Errorf("%w: pi: form %q is not pending", agents.ErrReplyExpired, formID)
+	if formID == "" {
+		return fmt.Errorf("pi: form id is required")
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	child := inst.child(ref.SessionID)
+	if child == nil {
+		return fmt.Errorf("%w: pi: no live session %q", agents.ErrReplyExpired, ref.SessionID)
+	}
+	return child.replyForm(formID, answer)
 }
