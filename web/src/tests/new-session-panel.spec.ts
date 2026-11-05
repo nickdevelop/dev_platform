@@ -11,6 +11,7 @@ import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import { usePromptsStore } from '../stores/prompts'
+import { useDraftsStore } from '../stores/drafts'
 import { clearModelCache } from '../shared/modelCache'
 import type { AgentInstance } from '../api/agents'
 import type { Project } from '../api/projects'
@@ -406,7 +407,7 @@ describe('NewSessionPanel', () => {
       {
         id: 10,
         name: '代码审查',
-        type: 'role',
+        type: 'flow',
         description: '审查代码',
         content: '请对以下代码进行审查：\n\n{user_prompt}\n\n给出优化建议。',
         createdAt: '',
@@ -438,7 +439,7 @@ describe('NewSessionPanel', () => {
       {
         id: 20,
         name: '系统自检',
-        type: 'role',
+        type: 'flow',
         description: '系统体检',
         content: '执行完整自检：{user_prompt}',
         createdAt: '',
@@ -469,7 +470,7 @@ describe('NewSessionPanel', () => {
       {
         id: 10,
         name: '代码审查',
-        type: 'role',
+        type: 'flow',
         description: '审查代码',
         content: '审查：{user_prompt}',
         createdAt: '',
@@ -488,6 +489,81 @@ describe('NewSessionPanel', () => {
 
     expect(select.element.value).toBe('')
     expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
+  })
+
+  it('offers only flow prompt templates to a new project session', async () => {
+    const { wrapper } = setup()
+    const promptsStore = usePromptsStore()
+    promptsStore.prompts = [
+      {
+        id: 10,
+        name: '角色：代码审查',
+        type: 'role',
+        description: '角色类提示词',
+        content: '角色提示词：{user_prompt}',
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 11,
+        name: '流程：并行评审',
+        type: 'flow',
+        description: '流程类提示词',
+        content: '流程提示词：{user_prompt}',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    await flushPromises()
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="prompt-select"]')
+    const labels = select.findAll('option').map((option) => option.text())
+    expect(labels).toContain('流程：并行评审')
+    expect(labels).not.toContain('角色：代码审查')
+  })
+
+  it('clears a restored role prompt draft instead of applying it', async () => {
+    setActivePinia(createPinia())
+    const agents = useAgentsStore()
+    agents.backends = [
+      {
+        backend: 'opencode-v2',
+        capabilities: capabilities(),
+        label: 'OpenCode',
+        order: 1,
+        serviceSupported: true,
+      },
+    ]
+    vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined as never)
+    vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined as never)
+
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: '项目一', path: '/path/1', defaultBackend: 'opencode-v2' },
+    ] as unknown as Project[]
+
+    const promptsStore = usePromptsStore()
+    promptsStore.prompts = [
+      {
+        id: 10,
+        name: '角色：代码审查',
+        type: 'role',
+        description: '角色类提示词',
+        content: '角色提示词：{user_prompt}',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    vi.spyOn(promptsStore, 'loadPrompts').mockResolvedValue(undefined as never)
+
+    const draftsStore = useDraftsStore()
+    draftsStore.setNewSessionDraft({ promptId: 10 }, 1)
+
+    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
+    expect(draftsStore.getNewSessionDraft(1).promptId).toBe('')
   })
 
   it('preserves user input and selected project across remounts via draftsStore (prevents resetting to first project)', async () => {

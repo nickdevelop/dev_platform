@@ -72,9 +72,14 @@ const initialDraft = draftsStore.getNewSessionDraft(initialProjectId)
 let isRestoringDraft = false
 
 const selectedPromptId = ref<number | ''>(initialDraft.promptId ?? '')
-const selectedPrompt = computed(() =>
-  selectedPromptId.value !== '' ? promptsStore.byId(Number(selectedPromptId.value)) ?? null : null,
-)
+// A new project session only offers flow prompts (role prompts belong to the
+// role library and the pure-chat assistants). The type check is the safety net
+// against a draft that still names a role prompt from before this restriction.
+const selectedPrompt = computed(() => {
+  if (selectedPromptId.value === '') return null
+  const prompt = promptsStore.byId(Number(selectedPromptId.value))
+  return prompt && prompt.type === 'flow' ? prompt : null
+})
 
 const {
   sendShortcut,
@@ -113,8 +118,7 @@ const promptOptions = computed<SelectMenuItem<number | ''>[]>(() => {
   const items: SelectMenuItem<number | ''>[] = [
     { value: '', label: '不使用提示词（默认）' },
   ]
-  const list = Array.isArray(promptsStore.prompts) ? promptsStore.prompts : []
-  for (const p of list) {
+  for (const p of promptsStore.flowPrompts) {
     items.push({
       value: p.id,
       label: p.name,
@@ -123,6 +127,18 @@ const promptOptions = computed<SelectMenuItem<number | ''>[]>(() => {
   }
   return items
 })
+
+// Drops a restored draft selection that is no longer offered here. Keeping it
+// would silently inject a role prompt into the first message while the picker
+// no longer shows it; an unknown id (prompt list not loaded yet) is left alone
+// because selectedPrompt already refuses to apply it.
+function clearInvalidPromptSelection() {
+  if (selectedPromptId.value === '') return
+  const prompt = promptsStore.byId(Number(selectedPromptId.value))
+  if (!prompt || prompt.type === 'flow') return
+  selectedPromptId.value = ''
+  draftsStore.setNewSessionDraft({ promptId: '' }, selectedProjectId.value)
+}
 
 watch(
   () => [props.projectId, route?.params?.projectId],
@@ -189,6 +205,7 @@ watch(selectedProjectId, (newId, oldId) => {
       : firstSelectableBackend()
     selectedModel.value = targetDraft.model || ''
     selectedPromptId.value = targetDraft.promptId || ''
+    clearInvalidPromptSelection()
     approvalMode.value = targetDraft.approvalMode || 'default'
     attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
     void nextTick(() => {
@@ -383,7 +400,11 @@ const createLabel = computed(() => {
 })
 
 onMounted(async () => {
-  void promptsStore.loadPrompts()
+  void promptsStore.loadPrompts().then(() => {
+    // The prompt list arrives asynchronously, so a role prompt in the restored
+    // draft can only be recognised and cleared here.
+    clearInvalidPromptSelection()
+  })
   await agents.loadBackends()
   if (Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0) {
     await projectsStore.load()

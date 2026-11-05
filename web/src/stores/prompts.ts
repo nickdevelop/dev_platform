@@ -24,9 +24,9 @@ export const usePromptsStore = defineStore('prompts', {
 
   getters: {
     byId: (state) => (id: number): Prompt | undefined =>
-      state.prompts.find((p) => p.id === id),
-    rolePrompts: (state) => state.prompts.filter((p) => p.type === 'role'),
-    flowPrompts: (state) => state.prompts.filter((p) => p.type === 'flow'),
+      (state.prompts ?? []).find((p) => p.id === id),
+    rolePrompts: (state) => (state.prompts ?? []).filter((p) => p.type === 'role'),
+    flowPrompts: (state) => (state.prompts ?? []).filter((p) => p.type === 'flow'),
   },
 
   actions: {
