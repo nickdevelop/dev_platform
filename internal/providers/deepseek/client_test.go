@@ -3,6 +3,7 @@ package deepseek
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -300,4 +301,79 @@ func TestCancelAfterStreamErrorDoesNotPanic(t *testing.T) {
 
 	// Calling cancelStream() after stream is closed must not panic!
 	cancelStream()
+}
+
+func TestClientBurstStreamDoesNotDropDeltas(t *testing.T) {
+	const totalChunks = 300
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/remote.mux" {
+			http.NotFound(w, r)
+			return
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		for {
+			var msg wsClientMessage
+			if err := conn.ReadJSON(&msg); err != nil {
+				return
+			}
+			if msg.Type == "open" && msg.Endpoint == "$events" {
+				_ = conn.WriteJSON(wsServerMessage{
+					Type:     "item",
+					StreamID: msg.StreamID,
+					Value:    json.RawMessage(`{"type": "ready", "clientId": "burst-test-client"}`),
+				})
+			} else if msg.Type == "open" && msg.Endpoint == "session/follow" {
+				go func(streamID string) {
+					// Simulate rapid-fire burst emission of text chunks
+					for i := 0; i < totalChunks; i++ {
+						chunkJSON := fmt.Sprintf(`{"type":"assistant-stream","frame":{"type":"chunk","chunk":{"type":"text-delta","text":"chunk-%d,"}}}`, i)
+						_ = conn.WriteJSON(wsServerMessage{
+							Type:     "item",
+							StreamID: streamID,
+							Value:    json.RawMessage(chunkJSON),
+						})
+					}
+					_ = conn.WriteJSON(wsServerMessage{
+						Type:     "end",
+						StreamID: streamID,
+					})
+				}(msg.StreamID)
+			}
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "auth=cookie")
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.ConnectMux(ctx); err != nil {
+		t.Fatalf("ConnectMux failed: %v", err)
+	}
+
+	_, ch, cancelStream, err := client.Subscribe(ctx, "session/follow", map[string]any{})
+	if err != nil {
+		t.Fatalf("Subscribe failed: %v", err)
+	}
+	defer cancelStream()
+
+	receivedCount := 0
+	for raw := range ch {
+		// Simulate slight downstream processing latency (e.g. JSON parse, SSE serialize, TCP flush)
+		time.Sleep(100 * time.Microsecond)
+		if strings.Contains(string(raw), "text-delta") {
+			receivedCount++
+		}
+	}
+
+	if receivedCount != totalChunks {
+		t.Fatalf("received %d chunks, want exact %d (burst stream dropped tokens)", receivedCount, totalChunks)
+	}
 }

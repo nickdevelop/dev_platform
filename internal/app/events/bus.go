@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultBusGCTTL   = 60 * time.Second
-	defaultBusBufSize = 512
+	defaultBusBufSize = 1024
 	heartbeatInterval = 15 * time.Second
 )
 
@@ -267,9 +267,19 @@ func isCriticalEventType(eventType string) bool {
 	}
 }
 
+// isStreamContentEvent identifies streaming content deltas where any loss corrupts the conversation text.
+func isStreamContentEvent(eventType string) bool {
+	switch eventType {
+	case "message", "thinking", "delta", "chunk":
+		return true
+	default:
+		return false
+	}
+}
+
 // enqueue attempts to deliver an envelope to the client bus output channel.
 // Non-critical events are dropped if the channel is full.
-// Critical events wait briefly (up to 50ms) for space before dropping, and drops are logged and counted.
+// Critical and streaming content events wait briefly (up to 100ms) for space before dropping, and drops are logged and counted.
 func (b *ClientBus) enqueue(env EventEnvelope) {
 	select {
 	case b.out <- env:
@@ -277,9 +287,9 @@ func (b *ClientBus) enqueue(env EventEnvelope) {
 	default:
 	}
 
-	// Buffer is currently full.
-	if isCriticalEventType(env.EventType) {
-		timer := time.NewTimer(50 * time.Millisecond)
+	// Buffer is currently full. Critical and streaming content events wait briefly for space.
+	if isCriticalEventType(env.EventType) || isStreamContentEvent(env.EventType) {
+		timer := time.NewTimer(100 * time.Millisecond)
 		defer timer.Stop()
 		select {
 		case b.out <- env:

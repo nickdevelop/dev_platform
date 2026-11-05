@@ -706,7 +706,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 		return nil, err
 	}
 
-	outCh := make(chan agents.NormalizedEvent, 100)
+	outCh := make(chan agents.NormalizedEvent, 1024)
 	subCtx, cancel := context.WithCancel(ctx)
 	sub := newSubscription(subCtx, outCh, cancel)
 

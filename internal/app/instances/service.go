@@ -631,8 +631,8 @@ func (s *Service) closeStream(instanceID string) {
 // finishStream holds while nil-ing the set, so the two are ordered safely.
 func (s *Service) addSubscriber(ctx context.Context, instanceID string, st *stream) (*subscriber, bool) {
 	sub := &subscriber{
-		stash: make(chan agents.NormalizedEvent, 32),
-		out:   make(chan agents.NormalizedEvent, 32),
+		stash: make(chan agents.NormalizedEvent, 512),
+		out:   make(chan agents.NormalizedEvent, 512),
 		done:  make(chan struct{}),
 	}
 

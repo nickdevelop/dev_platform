@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -69,7 +70,7 @@ type Client struct {
 	wsConn     *websocket.Conn
 	wsMu       sync.Mutex
 
-	subscribers   map[string]chan json.RawMessage
+	subscribers   map[string]*streamSub
 	subscribersMu sync.RWMutex
 
 	listenersMu     sync.RWMutex
@@ -152,6 +153,11 @@ func ExchangeLaunchToken(ctx context.Context, launchURL string) (endpoint string
 	return endpoint, cookie, nil
 }
 
+type streamSub struct {
+	ch   chan json.RawMessage
+	done chan struct{}
+}
+
 // NewClient creates an unauthenticated client. Call ConnectMux to initialize the WebSocket connection.
 func NewClient(endpoint, cookie string) *Client {
 	return &Client{
@@ -160,7 +166,7 @@ func NewClient(endpoint, cookie string) *Client {
 		httpClient: &http.Client{
 			Timeout: defaultRPCTimeout,
 		},
-		subscribers:     make(map[string]chan json.RawMessage),
+		subscribers:     make(map[string]*streamSub),
 		eventListeners:  make(map[uint64]func(json.RawMessage)),
 		closedListeners: make(map[uint64]func()),
 		done:            make(chan struct{}),
@@ -416,10 +422,13 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 	}
 
 	streamID := newStreamID()
-	ch := make(chan json.RawMessage, 200)
+	sub := &streamSub{
+		ch:   make(chan json.RawMessage, 1024),
+		done: make(chan struct{}),
+	}
 
 	c.subscribersMu.Lock()
-	c.subscribers[streamID] = ch
+	c.subscribers[streamID] = sub
 	c.subscribersMu.Unlock()
 
 	msg := wsClientMessage{
@@ -435,9 +444,10 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 
 	if err != nil {
 		c.subscribersMu.Lock()
-		if current, exists := c.subscribers[streamID]; exists && current == ch {
+		if current, exists := c.subscribers[streamID]; exists && current == sub {
 			delete(c.subscribers, streamID)
-			close(ch)
+			close(sub.done)
+			close(sub.ch)
 		}
 		c.subscribersMu.Unlock()
 		return "", nil, nil, fmt.Errorf("write subscribe frame: %w", err)
@@ -447,9 +457,9 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 	cancel := func() {
 		cancelOnce.Do(func() {
 			c.subscribersMu.Lock()
-			if _, exists := c.subscribers[streamID]; exists {
+			if current, exists := c.subscribers[streamID]; exists {
 				delete(c.subscribers, streamID)
-				close(ch)
+				close(current.done)
 			}
 			c.subscribersMu.Unlock()
 
@@ -464,7 +474,7 @@ func (c *Client) Subscribe(ctx context.Context, endpoint string, args any) (stri
 		})
 	}
 
-	return streamID, ch, cancel, nil
+	return streamID, sub.ch, cancel, nil
 }
 
 func (c *Client) readLoop() {
@@ -483,28 +493,32 @@ func (c *Client) readLoop() {
 			continue
 		}
 
-		// Hold the read lock across the non-blocking send so a concurrent
-		// Close cannot close the channel underneath it.
+		// Hold the read lock briefly to copy subscriber pointer, then dispatch without lock.
 		c.subscribersMu.RLock()
-		ch, ok := c.subscribers[frame.StreamID]
-		if ok && ch != nil && frame.Type == "item" {
-			select {
-			case ch <- frame.Value:
-			default:
-			}
-		}
+		sub, ok := c.subscribers[frame.StreamID]
 		c.subscribersMu.RUnlock()
 
-		if !ok || ch == nil {
+		if ok && sub != nil && frame.Type == "item" {
+			select {
+			case sub.ch <- frame.Value:
+			case <-sub.done:
+			case <-c.done:
+			case <-time.After(10 * time.Second):
+				log.Printf("[deepseek/client] warning: subscriber %s buffer congested, frame delayed", frame.StreamID)
+			}
+		}
+
+		if !ok || sub == nil {
 			continue
 		}
 
 		switch frame.Type {
 		case "end", "error":
 			c.subscribersMu.Lock()
-			if activeCh, exists := c.subscribers[frame.StreamID]; exists {
+			if active, exists := c.subscribers[frame.StreamID]; exists {
 				delete(c.subscribers, frame.StreamID)
-				close(activeCh)
+				close(active.done)
+				close(active.ch)
 			}
 			c.subscribersMu.Unlock()
 		}
@@ -524,9 +538,10 @@ func (c *Client) Close() error {
 		c.wsMu.Unlock()
 
 		c.subscribersMu.Lock()
-		for id, ch := range c.subscribers {
+		for id, sub := range c.subscribers {
 			delete(c.subscribers, id)
-			close(ch)
+			close(sub.done)
+			close(sub.ch)
 		}
 		c.subscribersMu.Unlock()
 	})
