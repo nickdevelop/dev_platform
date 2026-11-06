@@ -35,6 +35,12 @@ type busSessionSub struct {
 	nativeSessionID string
 	instanceID      string
 	backend         agents.BackendID
+	// replayWatermark is the highest sequence a SubscribeSession replay
+	// delivered for this session. Live forwarding skips events at or below
+	// it so the ring replay is the sole delivery of that range — otherwise
+	// a frame already queued on the bus and the same frame replayed after a
+	// re-subscribe would render twice.
+	replayWatermark uint64
 }
 
 // busInstanceSub manages the instance-level event channel shared by all sessions
@@ -278,6 +284,11 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 					})
 				}
 			}
+			// Everything at or below this sequence is now replayed for this
+			// session; live forwarding must not deliver it again.
+			if len(replay) > 0 {
+				sub.replayWatermark = replay[len(replay)-1].Sequence
+			}
 		}
 	}
 
@@ -338,6 +349,10 @@ func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string
 			}
 			// Find matching sessions within this bus.
 			for _, sub := range instSub.sessions {
+				if sub.replayWatermark > 0 && ev.Sequence > 0 && ev.Sequence <= sub.replayWatermark {
+					// The re-subscribe replay already owns this range.
+					continue
+				}
 				if matchesSessionRow(sub, ev) {
 					cloned := ev
 					if cloned.SessionID != "" {

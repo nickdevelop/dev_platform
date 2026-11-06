@@ -216,11 +216,26 @@ function pinnedFirst(tabs: OpenTab[]): OpenTab[] {
   return [...tabs.filter((tab) => tab.pinned === true), ...tabs.filter((tab) => tab.pinned !== true)]
 }
 
-// trim drops the oldest unpinned tabs until the set fits MAX_TABS. Pinned tabs
-// are the user's anchors, so they are never the one dropped.
+// Trim guard: when set, receives a trim candidate and returns true to protect
+// it — a session whose turn is still running must not lose its SSE
+// subscription mid-stream, otherwise its live output silently stops until the
+// tab is reopened (AppShell installs it once at mount). Unset in isolation
+// (e.g. unit tests) keeps the plain oldest-first behavior.
+let trimGuard: ((tab: OpenTab) => boolean) | null = null
+export function setOpenTabsTrimGuard(fn: ((tab: OpenTab) => boolean) | null) {
+  trimGuard = fn
+}
+
+// trim drops the oldest unprotected unpinned tabs until the set fits MAX_TABS.
+// Pinned tabs are the user's anchors, so they are never the one dropped; a
+// running session is skipped by the guard so its live stream is never torn
+// down by an automatic trim (the strip may exceed MAX_TABS while every
+// remaining candidate is protected — the next add retries).
 function trim(tabs: OpenTab[]) {
   while (tabs.length > MAX_TABS) {
-    const index = tabs.findIndex((tab) => tab.pinned !== true)
+    const index = tabs.findIndex(
+      (tab) => tab.pinned !== true && !(trimGuard?.(tab) ?? false),
+    )
     if (index === -1) break
     tabs.splice(index, 1)
   }

@@ -404,6 +404,21 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 	bus.onConnect(connCancel)
 	defer bus.onDisconnect()
 
+	// Drop everything still queued when the stream loop exits: a kick or a
+	// disconnect leaves undrained frames behind, and the client re-subscribes
+	// with its sequence and receives the same range replayed from the
+	// instance ring — leftovers would surface as duplicate renders.
+	defer func() {
+		for {
+			select {
+			case <-bus.out:
+				continue
+			default:
+				return
+			}
+		}
+	}()
+
 	write := func(s string) error {
 		if setWriteDeadline != nil {
 			_ = setWriteDeadline(time.Now().Add(writeDeadline))

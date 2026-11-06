@@ -20,6 +20,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { useChatsStore } from '../../stores/chats'
+import { setOpenTabsTrimGuard } from '../../stores/openTabs'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
@@ -45,6 +46,15 @@ const settings = useSettingsStore()
 const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
 const chats = useChatsStore()
+
+// Protect tabs whose session is mid-turn from automatic capacity trimming:
+// trimming would call sessions.unsubscribe below and tear down a live SSE
+// subscription, so the session's streaming output silently stops (its frames
+// only reappear after a manual reopen/refresh). Manual closes remain
+// unaffected — an explicit close intent still unsubscribes.
+setOpenTabsTrimGuard(
+  (tab) => tab.kind === 'session' && sessions.sessionTurns[tab.sessionId] === 'running',
+)
 
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)

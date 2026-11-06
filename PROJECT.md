@@ -136,7 +136,7 @@ web/src/
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、会话 Tab
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、会话 Tab
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、大模型配置（ModelSettings.vue）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
