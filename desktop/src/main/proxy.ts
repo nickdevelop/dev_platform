@@ -40,6 +40,12 @@ export class DesktopProxy {
     this.webDir = customWebDir || this.resolveWebDir()
     this.server = http.createServer((req, res) => this.handleHttpRequest(req, res))
     this.server.on('upgrade', (req, socket, head) => this.handleUpgrade(req, socket, head))
+    // SSE frames are small and flushed per frame; leave Nagle on and the
+    // renderer-visible stream stalls in multi-second batches until delayed
+    // ACKs release them. Disable coalescing on every accepted connection.
+    this.server.on('connection', (socket: import('node:net').Socket) => {
+      socket.setNoDelay(true)
+    })
   }
 
   private resolveWebDir(): string {
@@ -204,6 +210,13 @@ export class DesktopProxy {
         // Forward status and headers
         const resHeaders = { ...targetRes.headers }
         res.writeHead(targetRes.statusCode || 500, resHeaders)
+        // SSE responses must dispatch their headers immediately so the
+        // browser's EventSource enters 'open' at the moment the server
+        // considers the stream ready — buffering headers here desyncs the
+        // client's reconnect/replay timing.
+        if (targetRes.headers['content-type']?.includes('text/event-stream')) {
+          res.flushHeaders()
+        }
         // Stream response body (works for JSON, SSE, binaries)
         targetRes.pipe(res)
       },
