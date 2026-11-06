@@ -10,6 +10,7 @@ import {
   type EventEnvelope,
   type SubscribeBusBody,
 } from '../../api/events'
+import { BUS_EVENT_TYPES } from './event-types'
 
 export type StreamStatus = 'idle' | 'connecting' | 'open' | 'error' | 'reconnecting'
 
@@ -42,6 +43,11 @@ export class UnifiedEventBusClient {
   private repairTimer: ReturnType<typeof setTimeout> | null = null
   private hasRepaired = false
 
+  // SharedWorker activation handshake: subscribe() must not POST under this
+  // tab's proposed busId before the worker's arbitraged busId has arrived.
+  private workerReady: Promise<void> | null = null
+  private workerReadyResolve: (() => void) | null = null
+
   public getBusId(): string {
     if (!this.busId) {
       const cached =
@@ -67,6 +73,13 @@ export class UnifiedEventBusClient {
   }
 
   public setBusId(id: string) {
+    this.adoptBusId(id)
+  }
+
+  // adoptBusId applies an authoritative busId (from the worker's arbitration
+  // or an explicit caller) and persists it so reloads reuse the same bus.
+  private adoptBusId(id?: string) {
+    if (!id || id === this.busId) return
     this.busId = id
     if (typeof sessionStorage !== 'undefined') {
       try {
@@ -158,8 +171,12 @@ export class UnifiedEventBusClient {
     if (newStatus === 'open') {
       this.clearRepair()
       this.hasRepaired = false
-      if (this.hasConnected && prevStatus === 'reconnecting') {
-        // Reconnection occurred: trigger strategy A lightweight snapshot refresh
+      if (this.hasConnected && (prevStatus === 'reconnecting' || prevStatus === 'connecting')) {
+        // Reconnection occurred: trigger strategy A lightweight snapshot refresh.
+        // Both "reconnecting → open" (browser auto-retry) and
+        // "connecting → open" (worker/close-redial re-dial) count once this
+        // window has connected before — otherwise a force-redialed
+        // connection would silently skip the re-subscribe/replay pass.
         for (const listener of this.reconnectListeners) {
           try {
             listener()
@@ -202,6 +219,16 @@ export class UnifiedEventBusClient {
         const port = this.worker.port
         this.workerPort = port
 
+        // The worker arbitrates bus ownership: this tab's getBusId() is only
+        // a proposal, and the worker may answer with its (already owned)
+        // busId. Every busId arriving through init/status is authoritative
+        // and must be adopted AND persisted, so this tab's subscription
+        // POSTs target the same bus the SharedWorker's SSE connection reads.
+        this.workerReady = new Promise<void>((resolve) => {
+          if (this.busId) resolve()
+          this.workerReadyResolve = resolve
+        })
+
         port.onmessage = (event: MessageEvent) => {
           const data = event.data as
             | { type: 'init'; busId: string; status: StreamStatus }
@@ -211,10 +238,14 @@ export class UnifiedEventBusClient {
           if (!data || !data.type) return
 
           if (data.type === 'init') {
-            if (data.busId) this.busId = data.busId
+            this.adoptBusId(data.busId)
+            if (this.workerReadyResolve) {
+              this.workerReadyResolve()
+              this.workerReadyResolve = null
+            }
             this.setStatus(data.status)
           } else if (data.type === 'status') {
-            if (data.busId) this.busId = data.busId
+            this.adoptBusId(data.busId)
             this.setStatus(data.status)
           } else if (data.type === 'event') {
             this.dispatchEnvelope(data.envelope)
@@ -268,9 +299,19 @@ export class UnifiedEventBusClient {
 
     es.onerror = () => {
       if (es.readyState === EventSource.CLOSED) {
+        // CLOSED sources never self-retry: drop the source, report
+        // 'reconnecting' (never a terminal 'error') and redial after the
+        // stall window, so the next 'open' triggers the reconnect
+        // listeners — the same contract the SharedWorker implements.
         this.clearRepair()
-        this.setStatus('error')
         this.localSource = null
+        this.setStatus('reconnecting')
+        this.repairTimer = setTimeout(() => {
+          this.repairTimer = null
+          if (this.status === 'reconnecting') {
+            this.ensureTransport()
+          }
+        }, stallMs)
       } else {
         this.setStatus('reconnecting')
         if (this.hasRepaired || this.repairTimer) return
@@ -293,37 +334,14 @@ export class UnifiedEventBusClient {
       this.setStatus('open')
     })
 
-    const knownEvents = [
-      'delta',
-      'message',
-      'thinking',
-      'tool_call',
-      'tool_result',
-      'turn',
-      'interactions',
-      'interaction',
-      'resync',
-      'status_change',
-      'step_update',
-      'chunk',
-      'status',
-      'conversation',
-      'snapshot',
-      'message_update',
-      'closed',
-      'error',
-      'unknown',
-      'lifecycle',
-    ]
-
-    for (const evt of knownEvents) {
-      es.addEventListener(evt, (e) => {
+    for (const evtType of BUS_EVENT_TYPES) {
+      es.addEventListener(evtType, (e) => {
         try {
           const raw = JSON.parse(e.data)
           if (raw && typeof raw === 'object' && 'channel' in raw && 'targetId' in raw) {
             this.dispatchEnvelope(raw as EventEnvelope)
           } else {
-            this.dispatchRawFrame(evt, raw, (e as any).lastEventId)
+            this.dispatchRawFrame(evtType, raw, (e as any).lastEventId)
           }
         } catch {
           // Ignore
@@ -417,6 +435,10 @@ export class UnifiedEventBusClient {
         targetId,
       })
     }
+
+    // Wait for the worker's first init reply: it carries the arbitrated
+    // (possibly different) busId, and the POST below must target that bus.
+    if (this.workerReady) await this.workerReady
 
     const id = this.getBusId()
     const body: SubscribeBusBody = {

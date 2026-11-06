@@ -38,6 +38,7 @@ func NewService(manager *Manager) *Service {
 //	POST   /api/events/bus/:uuid/subscriptions             - Add subscription (and get optional snapshot)
 //	DELETE /api/events/bus/:uuid/subscriptions/:channel/:id - Remove subscription
 //	GET    /api/events/bus/:uuid/subscriptions             - List active subscriptions
+//	GET    /api/events/diagnostics                         - Per-bus buffer/drop diagnostics
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	busGroup := r.Group("/events/bus/:uuid")
 	{
@@ -46,6 +47,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		busGroup.DELETE("/subscriptions/:channel/:targetId", s.handleBusUnsubscribe)
 		busGroup.GET("/subscriptions", s.handleBusListSubscriptions)
 	}
+	r.GET("/events/diagnostics", s.handleDiagnostics)
 }
 
 func (s *Service) handleBusStream(c *gin.Context) {
@@ -59,10 +61,26 @@ func (s *Service) handleBusStream(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
+	responseController := http.NewResponseController(c.Writer)
+	_ = responseController.SetWriteDeadline(time.Time{})
 	c.Writer.Flush()
 
-	_ = s.Manager.StreamBus(c.Request.Context(), uuid, c.Writer, func() { c.Writer.Flush() })
+	// StreamBus applies a progressive deadline before every frame so a stalled
+	// client TCP connection terminates the loop (allowing the client to
+	// reconnect and replay) instead of blocking it while the buffer overflows.
+	_ = s.Manager.StreamBus(
+		c.Request.Context(),
+		uuid,
+		c.Writer,
+		func() { c.Writer.Flush() },
+		func(deadline time.Time) error { return responseController.SetWriteDeadline(deadline) },
+	)
+}
+
+func (s *Service) handleDiagnostics(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"buses": s.Manager.Diagnostics(),
+	})
 }
 
 func (s *Service) handleBusSubscribe(c *gin.Context) {

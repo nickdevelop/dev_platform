@@ -419,7 +419,7 @@ describe('session store streaming and isolation', () => {
     expect(sessions.messagesFor('sess-2').map((m) => m.text)).toEqual(['two'])
   })
 
-  it('reports a reconnecting stream and a terminal error without affecting other sessions', async () => {
+  it('reports a reconnecting stream that keeps retrying instead of a dead-end error', async () => {
     stubRoutes([
       [
         'GET',
@@ -435,7 +435,12 @@ describe('session store streaming and isolation', () => {
     source.fail()
     expect(sessions.statusFor('sess-1')).toBe('reconnecting')
     source.end()
-    expect(sessions.statusFor('sess-1')).toBe('error')
+    // A CLOSED source no longer terminates in a dead 'error' state — that
+    // dead-end killed live output until a page refresh. The client drops the
+    // source, stays 'reconnecting' and redials after the stall window; the
+    // next successful 'open' re-subscribes every session with its last
+    // sequence so the server can replay the gap.
+    expect(sessions.statusFor('sess-1')).toBe('reconnecting')
   })
 
   it('keeps both streams open when switching sessions', async () => {

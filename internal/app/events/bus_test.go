@@ -116,7 +116,7 @@ func TestManagerStreamBus(t *testing.T) {
 	done := make(chan error, 1)
 
 	go func() {
-		done <- mgr.StreamBus(ctx, busID, &buf, nil)
+		done <- mgr.StreamBus(ctx, busID, &buf, nil, nil)
 	}()
 
 	// Wait for ready frame to be flushed
@@ -157,7 +157,7 @@ func TestManagerGC(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- mgr.StreamBus(ctx, busID, &buf, nil)
+		done <- mgr.StreamBus(ctx, busID, &buf, nil, nil)
 	}()
 
 	time.Sleep(20 * time.Millisecond)

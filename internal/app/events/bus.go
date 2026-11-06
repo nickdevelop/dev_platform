@@ -16,6 +16,12 @@ const (
 	defaultBusGCTTL   = 60 * time.Second
 	defaultBusBufSize = 1024
 	heartbeatInterval = 15 * time.Second
+	// writeDeadline is applied to every frame and heartbeat write. A client
+	// whose TCP connection is stalled (background tab, dead network) cannot
+	// be unblocked from the outside: the deadline is what lets the stream
+	// loop observe a failed write and return, so the client reconnects and
+	// replays instead of the buffer silently overflowing forever.
+	writeDeadline = 3 * heartbeatInterval
 )
 
 var (
@@ -34,6 +40,7 @@ type ClientBus struct {
 	gcTimer      *time.Timer
 	connCancel   context.CancelFunc
 	droppedCount atomic.Uint64
+	streamDrops  atomic.Uint64
 }
 
 // DroppedCount returns the total number of events dropped due to buffer overflow.
@@ -86,6 +93,21 @@ func (b *ClientBus) onDisconnect() {
 	b.gcTimer = time.AfterFunc(ttl, func() {
 		mgr.RemoveBus(uuid)
 	})
+}
+
+// kick forces the current SSE stream to terminate so the client reconnects.
+// A reconnected client re-subscribes with its last sequence (or receives a
+// resync), and the instance ring buffer replays what was lost here — turning
+// an otherwise permanent silent gap into a recoverable one.
+func (b *ClientBus) kick(reason string) {
+	b.mu.Lock()
+	cancel := b.connCancel
+	b.mu.Unlock()
+	if cancel == nil {
+		return
+	}
+	log.Printf("[EventBus] bus %s kicked: %s", b.id, reason)
+	cancel()
 }
 
 // hasSubscription reports whether the bus is listening to (channel, targetID).
@@ -304,6 +326,23 @@ func (b *ClientBus) enqueue(env EventEnvelope) {
 		log.Printf("[EventBus] bus %s buffer full (%d), dropped %s event on channel %s/%s (total dropped: %d)",
 			b.id, cap(b.out), env.EventType, env.Channel, env.TargetID, count)
 	}
+
+	// A dropped critical or streaming-content event would corrupt the client
+	// transcript with no online self-healing (the client is still connected,
+	// so nothing triggers a replay). Kicking the stream is strictly better:
+	// the client reconnects, re-subscribes with its sequence, and the ring
+	// buffer replays the gap. Non-critical events cannot be replayed
+	// meaningfully, so they are tolerated — but sustained overflow still
+	// kicks, every 64th drop.
+	if isCriticalEventType(env.EventType) {
+		b.kick("critical event dropped")
+	} else if isStreamContentEvent(env.EventType) {
+		if b.streamDrops.Add(1)%8 == 0 {
+			b.kick("streaming content events dropped")
+		}
+	} else if count%64 == 0 {
+		b.kick("sustained buffer overflow")
+	}
 }
 
 // PushToBus direct-delivers an event to a specific client bus.
@@ -353,7 +392,10 @@ func (m *Manager) BroadcastPayload(channel, targetID, eventType string, payload 
 }
 
 // StreamBus streams events for a client bus over an SSE connection.
-func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush func()) error {
+// setWriteDeadline, when provided, is applied before every write so a stalled
+// TCP connection surfaces as a failed write instead of blocking the loop
+// forever while the buffer overflows.
+func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush func(), setWriteDeadline func(time.Time) error) error {
 	bus := m.GetOrCreate(uuid)
 
 	connCtx, connCancel := context.WithCancel(ctx)
@@ -361,6 +403,19 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 
 	bus.onConnect(connCancel)
 	defer bus.onDisconnect()
+
+	write := func(s string) error {
+		if setWriteDeadline != nil {
+			_ = setWriteDeadline(time.Now().Add(writeDeadline))
+		}
+		if _, err := io.WriteString(w, s); err != nil {
+			return err
+		}
+		if flush != nil {
+			flush()
+		}
+		return nil
+	}
 
 	// Initial handshake frame to indicate connection readiness
 	readyEnvelope := EventEnvelope{
@@ -370,11 +425,8 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 		Timestamp: NowMillis(),
 	}
 	readyBytes, _ := json.Marshal(readyEnvelope)
-	if _, err := fmt.Fprintf(w, "event: ready\ndata: %s\n\n", string(readyBytes)); err != nil {
+	if err := write(fmt.Sprintf("event: ready\ndata: %s\n\n", string(readyBytes))); err != nil {
 		return err
-	}
-	if flush != nil {
-		flush()
 	}
 
 	ticker := time.NewTicker(heartbeatInterval)
@@ -385,11 +437,8 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 		case <-connCtx.Done():
 			return nil
 		case <-ticker.C:
-			if _, err := fmt.Fprintf(w, ":keep-alive\n\n"); err != nil {
+			if err := write(":keep-alive\n\n"); err != nil {
 				return err
-			}
-			if flush != nil {
-				flush()
 			}
 		case env, ok := <-bus.out:
 			if !ok {
@@ -402,18 +451,54 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 			}
 
 			// We emit with eventType so EventSource listeners can filter, or generic message listener
+			var frame string
 			if env.ID > 0 {
-				if _, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.EventType, string(wireBytes)); err != nil {
-					return err
-				}
+				frame = fmt.Sprintf("id: %d\nevent: %s\ndata: %s\n\n", env.ID, env.EventType, string(wireBytes))
 			} else {
-				if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", env.EventType, string(wireBytes)); err != nil {
-					return err
-				}
+				frame = fmt.Sprintf("event: %s\ndata: %s\n\n", env.EventType, string(wireBytes))
 			}
-			if flush != nil {
-				flush()
+			if err := write(frame); err != nil {
+				return err
 			}
 		}
 	}
+}
+
+// BusDiagnostics is the observability snapshot of one client bus.
+type BusDiagnostics struct {
+	BusID       string         `json:"busId"`
+	Active      bool           `json:"active"`
+	Channels    map[string]int `json:"channels"`
+	Dropped     uint64         `json:"dropped"`
+	StreamDrops uint64         `json:"streamDrops"`
+	Queued      int            `json:"queued"`
+}
+
+// Diagnostics returns the current state of every client bus.
+func (m *Manager) Diagnostics() []BusDiagnostics {
+	m.mu.RLock()
+	buses := make([]*ClientBus, 0, len(m.buses))
+	for _, b := range m.buses {
+		buses = append(buses, b)
+	}
+	m.mu.RUnlock()
+
+	res := make([]BusDiagnostics, 0, len(buses))
+	for _, b := range buses {
+		b.mu.Lock()
+		channels := make(map[string]int, len(b.subs))
+		for ch, targets := range b.subs {
+			channels[ch] = len(targets)
+		}
+		res = append(res, BusDiagnostics{
+			BusID:       b.id,
+			Active:      b.active,
+			Channels:    channels,
+			Dropped:     b.droppedCount.Load(),
+			StreamDrops: b.streamDrops.Load(),
+			Queued:      len(b.out),
+		})
+		b.mu.Unlock()
+	}
+	return res
 }

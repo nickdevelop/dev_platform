@@ -2265,6 +2265,47 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /events/diagnostics:
+    get:
+      summary: Event bus diagnostics
+      description: >-
+        Returns the per-client-bus state of the unified event gateway: active flag,
+        subscribed channels/target counts, queued frames, and dropped frame counters.
+        Intended for operations and loss diagnosis.
+      operationId: getEventBusDiagnostics
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Bus diagnostics snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        busId:
+                          type: string
+                        active:
+                          type: boolean
+                        channels:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                        dropped:
+                          type: integer
+                          format: int64
+                        streamDrops:
+                          type: integer
+                          format: int64
+                        queued:
+                          type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /projects/{id}/sessions/{sessionId}/commands:
     get:
       summary: List platform-designed slash commands for the session

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"devplatform/internal/core/agents"
@@ -195,6 +196,13 @@ func (inst *instance) consume() (int, error) {
 
 	activity := make(chan struct{}, 1)
 	watchdogDone := make(chan struct{})
+	// inflight reports whether a normalized event is currently wedged inside
+	// inst.publish waiting for a slow subscriber. That is downstream
+	// backpressure, not a silent server: cancelling on it would force a
+	// reconnect whose gap the platform cannot replay (events that never
+	// reached the instance ring), so the watchdog only fires when the pump is
+	// genuinely blocked on reading.
+	inflight := new(atomic.Bool)
 	if inst.streamIdle > 0 {
 		go func() {
 			defer close(watchdogDone)
@@ -213,6 +221,13 @@ func (inst *instance) consume() (int, error) {
 					}
 					timer.Reset(inst.streamIdle)
 				case <-timer.C:
+					if inflight.Load() {
+						// A publish is blocked on a slow subscriber. Stay
+						// passive and re-arm: the stream is alive, only the
+						// consumer is slow.
+						timer.Reset(inst.streamIdle)
+						continue
+					}
 					// No data within the idle window: force the blocked
 					// read to unblock so the stream reconnects.
 					cancel()
@@ -240,7 +255,7 @@ func (inst *instance) consume() (int, error) {
 		default:
 		}
 	})
-	events, err := inst.pump(stream)
+	events, err := inst.pump(stream, inflight)
 	_ = stream.Close()
 	cancel()
 	<-watchdogDone
@@ -250,7 +265,7 @@ func (inst *instance) consume() (int, error) {
 // pump reads one stream to completion, normalizing and publishing each event.
 // It returns the number of events read so the caller can tell a healthy
 // connection from one that closed without ever producing data.
-func (inst *instance) pump(stream *EventStream) (int, error) {
+func (inst *instance) pump(stream *EventStream, inflight *atomic.Bool) (int, error) {
 	events := 0
 	for {
 		event, err := stream.Next()
@@ -259,7 +274,11 @@ func (inst *instance) pump(stream *EventStream) (int, error) {
 		}
 		events++
 		for _, normalized := range inst.normalize(event) {
+			// Latch while a publish is in progress so the idle watchdog can
+			// tell downstream backpressure from a silent server.
+			inflight.Store(true)
 			inst.publish(normalized)
+			inflight.Store(false)
 		}
 	}
 }

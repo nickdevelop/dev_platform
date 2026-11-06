@@ -62,6 +62,11 @@ import type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 
 export type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 
+// One-shot turn-end repair timers per session. Timed callbacks are module
+// state on purpose — they are ephemeral scheduling, not persisted store data.
+const repairTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const repairDelayMs = 1200
+
 // The store keeps the data (session index, logs, per-session state) in this
 // file and delegates stream machinery to the chat feature's execution layer
 // (see ../features/chat/execution/SessionEventStream.ts) and the log model to
@@ -606,14 +611,46 @@ export const useSessionsStore = defineStore('sessions', {
     // applyTurn follows a turn boundary: a started turn makes the open panel's
     // send action a stop action, and an ended one settles whatever is still
     // streaming. The outcome changes no log entry: an error that explains a
-    // failure arrives as its own error event.
+    // failure arrives as its own error event. If the turn ended while entries
+    // were still streaming, their final full-text frames were likely lost
+    // under congestion (a dropped message frame never self-heals online), so
+    // a deferred repair re-fetches the transcript and backfills from the
+    // final snapshots — the same convergence a page refresh would produce.
     applyTurn(sessionId: string, turn: TurnPayload) {
       if (turn.phase === 'started') {
         this.setTurn(sessionId, 'running')
         return
       }
+      const hadStreaming = (this.messages[sessionId] ?? []).some((entry) => entry.streaming)
       this.setTurn(sessionId, 'idle')
       this.settleStreaming(sessionId)
+      if (hadStreaming) this.scheduleStreamingRepair(sessionId)
+    },
+
+    // scheduleStreamingRepair arms a one-shot delayed repair for a session
+    // whose turn ended with streaming entries still open. The delay lets a
+    // final frame that raced past the turn boundary land first; the repair
+    // itself re-checks log shape and turn state, so it never races a live
+    // turn into a stale overwrite (see repairDanglingEntries).
+    scheduleStreamingRepair(sessionId: string) {
+      const projectId = this.projectIdOfSession(sessionId)
+      if (!projectId) return
+      const pending = repairTimers.get(sessionId)
+      if (pending) clearTimeout(pending)
+      repairTimers.set(
+        sessionId,
+        setTimeout(() => {
+          repairTimers.delete(sessionId)
+          void this.repairDanglingEntries(projectId, sessionId)
+        }, repairDelayMs),
+      )
+    },
+
+    projectIdOfSession(sessionId: string): number | undefined {
+      for (const [pid, list] of Object.entries(this.sessionsByProject)) {
+        if (list.some((entry) => entry.id === sessionId)) return Number(pid)
+      }
+      return undefined
     },
 
     applyInteraction(sessionId: string, payload: InteractionPayload) {

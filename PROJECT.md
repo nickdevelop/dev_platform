@@ -67,7 +67,7 @@
 
 | 模块目录 | 核心职责与功能边界 | 关键入口与核心文件 | 协作与边界约束 |
 |---|---|---|---|
-| **`events/`** | **统一多路复用事件网关**。平台级统一事件中枢与 SSE 网关服务（`UnifiedEventBusManager`）。下行事件多路复用统一收敛至单连接 `/api/events/bus/:uuid`，解耦具体业务领域（支持 `sessions`、`chat`、`tasks`、`system` 频道），通过动态主题订阅接口（`POST/DELETE .../subscriptions`）实现各业务页面即插即拔；统一心跳保活（15s keep-alive）与客户端断开内存垃圾回收（GC TTL 60s）；具备关键控制帧入队保护（对 `turn_ended`、`interaction_requested` 等核心状态机事件提供 50ms 缓冲保底）、慢客户端丢帧警告日志与原子丢帧计数器（`DroppedCount`）；彻底取代原先各业务烟囱式独立建长连接的历史架构，与前端 SharedWorker 协同彻底消灭浏览器同域名 6 连接耗尽假死问题。 | `service.go`（服务封装与依赖编排）、`bus.go`（多路复用总线与心跳调度）、`handlers.go`（统一 SSE 与订阅 REST API）、`models.go`（通用信封协议 `EventEnvelope` 与 `ChannelHandler` 契约） | 纯通用同构层，定义 `ChannelHandler` 接口供各业务领域实现快照与生命周期钩子，不直接耦合底层 Agent 或特定业务逻辑。 |
+| **`events/`** | **统一多路复用事件网关**。平台级统一事件中枢与 SSE 网关服务（`UnifiedEventBusManager`）。下行事件多路复用统一收敛至单连接 `/api/events/bus/:uuid`，解耦具体业务领域（支持 `sessions`、`chat`、`tasks`、`system` 频道），通过动态主题订阅接口（`POST/DELETE .../subscriptions`）实现各业务页面即插即拔；统一心跳保活（15s keep-alive）与客户端断开内存垃圾回收（GC TTL 60s）；具备关键帧入队保护（对 `turn_ended`、`interaction_requested` 等核心状态机事件与 `message/thinking/delta/chunk` 流内容帧在缓冲满时提供 100ms 等待入队保底）、慢客户端丢帧警告日志与原子丢帧计数器（`DroppedCount`）；**缓冲溢出可靠性闭环**：关键帧丢弃、流内容帧每第 8 次丢弃或累计第 64 次丢弃时主动踢断该 bus 的 SSE 连接（kick），迫使客户端带序号重订并经 `instances.ReplaySince` 环形重放或 resync 全量重建补齐缺口——把"在线静默丢帧"转化为可恢复转移；每帧写入前施加 45s 递进写超时（write deadline = 3×心跳），防止 TCP 停滞的客户端令 StreamBus 循环永久阻塞而缓冲无限溢出；提供 `GET /api/events/diagnostics` 诊断端点（各 bus 的 active/订阅计数/积压帧数/丢帧计数）；彻底取代原先各业务烟囱式独立建长连接的历史架构，与前端 SharedWorker 协同彻底消灭浏览器同域名 6 连接耗尽假死问题。 | `service.go`（服务封装与依赖编排）、`bus.go`（多路复用总线与心跳调度、溢出 kick、诊断快照）、`handlers.go`（统一 SSE 与订阅 REST API、diagnostics 路由）、`models.go`（通用信封协议 `EventEnvelope` 与 `ChannelHandler` 契约） | 纯通用同构层，定义 `ChannelHandler` 接口供各业务领域实现快照与生命周期钩子，不直接耦合底层 Agent 或特定业务逻辑。 |
 | **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、人机交互决策仲裁、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳；下行状态事件与交互快照统一接入全局事件网关（`events.Manager`，channel: `sessions`），废除原私有 bus 路由。 | `service.go`（会话主逻辑与 ChannelHandler 实现）、`handlers.go`（HTTP 路由处理）、`event_bus.go`（实例流监听与事件转发）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
 | **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（Ring Buffer）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket 及显示配置持久化）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
@@ -107,7 +107,7 @@
 
 | 模块目录 | 适配模式与通信机制 | 职责说明 |
 |---|---|---|
-| **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；内部按单一职责严格拆分为：`adapter.go`（核心适配契约与实例状态管理）、`server.go`（服务子进程启动/健康检查/端口与密码探测）、`stream.go`（SSE 事件流消费泵与多 Subscriber 广播分发）、`normalize.go`（原生事件清洗规整化与工具输出截断折叠）；自动从全局 `~/.config/opencode/AGENTS.md` 同步加载平台级系统规约；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
+| **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；内部按单一职责严格拆分为：`adapter.go`（核心适配契约与实例状态管理）、`server.go`（服务子进程启动/健康检查/端口与密码探测）、`stream.go`（SSE 事件流消费泵与多 Subscriber 广播分发；空闲 watchdog 的 idle 判定仅在泵阻塞于读取时生效——publish 正在等待慢 subscriber 的下游反压期间保持守门不复位，避免把"消费者慢"误判为"服务端静默"而强制重拨丢失上游原生事件）、`normalize.go`（原生事件清洗规整化与工具输出截断折叠）；自动从全局 `~/.config/opencode/AGENTS.md` 同步加载平台级系统规约；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
 | **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 `--append-system-prompt` 原生挂载数据目录全局 `AGENTS.md` 文件指令；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接扩展 UI 的 `confirm` → 权限确认映射。pi core 无内置工具审批，平台默认不注入审批扩展，行为与 CLI 一致；仅当 operator 通过 `PI_EXTENSIONS` 提供扩展时才可能出现确认卡片。 |
 | **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min；注入 `DSH_AGENTS_HOME` 原生加载全局指令）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
 
@@ -120,6 +120,7 @@ web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
   ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, viewport, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
+  │     ├── events/    ── 统一事件总线前端设施（event-bus.worker.ts 跨标签页单连接 SharedWorker：连接 error/CLOSED 后 3s 自愈重拨且状态保持 `reconnecting`（触发主线程 reconnectListeners 的带序号重订重放）、busId 所有权仲裁（首个 tab 建立 bus，后续 tab 经 init 回复采纳胜者 busId 并持久化，杜绝多 tab 各持 sessionStorage busId 互踩单连接）；UnifiedEventBusClient.ts 主线程单例与 fallback 本地 EventSource（CLOSED 同样自愈重拨）；event-types.ts 全线事件类型单一来源清单（worker 与 fallback 共享，含 `lifecycle/unknown/ready`，防漂移））
   │     ├── components/── Provider 中性业务通用控件（CronBuilder.vue 可视化 Cron 生成器，支持秒/分/时/日/月/周/年 7 位配置、反解析与后10次执行时间推断；RunningIndicator.vue 呼吸态标识；BackendTag.vue；BackendDiagnostics.vue）
   │     └── ui/        ── 平台标准 UI 组件库（纯中性业务解耦设计，基于 Tailwind CSS）：
   │           ├── atomic/    ── 原子组件（UiButton, UiInput, UiTextarea, UiSelect, UiDropdown, UiBadge, UiProgress, UiTooltip, UiTabs, UiAlert, UiEmpty, UiSpinner, UiDivider）
@@ -128,7 +129,7 @@ web/src/
   ├── features/        ── 业务领域垂直拆分目录：
   │     ├── chat/      ── Agent 工作台（核心）
   │     │     ├── composer/      ── 输入框组件、模型选择器、图片附件槽、斜杠命令调度器（slashActionDispatcher.ts）与多源补全、通用附件上传调度器（useAttachmentUploader.ts）与键盘快捷键控制器（useComposerKeyboard.ts）
-  │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护
+  │     │     ├── execution/     ── SessionEventStream.ts 事件流消费与状态维护；EventBusClient.ts 会话↔统一总线装配（带序号重订触发 `ReplaySince`/resync 重放）；会话 store 的 applyTurn 在轮次结束时若仍有未收到 final 的流式条目，延迟触发 repairDanglingEntries 按 history final 快照回填（在线丢帧自愈）
   │     │     ├── interactions/  ── 权限确认卡片、表单队列、审批事件派发
   │     │     ├── pane/          ── 会话右侧统一工作区面板管理（已彻底移除最右侧独立导航 Rail，顶层 Tab 栏最右侧集成纯图标布局开关，预览面板头部支持折叠文件树）、左预览右文件树排布、右侧工作区外框总宽度锁定与拖拽（主对话区宽度零跳动）、右侧文件树在面板内靠右展开与向右折叠、useActivityPane 共享视图状态
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染（完整承载主对话流思考与工具折叠卡片）、logModel.ts 纯逻辑
@@ -237,6 +238,7 @@ web/src/
            ▼
 5. 统一事件网关接入 (internal/app/events/ & internal/app/sessions/event_bus.go)
    - 将标准化事件以 channel="sessions", targetId=sessionID 封装并广播至平台统一事件网关
+   - 溢出与断连可靠性闭环：缓冲满载承压时保底帧/流内容帧 100ms 入队等待，超限丢帧计数并按策略 kick 踢断该 bus 的 SSE（关键帧丢即踢、流内容帧每 8 次丢、累计每 64 次）；客户端 SharedWorker/主线程线程自愈重拨后带 lastEventId 重订，服务端按 `instances.ReplaySince` 环形重放补帧或推 resync 触发前端全量 history 重建；每帧写超时防 TCP 停滞；`/api/events/diagnostics` 暴露丢帧观测
            │
            ▼ (经 /api/events/bus/:uuid 单连接由前端 SharedWorker 跨标签页共享多路复用分发)
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
