@@ -8,12 +8,10 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { FormInfo } from '../../../api/interactions'
 import type { FormField } from './types'
-import { deriveFieldRecommendedValue } from './autoApproval'
 
 const props = defineProps<{
   forms: FormInfo[]
   busy?: boolean
-  autopilot?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -30,10 +28,6 @@ function fieldsOf(form: FormInfo): FormField[] {
 }
 
 function defaultFor(field: FormField): unknown {
-  if (props.autopilot) {
-    const rec = deriveFieldRecommendedValue(field)
-    if (rec !== undefined) return rec
-  }
   if (field.default !== undefined) return field.default
   switch (field.type) {
     case 'boolean':
@@ -150,22 +144,6 @@ watch(
 watch(activeForm, () => {
   stepIndex.value = 0
 })
-
-watch(
-  () => props.autopilot,
-  (enabled) => {
-    if (!enabled) return
-    for (const form of props.forms) {
-      const bucket = valuesFor(form.id)
-      for (const field of fieldsOf(form)) {
-        if (!isAnswered(field, bucket)) {
-          const rec = deriveFieldRecommendedValue(field)
-          if (rec !== undefined) bucket[field.key] = rec
-        }
-      }
-    }
-  },
-)
 </script>
 
 <template>

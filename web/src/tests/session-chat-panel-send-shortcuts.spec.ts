@@ -76,12 +76,6 @@ class FakeEventSource {
   }
 }
 
-function sessionStream(): FakeEventSource {
-  const source = FakeEventSource.instances[FakeEventSource.instances.length - 1]
-  if (!source) throw new Error('no event stream opened')
-  return source
-}
-
 function stubSessionList(list: AgentSession[]) {
   const defaultInstances: AgentInstance[] = [
     { id: 'inst-1', projectId: 1, backend: 'opencode-v2', directory: '/workspace', status: 'running', createdAt: '', updatedAt: '' },
@@ -148,7 +142,7 @@ function mountPanel(sessionId: string) {
 // installs the real provider in main.ts, which these specs never run.
 installTestCSRF()
 
-describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
+describe('SessionChatPanel - Send Shortcuts', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
@@ -165,108 +159,6 @@ describe('SessionChatPanel - Approval Mode and Send Shortcuts', () => {
     useSessionsStore().unsubscribeAll()
     clearModelCache()
     vi.unstubAllGlobals()
-  })
-
-  it('renders approval mode select with default, auto-approve and autopilot', async () => {
-    stubSessionList([session('sess-1')])
-    const wrapper = mountPanel('sess-1')
-    await flushPromises()
-
-    const trigger = wrapper.find('[data-test="approval-mode-select"]')
-    expect(trigger.exists()).toBe(true)
-    expect(trigger.text()).toContain('默认')
-
-    await trigger.trigger('click')
-    await flushPromises()
-
-    const options = wrapper.findAll('[data-test^="approval-mode-option-"]')
-    expect(options.map((option) => option.find('.approval-mode-option-name').text())).toEqual([
-      '默认',
-      '自动审批',
-      '托管',
-    ])
-    expect(options[0].attributes('aria-selected')).toBe('true')
-  })
-
-  it('automatically approves tool confirmation in auto-approve mode', async () => {
-    const fetchSpy = stubSessionList([session('sess-1')])
-    const wrapper = mountPanel('sess-1')
-    await flushPromises()
-
-    // Switch to auto-approve through the picker menu.
-    await wrapper.find('[data-test="approval-mode-select"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-test="approval-mode-option-auto-approve"]').trigger('click')
-    await flushPromises()
-
-    // Simulate incoming permission request via stream
-    sessionStream().dispatch('interactions', {
-      permissions: [{ id: 'per_bash_1', sessionId: 'native-sess-1', action: 'bash', resources: ['rm -rf /tmp/test'] }],
-      forms: [],
-    })
-    await flushPromises()
-
-    // Verify replyPermission was called automatically with 'once'
-    const replyCall = fetchSpy.mock.calls.find((call) =>
-      String(call[0]).includes('/permission/per_bash_1/reply'),
-    )
-    expect(replyCall).toBeDefined()
-    const requestBody = JSON.parse(String(replyCall?.[1]?.body))
-    expect(requestBody.decision).toBe('once')
-  })
-
-  it('in autopilot mode, automatically approves tools and submits forms with recommended answers', async () => {
-    const fetchSpy = stubSessionList([session('sess-1')])
-    const wrapper = mountPanel('sess-1')
-    await flushPromises()
-
-    // Switch to autopilot through the picker menu.
-    await wrapper.find('[data-test="approval-mode-select"]').trigger('click')
-    await flushPromises()
-    await wrapper.find('[data-test="approval-mode-option-autopilot"]').trigger('click')
-    await flushPromises()
-
-    // Simulate incoming form with recommended option and boolean confirmation
-    sessionStream().dispatch('interactions', {
-      permissions: [{ id: 'per_2', sessionId: 'native-sess-1', action: 'read', resources: [] }],
-      forms: [
-        {
-          id: 'form_auto_1',
-          sessionId: 'native-sess-1',
-          title: 'Select strategy',
-          fields: [
-            {
-              key: 'strategy',
-              type: 'string',
-              required: true,
-              options: [
-                { value: 'safe', label: 'Safe mode' },
-                { value: 'fast', label: 'Fast mode (Recommended)' },
-              ],
-            },
-            {
-              key: 'proceed',
-              type: 'boolean',
-              required: true,
-            },
-          ],
-        },
-      ],
-    })
-    await flushPromises()
-
-    // Verify tool permission was automatically approved
-    const permCall = fetchSpy.mock.calls.find((call) => String(call[0]).includes('/permission/per_2/reply'))
-    expect(permCall).toBeDefined()
-
-    // Verify form was automatically answered with recommended options (fast and true)
-    const formCall = fetchSpy.mock.calls.find((call) => String(call[0]).includes('/form/form_auto_1/reply'))
-    expect(formCall).toBeDefined()
-    const formBody = JSON.parse(String(formCall?.[1]?.body))
-    expect(formBody.answer).toEqual({
-      strategy: 'fast',
-      proceed: true,
-    })
   })
 
   it('supports toggling send shortcuts and respects enter vs ctrl+enter', async () => {

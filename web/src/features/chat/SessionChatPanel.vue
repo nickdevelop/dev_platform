@@ -37,7 +37,6 @@ import MessageView from './rendering/MessageView.vue'
 import { isQuestionCall } from './rendering/logModel'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
-import ApprovalModeSelect from './composer/ApprovalModeSelect.vue'
 import ContextUsageMeter from './composer/ContextUsageMeter.vue'
 import ComposerImageTray from './composer/ComposerImageTray.vue'
 import ImagePreviewModal from './rendering/ImagePreviewModal.vue'
@@ -51,12 +50,6 @@ import { resolveSessionMentions } from './composer/sessionMentionResolver'
 import { dispatchSlashCommand } from './composer/slashActionDispatcher'
 import { getSessionHistory, executeCommand, compactSession } from '../../api/sessions'
 import type { ImageAttachment } from '../../api/messageTypes'
-import {
-  type ApprovalMode,
-  getPersistedApprovalMode,
-  setPersistedApprovalMode,
-} from './interactions/autoApproval'
-import { useAutoApproval } from './interactions/useAutoApproval'
 import {
   type SendShortcut,
 } from './composer/sendShortcut'
@@ -255,10 +248,6 @@ function onCompositionEnd() {
   }
 }
 
-const approvalMode = ref<ApprovalMode>(
-  (initialSessionDraft.approvalMode as ApprovalMode | undefined) || getPersistedApprovalMode(),
-)
-
 const {
   sendShortcut,
   sendMenuOpen,
@@ -302,13 +291,6 @@ const {
   onNotice: (msg) => {
     toolNotice.value = msg
   },
-})
-
-watch(approvalMode, (val) => {
-  setPersistedApprovalMode(val)
-  if (isRestoringDraft) return
-  if (!currentSessionId) return
-  draftsStore.setSessionDraft(currentSessionId, { approvalMode: val })
 })
 
 watch(messageText, (val) => {
@@ -579,7 +561,6 @@ watch(
       draftsStore.setSessionDraft(prevId, {
         messageText: messageText.value,
         attachedImages: attachedImages.value,
-        approvalMode: approvalMode.value,
       })
     }
     currentSessionId = newSessionId
@@ -588,9 +569,6 @@ watch(
       const draft = draftsStore.getSessionDraft(newSessionId)
       messageText.value = draft.messageText || ''
       attachedImages.value = Array.isArray(draft.attachedImages) ? [...draft.attachedImages] : []
-      if (draft.approvalMode) {
-        approvalMode.value = draft.approvalMode
-      }
       void nextTick(() => {
         isRestoringDraft = false
       })
@@ -615,14 +593,6 @@ const {
   },
 })
 
-useAutoApproval({
-  mode: approvalMode,
-  pendingToolCall,
-  pendingForms,
-  confirmTool: onConfirmTool,
-  answerForm: onAnswerForm,
-})
-
 onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   // Tabs keep other sessions alive: unmounting this panel must not close other
@@ -638,7 +608,6 @@ onBeforeUnmount(() => {
     draftsStore.setSessionDraft(currentSessionId, {
       messageText: messageText.value,
       attachedImages: attachedImages.value,
-      approvalMode: approvalMode.value,
     })
   }
 })
@@ -983,7 +952,6 @@ async function removeSession() {
             v-if="pendingForms.length > 0"
             :forms="pendingForms"
             :busy="answeringForm"
-            :autopilot="approvalMode === 'autopilot'"
             @submit="(formId, answer) => onAnswerForm(formId, answer)"
           />
 
@@ -1066,7 +1034,6 @@ async function removeSession() {
                   />
                 </div>
                 <div class="composer-actions">
-                  <ApprovalModeSelect v-model="approvalMode" />
                   <div class="send-split-group" data-test="send-split-group">
                     <button
                       type="button"

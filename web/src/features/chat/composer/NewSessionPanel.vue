@@ -21,8 +21,6 @@ import { getSessionHistory, type BackendId, type ImageAttachment } from '../../.
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
 import AgentSwitch from './AgentSwitch.vue'
-import ApprovalModeSelect from './ApprovalModeSelect.vue'
-import type { ApprovalMode } from '../interactions/autoApproval'
 import ComposerDropdown from './dropdown/ComposerDropdown.vue'
 import { useComposerDropdown } from './dropdown/useComposerDropdown'
 import { ProviderSlashSource } from './dropdown/sources/ProviderSlashSource'
@@ -166,7 +164,6 @@ watch(
 const selectedBackend = ref<BackendId | ''>(initialDraft.backend ?? '')
 const messageText = ref(initialDraft.messageText ?? '')
 const selectedModel = ref(initialDraft.model ?? '')
-const approvalMode = ref<ApprovalMode>(initialDraft.approvalMode ?? 'default')
 const modelOk = ref(false)
 const modelFailed = ref(false)
 const creating = ref(false)
@@ -184,7 +181,6 @@ watch(selectedProjectId, (newId, oldId) => {
         promptId: selectedPromptId.value,
         messageText: messageText.value,
         attachedImages: attachedImages.value,
-        approvalMode: approvalMode.value,
       },
       oldId,
     )
@@ -206,7 +202,6 @@ watch(selectedProjectId, (newId, oldId) => {
     selectedModel.value = targetDraft.model || ''
     selectedPromptId.value = targetDraft.promptId || ''
     clearInvalidPromptSelection()
-    approvalMode.value = targetDraft.approvalMode || 'default'
     attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
     void nextTick(() => {
       isRestoringDraft = false
@@ -241,11 +236,6 @@ watch(selectedModel, (val) => {
 watch(selectedPromptId, (val) => {
   if (isRestoringDraft) return
   draftsStore.setNewSessionDraft({ promptId: val }, selectedProjectId.value)
-})
-
-watch(approvalMode, (val) => {
-  if (isRestoringDraft) return
-  draftsStore.setNewSessionDraft({ approvalMode: val }, selectedProjectId.value)
 })
 
 const selectedCapabilities = computed(() =>
@@ -464,7 +454,6 @@ async function createSession() {
   })
   creating.value = false
   if (created) {
-    draftsStore.setSessionDraft(created.id, { approvalMode: approvalMode.value })
     draftsStore.clearNewSessionDraft(targetProjectId)
     emit('created', created.id, targetProjectId)
   }
@@ -615,7 +604,6 @@ async function createSession() {
             </div>
 
             <div class="composer-actions">
-              <ApprovalModeSelect v-model="approvalMode" />
               <div class="send-split-group" data-test="send-split-group">
                 <button
                   type="submit"

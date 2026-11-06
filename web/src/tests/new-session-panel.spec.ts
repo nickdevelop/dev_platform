@@ -109,7 +109,6 @@ describe('NewSessionPanel', () => {
     expect(wrapper.find('#new-session-model').exists()).toBe(false)
     expect(wrapper.find('[data-test="discover-sessions"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="project-select"]').exists()).toBe(true)
-    expect(wrapper.find('.approval-mode-select').exists()).toBe(true)
   })
 
   it('places the agent switch on its own row directly below the project row', async () => {
@@ -174,12 +173,11 @@ describe('NewSessionPanel', () => {
     expect(body).not.toHaveProperty('title')
   })
 
-  it('renders unified send button matching chat panel and provides approval mode selector', async () => {
+  it('renders unified send button matching chat panel', async () => {
     const { wrapper } = setup()
     await flushPromises()
 
     expect(wrapper.find('button.create').text()).toBe('发送')
-    expect(wrapper.find('.approval-mode-select').exists()).toBe(true)
   })
 
   it('sends the first message and model with the create request', async () => {

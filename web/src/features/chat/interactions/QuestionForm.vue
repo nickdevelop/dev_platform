@@ -3,8 +3,7 @@
 // opaque: the Form.Field union is rendered by type, so new field kinds degrade
 // to a text input instead of breaking. Answers are emitted as Form.Answer
 // (Record<key, string|number|boolean|string[]>).
-import { computed, reactive, watch } from 'vue'
-import { deriveFieldRecommendedValue } from './autoApproval'
+import { computed, reactive } from 'vue'
 import type { FormField, FormOption } from './types'
 
 export type { FormField, FormOption }
@@ -14,7 +13,6 @@ const props = defineProps<{
   title: string
   fields: unknown
   busy?: boolean
-  autopilot?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,10 +27,6 @@ const visibleFields = computed<FormField[]>(() => {
 })
 
 function defaultFor(field: FormField): unknown {
-  if (props.autopilot) {
-    const rec = deriveFieldRecommendedValue(field)
-    if (rec !== undefined) return rec
-  }
   if (field.default !== undefined) return field.default
   switch (field.type) {
     case 'boolean':
@@ -46,19 +40,6 @@ function defaultFor(field: FormField): unknown {
 
 const values = reactive<Record<string, unknown>>(
   Object.fromEntries(visibleFields.value.map((field) => [field.key, defaultFor(field)])),
-)
-
-watch(
-  () => props.autopilot,
-  (enabled) => {
-    if (!enabled) return
-    for (const field of visibleFields.value) {
-      if (!isAnswered(field)) {
-        const rec = deriveFieldRecommendedValue(field)
-        if (rec !== undefined) values[field.key] = rec
-      }
-    }
-  },
 )
 
 function fieldTitle(field: FormField): string {

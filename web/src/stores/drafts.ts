@@ -9,13 +9,11 @@ export interface NewSessionDraft {
   promptId: number | ''
   messageText: string
   attachedImages: ImageAttachment[]
-  approvalMode?: 'default' | 'auto-approve' | 'autopilot'
 }
 
 export interface SessionDraft {
   messageText: string
   attachedImages: ImageAttachment[]
-  approvalMode?: 'default' | 'auto-approve' | 'autopilot'
 }
 
 export interface TaskCreateDraft {
