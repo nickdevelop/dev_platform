@@ -121,7 +121,7 @@ function toggle() {
 
 .diff-hunk {
   color: var(--color-text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
 }
 
 .diff-truncated {

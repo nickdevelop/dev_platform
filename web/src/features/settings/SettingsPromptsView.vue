@@ -95,7 +95,7 @@ function formatDate(iso: string): string {
     <!-- Header Summary Panel -->
     <header class="settings-head pb-4 border-b border-[var(--color-border)] flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <h1 class="text-[22px] font-semibold text-[var(--color-text)] tracking-tight">提示词管理</h1>
+        <h1 class="text-2xl font-semibold text-[var(--color-text)] tracking-tight">提示词管理</h1>
         <p class="text-xs text-[var(--color-text-muted)] mt-1">
           管理角色类人设与流程类协同模板，供角色管理、对话助手与多 Agent 协同流程统一引用。
         </p>
@@ -189,7 +189,7 @@ function formatDate(iso: string): string {
               </span>
               <!-- Type Badge -->
               <span
-                class="text-[11px] px-1.5 py-0.5 rounded font-mono border"
+                class="text-2xs px-1.5 py-0.5 rounded font-mono border"
                 :class="[
                   prompt.type === 'role'
                     ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
@@ -201,7 +201,7 @@ function formatDate(iso: string): string {
               <!-- Placeholder Badge -->
               <span
                 v-if="hasUserPromptPlaceholder(prompt.content)"
-                class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]"
+                class="text-3xs px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]"
                 title="包含 {user_prompt} 占位符"
               >
                 {user_prompt}
@@ -240,7 +240,7 @@ function formatDate(iso: string): string {
         </div>
 
         <!-- Footer Meta & Copy -->
-        <div class="pt-2 border-t border-[var(--color-border)] flex items-center justify-between text-[11px] text-[var(--color-text-muted)] font-mono">
+        <div class="pt-2 border-t border-[var(--color-border)] flex items-center justify-between text-2xs text-[var(--color-text-muted)] font-mono">
           <span>更新: {{ formatDate(prompt.updatedAt || prompt.createdAt) }}</span>
           <button
             type="button"

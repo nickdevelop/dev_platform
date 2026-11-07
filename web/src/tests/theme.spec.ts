@@ -4,7 +4,7 @@
 // applying an appearance never reaches for a remote stylesheet.
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyAppearance, CACHE_KEY } from '../theme/apply'
-import { densities, themes } from '../theme/presets'
+import { densities, fontSizes, resolveFontSizeKey, themes } from '../theme/presets'
 
 afterEach(() => {
   const root = document.documentElement
@@ -20,6 +20,19 @@ describe('theme presets', () => {
   it('offers three light-based themes and three densities', () => {
     expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool'])
     expect(densities.map((d) => d.key)).toEqual(['compact', 'standard', 'relaxed'])
+  })
+
+  it('offers three font size tiers of 12 / 14 / 16 px', () => {
+    expect(fontSizes.map((f) => f.label)).toEqual(['小', '标准', '大'])
+    expect(fontSizes.map((f) => f.value)).toEqual([12, 14, 16])
+  })
+
+  it('resolves preset and in-between sizes to the nearest tier', () => {
+    expect(resolveFontSizeKey(12)).toBe('small')
+    expect(resolveFontSizeKey(13)).toBe('small')
+    expect(resolveFontSizeKey(14)).toBe('medium')
+    expect(resolveFontSizeKey(15)).toBe('medium')
+    expect(resolveFontSizeKey(16)).toBe('large')
   })
 })
 

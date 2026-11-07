@@ -69,14 +69,29 @@ var (
 	validThemes        = map[string]bool{"light": true, "warm": true, "cool": true}
 	validDensities     = map[string]bool{"compact": true, "standard": true, "relaxed": true}
 	validPlantumlModes = map[string]bool{"local": true, "online": true}
+	presetFontSizes    = map[int]bool{12: true, 14: true, 16: true}
 )
+
+// normalizeFontSize folds legacy continuous sizes (the old 12–20 range) onto
+// the three presets. Ties go to the lower tier so an old 13 ("small") stays
+// small and an old 15 ("medium") stays medium.
+func normalizeFontSize(size int) int {
+	switch {
+	case size <= 13:
+		return 12
+	case size <= 15:
+		return 14
+	default:
+		return 16
+	}
+}
 
 // Validate reports whether the appearance value is one the platform accepts.
 func (a *Appearance) Validate() error {
 	if !validThemes[a.Theme] {
 		return fmt.Errorf("%w: theme %q", ErrInvalidAppearance, a.Theme)
 	}
-	if a.FontSize < 12 || a.FontSize > 20 {
+	if !presetFontSizes[a.FontSize] {
 		return fmt.Errorf("%w: font size %d", ErrInvalidAppearance, a.FontSize)
 	}
 	if !validDensities[a.Density] {
@@ -163,6 +178,9 @@ func (s *Service) loadAppearance() (Appearance, error) {
 	if err := jsonUnmarshal(val, &appearance); err != nil {
 		return Appearance{}, fmt.Errorf("settings: decode appearance: %w", err)
 	}
+	// Legacy blobs may hold any size in the retired 12–20 range. Fold them onto
+	// a preset on read; the next save persists the normalized value.
+	appearance.FontSize = normalizeFontSize(appearance.FontSize)
 	return appearance, nil
 }
 

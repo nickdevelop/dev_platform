@@ -856,7 +856,7 @@ async function handleMarkdownClick(event: MouseEvent) {
   align-items: center;
   gap: 0.25rem;
   padding: 0.2rem 0.45rem;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   line-height: 1;
   color: var(--color-border);
   background: rgba(255, 255, 255, 0.12);
@@ -912,7 +912,7 @@ async function handleMarkdownClick(event: MouseEvent) {
   background: transparent;
   padding: 0;
   color: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .markdown-body :deep(blockquote) {
@@ -943,7 +943,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 
 .message-time {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 
@@ -976,7 +976,7 @@ async function handleMarkdownClick(event: MouseEvent) {
   border-radius: 4px;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   padding: 0.1rem 0.3rem;
   cursor: pointer;
   line-height: 1.2;
@@ -1005,7 +1005,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 }
 
 .user-message-time {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 
@@ -1188,7 +1188,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 
 .question-header {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--color-text-muted);
@@ -1220,7 +1220,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 }
 
 .question-multiple {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 
@@ -1308,7 +1308,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 
 .subagent-badge {
   flex-shrink: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-primary-hover);
   background: var(--color-info-soft);
   border-radius: 999px;
@@ -1530,7 +1530,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 
 .tool-status-error {
   flex-shrink: 0;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-danger, #ef4444);
   background: rgba(239, 68, 68, 0.1);
   border-radius: 999px;
@@ -1564,7 +1564,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 }
 
 .question-count-badge {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   font-weight: 500;
   color: var(--color-text-muted);
   background: var(--color-surface-muted, #f1f5f9);
@@ -1651,7 +1651,7 @@ async function handleMarkdownClick(event: MouseEvent) {
 
 .question-opt-multiple {
   display: inline-block;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
   background: var(--color-surface-muted, #f1f5f9);
   padding: 0.05rem 0.35rem;

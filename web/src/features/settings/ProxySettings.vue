@@ -127,7 +127,7 @@ onMounted(() => {
     <header class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 gap-4 flex-wrap">
       <div>
         <div class="flex items-center gap-2.5">
-          <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务代理</h1>
+          <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务代理</h1>
           <UiBadge variant="neutral" size="sm">ContextPath Proxy</UiBadge>
         </div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -184,7 +184,7 @@ onMounted(() => {
             </UiBadge>
             <template v-if="p.type === 'port'">
               <span
-                class="inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full"
+                class="inline-flex items-center gap-1.5 text-2xs px-2 py-0.5 rounded-full"
                 :class="p.online ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
               >
                 <span class="w-1.5 h-1.5 rounded-full" :class="p.online ? 'bg-emerald-500' : 'bg-slate-400'"></span>
@@ -217,7 +217,7 @@ onMounted(() => {
         <!-- Row 2: Access ContextPath Link Box -->
         <div class="bg-slate-50 dark:bg-slate-800/50 rounded-md px-3.5 py-2.5 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2 min-w-0 text-xs text-slate-700 dark:text-slate-300">
-            <span class="text-slate-400 select-none text-[11px]">ContextPath:</span>
+            <span class="text-slate-400 select-none text-2xs">ContextPath:</span>
             <code class="font-semibold text-blue-600 dark:text-blue-400 truncate">{{ getFullUrl(p.alias) }}</code>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
@@ -237,11 +237,11 @@ onMounted(() => {
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between items-start gap-1 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
           <div class="truncate max-w-lg flex items-center gap-1.5">
             <span class="text-slate-400">映射目标：</span>
-            <code class="font-mono text-slate-700 dark:text-slate-300 text-[11px] truncate">
+            <code class="font-mono text-slate-700 dark:text-slate-300 text-2xs truncate">
               {{ p.type === 'directory' ? p.target : `127.0.0.1:${p.target}` }}
             </code>
           </div>
-          <div class="text-[11px] shrink-0 text-slate-400 tabular-nums">
+          <div class="text-2xs shrink-0 text-slate-400 tabular-nums">
             更新于 {{ new Date(p.updatedAt).toLocaleString() }}
           </div>
         </div>

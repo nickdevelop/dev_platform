@@ -73,7 +73,7 @@ function onClose(e: MouseEvent) {
     <slot>{{ label }}</slot>
     <span
       v-if="count !== undefined"
-      class="px-1.5 py-0.2 text-[10px] font-mono rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+      class="px-1.5 py-0.2 text-3xs font-mono rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
     >
       {{ count }}
     </span>

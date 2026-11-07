@@ -190,7 +190,7 @@ async function copyPromptTemplate() {
         <div class="flex items-center gap-2 text-[var(--color-text-muted)]">
           <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
           <span class="font-semibold text-[var(--color-text)]">多 Agent 团队协同工作台</span>
-          <span class="text-[11px] text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-2">
+          <span class="text-2xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-2">
             中控自主派发 · 角色分工反馈 · IM 协同闭环
           </span>
         </div>
@@ -264,7 +264,7 @@ async function copyPromptTemplate() {
             </div>
             <div class="meta-item flex items-center gap-1.5">
               <span class="text-slate-400">运行模型:</span>
-              <code class="px-1.5 py-0.5 bg-[var(--color-surface-muted)] text-[var(--color-text)] rounded border border-[var(--color-border)] font-mono text-[11px]">{{ task.model }}</code>
+              <code class="px-1.5 py-0.5 bg-[var(--color-surface-muted)] text-[var(--color-text)] rounded border border-[var(--color-border)] font-mono text-2xs">{{ task.model }}</code>
             </div>
             <div class="meta-item flex items-center gap-1.5">
               <span class="text-slate-400">调度类型:</span>
@@ -397,7 +397,7 @@ async function copyPromptTemplate() {
           <span class="status-badge" :class="task.scheduleEnabled ? 'badge-success' : 'badge-idle'">
             {{ task.scheduleEnabled ? '持续调度中' : '已停用' }}
           </span>
-          <span v-if="task.nextRunAt" class="text-slate-400 text-[11px] tabular-nums">
+          <span v-if="task.nextRunAt" class="text-slate-400 text-2xs tabular-nums">
             (预计下次运行: {{ formatDateTime(task.nextRunAt) }})
           </span>
         </div>
@@ -484,7 +484,7 @@ async function copyPromptTemplate() {
             >
               <td class="col-id py-2.5 px-3.5 tabular-nums text-[var(--color-text-muted)]">#{{ run.id }}</td>
               <td class="py-2.5 px-3.5">
-                <span class="inline-flex text-[11px] font-medium text-[var(--color-text-muted)]">
+                <span class="inline-flex text-2xs font-medium text-[var(--color-text-muted)]">
                   {{
                     run.triggerType === 'cron'
                       ? '周期触发'
@@ -510,7 +510,7 @@ async function copyPromptTemplate() {
                 {{ calculateDuration(run) }}
               </td>
               <td class="col-session py-2.5 px-3.5">
-                <code class="session-id-text font-mono text-[11px] text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">{{ run.sessionId }}</code>
+                <code class="session-id-text font-mono text-2xs text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded border border-[var(--color-border)]">{{ run.sessionId }}</code>
               </td>
               <td class="col-actions py-2.5 px-3.5 text-right" style="text-align: right;">
                 <UiButton

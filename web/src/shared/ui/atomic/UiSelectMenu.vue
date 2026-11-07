@@ -374,7 +374,7 @@ watch(
   align-items: center;
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: var(--text-size-meta);
   font-weight: 500;
   background: var(--color-primary-soft, rgba(37, 99, 235, 0.1));
   color: var(--color-primary, #2563eb);
@@ -382,7 +382,7 @@ watch(
 }
 
 .clear-btn {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   padding: 0.1rem 0.25rem;
   color: var(--color-text-muted, #94a3b8);
   border-radius: 3px;
@@ -396,7 +396,7 @@ watch(
 
 .trigger-caret {
   color: var(--color-text-muted, #94a3b8);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   transition: transform 0.15s ease;
   flex-shrink: 0;
 }
@@ -517,7 +517,7 @@ watch(
 }
 
 .option-tag {
-  font-size: 0.7rem;
+  font-size: var(--text-size-meta);
   padding: 0.05rem 0.3rem;
   border-radius: 3px;
   background: var(--color-surface-muted, #f1f5f9);

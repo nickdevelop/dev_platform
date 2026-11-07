@@ -318,7 +318,7 @@ function onDragStart(event: DragEvent, path: string) {
           变更
           <span
             v-if="changesCount > 0"
-            class="badge-count px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-mono font-semibold"
+            class="badge-count px-1.5 py-0.2 rounded-full text-3xs bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-mono font-semibold"
           >
             {{ changesCount }}
           </span>
@@ -389,7 +389,7 @@ function onDragStart(event: DragEvent, path: string) {
         </select>
         <button
           type="button"
-          class="collapse-toggle-btn text-[11px] px-1.5 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded shrink-0 font-mono transition-colors"
+          class="collapse-toggle-btn text-2xs px-1.5 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded shrink-0 font-mono transition-colors"
           :title="expandedChangeDirs.size > 0 ? '全部折叠' : '全部展开'"
           @click="toggleAllChangeDirs"
         >
@@ -465,7 +465,7 @@ function onDragStart(event: DragEvent, path: string) {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>已暂存的更改</span>
-                <span class="text-[10px] text-slate-400 font-mono">({{ stagedItems.length }})</span>
+                <span class="text-3xs text-slate-400 font-mono">({{ stagedItems.length }})</span>
               </div>
               <button
                 type="button"
@@ -510,7 +510,7 @@ function onDragStart(event: DragEvent, path: string) {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>更改</span>
-                <span class="text-[10px] text-slate-400 font-mono">({{ unstagedItems.length }})</span>
+                <span class="text-3xs text-slate-400 font-mono">({{ unstagedItems.length }})</span>
               </div>
               <button
                 type="button"
@@ -573,7 +573,7 @@ function onDragStart(event: DragEvent, path: string) {
                     <polyline points="10 2 10 5 13 5" />
                   </svg>
                 </span>
-                <span class="change-file-name truncate font-mono text-[11px]" :title="item.path">{{ item.path }}</span>
+                <span class="change-file-name truncate font-mono text-2xs" :title="item.path">{{ item.path }}</span>
               </div>
             </li>
           </ul>
@@ -616,10 +616,10 @@ function onDragStart(event: DragEvent, path: string) {
     >
       <div class="text-xs text-slate-600 dark:text-slate-300 flex flex-col gap-2">
         <p>确定要放弃对以下文件的所有更改吗？</p>
-        <div class="p-2 rounded bg-slate-100 dark:bg-slate-900 font-mono text-[11px] text-red-600 dark:text-red-400 break-all border border-slate-200 dark:border-slate-800">
+        <div class="p-2 rounded bg-slate-100 dark:bg-slate-900 font-mono text-2xs text-red-600 dark:text-red-400 break-all border border-slate-200 dark:border-slate-800">
           {{ discardConfirmPath }}
         </div>
-        <p class="text-[11px] text-slate-400">注意：未暂存或未提交的修改将永久丢失，此操作无法撤销。</p>
+        <p class="text-2xs text-slate-400">注意：未暂存或未提交的修改将永久丢失，此操作无法撤销。</p>
       </div>
 
       <template #footer>

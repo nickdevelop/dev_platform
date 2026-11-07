@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { buildTerminalWSUrl } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
+import { useSettingsStore } from '../../stores/settings'
 import { copyToClipboard } from '../../shared/clipboard'
 
 const props = withDefaults(
@@ -20,6 +21,7 @@ const props = withDefaults(
 )
 
 const terminalStore = useTerminalStore()
+const settings = useSettingsStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 
 let term: Terminal | null = null
@@ -176,7 +178,7 @@ async function mountTerminal(): Promise<void> {
 
   term = new Terminal({
     cursorBlink: true,
-    fontSize: 13,
+    fontSize: settings.appearance.fontSize,
     fontFamily: FONT_STACK,
     theme: {
       background: '#121316',
@@ -277,6 +279,18 @@ watch(
         term?.focus()
       })
     }
+  },
+)
+
+// The terminal canvas does not inherit CSS font sizes: xterm measures its own
+// cell grid, so the appearance tier has to be pushed into the Terminal options
+// and followed by a refit. Without the refit the PTY keeps the old cols/rows.
+watch(
+  () => settings.appearance.fontSize,
+  (size) => {
+    if (!term) return
+    term.options.fontSize = size
+    void nextTick(handleFit)
   },
 )
 

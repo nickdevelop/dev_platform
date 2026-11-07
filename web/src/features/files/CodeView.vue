@@ -235,7 +235,7 @@ onUnmounted(() => {
 }
 
 .match-count {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
   min-width: 44px;
   text-align: center;
@@ -271,7 +271,7 @@ onUnmounted(() => {
   background: var(--color-surface, #ffffff);
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
   cursor: pointer;
   transition: all 0.15s ease;

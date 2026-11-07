@@ -292,7 +292,7 @@ async function onSubmit() {
             block
           />
           <div v-if="selectedPromptPreview" class="prompt-preview-box">
-            <div class="text-[11px] text-[var(--color-text-muted)] mb-1">提示词内容预览:</div>
+            <div class="text-2xs text-[var(--color-text-muted)] mb-1">提示词内容预览:</div>
             <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2.5 rounded border border-[var(--color-border)] max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed">
               {{ selectedPromptPreview }}
             </div>

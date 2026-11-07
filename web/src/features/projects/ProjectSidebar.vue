@@ -166,7 +166,7 @@ function onShowTaskSessionsChange() {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--text-size-11);
   color: var(--color-text-muted);
   cursor: pointer;
   user-select: none;

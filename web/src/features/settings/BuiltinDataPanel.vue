@@ -101,7 +101,7 @@ onMounted(load)
     <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
       <div>
         <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block" data-test="agent-data-title">{{ label(props.backend) }}</strong>
-        <span class="text-[11px] text-slate-400">该 Agent 的会话数据保存在平台数据库中，可在此查看与删除</span>
+        <span class="text-2xs text-slate-400">该 Agent 的会话数据保存在平台数据库中，可在此查看与删除</span>
       </div>
       <div class="flex items-center gap-2">
         <UiButton size="sm" variant="ghost" :loading="loading" data-test="agent-data-reload" @click="load">刷新</UiButton>
@@ -118,7 +118,7 @@ onMounted(load)
     </div>
 
     <UiAlert v-if="error" variant="error" data-test="agent-data-error">{{ error }}</UiAlert>
-    <p v-if="success" class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium" data-test="agent-data-success">
+    <p v-if="success" class="text-2xs text-emerald-600 dark:text-emerald-400 font-medium" data-test="agent-data-success">
       {{ success }}
     </p>
 
@@ -147,9 +147,9 @@ onMounted(load)
               <span class="font-medium text-slate-800 dark:text-slate-200 truncate" :title="session.title">
                 {{ session.title || '(未命名会话)' }}
               </span>
-              <code class="text-[10px] font-mono text-slate-400 shrink-0">{{ session.sessionId.slice(0, 8) }}</code>
+              <code class="text-3xs font-mono text-slate-400 shrink-0">{{ session.sessionId.slice(0, 8) }}</code>
             </div>
-            <div class="flex items-center gap-2.5 mt-1 text-[11px] text-slate-400 min-w-0">
+            <div class="flex items-center gap-2.5 mt-1 text-2xs text-slate-400 min-w-0">
               <span class="truncate" :title="session.directory">{{ session.directory }}</span>
               <span v-if="session.model" class="shrink-0">{{ session.model }}</span>
               <span class="shrink-0 tabular-nums">{{ session.messageCount }} 条记录</span>
@@ -171,7 +171,7 @@ onMounted(load)
     </ul>
     <p v-else-if="!loading && !error" class="text-xs text-slate-400 py-3 text-center" data-test="agent-data-empty">暂无会话数据</p>
 
-    <div v-if="total > pageSize" class="flex items-center justify-between pt-1 text-[11px] text-slate-400">
+    <div v-if="total > pageSize" class="flex items-center justify-between pt-1 text-2xs text-slate-400">
       <span class="tabular-nums">第 {{ page }} / {{ totalPages() }} 页，共 {{ total }} 条</span>
       <div class="flex items-center gap-1.5">
         <UiButton size="sm" variant="secondary" :disabled="page <= 1" @click="goPage(page - 1)">上一页</UiButton>

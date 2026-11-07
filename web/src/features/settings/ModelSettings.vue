@@ -138,7 +138,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
     <!-- Header row -->
     <header class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 gap-4 flex-wrap">
       <div>
-        <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">模型管理</h1>
+        <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">模型管理</h1>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
           配置 OpenAI 兼容端点服务，按服务发现与管理供平台 Chat 与 Agent 调用的模型。
         </p>
@@ -158,7 +158,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
         <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">
           {{ editingServiceId === null ? '新增服务' : '编辑服务' }}
         </h2>
-        <span class="text-[11px] text-slate-400">支持接入任何兼容 OpenAI Chat Completion 协议的模型接口</span>
+        <span class="text-2xs text-slate-400">支持接入任何兼容 OpenAI Chat Completion 协议的模型接口</span>
       </div>
 
       <div class="space-y-3">
@@ -180,7 +180,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
             placeholder="API Key（留空保留已保存的 Key，填写新值则替换）"
             block
           />
-          <span class="text-[11px] text-slate-400 block pt-0.5">敏感凭据采用写优先存储，已保存的密钥不会在界面明文回显。</span>
+          <span class="text-2xs text-slate-400 block pt-0.5">敏感凭据采用写优先存储，已保存的密钥不会在界面明文回显。</span>
         </label>
 
         <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none pt-1">
@@ -223,10 +223,10 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       <header class="flex items-center justify-between gap-4 flex-wrap pb-3 border-b border-slate-100 dark:border-slate-800">
         <div class="flex items-center gap-2.5 min-w-0">
           <strong class="text-sm text-slate-900 dark:text-slate-100 font-semibold">{{ service.name }}</strong>
-          <code class="text-[11px] text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 truncate max-w-[280px]">
+          <code class="text-2xs text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 truncate max-w-[280px]">
             {{ service.baseUrl }}
           </code>
-          <span class="text-[11px] text-slate-400 tabular-nums">
+          <span class="text-2xs text-slate-400 tabular-nums">
             {{ service.models?.length || 0 }} 个模型
           </span>
           <UiBadge v-if="!service.enabled" variant="default" size="sm">已停用</UiBadge>
@@ -247,7 +247,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       >
         <div class="flex items-center justify-between">
           <div class="text-xs font-semibold text-slate-800 dark:text-slate-200">勾选要添加至本服务的模型：</div>
-          <span class="text-[11px] text-slate-400 tabular-nums">{{ candidates[service.id].length }} 个远端模型</span>
+          <span class="text-2xs text-slate-400 tabular-nums">{{ candidates[service.id].length }} 个远端模型</span>
         </div>
         <div class="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
           <label
@@ -262,7 +262,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
               :checked="isSelected(service.id, candidate.id)"
               @change="selected[service.id][candidate.id] = ($event.target as HTMLInputElement).checked"
             />
-            <code class="truncate max-w-[220px] text-[11px]">{{ candidate.name || candidate.id }}</code>
+            <code class="truncate max-w-[220px] text-2xs">{{ candidate.name || candidate.id }}</code>
           </label>
         </div>
         <div class="flex justify-end pt-1">
@@ -275,7 +275,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       <!-- Models Table -->
       <div class="overflow-x-auto rounded border border-slate-100 dark:border-slate-800">
         <table class="model-table w-full text-left text-xs border-collapse">
-          <thead class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-[11px] font-medium border-b border-slate-100 dark:border-slate-800">
+          <thead class="bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 text-2xs font-medium border-b border-slate-100 dark:border-slate-800">
             <tr>
               <th class="py-2.5 px-3">模型 ID</th>
               <th class="py-2.5 px-3">名称</th>
@@ -293,12 +293,12 @@ async function runTest(service: ServiceDto, model: ModelDto) {
               :data-model="model.id"
               class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
             >
-              <td class="py-2.5 px-3 text-[11px] text-slate-800 dark:text-slate-200">
+              <td class="py-2.5 px-3 text-2xs text-slate-800 dark:text-slate-200">
                 <code>{{ model.modelId }}</code>
               </td>
               <td class="py-2.5 px-3 font-medium text-slate-800 dark:text-slate-200">{{ model.name }}</td>
               <td class="py-2.5 px-3">
-                <div class="inline-flex items-center gap-1 text-[10px]">
+                <div class="inline-flex items-center gap-1 text-3xs">
                   <span v-if="model.supportsText" class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">文本</span>
                   <span v-if="model.supportsImage" class="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300">图片</span>
                   <span v-if="model.supportsTools" class="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300">工具</span>
@@ -346,7 +346,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
     >
       <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
         <h2 class="text-sm font-semibold text-slate-800 dark:text-slate-200">编辑模型参数</h2>
-        <span class="text-[11px] text-slate-400">调整模型标识、友好名称与输入输出 Token 限制</span>
+        <span class="text-2xs text-slate-400">调整模型标识、友好名称与输入输出 Token 限制</span>
       </div>
 
       <div class="space-y-3">

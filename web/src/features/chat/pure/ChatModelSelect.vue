@@ -171,7 +171,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentClick)
 
 .chat-model-option-meta {
   color: var(--color-text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
 }
 
 .chat-model-option.selected {

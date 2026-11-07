@@ -47,7 +47,7 @@ async function toggleQuickAssistant(event: Event) {
   <section class="appearance-settings w-full space-y-6" aria-label="外观设置">
     <!-- Header -->
     <header class="settings-head pb-4 border-b border-slate-200 dark:border-slate-800">
-      <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">外观</h1>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">外观</h1>
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
         自定义工作台的主题配色、显示字号、界面密度以及 PlantUML 架构图渲染方式。
       </p>
@@ -115,7 +115,7 @@ async function toggleQuickAssistant(event: Event) {
     <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
       <div class="group-header">
         <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">字号</legend>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">控制全平台界面字体基准大小，代码区与对话区会自适应成比例缩放。</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">控制全平台界面字体基准大小，各区域文本会按比例缩放。</p>
       </div>
 
       <div class="font-size-row flex flex-wrap gap-2.5" data-font-size>
@@ -183,7 +183,7 @@ async function toggleQuickAssistant(event: Event) {
           @click="selectPlantumlMode('local')"
         >
           <div class="text-xs font-medium">离线渲染（本地）</div>
-          <div class="text-[11px] text-slate-400 mt-0.5">浏览器本地编译，无数据外传</div>
+          <div class="text-2xs text-slate-400 mt-0.5">浏览器本地编译，无数据外传</div>
         </button>
         <button
           type="button"
@@ -197,7 +197,7 @@ async function toggleQuickAssistant(event: Event) {
           @click="selectPlantumlMode('online')"
         >
           <div class="text-xs font-medium">在线渲染（服务器）</div>
-          <div class="text-[11px] text-slate-400 mt-0.5">支持复杂图表与高吞吐渲染</div>
+          <div class="text-2xs text-slate-400 mt-0.5">支持复杂图表与高吞吐渲染</div>
         </button>
       </div>
 
@@ -214,7 +214,7 @@ async function toggleQuickAssistant(event: Event) {
             @change="(e: Event) => updatePlantumlServerUrl((e.target as HTMLInputElement).value)"
           />
         </label>
-        <span class="field-hint text-[11px] text-slate-400 dark:text-slate-500">
+        <span class="field-hint text-2xs text-slate-400 dark:text-slate-500">
           支持填入企业内网自建 PlantUML 服务地址，默认使用官方安全渲染端点。
         </span>
       </div>
@@ -229,7 +229,7 @@ async function toggleQuickAssistant(event: Event) {
       <div class="flex items-center justify-between gap-4 py-1">
         <div class="space-y-0.5">
           <div class="text-xs font-medium text-slate-800 dark:text-slate-200">显示快捷助手漂浮按钮</div>
-          <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed max-w-lg">
+          <p class="text-2xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-lg">
             开启后，平台右上角将常驻快捷悬浮球，支持随时唤起 AI 提问；对话历史自动同步至 Chat「快捷助手」分组。
           </p>
         </div>

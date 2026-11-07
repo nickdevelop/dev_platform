@@ -533,7 +533,7 @@ async function handleCreateTask() {
               </label>
               <button
                 type="button"
-                class="text-[11px] text-[var(--color-primary)] hover:underline"
+                class="text-2xs text-[var(--color-primary)] hover:underline"
                 @click="router.push({ name: 'settings-models' })"
               >
                 配置模型…
@@ -583,7 +583,7 @@ async function handleCreateTask() {
             <div class="flex items-center justify-between gap-3">
               <label class="text-xs font-semibold text-[var(--color-text)] flex items-center gap-2">
                 <span>团队协同分工角色 <span class="text-red-500">*</span></span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-500 font-mono border border-blue-500/20">
+                <span class="text-3xs px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-500 font-mono border border-blue-500/20">
                   已选用 {{ selectedRoles.length }} 个角色
                 </span>
               </label>
@@ -627,14 +627,14 @@ async function handleCreateTask() {
                       <span class="text-xs font-semibold text-[var(--color-text)]">
                         {{ r.name }}
                       </span>
-                      <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                      <span class="text-3xs px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
                         {{ r.backend }}
                       </span>
-                      <span class="text-[10px] px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                      <span class="text-3xs px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
                         {{ r.model }}
                       </span>
                     </div>
-                    <p v-if="r.description" class="text-[11px] text-[var(--color-text-muted)] line-clamp-1 leading-relaxed">
+                    <p v-if="r.description" class="text-2xs text-[var(--color-text-muted)] line-clamp-1 leading-relaxed">
                       {{ r.description }}
                     </p>
                   </div>
@@ -642,7 +642,7 @@ async function handleCreateTask() {
 
                 <button
                   type="button"
-                  class="text-[11px] text-red-500 hover:text-red-600 px-1.5 py-0.5 rounded shrink-0 transition-colors"
+                  class="text-2xs text-red-500 hover:text-red-600 px-1.5 py-0.5 rounded shrink-0 transition-colors"
                   title="移除该角色"
                   @click="removeRole(r.id)"
                 >
@@ -657,7 +657,7 @@ async function handleCreateTask() {
               class="p-6 text-center rounded-[var(--radius,6px)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 space-y-2"
             >
               <div class="text-xs font-medium text-[var(--color-text)]">尚未选择协同专家角色</div>
-              <p class="text-[11px] text-[var(--color-text-muted)] max-w-sm mx-auto">
+              <p class="text-2xs text-[var(--color-text-muted)] max-w-sm mx-auto">
                 协同流程需要多位专家配合推进。请从上方的角色管理下拉菜单中选择加入本任务的角色。
               </p>
               <div class="flex items-center justify-center gap-1.5 flex-wrap pt-2">
@@ -680,7 +680,7 @@ async function handleCreateTask() {
               class="p-6 text-center rounded-[var(--radius,6px)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/50 space-y-2"
             >
               <div class="text-xs font-medium text-[var(--color-text)]">角色管理中暂无专家角色</div>
-              <p class="text-[11px] text-[var(--color-text-muted)] max-w-sm mx-auto">
+              <p class="text-2xs text-[var(--color-text-muted)] max-w-sm mx-auto">
                 请先前往角色管理创建团队角色（支持设定人设提示词、执行后端与模型），创建后即可在协同流程中选用。
               </p>
               <UiButton
@@ -828,7 +828,7 @@ async function handleCreateTask() {
                 </svg>
                 <span>手动执行</span>
               </div>
-              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">仅在任务创建完成后，由人工在任务详情页点击按钮立即触发。</p>
+              <p class="mode-desc text-2xs text-[var(--color-text-muted)] leading-relaxed">仅在任务创建完成后，由人工在任务详情页点击按钮立即触发。</p>
             </div>
 
             <div
@@ -853,7 +853,7 @@ async function handleCreateTask() {
                 </svg>
                 <span>定时执行 (单次)</span>
               </div>
-              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">在设定的未来时间点自动启动并执行一次任务会话。</p>
+              <p class="mode-desc text-2xs text-[var(--color-text-muted)] leading-relaxed">在设定的未来时间点自动启动并执行一次任务会话。</p>
             </div>
 
             <div
@@ -880,7 +880,7 @@ async function handleCreateTask() {
                 </svg>
                 <span>周期执行 (Cron)</span>
               </div>
-              <p class="mode-desc text-[11px] text-[var(--color-text-muted)] leading-relaxed">按照预设周期或 Cron 表达式自动循环执行任务并沉淀历史。</p>
+              <p class="mode-desc text-2xs text-[var(--color-text-muted)] leading-relaxed">按照预设周期或 Cron 表达式自动循环执行任务并沉淀历史。</p>
             </div>
           </div>
 

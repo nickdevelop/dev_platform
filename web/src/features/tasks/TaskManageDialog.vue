@@ -262,7 +262,7 @@ async function submit() {
           required
           block
         />
-        <span v-if="loadingModels" class="text-[11px] text-[var(--color-text-muted)]">加载模型列表中…</span>
+        <span v-if="loadingModels" class="text-2xs text-[var(--color-text-muted)]">加载模型列表中…</span>
       </div>
     </div>
 

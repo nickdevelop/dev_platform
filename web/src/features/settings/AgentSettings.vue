@@ -332,7 +332,7 @@ function cancelStop() {
   <section class="agents-settings w-full space-y-6" aria-label="Agent 设置">
     <!-- Header row -->
     <header class="pb-4 border-b border-slate-200 dark:border-slate-800">
-      <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Agent 设置</h1>
+      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Agent 设置</h1>
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
         配置平台接入的 AI Coding Agent 后端（OpenCode、Pi、DeepSeek 等），管理二进制路径、模型目录、空闲断开策略与后台服务守护进程。
       </p>
@@ -417,11 +417,11 @@ function cancelStop() {
             <label for="agent-general-system-prompt" class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
               全局系统提示词 (AGENTS.md)
             </label>
-            <span class="text-[11px] text-slate-400 block mt-0.5">
+            <span class="text-2xs text-slate-400 block mt-0.5">
               作为全局系统规约落盘于平台数据目录，各 Agent 原生作为底层系统级指令加载，绝不污染对话消息流。
             </span>
           </div>
-          <span v-if="settings.agentGeneral.path" class="text-[11px] text-slate-400 font-mono" :title="settings.agentGeneral.path">
+          <span v-if="settings.agentGeneral.path" class="text-2xs text-slate-400 font-mono" :title="settings.agentGeneral.path">
             {{ settings.agentGeneral.path }}
           </span>
         </div>
@@ -443,10 +443,10 @@ function cancelStop() {
 
         <div class="flex items-center justify-between pt-1 flex-wrap gap-2">
           <div class="flex items-center gap-3">
-            <span class="text-[11px] text-slate-400 tabular-nums">
+            <span class="text-2xs text-slate-400 tabular-nums">
               {{ (generalPromptInput || '').length }} 字符
             </span>
-            <span v-if="generalUpdatedAtLabel" class="text-[11px] text-slate-400">
+            <span v-if="generalUpdatedAtLabel" class="text-2xs text-slate-400">
               {{ generalUpdatedAtLabel }}
             </span>
           </div>
@@ -464,7 +464,7 @@ function cancelStop() {
           </div>
         </div>
 
-        <p v-if="generalPromptSuccess" class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium pt-1" data-test="agent-general-success">
+        <p v-if="generalPromptSuccess" class="text-2xs text-emerald-600 dark:text-emerald-400 font-medium pt-1" data-test="agent-general-success">
           ✓ 全局系统提示词已成功保存并同步
         </p>
       </div>
@@ -482,7 +482,7 @@ function cancelStop() {
       <header class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
         <div class="flex items-center gap-3">
           <strong class="text-base text-slate-900 dark:text-slate-100 font-semibold">{{ label(agent.backend) }}</strong>
-          <code class="text-[11px] font-mono text-slate-400 dark:text-slate-500">{{ agent.backend }}</code>
+          <code class="text-2xs font-mono text-slate-400 dark:text-slate-500">{{ agent.backend }}</code>
         </div>
         <label class="toggle-control inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
           <input
@@ -502,7 +502,7 @@ function cancelStop() {
         <div class="path-row flex items-center gap-2 flex-wrap">
           <template v-if="agent.pathSource === 'auto'">
             <div class="flex-1 min-w-[16rem] flex items-center gap-2 py-1.5 px-3 bg-slate-50 dark:bg-slate-800/50 rounded border border-slate-200 dark:border-slate-700 text-xs">
-              <span class="text-[11px] text-slate-400 select-none">自动检测:</span>
+              <span class="text-2xs text-slate-400 select-none">自动检测:</span>
               <code class="path font-mono text-slate-700 dark:text-slate-300 flex-1 truncate" :data-agent-path-display="agent.backend">
                 {{ agent.path }}
               </code>
@@ -526,7 +526,7 @@ function cancelStop() {
           <UiBadge :variant="agent.available ? 'success' : 'default'" size="sm" dot>
             {{ agent.available ? '已检测到' : '未检测到' }}
           </UiBadge>
-          <span v-if="agent.version" class="tabular-nums text-[11px]">版本 {{ agent.version }}</span>
+          <span v-if="agent.version" class="tabular-nums text-2xs">版本 {{ agent.version }}</span>
         </div>
       </div>
 
@@ -543,7 +543,7 @@ function cancelStop() {
             <option v-for="mode in agent.modes" :key="mode" :value="mode">{{ mode }}</option>
           </UiSelect>
         </label>
-        <span class="mode-hint text-slate-400 text-[11px]">修改传输模式后需重启平台生效</span>
+        <span class="mode-hint text-slate-400 text-2xs">修改传输模式后需重启平台生效</span>
       </div>
 
       <!-- Tool permission mode (backends that support the control) -->
@@ -563,7 +563,7 @@ function cancelStop() {
             <option value="auto">自动放行（所有工具调用直接执行）</option>
           </UiSelect>
         </label>
-        <span class="text-slate-400 text-[11px]">自下一轮对话开始生效</span>
+        <span class="text-slate-400 text-2xs">自下一轮对话开始生效</span>
       </div>
 
       <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->
@@ -575,9 +575,9 @@ function cancelStop() {
         <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
           <div>
             <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">DSH 进程空闲断开时间</strong>
-            <span class="text-[11px] text-slate-400">设置无会话活跃时共享 dsh 守护进程的自动释放时长</span>
+            <span class="text-2xs text-slate-400">设置无会话活跃时共享 dsh 守护进程的自动释放时长</span>
           </div>
-          <span v-if="agent.idleTimeoutMinutes !== undefined" class="tabular-nums text-[11px] text-slate-400">
+          <span v-if="agent.idleTimeoutMinutes !== undefined" class="tabular-nums text-2xs text-slate-400">
             当前设定：{{ agent.idleTimeoutMinutes < 0 ? '从不断开' : `${agent.idleTimeoutMinutes} 分钟` }}
           </span>
         </div>
@@ -616,7 +616,7 @@ function cancelStop() {
             </UiButton>
           </div>
 
-          <p v-if="idleTimeoutSuccess[agent.backend]" class="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium" data-test="idle-timeout-success">
+          <p v-if="idleTimeoutSuccess[agent.backend]" class="text-2xs text-emerald-600 dark:text-emerald-400 font-medium" data-test="idle-timeout-success">
             ✓ 空闲断开时间已成功保存
           </p>
         </div>
@@ -648,7 +648,7 @@ function cancelStop() {
         <div class="models-head flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
           <div>
             <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">可用模型目录</strong>
-            <span class="models-updated text-[11px] text-slate-400">{{ updatedAtLabel(agent.backend) }}</span>
+            <span class="models-updated text-2xs text-slate-400">{{ updatedAtLabel(agent.backend) }}</span>
           </div>
           <UiButton
             size="sm"
@@ -689,7 +689,7 @@ function cancelStop() {
               </UiBadge>
               <span class="model-name font-medium text-slate-800 dark:text-slate-200 truncate">{{ model.name || model.id }}</span>
               <!-- Desktop inline details -->
-              <div class="hidden sm:inline-flex items-center gap-2 text-[11px] text-slate-400 min-w-0">
+              <div class="hidden sm:inline-flex items-center gap-2 text-2xs text-slate-400 min-w-0">
                 <code class="model-id text-slate-400 font-mono truncate max-w-[140px]">{{ model.id }}</code>
                 <span v-if="model.contextLimit" class="tabular-nums whitespace-nowrap">
                   {{ Math.round(model.contextLimit / 1000) }}k 上下文
@@ -702,7 +702,7 @@ function cancelStop() {
             </div>
 
             <!-- Mobile subline -->
-            <div class="flex sm:hidden items-center gap-2 text-[11px] text-slate-400 pl-6 flex-wrap">
+            <div class="flex sm:hidden items-center gap-2 text-2xs text-slate-400 pl-6 flex-wrap">
               <code class="model-id text-slate-400 font-mono">{{ model.id }}</code>
               <span v-if="model.contextLimit" class="tabular-nums">
                 {{ Math.round(model.contextLimit / 1000) }}k 上下文
@@ -740,7 +740,7 @@ function cancelStop() {
             <h3 class="text-xs font-semibold text-slate-800 dark:text-slate-200">
               配置模型：<code class="font-mono text-slate-500">{{ editingModel.id }}</code>
             </h3>
-            <span class="text-[11px] text-slate-400">自定义友好显示名称与上下文 Token 限制</span>
+            <span class="text-2xs text-slate-400">自定义友好显示名称与上下文 Token 限制</span>
           </div>
 
           <UiAlert v-if="editingModel.error" variant="error">
@@ -749,13 +749,13 @@ function cancelStop() {
 
           <div class="space-y-2.5">
             <div>
-              <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">显示名称</label>
+              <label class="block text-2xs font-medium text-slate-600 dark:text-slate-400 mb-1">显示名称</label>
               <UiInput v-model="editingModel.name" placeholder="模型友好名称" required block />
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
-                <label class="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">上下文 Token 限制 (留空按默认)</label>
+                <label class="block text-2xs font-medium text-slate-600 dark:text-slate-400 mb-1">上下文 Token 限制 (留空按默认)</label>
                 <UiInput v-model.number="editingModel.contextLimit" type="number" min="0" placeholder="如 128000" block />
               </div>
               <div class="flex flex-col justify-end gap-1.5 pb-1">
@@ -794,19 +794,19 @@ function cancelStop() {
               {{ stateLabel(agent.backend) }}
             </UiBadge>
           </div>
-          <span v-if="serviceFor(agent.backend)?.version" class="tabular-nums text-[11px] text-slate-400">
+          <span v-if="serviceFor(agent.backend)?.version" class="tabular-nums text-2xs text-slate-400">
             版本 {{ serviceFor(agent.backend)?.version }}
           </span>
         </div>
 
         <div class="space-y-1 text-xs">
           <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs text-slate-600 dark:text-slate-400">
-            服务地址 <code class="text-[11px]">{{ serviceFor(agent.backend)?.endpoint }}</code>
+            服务地址 <code class="text-2xs">{{ serviceFor(agent.backend)?.endpoint }}</code>
           </p>
           <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs text-slate-600 dark:text-slate-400">
-            进程 PID <span class="tabular-nums text-[11px]">{{ serviceFor(agent.backend)?.pid }}</span>
+            进程 PID <span class="tabular-nums text-2xs">{{ serviceFor(agent.backend)?.pid }}</span>
           </p>
-          <p data-test="service-checked-at" class="service-line text-[11px] text-slate-400">
+          <p data-test="service-checked-at" class="service-line text-2xs text-slate-400">
             {{ checkedAt(agent.backend) }}
           </p>
           <p
@@ -883,7 +883,7 @@ function cancelStop() {
               {{ diagnosticsStatusLabel(agent.backend) }}
             </UiBadge>
           </div>
-          <span class="text-slate-400 text-[11px]">展开/收起 ▾</span>
+          <span class="text-slate-400 text-2xs">展开/收起 ▾</span>
         </summary>
         <div class="pt-2.5">
           <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />

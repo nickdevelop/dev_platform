@@ -564,7 +564,7 @@ function closePreview() {
 }
 
 .menu-hint {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 </style>

@@ -67,4 +67,17 @@ describe('theme tokens', () => {
       .map(([name, file]) => `${name} (used by ${file})`)
     expect(undefinedTokens).toEqual([])
   })
+
+  it('keeps hard-coded pixel font sizes out of the source', () => {
+    // The appearance tier is a root-font multiplier: a literal px font-size
+    // silently opts that text out of it. Both CSS declarations and Tailwind's
+    // text-[Npx] escapes are rejected so the scale cannot drift again.
+    const hardCoded = sources.flatMap(({ file, text }) => {
+      const css = [...text.matchAll(/font-size:\s*[0-9.]+px/g)].map((match) => `${file}: ${match[0]}`)
+      const tailwind = [...text.matchAll(/text-\[[0-9.]+px\]/g)].map((match) => `${file}: ${match[0]}`)
+      return [...css, ...tailwind]
+    })
+
+    expect(hardCoded).toEqual([])
+  })
 })

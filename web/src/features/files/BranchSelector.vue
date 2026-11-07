@@ -177,7 +177,7 @@ onUnmounted(() => {
 
       <!-- Branches List -->
       <div class="max-h-48 overflow-y-auto flex flex-col gap-0.5">
-        <div v-if="loading" class="text-slate-400 text-center py-2 text-[11px]">
+        <div v-if="loading" class="text-slate-400 text-center py-2 text-2xs">
           加载分支...
         </div>
         <template v-else-if="filteredBranches.length > 0">
@@ -208,7 +208,7 @@ onUnmounted(() => {
             </svg>
           </button>
         </template>
-        <div v-else-if="!isNewBranch" class="text-slate-400 text-center py-2 text-[11px]">
+        <div v-else-if="!isNewBranch" class="text-slate-400 text-center py-2 text-2xs">
           无匹配分支
         </div>
       </div>

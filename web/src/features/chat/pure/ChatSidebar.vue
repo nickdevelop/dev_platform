@@ -361,7 +361,7 @@ async function confirmDeleteGroup() {
   border-radius: var(--radius, 4px);
   background: var(--color-surface-muted, #f1f5f9);
   color: var(--color-text, #334155);
-  font-size: 11px;
+  font-size: var(--text-size-11);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -406,7 +406,7 @@ async function confirmDeleteGroup() {
 }
 
 .assistant-count {
-  font-size: 11px;
+  font-size: var(--text-size-11);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-muted);
   background: var(--color-surface-muted);
@@ -416,7 +416,7 @@ async function confirmDeleteGroup() {
 }
 
 .assistant-desc {
-  font-size: 11px;
+  font-size: var(--text-size-11);
   color: var(--color-text-muted);
   margin: 0;
   line-height: 1.2;
@@ -424,7 +424,7 @@ async function confirmDeleteGroup() {
 
 .list-error {
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--text-size-12);
   color: var(--color-danger);
   margin: 0 0 6px;
 }

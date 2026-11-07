@@ -367,7 +367,7 @@ watch(activeForm, () => {
   color: var(--color-text-muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   line-height: 1.4;
 }
 

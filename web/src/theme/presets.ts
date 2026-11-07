@@ -194,11 +194,14 @@ export interface FontSizePreset {
 }
 
 export const fontSizes: FontSizePreset[] = [
-  { key: 'small', label: '小', value: 13 },
-  { key: 'medium', label: '中', value: 14 },
+  { key: 'small', label: '小', value: 12 },
+  { key: 'medium', label: '标准', value: 14 },
   { key: 'large', label: '大', value: 16 },
 ]
 
+// The server normalizes legacy 12–20 values onto a preset on read, but a value
+// cached before that migration can still sit between two presets. Ties go to
+// the lower tier: 13 → small, 15 → medium.
 export function resolveFontSizeKey(fontSize: number): 'small' | 'medium' | 'large' {
   if (fontSize <= 13) return 'small'
   if (fontSize >= 16) return 'large'

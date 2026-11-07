@@ -129,7 +129,7 @@ async function copyPatch() {
         <!-- Status badge -->
         <span
           v-if="diffData?.status"
-          class="shrink-0 px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold"
+          class="shrink-0 px-1.5 py-0.5 rounded text-2xs font-mono font-semibold"
           :class="getChangeStatusLabel(diffData.status).class"
         >
           {{ getChangeStatusLabel(diffData.status).label }}
@@ -153,7 +153,7 @@ async function copyPatch() {
         <!-- Commit or working tree badge -->
         <span
           v-if="props.commitRef"
-          class="hidden sm:inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-mono"
+          class="hidden sm:inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-mono"
           :title="props.commitMessage || props.commitRef"
         >
           <span>commit:</span>
@@ -162,7 +162,7 @@ async function copyPatch() {
         </span>
         <span
           v-else
-          class="hidden sm:inline-flex items-center text-[11px] px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono"
+          class="hidden sm:inline-flex items-center text-2xs px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono"
         >
           工作区未提交变更
         </span>
@@ -232,7 +232,7 @@ async function copyPatch() {
         >
           <!-- Old line number -->
           <span
-            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-[11px]"
+            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-2xs"
             aria-hidden="true"
           >
             {{ line.oldNum ?? '' }}
@@ -240,7 +240,7 @@ async function copyPatch() {
 
           <!-- New line number -->
           <span
-            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-[11px] border-r border-slate-200 dark:border-slate-800/80"
+            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-2xs border-r border-slate-200 dark:border-slate-800/80"
             aria-hidden="true"
           >
             {{ line.newNum ?? '' }}

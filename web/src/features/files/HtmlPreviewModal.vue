@@ -210,7 +210,7 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 2px 7px;
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   font-weight: 600;
   background: rgba(37, 99, 235, 0.1);
   color: var(--color-primary, #2563eb);

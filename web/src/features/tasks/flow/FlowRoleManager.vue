@@ -267,7 +267,7 @@ async function handleDeleteRole(role: FlowRole) {
             <div v-if="!readOnly" class="flex items-center gap-1">
               <button
                 type="button"
-                class="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1 rounded transition-colors"
+                class="text-2xs text-[var(--color-text-muted)] hover:text-[var(--color-text)] p-1 rounded transition-colors"
                 title="编辑角色"
                 @click="openEditDialog(role)"
               >
@@ -275,7 +275,7 @@ async function handleDeleteRole(role: FlowRole) {
               </button>
               <button
                 type="button"
-                class="text-[11px] text-red-500 hover:text-red-600 p-1 rounded transition-colors"
+                class="text-2xs text-red-500 hover:text-red-600 p-1 rounded transition-colors"
                 title="移除角色"
                 @click="handleDeleteRole(role)"
               >
@@ -291,14 +291,14 @@ async function handleDeleteRole(role: FlowRole) {
 
         <!-- Prompt preview snippet with source info -->
         <div class="space-y-1 pt-1 border-t border-[var(--color-border)]">
-          <div class="text-[10px] text-[var(--color-text-muted)] flex items-center gap-1">
+          <div class="text-3xs text-[var(--color-text-muted)] flex items-center gap-1">
             <span class="font-medium text-[var(--color-text)]">提示词:</span>
             <span v-if="role.promptId" class="text-[var(--color-primary)]">
               [引用] {{ getPromptName(role.promptId) }}
             </span>
             <span v-else>自定义设定</span>
           </div>
-          <div v-if="role.systemPrompt" class="text-[11px] text-[var(--color-text-muted)] font-mono bg-[var(--color-surface-muted)] p-2 rounded border border-[var(--color-border)] truncate">
+          <div v-if="role.systemPrompt" class="text-2xs text-[var(--color-text-muted)] font-mono bg-[var(--color-surface-muted)] p-2 rounded border border-[var(--color-border)] truncate">
             {{ role.systemPrompt }}
           </div>
         </div>
@@ -481,7 +481,7 @@ async function handleDeleteRole(role: FlowRole) {
               block
             />
             <div v-if="selectedPromptPreview" class="space-y-1">
-              <span class="text-[11px] text-[var(--color-text-muted)]">提示词预览:</span>
+              <span class="text-2xs text-[var(--color-text-muted)]">提示词预览:</span>
               <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2 rounded border border-[var(--color-border)] max-h-32 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                 {{ selectedPromptPreview }}
               </div>

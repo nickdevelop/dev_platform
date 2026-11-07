@@ -178,7 +178,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
         <!-- Folder change count badge -->
         <span
           v-if="node.isDir && node.changeCount"
-          class="count-badge shrink-0 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-mono"
+          class="count-badge shrink-0 px-1.5 py-0.2 rounded-full text-3xs bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-mono"
           :title="`${node.changeCount} 个文件变更`"
         >
           {{ node.changeCount }}
@@ -187,7 +187,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
         <!-- File change status badge -->
         <span
           v-else-if="!node.isDir && node.status"
-          class="git-badge shrink-0 px-1 py-0.2 rounded text-[10px] font-mono font-semibold"
+          class="git-badge shrink-0 px-1 py-0.2 rounded text-3xs font-mono font-semibold"
           :class="getChangeStatusLabel(node.status).class"
           :title="getChangeStatusLabel(node.status).label"
         >

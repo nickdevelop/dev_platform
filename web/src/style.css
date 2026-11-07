@@ -52,6 +52,20 @@
   --font-mono: 'Google Sans Code', 'Noto Sans SC', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-size-base: 14px;
 
+  /* Type scale for the sizes that historically were hard-coded pixels. Each
+     token is the rem equivalent of its medium (14px) size, so the appearance
+     tier scales it through the root font. The smallest steps carry a px floor
+     so the 12px tier does not fall below a legible size. */
+  --text-size-10: max(9.5px, 0.7143rem);
+  --text-size-11: max(10px, 0.7857rem);
+  --text-size-12: max(10.5px, 0.8571rem);
+  --text-size-13: max(11px, 0.9286rem);
+  --text-size-14: 1rem;
+  --text-size-20: 1.4286rem;
+  --text-size-22: 1.5714rem;
+  --text-size-caption: max(9.5px, 0.6875rem);
+  --text-size-meta: max(10px, 0.72rem);
+
   --space-unit: 6px;
   --control-height: 34px;
   --radius: 6px;

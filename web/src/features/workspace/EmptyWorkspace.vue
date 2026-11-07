@@ -99,7 +99,7 @@ function goToTerminal() {
 
 .header-status {
   margin-left: auto;
-  font-size: 0.7rem;
+  font-size: var(--text-size-meta);
   color: var(--color-success);
   padding: 1px 6px;
   border: 1px solid var(--color-border);
@@ -174,7 +174,7 @@ function goToTerminal() {
 }
 
 .key-hint {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   padding: 1px 5px;
   border: 1px solid var(--color-border-strong);
   border-radius: 2px;
@@ -189,7 +189,7 @@ function goToTerminal() {
   padding: 0.45rem 0.85rem;
   border-top: 1px solid var(--color-border);
   background: var(--color-surface-muted);
-  font-size: 0.7rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 

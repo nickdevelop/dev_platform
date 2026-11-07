@@ -427,7 +427,7 @@ watch(
       <div class="flex flex-col gap-1.5">
         <label :for="id" class="font-medium text-[var(--color-text)] flex items-center justify-between">
           <span>Cron 表达式 (秒 分 时 日 月 周 年)</span>
-          <span class="text-[10px] text-[var(--color-text-muted)] font-normal">支持直接粘贴反解析</span>
+          <span class="text-3xs text-[var(--color-text-muted)] font-normal">支持直接粘贴反解析</span>
         </label>
         <UiInput
           :id="id"
@@ -443,7 +443,7 @@ watch(
     </div>
 
     <!-- Navigation Tabs: Fast Preset vs 7 individual Fields -->
-    <div class="cron-tabs-header flex items-center gap-1 border-b border-[var(--color-border)] pb-1.5 overflow-x-auto text-[11px]">
+    <div class="cron-tabs-header flex items-center gap-1 border-b border-[var(--color-border)] pb-1.5 overflow-x-auto text-2xs">
       <button
         type="button"
         class="tab-btn px-2.5 py-1 rounded transition-colors font-medium shrink-0"
@@ -567,7 +567,7 @@ watch(
       </div>
 
       <!-- 6. Custom helper hint -->
-      <div v-else class="text-[11px] text-[var(--color-text-muted)]">
+      <div v-else class="text-2xs text-[var(--color-text-muted)]">
         当前为自定义表达式，可点击上方「秒、分、时、日、月、周、年」标签页直接编辑字段规则，或直接修改表达式。
       </div>
     </div>
@@ -606,7 +606,7 @@ watch(
           v-for="s in 60"
           :key="s - 1"
           type="button"
-          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          class="px-1 py-0.5 text-2xs rounded border text-center transition-colors"
           :class="states.second.specific.includes(s - 1)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -651,7 +651,7 @@ watch(
           v-for="m in 60"
           :key="m - 1"
           type="button"
-          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          class="px-1 py-0.5 text-2xs rounded border text-center transition-colors"
           :class="states.minute.specific.includes(m - 1)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -696,7 +696,7 @@ watch(
           v-for="h in 24"
           :key="h - 1"
           type="button"
-          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          class="px-1 py-0.5 text-2xs rounded border text-center transition-colors"
           :class="states.hour.specific.includes(h - 1)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -737,7 +737,7 @@ watch(
           v-for="d in 31"
           :key="d"
           type="button"
-          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          class="px-1 py-0.5 text-2xs rounded border text-center transition-colors"
           :class="states.day.specific.includes(d)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -774,7 +774,7 @@ watch(
           v-for="m in 12"
           :key="m"
           type="button"
-          class="px-1 py-0.5 text-[11px] rounded border text-center transition-colors"
+          class="px-1 py-0.5 text-2xs rounded border text-center transition-colors"
           :class="states.month.specific.includes(m)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -818,7 +818,7 @@ watch(
           v-for="d in weekdaysList"
           :key="d.value"
           type="button"
-          class="px-2.5 py-1 text-[11px] rounded border transition-colors"
+          class="px-2.5 py-1 text-2xs rounded border transition-colors"
           :class="states.week.specific.includes(d.value)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -855,7 +855,7 @@ watch(
           v-for="y in yearsList"
           :key="y"
           type="button"
-          class="px-2 py-0.5 text-[11px] rounded border transition-colors"
+          class="px-2 py-0.5 text-2xs rounded border transition-colors"
           :class="states.year.specific.includes(y)
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
             : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:bg-[var(--color-surface-muted)]'"
@@ -868,7 +868,7 @@ watch(
 
     <!-- Human readable explanation text -->
     <div class="flex items-center justify-between gap-2 pt-2 border-t border-[var(--color-border)]/60">
-      <div class="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] min-w-0">
+      <div class="flex items-center gap-1.5 text-2xs text-[var(--color-text-muted)] min-w-0">
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" class="shrink-0 text-[var(--color-primary,#2563eb)]" aria-hidden="true">
           <circle cx="8" cy="8" r="6.5" />
           <polyline points="8 4 8 8 10.5 10.5" />
@@ -880,7 +880,7 @@ watch(
 
       <button
         type="button"
-        class="text-[11px] text-[var(--color-primary)] hover:underline shrink-0"
+        class="text-2xs text-[var(--color-primary)] hover:underline shrink-0"
         @click="showNextRuns = !showNextRuns"
       >
         {{ showNextRuns ? '收起后 10 次执行时间' : '查看后 10 次执行时间' }}
@@ -889,17 +889,17 @@ watch(
 
     <!-- Next 10 runs forecast panel -->
     <div v-if="showNextRuns" class="cron-next-runs bg-[var(--color-surface)] p-2.5 rounded border border-[var(--color-border)]/80 space-y-1.5" data-test="cron-next-runs">
-      <div class="flex items-center justify-between text-[11px] font-medium text-[var(--color-text)]">
+      <div class="flex items-center justify-between text-2xs font-medium text-[var(--color-text)]">
         <span>推断后 10 次执行时间：</span>
-        <span class="text-[10px] text-[var(--color-text-muted)] font-normal">基于本地系统时区计算</span>
+        <span class="text-3xs text-[var(--color-text-muted)] font-normal">基于本地系统时区计算</span>
       </div>
 
-      <ol v-if="nextRuns.length > 0" class="list-decimal list-inside grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-[11px] font-mono text-[var(--color-text-muted)]">
+      <ol v-if="nextRuns.length > 0" class="list-decimal list-inside grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-2xs font-mono text-[var(--color-text-muted)]">
         <li v-for="(run, idx) in nextRuns" :key="idx" class="truncate" :data-test="`next-run-${idx}`">
           {{ formatDateTime(run) }}
         </li>
       </ol>
-      <p v-else class="text-[11px] text-amber-500 py-1">
+      <p v-else class="text-2xs text-amber-500 py-1">
         当前表达式在未来 5 年内无法产生执行时刻，请检查字段配置（如已过期的年份或互斥的日/周配置）。
       </p>
     </div>

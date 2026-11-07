@@ -62,7 +62,7 @@ const dotColorClasses = computed(() => {
     class="inline-flex items-center font-medium border rounded select-none shrink-0"
     :class="[
       variantClasses,
-      size === 'sm' ? 'px-1.5 py-0.5 text-[11px] gap-1' : 'px-2 py-0.5 text-xs gap-1.5',
+      size === 'sm' ? 'px-1.5 py-0.5 text-2xs gap-1' : 'px-2 py-0.5 text-xs gap-1.5',
     ]"
   >
     <span

@@ -186,7 +186,7 @@ function onSaved(prompt: Prompt) {
 
 .placeholder-tag {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--text-size-10);
   color: var(--color-accent, #4a8ad6);
   background: var(--color-surface-muted, #f1f5f9);
   padding: 1px 4px;

@@ -6074,6 +6074,11 @@ components:
           type: string
         fontSize:
           type: integer
+          enum: [12, 14, 16]
+          description: >-
+            UI font size tier: small 12, standard 14, large 16. Reads fold
+            legacy 12–20 values onto the nearest preset; writes only accept
+            these three values.
         density:
           type: string
       additionalProperties: false

@@ -51,7 +51,7 @@ onBeforeUnmount(() => {
               </svg>
             </span>
             <span class="dialog-title text-sm font-semibold text-[var(--color-text)]">{{ title }}</span>
-            <span v-if="backend" class="dialog-meta-badge font-mono text-[11px] text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)]">
+            <span v-if="backend" class="dialog-meta-badge font-mono text-2xs text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)]">
               {{ backend }} {{ model ? `· ${model}` : '' }}
             </span>
           </div>

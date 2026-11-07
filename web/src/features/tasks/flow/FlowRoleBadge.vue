@@ -20,7 +20,7 @@ const roleModel = computed(() => props.role?.model || props.model || '')
 
 <template>
   <span
-    class="flow-role-badge inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium border border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text)] transition-colors select-none"
+    class="flow-role-badge inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-2xs font-medium border border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text)] transition-colors select-none"
     :class="{ 'hover:border-[var(--color-primary)] cursor-pointer': interactive }"
   >
     <span
@@ -31,13 +31,13 @@ const roleModel = computed(() => props.role?.model || props.model || '')
     <span class="role-name font-semibold tracking-tight">{{ roleName }}</span>
     <span
       v-if="roleBackend"
-      class="text-[10px] text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
+      class="text-3xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
     >
       {{ roleBackend }}
     </span>
     <span
       v-if="roleModel"
-      class="text-[10px] text-[var(--color-text-muted)] truncate max-w-[90px] font-mono"
+      class="text-3xs text-[var(--color-text-muted)] truncate max-w-[90px] font-mono"
       :title="roleModel"
     >
       {{ roleModel }}

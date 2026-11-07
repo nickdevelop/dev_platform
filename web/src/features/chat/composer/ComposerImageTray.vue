@@ -109,7 +109,7 @@ function formatSize(bytes: number): string {
 }
 
 .image-size {
-  font-size: 0.68rem;
+  font-size: var(--text-size-caption);
   color: var(--color-text-muted, #64748b);
 }
 

@@ -121,7 +121,7 @@ onMounted(() => {
             </div>
             <button
               type="button"
-              class="text-[11px] text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+              class="text-2xs text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
               title="进入此目录"
               @click.stop="openEntry(entry)"
             >
@@ -132,7 +132,7 @@ onMounted(() => {
       </div>
 
       <!-- Selection preview -->
-      <div class="text-[11px] text-slate-500 flex items-center gap-1.5 truncate">
+      <div class="text-2xs text-slate-500 flex items-center gap-1.5 truncate">
         <span class="shrink-0 text-slate-400">选中路径：</span>
         <code class="font-mono text-slate-700 dark:text-slate-300 truncate">{{ selectedPath || currentPath }}</code>
       </div>

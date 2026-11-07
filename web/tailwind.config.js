@@ -12,6 +12,15 @@ export default {
         xl: '12px',
         full: '9999px',
       },
+      fontSize: {
+        // Small steps follow the root font but keep a px floor so the 12px
+        // appearance tier stays readable.
+        '3xs': ['var(--text-size-10)', { lineHeight: '1.5' }],
+        '2xs': ['var(--text-size-11)', { lineHeight: '1.5' }],
+        xs: ['max(10.5px, 0.75rem)', { lineHeight: '1rem' }],
+        sm: ['max(11px, 0.875rem)', { lineHeight: '1.25rem' }],
+        '2xl': ['var(--text-size-22)', { lineHeight: '1.4' }],
+      },
       colors: {
         platform: {
           bg: 'var(--color-bg)',

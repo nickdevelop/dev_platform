@@ -293,7 +293,7 @@ function onConnect(serverId: number) {
   background: color-mix(in srgb, var(--color-warning, #d9a441) 10%, transparent);
   border: 1px solid color-mix(in srgb, var(--color-warning, #d9a441) 30%, transparent);
   border-radius: var(--radius, 4px);
-  font-size: 11px;
+  font-size: var(--text-size-11);
   color: var(--color-warning, #d9a441);
   line-height: 1.4;
 }
@@ -308,7 +308,7 @@ function onConnect(serverId: number) {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--text-size-11);
   font-weight: 600;
   color: var(--color-text-muted);
   padding: 0 4px;
@@ -320,7 +320,7 @@ function onConnect(serverId: number) {
   border: 1px solid var(--color-border);
   padding: 0 4px;
   border-radius: var(--radius, 4px);
-  font-size: 10px;
+  font-size: var(--text-size-10);
   font-weight: normal;
   font-variant-numeric: tabular-nums;
 }
@@ -337,7 +337,7 @@ function onConnect(serverId: number) {
 }
 
 .server-sub {
-  font-size: 11px;
+  font-size: var(--text-size-11);
   color: var(--color-text-muted);
   font-family: var(--font-mono, monospace);
   font-variant-numeric: tabular-nums;
@@ -347,7 +347,7 @@ function onConnect(serverId: number) {
 }
 
 .badge {
-  font-size: 10px;
+  font-size: var(--text-size-10);
   padding: 0 4px;
   height: 16px;
   line-height: 16px;
@@ -377,7 +377,7 @@ function onConnect(serverId: number) {
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-radius: var(--radius, 4px);
-  font-size: 11px;
+  font-size: var(--text-size-11);
   font-weight: 500;
   cursor: pointer;
   transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
@@ -421,7 +421,7 @@ function onConnect(serverId: number) {
 }
 
 .empty-tip {
-  font-size: 11px;
+  font-size: var(--text-size-11);
   color: var(--color-text-muted);
   margin: 0 0 6px 0;
 }
@@ -430,7 +430,7 @@ function onConnect(serverId: number) {
   background: transparent;
   color: var(--color-accent, #4a8ad6);
   border: none;
-  font-size: 11px;
+  font-size: var(--text-size-11);
   cursor: pointer;
   padding: 2px 4px;
 }
@@ -460,14 +460,14 @@ function onConnect(serverId: number) {
 
 .confirm-modal h3 {
   margin: 0 0 8px 0;
-  font-size: 14px;
+  font-size: var(--text-size-14);
   font-weight: 600;
   color: var(--color-text);
 }
 
 .confirm-modal p {
   margin: 0 0 16px 0;
-  font-size: 12px;
+  font-size: var(--text-size-12);
   color: var(--color-text-muted);
   line-height: 1.5;
 }
@@ -484,7 +484,7 @@ function onConnect(serverId: number) {
   border-radius: var(--radius, 4px);
   background: var(--color-surface);
   color: var(--color-text);
-  font-size: 12px;
+  font-size: var(--text-size-12);
   cursor: pointer;
 }
 
@@ -494,7 +494,7 @@ function onConnect(serverId: number) {
   border-radius: var(--radius, 4px);
   background: var(--color-danger, #e5566f);
   color: #fff;
-  font-size: 12px;
+  font-size: var(--text-size-12);
   cursor: pointer;
 }
 

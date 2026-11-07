@@ -1154,7 +1154,7 @@ async function removeSession() {
                     <span class="file-tab-name">{{ fileTab.name }}</span>
                     <span
                       v-if="fileTab.mode === 'diff'"
-                      class="tab-diff-badge text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
+                      class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
                     >
                       Diff
                     </span>
@@ -1201,7 +1201,7 @@ async function removeSession() {
                     </svg>
                   </div>
                   <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
-                  <p class="empty-desc text-[11px] text-slate-400 leading-relaxed max-w-[200px] text-center">
+                  <p class="empty-desc text-2xs text-slate-400 leading-relaxed max-w-[200px] text-center">
                     在右侧文件树中选择文件即可在此快速预览文件内容与变更
                   </p>
                 </div>
@@ -1922,7 +1922,7 @@ async function removeSession() {
   padding: 0 0.3rem;
   border-radius: 999px;
   background: var(--color-border);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   font-weight: 600;
   line-height: 1;
   color: var(--color-text);
@@ -2425,7 +2425,7 @@ async function removeSession() {
 }
 
 .menu-hint {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 

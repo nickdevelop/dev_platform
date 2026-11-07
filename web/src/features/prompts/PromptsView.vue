@@ -102,7 +102,7 @@ async function copyTemplate(text: string) {
             </h1>
             <span
               v-if="hasUserPromptPlaceholder(activePrompt.content)"
-              class="placeholder-badge inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)]"
+              class="placeholder-badge inline-flex items-center gap-1 font-mono text-2xs px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)]"
             >
               <span>包含 {user_prompt} 占位符</span>
             </span>

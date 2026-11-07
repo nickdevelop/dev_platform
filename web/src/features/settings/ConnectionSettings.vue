@@ -146,7 +146,7 @@ async function handleSwitch(conn: ServerConnection) {
     <header class="settings-head pb-4 border-b border-slate-200 dark:border-slate-800">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-[22px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务连接</h1>
+          <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务连接</h1>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
             管理当前客户端连接的后端服务，支持在本地内置单机引擎与远程团队服务器间无缝切换。
           </p>
@@ -377,7 +377,7 @@ async function handleSwitch(conn: ServerConnection) {
               <span>{{ testResult.ok ? '连接成功' : '连接失败' }}</span>
               <span v-if="testResult.latencyMs !== undefined" class="text-slate-500 font-normal">({{ testResult.latencyMs }}ms)</span>
             </div>
-            <div v-if="testResult.message" class="mt-1 text-[11px] opacity-90">{{ testResult.message }}</div>
+            <div v-if="testResult.message" class="mt-1 text-2xs opacity-90">{{ testResult.message }}</div>
           </div>
 
           <div>

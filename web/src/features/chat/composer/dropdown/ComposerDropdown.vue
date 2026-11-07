@@ -171,7 +171,7 @@ watch(
 }
 
 .item-badge {
-  font-size: 0.68rem;
+  font-size: var(--text-size-caption);
   padding: 0.05rem 0.3rem;
   border-radius: 2px;
   background: var(--color-border, #222631);

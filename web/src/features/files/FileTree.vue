@@ -172,7 +172,7 @@ defineExpose({
 
         <span
           v-if="!node.isDir && props.gitChangesMap.get(node.path)"
-          class="git-badge shrink-0 px-1 py-0.2 text-[10px] font-mono rounded font-semibold border"
+          class="git-badge shrink-0 px-1 py-0.2 text-3xs font-mono rounded font-semibold border"
           :class="[
             `git-${props.gitChangesMap.get(node.path)}`,
             props.gitChangesMap.get(node.path) === 'added'
@@ -195,7 +195,7 @@ defineExpose({
         :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
         data-test="tree-node-loading"
       >
-        <span class="tree-loading-spinner animate-spin inline-block text-[11px]" aria-hidden="true">↻</span>
+        <span class="tree-loading-spinner animate-spin inline-block text-2xs" aria-hidden="true">↻</span>
         <span class="tree-state-text">加载中…</span>
       </div>
 

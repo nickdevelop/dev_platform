@@ -224,7 +224,7 @@ function getRoleById(roleId?: number): FlowRole | null {
               {{ task.title }}
             </h2>
           </div>
-          <div class="flex items-center gap-3 text-[11px] text-[var(--color-text-muted)] font-mono">
+          <div class="flex items-center gap-3 text-2xs text-[var(--color-text-muted)] font-mono">
             <span>工作区: {{ projectName }}</span>
             <span>中控模型: {{ activeRun?.orchestratorModel || task.orchestratorModel || task.model || '-' }}</span>
             <span v-if="activeRun" class="text-amber-500 font-semibold">
@@ -319,9 +319,9 @@ function getRoleById(roleId?: number): FlowRole | null {
 
     <!-- 2. Roles Sub-header: Quick access strip -->
     <section class="roles-strip px-4 py-2 bg-[var(--color-surface)]/70 border-b border-[var(--color-border)] flex items-center gap-2 overflow-x-auto shrink-0 select-none">
-      <span class="text-[11px] text-[var(--color-text-muted)] shrink-0 font-medium">团队成员:</span>
+      <span class="text-2xs text-[var(--color-text-muted)] shrink-0 font-medium">团队成员:</span>
       <!-- Orchestrator Pill -->
-      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/10 text-blue-500 border border-blue-500/20">
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-semibold bg-blue-500/10 text-blue-500 border border-blue-500/20">
         <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="8" cy="8" r="3" />
         </svg>
@@ -339,7 +339,7 @@ function getRoleById(roleId?: number): FlowRole | null {
 
       <button
         type="button"
-        class="text-[11px] text-[var(--color-primary)] hover:underline ml-1 shrink-0 font-medium"
+        class="text-2xs text-[var(--color-primary)] hover:underline ml-1 shrink-0 font-medium"
         @click="showRoleManager = true"
       >
         + 配置角色

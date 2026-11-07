@@ -72,12 +72,12 @@ function onKeydown(e: KeyboardEvent) {
         ></textarea>
       </div>
 
-      <div v-if="localError" class="text-[11px] text-red-600 dark:text-red-400 truncate" :title="localError">
+      <div v-if="localError" class="text-2xs text-red-600 dark:text-red-400 truncate" :title="localError">
         {{ localError }}
       </div>
 
       <div class="flex items-center justify-between gap-1.5">
-        <span class="text-[11px] text-slate-400 tabular-nums">
+        <span class="text-2xs text-slate-400 tabular-nums">
           <template v-if="props.stagedCount > 0">
             已暂存 {{ props.stagedCount }} 个
           </template>

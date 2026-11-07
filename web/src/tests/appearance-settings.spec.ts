@@ -98,7 +98,7 @@ describe('AppearanceSettings', () => {
       .findAll('[data-density-option]')
       .map((option) => option.text())
 
-    expect(fontSizeTexts).toEqual(['小', '中', '大'])
+    expect(fontSizeTexts).toEqual(['小', '标准', '大'])
     expect(densityTexts).toEqual(['紧凑', '标准', '宽松'])
     expect([...fontSizeTexts, ...densityTexts].join(' ')).not.toMatch(/\d+\s*px/i)
   })
@@ -159,6 +159,18 @@ describe('AppearanceSettings', () => {
     expect(keys).toEqual(expect.arrayContaining(['density', 'fontSize', 'theme']))
     expect(put?.body).toMatchObject({ fontSize: 16 })
     expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('16px')
+  })
+
+  it('saves the small tier as 12px', async () => {
+    const calls = stubFetch()
+    const { wrapper } = await mountSettings()
+
+    await wrapper.find('[data-font-size-option="small"]').trigger('click')
+    await flushPromises()
+
+    const put = calls.find((call) => call.method === 'PUT')
+    expect(put?.body).toMatchObject({ fontSize: 12 })
+    expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('12px')
   })
 
   it('saves plantuml mode and server url changes', async () => {

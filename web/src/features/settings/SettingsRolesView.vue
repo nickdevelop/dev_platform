@@ -254,7 +254,7 @@ function goToPromptsSetting() {
     <!-- Header Summary Panel -->
     <header class="settings-head pb-4 border-b border-[var(--color-border)] flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <h1 class="text-[22px] font-semibold text-[var(--color-text)] tracking-tight">角色管理</h1>
+        <h1 class="text-2xl font-semibold text-[var(--color-text)] tracking-tight">角色管理</h1>
         <p class="text-xs text-[var(--color-text-muted)] mt-1">
           配置平台通用的智能体专家角色，统一绑定提示词与模型，供多 Agent 协同流程与智能工作流按需选用。
         </p>
@@ -311,7 +311,7 @@ function goToPromptsSetting() {
               <span class="text-sm font-semibold text-[var(--color-text)] truncate">
                 {{ role.name }}
               </span>
-              <span class="text-[11px] px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+              <span class="text-2xs px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
                 {{ role.backend }}
               </span>
             </div>
@@ -350,7 +350,7 @@ function goToPromptsSetting() {
 
         <!-- Referenced Prompt Snippet -->
         <div class="pt-2 border-t border-[var(--color-border)] text-xs space-y-1">
-          <div class="flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+          <div class="flex items-center justify-between text-2xs text-[var(--color-text-muted)]">
             <span class="flex items-center gap-1">
               <span class="font-medium text-[var(--color-text)]">提示词来源:</span>
               <span v-if="role.promptId" class="inline-flex items-center gap-1 text-[var(--color-primary)] font-medium">
@@ -364,7 +364,7 @@ function goToPromptsSetting() {
 
           <div
             v-if="role.systemPrompt"
-            class="text-[11px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2 rounded border border-[var(--color-border)] line-clamp-2"
+            class="text-2xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2 rounded border border-[var(--color-border)] line-clamp-2"
           >
             {{ role.systemPrompt }}
           </div>
@@ -477,7 +477,7 @@ function goToPromptsSetting() {
                 </label>
                 <button
                   type="button"
-                  class="text-[11px] text-[var(--color-primary)] hover:underline"
+                  class="text-2xs text-[var(--color-primary)] hover:underline"
                   @click="isCustomModel = !isCustomModel"
                 >
                   {{ isCustomModel ? '从候选列表选择' : '自定义输入' }}
@@ -571,7 +571,7 @@ function goToPromptsSetting() {
 
               <!-- Preview of selected prompt content -->
               <div v-if="selectedPromptPreview" class="space-y-1">
-                <span class="text-[11px] text-[var(--color-text-muted)]">提示词实时预览:</span>
+                <span class="text-2xs text-[var(--color-text-muted)]">提示词实时预览:</span>
                 <div class="text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-muted)] p-2.5 rounded border border-[var(--color-border)] max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed">
                   {{ selectedPromptPreview }}
                 </div>

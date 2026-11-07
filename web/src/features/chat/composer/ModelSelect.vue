@@ -282,7 +282,7 @@ function onKeydown(event: KeyboardEvent) {
   align-items: center;
   padding: 0.08rem 0.32rem;
   border-radius: 4px;
-  font-size: 0.7rem;
+  font-size: var(--text-size-meta);
   line-height: 1;
   font-weight: 500;
   background: var(--color-primary-soft, rgba(59, 130, 246, 0.15));
@@ -333,7 +333,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 .variants-title {
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   color: var(--color-text-muted);
 }
 
@@ -346,7 +346,7 @@ function onKeydown(event: KeyboardEvent) {
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   cursor: pointer;
   transition: all 0.12s ease;
 }
@@ -372,7 +372,7 @@ function onKeydown(event: KeyboardEvent) {
 
 .model-option-id {
   color: var(--color-text-muted);
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

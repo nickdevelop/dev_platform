@@ -140,7 +140,7 @@ async function submit() {
               />
               <span class="text-xs font-medium text-[var(--color-text)]">角色类 (Role)</span>
             </div>
-            <span class="text-[11px] text-[var(--color-text-muted)] mt-1 leading-normal">
+            <span class="text-2xs text-[var(--color-text-muted)] mt-1 leading-normal">
               定义智能体人设、思考范式与专业准则
             </span>
           </label>
@@ -163,7 +163,7 @@ async function submit() {
               />
               <span class="text-xs font-medium text-[var(--color-text)]">流程类 (Flow)</span>
             </div>
-            <span class="text-[11px] text-[var(--color-text-muted)] mt-1 leading-normal">
+            <span class="text-2xs text-[var(--color-text-muted)] mt-1 leading-normal">
               定义多步骤协同规范、任务拆解与工作流程
             </span>
           </label>
@@ -192,7 +192,7 @@ async function submit() {
           </label>
           <button
             type="button"
-            class="btn-insert-placeholder inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors"
+            class="btn-insert-placeholder inline-flex items-center gap-1 text-2xs font-mono px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors"
             title="在光标处插入占位符"
             data-test="btn-insert-placeholder"
             @click="insertPlaceholder"
@@ -200,7 +200,7 @@ async function submit() {
             <span>+ 插入 {user_prompt} 占位符</span>
           </button>
         </div>
-        <p class="field-hint text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+        <p class="field-hint text-2xs text-[var(--color-text-muted)] leading-relaxed">
           可使用 <code>{user_prompt}</code> 作为变量槽。在实际创建会话或触发任务时，用户的输入消息将自动填充该位置。
         </p>
         <textarea

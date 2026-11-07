@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))
 
-	input := Appearance{Theme: "warm", FontSize: 18, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
+	input := Appearance{Theme: "warm", FontSize: 16, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
 	saved, err := svc.SetAppearance(input)
 	if err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -65,6 +66,38 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	}
 }
 
+func TestAppearanceNormalizesLegacyFontSizes(t *testing.T) {
+	cases := []struct {
+		stored int
+		want   int
+	}{
+		{12, 12},
+		{13, 12},
+		{14, 14},
+		{15, 14},
+		{16, 16},
+		{18, 16},
+		{20, 16},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%d", tc.stored), func(t *testing.T) {
+			db := openTestDB(t)
+			stored := fmt.Sprintf(`{"theme":"light","fontSize":%d,"density":"standard"}`, tc.stored)
+			if err := db.Save(&database.Setting{Key: appearanceKey, Value: stored}).Error; err != nil {
+				t.Fatalf("store legacy appearance: %v", err)
+			}
+
+			got, err := NewService(db, testCatalog(t)).Appearance()
+			if err != nil {
+				t.Fatalf("Appearance: %v", err)
+			}
+			if got.FontSize != tc.want {
+				t.Errorf("Appearance().FontSize = %d, want %d", got.FontSize, tc.want)
+			}
+		})
+	}
+}
+
 func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 	svc := NewService(openTestDB(t), testCatalog(t))
 	valid := DefaultAppearance()
@@ -78,6 +111,8 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 		{"density", func(a *Appearance) { a.Density = "huge" }},
 		{"font size low", func(a *Appearance) { a.FontSize = 11 }},
 		{"font size high", func(a *Appearance) { a.FontSize = 21 }},
+		{"font size not a preset", func(a *Appearance) { a.FontSize = 13 }},
+		{"font size retired 18", func(a *Appearance) { a.FontSize = 18 }},
 		{"plantuml mode", func(a *Appearance) { a.PlantumlMode = "invalid_mode" }},
 	}
 	for _, tc := range cases {

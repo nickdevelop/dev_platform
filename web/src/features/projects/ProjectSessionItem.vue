@@ -120,11 +120,11 @@ const modelLabel = computed(() => {
     </div>
 
     <!-- Row 2: Model tag on the left, right-aligned time and delete action on the right -->
-    <div class="session-row-bottom flex items-center justify-between gap-1 text-[11px] text-platform-text-muted">
+    <div class="session-row-bottom flex items-center justify-between gap-1 text-2xs text-platform-text-muted">
       <div class="session-bottom-left flex items-center gap-1.5 min-w-0">
         <span
           v-if="modelLabel"
-          class="session-model text-[10px] px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
+          class="session-model text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
           :title="modelFull"
           data-test="session-model"
         >
@@ -133,7 +133,7 @@ const modelLabel = computed(() => {
       </div>
       <div class="session-bottom-right flex items-center gap-1 shrink-0 ml-auto">
         <span
-          class="session-time font-mono text-[10px] shrink-0"
+          class="session-time font-mono text-3xs shrink-0"
           :title="formatFullTime(session.updatedAt)"
         >
           {{ formatSessionTime(session.updatedAt) }}
@@ -170,7 +170,7 @@ const modelLabel = computed(() => {
   align-items: center;
   justify-content: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
+  font-size: var(--text-size-10);
   font-weight: 700;
   line-height: 1;
   padding: 1.5px 3.5px;

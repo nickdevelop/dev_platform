@@ -162,7 +162,7 @@ async function submit() {
         />
         <code class="text-xs text-slate-400 select-none">/</code>
       </div>
-      <p class="text-[11px] text-slate-400">
+      <p class="text-2xs text-slate-400">
         访问路径前缀，仅限小写英文、数字与横线。外部访问链接将形如 <code>http://host:port/proxy/{{ alias || 'demo' }}/</code>
       </p>
     </div>
@@ -201,7 +201,7 @@ async function submit() {
         <label for="dlg-proxy-project" class="text-xs font-medium text-slate-700 dark:text-slate-300">
           从已有项目选取（快捷填入）
         </label>
-        <span class="text-[11px] text-slate-400">选择后自动带出项目目录</span>
+        <span class="text-2xs text-slate-400">选择后自动带出项目目录</span>
       </div>
       <UiSelect id="dlg-proxy-project" v-model="selectedProjectId" block @change="onProjectSelected">
         <option value="">选择项目…</option>
@@ -210,12 +210,12 @@ async function submit() {
         </option>
       </UiSelect>
       <div v-if="target" class="flex items-center gap-1 mt-1 flex-wrap">
-        <span class="text-[11px] text-slate-400">追加常用构建子目录：</span>
+        <span class="text-2xs text-slate-400">追加常用构建子目录：</span>
         <button
           v-for="sub in ['dist', 'build', 'public', 'out']"
           :key="sub"
           type="button"
-          class="text-[11px] px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-blue-400 text-slate-600 dark:text-slate-300 transition-colors"
+          class="text-2xs px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-blue-400 text-slate-600 dark:text-slate-300 transition-colors"
           @click="appendSubdir(sub)"
         >
           + /{{ sub }}
@@ -248,7 +248,7 @@ async function submit() {
           浏览目录…
         </UiButton>
       </div>
-      <p class="text-[11px] text-slate-400">
+      <p class="text-2xs text-slate-400">
         {{ type === 'directory'
           ? '服务器上生成的静态 HTML/构建产物所在的绝对路径。可点击“浏览目录…”选择服务器文件夹。'
           : '服务器本地回环（127.0.0.1）上运行的 HTTP 端口。支持 WebSocket 双向转发（满足 Vite HMR 热更新）。'

@@ -542,7 +542,7 @@ function formatChatTime(isoString?: string): string {
 }
 
 .item-time {
-  font-size: 0.6875rem;
+  font-size: var(--text-size-caption);
   color: var(--color-text-muted, #94a3b8);
 }
 
@@ -625,7 +625,7 @@ function formatChatTime(isoString?: string): string {
 }
 
 .no-more-text {
-  font-size: 0.6875rem;
+  font-size: var(--text-size-caption);
   color: var(--color-text-muted, #94a3b8);
   text-align: center;
   padding: 4px 0;

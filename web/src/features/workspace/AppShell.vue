@@ -990,7 +990,7 @@ watch(
 }
 
 .sidebar-head h2 {
-  font-size: 13px;
+  font-size: var(--text-size-13);
   font-weight: 600;
   letter-spacing: 0.2px;
   color: var(--color-text);
@@ -1015,7 +1015,7 @@ watch(
   border-radius: var(--radius, 4px);
   padding: 0 8px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-size-12);
   font-weight: 500;
   transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
 }
@@ -1035,7 +1035,7 @@ watch(
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-size-12);
   box-sizing: border-box;
   outline: none;
   transition: border-color 0.12s ease-out;

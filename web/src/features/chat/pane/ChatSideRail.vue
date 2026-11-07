@@ -63,7 +63,7 @@ defineProps<{
   margin-bottom: 2px;
   width: 12px;
   color: var(--color-text-muted);
-  font-size: 0.6rem;
+  font-size: var(--text-size-caption);
   line-height: 1.5;
   text-align: center;
   word-break: break-all;
@@ -129,7 +129,7 @@ defineProps<{
 .chat-side-rail :slotted(.rail-text) {
   width: 1em;
   color: inherit;
-  font-size: 10px;
+  font-size: var(--text-size-10);
   line-height: 1.35;
   letter-spacing: 0;
   text-align: center;

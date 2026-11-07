@@ -119,7 +119,7 @@ async function handleMarkdownClick(event: MouseEvent) {
         <circle cx="8" cy="11" r="0.8" fill="currentColor" />
       </svg>
       <span>{{ message.content }}</span>
-      <span class="text-[10px] opacity-70 ml-1">{{ formatTime(message.createdAt) }}</span>
+      <span class="text-3xs opacity-70 ml-1">{{ formatTime(message.createdAt) }}</span>
     </div>
   </div>
 
@@ -174,7 +174,7 @@ async function handleMarkdownClick(event: MouseEvent) {
         <template v-if="!isUser">
           <span v-if="isOrchestrator" class="font-semibold text-blue-500 flex items-center gap-1">
             <span>平台中控</span>
-            <span class="text-[10px] px-1 py-0.2 rounded bg-blue-500/10 border border-blue-500/20 font-mono">AI内置大脑</span>
+            <span class="text-3xs px-1 py-0.2 rounded bg-blue-500/10 border border-blue-500/20 font-mono">AI内置大脑</span>
           </span>
           <FlowRoleBadge
             v-else
@@ -182,7 +182,7 @@ async function handleMarkdownClick(event: MouseEvent) {
             :name="message.senderName"
           />
         </template>
-        <span class="time-stamp text-[11px] tabular-nums font-mono opacity-80">
+        <span class="time-stamp text-2xs tabular-nums font-mono opacity-80">
           {{ formatTime(message.createdAt) }}
         </span>
         <span
@@ -326,7 +326,7 @@ async function handleMarkdownClick(event: MouseEvent) {
   border-radius: var(--radius, 6px);
   border: 1px solid var(--color-border, #282e3d);
   font-family: var(--font-mono, monospace);
-  font-size: 11.5px;
+  font-size: var(--text-size-12);
   line-height: 1.45;
   overflow-x: auto;
 }
@@ -360,7 +360,7 @@ async function handleMarkdownClick(event: MouseEvent) {
   align-items: center;
   gap: 0.25rem;
   padding: 0.2rem 0.45rem;
-  font-size: 0.72rem;
+  font-size: var(--text-size-meta);
   line-height: 1;
   color: var(--color-text-muted);
   background: var(--color-surface);
