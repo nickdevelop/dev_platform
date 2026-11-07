@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// Appearance settings section: theme palette, font size and interface density.
+// Appearance settings section: theme palette and font size.
 // Types of font face are built-in (Google Sans Code + Noto Sans SC).
 // Every change applies immediately and syncs with the server.
 // Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
 // flat surfaces, zero resting shadows, precise tactile swatches, accessible controls).
 import { onMounted } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
-import { densities, fontSizes, resolveFontSizeKey, themes } from '../../theme/presets'
+import { fontSizes, resolveFontSizeKey, themes } from '../../theme/presets'
 import { UiAlert, UiInput } from '../../shared/ui'
 
 const settings = useSettingsStore()
@@ -22,10 +22,6 @@ function selectTheme(key: string) {
 
 function selectFontSize(value: number) {
   if (settings.appearance.fontSize !== value) void settings.saveAppearance({ fontSize: value })
-}
-
-function selectDensity(key: string) {
-  if (settings.appearance.density !== key) void settings.saveAppearance({ density: key })
 }
 
 function selectPlantumlMode(mode: 'local' | 'online') {
@@ -49,7 +45,7 @@ async function toggleQuickAssistant(event: Event) {
     <header class="settings-head pb-4 border-b border-slate-200 dark:border-slate-800">
       <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">外观</h1>
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-        自定义工作台的主题配色、显示字号、界面密度以及 PlantUML 架构图渲染方式。
+        自定义工作台的主题配色、显示字号以及 PlantUML 架构图渲染方式。
       </p>
     </header>
 
@@ -137,32 +133,6 @@ async function toggleQuickAssistant(event: Event) {
       </div>
     </fieldset>
 
-    <!-- Density -->
-    <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
-      <div class="group-header">
-        <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">界面密度</legend>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">调整工作台边距、列表高度与控件尺寸，紧凑模式利于高信息密度作业。</p>
-      </div>
-
-      <div class="density-row flex flex-wrap gap-2.5">
-        <button
-          v-for="density in densities"
-          :key="density.key"
-          type="button"
-          class="density-option flex-1 min-w-[90px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
-          :class="[
-            settings.appearance.density === density.key
-              ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'
-              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300',
-          ]"
-          :data-density-option="density.key"
-          @click="selectDensity(density.key)"
-        >
-          <div class="text-xs">{{ density.label }}</div>
-        </button>
-      </div>
-    </fieldset>
-
     <!-- PlantUML Rendering Mode -->
     <fieldset class="setting-group p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
       <div class="group-header">
@@ -170,10 +140,10 @@ async function toggleQuickAssistant(event: Event) {
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">对话或文档中的时序图与架构图渲染引擎设置，支持内建本地离线生成或私有服务器。</p>
       </div>
 
-      <div class="density-row flex flex-wrap gap-2.5">
+      <div class="mode-row flex flex-wrap gap-2.5">
         <button
           type="button"
-          class="density-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
+          class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
             (settings.appearance.plantumlMode || 'local') === 'local'
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'
@@ -187,7 +157,7 @@ async function toggleQuickAssistant(event: Event) {
         </button>
         <button
           type="button"
-          class="density-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
+          class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
             settings.appearance.plantumlMode === 'online'
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'

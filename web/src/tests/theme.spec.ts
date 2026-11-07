@@ -4,7 +4,7 @@
 // applying an appearance never reaches for a remote stylesheet.
 import { afterEach, describe, expect, it } from 'vitest'
 import { applyAppearance, CACHE_KEY } from '../theme/apply'
-import { densities, fontSizes, resolveFontSizeKey, themes } from '../theme/presets'
+import { fontSizes, resolveFontSizeKey, themes } from '../theme/presets'
 
 afterEach(() => {
   const root = document.documentElement
@@ -17,9 +17,8 @@ afterEach(() => {
 })
 
 describe('theme presets', () => {
-  it('offers three light-based themes and three densities', () => {
+  it('offers three light-based themes', () => {
     expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool'])
-    expect(densities.map((d) => d.key)).toEqual(['compact', 'standard', 'relaxed'])
   })
 
   it('offers three font size tiers of 12 / 14 / 16 px', () => {
@@ -37,30 +36,39 @@ describe('theme presets', () => {
 })
 
 describe('applyAppearance', () => {
-  it('sets theme, density and font size on the root element', () => {
-    applyAppearance({ theme: 'warm', fontSize: 16, density: 'compact' })
+  it('sets theme and font size on the root element', () => {
+    applyAppearance({ theme: 'warm', fontSize: 16 })
 
     const root = document.documentElement
     expect(root.dataset.theme).toBe('warm')
-    expect(root.dataset.density).toBe('compact')
+    expect(root.dataset.density).toBeUndefined()
     expect(root.style.getPropertyValue('--font-size-base')).toBe('16px')
   })
 
+  it('leaves the fixed layout tokens to the stylesheet', () => {
+    applyAppearance({ theme: 'light', fontSize: 14 })
+
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--space-unit')).toBe('')
+    expect(root.style.getPropertyValue('--control-height')).toBe('')
+    expect(root.style.getPropertyValue('--radius')).toBe('')
+  })
+
   it('falls back to light when an unknown or removed theme is provided', () => {
-    applyAppearance({ theme: 'dark', fontSize: 14, density: 'standard' })
+    applyAppearance({ theme: 'dark', fontSize: 14 })
 
     const root = document.documentElement
     expect(root.dataset.theme).toBe('light')
   })
 
   it('leaves the built-in font family alone', () => {
-    applyAppearance({ theme: 'light', fontSize: 14, density: 'standard' })
+    applyAppearance({ theme: 'light', fontSize: 14 })
 
     expect(document.documentElement.style.getPropertyValue('--font-family')).toBe('')
   })
 
   it('adds no stylesheet link', () => {
-    applyAppearance({ theme: 'light', fontSize: 14, density: 'standard' })
+    applyAppearance({ theme: 'light', fontSize: 14 })
 
     expect(document.head.querySelectorAll('link')).toHaveLength(0)
   })

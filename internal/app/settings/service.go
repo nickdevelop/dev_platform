@@ -36,7 +36,6 @@ var ErrInvalidAppearance = errors.New("settings: invalid appearance")
 type Appearance struct {
 	Theme             string `json:"theme"`
 	FontSize          int    `json:"fontSize"`
-	Density           string `json:"density"`
 	PlantumlMode      string `json:"plantumlMode"`
 	PlantumlServerURL string `json:"plantumlServerUrl"`
 }
@@ -46,7 +45,6 @@ func DefaultAppearance() Appearance {
 	return Appearance{
 		Theme:             "light",
 		FontSize:          14,
-		Density:           "standard",
 		PlantumlMode:      "local",
 		PlantumlServerURL: "https://www.plantuml.com/plantuml",
 	}
@@ -67,7 +65,6 @@ func DefaultQuickAssistant() QuickAssistant {
 // Allowed values. The frontend's presets mirror these lists.
 var (
 	validThemes        = map[string]bool{"light": true, "warm": true, "cool": true}
-	validDensities     = map[string]bool{"compact": true, "standard": true, "relaxed": true}
 	validPlantumlModes = map[string]bool{"local": true, "online": true}
 	presetFontSizes    = map[int]bool{12: true, 14: true, 16: true}
 )
@@ -93,9 +90,6 @@ func (a *Appearance) Validate() error {
 	}
 	if !presetFontSizes[a.FontSize] {
 		return fmt.Errorf("%w: font size %d", ErrInvalidAppearance, a.FontSize)
-	}
-	if !validDensities[a.Density] {
-		return fmt.Errorf("%w: density %q", ErrInvalidAppearance, a.Density)
 	}
 	if a.PlantumlMode == "" {
 		a.PlantumlMode = "local"

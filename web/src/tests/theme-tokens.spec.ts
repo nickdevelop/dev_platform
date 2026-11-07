@@ -1,7 +1,7 @@
 // Guard for the theme token layer: every CSS custom property the UI consumes
 // through var() must be defined somewhere — the global stylesheet, a component's
-// own <style> block, or the appearance layer that projects the palette and
-// density onto the document root.
+// own <style> block, or the appearance layer that projects the palette onto the
+// document root.
 //
 // A var() with no definition silently falls back to its ad-hoc literal (or to
 // nothing), which is exactly how the tasks feature stayed dark on a light theme:
@@ -27,8 +27,8 @@ function walk(dir: string): string[] {
 }
 
 const sources = walk(srcDir).map((file) => ({ file, text: readFileSync(file, 'utf8') }))
-// apply.ts holds the theme palette and density: its quoted strings are the
-// variable names the appearance projection writes at runtime.
+// apply.ts holds the theme palette: its quoted strings are the variable names
+// the appearance projection writes at runtime.
 const applySource = readFileSync(resolve(srcDir, 'theme/apply.ts'), 'utf8')
 
 const DEFINED_IN_APPLY = /'--[a-z0-9-]+'/g
@@ -79,5 +79,15 @@ describe('theme tokens', () => {
     })
 
     expect(hardCoded).toEqual([])
+  })
+
+  it('freezes the layout tokens at the former compact tier', () => {
+    // Interface density is no longer a setting, so these three tokens are the
+    // single layout scale. Pin them here so a future change to style.css is a
+    // deliberate decision rather than an accidental drift.
+    const style = sources.find(({ file }) => file.endsWith('/style.css'))?.text ?? ''
+    expect(style).toMatch(/--space-unit:\s*4px/)
+    expect(style).toMatch(/--control-height:\s*28px/)
+    expect(style).toMatch(/--radius:\s*3px/)
   })
 })

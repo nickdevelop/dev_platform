@@ -1,7 +1,7 @@
 // Tests for the appearance settings section: it renders every preset, saves a
 // change through the API and applies it to the document, and keeps the last
-// good value when the save fails. The font face is built in, so the section
-// offers no control for it.
+// good value when the save fails. The font face is built in and interface
+// density is no longer a setting, so the section offers no control for either.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -13,7 +13,8 @@ import { useSettingsStore } from '../stores/settings'
 const defaultAppearance = {
   theme: 'light',
   fontSize: 14,
-  density: 'standard',
+  plantumlMode: 'local',
+  plantumlServerUrl: 'https://www.plantuml.com/plantuml',
 }
 
 function stubFetch(putStatus = 200) {
@@ -60,7 +61,6 @@ async function mountSettings() {
 beforeEach(() => {
   localStorage.clear()
   document.documentElement.removeAttribute('data-theme')
-  document.documentElement.removeAttribute('data-density')
 })
 
 afterEach(() => {
@@ -68,17 +68,16 @@ afterEach(() => {
 })
 
 describe('AppearanceSettings', () => {
-  it('renders every theme and density option and no font control', async () => {
+  it('renders every theme option and no font or density control', async () => {
     stubFetch()
     const { wrapper } = await mountSettings()
 
     expect(wrapper.findAll('[data-theme-option]')).toHaveLength(3)
     expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-density-option]')).toHaveLength(3)
+    expect(wrapper.findAll('[data-density-option]')).toHaveLength(0)
     expect(wrapper.findAll('legend').map((legend) => legend.text())).toEqual([
       '主题配色',
       '字号',
-      '界面密度',
       'PlantUML 渲染模式',
       '快捷助手',
     ])
@@ -87,20 +86,16 @@ describe('AppearanceSettings', () => {
     expect(wrapper.find('[data-custom-font]').exists()).toBe(false)
   })
 
-  it('shows font size and density as labels without pixel values', async () => {
+  it('shows font size as labels without pixel values', async () => {
     stubFetch()
     const { wrapper } = await mountSettings()
 
     const fontSizeTexts = wrapper
       .findAll('[data-font-size-option]')
       .map((option) => option.text())
-    const densityTexts = wrapper
-      .findAll('[data-density-option]')
-      .map((option) => option.text())
 
     expect(fontSizeTexts).toEqual(['小', '标准', '大'])
-    expect(densityTexts).toEqual(['紧凑', '标准', '宽松'])
-    expect([...fontSizeTexts, ...densityTexts].join(' ')).not.toMatch(/\d+\s*px/i)
+    expect(fontSizeTexts.join(' ')).not.toMatch(/\d+\s*px/i)
   })
 
   it('toggles the quick assistant feature through its own setting', async () => {
@@ -156,7 +151,7 @@ describe('AppearanceSettings', () => {
 
     const put = calls.find((call) => call.method === 'PUT')
     const keys = Object.keys(put?.body as object).sort()
-    expect(keys).toEqual(expect.arrayContaining(['density', 'fontSize', 'theme']))
+    expect(keys).toEqual(['fontSize', 'plantumlMode', 'plantumlServerUrl', 'theme'])
     expect(put?.body).toMatchObject({ fontSize: 16 })
     expect(document.documentElement.style.getPropertyValue('--font-size-base')).toBe('16px')
   })

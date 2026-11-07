@@ -42,7 +42,7 @@ func TestAppearanceHandlerGetReturnsDefault(t *testing.T) {
 func TestAppearanceHandlerPutPersists(t *testing.T) {
 	router, svc := newAppearanceRouter(t)
 
-	body := `{"theme":"warm","fontSize":16,"density":"relaxed"}`
+	body := `{"theme":"warm","fontSize":16}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/appearance", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -55,16 +55,16 @@ func TestAppearanceHandlerPutPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
+	want := Appearance{Theme: "warm", FontSize: 16, PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if stored != want {
 		t.Errorf("stored = %+v, want %+v", stored, want)
 	}
 }
 
-// A page loaded before the font became built-in still PUTs font and
-// customFont; the API accepts the request, ignores those keys and answers
-// without them.
-func TestAppearanceHandlerPutIgnoresFontFields(t *testing.T) {
+// A page loaded before the font became built-in and before interface density
+// was removed still PUTs font, customFont and density; the API accepts the
+// request, ignores those keys and answers without them.
+func TestAppearanceHandlerPutIgnoresRetiredFields(t *testing.T) {
 	router, svc := newAppearanceRouter(t)
 
 	body := `{"theme":"warm","font":"serif","customFont":"Fira Code","fontSize":16,"density":"relaxed"}`
@@ -76,7 +76,7 @@ func TestAppearanceHandlerPutIgnoresFontFields(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PUT status = %d, want %d (body %s)", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	for _, key := range []string{`"font"`, `"customFont"`} {
+	for _, key := range []string{`"font"`, `"customFont"`, `"density"`} {
 		if strings.Contains(rec.Body.String(), key) {
 			t.Errorf("response body %s contains %s", rec.Body.String(), key)
 		}
@@ -85,7 +85,7 @@ func TestAppearanceHandlerPutIgnoresFontFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "warm", FontSize: 16, Density: "relaxed", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
+	want := Appearance{Theme: "warm", FontSize: 16, PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if stored != want {
 		t.Errorf("stored = %+v, want %+v", stored, want)
 	}
@@ -95,7 +95,7 @@ func TestAppearanceHandlerPutRejectsInvalid(t *testing.T) {
 	router, _ := newAppearanceRouter(t)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/settings/appearance", strings.NewReader(`{"theme":"neon","fontSize":14,"density":"standard"}`))
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/appearance", strings.NewReader(`{"theme":"neon","fontSize":14}`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 

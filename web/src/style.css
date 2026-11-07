@@ -8,9 +8,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global appearance tokens. The theme palette and density are projected onto
-   the document root by src/theme/apply.ts; the values here are the light /
-   standard defaults used for the pre-JS first paint and as fallbacks. */
+/* Global appearance tokens. The theme palette is projected onto the document
+   root by src/theme/apply.ts; the values here are the light defaults used for
+   the pre-JS first paint and as fallbacks. */
 :root {
   --color-bg: #f4f5f7;
   --color-surface: #ffffff;
@@ -66,9 +66,12 @@
   --text-size-caption: max(9.5px, 0.6875rem);
   --text-size-meta: max(10px, 0.72rem);
 
-  --space-unit: 6px;
-  --control-height: 34px;
-  --radius: 6px;
+  /* Layout tokens are fixed: the settings center no longer offers a layout
+     scale choice. They keep the former compact preset (4px / 28px / 3px) so the
+     platform stays on the compact, high-information layout. */
+  --space-unit: 4px;
+  --control-height: 28px;
+  --radius: 3px;
 }
 
 /* The shell owns the viewport: the document itself must never scroll, so each

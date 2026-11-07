@@ -124,7 +124,7 @@ describe('settings and model API contracts', () => {
     expect(calls[0].init?.method).toBe('GET')
     expect(headersOf(calls[0])['X-CSRF-Token']).toBeUndefined()
 
-    await putAppearance({ theme: 'light', fontSize: 14, density: 'standard' })
+    await putAppearance({ theme: 'light', fontSize: 14 })
     expect(calls[1].url).toBe('/api/settings/appearance')
     expect(calls[1].init?.method).toBe('PUT')
     expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)

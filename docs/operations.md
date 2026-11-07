@@ -222,7 +222,7 @@ Windows 不做 ACL 收紧：`secrets.json`（明文）、数据库、锁文件�
 
 Open **设置** (Settings) from the left rail. It has three sections:
 
-- **外观 (Appearance)** — theme, font, font size and interface density. The
+- **外观 (Appearance)** — theme and font size. The
   configuration is shared platform state and is applied on the next page load;
   other already-open pages pick it up on refresh.
 - **模型 (Models)** — OpenAI-compatible model services and their models, with

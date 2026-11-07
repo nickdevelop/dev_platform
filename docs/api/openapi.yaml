@@ -6068,7 +6068,7 @@ components:
         Shared visual configuration. The type of face is not part of it: the UI
         bundles Google Sans Code (Latin text, digits, code) and Noto Sans SC
         (Chinese) and always uses them.
-      required: [theme, fontSize, density]
+      required: [theme, fontSize]
       properties:
         theme:
           type: string
@@ -6079,8 +6079,6 @@ components:
             UI font size tier: small 12, standard 14, large 16. Reads fold
             legacy 12–20 values onto the nearest preset; writes only accept
             these three values.
-        density:
-          type: string
       additionalProperties: false
     QuickAssistant:
       type: object

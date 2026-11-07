@@ -1,15 +1,14 @@
-// Appearance presets: the single source of truth for the theme palettes and
-// density scales the settings UI offers. applyAppearance projects these onto the
-// document's CSS custom properties, so adding a preset here and a label is all
-// it takes to make it selectable. The type of face is not a preset: the UI
-// bundles Google Sans Code and Noto Sans SC (src/fonts) and always uses them.
+// Appearance presets: the single source of truth for the theme palettes the
+// settings UI offers. applyAppearance projects these onto the document's CSS
+// custom properties, so adding a preset here and a label is all it takes to
+// make it selectable. The type of face is not a preset: the UI bundles Google
+// Sans Code and Noto Sans SC (src/fonts) and always uses them.
 
 // Appearance is the shared visual configuration. It mirrors the server's
 // settings.Appearance DTO; api/settings.ts re-exports it.
 export interface Appearance {
   theme: string
   fontSize: number
-  density: string
   plantumlMode?: 'local' | 'online'
   plantumlServerUrl?: string
 }
@@ -57,14 +56,6 @@ export interface ThemePreset {
   // dark, and asking it to guess per palette would drift.
   dark: boolean
   colors: ThemeColors
-}
-
-export interface DensityPreset {
-  key: string
-  label: string
-  spaceUnit: string
-  controlHeight: string
-  radius: string
 }
 
 export const themes: ThemePreset[] = [
@@ -180,12 +171,6 @@ export const themes: ThemePreset[] = [
 export function isDarkTheme(key: string): boolean {
   return key === 'dark' || themes.find((theme) => theme.key === key)?.dark === true
 }
-
-export const densities: DensityPreset[] = [
-  { key: 'compact', label: '紧凑', spaceUnit: '4px', controlHeight: '28px', radius: '3px' },
-  { key: 'standard', label: '标准', spaceUnit: '6px', controlHeight: '34px', radius: '4px' },
-  { key: 'relaxed', label: '宽松', spaceUnit: '8px', controlHeight: '40px', radius: '6px' },
-]
 
 export interface FontSizePreset {
   key: 'small' | 'medium' | 'large'

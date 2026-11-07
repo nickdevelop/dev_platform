@@ -48,7 +48,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))
 
-	input := Appearance{Theme: "warm", FontSize: 16, Density: "compact", PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
+	input := Appearance{Theme: "warm", FontSize: 16, PlantumlMode: "online", PlantumlServerURL: "https://custom.plantuml.net"}
 	saved, err := svc.SetAppearance(input)
 	if err != nil {
 		t.Fatalf("SetAppearance: %v", err)
@@ -82,7 +82,7 @@ func TestAppearanceNormalizesLegacyFontSizes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("%d", tc.stored), func(t *testing.T) {
 			db := openTestDB(t)
-			stored := fmt.Sprintf(`{"theme":"light","fontSize":%d,"density":"standard"}`, tc.stored)
+			stored := fmt.Sprintf(`{"theme":"light","fontSize":%d}`, tc.stored)
 			if err := db.Save(&database.Setting{Key: appearanceKey, Value: stored}).Error; err != nil {
 				t.Fatalf("store legacy appearance: %v", err)
 			}
@@ -108,7 +108,6 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 	}{
 		{"theme", func(a *Appearance) { a.Theme = "neon" }},
 		{"theme dark removed", func(a *Appearance) { a.Theme = "dark" }},
-		{"density", func(a *Appearance) { a.Density = "huge" }},
 		{"font size low", func(a *Appearance) { a.FontSize = 11 }},
 		{"font size high", func(a *Appearance) { a.FontSize = 21 }},
 		{"font size not a preset", func(a *Appearance) { a.FontSize = 13 }},
@@ -135,9 +134,9 @@ func TestSetAppearanceRejectsInvalidValues(t *testing.T) {
 	}
 }
 
-// The type of face is built into the UI, not operator-selectable, so the
-// stored blob must stop carrying font fields.
-func TestStoredAppearanceHasNoFontFields(t *testing.T) {
+// The type of face is built into the UI and interface density is no longer a
+// setting, so the stored blob must stop carrying their fields.
+func TestStoredAppearanceHasNoRetiredFields(t *testing.T) {
 	db := openTestDB(t)
 	svc := NewService(db, testCatalog(t))
 
@@ -149,29 +148,49 @@ func TestStoredAppearanceHasNoFontFields(t *testing.T) {
 	if err := db.Where("key = ?", appearanceKey).First(&row).Error; err != nil {
 		t.Fatalf("load stored row: %v", err)
 	}
-	for _, key := range []string{`"font"`, `"customFont"`} {
+	for _, key := range []string{`"font"`, `"customFont"`, `"density"`} {
 		if strings.Contains(row.Value, key) {
 			t.Errorf("stored appearance %s contains %s", row.Value, key)
 		}
 	}
 }
 
-// Blobs saved while the font was still selectable carry font and customFont;
-// loading one must ignore those keys instead of failing.
-func TestAppearanceIgnoresStoredFontFields(t *testing.T) {
+// Blobs saved while the font and interface density were still settings carry
+// font, customFont and density; loading one must ignore those keys instead of
+// failing, and the next save must rewrite the blob without them.
+func TestAppearanceIgnoresStoredRetiredFields(t *testing.T) {
 	db := openTestDB(t)
 	stored := `{"theme":"cool","font":"mono","customFont":"Fira Code","fontSize":16,"density":"compact"}`
 	if err := db.Save(&database.Setting{Key: appearanceKey, Value: stored}).Error; err != nil {
 		t.Fatalf("store legacy appearance: %v", err)
 	}
 
-	got, err := NewService(db, testCatalog(t)).Appearance()
+	svc := NewService(db, testCatalog(t))
+	got, err := svc.Appearance()
 	if err != nil {
 		t.Fatalf("Appearance: %v", err)
 	}
-	want := Appearance{Theme: "cool", FontSize: 16, Density: "compact", PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
+	want := Appearance{Theme: "cool", FontSize: 16, PlantumlMode: "local", PlantumlServerURL: "https://www.plantuml.com/plantuml"}
 	if got != want {
 		t.Errorf("Appearance() = %+v, want %+v", got, want)
+	}
+
+	saved, err := svc.SetAppearance(got)
+	if err != nil {
+		t.Fatalf("SetAppearance: %v", err)
+	}
+	if saved != want {
+		t.Errorf("SetAppearance returned %+v, want %+v", saved, want)
+	}
+
+	var row database.Setting
+	if err := db.Where("key = ?", appearanceKey).First(&row).Error; err != nil {
+		t.Fatalf("load stored row: %v", err)
+	}
+	for _, key := range []string{`"font"`, `"customFont"`, `"density"`} {
+		if strings.Contains(row.Value, key) {
+			t.Errorf("stored appearance %s contains %s", row.Value, key)
+		}
 	}
 }
 

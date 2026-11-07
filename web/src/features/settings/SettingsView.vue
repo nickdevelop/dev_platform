@@ -2,7 +2,7 @@
 // Settings center pane wrapper: with category links living in the shell's
 // middle column (SettingsNav.vue), this component hosts the active section
 // inside a framed canvas following the app-screens guidelines (framed-sheet style,
-// medium density, 24px pad, clean section rhythm, zero resting shadows).
+// compact rhythm, 24px pad, clean section rhythm, zero resting shadows).
 import { RouterView } from 'vue-router'
 </script>
 

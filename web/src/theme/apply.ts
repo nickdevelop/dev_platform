@@ -1,9 +1,10 @@
 // applyAppearance projects an Appearance config onto the document root: the
-// theme palette and density become inline CSS custom properties and the font
-// size becomes the root variable. style.css carries the same defaults for the
-// pre-JS first paint, and owns the font family — the faces are built into the
-// build (src/fonts), so applying an appearance never reaches for a stylesheet.
-import { densities, themes, type Appearance, type ThemeColors } from './presets'
+// theme palette becomes inline CSS custom properties and the font size becomes
+// the root variable. style.css carries the same defaults for the pre-JS first
+// paint, and owns the font family and the fixed layout tokens — the faces are
+// built into the build (src/fonts), so applying an appearance never reaches for
+// a stylesheet.
+import { themes, type Appearance, type ThemeColors } from './presets'
 
 // CACHE_KEY is where the last applied appearance is cached so the next page
 // load can paint with it before the server responds.
@@ -45,15 +46,9 @@ export function applyAppearance(appearance: Appearance): void {
   const theme = themes.find((entry) => entry.key === appearance.theme) ?? themes[0]
   const root = document.documentElement
   root.dataset.theme = theme.key
-  root.dataset.density = appearance.density
   for (const [field, variable] of Object.entries(colorVariables) as [keyof ThemeColors, string][]) {
     root.style.setProperty(variable, theme.colors[field])
   }
-
-  const density = densities.find((entry) => entry.key === appearance.density) ?? densities[1]
-  root.style.setProperty('--space-unit', density.spaceUnit)
-  root.style.setProperty('--control-height', density.controlHeight)
-  root.style.setProperty('--radius', density.radius)
 
   root.style.setProperty('--font-size-base', `${appearance.fontSize}px`)
 }
