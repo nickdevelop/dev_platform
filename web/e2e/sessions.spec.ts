@@ -15,6 +15,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { createSession } from './support/project-workbench'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
@@ -50,19 +51,6 @@ function sessionRow(page: Page, title: string) {
   return page.locator('.session', { hasText: title })
 }
 
-// createSession opens the project's new-session form from the tree, chooses the agent
-// backend, and waits for the session to appear.
-async function createSession(page: Page, backendName: string, title: string) {
-  // Scoped to the selected project row: the tree renders one ＋ per
-  // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-session').click()
-  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
-  await page.locator(`[data-test="agent-switch"] [data-backend="${backendName}"]`).click()
-  await page.locator('#first-message').fill(title)
-  await page.locator('form.create-session button.create').click()
-  await expect(sessionRow(page, title)).toBeVisible()
-}
-
 test('isolates streamed events and interrupts one turn across agent instances', async ({ page, request }) => {
   test.slow()
 
@@ -76,24 +64,21 @@ test('isolates streamed events and interrupts one turn across agent instances', 
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  const project = (await registered.json()) as { id: number }
+  const project = (await registered.json()) as { id: number; name: string }
 
-  // Log in through the UI, then open the project's Agent settings.
+  // Log in through the UI; the project tree is the workbench entry point.
   await page.goto('/')
   await expect(page).toHaveURL(/\/login$/)
   await page.getByLabel('平台密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  await page.goto(`/projects/${project.id}/settings`)
-  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
-
   // Sessions are created by choosing the agent backend and giving a first message
   // (which names the session); the platform starts
   // whatever backend service each one needs.
-  await createSession(page, 'pi', 'pi-session')
-  await createSession(page, 'opencode-v2', 'oc-session-1')
-  await createSession(page, 'opencode-v2', 'oc-hold')
+  await createSession(page, project.name, 'pi', 'pi-session')
+  await createSession(page, project.name, 'opencode-v2', 'oc-session-1')
+  await createSession(page, project.name, 'opencode-v2', 'oc-hold')
 
   // The pi session streams its reply into its own conversation.
   await openSession(page, 'pi-session')
@@ -147,16 +132,15 @@ test('deletes a session from the conversation header after confirmation', async 
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  const project = (await registered.json()) as { id: number }
+  const project = (await registered.json()) as { id: number; name: string }
 
   await page.goto('/')
   await expect(page).toHaveURL(/\/login$/)
   await page.getByLabel('平台密码').fill(password)
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
-  await page.goto(`/projects/${project.id}/settings`)
 
-  await createSession(page, 'pi', 'pi-delete')
+  await createSession(page, project.name, 'pi', 'pi-delete')
   await openSession(page, 'pi-delete')
 
   // Cancelling the confirmation leaves the session in place.

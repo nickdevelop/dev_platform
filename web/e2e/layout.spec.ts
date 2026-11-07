@@ -81,9 +81,8 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'layout')
+  const { name: projectName } = await registerProject(request, csrf, 'layout')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
   await createSession(page, projectName, 'pi', 'pi-layout')
   await sessionRow(page, 'pi-layout').click()
@@ -127,9 +126,8 @@ test('a long turn scrolls the message log, not the page or the outer pane', asyn
 // the fold while body overflow:hidden hid every scrollbar.
 test('a long session tree scrolls the sidebar and keeps the composer in view', async ({ page, request }) => {
   const csrf = await operatorLogin(request)
-  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'layout-tree')
+  const { name: projectName } = await registerProject(request, csrf, 'layout-tree')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
   await createSession(page, projectName, 'pi', 'pi-tree')
   await sessionRow(page, 'pi-tree').click()
@@ -161,40 +159,46 @@ test('a long session tree scrolls the sidebar and keeps the composer in view', a
   expect(metrics.composerInViewport).toBe(true)
 })
 
-test('the right rail stays in view when the file tree and preview are open together', async ({
+test('the preview pane stays inside the conversation split when the file tree is open', async ({
   page,
   request,
 }) => {
   const csrf = await operatorLogin(request)
-  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'layout-rails')
+  const { name: projectName } = await registerProject(request, csrf, 'layout-preview')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
-  await createSession(page, projectName, 'pi', 'pi-rails')
-  await sessionRow(page, 'pi-rails').click()
+  await createSession(page, projectName, 'pi', 'pi-preview')
+  await sessionRow(page, 'pi-preview').click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
 
-  // The default file-tree drawer is docked; both toggles share the right rail.
-  const rail = conversation.locator('[data-test="chat-side-rail-right"]')
-  await expect(rail.locator('[data-test="toggle-filetree-btn"]')).toBeVisible()
-  const previewBtn = rail.locator('[data-test="toggle-preview-btn"]')
-  await expect(previewBtn).toHaveAttribute('aria-pressed', 'false')
-  await previewBtn.click()
-  await expect(previewBtn).toHaveAttribute('aria-pressed', 'true')
+  // Preview starts collapsed; the collapsed-edge button opens the unified
+  // workspace (preview on the left, file tree on the right).
+  await expect(conversation.locator('[data-test="activity-pane"]')).toHaveCount(0)
+  const openBtn = conversation.locator('[data-test="toggle-preview-btn"]')
+  await expect(openBtn).toBeVisible()
+  await expect(openBtn).toHaveAttribute('aria-pressed', 'false')
+  await openBtn.click()
   await expect(conversation.locator('[data-test="activity-pane"]')).toBeVisible()
+
+  // The file tree is docked by default when the workspace opens.
+  const filetreeToggle = conversation.locator('[data-test="toggle-filetree-btn"]')
+  await expect(filetreeToggle).toBeVisible()
+  const drawer = conversation.locator('[data-test="filetree-drawer"]')
+  if ((await drawer.count()) === 0) await filetreeToggle.click()
+  await expect(drawer).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const split = document.querySelector('[data-test="conversation-split"]') as HTMLElement
     const composer = document.querySelector('.message-column form.send') as HTMLElement
-    const rightRail = document.querySelector('[data-test="chat-side-rail-right"]') as HTMLElement
     const preview = document.querySelector('[data-test="activity-pane"]') as HTMLElement
+    const tree = document.querySelector('[data-test="filetree-drawer"]') as HTMLElement
     return {
       splitLeft: split.getBoundingClientRect().left,
       splitScrolls: split.scrollWidth > split.clientWidth + 1,
+      previewLeft: preview.getBoundingClientRect().left,
       previewRight: preview.getBoundingClientRect().right,
-      rightRailLeft: rightRail.getBoundingClientRect().left,
-      rightRailRight: rightRail.getBoundingClientRect().right,
+      treeRight: tree.getBoundingClientRect().right,
       composerRight: composer.getBoundingClientRect().right,
       composerBottom: composer.getBoundingClientRect().bottom,
       viewportWidth: window.innerWidth,
@@ -202,67 +206,72 @@ test('the right rail stays in view when the file tree and preview are open toget
     }
   })
 
-  // The rail is never pushed past the viewport, and the composer stays inside
-  // the visible conversation area instead of being clipped by the panels.
+  // The workspace stays inside the split/viewport and the composer keeps its
+  // full width in the message column.
   expect(metrics.splitScrolls).toBe(false)
-  expect(metrics.rightRailLeft).toBeGreaterThanOrEqual(metrics.splitLeft)
-  expect(metrics.rightRailRight).toBeLessThanOrEqual(metrics.viewportWidth + 1)
-  expect(metrics.previewRight).toBeLessThanOrEqual(metrics.rightRailLeft + 1)
-  expect(metrics.composerRight).toBeLessThanOrEqual(metrics.previewRight + 1)
+  expect(metrics.previewLeft).toBeGreaterThanOrEqual(metrics.splitLeft)
+  expect(metrics.previewRight).toBeLessThanOrEqual(metrics.viewportWidth + 1)
+  expect(metrics.treeRight).toBeLessThanOrEqual(metrics.viewportWidth + 1)
+  expect(metrics.composerRight).toBeLessThanOrEqual(metrics.previewLeft + 1)
   expect(metrics.composerBottom).toBeLessThanOrEqual(metrics.viewportHeight + 1)
 
-  // The same right-rail button collapses the preview again.
-  await previewBtn.click()
-  await expect(previewBtn).toHaveAttribute('aria-pressed', 'false')
+  // Escape collapses the workspace and restores the edge trigger.
+  await page.keyboard.press('Escape')
   await expect(conversation.locator('[data-test="activity-pane"]')).toHaveCount(0)
+  await expect(openBtn).toBeVisible()
+  await expect(openBtn).toHaveAttribute('aria-pressed', 'false')
 })
 
-// Regression: the activity card that wraps reasoning/tool output was sized
-// width:100% plus its padding under the default content-box, so it stuck out
-// past its scroller's content box and the pane grew a horizontal scrollbar. A
-// flat activity card must still sit inside the activity pane.
-test('an activity card never adds a horizontal scroller to the activity pane', async ({
+// Regression: the unified workspace used to size its preview and file-tree
+// children against the viewport instead of the pane, so opening both grew a
+// horizontal scroller inside the conversation split.
+test('the workspace pane never adds a horizontal scroller to the conversation split', async ({
   page,
   request,
 }) => {
-  test.slow()
-
   const csrf = await operatorLogin(request)
-  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'layout-steps')
+  const { name: projectName } = await registerProject(request, csrf, 'layout-workspace')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
-  await createSession(page, projectName, 'opencode-v2', 'oc-steps')
-  await sessionRow(page, 'oc-steps').click()
+  await createSession(page, projectName, 'pi', 'pi-workspace')
+  await sessionRow(page, 'pi-workspace').click()
   const conversation = page.locator('[data-test="conversation"]')
   await expect(conversation).toHaveAttribute('data-stream-status', 'open')
-  await expect(conversation.locator('[data-test="chat-side-rail-left"]')).toHaveCount(0)
-  await expect(conversation.locator('[data-test="chat-side-rail-right"]')).toBeVisible()
 
-  await page.locator('#message-text').fill('step group please')
-  await page.getByRole('button', { name: '发送', exact: true }).click()
-  await expect(conversation).toContainText('opencode reply: step group please', { timeout: 20_000 })
-  // If preview pane was collapsed by default, open it so activity-scroll is mounted.
-  const expandBtn = conversation.locator('[data-test="toggle-preview-btn"]')
-  await expect(expandBtn).toBeVisible()
-  if ((await expandBtn.getAttribute('aria-pressed')) === 'false') {
-    await expandBtn.click()
-  }
-  await expect(expandBtn).toHaveAttribute('aria-pressed', 'true')
-  // The reply's reasoning lands in the flat activity list, which is the box
-  // under test. Each turn contributes its own reasoning block, so the card under
-  // test is the first one — the same element the geometry check below reads.
-  await expect(conversation.locator('[data-test="activity-scroll"] [data-test="thinking"]').first()).toBeVisible()
+  // The bulky side rails are gone; the workspace is the only right-hand pane.
+  await expect(conversation.locator('[data-test="chat-side-rail-left"]')).toHaveCount(0)
+  await expect(conversation.locator('[data-test="chat-side-rail-right"]')).toHaveCount(0)
+
+  const openBtn = conversation.locator('[data-test="toggle-preview-btn"]')
+  await expect(openBtn).toBeVisible()
+  await openBtn.click()
+  const pane = conversation.locator('[data-test="activity-pane"]')
+  await expect(pane).toBeVisible()
+
+  const filetreeToggle = conversation.locator('[data-test="toggle-filetree-btn"]')
+  const drawer = conversation.locator('[data-test="filetree-drawer"]')
+  if ((await drawer.count()) === 0) await filetreeToggle.click()
+  await expect(drawer).toBeVisible()
 
   const metrics = await page.evaluate(() => {
-    const log = document.querySelector('[data-test="activity-scroll"]') as HTMLElement
-    const group = document.querySelector('[data-test="activity-scroll"] [data-test="thinking"]') as HTMLElement
+    const split = document.querySelector('[data-test="conversation-split"]') as HTMLElement
+    const workspace = document.querySelector('[data-test="activity-pane"]') as HTMLElement
+    const inner = workspace.querySelector('.workspace-inner-split') as HTMLElement
+    const preview = workspace.querySelector('.workspace-preview-section') as HTMLElement
     return {
-      logScrollOverflow: log.scrollWidth - log.clientWidth,
-      groupWidth: group.getBoundingClientRect().width,
-      logWidth: log.getBoundingClientRect().width,
+      splitOverflow: split.scrollWidth - split.clientWidth,
+      workspaceOverflow: workspace.scrollWidth - workspace.clientWidth,
+      innerOverflow: inner.scrollWidth - inner.clientWidth,
+      previewOverflow: preview.scrollWidth - preview.clientWidth,
     }
   })
-  expect(metrics.logScrollOverflow).toBeLessThanOrEqual(0)
-  expect(metrics.groupWidth).toBeLessThanOrEqual(Math.ceil(metrics.logWidth) + 1)
+
+  expect(metrics.splitOverflow).toBeLessThanOrEqual(0)
+  expect(metrics.workspaceOverflow).toBeLessThanOrEqual(0)
+  expect(metrics.innerOverflow).toBeLessThanOrEqual(0)
+  expect(metrics.previewOverflow).toBeLessThanOrEqual(0)
+
+  // Escape collapses the workspace.
+  await page.keyboard.press('Escape')
+  await expect(pane).toHaveCount(0)
 })

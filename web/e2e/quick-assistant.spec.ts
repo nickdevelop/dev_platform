@@ -61,7 +61,7 @@ test.describe.serial('quick assistant', () => {
         response.url().includes('/api/settings/quick-assistant') &&
         response.request().method() === 'PUT',
     )
-    await toggle.check()
+    await toggle.locator('..').click()
     await saved
     await expect(toggle).toBeChecked()
 
@@ -115,7 +115,7 @@ test.describe.serial('quick assistant', () => {
         response.url().includes('/api/settings/quick-assistant') &&
         response.request().method() === 'PUT',
     )
-    await toggleAgain.uncheck()
+    await toggleAgain.locator('..').click()
     await disabled
     await page.goto('/')
     await expect(page.locator('[data-test="quick-assistant-button"]')).toHaveCount(0)
@@ -131,6 +131,6 @@ test.describe.serial('quick assistant', () => {
     await expect(sidebar.getByText('固定')).toHaveCount(0)
     await expect(sidebar.locator('[aria-label="编辑助手「快捷助手」"]')).toBeVisible()
     await expect(sidebar.locator('[aria-label="删除助手「快捷助手」"]')).toBeVisible()
-    await expect(sidebar.locator('[aria-label="在「快捷助手」中新建对话"]')).toBeVisible()
+    await expect(sidebar.locator('[aria-label="在「快捷助手」下新建对话"]')).toBeVisible()
   })
 })

@@ -16,6 +16,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { projectRow } from './support/project-workbench'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
@@ -35,7 +36,7 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
   return session.csrfToken as string
 }
 
-async function registerProject(request: APIRequestContext, csrf: string, name: string): Promise<number> {
+async function registerProject(request: APIRequestContext, csrf: string, name: string): Promise<{ id: number; name: string }> {
   const projectDir = join(workspaceRoot, `${name}-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {
@@ -43,7 +44,7 @@ async function registerProject(request: APIRequestContext, csrf: string, name: s
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  return ((await registered.json()) as { id: number }).id
+  return (await registered.json()) as { id: number; name: string }
 }
 
 async function uiLogin(page: Page) {
@@ -57,26 +58,24 @@ async function uiLogin(page: Page) {
 async function openAgentSettings(page: Page) {
   await page.goto('/settings/agents')
   await expect(page).toHaveURL(/\/settings\/agents$/)
+  // Service controls live on the opencode backend tab; the page opens on the
+  // general tab, so activate it explicitly instead of relying on stored state.
+  await page.locator('[data-test="agent-tab-opencode-v2"]').click()
+  await expect(page.locator('[data-test="service-state-opencode-v2"]')).toBeVisible()
 }
 
-// createOpencodeSession submits the new-session form for a project whose row is
-// selected, and waits for the session's conversation to mount. It asserts on the
-// conversation rather than the tree row, because the tree's refresh cycle is
-// covered by its own specs.
-async function createOpencodeSession(page: Page, title: string) {
-  await page.locator('.project-row.selected .project-new-session').click()
+// createOpencodeSession opens the project's own tree row and submits the
+// new-session form. The old selected-project settings tab is gone, so the row
+// is addressed by name instead of relying on global selection.
+async function createOpencodeSession(page: Page, projectName: string, title: string) {
+  await page.goto('/')
+  const row = projectRow(page, projectName)
+  await expect(row).toBeVisible()
+  await row.locator('.project-new-session').click()
   await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
   await page.locator('[data-test="agent-switch"] [data-backend="opencode-v2"]').click()
   await page.locator('#first-message').fill(title)
   await page.locator('form.create-session button.create').click()
-}
-
-// openProject shows one project's settings tab, which is what marks its tree row
-// selected and gives the new-session control a unique target: several specs
-// register projects, and the tree lists them all.
-async function openProject(page: Page, projectId: number) {
-  await page.goto(`/projects/${projectId}/settings`)
-  await expect(page.locator('.project-row.selected')).toBeVisible()
 }
 
 // serviceState reads the label the settings page renders for the opencode
@@ -91,7 +90,7 @@ test('the service is observed, stopped, refused, and started again by an operato
   request,
 }) => {
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf, 'service-toggle')
+  const project = await registerProject(request, csrf, 'service-toggle')
   await uiLogin(page)
 
   await test.step('settings shows the running service with its details', async () => {
@@ -107,8 +106,7 @@ test('the service is observed, stopped, refused, and started again by an operato
   })
 
   await test.step('a session works while the service runs', async () => {
-    await openProject(page, projectId)
-    await createOpencodeSession(page, 'oc-running')
+    await createOpencodeSession(page, project.name, 'oc-running')
     await expect(page.locator('[data-test="conversation"]')).toBeVisible({ timeout: 20_000 })
   })
 
@@ -133,8 +131,7 @@ test('the service is observed, stopped, refused, and started again by an operato
   })
 
   await test.step('a session is refused with the sentence that names the fix', async () => {
-    await openProject(page, projectId)
-    await createOpencodeSession(page, 'oc-refused')
+    await createOpencodeSession(page, project.name, 'oc-refused')
 
     const error = page.locator('[data-test="new-session-error"]')
     await expect(error).toContainText('opencode service 未启动，请到平台设置 → Agent 检测并启动。')
@@ -153,8 +150,7 @@ test('the service is observed, stopped, refused, and started again by an operato
       timeout: 20_000,
     })
 
-    await openProject(page, projectId)
-    await createOpencodeSession(page, 'oc-restored')
+    await createOpencodeSession(page, project.name, 'oc-restored')
     await expect(page.locator('[data-test="conversation"]')).toBeVisible({ timeout: 20_000 })
   })
 

@@ -41,7 +41,6 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  const settings = page.getByRole('region', { name: '项目设置' })
   const row = (name: string) => page.locator('.project-row', { hasText: name })
 
   // Register an existing directory (no new directory is created).
@@ -85,35 +84,24 @@ test('login and drive a project through its full lifecycle', async ({ page, requ
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
   expect(existsSync(join(workspaceRoot, 'gamma'))).toBe(false)
 
-  // Resolve ids from the project list so the settings panel can be opened by
-  // URL (the tree row no longer navigates to it).
+  // The project settings page is gone: unregistering now happens on the
+  // management list, which keeps the same "directory is preserved" contract.
   await page.goto('/projects/management')
-  const alphaId = await page
-    .locator('[data-test="project-manage-row"]', { hasText: 'alpha' })
-    .getAttribute('data-project-id')
-  const gammaId = await page
-    .locator('[data-test="project-manage-row"]', { hasText: 'gamma' })
-    .getAttribute('data-project-id')
-  expect(alphaId).toBeTruthy()
-  expect(gammaId).toBeTruthy()
 
-  // Unregister removes only the platform record; the directory survives.
-  await page.goto(`/projects/${alphaId}/settings`)
-  await expect(settings).toBeVisible()
-  await settings.getByRole('button', { name: '解除登记' }).click()
+  const alphaManageRow = page.locator('[data-test="project-manage-row"]', { hasText: 'alpha' })
+  await alphaManageRow.getByRole('button', { name: '解除', exact: true }).click()
   const unregisterDialog = page.getByRole('dialog')
-  await expect(unregisterDialog).toContainText('会被完整保留')
+  await expect(unregisterDialog).toContainText('会完全保留')
   await unregisterDialog.getByRole('button', { name: '解除登记', exact: true }).click()
-  await expect(page).toHaveURL(/\/$/)
+  await expect(alphaManageRow).toHaveCount(0)
   await expect(row('alpha')).toHaveCount(0)
   expect(existsSync(join(workspaceRoot, 'alpha'))).toBe(true)
 
   // The edited project is unregistered the same way and its directory survives.
-  await page.goto(`/projects/${gammaId}/settings`)
-  await expect(settings).toBeVisible()
-  await settings.getByRole('button', { name: '解除登记' }).click()
+  const gammaManageRow = page.locator('[data-test="project-manage-row"]', { hasText: 'gamma' })
+  await gammaManageRow.getByRole('button', { name: '解除', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '解除登记', exact: true }).click()
-  await expect(page).toHaveURL(/\/$/)
+  await expect(gammaManageRow).toHaveCount(0)
   await expect(row('gamma')).toHaveCount(0)
   expect(existsSync(join(workspaceRoot, 'beta'))).toBe(true)
 

@@ -16,6 +16,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { createSession } from './support/project-workbench'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
@@ -38,7 +39,7 @@ async function operatorLogin(request: APIRequestContext): Promise<string> {
 }
 
 // registerProject registers a fresh project directory, returning its id.
-async function registerProject(request: APIRequestContext, csrf: string): Promise<number> {
+async function registerProject(request: APIRequestContext, csrf: string): Promise<{ id: number; name: string }> {
   const projectDir = join(workspaceRoot, `agent-failures-${Date.now()}-${process.pid}`)
   mkdirSync(projectDir, { recursive: true })
   const registered = await request.post('/api/projects', {
@@ -46,8 +47,7 @@ async function registerProject(request: APIRequestContext, csrf: string): Promis
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  const project = (await registered.json()) as { id: number }
-  return project.id
+  return (await registered.json()) as { id: number; name: string }
 }
 
 // uiLogin drives the browser through the login form.
@@ -71,24 +71,11 @@ function sessionRow(page: Page, title: string) {
   return page.locator('.session', { hasText: title })
 }
 
-// createSession opens the project's new-session form from the tree, chooses the agent
-// backend, and waits for the session to appear.
-async function createSession(page: Page, backendName: string, title: string) {
-  // Scoped to the selected project row: the tree renders one ＋ per
-  // registered project, and earlier specs register their own.
-  await page.locator('.project-row.selected .project-new-session').click()
-  await expect(page.getByRole('heading', { name: '新建会话' })).toBeVisible()
-  await page.locator(`[data-test="agent-switch"] [data-backend="${backendName}"]`).click()
-  await page.locator('#first-message').fill(title)
-  await page.locator('form.create-session button.create').click()
-  await expect(sessionRow(page, title)).toBeVisible()
-}
-
 test('a failing pi turn never disturbs the opencode instance in the same project', async ({ page, request }) => {
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf)
+  const project = await registerProject(request, csrf)
   await uiLogin(page)
 
   // The platform Agent page reports both backends with the versions their
@@ -102,16 +89,11 @@ test('a failing pi turn never disturbs the opencode instance in the same project
   await expect(piReport).toContainText('1.1.0')
   await expect(ocReport).toContainText('2.0.24')
 
-  // Return to the registered project so its row is selected for the session
-  // helpers below.
-  await page.goto(`/projects/${projectId}/settings`)
-  await expect(page.getByRole('region', { name: '项目设置' })).toBeVisible()
-
   // One session per backend, created by choosing the agent and giving a first
   // message; the platform
   // starts whatever backend service each one needs.
-  await createSession(page, 'pi', 'pi-failing')
-  await createSession(page, 'opencode-v2', 'oc-healthy')
+  await createSession(page, project.name, 'pi', 'pi-failing')
+  await createSession(page, project.name, 'opencode-v2', 'oc-healthy')
 
   // The pi turn fails: the fake CLI writes one stderr diagnostic and exits
   // non-zero. The error is surfaced in the failing session's conversation.
@@ -143,7 +125,7 @@ test('a failing pi turn never disturbs the opencode instance in the same project
 
 test('starting an unknown backend is rejected without touching existing instances', async ({ request }) => {
   const csrf = await operatorLogin(request)
-  const projectId = await registerProject(request, csrf)
+  const projectId = (await registerProject(request, csrf)).id
 
   const started = await request.post(`/api/projects/${projectId}/instances`, {
     data: { backend: 'pi' },

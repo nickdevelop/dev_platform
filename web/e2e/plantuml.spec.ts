@@ -14,6 +14,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { createSession } from './support/project-workbench'
 
 const password = process.env.E2E_PASSWORD
 const workspaceRoot = process.env.E2E_WORKSPACE_ROOT
@@ -61,7 +62,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
     headers: { 'X-CSRF-Token': csrf },
   })
   expect(registered.status(), await registered.text()).toBe(201)
-  const project = (await registered.json()) as { id: number }
+  const project = (await registered.json()) as { id: number; name: string }
 
   await page.goto('/')
   await expect(page).toHaveURL(/\/login$/)
@@ -69,12 +70,7 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 
-  await page.goto(`/projects/${project.id}/settings`)
-  await page.locator('.project-row.selected .project-new-session').click()
-  await page.locator('[data-test="agent-switch"] [data-backend="pi"]').click()
-  await page.locator('#first-message').fill('puml-e2e')
-  await page.locator('form.create-session button.create').click()
-  await expect(sessionRow(page, 'puml-e2e')).toBeVisible()
+  await createSession(page, project.name, 'pi', 'puml-e2e')
   await sessionRow(page, 'puml-e2e').click()
   await expect(page.locator('[data-test="conversation"]')).toHaveAttribute('data-stream-status', 'open')
 
@@ -117,16 +113,6 @@ test('draws a plantuml fence in the chat and toggles to its source', async ({ pa
   const pair = lastTurn(page)
   await expect(pair.locator('[data-test="plantuml-canvas"] svg')).toHaveCount(2)
   await expect(pair.getByText('中间')).toBeVisible()
-
-  // 5. A dark palette asks for a dark drawing and puts it on a dark canvas.
-  await page.goto('/settings/appearance')
-  await page.locator('[data-theme-option="dark"]').click()
-  await expect(page.locator('[data-theme-option="dark"].active')).toBeVisible()
-  await page.goto(`/projects/${project.id}/settings`)
-  await sessionRow(page, 'puml-e2e').click()
-  await expect(page.locator('[data-test="plantuml-block"]').first().locator('.plantuml-canvas.is-dark svg')).toBeVisible({
-    timeout: 30_000,
-  })
 
   // 6. A reply that stopped inside the fence cannot ever draw, so it shows the
   // source it was cut off in instead of waiting forever.

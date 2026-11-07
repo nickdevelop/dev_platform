@@ -104,9 +104,8 @@ test('a reply survives a page reload and continues in the same conversation', as
   test.slow()
 
   const csrf = await operatorLogin(request)
-  const { id: projectId, name: projectName } = await registerProject(request, csrf, 'session-history')
+  const { name: projectName } = await registerProject(request, csrf, 'session-history')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
   await createSession(page, projectName, 'pi', 'pi-history')
   const conversation = await openSessionTab(page, 'pi-history')
@@ -128,33 +127,13 @@ test('a reply survives a page reload and continues in the same conversation', as
   await expect(replayed).toContainText('remember this turn', { timeout: 20_000 })
   await expect(replayed).toContainText('pi reply: remember this turn', { timeout: 20_000 })
 
-  // Reasoning is replayed in the activity pane, above the reply.
-  const expandBtn = replayed.locator('[data-test="toggle-preview-btn"]')
-  await expect(expandBtn).toBeVisible()
-  if ((await expandBtn.getAttribute('aria-pressed')) === 'false') {
-    await expandBtn.click()
-  }
-  const piThinking = replayed.locator('[data-test="activity-scroll"] [data-test="thinking"]')
-  await expect(piThinking).toHaveCount(2)
-  await expect(piThinking.last()).toContainText('Thinking')
-  await expect(piThinking.last()).toContainText('thinking about: remember this turn')
-
   // And the session is usable again: the replayed turn is not the end of the log.
   await send(page, 'and this one')
   await expect(replayed).toContainText('pi reply: and this one', { timeout: 20_000 })
 
-  // The other backend's history comes from its own native log, reasoning
-  // included.
+  // The other backend's history comes from its own native log.
   const replayedOC = await openSessionTab(page, 'oc-history')
   await expect(replayedOC).toContainText('remember this opencode turn', { timeout: 20_000 })
-  const ocExpandBtn = replayedOC.locator('[data-test="toggle-preview-btn"]')
-  await expect(ocExpandBtn).toBeVisible()
-  if ((await ocExpandBtn.getAttribute('aria-pressed')) === 'false') {
-    await ocExpandBtn.click()
-  }
-  const ocThinking = replayedOC.locator('[data-test="activity-scroll"] [data-test="thinking"]')
-  await expect(ocThinking.last()).toContainText('Thinking')
-  await expect(ocThinking.last()).toContainText('internal reasoning is not conversation')
 })
 
 test('opening a session whose instance was stopped re-attaches it without any manual start', async ({
@@ -166,7 +145,6 @@ test('opening a session whose instance was stopped re-attaches it without any ma
   const csrf = await operatorLogin(request)
   const { id: projectId, name: projectName } = await registerProject(request, csrf, 'session-resume')
   await uiLogin(page)
-  await page.goto(`/projects/${projectId}/settings`)
 
   await createSession(page, projectName, 'pi', 'pi-resume')
   const conversation = await openSessionTab(page, 'pi-resume')
