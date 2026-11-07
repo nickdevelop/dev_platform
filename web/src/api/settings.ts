@@ -46,7 +46,10 @@ export interface AgentDto {
   backend: string
   enabled: boolean
   path: string
-  pathSource: 'auto' | 'manual' | 'none'
+  // pathSource is auto when the executable was found on PATH, manual when the
+  // operator set a path, none when neither applies, and embedded for an
+  // in-process backend (no path controls apply).
+  pathSource: 'auto' | 'manual' | 'none' | 'embedded'
   available: boolean
   // mode selects a backend transport when the backend has more than one
   // (pi: cli or rpc). modes lists the choices; both are absent otherwise.
@@ -55,6 +58,13 @@ export interface AgentDto {
   version?: string
   checkedAt?: string
   idleTimeoutMinutes?: number
+  // permissionMode gates the tool confirmations of backends that support the
+  // control; permissionModes lists the choices. Both are absent otherwise.
+  permissionMode?: string
+  permissionModes?: string[]
+  // sessionDataOwner marks a backend whose transcript the platform persists,
+  // so the settings center offers its session data management.
+  sessionDataOwner?: boolean
 }
 
 export interface AgentList {
@@ -87,6 +97,40 @@ export function setAgentMode(backend: string, mode: string): Promise<AgentDto> {
 
 export function setAgentIdleTimeout(backend: string, minutes: number): Promise<AgentDto> {
   return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/idle-timeout`, { minutes })
+}
+
+export function setAgentPermissionMode(backend: string, mode: string): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/permission-mode`, { mode })
+}
+
+// Transcript data management of the backend that persists its session data in
+// the platform database (the embedded agent).
+export interface AgentDataSession {
+  sessionId: string
+  title: string
+  directory: string
+  model?: string
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentDataSessionList {
+  sessions: AgentDataSession[]
+  total: number
+}
+
+export function listAgentDataSessions(page = 1, pageSize = 20): Promise<AgentDataSessionList> {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  return get<AgentDataSessionList>(`/settings/agent-data/sessions?${query.toString()}`)
+}
+
+export function deleteAgentDataSession(sessionId: string): Promise<{ deleted: boolean }> {
+  return mutate<{ deleted: boolean }>('DELETE', `/settings/agent-data/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function clearAgentDataSessions(): Promise<{ deleted: number }> {
+  return mutate<{ deleted: number }>('DELETE', '/settings/agent-data/sessions')
 }
 
 export function detectAgent(backend: string): Promise<AgentDetection> {

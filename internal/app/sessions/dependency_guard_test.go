@@ -18,6 +18,7 @@ func TestGenericLayersDoNotImportBackendPackages(t *testing.T) {
 		"devplatform/internal/providers/opencode",
 		"devplatform/internal/providers/pi",
 		"devplatform/internal/providers/deepseek",
+		"devplatform/internal/providers/builtin",
 	}
 
 	roots := []string{"..", "../../transport"}
@@ -59,7 +60,10 @@ func TestGenericLayersDoNotImportBackendPackages(t *testing.T) {
 // identifiers: they learn about a backend from the catalog and the registry,
 // never from a literal. The composition root is the one place that names them.
 func TestGenericLayersNameNoBackend(t *testing.T) {
-	forbidden := []string{"BackendOpenCodeV2", "BackendPi", "BackendDeepSeek", `"opencode-v2"`, `"pi"`, `"deepseek"`}
+	forbidden := []string{
+		"BackendOpenCodeV2", "BackendPi", "BackendDeepSeek", "BackendBuiltin",
+		`"opencode-v2"`, `"pi"`, `"deepseek"`, `"builtin"`,
+	}
 	roots := []string{"..", "../../transport"}
 
 	for _, root := range roots {

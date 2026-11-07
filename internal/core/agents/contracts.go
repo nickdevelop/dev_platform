@@ -54,12 +54,17 @@ const (
 	BackendPi BackendID = "pi"
 	// BackendDeepSeek is the deepseek-harness backend, driven through its dsh runtime.
 	BackendDeepSeek BackendID = "deepseek"
+	// BackendBuiltin is the platform's embedded agent: it runs in-process,
+	// drives OpenAI-compatible model endpoints directly and persists its
+	// session transcripts in the platform database. It is the fallback
+	// backend for machines without an external agent CLI.
+	BackendBuiltin BackendID = "builtin"
 )
 
 // Valid reports whether the backend id is one the platform knows.
 func (b BackendID) Valid() bool {
 	switch b {
-	case BackendOpenCodeV2, BackendPi, BackendDeepSeek:
+	case BackendOpenCodeV2, BackendPi, BackendDeepSeek, BackendBuiltin:
 		return true
 	default:
 		return false

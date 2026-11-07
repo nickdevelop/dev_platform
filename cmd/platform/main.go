@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"devplatform/internal/app/agentdata"
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
@@ -40,6 +41,7 @@ import (
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/builtin"
 	"devplatform/internal/providers/deepseek"
 	"devplatform/internal/providers/opencode"
 	"devplatform/internal/providers/pi"
@@ -278,7 +280,7 @@ func runServer(args []string) error {
 	// The catalog is built from the adapter packages' own descriptors before
 	// anything reads backend facts, so settings, diagnostics and the API all
 	// describe the same backends.
-	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor, deepseek.Descriptor)
+	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor, deepseek.Descriptor, builtin.Descriptor)
 	if err != nil {
 		return fmt.Errorf("build backend catalog: %w", err)
 	}
@@ -287,6 +289,15 @@ func runServer(args []string) error {
 	// own Register helper); there is no package-init side effect, so tests can
 	// build an isolated registry. Until an adapter is registered, starting an
 	// instance of that backend is refused with a clear error.
+	// The platform's OpenAI-compatible model configuration is shared by the
+	// pure chat and the embedded builtin agent, so it is built before the
+	// adapters register.
+	secretStore, err := secrets.NewStore(dataDir)
+	if err != nil {
+		return fmt.Errorf("open secret store: %w", err)
+	}
+	modelConfig := modelconfig.NewService(db, secretStore)
+
 	registry := agents.NewRegistry()
 	// Register the installed backends. Registration only constructs the
 	// adapter; it never probes or starts a backend, so a missing binary is
@@ -319,6 +330,29 @@ func runServer(args []string) error {
 	})); err != nil {
 		return fmt.Errorf("register deepseek adapter: %w", err)
 	}
+	builtinAdapter := builtin.New(builtin.Options{
+		// TranscriptStore persists the builtin agent's sessions in the
+		// platform database; the session data settings manage them.
+		TranscriptStore: newBuiltinTranscriptStore(agentdata.NewService(db)),
+		// ModelResolver shares the platform's OpenAI-compatible services.
+		ModelResolver: newBuiltinModelResolver(modelConfig),
+		// AgentGlobalPrompt re-reads dataDir/AGENTS.md for every turn.
+		AgentGlobalPrompt: func(ctx context.Context) (string, error) {
+			general, err := settingsService.AgentGeneral()
+			if err != nil {
+				return "", err
+			}
+			return general.SystemPrompt, nil
+		},
+		// PermissionMode is consulted per turn so operator changes apply at
+		// once (confirm asks on the approval cards, auto approves every call).
+		PermissionMode: func() string {
+			return settingsService.AgentPermissionMode(agents.BackendBuiltin)
+		},
+	})
+	if err := registry.Register(agents.BackendBuiltin, builtinAdapter); err != nil {
+		return fmt.Errorf("register builtin adapter: %w", err)
+	}
 	if err := checkBackendWiring(registry, catalog); err != nil {
 		return err
 	}
@@ -336,10 +370,6 @@ func runServer(args []string) error {
 		sessions.WithCatalog(catalog),
 	)
 	defer sessionService.Close()
-	secretStore, err := secrets.NewStore(dataDir)
-	if err != nil {
-		return fmt.Errorf("open secret store: %w", err)
-	}
 	promptRepo := prompts.NewRepository(db)
 	promptService := prompts.NewService(promptRepo)
 	platformTools := platformtools.NewExecutor(projectService, promptService, sessionService)
@@ -347,7 +377,6 @@ func runServer(args []string) error {
 	rolesRepo := roles.NewRepository(db)
 	rolesService := roles.NewService(rolesRepo, promptService)
 
-	modelConfig := modelconfig.NewService(db, secretStore)
 	chatService := chat.NewService(db, modelConfig, chat.WithToolExecutor(platformTools), chat.WithPromptReader(promptService))
 	// Cancel in-flight generations before the database closes. Defers unwind
 	// LIFO, so this runs before the database close registered earlier.
@@ -404,7 +433,17 @@ func runServer(args []string) error {
 		}
 	}()
 
+	// Transcript data management for the embedded agent: the settings center
+	// lists and deletes the sessions its store owns, purging the platform
+	// session index rows at the same time. A running turn refuses deletion.
+	agentData := agentdata.NewService(db, agentdata.WithIndexPurger(
+		func(nativeSessions []string) error {
+			return sessionService.DeleteIndexByNative(agents.BackendBuiltin, nativeSessions)
+		},
+	), agentdata.WithActivityGate(quickSessionBusy(builtinAdapter)))
+
 	router := platformhttp.NewRouter(platformhttp.Dependencies{
+		AgentData:     agentData,
 		Auth:          authService,
 		Projects:      projectService,
 		Settings:      settingsService,

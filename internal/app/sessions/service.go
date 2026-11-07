@@ -187,6 +187,7 @@ type StoreRepository interface {
 	UpdateModel(id, model string) error
 	TouchUpdatedAt(id string, at time.Time) error
 	Delete(id string) error
+	DeleteBackendNatives(backend string, nativeIDs []string) error
 }
 
 // Service manages the platform's session index and the operations built on the
@@ -487,6 +488,24 @@ func (s *Service) Delete(projectID uint, sessionID string) error {
 	// The turn tracker is keyed by native session; drop the entry so a later
 	// re-index of the same native session starts from a clean state.
 	s.turnTracker.Forget(agents.BackendID(row.Backend), row.NativeSessionID)
+	return nil
+}
+
+// DeleteIndexByNative removes every index row of one backend's given native
+// sessions and forgets their tracked turns. The backend arrives as a
+// parameter, so the method stays free of backend ids; it backs the platform
+// side of transcript data management for backends that own their session
+// data, where removing the transcript must also remove the index row.
+func (s *Service) DeleteIndexByNative(backend agents.BackendID, nativeIDs []string) error {
+	if backend == "" || len(nativeIDs) == 0 {
+		return nil
+	}
+	if err := s.store.DeleteBackendNatives(string(backend), nativeIDs); err != nil {
+		return err
+	}
+	for _, native := range nativeIDs {
+		s.turnTracker.Forget(backend, native)
+	}
 	return nil
 }
 

@@ -2974,6 +2974,153 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /agents/{backend}/permission-mode:
+    put:
+      summary: Set an agent tool permission mode
+      description: >-
+        Sets how a backend that supports tool confirmation gates its high-risk
+        calls: confirm asks on the platform approval cards, auto approves every
+        call. An empty mode restores the backend default (confirm). A backend
+        without support, or an unknown mode, is refused with 400. The change
+        applies from the agent's next turn.
+      operationId: setAgentPermissionMode
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+      responses:
+        '200':
+          description: The updated backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /settings/agent-data/sessions:
+    get:
+      summary: List the persisted transcript sessions
+      description: >-
+        Pages through the transcript sessions of the backend that persists its
+        session data in the platform database (the embedded agent), newest use
+        first, with message counts for cleanup decisions.
+      operationId: listAgentDataSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            maximum: 100
+      responses:
+        '200':
+          description: One page of transcript sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sessionId:
+                          type: string
+                        title:
+                          type: string
+                        directory:
+                          type: string
+                        model:
+                          type: string
+                        messageCount:
+                          type: integer
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      summary: Clear all persisted transcript sessions
+      description: >-
+        Removes every transcript session of the backend together with its
+        messages and the matching platform session index rows.
+      operationId: clearAgentDataSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The number of removed sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /settings/agent-data/sessions/{sessionId}:
+    delete:
+      summary: Delete one persisted transcript session
+      description: >-
+        Removes one transcript session with its messages and matching platform
+        session index rows. A session whose turn is running is refused with 409.
+      operationId: deleteAgentDataSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: The session was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+        '409':
+          description: The session is running a turn.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /agents/{backend}/idle-timeout:
     put:
       summary: Set an agent idle disconnection timeout

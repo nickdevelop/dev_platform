@@ -25,7 +25,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v35，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v36，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
@@ -44,7 +44,7 @@
 ① 组合根     cmd/platform/（Go 服务入口）+ desktop/src/main/（Electron 桌面主进程）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
 ③ 领域服务   internal/app/{sessions, instances, agentmodels, projects, chat, platformtools, tasks, terminal, settings, auth, ...}
-⑤ 异构适配   internal/providers/{opencode, pi, deepseek}（实现 core 契约，向组合根导出 Descriptor）
+⑤ 异构适配   internal/providers/{opencode, pi, deepseek, builtin}（实现 core 契约，向组合根导出 Descriptor）
 传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）+ desktop/src/main/proxy.ts（桌面透明反代）
 ② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
 ```
@@ -81,11 +81,12 @@
 | **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态。 | `service.go`（List/Refresh/UpdateModel）、`repository.go`（快照读写与增量合并）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、本机首次免命令行密码设置引导、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出/首次密码设置） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
-| **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、全局 Agent 系统提示词（AGENTS.md）落盘与跨后端配置同步、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长。 | `service.go`（系统偏好与快捷助手开关）、`general.go`（全局系统提示词文件管理与跨 Agent 同步）、`agents.go`（各 Backend 的配置状态与空闲超时）、`handlers.go`（设置 API） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；全局提示词以平台数据目录 `dataDir/AGENTS.md` 为唯一权威源，跨平台文件同步写入各后端，不依赖 Windows 受限的软链接；快捷助手开关独立于外观配置存储。 |
+| **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色）、快捷助手开关、全局 Agent 系统提示词（AGENTS.md）落盘与跨后端配置同步、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长；并新增后端工具权限模式（confirm / auto）配置与"平台持久化会话数据"门控标志（`sessionDataOwner`，由 Descriptor 声明）。 | `service.go`（系统偏好与快捷助手开关）、`general.go`（全局系统提示词文件管理与跨 Agent 同步）、`agents.go`（各 Backend 的配置状态、空闲超时与权限模式）、`handlers_agents.go`（设置 API 与 agent DTO） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；全局提示词以平台数据目录 `dataDir/AGENTS.md` 为唯一权威源，跨平台文件同步写入各后端，不依赖 Windows 受限的软链接；快捷助手开关独立于外观配置存储。 |
 | **`proxy/`** | 动态 ContextPath 服务代理网关。将服务器静态文件目录（含目录树浏览与防穿越）或本地端口 HTTP 服务反向代理至平台单一端口；全协议透明转发、自动剥离 ContextPath 前缀、支持 WebSocket 协议升级（HMR）与端口连通性探测。 | `service.go`（CRUD、参数校验与端口探测）、`gateway.go`（动态反代与文件服务分发器）、`handlers.go`（管理 API） | 数据面（`/proxy/*`）完全免鉴权公开直通；控制面（`/api/proxies`）严格执行 Session 与 CSRF 认证；不感知具体 Agent 业务。 |
 | **`prompts/`** | 平台提示词模板管理。管理角色类（`role`）与流程类（`flow`）模板，支持 `{user_prompt}` 变量占位符、多维度关键词与分类筛选，供角色管理、纯对话助手及多 Agent 协同流程作为统一权威源引用；新建项目会话入口仅消费流程类模板，角色类模板不对该入口开放。 | `model.go`（模型定义）、`service.go`（CRUD 与分类过滤）、`repository.go`（持久化存储）、`handlers.go`（REST 路由） | 供平台各中心与 `platformtools` 组合调用。 |
+| **`agentdata/`** | 内置 Agent 转写数据域服务。承载"声明拥有自身会话数据"（Descriptor `OwnsSessionData`）的后端在平台数据库中的会话转写：adapter 侧经组合根注入的 `TranscriptStore` 契约读写，设置中心侧提供会话数据管理（分页列表 / 单条删除 / 批量清空，路由 `GET/DELETE /api/settings/agent-data/sessions...`）。删除时联动清理会话工作台索引行（组合根绑定 `sessions.Service.DeleteIndexByNative`），运行中的轮次拒绝删除（409 `session_busy`）；本包不出现任何后端 ID 字面量，服务的目标后端由组合根绑定。 | `store.go`（GORM 转写表读写与生命周期管理）、`handlers.go`（管理 REST API） | 只依赖 `database` 与 `core/agents`；purger 与 activity gate 为组合根注入的函数钩子，保持包的完全后端中立。 |
 | **`roles/`** | 全局专家角色管理。将多 Agent 协同流程中的角色抽取为平台一等实体，统一人设名称、职责描述、执行引擎（Backend）、分配模型（Model）与标识色彩；统一关联并动态同步提示词库中的角色类提示词，供多 Agent 协同流程与对话助手按需选用与复用。 | `model.go`（角色模型与 DTO）、`service.go`（角色 CRUD 与提示词动态同步）、`repository.go`（持久化存储与平滑兼容转换）、`handlers.go`（REST API 路由） | 依赖 `core/agents` 契约与 `prompts.Service` 接口，与具体后端实现解耦。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v35 迁移链，含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v36 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -110,6 +111,7 @@
 | **`opencode/`** | **CLI + RPC + 机器级 Service** | 封装 OpenCode V2 协议；内部按单一职责严格拆分为：`adapter.go`（核心适配契约与实例状态管理）、`server.go`（服务子进程启动/健康检查/端口与密码探测）、`stream.go`（SSE 事件流消费泵与多 Subscriber 广播分发；空闲 watchdog 的 idle 判定仅在泵阻塞于读取时生效——publish 正在等待慢 subscriber 的下游反压期间保持守门不复位，避免把"消费者慢"误判为"服务端静默"而强制重拨丢失上游原生事件）、`normalize.go`（原生事件清洗规整化与工具输出截断折叠）；自动从全局 `~/.config/opencode/AGENTS.md` 同步加载平台级系统规约；将原生 `session.text.delta`、`session.reasoning.*` 映射为标准事件流。 |
 | **`pi/`** | **常驻子进程 + JSON-RPC** | 以 `pi --mode rpc` 运行；通过 `--append-system-prompt` 原生挂载数据目录全局 `AGENTS.md` 文件指令；通过 stdin/stdout 全双工派发 `prompt`、`abort`、`set_model` 命令；解析 Edit Diff 增量；承接扩展 UI 的 `confirm` → 权限确认映射。pi core 无内置工具审批，平台默认不注入审批扩展，行为与 CLI 一致；仅当 operator 通过 `PI_EXTENSIONS` 提供扩展时才可能出现确认卡片。 |
 | **`deepseek/`** | **共享 Host 进程 + WebSocket** | 启动并监控共享的 `dsh` 服务（懒启动、30s 启动超时、支持平台设置空闲回收时长，默认 30min；注入 `DSH_AGENTS_HOME` 原生加载全局指令）；通过 WebSocket 客户端双向转发消息；管理子代理（Subagent）级联关系。 |
+| **`builtin/`** | **进程内直驱（无外部二进制）** | 平台内置兜底 Coding Agent：直接驱动平台共享的 OpenAI 兼容模型服务（经组合根注入 `ModelResolver`：优先列出支持 function calling 的模型，当平台未勾选任何"支持工具调用"模型时回退列出全部可用文本模型以保证兜底可用；目录 ID 采用平台 wire model_id（跨服务同名时按 "provider/model" 限定），按标记行精确解析并兼容历史数字 ID），进程内自建补充 SSE 客户端与 ReAct 工具循环；工具集 `tools/`（`write_file`/`edit_file`/`execute_command`/`read_file`/`list_directory`/`glob_search`/`grep_search`/`git_status`/`git_diff`，内置工作区安全路径校验与受控进程执行）；高危工具经权限确认卡片（confirm / auto 两种模式，设置中心可配置）；**会话转写持久化于平台数据库**（经组合根注入 `TranscriptStore` → `internal/app/agentdata`），重启后会话经 `ContinueSession` + `HistoryReader` 从平台表恢复回放与 LLM 上下文；`Descriptor` 声明 `Embedded`（无路径/版本检测）与 `OwnsSessionData`（设置中心据此提供会话数据管理面板）。 |
 
 ---
 
@@ -225,7 +227,7 @@ web/src/
    - 唤醒底层 instances.Service 确保适配器进程存活
            │
            ▼
-4. 异构适配层 (internal/providers/*)
+4. 异构适配层 (internal/providers/*)。内置 Agent（builtin）无外部子进程：其适配器在进程内驱动模型补全与工具循环，并以 `OwnsSessionData` 后端身份把会话转写写入平台数据库（`internal/app/agentdata`），历史回放与重启续接均取自平台表
    - 将标准消息请求转化为后端专有命令 (如 pi 的 rpcCommandPrompt)
    - 捕获后端原生输出 (stdout / WebSocket)
    - 适配器将原生事件转化为标准 NormalizedEvent:

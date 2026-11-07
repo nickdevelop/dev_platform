@@ -426,6 +426,19 @@ var migrationSteps = []migrationStep{
 
 		return nil
 	}},
+	{version: 36, name: "builtin_agent_transcript", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&BuiltinAgentSession{}) {
+			if err := tx.Migrator().CreateTable(&BuiltinAgentSession{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&BuiltinAgentMessage{}) {
+			if err := tx.Migrator().CreateTable(&BuiltinAgentMessage{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

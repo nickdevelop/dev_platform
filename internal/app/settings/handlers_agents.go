@@ -29,6 +29,15 @@ type agentDTO struct {
 	Version            string   `json:"version,omitempty"`
 	CheckedAt          string   `json:"checkedAt,omitempty"`
 	IdleTimeoutMinutes int      `json:"idleTimeoutMinutes,omitempty"`
+	// PermissionMode is the configured tool permission mode of backends that
+	// support the control; PermissionModes lists the choices.
+	PermissionMode  string   `json:"permissionMode,omitempty"`
+	PermissionModes []string `json:"permissionModes,omitempty"`
+	// Embedded reports an in-process backend: no executable check applies.
+	Embedded bool `json:"embedded"`
+	// SessionDataOwner reports a platform-persisted transcript, so the
+	// settings UI shows the session data management panel.
+	SessionDataOwner bool `json:"sessionDataOwner"`
 }
 
 type agentListResponse struct {
@@ -150,6 +159,29 @@ func (s *Service) handleSetAgentMode(c *gin.Context) {
 	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
 }
 
+// handleSetAgentPermissionMode sets a backend's tool permission mode. The
+// value must be one the descriptor offers (or empty for the default); the
+// embedding adapter consults it per turn, so changes apply at once.
+func (s *Service) handleSetAgentPermissionMode(c *gin.Context) {
+	backend, ok := s.backendParam(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Mode string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	setting, err := s.SetAgentPermissionMode(backend, strings.TrimSpace(request.Mode))
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_permission_mode")
+		return
+	}
+	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
+}
+
 func (s *Service) handleSetAgentIdleTimeout(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
@@ -173,6 +205,12 @@ func (s *Service) handleSetAgentIdleTimeout(c *gin.Context) {
 func (s *Service) handleDetectAgent(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
+		return
+	}
+	descriptor, _ := s.catalog.Get(backend)
+	if descriptor.Embedded {
+		// Nothing to detect on an in-process backend.
+		c.JSON(http.StatusOK, agentDetectionDTO{Backend: string(backend), Status: "ok"})
 		return
 	}
 	path, source := s.ResolvePath(backend)
@@ -199,17 +237,27 @@ func (s *Service) handleDetectAgent(c *gin.Context) {
 func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agentDTO {
 	path, source := s.ResolvePath(backend)
 	descriptor, _ := s.catalog.Get(backend)
+	available := source != "none" && s.platform.Executables().IsExecutable(path)
+	if descriptor.Embedded {
+		// An in-process backend has no executable to resolve; it is always
+		// available and its path controls are hidden.
+		path, source, available = "", "embedded", true
+	}
 	return agentDTO{
 		Backend:            string(backend),
 		Enabled:            setting.Enabled,
 		Path:               path,
 		PathSource:         source,
-		Available:          source != "none" && s.platform.Executables().IsExecutable(path),
+		Available:          available,
 		Mode:               setting.Mode,
 		Modes:              descriptor.Modes,
 		Version:            setting.Version,
 		CheckedAt:          setting.CheckedAt,
 		IdleTimeoutMinutes: setting.IdleTimeoutMinutes,
+		PermissionMode:     setting.PermissionMode,
+		PermissionModes:    descriptor.PermissionModes,
+		Embedded:           descriptor.Embedded,
+		SessionDataOwner:   descriptor.OwnsSessionData,
 	}
 }
 

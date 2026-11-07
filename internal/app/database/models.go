@@ -108,6 +108,45 @@ type AgentSession struct {
 // AgentSession to agent_sessions already; pinning keeps it explicit).
 func (AgentSession) TableName() string { return "agent_sessions" }
 
+// BuiltinAgentSession records one platform-persisted transcript session of the
+// embedded agent backend (OwnsSessionData). Unlike the session index, this row
+// is the conversation's owning record: the transcript messages below it are
+// the agent-native history that ListHistory replays and the settings center
+// manages (list and delete).
+// Table: agent_builtin_sessions.
+type BuiltinAgentSession struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	SessionID string `gorm:"column:session_id;not null;uniqueIndex:idx_builtin_session_id"`
+	Directory string `gorm:"column:directory;not null;index"`
+	Title     string `gorm:"column:title"`
+	Model     string `gorm:"column:model"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName pins the transcript session table name.
+func (BuiltinAgentSession) TableName() string { return "agent_builtin_sessions" }
+
+// BuiltinAgentMessage is one transcript record of a builtin session. Kind
+// discriminates the record (user/assistant/thinking/tool_call/tool_result/
+// error); Content carries the text body and Payload the full JSON payload the
+// agent loop needs to rebuild an LLM context (tool call arguments and tool
+// outputs are kept unpruned, while events published to the stream stay
+// summarized).
+// Table: agent_builtin_messages.
+type BuiltinAgentMessage struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	SessionID string `gorm:"column:session_id;not null;uniqueIndex:idx_builtin_message_order,priority:1"`
+	Seq       int    `gorm:"column:seq;not null;uniqueIndex:idx_builtin_message_order,priority:2"`
+	Kind      string `gorm:"column:kind;not null;index"`
+	Content   string `gorm:"column:content"`
+	Payload   string `gorm:"column:payload"`
+	CreatedAt time.Time
+}
+
+// TableName pins the transcript message table name.
+func (BuiltinAgentMessage) TableName() string { return "agent_builtin_messages" }
+
 // Resource is a legacy resource-library row. Migrations 8 and 12 create its
 // table and migration 17 drops it; no current code reads or writes it.
 // Resource is one canonical, reusable Skill, MCP or prompt definition owned

@@ -165,3 +165,18 @@ func (r *Store) Delete(id string) error {
 		return tx.Delete(&database.AgentSession{}, "id = ?", id).Error
 	})
 }
+
+// DeleteBackendNatives removes every index row of one backend's given native
+// sessions regardless of which project or instance indexed them. The backend
+// arrives as a parameter so this method stays free of backend ids; transcript
+// data management uses it to purge rows pointing at conversations whose
+// transcript was already removed.
+func (r *Store) DeleteBackendNatives(backend string, nativeIDs []string) error {
+	if backend == "" || len(nativeIDs) == 0 {
+		return nil
+	}
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Where("backend = ? AND native_session_id IN ?", backend, nativeIDs).
+			Delete(&database.AgentSession{}).Error
+	})
+}

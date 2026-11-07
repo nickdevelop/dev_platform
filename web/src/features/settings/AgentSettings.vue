@@ -18,6 +18,7 @@ import {
 } from '../../api/agents'
 import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
+import BuiltinDataPanel from './BuiltinDataPanel.vue'
 import { rememberModels } from '../../shared/modelCache'
 import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
 
@@ -144,6 +145,15 @@ async function toggle(backend: string, value: boolean) {
 
 function onModeChange(backend: string, mode: string) {
   void settings.setAgentMode(backend, mode)
+}
+
+async function onPermissionModeChange(backend: string, mode: string) {
+  try {
+    await setAgentPermissionMode(backend, mode)
+    void settings.loadAgents()
+  } catch {
+    // The select falls back to the persisted value on the next reload.
+  }
 }
 
 function serviceFor(backend: string): AgentServiceStatus | null {
@@ -486,8 +496,8 @@ function cancelStop() {
         </label>
       </header>
 
-      <!-- Executable path & detection -->
-      <div class="space-y-2">
+      <!-- Executable path & detection (hidden for in-process backends) -->
+      <div v-if="agent.pathSource !== 'embedded'" class="space-y-2">
         <span class="text-xs font-medium text-slate-700 dark:text-slate-300 block">可执行文件路径</span>
         <div class="path-row flex items-center gap-2 flex-wrap">
           <template v-if="agent.pathSource === 'auto'">
@@ -534,6 +544,26 @@ function cancelStop() {
           </UiSelect>
         </label>
         <span class="mode-hint text-slate-400 text-[11px]">修改传输模式后需重启平台生效</span>
+      </div>
+
+      <!-- Tool permission mode (backends that support the control) -->
+      <div
+        v-if="agent.permissionModes && agent.permissionModes.length > 0"
+        class="permission-row flex items-center gap-3 text-xs text-slate-600 dark:text-slate-400 py-1 border-t border-slate-100 dark:border-slate-800"
+      >
+        <label class="inline-flex items-center gap-2">
+          <span class="font-medium text-slate-700 dark:text-slate-300">工具权限模式:</span>
+          <UiSelect
+            size="sm"
+            :data-agent-permission-mode="agent.backend"
+            :model-value="agent.permissionMode || agent.permissionModes[0]"
+            @change="(e: Event) => onPermissionModeChange(agent.backend, (e.target as HTMLSelectElement).value)"
+          >
+            <option value="confirm">需确认（写文件与命令前弹出审批卡片）</option>
+            <option value="auto">自动放行（所有工具调用直接执行）</option>
+          </UiSelect>
+        </label>
+        <span class="text-slate-400 text-[11px]">自下一轮对话开始生效</span>
       </div>
 
       <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->
@@ -605,6 +635,9 @@ function cancelStop() {
             : `检测失败：${detections[agent.backend]?.error}`
         }}
       </UiAlert>
+
+      <!-- Session data management (platform-persisted transcripts) -->
+      <BuiltinDataPanel v-if="agent.sessionDataOwner" :backend="agent.backend" />
 
       <!-- Agent available models catalog -->
       <div

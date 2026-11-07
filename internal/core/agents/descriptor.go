@@ -50,6 +50,20 @@ type BackendDescriptor struct {
 	// DefaultIdleTimeoutMinutes is the default idle duration in minutes before
 	// a shared host process is reclaimed. 0 means no idle timeout is configured by default.
 	DefaultIdleTimeoutMinutes int
+	// Embedded reports that the backend does not run an external executable:
+	// it executes inside the platform process. Binary stays empty, PATH
+	// resolution and version checks do not apply, and the settings UI hides
+	// path and detection controls.
+	Embedded bool
+	// OwnsSessionData reports that the backend persists its session
+	// transcripts in the platform database, so the settings UI exposes a
+	// session data management panel for it (list and delete).
+	OwnsSessionData bool
+	// PermissionModes lists the tool permission modes a backend supports
+	// when the operator can choose how tool calls are approved (for example
+	// builtin's "confirm" and "auto"). Empty means the backend has no
+	// permission mode control.
+	PermissionModes []string
 	// Tone is an optional visual tone preference for backend tags in the UI
 	// (such as "info", "warning", "primary", or "neutral"). It is the fallback
 	// when Color is empty.
@@ -81,7 +95,7 @@ func NewCatalog(descriptors ...BackendDescriptor) (*Catalog, error) {
 		if !d.ID.Valid() {
 			return nil, fmt.Errorf("%w: unknown backend %q", ErrCatalogEntry, d.ID)
 		}
-		if d.Binary == "" {
+		if d.Binary == "" && !d.Embedded {
 			return nil, fmt.Errorf("%w: backend %q has no executable name", ErrCatalogEntry, d.ID)
 		}
 		if d.Color != "" && !brandColorPattern.MatchString(d.Color) {

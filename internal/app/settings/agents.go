@@ -29,6 +29,10 @@ type AgentSetting struct {
 	// runs before automatic reclamation. -1 means never disconnect, > 0 specifies
 	// the minutes. 0 uses the catalog descriptor default.
 	IdleTimeoutMinutes int `json:"idleTimeoutMinutes,omitempty"`
+	// PermissionMode selects how a backend that supports tool confirmation
+	// gates its high-risk calls ("confirm" asks on an approval card, "auto"
+	// approves everything). Empty means the backend default (confirm).
+	PermissionMode string `json:"permissionMode,omitempty"`
 }
 
 // defaultAgentSettings returns every catalog backend at its descriptor's
@@ -199,6 +203,58 @@ func (s *Service) AgentMode(backend agents.BackendID) string {
 		return ""
 	}
 	return settings[backend].Mode
+}
+
+// AgentPermissionMode returns the configured permission mode of a backend
+// (empty means the backend default). It is consulted by the embedding
+// adapter before every turn so operator changes apply at once.
+func (s *Service) AgentPermissionMode(backend agents.BackendID) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		return ""
+	}
+	return settings[backend].PermissionMode
+}
+
+// SetAgentPermissionMode stores a backend's tool permission mode. The value
+// must be one the descriptor offers, or empty to restore the default.
+func (s *Service) SetAgentPermissionMode(backend agents.BackendID, mode string) (AgentSetting, error) {
+	if mode != "" {
+		s.mu.Lock()
+		descriptor, known := s.catalog.Get(backend)
+		s.mu.Unlock()
+		if !known {
+			return AgentSetting{}, fmt.Errorf("settings: unknown backend %q", backend)
+		}
+		valid := false
+		for _, allowed := range descriptor.PermissionModes {
+			if mode == allowed {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return AgentSetting{}, fmt.Errorf("settings: backend %q does not support permission mode %q", backend, mode)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		return AgentSetting{}, err
+	}
+	current, ok := settings[backend]
+	if !ok {
+		return AgentSetting{}, fmt.Errorf("settings: unknown backend %q", backend)
+	}
+	current.PermissionMode = mode
+	settings[backend] = current
+	if err := s.saveAgents(settings); err != nil {
+		return AgentSetting{}, err
+	}
+	return current, nil
 }
 
 // RecordDetection stores the version a successful detection reported.

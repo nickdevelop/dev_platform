@@ -66,9 +66,9 @@ func DefaultQuickAssistant() QuickAssistant {
 
 // Allowed values. The frontend's presets mirror these lists.
 var (
-	validThemes         = map[string]bool{"light": true, "warm": true, "cool": true}
-	validDensities      = map[string]bool{"compact": true, "standard": true, "relaxed": true}
-	validPlantumlModes  = map[string]bool{"local": true, "online": true}
+	validThemes        = map[string]bool{"light": true, "warm": true, "cool": true}
+	validDensities     = map[string]bool{"compact": true, "standard": true, "relaxed": true}
+	validPlantumlModes = map[string]bool{"local": true, "online": true}
 )
 
 // Validate reports whether the appearance value is one the platform accepts.
@@ -97,7 +97,7 @@ func (a *Appearance) Validate() error {
 // Service reads and writes platform settings over the platform database.
 type Service struct {
 	repo Repository
-	mu sync.Mutex
+	mu   sync.Mutex
 	// now is the clock used for detection timestamps; tests override it.
 	now func() time.Time
 	// catalog describes every backend the platform knows: its default

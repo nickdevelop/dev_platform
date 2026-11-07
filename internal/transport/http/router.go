@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/agentdata"
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/auth"
@@ -99,6 +100,10 @@ type Dependencies struct {
 	Events *events.Service
 	// Proxy manages contextpath exposure for local directories and ports.
 	Proxy *proxy.Service
+	// AgentData manages the transcript data of the backends that persist
+	// their sessions in the platform database (the embedded agent). The
+	// settings center lists and deletes those sessions through it.
+	AgentData *agentdata.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -145,6 +150,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Settings != nil {
 			deps.Settings.RegisterRoutes(protected)
+		}
+		if deps.AgentData != nil {
+			deps.AgentData.RegisterRoutes(protected)
 		}
 		if deps.Models != nil {
 			deps.Models.RegisterRoutes(protected)

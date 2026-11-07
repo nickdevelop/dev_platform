@@ -29,6 +29,7 @@ listed as provisional below.
 | `opencode-v2` | **2.0.24** | `[2.0.0, 3.0.0)` | One binary provides both the CLI and the v2 API server, so the CLI version is also the API version. |
 | `pi` | **1.1.0** | `[1.0.0, 2.0.0)` | RPC (`--mode rpc`) only; long-lived per-session child process. |
 | `deepseek` | **0.2.1-rc.2** | `[0.2.0, 1.0.0)` | Shared Host daemon (`dsh --profile web --port 0 --no-open`) via Typert HTTP & WebSocket Remote RPC. |
+| `builtin` | **in-process** | n/a | Platform-embedded agent: no external binary, no version range. Codified by `internal/providers/builtin/descriptor.go` (`Embedded: true`). |
 
 Diagnostics classify a detected version as follows:
 
@@ -120,6 +121,45 @@ The deepseek adapter operates in shared host mode (`dsh --profile web --port 0 -
 - **Stop**: drops logical instance reference; shared host shuts down gracefully when all instances are idle.
 - **Tool confirmation**: `$events` waterfall frames (`approval/request`, `user-questions/request`) become normalized `interaction` events; answers and decisions are returned through `$events/result`. Pending interactions are also exposed through `ListPermissions` / `ListForms`, so a stream that opens after the request still shows the card.
 - **Session addressing**: because one dsh host serves every project directory, `session/list` is host-wide and cannot assign a session to one platform instance. Question and approval events are therefore session-addressed: the adapter resolves the native agent id to the root conversation through the parent links the roster reports, and fans the event out to every subscribed instance. The session layer keeps only the copy whose native session id a client actually subscribed, so a session opened in one project is never stolen by another project's instance.
+
+## The builtin backend (embedded agent)
+
+`builtin` is the platform's own fallback coding agent: it runs inside the
+platform process, drives the platform's shared OpenAI-compatible model
+services (`modelconfig`), and executes a local workspace toolset directly
+(`internal/providers/builtin/tools`).
+
+- **No external binary.** `Probe` always succeeds; the settings card hides the
+  path and detection controls (`Agent.pathSource` reports `embedded`). There
+  is no service gate; `Diagnostics` only reports the model resolver (a warning
+  when no tool-capable model is configured, since function calling is
+  required to drive a turn).
+- **Models** are the platform's own OpenAI-compatible configuration:
+  tool-capable models surface first, and when no model carries the "supports
+  tools" flag at all the catalog falls back to every usable text model (the
+  flag defaults off; a model that truly cannot call tools only fails at turn
+  time). Catalog ids are the wire model ids, qualified with the provider when
+  two services expose the same id ("provider/model"); resolution is exact
+  against the flagged row, and older snapshots' numeric ids keep resolving.
+  `agentmodels` snapshots work like any other backend (operator-triggered
+  refresh).
+- **Permissions** are configurable per backend (`AgentSetting.permissionMode`):
+  `confirm` raises the platform approval cards for `write_file`, `edit_file`
+  and `execute_command`; `auto` approves everything. Read/search/glob tools
+  always run without confirmation. "always" decisions remember the invocation
+  class for the runtime session.
+- **Session data ownership.** The transcript (user messages, assistant text,
+  reasoning, tool calls and results, errors) persists in the platform
+  database (`agent_builtin_sessions` / `agent_builtin_messages`, migration 36,
+  owned by `internal/app/agentdata`). `sessionContinue` + `sessionHistory`
+  replay from that store, so a session survives platform restarts. The
+  settings center exposes list and delete for those sessions
+  (`GET/DELETE /api/settings/agent-data/sessions...`); deleting purges the
+  matching session index rows and refuses a session whose turn is running.
+- **Capabilities as declared**: streaming, sessionContinue, stop,
+  modelSelection, toolCallEvents, toolConfirmation, interrupt, sessionHistory;
+  NOT sessionDiscovery (the platform's session index is the list), not
+  rawEvents.
 
 ## Turns, stop and interaction events
 
