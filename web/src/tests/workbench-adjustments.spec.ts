@@ -111,6 +111,33 @@ describe('question queue', () => {
     await flushPromises()
     expect(wrapper.find('[data-form-id="f2"]').exists()).toBe(true)
   })
+
+  it('collapses and expands the answer area without losing input', async () => {
+    const wrapper = mount(QuestionQueue, {
+      props: {
+        forms: [
+          { id: 'f1', sessionId: 's1', title: '折叠检查', fields: [{ key: 'a', type: 'string', title: 'A' }] },
+        ],
+      },
+    })
+
+    const toggle = wrapper.find('[data-test="question-collapse-toggle"]')
+    const body = wrapper.find('[data-test="question-body"]')
+    expect(wrapper.find('[data-test="question-form"]').attributes('data-collapsed')).toBe('false')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect((body.element as HTMLElement).style.display).toBe('')
+
+    await wrapper.find('.text-input').setValue('keep me')
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-test="question-form"]').attributes('data-collapsed')).toBe('true')
+    expect((body.element as HTMLElement).style.display).toBe('none')
+
+    await toggle.trigger('click')
+    expect((body.element as HTMLElement).style.display).toBe('')
+    expect((wrapper.find('.text-input').element as HTMLInputElement).value).toBe('keep me')
+  })
 })
 
 describe('session tabs and open-tabs store', () => {

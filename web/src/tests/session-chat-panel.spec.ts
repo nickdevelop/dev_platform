@@ -363,6 +363,9 @@ describe('SessionChatPanel opencode approvals', () => {
 
     const card = wrapper.find('[data-test="question-form"]')
     expect(card.exists()).toBe(true)
+    // The answer area starts expanded so a blocking question is visible.
+    expect(card.attributes('data-collapsed')).toBe('false')
+    expect(card.find('[data-test="question-collapse-toggle"]').attributes('aria-expanded')).toBe('true')
     await card.find('.text-input').setValue('大')
     await card.find('[data-test="submit-answer"]').trigger('click')
     await flushPromises()

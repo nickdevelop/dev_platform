@@ -15,10 +15,10 @@ const links = [
     icon: 'palette',
   },
   {
-    name: 'settings-roles',
-    label: '角色管理',
-    desc: '协同专家与智能体分工',
-    icon: 'users',
+    name: 'settings-models',
+    label: '模型',
+    desc: '服务端点与可用模型',
+    icon: 'cube',
   },
   {
     name: 'settings-prompts',
@@ -27,10 +27,10 @@ const links = [
     icon: 'prompt',
   },
   {
-    name: 'settings-models',
-    label: '模型',
-    desc: '服务端点与可用模型',
-    icon: 'cube',
+    name: 'settings-roles',
+    label: '角色管理',
+    desc: '协同专家与智能体分工',
+    icon: 'users',
   },
   {
     name: 'settings-agents',

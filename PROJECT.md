@@ -141,7 +141,7 @@ web/src/
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、会话 Tab
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
-  │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、大模型配置（ModelSettings.vue）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、设置侧边导航（SettingsNav.vue，无缝对齐 AppShell 单头部规范）
+  │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，字号与界面密度仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
   │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建，中控调度模型基于已配置 Chat 文本模型下拉选取，团队协同角色直接从角色库选用并展示）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡，内建完备的 `.markdown-body` 排版体系、代码块复制与代码内 `@角色` 保护、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板，支持从全局角色库导入专家角色并统一引用提示词）
   │     ├── prompts/   ── 提示词管理核心组件与模版逻辑（PromptManageDialog.vue 支持角色类与流程类单选区分、promptTemplate.ts 变量槽替换）
@@ -245,7 +245,7 @@ web/src/
            ▼ (经 /api/events/bus/:uuid 单连接由前端 SharedWorker 跨标签页共享多路复用分发)
 6. 前端执行引擎 (features/chat/execution/SessionEventStream.ts & rendering)
    - 消费 SSE 事件帧，更新 sessionLog 状态
-   - 问答交互工具与纯净对话流（MessageView display="messages"），完整承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
+   - 问答交互工具与纯净对话流（MessageView display="messages"），完整承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；底部待回答问答面板支持向下收起/展开，展开时限高并在内部滚动，避免面板过大挤压对话审阅区；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
    - 主对话流动态运行状态指示（MessageView kind-running）：移除原有静态“正在运行...”，采用 deriveRunningAction 基于最新活动动态解析动作语义（如“正在思考...”、“执行 <cmd>”、“编辑 <path>”、“读取 <path>”、“搜索 <query>”等）并以微动效卡片实时呈现
    - 右侧面板整合为统一工作区面板（左侧为文件预览与 Diff 比对，右侧为文件树），由顶层 Tab 栏最右侧纯图标布局按钮统一控制显隐；文件树在右侧面板内展开或向右折叠，内部弹性伸缩（flex: 1 撑满），外框总宽度恒定锁定，绝不占用或晃动主对话窗口宽度；操作按钮全面纯图标化。
    - 会话历史读取瘦身（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务统一对适配器历史事件进行按需瘦身过滤，仅保留主对话视图所需的消息（EventMessage、EventError）以及成对的问答交互工具（IsQuestionTool 识别之 EventToolCall 及配套 EventToolResult），海量思维链 EventThinking 与非问答类工具事件均不透传，进一步压降前后端交互体量

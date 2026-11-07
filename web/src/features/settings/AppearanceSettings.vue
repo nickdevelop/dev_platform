@@ -132,8 +132,7 @@ async function toggleQuickAssistant(event: Event) {
           :data-font-size-option="opt.key"
           @click="selectFontSize(opt.value)"
         >
-          <div class="text-xs mb-0.5">{{ opt.label }}</div>
-          <div class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{{ opt.value }}px</div>
+          <div class="text-xs">{{ opt.label }}</div>
         </button>
       </div>
     </fieldset>
@@ -159,8 +158,7 @@ async function toggleQuickAssistant(event: Event) {
           :data-density-option="density.key"
           @click="selectDensity(density.key)"
         >
-          <div class="text-xs mb-0.5">{{ density.label }}</div>
-          <div class="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{{ density.controlHeight }}</div>
+          <div class="text-xs">{{ density.label }}</div>
         </button>
       </div>
     </fieldset>

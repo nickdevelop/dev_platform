@@ -20,6 +20,7 @@ const emit = defineEmits<{
 
 const activeIndex = ref(0)
 const stepIndex = ref(0)
+const collapsed = ref(false)
 const values = reactive<Record<string, Record<string, unknown>>>({})
 
 function fieldsOf(form: FormInfo): FormField[] {
@@ -150,122 +151,162 @@ watch(activeForm, () => {
   <section
     v-if="activeForm"
     class="question-queue"
+    :class="{ collapsed }"
     data-test="question-form"
     :data-form-id="activeForm.id"
+    :data-collapsed="collapsed ? 'true' : 'false'"
     aria-label="提问"
   >
     <div class="queue-head">
-      <p class="queue-title">{{ activeForm.title }}</p>
-      <p class="queue-progress" data-test="question-progress">
-        <template v-if="props.forms.length > 1">表单 {{ activeIndex + 1 }}/{{ props.forms.length }} · </template>
-        问题 {{ activeFields.length === 0 ? 0 : stepIndex + 1 }}/{{ activeFields.length }}
-      </p>
-    </div>
-    <div v-if="props.forms.length > 1" class="queue-tabs" role="tablist" aria-label="待确认的提问">
+      <div class="queue-heading">
+        <p class="queue-title">{{ activeForm.title }}</p>
+        <p class="queue-progress" data-test="question-progress">
+          <template v-if="props.forms.length > 1">表单 {{ activeIndex + 1 }}/{{ props.forms.length }} · </template>
+          问题 {{ activeFields.length === 0 ? 0 : stepIndex + 1 }}/{{ activeFields.length }}
+        </p>
+      </div>
       <button
-        v-for="(form, index) in props.forms"
-        :key="form.id"
         type="button"
-        class="queue-tab"
-        :class="{ active: index === Math.min(activeIndex, props.forms.length - 1) }"
-        :disabled="props.busy"
-        @click="activeIndex = index; stepIndex = 0"
+        class="queue-toggle"
+        data-test="question-collapse-toggle"
+        :aria-expanded="(!collapsed).toString()"
+        :aria-label="collapsed ? '展开问答区域' : '收起问答区域'"
+        :title="collapsed ? '展开问答区域' : '收起问答区域'"
+        aria-controls="question-queue-body"
+        @click="collapsed = !collapsed"
       >
-        {{ index + 1 }}
+        <span>{{ collapsed ? '展开' : '收起' }}</span>
+        <svg
+          class="queue-chevron"
+          :class="{ collapsed }"
+          viewBox="0 0 16 16"
+          width="12"
+          height="12"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="4 6 8 10 12 6" />
+        </svg>
       </button>
     </div>
-
-    <div v-if="stepField && activeForm" class="field">
-      <p class="field-title">
-        {{ fieldTitle(stepField) }}
-        <span v-if="stepField.required" class="required">*</span>
-      </p>
-      <p v-if="stepField.description" class="field-description">{{ stepField.description }}</p>
-
-      <template v-if="stepField.type === 'string' && stepField.options?.length">
-        <label v-for="option in stepField.options" :key="option.value" class="option">
-          <input
-            type="radio"
-            :name="`${activeForm.id}:${stepField.key}`"
-            :value="option.value"
-            v-model="valuesFor(activeForm.id)[stepField.key]"
-            :disabled="props.busy"
-          />
-          <span class="option-label">{{ option.label }}</span>
-          <span v-if="option.description" class="option-description">{{ option.description }}</span>
-        </label>
-        <input
-          v-if="stepField.custom"
-          v-model="valuesFor(activeForm.id)[stepField.key]"
-          class="text-input"
-          type="text"
-          placeholder="或自定义输入…"
+    <div
+      v-show="!collapsed"
+      id="question-queue-body"
+      class="queue-body"
+      data-test="question-body"
+    >
+      <div v-if="props.forms.length > 1" class="queue-tabs" role="tablist" aria-label="待确认的提问">
+        <button
+          v-for="(form, index) in props.forms"
+          :key="form.id"
+          type="button"
+          class="queue-tab"
+          :class="{ active: index === Math.min(activeIndex, props.forms.length - 1) }"
           :disabled="props.busy"
-        />
-      </template>
-
-      <div v-else-if="stepField.type === 'boolean'" class="boolean-options">
-        <button type="button" :class="{ selected: valuesFor(activeForm.id)[stepField.key] === true }" :disabled="props.busy" @click="valuesFor(activeForm.id)[stepField.key] = true">是</button>
-        <button type="button" :class="{ selected: valuesFor(activeForm.id)[stepField.key] === false }" :disabled="props.busy" @click="valuesFor(activeForm.id)[stepField.key] = false">否</button>
+          @click="activeIndex = index; stepIndex = 0"
+        >
+          {{ index + 1 }}
+        </button>
       </div>
 
-      <div v-else-if="stepField.type === 'multiselect'" class="multiselect-options">
-        <label v-for="option in stepField.options ?? []" :key="option.value" class="option">
+      <div class="queue-scroll">
+        <div v-if="stepField && activeForm" class="field">
+          <p class="field-title">
+            {{ fieldTitle(stepField) }}
+            <span v-if="stepField.required" class="required">*</span>
+          </p>
+          <p v-if="stepField.description" class="field-description">{{ stepField.description }}</p>
+
+          <template v-if="stepField.type === 'string' && stepField.options?.length">
+            <label v-for="option in stepField.options" :key="option.value" class="option">
+              <input
+                type="radio"
+                :name="`${activeForm.id}:${stepField.key}`"
+                :value="option.value"
+                v-model="valuesFor(activeForm.id)[stepField.key]"
+                :disabled="props.busy"
+              />
+              <span class="option-label">{{ option.label }}</span>
+              <span v-if="option.description" class="option-description">{{ option.description }}</span>
+            </label>
+            <input
+              v-if="stepField.custom"
+              v-model="valuesFor(activeForm.id)[stepField.key]"
+              class="text-input"
+              type="text"
+              placeholder="或自定义输入…"
+              :disabled="props.busy"
+            />
+          </template>
+
+          <div v-else-if="stepField.type === 'boolean'" class="boolean-options">
+            <button type="button" :class="{ selected: valuesFor(activeForm.id)[stepField.key] === true }" :disabled="props.busy" @click="valuesFor(activeForm.id)[stepField.key] = true">是</button>
+            <button type="button" :class="{ selected: valuesFor(activeForm.id)[stepField.key] === false }" :disabled="props.busy" @click="valuesFor(activeForm.id)[stepField.key] = false">否</button>
+          </div>
+
+          <div v-else-if="stepField.type === 'multiselect'" class="multiselect-options">
+            <label v-for="option in stepField.options ?? []" :key="option.value" class="option">
+              <input
+                type="checkbox"
+                :checked="(valuesFor(activeForm.id)[stepField.key] as unknown[] ?? []).includes(option.value)"
+                :disabled="props.busy"
+                @change="toggleMultiselect(activeForm.id, stepField!, option.value)"
+              />
+              <span class="option-label">{{ option.label }}</span>
+            </label>
+          </div>
+
           <input
-            type="checkbox"
-            :checked="(valuesFor(activeForm.id)[stepField.key] as unknown[] ?? []).includes(option.value)"
+            v-else-if="stepField.type === 'number' || stepField.type === 'integer'"
+            v-model="valuesFor(activeForm.id)[stepField.key]"
+            class="text-input"
+            type="number"
             :disabled="props.busy"
-            @change="toggleMultiselect(activeForm.id, stepField!, option.value)"
           />
-          <span class="option-label">{{ option.label }}</span>
-        </label>
+
+          <template v-else>
+            <a v-if="stepField.type === 'external' && stepField.url" :href="stepField.url" target="_blank" rel="noreferrer" class="external-link">在外部页面中查看</a>
+            <input v-model="valuesFor(activeForm.id)[stepField.key]" class="text-input" type="text" :disabled="props.busy" />
+          </template>
+        </div>
+        <p v-else class="no-fields">该提问没有可填写的字段。</p>
       </div>
 
-      <input
-        v-else-if="stepField.type === 'number' || stepField.type === 'integer'"
-        v-model="valuesFor(activeForm.id)[stepField.key]"
-        class="text-input"
-        type="number"
-        :disabled="props.busy"
-      />
-
-      <template v-else>
-        <a v-if="stepField.type === 'external' && stepField.url" :href="stepField.url" target="_blank" rel="noreferrer" class="external-link">在外部页面中查看</a>
-        <input v-model="valuesFor(activeForm.id)[stepField.key]" class="text-input" type="text" :disabled="props.busy" />
-      </template>
-    </div>
-    <p v-else class="no-fields">该提问没有可填写的字段。</p>
-
-    <div class="queue-actions">
-      <button
-        type="button"
-        class="nav-button"
-        data-test="question-prev"
-        :disabled="stepIndex === 0 || props.busy"
-        @click="prev"
-      >
-        上一题
-      </button>
-      <button
-        v-if="!isLastStep"
-        type="button"
-        class="nav-button primary"
-        data-test="question-next"
-        :disabled="!canAdvance"
-        @click="next"
-      >
-        下一题
-      </button>
-      <button
-        v-else
-        type="button"
-        class="submit-answer"
-        data-test="submit-answer"
-        :disabled="!canSubmit"
-        @click="submit"
-      >
-        {{ props.busy ? '提交中…' : '提交回答' }}
-      </button>
+      <div class="queue-actions">
+        <button
+          type="button"
+          class="nav-button"
+          data-test="question-prev"
+          :disabled="stepIndex === 0 || props.busy"
+          @click="prev"
+        >
+          上一题
+        </button>
+        <button
+          v-if="!isLastStep"
+          type="button"
+          class="nav-button primary"
+          data-test="question-next"
+          :disabled="!canAdvance"
+          @click="next"
+        >
+          下一题
+        </button>
+        <button
+          v-else
+          type="button"
+          class="submit-answer"
+          data-test="submit-answer"
+          :disabled="!canSubmit"
+          @click="submit"
+        >
+          {{ props.busy ? '提交中…' : '提交回答' }}
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -277,18 +318,34 @@ watch(activeForm, () => {
   background: var(--color-surface);
   padding: 0.6rem 0.8rem;
   margin: 0.5rem 0;
+  min-height: 0;
+}
+
+.question-queue.collapsed {
+  padding: 0.45rem 0.8rem;
 }
 
 .queue-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+.queue-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .queue-title {
   margin: 0;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .queue-progress {
@@ -296,6 +353,53 @@ watch(activeForm, () => {
   color: var(--color-text-muted);
   font-size: 0.8rem;
   white-space: nowrap;
+}
+
+.queue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.queue-toggle:hover {
+  color: var(--color-text);
+  border-color: var(--color-primary);
+}
+
+.queue-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.queue-chevron {
+  transition: transform 0.15s ease;
+}
+
+.queue-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.queue-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.queue-scroll {
+  /* Long option lists must not squeeze the conversation out of view: the body
+     scrolls internally while the header and action bar stay pinned. */
+  max-height: min(40vh, 24rem);
+  overflow-y: auto;
 }
 
 .queue-tabs {

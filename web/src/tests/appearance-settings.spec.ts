@@ -87,6 +87,22 @@ describe('AppearanceSettings', () => {
     expect(wrapper.find('[data-custom-font]').exists()).toBe(false)
   })
 
+  it('shows font size and density as labels without pixel values', async () => {
+    stubFetch()
+    const { wrapper } = await mountSettings()
+
+    const fontSizeTexts = wrapper
+      .findAll('[data-font-size-option]')
+      .map((option) => option.text())
+    const densityTexts = wrapper
+      .findAll('[data-density-option]')
+      .map((option) => option.text())
+
+    expect(fontSizeTexts).toEqual(['小', '中', '大'])
+    expect(densityTexts).toEqual(['紧凑', '标准', '宽松'])
+    expect([...fontSizeTexts, ...densityTexts].join(' ')).not.toMatch(/\d+\s*px/i)
+  })
+
   it('toggles the quick assistant feature through its own setting', async () => {
     const calls = stubFetch()
     const { wrapper } = await mountSettings()

@@ -117,5 +117,16 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     const links = wrapper.findAll('.settings-link')
     expect(links.length).toBe(7)
     expect(links[0].classes()).toContain('sidebar-card')
+    // Menu order is part of the product contract: appearance, models, prompts,
+    // roles, agents, proxies, connections.
+    expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
+      '外观',
+      '模型',
+      '提示词管理',
+      '角色管理',
+      'Agent',
+      '服务代理',
+      '服务连接',
+    ])
   })
 })
