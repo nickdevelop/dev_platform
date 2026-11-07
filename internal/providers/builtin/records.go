@@ -46,14 +46,20 @@ func buildToolHandoffRecords(seq int, result *assistantResult, now time.Time) []
 		seq++
 	}
 	for _, call := range result.ToolCalls {
-		records = append(records, buildToolCallRecord(seq, call.Function.Name, call.ID, call.Function.Arguments, now))
+		records = append(records, buildToolCallRecord(seq, call.Function.Name, call.ID, json.RawMessage(call.Function.Arguments), now))
 		seq++
 	}
 	return records
 }
 
-// buildToolCallRecord stores one tool invocation with its full arguments.
+// buildToolCallRecord stores one tool invocation with its full arguments. A
+// malformed model fragment has no replayable JSON form, so it is stored as an
+// empty object: the call keeps its id and the matching tool result stays
+// addressable when the transcript is rebuilt.
 func buildToolCallRecord(seq int, toolName, callID string, input json.RawMessage, now time.Time) TranscriptRecord {
+	if !json.Valid(input) {
+		input = json.RawMessage("{}")
+	}
 	encoded, _ := json.Marshal(toolCallRecord{
 		CallID:        callID,
 		Name:          toolName,

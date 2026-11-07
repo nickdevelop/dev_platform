@@ -266,16 +266,16 @@ func (a *Adapter) executeToolCall(
 		ToolCall: &agents.ToolCallPayload{
 			CallID: callID,
 			Name:   toolName,
-			Input:  agents.PruneToolInput(toolName, inputJSON),
+			Input:  agents.PruneToolInput(toolName, []byte(inputJSON)),
 		},
 	})
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
-		return []TranscriptRecord{buildToolCallRecord(seq, toolName, callID, inputJSON, a.now())}, nil
+		return []TranscriptRecord{buildToolCallRecord(seq, toolName, callID, json.RawMessage(inputJSON), a.now())}, nil
 	})
 
 	approved, cancelled := true, false
 	if requiresApproval(toolName) && mode == PermissionModeConfirm {
-		approved, cancelled = a.gateToolCall(ctx, inst, ref, state, toolName, string(inputJSON))
+		approved, cancelled = a.gateToolCall(ctx, inst, ref, state, toolName, inputJSON)
 	}
 	output, isErr := "", false
 	switch {
@@ -285,7 +285,7 @@ func (a *Adapter) executeToolCall(
 		output = "用户拒绝本次执行。如果需要继续，请先解释方案并重新请求授权。"
 		isErr = true
 	default:
-		executed, execErr := a.registry.Execute(ctx, inst.directory, toolName, string(inputJSON))
+		executed, execErr := a.registry.Execute(ctx, inst.directory, toolName, inputJSON)
 		if execErr != nil && ctx.Err() != nil {
 			return toolLoopExitCancelled
 		}

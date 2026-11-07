@@ -56,10 +56,30 @@ type wireToolCall struct {
 	Function wireFunctionCall `json:"function"`
 }
 
-// wireFunctionCall names the tool and carries its JSON argument object.
+// wireFunctionCall names the tool and carries its JSON argument text.
 type wireFunctionCall struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// MarshalJSON renders the call on the OpenAI wire format, where arguments is a
+// JSON-encoded string, never an object: strict services (DeepSeek among them)
+// reject the object form with "expected string, received object".
+func (f wireFunctionCall) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	}{Name: f.Name, Arguments: normalizeToolArguments(f.Arguments)})
+}
+
+// normalizeToolArguments keeps the replayed argument text decodable: an empty
+// or malformed fragment becomes "{}" so a later request still parses.
+func normalizeToolArguments(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || !json.Valid([]byte(trimmed)) {
+		return "{}"
+	}
+	return trimmed
 }
 
 // wireToolCallDelta is one streamed fragment of a tool call: arguments arrive
@@ -202,7 +222,7 @@ func (c *completer) streamChat(ctx context.Context, endpoint ModelEndpoint, hist
 			if callDelta.Function.Name != "" {
 				call.Function.Name += callDelta.Function.Name
 			}
-			call.Function.Arguments = json.RawMessage(string(call.Function.Arguments) + callDelta.Function.Arguments)
+			call.Function.Arguments += callDelta.Function.Arguments
 		}
 		if delta.FinishReason != "" {
 			result.Finish = delta.FinishReason

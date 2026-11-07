@@ -62,7 +62,7 @@ func (a *Adapter) rebuildHistoryMessages(ctx context.Context, sessionID string, 
 				ToolCalls: []wireToolCall{{
 					ID:       payload.CallID,
 					Type:     "function",
-					Function: wireFunctionCall{Name: payload.Name, Arguments: payload.Input},
+					Function: wireFunctionCall{Name: payload.Name, Arguments: string(payload.Input)},
 				}},
 			})
 		case TranscriptToolResult:

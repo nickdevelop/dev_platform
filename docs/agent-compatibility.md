@@ -156,6 +156,12 @@ services (`modelconfig`), and executes a local workspace toolset directly
   settings center exposes list and delete for those sessions
   (`GET/DELETE /api/settings/agent-data/sessions...`); deleting purges the
   matching session index rows and refuses a session whose turn is running.
+- **Wire format.** Tool calls follow the OpenAI dialect exactly:
+  `tool_calls[].function.arguments` is a JSON-encoded string, never an object,
+  and replayed calls use the same shape. An empty or malformed fragment is
+  sent as `{}` so the request still parses. Strict services (DeepSeek answers
+  `Invalid input: expected string, received object`) reject the object form,
+  so the encoding lives in one place (`wireFunctionCall.MarshalJSON`).
 - **Capabilities as declared**: streaming, sessionContinue, stop,
   modelSelection, toolCallEvents, toolConfirmation, interrupt, sessionHistory;
   NOT sessionDiscovery (the platform's session index is the list), not
