@@ -13,16 +13,23 @@ import (
 // Compile-time proof the builtin adapter serves history reads.
 var _ agents.HistoryReader = (*Adapter)(nil)
 
-// rebuildHistoryMessages loads the stored transcript and renders it as the
-// chat messages the turn sends back to the model, so a session keeps its
-// memory across platform restarts. The mapping is the OpenAI loop format:
-// user -> user, assistant -> assistant, tool_call -> assistant tool_calls,
-// tool_result -> tool, thinking -> dropped, error -> inline note.
-func (a *Adapter) rebuildHistoryMessages(ctx context.Context, sessionID string, endpoint ModelEndpoint) ([]chatMessage, error) {
+// loadTranscriptRecords reads the stored transcript of one session. A turn
+// snapshots it before recording the fresh user message, so the rebuilt context
+// carries prior turns only.
+func (a *Adapter) loadTranscriptRecords(ctx context.Context, sessionID string) ([]TranscriptRecord, error) {
 	records, err := a.store.Load(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("builtin: load transcript: %w", err)
 	}
+	return records, nil
+}
+
+// renderHistoryMessages renders stored records as the chat messages the turn
+// sends back to the model, so a session keeps its memory across platform
+// restarts. The mapping is the OpenAI loop format: user -> user, assistant ->
+// assistant, tool_call -> assistant tool_calls, tool_result -> tool, thinking
+// -> dropped, error -> inline note.
+func renderHistoryMessages(records []TranscriptRecord, endpoint ModelEndpoint) []chatMessage {
 	messages := make([]chatMessage, 0, len(records))
 	for _, record := range records {
 		switch record.Kind {
@@ -85,7 +92,7 @@ func (a *Adapter) rebuildHistoryMessages(ctx context.Context, sessionID string, 
 			messages = append(messages, textMessage("user", note))
 		}
 	}
-	return messages, nil
+	return messages
 }
 
 // compactJSONString renders a payload blob as the model-facing fallback text.

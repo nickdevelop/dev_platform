@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -160,6 +161,33 @@ func TestToolCallArgumentsAreJSONStrings(t *testing.T) {
 	}
 }
 
+// TestTurnContextDoesNotDuplicateUserMessage pins the rebuilt context shape:
+// the fresh user message is part of the request exactly once.
+func TestTurnContextDoesNotDuplicateUserMessage(t *testing.T) {
+	requests := &capturedRequests{}
+	server := strictToolServer(requests)
+	defer server.Close()
+
+	events := runBuiltinTurn(t, server.URL)
+	if failure := turnError(events); failure != "" {
+		t.Fatalf("回合失败: %s", failure)
+	}
+
+	bodies := requests.all()
+	if len(bodies) != 2 {
+		t.Fatalf("请求数 = %d, want 2", len(bodies))
+	}
+	want := [][]string{
+		{"system", "user"},
+		{"system", "user", "assistant", "tool"},
+	}
+	for index, body := range bodies {
+		if roles := messageRoles([]byte(body)); !slices.Equal(roles, want[index]) {
+			t.Fatalf("请求 #%d 角色序列 = %v, want %v", index+1, roles, want[index])
+		}
+	}
+}
+
 // TestNormalizeToolArguments pins the defensive fallback: an empty or broken
 // fragment still yields decodable JSON on the wire.
 func TestNormalizeToolArguments(t *testing.T) {
@@ -213,6 +241,27 @@ func TestWireToolCallMarshalsArgumentsAsString(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"arguments":"{}"`) {
 		t.Fatalf("非法参数未归一: %s", encoded)
+	}
+}
+
+// TestRenderHistoryMessagesEmitsStringArguments covers replay: a stored tool
+// call must go back to the model with string arguments too.
+func TestRenderHistoryMessagesEmitsStringArguments(t *testing.T) {
+	records := []TranscriptRecord{
+		{Seq: 1, Kind: TranscriptUser, Content: "列出文件"},
+		{Seq: 2, Kind: TranscriptToolCall, Payload: json.RawMessage(`{"callId":"call-9","name":"list_directory","input":{"path":"."}}`)},
+		{Seq: 3, Kind: TranscriptToolResult, Payload: json.RawMessage(`{"callId":"call-9","output":"ok"}`)},
+	}
+	messages := renderHistoryMessages(records, ModelEndpoint{})
+	encoded, err := json.Marshal(map[string]any{"messages": messages})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if param := objectToolArguments(encoded); param != "" {
+		t.Fatalf("回放参数不是字符串: %s (%s)", param, encoded)
+	}
+	if want := `"arguments":"{\"path\":\".\"}"`; !strings.Contains(string(encoded), want) {
+		t.Fatalf("wire = %s, want 包含 %s", encoded, want)
 	}
 }
 

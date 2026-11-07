@@ -77,6 +77,15 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 	ctx := current.ctx
 	now := a.now()
 
+	// Snapshot the persisted transcript before recording this turn's message:
+	// the rebuilt context must hold prior turns only, otherwise the fresh user
+	// message would appear twice in the request.
+	records, err := a.loadTranscriptRecords(ctx, ref.SessionID)
+	if err != nil {
+		a.failTurn(inst, ref, current, "history_load_failed", err.Error())
+		return
+	}
+
 	// Record and publish the user message, then open the turn.
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
 		return []TranscriptRecord{buildUserRecord(seq, message, now)}, nil
@@ -101,13 +110,9 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 	}
 	_ = a.store.SetModel(ctx, ref.SessionID, endpoint.ModelID)
 
-	// Rebuild the conversation context from the stored transcript (so a
-	// session survives restarts) and add the fresh user message.
-	history, err := a.rebuildHistoryMessages(ctx, ref.SessionID, endpoint)
-	if err != nil {
-		a.failTurn(inst, ref, current, "history_load_failed", err.Error())
-		return
-	}
+	// Rebuild the conversation context from the pre-turn snapshot (so a
+	// session survives restarts) and add the fresh user message exactly once.
+	history := renderHistoryMessages(records, endpoint)
 	messages := make([]chatMessage, 0, len(history)+3)
 	if prompt := a.systemPrompt(ctx, inst.directory); prompt != "" {
 		messages = append(messages, textMessage("system", prompt))
