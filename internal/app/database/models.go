@@ -130,9 +130,8 @@ func (BuiltinAgentSession) TableName() string { return "agent_builtin_sessions" 
 // BuiltinAgentMessage is one transcript record of a builtin session. Kind
 // discriminates the record (user/assistant/thinking/tool_call/tool_result/
 // error); Content carries the text body and Payload the full JSON payload the
-// agent loop needs to rebuild an LLM context (tool call arguments and tool
-// outputs are kept unpruned, while events published to the stream stay
-// summarized).
+// agent loop needs to rebuild an LLM context. Tool call arguments and tool
+// outputs are raw; events publish the same raw payloads.
 // Table: agent_builtin_messages.
 type BuiltinAgentMessage struct {
 	ID        uint   `gorm:"primaryKey;column:id"`

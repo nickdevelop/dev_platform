@@ -36,8 +36,8 @@ type TranscriptSession struct {
 
 // TranscriptRecord is one stored conversation entry. Payload carries kind
 // specific JSON the agent loop needs to rebuild an LLM context (tool call
-// arguments and tool outputs are kept unpruned); Content carries the compact
-// display text.
+// arguments and tool outputs are kept raw); Content carries optional display
+// text and is empty for tool results.
 type TranscriptRecord struct {
 	Seq       int
 	Kind      TranscriptKind
@@ -71,8 +71,8 @@ type toolCallRecord struct {
 	NeedsApproval bool            `json:"needsApproval,omitempty"`
 }
 
-// toolResultRecord is the stored payload of one tool outcome: the output the
-// turn fed back to the model (bounded to toolOutputContextLimit).
+// toolResultRecord is the stored payload of one tool outcome: the raw output
+// the turn fed back to the model.
 type toolResultRecord struct {
 	CallID  string `json:"callId"`
 	Output  string `json:"output"`

@@ -1,6 +1,7 @@
 package instances
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,18 @@ func ringEvent(seq uint64) agents.NormalizedEvent {
 		Timestamp:  time.Now().UTC(),
 		Type:       agents.EventMessage,
 		Message:    &agents.MessagePayload{Role: "assistant", Text: "chunk", Final: true},
+	}
+}
+
+func ringResultEvent(seq uint64, output string) agents.NormalizedEvent {
+	return agents.NormalizedEvent{
+		InstanceID: "inst-1",
+		Backend:    agents.BackendPi,
+		SessionID:  "native-1",
+		Sequence:   seq,
+		Timestamp:  time.Now().UTC(),
+		Type:       agents.EventToolResult,
+		ToolResult: &agents.ToolResultPayload{CallID: "call-1", Output: output},
 	}
 }
 
@@ -57,31 +70,71 @@ func TestReplayRingWithinBuffer(t *testing.T) {
 	}
 }
 
-// TestReplayRingEviction verifies that once the oldest events are evicted,
-// resume positions inside the retained window still replay contiguously
-// while older positions are refused so the client rebuilds from history.
-func TestReplayRingEviction(t *testing.T) {
+// TestReplayRingEventCap verifies the count bound: a stream of small events
+// keeps the newest replayMaxEvents, and positions before that window cannot be
+// covered.
+func TestReplayRingEventCap(t *testing.T) {
 	r := newReplayRing()
-	total := uint64(replayBufferSize + 10)
+	total := uint64(replayMaxEvents + 10)
 	for seq := uint64(1); seq <= total; seq++ {
 		r.add(ringEvent(seq))
 	}
-	// The ring kept the newest replayBufferSize events: sequences
-	// total-replayBufferSize+1 .. total. One position before the oldest
-	// retained event the gap starts at an evicted sequence and coverage is
-	// refused; on it, the whole retained window replays.
-	firstRetained := total - replayBufferSize + 1
+	// The ring kept the newest replayMaxEvents events.
+	firstRetained := total - replayMaxEvents + 1
 	if _, covered := r.since(firstRetained - 2); covered {
 		t.Fatalf("since(%d) reached behind the eviction point but reported coverage", firstRetained-2)
 	}
-	if events, covered := r.since(firstRetained - 1); !covered || len(events) != replayBufferSize {
-		t.Fatalf("since(firstRetained-1) = %d events covered=%v, want %d covered", len(events), covered, replayBufferSize)
+	if events, covered := r.since(firstRetained - 1); !covered || len(events) != replayMaxEvents {
+		t.Fatalf("since(firstRetained-1) = %d events covered=%v, want %d covered", len(events), covered, replayMaxEvents)
 	}
 	if _, covered := r.since(1); covered {
 		t.Fatal("since(1) was evicted but reported coverage")
 	}
 	if events, covered := r.since(total); !covered || len(events) != 0 {
 		t.Fatalf("since(newest) = %d events covered=%v, want empty and covered", len(events), covered)
+	}
+}
+
+// TestReplayRingByteCap verifies the byte bound: large tool results evict older
+// events before the count cap is reached, while coverage remains a contiguous
+// suffix.
+func TestReplayRingByteCap(t *testing.T) {
+	r := newReplayRing()
+	output := strings.Repeat("x", replayMaxBytes/4)
+	for seq := uint64(1); seq <= 5; seq++ {
+		r.add(ringResultEvent(seq, output))
+	}
+	// Each event is roughly a quarter of the budget, so at most three fit
+	// after the last add.
+	events, covered := r.since(2)
+	if !covered || len(events) != 3 {
+		t.Fatalf("since(2) = %d events covered=%v, want 3 covered", len(events), covered)
+	}
+	if first := events[0].Sequence; first != 3 {
+		t.Fatalf("oldest retained sequence = %d, want 3", first)
+	}
+	if _, covered := r.since(1); covered {
+		t.Fatal("since(1) was evicted by the byte budget but reported coverage")
+	}
+}
+
+// TestReplayRingOversizedEvent verifies a single event larger than the byte
+// budget is kept alone instead of creating a sequence hole, and is evicted when
+// the next event arrives.
+func TestReplayRingOversizedEvent(t *testing.T) {
+	r := newReplayRing()
+	r.add(ringResultEvent(1, strings.Repeat("x", replayMaxBytes*2)))
+	if events, covered := r.since(0); !covered || len(events) != 1 {
+		t.Fatalf("since(0) = %d events covered=%v, want the oversized event covered", len(events), covered)
+	}
+
+	r.add(ringEvent(2))
+	events, covered := r.since(1)
+	if !covered || len(events) != 1 || events[0].Sequence != 2 {
+		t.Fatalf("since(1) = %v/%v, want only the newest event", seqs(events), covered)
+	}
+	if _, covered := r.since(0); covered {
+		t.Fatal("since(0) reported coverage after the oversized event was evicted")
 	}
 }
 

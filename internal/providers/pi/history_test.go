@@ -107,7 +107,7 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 	result := events[4]
 	if result.Type != agents.EventToolResult || result.ToolResult == nil ||
 		result.ToolResult.CallID != "call_1" || !strings.Contains(result.ToolResult.Output, "历史里的工具输出") || !result.ToolResult.IsError {
-		t.Errorf("events[4] = %+v, want a failed tool result with summary for call_1", result)
+		t.Errorf("events[4] = %+v, want a failed tool result with the raw output for call_1", result)
 	}
 
 	for i, event := range events {

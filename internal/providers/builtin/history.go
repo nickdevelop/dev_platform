@@ -174,7 +174,7 @@ func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 			event.ToolCall = &agents.ToolCallPayload{
 				CallID: payload.CallID,
 				Name:   payload.Name,
-				Input:  agents.PruneToolInput(payload.Name, payload.Input),
+				Input:  payload.Input,
 			}
 		case TranscriptToolResult:
 			var payload toolResultRecord

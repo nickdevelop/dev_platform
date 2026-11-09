@@ -602,7 +602,7 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	if string(got[5].ToolCall.Input) != `{"cmd":"ls"}` {
 		t.Fatalf("tool input = %s", got[5].ToolCall.Input)
 	}
-	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "执行了 ls 命令" || got[6].ToolResult.IsError {
+	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "ok" || got[6].ToolResult.IsError {
 		t.Fatalf("event 6 = %+v", got[6])
 	}
 	// 8: this execution never started in the stream, so its failure has no
@@ -674,9 +674,9 @@ func TestAdapterSubscribeCarriesLargeToolResult(t *testing.T) {
 	if got[0].Type != agents.EventToolResult || got[0].ToolResult == nil {
 		t.Fatalf("event = %+v", got[0])
 	}
-	// The large tool output is summarized from the backend to reduce transmission overhead.
-	if len(got[0].ToolResult.Output) > 200 || !strings.Contains(got[0].ToolResult.Output, "工具") {
-		t.Fatalf("tool output should be a concise summary, got %q (len %d)", got[0].ToolResult.Output, len(got[0].ToolResult.Output))
+	// Tool output is raw: a large result arrives whole rather than summarized.
+	if got[0].ToolResult.Output != output {
+		t.Fatalf("tool output should be the raw backend text (len %d, got %d)", len(output), len(got[0].ToolResult.Output))
 	}
 }
 
@@ -1006,7 +1006,6 @@ func TestAdapterDetectTurn(t *testing.T) {
 	}
 }
 
-
 func TestParseModelRef(t *testing.T) {
 	model, err := parseModelRef("prov/model#fast")
 	if err != nil {
@@ -1265,8 +1264,8 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		t.Errorf("first tool call input = %s, want the fixture state.input", events[3].ToolCall.Input)
 	}
 	if events[4].Type != agents.EventToolResult || events[4].ToolResult == nil ||
-		events[4].ToolResult.CallID != "call_1" || !strings.Contains(events[4].ToolResult.Output, "ls -la") || events[4].ToolResult.IsError {
-		t.Errorf("events[4] = %+v, want the completed tool result with summary", events[4])
+		events[4].ToolResult.CallID != "call_1" || events[4].ToolResult.Output != "历史里的工具输出" || events[4].ToolResult.IsError {
+		t.Errorf("events[4] = %+v, want the completed tool result with its raw output", events[4])
 	}
 	if events[5].Type != agents.EventToolCall || events[5].ToolCall == nil || events[5].ToolCall.CallID != "call_2" {
 		t.Fatalf("events[5] = %+v, want the second tool call", events[5])
@@ -1275,7 +1274,7 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		events[6].ToolResult.CallID != "call_2" || !events[6].ToolResult.IsError {
 		t.Errorf("events[6] = %+v, want a failed tool result for call_2", events[6])
 	}
-	// A failed block without content falls back to its structured error summary so
+	// A failed block without content falls back to its structured error so
 	// the replay never renders an empty result.
 	if events[6].ToolResult == nil || !strings.Contains(events[6].ToolResult.Output, "工具失败原因") {
 		t.Errorf("events[6] = %+v, want the structured error summary", events[6])
@@ -1571,30 +1570,10 @@ func TestAdapterSubscribeMapsTurnsAndInteractions(t *testing.T) {
 	}
 }
 
-func TestFlattenContentCompactDataURIs(t *testing.T) {
+func TestFlattenRawContentKeepsRawText(t *testing.T) {
 	fakeBase64 := strings.Repeat("A", 1000)
 	raw := json.RawMessage(fmt.Sprintf(`"data:image/png;base64,%s"`, fakeBase64))
-	got := flattenContent(raw)
-	if strings.Contains(got, fakeBase64) {
-		t.Fatalf("flattenContent leaked huge base64 data: %s", got)
-	}
-	if !strings.Contains(got, "[图片数据") {
-		t.Fatalf("flattenContent did not replace with summary: %s", got)
+	if got := flattenRawContent(raw); got != "data:image/png;base64,"+fakeBase64 {
+		t.Fatalf("flattenRawContent must keep the raw data URI, got %q", got)
 	}
 }
-
-func TestFlattenContentTruncatesHugeOutput(t *testing.T) {
-	huge := strings.Repeat("hello world line\n", 30000) // ~500KB
-	raw, err := json.Marshal(huge)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	got := flattenContent(raw)
-	if len(got) >= len(huge) {
-		t.Fatalf("flattenContent did not truncate huge text: len=%d, want < %d", len(got), len(huge))
-	}
-	if !strings.Contains(got, "工具输出过长，已截断展示") {
-		t.Fatalf("flattenContent missing truncation marker: %s", got)
-	}
-}
-

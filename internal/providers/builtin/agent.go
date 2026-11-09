@@ -262,8 +262,8 @@ func (a *Adapter) executeToolCall(
 	toolName := call.Function.Name
 	inputJSON := call.Function.Arguments
 
-	// Announce the invocation: the event input is pruned for the wire, the
-	// stored transcript keeps the full arguments for honest context rebuild.
+	// Announce the invocation with its raw arguments; the stored transcript
+	// keeps the full arguments too, so both sides stay honest.
 	inst.publish(agents.NormalizedEvent{
 		Type:      agents.EventToolCall,
 		SessionID: ref.SessionID,
@@ -271,7 +271,7 @@ func (a *Adapter) executeToolCall(
 		ToolCall: &agents.ToolCallPayload{
 			CallID: callID,
 			Name:   toolName,
-			Input:  agents.PruneToolInput(toolName, []byte(inputJSON)),
+			Input:  json.RawMessage(normalizeToolArguments(inputJSON)),
 		},
 	})
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
@@ -301,18 +301,15 @@ func (a *Adapter) executeToolCall(
 			output = executed
 		}
 	}
-	summary := agents.SummarizeToolResult(toolName, []byte(inputJSON), output, isErr)
-
-	// Publish the compact summary for the workbench; the stored transcript
-	// keeps the model-facing output (bounded) so later turns rebuild an
-	// honest context.
+	// Publish the raw tool output; the stored transcript keeps the same
+	// model-facing output so later turns rebuild an honest context.
 	inst.publish(agents.NormalizedEvent{
 		Type:      agents.EventToolResult,
 		SessionID: ref.SessionID,
 		Timestamp: a.now(),
 		ToolResult: &agents.ToolResultPayload{
 			CallID:  callID,
-			Output:  summary,
+			Output:  output,
 			IsError: isErr,
 		},
 	})

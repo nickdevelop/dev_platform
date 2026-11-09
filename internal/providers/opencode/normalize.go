@@ -3,7 +3,6 @@ package opencode
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -135,7 +134,7 @@ func structuredErrorMessage(data eventData, content json.RawMessage) string {
 		}
 	}
 	if len(content) > 0 {
-		if text := flattenContent(content); text != "" {
+		if text := flattenRawContent(content); text != "" {
 			return text
 		}
 	}
@@ -183,60 +182,6 @@ func boundRaw(raw []byte) json.RawMessage {
 	return append(json.RawMessage(nil), raw[:cut]...)
 }
 
-const maxToolOutputBytes = 256 * 1024 // 256KB
-
-var dataURIPattern = regexp.MustCompile(`data:image/[a-zA-Z0-9+.-]+;base64,[A-Za-z0-9+/=\s]{200,}`)
-
-// formatByteSize formats a byte count into a human-readable string.
-func formatByteSize(bytes int) string {
-	switch {
-	case bytes >= 1024*1024:
-		return fmt.Sprintf("%.2f MB", float64(bytes)/(1024*1024))
-	case bytes >= 1024:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
-	default:
-		return fmt.Sprintf("%d 字节", bytes)
-	}
-}
-
-// compactDataURIs replaces long inlined data URI image payloads with a concise summary.
-func compactDataURIs(text string) string {
-	if !strings.Contains(text, "data:image/") {
-		return text
-	}
-	return dataURIPattern.ReplaceAllStringFunc(text, func(match string) string {
-		return fmt.Sprintf("[图片数据 (base64, 约 %s)]", formatByteSize(len(match)))
-	})
-}
-
-// summarizeToolOutput compacts tool result strings so multi-megabyte payloads
-// never overwhelm the event stream or client memory.
-func summarizeToolOutput(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	cleaned := compactDataURIs(raw)
-	if len(cleaned) <= maxToolOutputBytes {
-		return cleaned
-	}
-	cut := maxToolOutputBytes
-	for cut > 0 && !utf8.RuneStart(cleaned[cut]) {
-		cut--
-	}
-	lines := strings.Count(raw, "\n") + 1
-	return fmt.Sprintf("%s\n\n... [工具输出过长，已截断展示；原始内容共 %s，约 %d 行]",
-		cleaned[:cut],
-		formatByteSize(len(raw)),
-		lines,
-	)
-}
-
-// flattenContent renders a tool result content value as display text, compacted to a safe size.
-func flattenContent(raw json.RawMessage) string {
-	text := flattenRawContent(raw)
-	return summarizeToolOutput(text)
-}
-
 func flattenRawContent(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -277,7 +222,7 @@ func flattenRawContent(raw json.RawMessage) string {
 			return object.Message
 		}
 	}
-	return truncate(string(raw))
+	return string(raw)
 }
 
 // event builds an envelope populated with the instance identity. Sequence is
@@ -453,30 +398,30 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		if name == "" {
 			name = data.Name
 		}
-		prunedInput := agents.PruneToolInput(name, data.Input)
 		inst.rememberTool(sessionID, data.AssistantMessageID, data.ID, name, data.Input)
 		out.ToolCall = &agents.ToolCallPayload{
 			CallID: data.ID,
 			Name:   name,
-			Input:  prunedInput,
+			Input:  data.Input,
 		}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.success":
-		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
+		inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		summary := agents.SummarizeToolResult(info.name, info.input, flattenContent(data.Content), false)
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: false}
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenRawContent(data.Content), IsError: false}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.failed":
-		info := inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
+		inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		errMsg := structuredErrorMessage(data, data.Content)
-		summary := agents.SummarizeToolResult(info.name, info.input, errMsg, true)
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: summary, IsError: true}
+		output := flattenRawContent(data.Content)
+		if output == "" {
+			output = structuredErrorMessage(data, nil)
+		}
+		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: output, IsError: true}
 		return []agents.NormalizedEvent{out}
 
 	case "session.execution.started":

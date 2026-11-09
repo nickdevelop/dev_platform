@@ -8,8 +8,8 @@ import (
 )
 
 // The record builders turn runtime facts into stored transcript rows. Payload
-// JSON keeps the full, unpruned data the LLM context needs; Content keeps the
-// compact display text.
+// JSON keeps the full, unpruned data the LLM context needs; Content carries
+// optional display text and stays empty for tool results.
 
 // buildUserRecord stores one user message with its images (identity and the
 // base64 body, bounded per image, so a rebuilt history keeps the attachments).
@@ -74,8 +74,8 @@ func buildToolCallRecord(seq int, toolName, callID string, input json.RawMessage
 	}
 }
 
-// buildToolResultRecord stores one tool outcome: the model-facing output
-// (bounded) in the payload, and the compact summary as display content.
+// buildToolResultRecord stores one tool outcome: the model-facing output in
+// the payload. Tool results leave Content empty; history replays Payload.Output.
 func buildToolResultRecord(seq int, callID, output string, isErr bool, now time.Time) TranscriptRecord {
 	encoded, _ := json.Marshal(toolResultRecord{
 		CallID:  callID,

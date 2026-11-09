@@ -2,7 +2,6 @@ package deepseek
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"devplatform/internal/core/agents"
@@ -89,7 +88,7 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 1 || evs[0].Type != agents.EventToolResult || evs[0].ToolResult.CallID != "call-1" || evs[0].ToolResult.Output != "读取了 main.go 文件" {
+	if len(evs) != 1 || evs[0].Type != agents.EventToolResult || evs[0].ToolResult.CallID != "call-1" || evs[0].ToolResult.Output != "package main" {
 		t.Fatalf("tool/result mismatch: %+v", evs)
 	}
 
@@ -431,7 +430,7 @@ func TestAskUserQuestionNormalized(t *testing.T) {
 		t.Fatalf("expected EventToolResult, got %+v", resEvs)
 	}
 	tr := resEvs[0].ToolResult
-	if tr.CallID != "call-ask-1" || !strings.Contains(tr.Output, "已回答: AWS") {
-		t.Errorf("tool result output = %q, want '已回答: AWS'", tr.Output)
+	if tr.CallID != "call-ask-1" || tr.Output != "AWS" {
+		t.Errorf("tool result output = %q, want the raw answer 'AWS'", tr.Output)
 	}
 }

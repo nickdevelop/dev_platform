@@ -78,34 +78,6 @@ type parser struct {
 	// newTurnID mints turn ids unique within the instance; a parser without
 	// one numbers its own turns.
 	newTurnID func() string
-	toolCalls map[string]toolCallInfo
-}
-
-type toolCallInfo struct {
-	name string
-	args json.RawMessage
-}
-
-func (p *parser) rememberTool(callID, name string, args json.RawMessage) {
-	if callID == "" {
-		return
-	}
-	if p.toolCalls == nil {
-		p.toolCalls = make(map[string]toolCallInfo)
-	}
-	p.toolCalls[callID] = toolCallInfo{name: name, args: args}
-}
-
-func (p *parser) forgetTool(callID string) (string, json.RawMessage) {
-	if p.toolCalls == nil {
-		return "", nil
-	}
-	info, ok := p.toolCalls[callID]
-	if !ok {
-		return "", nil
-	}
-	delete(p.toolCalls, callID)
-	return info.name, info.args
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -360,13 +332,12 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			name = agents.StandardToolQuestion
 			args = agents.NormalizeQuestionToolInput(args)
 		}
-		p.rememberTool(event.ToolCallID, name, args)
 		out := p.event()
 		out.Type = agents.EventToolCall
 		out.ToolCall = &agents.ToolCallPayload{
 			CallID: event.ToolCallID,
 			Name:   name,
-			Input:  agents.PruneToolInput(name, args),
+			Input:  args,
 		}
 		return []agents.NormalizedEvent{out}
 
@@ -374,17 +345,9 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		return nil
 
 	case "tool_execution_end":
-		name, args := p.forgetTool(event.ToolCallID)
-		if name == "" {
-			name = event.ToolName
-		}
-		if len(args) == 0 {
-			args = event.Args
-		}
 		out := p.event()
 		out.Type = agents.EventToolResult
-		summary := agents.SummarizeToolResult(name, args, resultText(event.Result), event.IsError)
-		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: summary, IsError: event.IsError}
+		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.Result), IsError: event.IsError}
 		return []agents.NormalizedEvent{out}
 
 	case "error":
@@ -581,7 +544,8 @@ func contentText(raw json.RawMessage) string {
 	return ""
 }
 
-// resultText flattens a tool result or partial result into display text.
+// resultText flattens a tool result or partial result into its raw text;
+// callers pass it through without summarizing.
 func resultText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -594,7 +558,7 @@ func resultText(raw json.RawMessage) string {
 			return text
 		}
 	}
-	return truncate(string(raw))
+	return string(raw)
 }
 
 // scanLines reads LF-delimited records from r. Unlike bufio.Scanner it never

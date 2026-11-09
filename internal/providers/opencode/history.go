@@ -257,14 +257,13 @@ func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []ag
 	result.ToolResult = &agents.ToolResultPayload{CallID: block.ID, IsError: true}
 
 	if block.State != nil {
-		call.ToolCall.Input = agents.PruneToolInput(block.Name, block.State.Input)
+		call.ToolCall.Input = block.State.Input
 		isError := block.State.Status != "completed"
-		rawOutput := flattenContent(block.State.Content)
+		rawOutput := flattenRawContent(block.State.Content)
 		if isError && rawOutput == "" {
 			rawOutput = historyErrorMessage(block.State)
 		}
-		summary := agents.SummarizeToolResult(block.Name, block.State.Input, rawOutput, isError)
-		result.ToolResult.Output = summary
+		result.ToolResult.Output = rawOutput
 		result.ToolResult.IsError = isError
 	}
 	return []agents.NormalizedEvent{call, result}

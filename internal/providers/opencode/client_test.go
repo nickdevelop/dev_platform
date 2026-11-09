@@ -597,7 +597,7 @@ func TestClientListMessages(t *testing.T) {
 	}
 	tool := messages[1].Content[2]
 	if tool.Type != "tool" || tool.ID != "call_1" || tool.Name != "execute" || tool.State == nil ||
-		tool.State.Status != "completed" || flattenContent(tool.State.Content) != "历史里的工具输出" {
+		tool.State.Status != "completed" || flattenRawContent(tool.State.Content) != "历史里的工具输出" {
 		t.Errorf("assistant tool block = %+v, want the fixture tool call", tool)
 	}
 }
@@ -619,4 +619,3 @@ func TestClientActiveSessions(t *testing.T) {
 		t.Fatalf("unexpected active sessions: %v", active)
 	}
 }
-

@@ -40,7 +40,7 @@ func TestCreateAppendAndLoadRoundTrips(t *testing.T) {
 	records := []Record{
 		{Seq: 1, Kind: "user", Content: "你好", CreatedAt: created},
 		{Seq: 2, Kind: "tool_call", Payload: []byte(`{"callId":"c1","name":"read_file","input":{"path":"a.go"}}`), CreatedAt: created},
-		{Seq: 3, Kind: "tool_result", Content: "读取了 a.go 文件", Payload: []byte(`{"callId":"c1","output":"content"}`), CreatedAt: created},
+		{Seq: 3, Kind: "tool_result", Content: "content", Payload: []byte(`{"callId":"c1","output":"content"}`), CreatedAt: created},
 		{Seq: 4, Kind: "assistant", Content: "回复", CreatedAt: created},
 	}
 	if err := s.Append(ctx, "sess-1", records); err != nil {

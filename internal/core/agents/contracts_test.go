@@ -263,6 +263,16 @@ func TestContractsNormalizedEvents(t *testing.T) {
 			event: withPayload(base, EventToolResult, &ToolResultPayload{CallID: "call_1", Output: "ok", IsError: false}),
 		},
 		{
+			// Tool call input is raw backend data: the contract no longer
+			// enforces the raw-blob bound on it.
+			name: "tool call input larger than the raw blob bound",
+			event: withPayload(base, EventToolCall, &ToolCallPayload{
+				CallID: "call_1",
+				Name:   "write_file",
+				Input:  json.RawMessage(`{"path":"a.txt","content":"` + strings.Repeat("x", MaxRawEventBytes*2) + `"}`),
+			}),
+		},
+		{
 			name:  "error event",
 			event: withPayload(base, EventError, &ErrorPayload{Code: "backend_unavailable", Message: "daemon not reachable"}),
 		},

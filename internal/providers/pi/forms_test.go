@@ -343,8 +343,8 @@ drainedEvents:
 	if len(endEvents) != 1 || endEvents[0].Type != agents.EventToolResult {
 		t.Fatalf("expected EventToolResult, got %+v", endEvents)
 	}
-	if endEvents[0].ToolResult.Output != "已回答: User has answered your questions" {
-		t.Errorf("tool result output = %q, want '已回答: ...'", endEvents[0].ToolResult.Output)
+	if endEvents[0].ToolResult.Output != "User has answered your questions" {
+		t.Errorf("tool result output = %q, want the raw answer text", endEvents[0].ToolResult.Output)
 	}
 
 	// 8. Subsequent replyForm fails with ErrReplyExpired

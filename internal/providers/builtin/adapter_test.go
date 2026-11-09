@@ -105,6 +105,7 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 
 	var types []agents.EventType
 	var finalText string
+	var publishedToolOutput string
 	var turnEnded bool
 	deadline := time.After(5 * time.Second)
 	collecting := true
@@ -119,6 +120,9 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 				t.Fatalf("invalid event: %v", err)
 			}
 			types = append(types, event.Type)
+			if event.Type == agents.EventToolResult && event.ToolResult != nil {
+				publishedToolOutput = event.ToolResult.Output
+			}
 			if event.Type == agents.EventMessage && event.Message != nil && event.Message.Final && event.Message.Role == "assistant" {
 				finalText = event.Message.Text
 			}
@@ -187,6 +191,30 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 				t.Fatalf("tool call payload = %s/%s", payload.Name, payload.Input)
 			}
 		}
+	}
+
+	// SSE and history must expose the same raw tool result, not a summary.
+	history, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
+		Directory: workDir,
+		SessionID: ref.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("ListHistory: %v", err)
+	}
+	var replayedToolOutput string
+	for _, event := range history.Events {
+		if event.Type == agents.EventToolResult && event.ToolResult != nil {
+			replayedToolOutput = event.ToolResult.Output
+		}
+	}
+	if publishedToolOutput == "" {
+		t.Fatal("no tool result reached the live stream")
+	}
+	if replayedToolOutput != publishedToolOutput {
+		t.Fatalf("history tool output = %q, live = %q", replayedToolOutput, publishedToolOutput)
+	}
+	if !strings.Contains(publishedToolOutput, "Successfully wrote") {
+		t.Fatalf("tool output = %q, want the raw write_file output", publishedToolOutput)
 	}
 }
 
@@ -266,7 +294,7 @@ func TestConfirmModeBlocksUntilPermissionReply(t *testing.T) {
 		}
 	}
 	if rejectionSummary == "" {
-		t.Fatalf("the rejection never reached the model-facing summary: %+v", events)
+		t.Fatalf("the rejection never reached the model-facing output: %+v", events)
 	}
 
 	// An expired reply is a clean 409-style error.

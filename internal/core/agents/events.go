@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// MaxRawEventBytes bounds every backend JSON blob carried inside a
-// normalized event: the Raw metadata body and a tool call's Input. It keeps a
-// chatty or broken backend from inflating platform memory while still
-// preserving the original bytes of unknown events.
+// MaxRawEventBytes bounds the backend JSON blobs carried as metadata inside a
+// normalized event: the Raw body and a tool result's Metadata. Tool call
+// input is backend data and is passed through verbatim, so it is not bounded
+// here; the instance replay ring bounds retained event memory instead.
 const MaxRawEventBytes = 64 * 1024
 
 // MaxHistoryEvents bounds how many prior events one history read returns.
@@ -278,7 +278,8 @@ type ThinkingPayload struct {
 }
 
 // ToolCallPayload announces a tool invocation the agent requested. Input is
-// the backend's argument JSON, bounded by MaxRawEventBytes.
+// the backend's raw argument JSON, passed through verbatim. The contract does
+// not size-bound it; the replay ring's byte budget bounds retained events.
 type ToolCallPayload struct {
 	CallID string          `json:"callId"`
 	Name   string          `json:"name"`
@@ -286,8 +287,9 @@ type ToolCallPayload struct {
 }
 
 // ToolResultPayload reports the outcome of the tool call named by CallID.
-// Metadata optionally carries typed edit summaries (FileDiff list) alongside
-// the human-readable Output; it never exceeds MaxRawEventBytes.
+// Output is the tool's raw output, passed through verbatim and not summarized.
+// Metadata optionally carries typed edit summaries (FileDiff list) and never
+// exceeds MaxRawEventBytes.
 type ToolResultPayload struct {
 	CallID   string          `json:"callId"`
 	Output   string          `json:"output,omitempty"`
@@ -346,8 +348,9 @@ type NormalizedEvent struct {
 }
 
 // Validate reports whether the event satisfies the contract: a complete
-// envelope, a known type with exactly the matching payload, and every
-// embedded backend JSON blob within the size bound.
+// envelope, a known type with exactly the matching payload, and every bounded
+// metadata blob within the size bound. Tool call input is passed through and
+// is not size-checked here.
 func (e NormalizedEvent) Validate() error {
 	if e.InstanceID == "" {
 		return fmt.Errorf("%w: instance id is empty", ErrInvalidEvent)
@@ -412,9 +415,6 @@ func (e NormalizedEvent) Validate() error {
 		case got != want:
 			return fmt.Errorf("%w: %s event carries a %s payload", ErrInvalidEvent, e.Type, got)
 		}
-		if e.Type == EventToolCall && len(e.ToolCall.Input) > MaxRawEventBytes {
-			return fmt.Errorf("%w: tool call input is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.ToolCall.Input), MaxRawEventBytes)
-		}
 		if e.Type == EventToolResult && len(e.ToolResult.Metadata) > MaxRawEventBytes {
 			return fmt.Errorf("%w: tool result metadata is %d bytes, limit is %d", ErrRawEventTooLarge, len(e.ToolResult.Metadata), MaxRawEventBytes)
 		}
@@ -456,4 +456,3 @@ func IsQuestionTool(name string) bool {
 	}
 	return strings.Contains(lower, "ask_user") || strings.Contains(lower, "question")
 }
-
