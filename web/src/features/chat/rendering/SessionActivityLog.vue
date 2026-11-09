@@ -32,8 +32,10 @@ function toolEventsVisibleFor(entry: ChatEntry): boolean {
   return toolEventsVisible()
 }
 
+// Derive from the render model, not the raw props: buildLogModel already
+// removes a result whose call is on screen, because that call's card prints it.
 const visibleEntries = computed<ChatEntry[]>(() =>
-  props.messages.filter((entry) => {
+  model.value.visibleEntries.filter((entry) => {
     if (entry.kind === 'tool_call' || entry.kind === 'tool_result') {
       return toolEventsVisible()
     }

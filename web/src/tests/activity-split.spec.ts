@@ -144,6 +144,11 @@ describe('split message/activity log', () => {
     const read = calls[0]
     const shell = calls[1]
 
+    // A result whose call is on screen belongs to that call's card only: the
+    // pane must not add a second "工具结果" block for the same output.
+    expect(wrapper.findAll('[data-test="tool-result"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="tool-output"]')).toHaveLength(2)
+
     // Tools expose their full input and output instead of a summary line.
     expect(read.find('[data-test="tool-input"]').text()).toContain('/a.md')
     expect(read.find('.tool-output').text()).toContain('读取了 /a.md 文件')
@@ -151,6 +156,36 @@ describe('split message/activity log', () => {
 
     expect(shell.find('[data-test="tool-input"]').text()).toContain('ls -la')
     expect(shell.find('.tool-output').text()).toContain('执行了 ls -la 命令')
+  })
+
+  it('renders a repeated result for one call only once', () => {
+    const entries: ChatEntry[] = [
+      {
+        id: 'c1', kind: 'tool_call', role: 'assistant', text: 'read', name: 'read',
+        callId: 'call-1', input: { path: '/a.md' }, streaming: false,
+      },
+      { id: 'r1', kind: 'tool_result', role: 'tool', text: '第一次输出', callId: 'call-1', streaming: false },
+      { id: 'r2', kind: 'tool_result', role: 'tool', text: '第二次输出', callId: 'call-1', streaming: false },
+    ]
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    expect(wrapper.findAll('[data-test="tool-call"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-test="tool-result"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="tool-output"]')).toHaveLength(1)
+    expect(wrapper.find('[data-test="tool-output"]').text()).toContain('第二次输出')
+  })
+
+  it('still shows a tool result whose call is missing', () => {
+    const entries: ChatEntry[] = [
+      { id: 'r1', kind: 'tool_result', role: 'tool', text: '孤儿输出', callId: 'missing-call', streaming: false },
+    ]
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), display: 'activity' },
+    })
+    const result = wrapper.find('[data-test="tool-result"]')
+    expect(result.exists()).toBe(true)
+    expect(result.text()).toContain('孤儿输出')
   })
 
   it('renders an edit call with its diff body', () => {
@@ -216,6 +251,7 @@ describe('split message/activity log', () => {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
     expect(activityWrapper.find('[data-test="tool-call"]').exists()).toBe(false)
+    expect(activityWrapper.find('[data-test="tool-result"]').exists()).toBe(false)
 
     // 2. Rendered in message column
     const messageWrapper = mount(MessageView, {
@@ -250,6 +286,7 @@ describe('split message/activity log', () => {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
     expect(activityWrapper.find('[data-test="tool-call"]').exists()).toBe(false)
+    expect(activityWrapper.find('[data-test="tool-result"]').exists()).toBe(false)
 
     // 2. Rendered in message column
     const messageWrapper = mount(MessageView, {
