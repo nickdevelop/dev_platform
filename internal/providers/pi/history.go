@@ -56,7 +56,10 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	if err != nil {
 		return agents.HistoryResult{}, err
 	}
-	result := boundHistory(events)
+	result, err := agents.PageHistory(events, request.Limit, request.Before)
+	if err != nil {
+		return agents.HistoryResult{}, err
+	}
 	// A read that stopped early dropped data just as a bounded read does, and
 	// the caller must not present the remainder as the whole conversation.
 	result.Truncated = result.Truncated || partial
@@ -309,18 +312,4 @@ func decodeHistoryContent(raw json.RawMessage) []historyBlock {
 		return nil
 	}
 	return blocks
-}
-
-// boundHistory keeps the most recent MaxHistoryEvents and renumbers them from
-// one, so an unbounded transcript is never materialized whole. It reports
-// whether older events were dropped.
-func boundHistory(events []agents.NormalizedEvent) agents.HistoryResult {
-	truncated := len(events) > agents.MaxHistoryEvents
-	if truncated {
-		events = events[len(events)-agents.MaxHistoryEvents:]
-	}
-	for i := range events {
-		events[i].Sequence = uint64(i + 1)
-	}
-	return agents.HistoryResult{Events: events, Truncated: truncated}
 }

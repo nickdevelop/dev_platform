@@ -135,19 +135,13 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 		return agents.HistoryResult{}, errors.New("builtin: transcript belongs to another working directory")
 	}
 
-	events, truncated := transcriptToEvents(records)
-	return agents.HistoryResult{Events: events, Truncated: truncated}, nil
+	events := transcriptToEvents(records)
+	return agents.PageHistory(events, request.Limit, request.Before)
 }
 
-// transcriptToEvents converts stored records into replayed events,
-// renumbered from one so sequence stays dense. A very long transcript is
-// bounded like every other backend's history read.
-func transcriptToEvents(records []TranscriptRecord) ([]agents.NormalizedEvent, bool) {
-	truncated := false
-	if len(records) > agents.MaxHistoryEvents {
-		records = records[len(records)-agents.MaxHistoryEvents:]
-		truncated = true
-	}
+// transcriptToEvents converts stored records into replayed events. The caller
+// applies the shared page bound; Sequence is renumbered there.
+func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 	events := make([]agents.NormalizedEvent, 0, len(records))
 	for index, record := range records {
 		timestamp := record.CreatedAt
@@ -197,5 +191,5 @@ func transcriptToEvents(records []TranscriptRecord) ([]agents.NormalizedEvent, b
 		event.Sequence = uint64(index + 1)
 		events = append(events, event)
 	}
-	return events, truncated
+	return events
 }

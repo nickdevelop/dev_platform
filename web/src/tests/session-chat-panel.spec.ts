@@ -123,7 +123,7 @@ function stubSessionList(
 ) {
   const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+    if (new URL(url, 'http://localhost').pathname.endsWith('/history')) return { status: 200, json: async () => history } as Response
     if (url.endsWith('/continue')) {
       const id = url.split('/')[5]
       const found = list.find((entry) => entry.id === id) ?? list[0]
@@ -421,7 +421,7 @@ describe('SessionChatPanel opencode approvals', () => {
     expect(openSession).toHaveBeenCalledWith(1, 'sess-1')
     const urls = fetchSpy.mock.calls.map((call) => String(call[0]))
     expect(urls.some((url) => url.endsWith('/continue'))).toBe(true)
-    expect(urls.some((url) => url.endsWith('/history'))).toBe(true)
+    expect(urls.some((url) => new URL(url, 'http://localhost').pathname.endsWith('/history'))).toBe(true)
   })
 
   it('renders no instance identifier in the header', async () => {
@@ -462,7 +462,7 @@ describe('SessionChatPanel opencode approvals', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           historyCalls += 1
           if (historyCalls === 1) {
             return { status: 502, json: async () => ({ error: 'agent_operation_failed' }) } as Response
@@ -488,7 +488,7 @@ describe('SessionChatPanel opencode approvals', () => {
   it('explains a session that stays disconnected and offers to retry', async () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/history')) {
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
         return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
       }
       if (url.endsWith('/continue')) {
@@ -524,7 +524,7 @@ describe('SessionChatPanel opencode approvals', () => {
     useAgentsStore().backends = backendFixtures()
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
-      if (url.endsWith('/history')) {
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
         return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
       }
       if (url.endsWith('/continue')) {
@@ -567,7 +567,7 @@ describe('SessionChatPanel opencode approvals', () => {
         if (url.endsWith('/continue')) {
           return { status: 200, json: async () => session('sess-1') } as Response
         }
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return { status: 200, json: async () => ({ sessions: [session('sess-1')] }) } as Response
@@ -725,7 +725,7 @@ describe('SessionChatPanel opencode approvals', () => {
             json: async () => session('sess-1', { capabilities: capabilities({ modelSelection: true }) }),
           } as Response
         }
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return {
@@ -767,7 +767,7 @@ describe('SessionChatPanel opencode approvals', () => {
         if (url.endsWith('/continue')) {
           return { status: 200, json: async () => session('sess-1', { capabilities: selectable }) } as Response
         }
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return {
@@ -802,7 +802,7 @@ describe('SessionChatPanel opencode approvals', () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
         if (url.endsWith('/models')) return { status: 200, json: async () => ({ models }) } as Response
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         if (url.endsWith('/continue')) {
@@ -859,7 +859,7 @@ describe('SessionChatPanel opencode approvals', () => {
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
         if (url.endsWith('/models')) return { status: 200, json: async () => ({ models }) } as Response
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           const id = url.split('/')[5]
           const model = used[id] ?? 'pi/a'
           return {
@@ -942,7 +942,7 @@ describe('SessionChatPanel opencode approvals', () => {
         if (url.endsWith('/continue')) {
           return { status: 200, json: async () => session('sess-1', { capabilities: selectable }) } as Response
         }
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
         }
         return {
@@ -1071,7 +1071,7 @@ describe('SessionChatPanel conversation layout', () => {
       if (url.includes('/git-info')) {
         return { status: 200, json: async () => ({ isGit: true, branch: 'feature-x', dirty: true }) } as Response
       }
-      if (url.endsWith('/history')) {
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
         return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
       }
       if (url.endsWith('/continue')) {
@@ -1101,7 +1101,7 @@ describe('SessionChatPanel conversation layout', () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/git-info')) return { status: 200, json: async () => ({ isGit: false }) } as Response
-      if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) return { status: 200, json: async () => history } as Response
       if (url.endsWith('/continue')) {
         return { status: 200, json: async () => session('sess-1') } as Response
       }
@@ -1141,7 +1141,7 @@ describe('SessionChatPanel conversation layout', () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/git-info')) return { status: 200, json: async () => ({ isGit: false }) } as Response
-      if (url.endsWith('/history')) return { status: 200, json: async () => history } as Response
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) return { status: 200, json: async () => history } as Response
       if (url.endsWith('/continue')) {
         return { status: 200, json: async () => session('sess-1') } as Response
       }
@@ -1395,7 +1395,7 @@ describe('SessionChatPanel scroll following', () => {
       if (url.endsWith('/messages')) {
         return { status: 200, json: async () => session('sess-1') } as Response
       }
-      if (url.endsWith('/history')) {
+      if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
         return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
       }
       if (url.endsWith('/continue')) {

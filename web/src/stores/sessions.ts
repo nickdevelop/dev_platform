@@ -66,6 +66,51 @@ export type { ChatEntry, StreamStatus } from '../features/chat/state/sessionLog'
 // state on purpose — they are ephemeral scheduling, not persisted store data.
 const repairTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const repairDelayMs = 1200
+// History opens on the newest page and grows backwards; 200 events is roughly
+// a dozen turns even when tool calls dominate, small enough for a fast first
+// paint and large enough that scrolling up is uncommon.
+const historyPageSize = 200
+// Repair and mention only need the tail; one page is plenty in practice.
+const historyTailWindow = 100
+
+// historyEntriesFromEvents maps one replayed page to log entries without the
+// live path's streaming merge: history events are complete snapshots, and a
+// page may be prepended, so it must not touch an open live block.
+function historyEntriesFromEvents(sessionId: string, events: NormalizedEvent[]): ChatEntry[] {
+  const entries: ChatEntry[] = []
+  for (const event of events) {
+    if (event.type === 'message' && event.message) {
+      if (event.message.text === '' && (!event.message.images || event.message.images.length === 0)) continue
+      entries.push({
+        id: nextEntryID(sessionId, event.sequence, 'message'),
+        kind: 'message',
+        role: event.message.role,
+        text: event.message.text,
+        images: event.message.images,
+        streaming: false,
+        timestamp: event.timestamp || new Date().toISOString(),
+        model: event.message.model,
+        usage: event.message.usage,
+      })
+      continue
+    }
+    if (event.type === 'thinking' && event.thinking) {
+      if (event.thinking.text === '') continue
+      entries.push({
+        id: nextEntryID(sessionId, event.sequence, 'thinking'),
+        kind: 'thinking',
+        role: 'assistant',
+        text: event.thinking.text,
+        streaming: false,
+        timestamp: event.timestamp,
+      })
+      continue
+    }
+    const entry = entryFromEvent(sessionId, event)
+    if (entry) entries.push(entry)
+  }
+  return entries
+}
 
 // The store keeps the data (session index, logs, per-session state) in this
 // file and delegates stream machinery to the chat feature's execution layer
@@ -89,6 +134,12 @@ export const useSessionsStore = defineStore('sessions', {
     historyLoaded: {} as Record<string, boolean>,
     historyError: {} as Record<string, string>,
     historyTruncated: {} as Record<string, boolean>,
+    // Paging state: the cursor for the next older page, whether one exists,
+    // and the independent loading/error state of the "load older" action.
+    historyCursor: {} as Record<string, string>,
+    historyHasMore: {} as Record<string, boolean>,
+    historyOlderLoading: {} as Record<string, boolean>,
+    historyOlderError: {} as Record<string, string>,
     // historyTailGuard is true right after a replay, when a backend may
     // re-deliver the message the history ended with.
     historyTailGuard: {} as Record<string, boolean>,
@@ -326,6 +377,10 @@ export const useSessionsStore = defineStore('sessions', {
       delete this.historyError[sessionId]
       delete this.historyTruncated[sessionId]
       delete this.historyTailGuard[sessionId]
+      delete this.historyCursor[sessionId]
+      delete this.historyHasMore[sessionId]
+      delete this.historyOlderLoading[sessionId]
+      delete this.historyOlderError[sessionId]
       delete this.selectedModels[sessionId]
       delete this.autoModels[sessionId]
       delete this.creationModels[sessionId]
@@ -360,6 +415,10 @@ export const useSessionsStore = defineStore('sessions', {
       this.messages[sessionId] = []
       this.historyLoaded[sessionId] = false
       this.historyTailGuard[sessionId] = false
+      this.historyCursor[sessionId] = ''
+      this.historyHasMore[sessionId] = false
+      this.historyOlderError[sessionId] = ''
+      this.historyOlderLoading[sessionId] = false
       forgetResumePosition(sessionId)
       await this.openSession(projectId, sessionId)
     },
@@ -416,35 +475,16 @@ export const useSessionsStore = defineStore('sessions', {
       if (this.historyLoaded[sessionId]) return
       this.historyError[sessionId] = ''
       try {
-        const history = await getSessionHistory(projectId, sessionId)
+        const history = await getSessionHistory(projectId, sessionId, {
+          limit: historyPageSize,
+          includeImages: false,
+        })
         if (this.historyLoaded[sessionId]) return
-        const entries = this.ensureMessages(sessionId)
-        for (const event of history.events) {
-          if (event.type === 'message' && event.message) {
-            // Replayed messages are complete and are never echo-deduplicated:
-            // two identical user turns in a transcript are two real turns.
-            // (Echo dedupe lives in the live path's echoPending; replay never
-            // consults it.)
-            this.appendMessage(
-              sessionId,
-              event.message.role,
-              event.message.text,
-              event.message.final,
-              event.sequence,
-              event.message.model,
-              event.message.usage,
-              event.message.images,
-              event.timestamp,
-            )
-            continue
-          }
-          if (event.type === 'thinking' && event.thinking) {
-            this.appendThinking(sessionId, event.thinking.text, event.thinking.final, event.sequence)
-            continue
-          }
-          const entry = entryFromEvent(sessionId, event)
-          if (entry) entries.push(entry)
-        }
+        const existing = this.ensureMessages(sessionId)
+        // Replayed messages are complete and never echo-deduplicated: two
+        // identical user turns in a transcript are two real turns.
+        const entries = historyEntriesFromEvents(sessionId, history.events)
+        this.messages[sessionId] = [...existing, ...entries]
         // The live stream may re-deliver the message the replay ended with;
         // historyTailGuard spends one live message on that. The guard stays even
         // though history is no longer marked off by a separator: history and the
@@ -454,6 +494,9 @@ export const useSessionsStore = defineStore('sessions', {
           this.historyTailGuard[sessionId] = true
         }
         this.historyTruncated[sessionId] = history.truncated
+        this.historyCursor[sessionId] = history.nextCursor ?? ''
+        this.historyHasMore[sessionId] = history.hasMore === true
+        this.historyOlderError[sessionId] = ''
         this.historyLoaded[sessionId] = true
 
         let latestTimestamp = ''
@@ -484,6 +527,36 @@ export const useSessionsStore = defineStore('sessions', {
       } catch (error) {
         if (error instanceof UnauthorizedError) return
         this.historyError[sessionId] = describeApiError(error)
+      }
+    },
+
+    // loadOlderHistory prepends the next older page. The caller adjusts the
+    // scroll position; the store only guarantees event order and paging state.
+    async loadOlderHistory(projectId: number, sessionId: string) {
+      if (!this.historyLoaded[sessionId] || this.historyOlderLoading[sessionId]) return
+      if (!this.historyHasMore[sessionId]) return
+      const cursor = this.historyCursor[sessionId]
+      if (!cursor) return
+      this.historyOlderLoading[sessionId] = true
+      this.historyOlderError[sessionId] = ''
+      try {
+        const history = await getSessionHistory(projectId, sessionId, {
+          limit: historyPageSize,
+          before: cursor,
+          includeImages: false,
+        })
+        if (!this.historyLoaded[sessionId]) return
+        const older = historyEntriesFromEvents(sessionId, history.events)
+        const list = this.ensureMessages(sessionId)
+        this.messages[sessionId] = [...older, ...list]
+        this.historyCursor[sessionId] = history.nextCursor ?? ''
+        this.historyHasMore[sessionId] = history.hasMore === true
+        if (history.truncated) this.historyTruncated[sessionId] = true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return
+        this.historyOlderError[sessionId] = describeApiError(error)
+      } finally {
+        this.historyOlderLoading[sessionId] = false
       }
     },
 
@@ -705,7 +778,10 @@ export const useSessionsStore = defineStore('sessions', {
       const beforeLastId = before.length > 0 ? before[before.length - 1].id : ''
       let history: SessionHistory
       try {
-        history = await getSessionHistory(projectId, sessionId)
+        history = await getSessionHistory(projectId, sessionId, {
+          limit: historyTailWindow,
+          includeImages: false,
+        })
       } catch (error) {
         if (error instanceof UnauthorizedError) return
         return

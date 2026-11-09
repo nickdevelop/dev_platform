@@ -2120,8 +2120,13 @@ paths:
         replayed=true. A tool_result event may carry metadata.files (file, patch, additions, deletions, status) for file edits; the workbench renders the desktop-style +N/-N badge and diff body from it and falls back to plain output text when absent. History stays in the agent's own storage: the platform
         reads it on demand and keeps no copy, so a session whose instance has
         stopped can still be replayed. Requires the backend to declare
-        sessionHistory support. At most 5000 of the most recent events are
-        returned; truncated reports that older events were left out.
+        sessionHistory support. Without `limit`, at most 5000 of the most
+        recent events are returned and `truncated` reports that older events
+        were left out. With `limit`, one page is returned; `hasMore` and
+        `nextCursor` walk older pages. Pages are aligned to a user-turn
+        boundary, so a page can exceed the soft limit when one turn is long.
+        `before` is opaque and assumes an append-only transcript; a stale
+        cursor answers 400 `invalid_history_cursor`.
       operationId: readProjectSessionHistory
       security:
         - cookieAuth: []
@@ -2139,6 +2144,36 @@ paths:
           description: Platform identifier of the session.
           schema:
             type: string
+        - name: limit
+          in: query
+          required: false
+          description: >-
+            Requested page size (1-1000). Omit for the legacy read of the most
+            recent 5000 events. The returned page ends at the newest event and
+            starts at the nearest user message, so `limit` is a soft bound.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        - name: before
+          in: query
+          required: false
+          description: >-
+            Opaque cursor from the previous page's `nextCursor`. Only valid
+            together with `limit`. Returns the page immediately older than the
+            cursor.
+          schema:
+            type: string
+        - name: includeImages
+          in: query
+          required: false
+          description: >-
+            When false, image bodies may be omitted and described by `url`
+            instead (backends that support lazy history images). Defaults to
+            true for older clients.
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: The session's replayed prior turns, oldest first.
@@ -2146,6 +2181,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AgentSessionHistory'
+        '400':
+          description: Malformed paging query or a stale history cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -5888,6 +5929,7 @@ components:
       required:
         - events
         - truncated
+        - hasMore
       properties:
         events:
           type: array
@@ -5904,9 +5946,19 @@ components:
         truncated:
           type: boolean
           description: >-
-            True when older events exist beyond the returned window, so the
-            client can say so instead of presenting a partial history as
-            complete.
+            True when the reader could not return the requested window (the
+            legacy 5000-event hard bound, or a partial transcript read). It no
+            longer means "more pages exist"; `hasMore` carries that.
+        hasMore:
+          type: boolean
+          description: >-
+            True when older events exist before this page. Call the endpoint
+            again with `before=nextCursor` to load them.
+        nextCursor:
+          type: string
+          description: >-
+            Opaque cursor for the next older page. Empty when `hasMore` is
+            false.
       additionalProperties: false
     ModelInfo:
       type: object

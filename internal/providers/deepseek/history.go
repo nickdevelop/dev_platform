@@ -132,7 +132,6 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	})
 
 	var collectedEvents []agents.NormalizedEvent
-	truncated := false
 	for _, rec := range allRecords {
 		frame := map[string]any{
 			"type":  "event",
@@ -147,11 +146,6 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 				collectedEvents = append(collectedEvents, ev)
 			}
 		}
-	}
-
-	if len(collectedEvents) > agents.MaxHistoryEvents {
-		collectedEvents = collectedEvents[len(collectedEvents)-agents.MaxHistoryEvents:]
-		truncated = true
 	}
 
 	// 3. If projections carry context/usage anchor and none was in history, attach an anchor event
@@ -197,19 +191,16 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 		}
 	}
 
-	// Renumber sequences from 1 and ensure contract compliance (InstanceID and SessionID empty)
+	// Ensure contract compliance (InstanceID and SessionID empty); PageHistory
+	// applies the requested bound and renumbers the returned page from one.
 	for i := range collectedEvents {
 		collectedEvents[i].Backend = agents.BackendDeepSeek
 		collectedEvents[i].InstanceID = ""
 		collectedEvents[i].SessionID = ""
-		collectedEvents[i].Sequence = uint64(i + 1)
 		if collectedEvents[i].Timestamp.IsZero() {
 			collectedEvents[i].Timestamp = time.Now().UTC()
 		}
 	}
 
-	return agents.HistoryResult{
-		Events:    collectedEvents,
-		Truncated: truncated,
-	}, nil
+	return agents.PageHistory(collectedEvents, request.Limit, request.Before)
 }

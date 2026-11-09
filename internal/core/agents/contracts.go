@@ -40,6 +40,10 @@ var (
 	// ErrInvalidHistoryRequest reports a history read that does not name both
 	// a working directory and an agent-native session id.
 	ErrInvalidHistoryRequest = errors.New("agents: invalid history request")
+	// ErrInvalidHistoryCursor reports a history page cursor that is malformed
+	// or outside the current transcript. Cursors are opaque to clients; a
+	// stale one usually means the agent rewrote its transcript.
+	ErrInvalidHistoryCursor = errors.New("agents: invalid history cursor")
 )
 
 // BackendID identifies an agent backend supported by the workbench. The
@@ -275,6 +279,13 @@ type ListHistoryRequest struct {
 	Directory string `json:"directory"`
 	// SessionID is the agent-native session identifier.
 	SessionID string `json:"sessionId"`
+	// Limit asks for one page of at most this many events, aligned to a user
+	// turn boundary. Zero preserves the legacy behavior: the most recent
+	// MaxHistoryEvents events with Truncated reporting the hard bound.
+	Limit int `json:"limit,omitempty"`
+	// Before is the opaque cursor returned as HistoryResult.NextCursor by the
+	// previous page. It is only meaningful together with Limit.
+	Before string `json:"before,omitempty"`
 }
 
 // Validate reports whether the history request names both the directory and
@@ -407,11 +418,18 @@ type BackendCloser interface {
 // reader that bounded the read reports it, because only it knows whether
 // anything was dropped.
 type HistoryResult struct {
-	// Events are the replayed events, oldest first, bounded by
-	// MaxHistoryEvents and renumbered from one.
+	// Events are the replayed events, oldest first, bounded by the requested
+	// page or by MaxHistoryEvents for a legacy read, and renumbered from one.
 	Events []NormalizedEvent
-	// Truncated reports that older events exist beyond the bound.
+	// Truncated reports that the reader could not return the whole requested
+	// window (a hard bound or a partial transcript read). It no longer means
+	// "more pages exist"; HasMore carries that.
 	Truncated bool
+	// HasMore reports that older events exist before this page.
+	HasMore bool
+	// NextCursor is the opaque cursor to pass as Before for the next older
+	// page. It is empty when HasMore is false.
+	NextCursor string
 }
 
 // HistoryReader is the optional half of the adapter contract: an adapter

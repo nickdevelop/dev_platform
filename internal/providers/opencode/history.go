@@ -43,7 +43,7 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	for _, message := range messages {
 		events = append(events, normalizeHistoryMessage(message)...)
 	}
-	return boundHistory(events), nil
+	return agents.PageHistory(events, request.Limit, request.Before)
 }
 
 // historyInstance returns a running instance whose client can answer for the
@@ -232,18 +232,4 @@ func historyErrorMessage(state *ToolState) string {
 		}
 	}
 	return "opencode reported a failure"
-}
-
-// boundHistory keeps the most recent agents.MaxHistoryEvents and renumbers them
-// from one, so an unbounded log is never materialized whole. It reports whether
-// older events were dropped.
-func boundHistory(events []agents.NormalizedEvent) agents.HistoryResult {
-	truncated := len(events) > agents.MaxHistoryEvents
-	if truncated {
-		events = events[len(events)-agents.MaxHistoryEvents:]
-	}
-	for i := range events {
-		events[i].Sequence = uint64(i + 1)
-	}
-	return agents.HistoryResult{Events: events, Truncated: truncated}
 }

@@ -70,7 +70,7 @@ class FakeEventSource {
 function stubSessionList(list: AgentSession[]) {
   const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.endsWith('/history')) return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+    if (new URL(url, 'http://localhost').pathname.endsWith('/history')) return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
     if (url.endsWith('/continue')) return { status: 200, json: async () => list[0] } as Response
     return { status: 200, json: async () => ({ sessions: list }) } as Response
   })

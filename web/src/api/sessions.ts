@@ -195,6 +195,17 @@ export interface NormalizedEvent {
 export interface SessionHistory {
   events: NormalizedEvent[]
   truncated: boolean
+  hasMore: boolean
+  nextCursor?: string
+}
+
+export interface SessionHistoryOptions {
+  // Requested page size; omitted keeps the legacy full read.
+  limit?: number
+  // Opaque cursor returned as nextCursor by the previous page.
+  before?: string
+  // false asks the server to describe images by URL instead of inline base64.
+  includeImages?: boolean
 }
 
 // GET /api/projects/{id}/sessions
@@ -229,9 +240,21 @@ export function createProjectSession(
 export function getSessionHistory(
   projectId: number,
   sessionId: string,
+  options?: SessionHistoryOptions,
 ): Promise<SessionHistory> {
+  const params = new URLSearchParams()
+  if (options?.limit !== undefined && options.limit > 0) {
+    params.set('limit', String(options.limit))
+  }
+  if (options?.before) {
+    params.set('before', options.before)
+  }
+  if (options?.includeImages !== undefined) {
+    params.set('includeImages', String(options.includeImages))
+  }
+  const query = params.toString()
   return get<SessionHistory>(
-    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/history`,
+    `/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/history${query ? `?${query}` : ''}`,
   )
 }
 

@@ -112,6 +112,17 @@ describe('session history API contract', () => {
     expect(headersOf(calls[0])['X-CSRF-Token']).toBeUndefined()
     expect(history.truncated).toBe(true)
   })
+
+  it('passes paging and image options as query parameters', async () => {
+    const calls = stubJson({ events: [], truncated: false, hasMore: false })
+
+    await getSessionHistory(7, 'ses/1', { limit: 200, before: '40', includeImages: false })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe(
+      '/api/projects/7/sessions/ses%2F1/history?limit=200&before=40&includeImages=false',
+    )
+  })
 })
 
 describe('settings and model API contracts', () => {

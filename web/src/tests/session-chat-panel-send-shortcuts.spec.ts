@@ -85,7 +85,7 @@ function stubSessionList(list: AgentSession[]) {
     if (url.endsWith('/instances')) {
       return { status: 200, json: async () => ({ instances: defaultInstances }) } as Response
     }
-    if (url.endsWith('/history')) return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
+    if (new URL(url, 'http://localhost').pathname.endsWith('/history')) return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
     if (url.endsWith('/continue')) {
       const id = url.split('/')[5]
       const found = list.find((entry) => entry.id === id) ?? list[0]

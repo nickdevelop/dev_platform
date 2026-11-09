@@ -432,8 +432,8 @@ async function createSession() {
   const rawText = messageText.value.trim()
   const textToSend =
     rawText !== ''
-      ? await resolveSessionMentions(targetProjectId, rawText, (targetId) =>
-          getSessionHistory(targetProjectId, targetId),
+      ? await resolveSessionMentions(targetProjectId, rawText, (targetId, options) =>
+          getSessionHistory(targetProjectId, targetId, options),
         )
       : ''
   const finalMessage = selectedPrompt.value

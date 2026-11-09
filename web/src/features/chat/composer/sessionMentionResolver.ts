@@ -39,14 +39,40 @@ export function parseSessionMentions(text: string): ParsedSessionMention[] {
   return matches
 }
 
+type MentionHistoryEntry = { kind?: string; role?: string; text?: string }
+
+// historyEntries accepts the current event-shaped history and the older
+// entries-shaped payload some clients still send.
+function historyEntries(history: any): MentionHistoryEntry[] {
+  return (
+    history?.entries ||
+    (history?.events || [])
+      .filter((e: any) => e.type === 'message')
+      .map((e: any) => ({
+        role: e.message?.role,
+        text: e.message?.text,
+      }))
+  )
+}
+
+function relevantCount(entries: MentionHistoryEntry[]): number {
+  return entries.filter((e) => e.kind === 'user' || e.kind === 'agent' || e.role === 'user' || e.role === 'assistant').length
+}
+
 /**
  * Resolves session mentions in the user text, fetches referenced histories,
  * rewrites references into natural titles, and appends reference context blocks.
  */
+export interface SessionHistoryFetchOptions {
+  limit?: number
+  before?: string
+  includeImages?: boolean
+}
+
 export async function resolveSessionMentions(
   projectId: number,
   text: string,
-  fetchHistory: (sessionId: string) => Promise<SessionHistory>,
+  fetchHistory: (sessionId: string, options?: SessionHistoryFetchOptions) => Promise<SessionHistory>,
 ): Promise<string> {
   const mentions = parseSessionMentions(text)
   if (mentions.length === 0) return text
@@ -59,15 +85,26 @@ export async function resolveSessionMentions(
     seenSessions.add(mention.sessionId)
 
     try {
-      const history = (await fetchHistory(mention.sessionId)) as any
-      const entries: Array<{ kind?: string; role?: string; text?: string }> =
-        history?.entries ||
-        (history?.events || [])
-          .filter((e: any) => e.type === 'message')
-          .map((e: any) => ({
-            role: e.message?.role,
-            text: e.message?.text,
-          }))
+      // A mention only needs the last few messages, not the whole transcript.
+      // Start from a bounded tail and walk backwards only when the window did
+      // not contain enough messages.
+      let history = await fetchHistory(mention.sessionId, {
+        limit: 100,
+        includeImages: false,
+      })
+      let entries = historyEntries(history)
+      for (let page = 1; page < 3 && relevantCount(entries) < 4 && history?.hasMore && history?.nextCursor; page += 1) {
+        try {
+          history = await fetchHistory(mention.sessionId, {
+            limit: 100,
+            before: history.nextCursor,
+            includeImages: false,
+          })
+          entries = [...historyEntries(history), ...entries]
+        } catch {
+          break
+        }
+      }
 
       if (entries.length > 0) {
         // Extract up to the last 4 user/agent messages as summary context

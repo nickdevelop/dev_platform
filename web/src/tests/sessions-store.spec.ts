@@ -225,8 +225,9 @@ function stubRoutes(routes: Record<string, unknown>): string[] {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(url)
+      const pathname = new URL(url, 'http://localhost').pathname
       for (const [suffix, payload] of Object.entries(routes)) {
-        if (url.endsWith(suffix)) return { status: 200, json: async () => payload } as Response
+        if (pathname.endsWith(suffix)) return { status: 200, json: async () => payload } as Response
       }
       if (url.includes('/events/') && url.includes('/subscriptions')) {
         if (init?.method === 'DELETE') {
@@ -275,7 +276,7 @@ describe('sessions store history', () => {
 
     expect(calls.filter((c) => !c.includes('/events/'))).toEqual([
       '/api/projects/1/sessions/s1/continue',
-      '/api/projects/1/sessions/s1/history',
+      '/api/projects/1/sessions/s1/history?limit=200&includeImages=false',
     ])
     expect(calls.some((c) => c.includes('/events/') && c.includes('/subscriptions'))).toBe(true)
     expect(RecordingEventSource.instances).toHaveLength(1)
@@ -317,7 +318,7 @@ describe('sessions store history', () => {
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
-        if (url.endsWith('/history')) {
+        if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
           return { status: 502, json: async () => ({ code: 'agent_operation_failed', message: '读不到历史' }) } as Response
         }
         return { status: 200, json: async () => session('s1', 1) } as Response
@@ -338,6 +339,64 @@ describe('sessions store history', () => {
     await sessions.loadHistory(1, 's1')
 
     expect(sessions.historyTruncated['s1']).toBe(true)
+  })
+
+  it('opens on a tail page and records its cursor', async () => {
+    const sessions = useSessionsStore()
+    const calls = stubRoutes({
+      '/history': {
+        events: [messageEvent('assistant', '最新一页', 1)],
+        truncated: false,
+        hasMore: true,
+        nextCursor: '40',
+      },
+    })
+
+    await sessions.loadHistory(1, 's1')
+
+    expect(calls[0]).toContain('limit=200')
+    expect(calls[0]).toContain('includeImages=false')
+    expect(sessions.historyHasMore['s1']).toBe(true)
+    expect(sessions.historyCursor['s1']).toBe('40')
+  })
+
+  it('prepends an older page without disturbing the newer log', async () => {
+    const sessions = useSessionsStore()
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost')
+        calls.push(url.pathname + url.search)
+        if (url.searchParams.get('before')) {
+          return {
+            status: 200,
+            json: async () => ({
+              events: [messageEvent('user', '更早的问题', 1)],
+              truncated: false,
+              hasMore: false,
+            }),
+          } as Response
+        }
+        return {
+          status: 200,
+          json: async () => ({
+            events: [messageEvent('assistant', '最新的回答', 2)],
+            truncated: false,
+            hasMore: true,
+            nextCursor: '1',
+          }),
+        } as Response
+      }),
+    )
+
+    await sessions.loadHistory(1, 's1')
+    await sessions.loadOlderHistory(1, 's1')
+
+    expect(calls[1]).toContain('before=1')
+    expect(sessions.messagesFor('s1').map((entry) => entry.text)).toEqual(['更早的问题', '最新的回答'])
+    expect(sessions.historyHasMore['s1']).toBe(false)
+    expect(sessions.historyCursor['s1']).toBe('')
   })
 
   it('drops a live echo of the message history already ended with', async () => {
@@ -1560,7 +1619,7 @@ describe('sessions store stream resume', () => {
 
     // The broken log and its stale resume position are gone: the reopened
     // stream dials fresh and history was re-fetched.
-    expect(calls).toContain('/api/projects/1/sessions/s1/history')
+    expect(calls.some((url) => new URL(url, 'http://localhost').pathname.endsWith('/history'))).toBe(true)
     expect(StreamingEventSource.instances[0].url).toContain('/api/events/')
   })
 })

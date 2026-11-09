@@ -307,9 +307,9 @@ flag gates it, because it drives no control — a backend that never reasons
 simply never emits it. The workbench renders it as a collapsed block of its own
 rather than folding it into the reply.
 
-Reads are bounded by `agents.MaxHistoryEvents = 5000`: a reader keeps the most
-recent events, renumbers them from one and reports the truncation through
-`HistoryResult.Truncated` (surfaced as `truncated` on
+Without a `limit`, reads are bounded by `agents.MaxHistoryEvents = 5000`: a
+reader keeps the most recent events, renumbers them from one and reports the
+truncation through `HistoryResult.Truncated` (surfaced as `truncated` on
 `GET /api/projects/{id}/sessions/{sessionId}/history`), so the workbench can say
 an older part was left out instead of presenting a partial transcript as
 complete. A transcript whose last line is half-written ends the read with the
@@ -318,6 +318,18 @@ turn currently being written, so nothing earlier was lost. An unreadable or
 oversized record anywhere else does report truncation, because everything after
 it is gone and the workbench must not present the remainder as the whole
 conversation.
+
+With `limit=N`, the same endpoint returns one page and exposes `hasMore` plus
+an opaque `nextCursor`; the workbench opens on a 200-event tail and loads older
+pages on demand. `agents.PageHistory` implements the slicing for every adapter,
+so the cursor format does not leak into providers. Pages end at the newest
+event and start at the nearest user message: `limit` is a soft bound, and one
+long turn can make a page larger rather than splitting its tool-call/result
+pairs. Each page renumbers `sequence` from one. The cursor assumes an
+append-only transcript; if the agent rewrites or compacts it, the endpoint
+answers 400 `invalid_history_cursor` and the workbench surfaces a retryable error instead of showing the page.
+`truncated` now means only a hard bound or a partial read; it no longer means
+"more pages exist".
 
 opencode's history read needs a running server, because that is where the
 message log lives; the platform starts one if none is running before reading.

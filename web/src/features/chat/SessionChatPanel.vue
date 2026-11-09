@@ -501,9 +501,24 @@ const logSignature = computed(() => {
 const streamStatus = computed(() => sessions.statusFor(props.sessionId))
 const historyError = computed(() => sessions.historyError[props.sessionId] ?? '')
 const historyTruncated = computed(() => sessions.historyTruncated[props.sessionId] === true)
+const historyHasMore = computed(() => sessions.historyHasMore[props.sessionId] === true)
+const historyOlderLoading = computed(() => sessions.historyOlderLoading[props.sessionId] === true)
+const historyOlderError = computed(() => sessions.historyOlderError[props.sessionId] ?? '')
 // The message column follows its scroller: reaching the bottom resumes
 // following and hides the jump button; scrolling away parks the view. See shared/scrollFollow.
 const logFollow = useBottomFollow(logScroll, logSignature)
+
+async function loadOlderHistory() {
+  const scroller = logScroll.value
+  const previousHeight = scroller?.scrollHeight ?? 0
+  const previousTop = scroller?.scrollTop ?? 0
+  await sessions.loadOlderHistory(props.projectId, props.sessionId)
+  await nextTick()
+  if (scroller) {
+    // Keep the user's reading position: the prepended page adds height above.
+    scroller.scrollTop = previousTop + (scroller.scrollHeight - previousHeight)
+  }
+}
 
 function onLogScroll() {
   logFollow.onScroll()
@@ -807,8 +822,8 @@ async function send() {
   sending.value = true
   sendError.value = ''
   const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
-  const textToSend = await resolveSessionMentions(props.projectId, messageText.value, (targetId) =>
-    getSessionHistory(props.projectId, targetId),
+  const textToSend = await resolveSessionMentions(props.projectId, messageText.value, (targetId, options) =>
+    getSessionHistory(props.projectId, targetId, options),
   )
   const updated = await sessions.sendMessage(props.projectId, session.id, textToSend, model, attachedImages.value)
   // The text is kept on failure so the user can retry without retyping it.
@@ -1007,6 +1022,20 @@ async function removeSession() {
               ref="logScroll"
               @scroll.passive="onLogScroll"
             >
+              <button
+                v-if="historyHasMore"
+                type="button"
+                class="load-older"
+                data-test="load-older-history"
+                :disabled="historyOlderLoading"
+                @click="loadOlderHistory"
+              >
+                {{ historyOlderLoading ? '正在加载更早的消息…' : '加载更早的消息' }}
+              </button>
+              <p v-if="historyOlderError" class="history-error" data-test="history-older-error" role="alert">
+                {{ historyOlderError }}
+              </p>
+
               <MessageView
                 :messages="activeMessages"
                 :capabilities="activeSession.capabilities"
@@ -2305,6 +2334,28 @@ async function removeSession() {
   color: var(--color-primary-hover);
   font-size: 0.8rem;
   font-weight: 500;
+}
+
+.load-older {
+  display: block;
+  margin: 0.6rem auto;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.load-older:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.load-older:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .history-note {

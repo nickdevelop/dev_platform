@@ -42,7 +42,7 @@ describe('sessionMentionResolver', () => {
     const fetchHistory = vi.fn().mockResolvedValue(mockHistory)
     const result = await resolveSessionMentions(1, text, fetchHistory)
 
-    expect(fetchHistory).toHaveBeenCalledWith('ses-1')
+    expect(fetchHistory).toHaveBeenCalledWith('ses-1', { limit: 100, includeImages: false })
     expect(result).toContain('@"方案 A"')
     expect(result).toContain('<referenced_session id="ses-1" title="方案 A">')
     expect(result).toContain('[用户]: 我们采用方案 A 可以吗？')

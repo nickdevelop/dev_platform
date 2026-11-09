@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"devplatform/internal/core/agents"
 	"devplatform/internal/app/instances"
+	"devplatform/internal/core/agents"
 )
 
 // RegisterRoutes registers the project-scoped session routes under r. The
@@ -34,6 +34,9 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
 	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 }
+
+// errInvalidHistoryPage reports a malformed history paging query.
+var errInvalidHistoryPage = errors.New("sessions: invalid history page")
 
 // errorResponse is the JSON error envelope for session API failures.
 type errorResponse struct {
@@ -64,6 +67,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "service_not_running")
 	case errors.Is(err, instances.ErrStartFailed):
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
+	case errors.Is(err, agents.ErrInvalidHistoryCursor):
+		respondError(c, http.StatusBadRequest, "invalid_history_cursor")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, ErrPermissionExpired):
@@ -104,10 +109,10 @@ type backendDiagnosticsResponse struct {
 // Message and model are optional: when present, the session is created on the
 // model and the message is admitted as its first turn in the same request.
 type createSessionRequest struct {
-	Backend agents.BackendID        `json:"backend"`
-	Title   string                  `json:"title,omitempty"`
-	Message string                  `json:"message,omitempty"`
-	Model   string                  `json:"model,omitempty"`
+	Backend agents.BackendID         `json:"backend"`
+	Title   string                   `json:"title,omitempty"`
+	Message string                   `json:"message,omitempty"`
+	Model   string                   `json:"model,omitempty"`
 	Images  []agents.ImageAttachment `json:"images,omitempty"`
 }
 
@@ -121,8 +126,8 @@ type createSessionResponse struct {
 
 // sendMessageRequest is the JSON body of a session message.
 type sendMessageRequest struct {
-	Text   string                  `json:"text"`
-	Model  string                  `json:"model"`
+	Text   string                   `json:"text"`
+	Model  string                   `json:"model"`
 	Images []agents.ImageAttachment `json:"images,omitempty"`
 }
 
@@ -264,12 +269,46 @@ func (s *Service) handleHistory(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	history, err := s.History(c.Request.Context(), id, sessionID)
+	options, err := historyOptions(c)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	history, err := s.HistoryPage(c.Request.Context(), id, sessionID, options)
 	if err != nil {
 		respondServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, history)
+}
+
+// historyOptions parses the paging/image query of the history endpoint. The
+// zero limit preserves the legacy full read for older clients; includeImages
+// defaults to true for the same reason.
+func historyOptions(c *gin.Context) (HistoryOptions, error) {
+	options := HistoryOptions{IncludeImages: true}
+	if raw := strings.TrimSpace(c.Query("includeImages")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return HistoryOptions{}, err
+		}
+		options.IncludeImages = value
+	}
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil {
+			return HistoryOptions{}, err
+		}
+		if limit < 0 {
+			return HistoryOptions{}, errInvalidHistoryPage
+		}
+		options.Limit = limit
+	}
+	options.Before = strings.TrimSpace(c.Query("before"))
+	if len(options.Before) > 32 || (options.Before != "" && options.Limit == 0) {
+		return HistoryOptions{}, errInvalidHistoryPage
+	}
+	return options, nil
 }
 
 func (s *Service) handleContinue(c *gin.Context) {
@@ -528,4 +567,3 @@ func projectID(c *gin.Context) (uint, bool) {
 	}
 	return uint(id), true
 }
-

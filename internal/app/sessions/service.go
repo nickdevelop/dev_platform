@@ -15,12 +15,12 @@ import (
 
 	"gorm.io/gorm"
 
-	"devplatform/internal/core/agents"
+	"devplatform/internal/app/database"
 	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/sessions/store"
 	"devplatform/internal/app/sessions/turns"
-	"devplatform/internal/app/database"
+	"devplatform/internal/core/agents"
 )
 
 // SessionStatus is the platform's view of a session's run state. It is derived
@@ -718,14 +718,42 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 // the session's instance and native id, and Truncated reports that older
 // events exist beyond the backend's read bound.
 type History struct {
-	Events    []agents.NormalizedEvent `json:"events"`
-	Truncated bool                     `json:"truncated"`
+	Events     []agents.NormalizedEvent `json:"events"`
+	Truncated  bool                     `json:"truncated"`
+	HasMore    bool                     `json:"hasMore"`
+	NextCursor string                   `json:"nextCursor,omitempty"`
+}
+
+// HistoryOptions selects one history page. The zero value keeps the legacy
+// behavior: the most recent MaxHistoryEvents events, inline images included.
+type HistoryOptions struct {
+	// Limit requests a page aligned to a user turn boundary. Zero means the
+	// legacy full read (bounded by agents.MaxHistoryEvents).
+	Limit int
+	// Before is the opaque cursor returned by the previous page.
+	Before string
+	// IncludeImages keeps base64 image bodies inline. When false, adapters
+	// that support lazy reads return a URL instead (used by the workbench).
+	IncludeImages bool
 }
 
 // History reads a session's agent-native prior turns. History lives in the
 // agent's own storage: the platform reads it on demand and keeps no copy, so
 // this works for a session whose instance is no longer running.
 func (s *Service) History(ctx context.Context, projectID uint, sessionID string) (History, error) {
+	return s.HistoryPage(ctx, projectID, sessionID, HistoryOptions{IncludeImages: true})
+}
+
+// HistoryPage reads one page of a session's agent-native prior turns. History
+// lives in the agent's own storage: the platform reads it on demand and keeps
+// no copy, so this works for a session whose instance is no longer running.
+func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID string, options HistoryOptions) (History, error) {
+	if options.Limit < 0 || (options.Before != "" && options.Limit == 0) {
+		return History{}, fmt.Errorf("%w: invalid history page", ErrInvalidRequest)
+	}
+	if options.Limit > agents.MaxHistoryPageSize {
+		options.Limit = agents.MaxHistoryPageSize
+	}
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return History{}, err
@@ -755,8 +783,15 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 	result, err := reader.ListHistory(ctx, agents.ListHistoryRequest{
 		Directory: inst.Directory,
 		SessionID: row.NativeSessionID,
+		Limit:     options.Limit,
+		Before:    options.Before,
 	})
 	if err != nil {
+		// A stale cursor is a client/transcript problem, not an instance
+		// problem; rebinding would only repeat the same read.
+		if errors.Is(err, agents.ErrInvalidHistoryCursor) {
+			return History{}, err
+		}
 		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
 			row.InstanceID = inst.ID
@@ -764,10 +799,15 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 			result, err = reader.ListHistory(ctx, agents.ListHistoryRequest{
 				Directory: inst.Directory,
 				SessionID: row.NativeSessionID,
+				Limit:     options.Limit,
+				Before:    options.Before,
 			})
 		}
 	}
 	if err != nil {
+		if errors.Is(err, agents.ErrInvalidHistoryCursor) {
+			return History{}, err
+		}
 		return History{}, fmt.Errorf("%w: read session history: %w", ErrBackendFailed, err)
 	}
 
@@ -794,7 +834,12 @@ func (s *Service) History(ctx context.Context, projectID uint, sessionID string)
 			_ = s.store.TouchUpdatedAt(row.ID, lastTime)
 		}
 	}
-	return History{Events: events, Truncated: result.Truncated}, nil
+	return History{
+		Events:     events,
+		Truncated:  result.Truncated,
+		HasMore:    result.HasMore,
+		NextCursor: result.NextCursor,
+	}, nil
 }
 
 // TouchInteraction updates a native session's last interaction time to at.
@@ -1297,8 +1342,6 @@ func (s *Service) reconcileRunningTurns() {
 		cancel()
 	}
 }
-
-
 
 // matchesSession reports whether an event belongs to the session: a
 // session-scoped event for its native id, or an instance-scoped event (empty
