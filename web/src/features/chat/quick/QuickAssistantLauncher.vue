@@ -5,7 +5,7 @@
 // leaves the panel where it is, and the panel header allows dragging the dialog
 // anywhere within the viewport.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { useDraggablePosition, useDraggablePanel } from './useDraggablePosition'
+import { useDraggablePosition, useDraggablePanel } from '../../../shared/composables/useDraggablePosition'
 import QuickAssistantPanel from './QuickAssistantPanel.vue'
 import { useChatsStore } from '../../../stores/chats'
 import { useQuickAssistantStore } from '../../../stores/quickAssistant'

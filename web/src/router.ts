@@ -28,6 +28,7 @@ import PromptsView from './features/prompts/PromptsView.vue'
 import TerminalWorkspace from './features/terminal/TerminalWorkspace.vue'
 import ProxySettings from './features/settings/ProxySettings.vue'
 import ConnectionSettings from './features/settings/ConnectionSettings.vue'
+import DebugSettings from './features/settings/DebugSettings.vue'
 
 export function createAppRouter() {
   const router = createRouter({
@@ -81,6 +82,7 @@ export function createAppRouter() {
               { path: 'agents', name: 'settings-agents', component: AgentSettings },
               { path: 'proxies', name: 'settings-proxies', component: ProxySettings },
               { path: 'connections', name: 'settings-connections', component: ConnectionSettings },
+              { path: 'debug', name: 'settings-debug', component: DebugSettings },
             ],
           },
           {

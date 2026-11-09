@@ -50,6 +50,12 @@ const links = [
     desc: '本地与远程服务连接管理',
     icon: 'connection',
   },
+  {
+    name: 'settings-debug',
+    label: '调试面板',
+    desc: 'SSE 总线消息实时调试',
+    icon: 'debug',
+  },
 ]
 </script>
 
@@ -110,6 +116,13 @@ const links = [
               <svg v-else-if="link.icon === 'connection'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <!-- Debug / Terminal monitor -->
+              <svg v-else-if="link.icon === 'debug'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2.5" y="4.5" width="19" height="15" rx="2" />
+                <path d="M2.5 9.5h19" />
+                <path d="M6 14.5h3M10.5 14.5h2M15 14.5h3" />
+                <path d="M6 12.5h5M13 12.5h5" />
               </svg>
             </span>
             <span class="link-label sidebar-card-title">{{ link.label }}</span>

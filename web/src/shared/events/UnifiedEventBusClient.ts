@@ -17,6 +17,11 @@ export type StreamStatus = 'idle' | 'connecting' | 'open' | 'error' | 'reconnect
 export type EventHandler = (envelope: EventEnvelope) => void
 export type StatusListener = (status: StreamStatus) => void
 export type ReconnectListener = () => void
+// EnvelopeTap observes every envelope exactly once, at the single dispatch
+// convergence point (SharedWorker and fallback paths both funnel into
+// dispatchEnvelope). Taps are isolated: a throwing tap must never break the
+// normal message dispatch.
+export type EnvelopeTap = (envelope: EventEnvelope) => void
 
 const stallMs = 3000
 
@@ -32,6 +37,9 @@ export class UnifiedEventBusClient {
 
   // Subscriptions registry in the current window: "channel:targetId" -> Set of callbacks
   private handlers = new Map<string, Set<EventHandler>>()
+
+  // Observation-only taps (debug capture etc.) invoked before dispatch.
+  private envelopeTaps = new Set<EnvelopeTap>()
 
   // Track active channels/targets registered with the backend from this tab
   private activeSubs = new Set<string>()
@@ -387,8 +395,27 @@ export class UnifiedEventBusClient {
     }
   }
 
+  // addEnvelopeTap registers an observation-only callback for every envelope.
+  // It returns a detach function; taps are never called after detaching and
+  // exceptions in a tap are swallowed so dispatch is unaffected.
+  public addEnvelopeTap(tap: EnvelopeTap): () => void {
+    this.envelopeTaps.add(tap)
+    return () => {
+      this.envelopeTaps.delete(tap)
+    }
+  }
+
   public dispatchEnvelope(env: EventEnvelope) {
     if (!env || !env.channel) return
+    if (this.envelopeTaps.size > 0) {
+      for (const tap of this.envelopeTaps) {
+        try {
+          tap(env)
+        } catch {
+          // A debug tap must never break the real message consumers.
+        }
+      }
+    }
     const key = `${env.channel}:${env.targetId}`
     const targetHandlers = this.handlers.get(key)
     if (targetHandlers) {

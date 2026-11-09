@@ -32,6 +32,9 @@ import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
+import DebugLauncher from '../debug/DebugLauncher.vue'
+import DebugPanel from '../debug/DebugPanel.vue'
+import { useDebugPanelStore } from '../../stores/debugPanel'
 
 type DialogKind = 'register' | 'create' | 'edit' | 'unregister'
 
@@ -46,6 +49,7 @@ const settings = useSettingsStore()
 const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
 const chats = useChatsStore()
+const debug = useDebugPanelStore()
 
 // Protect tabs whose session is mid-turn from automatic capacity trimming:
 // trimming would call sessions.unsubscribe below and tear down a live SSE
@@ -794,6 +798,10 @@ watch(
     />
 
     <QuickAssistantLauncher v-if="settings.quickAssistant.enabled" />
+    <template v-if="debug.enabled">
+      <DebugLauncher />
+      <DebugPanel v-if="debug.open" />
+    </template>
   </div>
 </template>
 

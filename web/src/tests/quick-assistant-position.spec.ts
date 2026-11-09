@@ -12,7 +12,7 @@ import {
   readStoredPanelPosition,
   persistPanelPosition,
   PANEL_POSITION_STORAGE_KEY,
-} from '../features/chat/quick/useDraggablePosition'
+} from '../shared/composables/useDraggablePosition'
 
 const viewport = { width: 1280, height: 800 }
 const button = { width: 110, height: 36 }
