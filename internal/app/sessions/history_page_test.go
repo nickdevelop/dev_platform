@@ -156,3 +156,165 @@ func TestHistoryHandlerMapsInvalidCursor(t *testing.T) {
 		t.Errorf("error = %q, want invalid_history_cursor", payload["error"])
 	}
 }
+
+func TestHistoryPageRewritesImagesToURLs(t *testing.T) {
+	env, session := historyPageSession(t)
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: []agents.NormalizedEvent{{
+		Type:      agents.EventMessage,
+		Timestamp: time.Now().UTC(),
+		Message: &agents.MessagePayload{
+			Role:  "user",
+			Text:  "看图",
+			Final: true,
+			Images: []agents.ImageAttachment{{
+				ID:        "msg_1:1",
+				Name:      "chart.png",
+				MediaType: "image/png",
+				Data:      "aGVsbG8=",
+			}},
+		},
+	}}}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.HistoryPage(context.Background(), env.projectID, session.ID, HistoryOptions{
+		Limit:         20,
+		IncludeImages: false,
+	})
+	if err != nil {
+		t.Fatalf("HistoryPage: %v", err)
+	}
+	image := history.Events[0].Message.Images[0]
+	if image.Data != "" {
+		t.Errorf("Data = %q, want it stripped for lazy loading", image.Data)
+	}
+	if !strings.Contains(image.URL, "/history/images/") || !strings.Contains(image.URL, "msg_1:1") {
+		t.Errorf("URL = %q, want the history image endpoint", image.URL)
+	}
+}
+
+func TestHistoryPageKeepsUnsupportedImageFormatsInline(t *testing.T) {
+	env, session := historyPageSession(t)
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: []agents.NormalizedEvent{{
+		Type:      agents.EventMessage,
+		Timestamp: time.Now().UTC(),
+		Message: &agents.MessagePayload{
+			Role: "user", Text: "看图", Final: true,
+			Images: []agents.ImageAttachment{{ID: "svg", MediaType: "image/svg+xml", Data: "PHN2Zy8+"}},
+		},
+	}}}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.HistoryPage(context.Background(), env.projectID, session.ID, HistoryOptions{
+		IncludeImages: false,
+	})
+	if err != nil {
+		t.Fatalf("HistoryPage: %v", err)
+	}
+	image := history.Events[0].Message.Images[0]
+	if image.Data == "" || image.URL != "" {
+		t.Errorf("image = %+v, want unsupported format kept inline", image)
+	}
+}
+
+func TestHistoryPageKeepsInlineImagesWhenRequested(t *testing.T) {
+	env, session := historyPageSession(t)
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: []agents.NormalizedEvent{{
+		Type:      agents.EventMessage,
+		Timestamp: time.Now().UTC(),
+		Message: &agents.MessagePayload{
+			Role: "user", Text: "看图", Final: true,
+			Images: []agents.ImageAttachment{{ID: "i1", MediaType: "image/png", Data: "aGVsbG8="}},
+		},
+	}}}
+	env.fake.mu.Unlock()
+
+	history, err := env.svc.HistoryPage(context.Background(), env.projectID, session.ID, HistoryOptions{
+		IncludeImages: true,
+	})
+	if err != nil {
+		t.Fatalf("HistoryPage: %v", err)
+	}
+	image := history.Events[0].Message.Images[0]
+	if image.Data != "aGVsbG8=" || image.URL != "" {
+		t.Errorf("image = %+v, want inline data and no URL", image)
+	}
+}
+
+func TestHistoryHandlerServesImage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env, session := historyPageSession(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	env.fake.mu.Lock()
+	env.fake.historyImage = agents.ImageAttachment{
+		ID: "msg_1:1", MediaType: "image/png", Data: "cG5nLWJ5dGVz",
+	}
+	env.fake.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf(
+		"/projects/%d/sessions/%s/history/images/msg_1:1", env.projectID, session.ID,
+	), nil)
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Errorf("Content-Type = %q, want image/png", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+	if got := rec.Body.String(); got != "png-bytes" {
+		t.Errorf("body = %q, want decoded image bytes", got)
+	}
+
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.historyImageReqs) != 1 {
+		t.Fatalf("adapter saw %d image requests, want 1", len(env.fake.historyImageReqs))
+	}
+	request := env.fake.historyImageReqs[0]
+	if request.Directory != env.projectDir || request.SessionID != "native-page" || request.ImageID != "msg_1:1" {
+		t.Errorf("image request = %+v", request)
+	}
+}
+
+func TestHistoryHandlerMapsImageErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	env, session := historyPageSession(t)
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+
+	env.fake.mu.Lock()
+	env.fake.historyImageErr = agents.ErrHistoryImageNotFound
+	env.fake.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf(
+		"/projects/%d/sessions/%s/history/images/missing", env.projectID, session.ID,
+	), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+
+	env.fake.mu.Lock()
+	env.fake.historyImageErr = nil
+	env.fake.historyImage = agents.ImageAttachment{ID: "i", MediaType: "image/svg+xml", Data: "PHN2Zy8+"}
+	env.fake.mu.Unlock()
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, fmt.Sprintf(
+		"/projects/%d/sessions/%s/history/images/i", env.projectID, session.ID,
+	), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("svg status = %d, want 415", rec.Code)
+	}
+}

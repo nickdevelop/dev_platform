@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
 import type { ImageAttachment } from '../../../api/sessions'
+import { imageSource } from '../../../shared/imageSource'
 
 const props = defineProps<{
   image: ImageAttachment | null
@@ -58,7 +59,7 @@ function formatSize(bytes?: number): string {
         </div>
         <div class="image-modal-body">
           <img
-            :src="image.data.startsWith('data:') ? image.data : `data:${image.mediaType};base64,${image.data}`"
+            :src="imageSource(image)"
             :alt="image.name"
           />
         </div>

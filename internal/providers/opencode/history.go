@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"sort"
@@ -13,6 +14,9 @@ import (
 
 // Compile-time proof that the opencode adapter can serve history reads.
 var _ agents.HistoryReader = (*Adapter)(nil)
+
+// Compile-time proof that the opencode adapter can serve lazy history images.
+var _ agents.HistoryImageReader = (*Adapter)(nil)
 
 // ListHistory reads a session's native message log and translates it into the
 // platform's normalized events.
@@ -89,6 +93,85 @@ func (a *Adapter) historyInstance(directory string) (*instance, error) {
 	return nil, errors.New("opencode: no running instance; start the backend before reading session history")
 }
 
+// historyImages extracts a user message's image attachments with ids that are
+// unique across the session. The id is <message id>:<file index>, so the lazy
+// image endpoint can find the same bytes without a second history response.
+func historyImages(message Message) []agents.ImageAttachment {
+	var images []agents.ImageAttachment
+	for i, f := range message.Files {
+		mime := f.Mime
+		data := f.Data
+		if data == "" && strings.HasPrefix(f.URI, "data:") {
+			comma := strings.Index(f.URI, ",")
+			if comma != -1 {
+				meta := f.URI[5:comma]
+				data = f.URI[comma+1:]
+				parts := strings.Split(meta, ";")
+				if len(parts) > 0 && strings.HasPrefix(parts[0], "image/") {
+					mime = parts[0]
+				}
+			}
+		}
+		if mime == "" && strings.HasPrefix(f.Mime, "image/") {
+			mime = f.Mime
+		}
+		if !strings.HasPrefix(mime, "image/") || data == "" {
+			continue
+		}
+		name := f.Name
+		if name == "" {
+			name = fmt.Sprintf("image_%d.png", i+1)
+		}
+		prefix := message.ID
+		if prefix == "" {
+			prefix = "message"
+		}
+		size := int64(base64.StdEncoding.DecodedLen(len(data)))
+		if decoded, decodeErr := base64.StdEncoding.DecodeString(data); decodeErr == nil {
+			size = int64(len(decoded))
+		}
+		images = append(images, agents.ImageAttachment{
+			ID:        fmt.Sprintf("%s:%d", prefix, i+1),
+			Name:      name,
+			MediaType: mime,
+			Data:      data,
+			Size:      size,
+		})
+	}
+	return images
+}
+
+// ReadHistoryImage serves one image by the id historyImages emitted. The
+// transcript is still the agent's; the adapter re-reads the message list and
+// returns only the requested body.
+func (a *Adapter) ReadHistoryImage(ctx context.Context, request agents.HistoryImageRequest) (agents.ImageAttachment, error) {
+	if err := ctx.Err(); err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	if err := request.Validate(); err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	inst, err := a.historyInstance(request.Directory)
+	if err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	messages, err := inst.client.ListMessages(ctx, request.SessionID)
+	if err != nil {
+		return agents.ImageAttachment{}, fmt.Errorf("opencode: read history image: %w", err)
+	}
+	for _, message := range messages {
+		if message.Type != "user" {
+			continue
+		}
+		for _, image := range historyImages(message) {
+			if image.ID == request.ImageID {
+				return image, nil
+			}
+		}
+	}
+	return agents.ImageAttachment{}, agents.ErrHistoryImageNotFound
+}
+
 // normalizeHistoryMessage translates one native message. A message can yield
 // several events (an assistant entry that reasons, speaks and calls a tool), one,
 // or none (turn markers, model switches). The reasoning block is kept as its own
@@ -106,37 +189,7 @@ func normalizeHistoryMessage(message Message) []agents.NormalizedEvent {
 
 	switch message.Type {
 	case "user":
-		var images []agents.ImageAttachment
-		for i, f := range message.Files {
-			mime := f.Mime
-			data := f.Data
-			if data == "" && strings.HasPrefix(f.URI, "data:") {
-				comma := strings.Index(f.URI, ",")
-				if comma != -1 {
-					meta := f.URI[5:comma]
-					data = f.URI[comma+1:]
-					parts := strings.Split(meta, ";")
-					if len(parts) > 0 && strings.HasPrefix(parts[0], "image/") {
-						mime = parts[0]
-					}
-				}
-			}
-			if mime == "" && strings.HasPrefix(f.Mime, "image/") {
-				mime = f.Mime
-			}
-			if strings.HasPrefix(mime, "image/") && data != "" {
-				name := f.Name
-				if name == "" {
-					name = fmt.Sprintf("image_%d.png", i+1)
-				}
-				images = append(images, agents.ImageAttachment{
-					ID:        fmt.Sprintf("img_%d", i+1),
-					Name:      name,
-					MediaType: mime,
-					Data:      data,
-				})
-			}
-		}
+		images := historyImages(message)
 		if message.Text == "" && len(images) == 0 {
 			return nil
 		}

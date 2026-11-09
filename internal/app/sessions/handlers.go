@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -29,6 +30,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/sessions/:sessionId/interrupt", s.handleInterrupt)
 	r.DELETE("/projects/:id/sessions/:sessionId", s.handleDelete)
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
+	r.GET("/projects/:id/sessions/:sessionId/history/images/:imageId", s.handleHistoryImage)
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.POST("/projects/:id/sessions/:sessionId/command", s.handleExecuteCommand)
 	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
@@ -69,6 +71,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
 	case errors.Is(err, agents.ErrInvalidHistoryCursor):
 		respondError(c, http.StatusBadRequest, "invalid_history_cursor")
+	case errors.Is(err, agents.ErrHistoryImageNotFound):
+		respondError(c, http.StatusNotFound, "image_not_found")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, ErrPermissionExpired):
@@ -282,7 +286,57 @@ func (s *Service) handleHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, history)
 }
 
-// historyOptions parses the paging/image query of the history endpoint. The
+// handleHistoryImage serves one transcript image by its opaque id. Only raster
+// formats the composer accepts are served: SVG is deliberately excluded so a
+// transcript image cannot become a same-origin script document.
+func (s *Service) handleHistoryImage(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	imageID := c.Param("imageId")
+	if sessionID == "" || imageID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	image, err := s.HistoryImage(c.Request.Context(), id, sessionID, imageID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	if !supportedHistoryImageType(image.MediaType) {
+		respondError(c, http.StatusUnsupportedMediaType, "unsupported_media_type")
+		return
+	}
+	encoded := image.Data
+	if comma := strings.Index(encoded, ","); strings.HasPrefix(encoded, "data:") && comma != -1 {
+		encoded = encoded[comma+1:]
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(data) == 0 {
+		respondError(c, http.StatusBadGateway, "agent_operation_failed")
+		return
+	}
+	if len(data) > maxHistoryImageBytes {
+		respondError(c, http.StatusRequestEntityTooLarge, "image_too_large")
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=86400")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, image.MediaType, data)
+}
+
+func supportedHistoryImageType(mediaType string) bool {
+	switch mediaType {
+	case "image/jpeg", "image/png", "image/webp", "image/gif":
+		return true
+	default:
+		return false
+	}
+}
+
+// historyOptions parses the paging/image query of the history endpoint.// historyOptions parses the paging/image query of the history endpoint. The
 // zero limit preserves the legacy full read for older clients; includeImages
 // defaults to true for the same reason.
 func historyOptions(c *gin.Context) (HistoryOptions, error) {

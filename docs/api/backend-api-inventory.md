@@ -24,7 +24,7 @@
 1. **接口面集中在一个同源 `/api` 下**，没有版本前缀；单用户局域网部署下这是合理取舍，但契约变更没有并行版本可用。
 2. **鉴权是"全局 CSRF + 分组会话"两层**：变更方法统一过双提交 CSRF，管理路由统一过会话校验，新增路由很难漏掉鉴权。
 3. **OpenAPI 与 Gin 的集合仍有偏差**：文档与实现的方法数不再以巧合相等，差异见第 6 节。
-4. **会话域是绝对核心**：23 个端点（24%）围绕会话、事件流与工具审批；纯 Chat 另有一套独立的 SSE 快照流，不依赖 agent 能力门控。
+4. **会话域是绝对核心**：24 个端点（24%）围绕会话、事件流与工具审批；纯 Chat 另有一套独立的 SSE 快照流，不依赖 agent 能力门控。
 
 ## 2. 接口如何被组织
 
@@ -42,7 +42,7 @@ actor "浏览器 / Vue 工作台" as Web
 
 rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Compress(gzip) → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
 
-rectangle "领域服务 internal/app（97 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 23\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
+rectangle "领域服务 internal/app（99 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 24\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
 
 rectangle "契约 internal/core/agents\nBackendID · Capabilities · AgentAdapter" as C
 rectangle "适配 internal/providers\nopencode · pi" as P
@@ -63,8 +63,8 @@ end note
 
 **读图要点**
 
-- 98 个端点中 97 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
-- `sessions` 的 23 个端点包含 `agent-backends` 目录（2 个）与 `opencode` 交互（5 个），因此它同时依赖 `core/agents` 契约与 SQLite 索引。
+- 99 个端点中 98 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
+- `sessions` 的 24 个端点包含 `agent-backends` 目录（2 个）、`opencode` 交互（5 个）与历史图片读取（1 个），因此它同时依赖 `core/agents` 契约与 SQLite 索引。
 - `terminal` 的 WebSocket 不走 `core/agents`，只依赖 `core/platform` 的 PTY/SSH 能力。
 
 ## 3. 鉴权与请求管线
@@ -203,7 +203,8 @@ end note
 | 41 | POST | `/projects/{id}/sessions/{sessionId}/stop` | 停止会话 | 会话+CSRF | 200 |
 | 42 | POST | `/projects/{id}/sessions/{sessionId}/interrupt` | 中断当前轮 | 会话+CSRF | 200 |
 | 43 | DELETE | `/projects/{id}/sessions/{sessionId}` | 删除会话索引条目 | 会话+CSRF | 204 |
-| 44 | GET | `/projects/{id}/sessions/{sessionId}/history` | 读取历史轮次（精简模式：仅返回消息与成对问答，剔除思考与普通工具） | 会话 | 200 |
+| 44 | GET | `/projects/{id}/sessions/{sessionId}/history` | 读取历史轮次（支持 limit/before 分页、hasMore/nextCursor 与 includeImages） | 会话 | 200 / 400 |
+| 44a | GET | `/projects/{id}/sessions/{sessionId}/history/images/{imageId}` | 按需读取历史图片（JPEG/PNG/WebP/GIF） | 会话 | 200 / 404 / 409 / 413 / 415 |
 | 45 | GET | `/projects/{id}/sessions/{sessionId}/commands` | 列出斜杠命令与技能 | 会话 | 200 |
 | 46 | GET | `/projects/{id}/sessions/{sessionId}/events` | 规范化事件 SSE，支持断点续传 | 会话 | 200 SSE |
 | 47 | GET | `/events/{uuid}` | 客户端多路复用事件总线 SSE | 会话 | 200 SSE |
@@ -458,7 +459,7 @@ BOTH --> CODE : 实现独有 5
 
 **附：统计口径复核**
 
-- 98 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 23 + settings 9 + tasks 8 + prompts 5 + terminal 8 + chat 10。
+- 99 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 24 + settings 9 + tasks 8 + prompts 5 + terminal 8 + chat 10。
 - 方法分布：GET 42 + POST 36 + PUT 12 + DELETE 8 = 98。
 - 路径分布：`/projects/*` 34、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 4、`/agent-backends/*` 4、`/health` 1。
 - 2026-10-23 变更：新增 `GET/PUT /settings/quick-assistant` 快捷助手开关与 `GET /chats?groupId=` 分组过滤；Chat 增加“快捷助手”固定分组治理。

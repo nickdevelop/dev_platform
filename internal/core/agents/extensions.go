@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -12,6 +13,10 @@ import (
 // backend wraps its own "not pending" answer with it, so the session layer can
 // turn it into an expired reply (HTTP 409) without knowing the backend.
 var ErrReplyExpired = errors.New("agents: reply target is no longer pending")
+
+// ErrHistoryImageNotFound reports an image id that does not exist in the
+// session transcript (or whose body was not retained by the adapter).
+var ErrHistoryImageNotFound = errors.New("agents: history image not found")
 
 // PermissionRequest is a pending tool approval the backend is waiting on. It
 // carries identity and human-readable context only.
@@ -101,3 +106,30 @@ type SessionTurnDetector interface {
 	DetectTurn(ctx context.Context, ref SessionRef) (bool, error)
 }
 
+// HistoryImageRequest names one image inside an agent-native transcript.
+type HistoryImageRequest struct {
+	// Directory is the working directory the agent operated in.
+	Directory string
+	// SessionID is the agent-native session identifier.
+	SessionID string
+	// ImageID is the opaque id carried by ImageAttachment.ID in history.
+	ImageID string
+}
+
+// Validate reports whether the request can address a transcript image.
+func (r HistoryImageRequest) Validate() error {
+	if r.Directory == "" || r.SessionID == "" || r.ImageID == "" {
+		return fmt.Errorf("%w: incomplete history image request", ErrInvalidHistoryRequest)
+	}
+	return nil
+}
+
+// HistoryImageReader is the optional half of the history contract: an adapter
+// implements it when it can serve one image from a transcript on demand, so a
+// history response can omit the base64 body and expose a URL instead.
+//
+// It is separate from HistoryReader so backends whose transcripts carry no
+// images (pi, deepseek) do not have to implement it.
+type HistoryImageReader interface {
+	ReadHistoryImage(ctx context.Context, request HistoryImageRequest) (ImageAttachment, error)
+}

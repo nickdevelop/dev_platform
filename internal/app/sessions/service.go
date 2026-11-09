@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -822,6 +823,10 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 		events = append(events, event)
 	}
 
+	if !options.IncludeImages {
+		s.lazyHistoryImages(projectID, sessionID, events, adapter)
+	}
+
 	if len(events) > 0 {
 		var lastTime time.Time
 		for i := len(events) - 1; i >= 0; i-- {
@@ -842,7 +847,90 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 	}, nil
 }
 
-// TouchInteraction updates a native session's last interaction time to at.
+// maxHistoryImageBytes bounds one decoded history image. The platform's
+// composer accepts up to 5 MiB per image, so 10 MiB leaves room for a larger
+// attachment stored by the agent without letting one request exhaust memory.
+const maxHistoryImageBytes = 10 << 20
+
+// lazyHistoryImages replaces inline base64 bodies with URLs when the adapter
+// can serve the image later. Adapters without HistoryImageReader keep their
+// inline data: dropping it without a URL would silently lose the image.
+func (s *Service) lazyHistoryImages(projectID uint, sessionID string, events []agents.NormalizedEvent, adapter agents.AgentAdapter) {
+	if _, ok := adapter.(agents.HistoryImageReader); !ok {
+		return
+	}
+	for i := range events {
+		message := events[i].Message
+		if message == nil {
+			continue
+		}
+		for j := range message.Images {
+			image := &message.Images[j]
+			if image.ID == "" || image.Data == "" {
+				continue
+			}
+			// Keep unsupported formats inline: the image endpoint refuses
+			// them, so stripping the body would leave a broken <img>.
+			if !supportedHistoryImageType(image.MediaType) {
+				continue
+			}
+			image.URL = fmt.Sprintf(
+				"/api/projects/%d/sessions/%s/history/images/%s",
+				projectID,
+				url.PathEscape(sessionID),
+				url.PathEscape(image.ID),
+			)
+			image.Data = ""
+		}
+	}
+}
+
+// HistoryImage reads one image from a session's agent-native transcript, for
+// the lazy URL HistoryPage emits when includeImages=false. The image id is
+// opaque and adapter-owned; the platform only scopes the read to the project
+// and session before handing it to the adapter.
+func (s *Service) HistoryImage(ctx context.Context, projectID uint, sessionID, imageID string) (agents.ImageAttachment, error) {
+	if imageID == "" || len(imageID) > 128 {
+		return agents.ImageAttachment{}, agents.ErrHistoryImageNotFound
+	}
+	row, err := s.loadScoped(projectID, sessionID)
+	if err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	backend := agents.BackendID(row.Backend)
+	if !s.capabilities(backend).SessionHistory {
+		return agents.ImageAttachment{}, fmt.Errorf("%w: session history", ErrUnsupportedCapability)
+	}
+	adapter, err := s.adapter(backend)
+	if err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	reader, ok := adapter.(agents.HistoryImageReader)
+	if !ok {
+		return agents.ImageAttachment{}, fmt.Errorf("%w: history images", ErrUnsupportedCapability)
+	}
+	inst, err := s.instances.Get(row.InstanceID)
+	if err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	image, err := reader.ReadHistoryImage(ctx, agents.HistoryImageRequest{
+		Directory: inst.Directory,
+		SessionID: row.NativeSessionID,
+		ImageID:   imageID,
+	})
+	if err != nil {
+		if errors.Is(err, agents.ErrHistoryImageNotFound) {
+			return agents.ImageAttachment{}, err
+		}
+		return agents.ImageAttachment{}, fmt.Errorf("%w: read history image: %w", ErrBackendFailed, err)
+	}
+	if image.Data == "" {
+		return agents.ImageAttachment{}, agents.ErrHistoryImageNotFound
+	}
+	return image, nil
+}
+
+// TouchInteraction updates a native session's last interaction time to at.// TouchInteraction updates a native session's last interaction time to at.
 func (s *Service) TouchInteraction(backend agents.BackendID, nativeSessionID string, at time.Time) {
 	if at.IsZero() {
 		at = s.now()

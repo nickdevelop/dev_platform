@@ -2207,6 +2207,96 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/sessions/{sessionId}/history/images/{imageId}:
+    get:
+      summary: Read one history image
+      description: >-
+        Serves one image from an agent-native transcript by the opaque id the
+        history response carries in `images[].id`. Only raster formats the
+        composer accepts (JPEG, PNG, WebP, GIF) are served; SVG is rejected.
+        The response is private and immutable enough to cache for a day.
+      operationId: readProjectSessionHistoryImage
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+        - name: imageId
+          in: path
+          required: true
+          description: Opaque image id from a history response.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The image body.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Missing image id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such session, or no such image in the transcript.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The backend does not support lazy history images.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: The decoded image exceeds the 10 MiB bound.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: The image media type is not an accepted raster format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /events/bus/{uuid}:
     get:
       summary: Connect to unified client event bus stream
@@ -5940,7 +6030,10 @@ components:
             typed payload), with replayed=true to mark it as history rather
             than a live event. History carries the transcript only (message,
             tool_call, tool_result, thinking and the like); `turn` and
-            `interaction` events are live-only and never appear in it.
+            `interaction` events are live-only and never appear in it. With
+            `includeImages=false`, a user message's `images` entries may carry
+            `url` and an empty `data`; fetch that URL with the session's
+            credentials.
           items:
             type: object
         truncated:

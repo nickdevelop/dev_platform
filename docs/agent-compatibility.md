@@ -331,6 +331,16 @@ answers 400 `invalid_history_cursor` and the workbench surfaces a retryable erro
 `truncated` now means only a hard bound or a partial read; it no longer means
 "more pages exist".
 
+History images are inline by default (`images[].data`, base64). When the
+workbench asks with `includeImages=false`, an adapter that implements
+`agents.HistoryImageReader` has its bodies replaced with an `images[].url`
+pointing at
+`GET /api/projects/{id}/sessions/{sessionId}/history/images/{imageId}`; the
+workbench renders those lazily. opencode (message id + file index) and builtin
+(record seq + stored image id) implement the reader; pi and deepseek transcripts
+carry no replayed images, so they keep the default inline path. The endpoint
+accepts only JPEG/PNG/WebP/GIF and bounds the decoded body at 10 MiB.
+
 opencode's history read needs a running server, because that is where the
 message log lives; the platform starts one if none is running before reading.
 pi's read touches only the filesystem, so it needs no process at all.

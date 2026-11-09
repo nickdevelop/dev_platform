@@ -135,13 +135,16 @@ type ModelInfo struct {
 	Enabled        bool     `json:"enabled"`
 }
 
-// ImageAttachment represents a base64 encoded image attachment sent with a turn.
+// ImageAttachment represents an image attachment sent with a turn, or one
+// replayed from an agent-native transcript. Data is base64; URL is set instead
+// when the platform exposes the image through a lazy history endpoint.
 type ImageAttachment struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	MediaType string `json:"mediaType"`
 	Data      string `json:"data"`
 	Size      int64  `json:"size"`
+	URL       string `json:"url,omitempty"`
 }
 
 // InstanceStatus is the lifecycle state of an adapter-managed instance.

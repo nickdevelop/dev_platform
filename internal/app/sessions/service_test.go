@@ -18,10 +18,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"devplatform/internal/core/agents"
-	"devplatform/internal/app/instances"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/instances"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/core/agents"
 )
 
 // openTestDB opens and migrates a throwaway platform database. The GORM logger
@@ -89,6 +89,10 @@ type fakeAdapter struct {
 	historyResult agents.HistoryResult
 	historyErr    error
 	historyReqs   []agents.ListHistoryRequest
+
+	historyImage     agents.ImageAttachment
+	historyImageErr  error
+	historyImageReqs []agents.HistoryImageRequest
 
 	startErr  error
 	next      int
@@ -254,6 +258,18 @@ func (f *fakeAdapter) ListHistory(_ context.Context, request agents.ListHistoryR
 	return f.historyResult, nil
 }
 
+// ReadHistoryImage makes fakeAdapter an agents.HistoryImageReader so the
+// service's lazy-image rewrite and the image endpoint are testable.
+func (f *fakeAdapter) ReadHistoryImage(_ context.Context, request agents.HistoryImageRequest) (agents.ImageAttachment, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.historyImageReqs = append(f.historyImageReqs, request)
+	if f.historyImageErr != nil {
+		return agents.ImageAttachment{}, f.historyImageErr
+	}
+	return f.historyImage, nil
+}
+
 func (f *fakeAdapter) DetectTurn(_ context.Context, ref agents.SessionRef) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -265,7 +281,6 @@ func (f *fakeAdapter) DetectTurn(_ context.Context, ref agents.SessionRef) (bool
 	}
 	return f.detectTurnMap[ref.SessionID], nil
 }
-
 
 func (f *fakeAdapter) Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error) {
 	f.mu.Lock()

@@ -8,8 +8,11 @@ export interface ImageAttachment {
   id: string
   name: string
   mediaType: ImageMediaType
+  // Empty when the server returned a lazy history URL instead of the body.
   data: string
   size: number
+  // Set by history replay when the image is served on demand.
+  url?: string
 }
 
 // Mirrors agents.MessageModel: the model that produced one assistant message.

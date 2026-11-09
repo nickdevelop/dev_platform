@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,9 @@ import (
 
 // Compile-time proof the builtin adapter serves history reads.
 var _ agents.HistoryReader = (*Adapter)(nil)
+
+// Compile-time proof that the builtin adapter can serve lazy history images.
+var _ agents.HistoryImageReader = (*Adapter)(nil)
 
 // loadTranscriptRecords reads the stored transcript of one session. A turn
 // snapshots it before recording the fresh user message, so the rebuilt context
@@ -154,6 +158,7 @@ func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 		case TranscriptUser:
 			event.Type = agents.EventMessage
 			event.Message = &agents.MessagePayload{Role: "user", Text: record.Content, Final: true}
+			event.Message.Images = builtinHistoryImages(record)
 		case TranscriptAssistant:
 			event.Type = agents.EventMessage
 			event.Message = &agents.MessagePayload{Role: "assistant", Text: record.Content, Final: true}
@@ -192,4 +197,69 @@ func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 		events = append(events, event)
 	}
 	return events
+}
+
+// builtinHistoryImages parses the payload of one user record. Image ids are
+// <record seq>:<stored id> so they stay stable across history pages and can be
+// fetched without embedding the transcript again. Oversized bodies were stored
+// by identity only and are skipped: there is nothing to serve.
+func builtinHistoryImages(record TranscriptRecord) []agents.ImageAttachment {
+	if len(record.Payload) == 0 {
+		return nil
+	}
+	var payload userRecord
+	if err := json.Unmarshal(record.Payload, &payload); err != nil {
+		return nil
+	}
+	images := make([]agents.ImageAttachment, 0, len(payload.Images))
+	for index, image := range payload.Images {
+		if image.Data == "" {
+			continue
+		}
+		id := image.ID
+		if id == "" {
+			id = fmt.Sprintf("image_%d", index+1)
+		}
+		size := int64(base64.StdEncoding.DecodedLen(len(image.Data)))
+		if decoded, decodeErr := base64.StdEncoding.DecodeString(image.Data); decodeErr == nil {
+			size = int64(len(decoded))
+		}
+		images = append(images, agents.ImageAttachment{
+			ID:        fmt.Sprintf("%d:%s", record.Seq, id),
+			Name:      image.Name,
+			MediaType: image.MediaType,
+			Data:      image.Data,
+			Size:      size,
+		})
+	}
+	return images
+}
+
+// ReadHistoryImage serves one stored image by the id history replay emitted.
+func (a *Adapter) ReadHistoryImage(ctx context.Context, request agents.HistoryImageRequest) (agents.ImageAttachment, error) {
+	if err := ctx.Err(); err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	if err := request.Validate(); err != nil {
+		return agents.ImageAttachment{}, err
+	}
+	directory, err := a.sessionDirectory(request.SessionID)
+	if err == nil && directory != "" && directory != request.Directory {
+		return agents.ImageAttachment{}, agents.ErrHistoryImageNotFound
+	}
+	records, err := a.store.Load(ctx, request.SessionID)
+	if err != nil {
+		return agents.ImageAttachment{}, fmt.Errorf("builtin: load history image: %w", err)
+	}
+	for _, record := range records {
+		if record.Kind != TranscriptUser {
+			continue
+		}
+		for _, image := range builtinHistoryImages(record) {
+			if image.ID == request.ImageID {
+				return image, nil
+			}
+		}
+	}
+	return agents.ImageAttachment{}, agents.ErrHistoryImageNotFound
 }

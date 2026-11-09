@@ -26,6 +26,7 @@ import { copyToClipboard } from '../../../shared/clipboard'
 import { formatMessageTime } from '../../../shared/format'
 import { renderMarkdown } from '../../../shared/markdown'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
+import { imageSource } from '../../../shared/imageSource'
 import PlantumlBlock from './PlantumlBlock.vue'
 import SessionActivityLog from './SessionActivityLog.vue'
 import EditToolBlock from './EditToolBlock.vue'
@@ -280,7 +281,13 @@ async function handleMarkdownClick(event: MouseEvent) {
                     :title="img.name"
                     @click="openImagePreview(img)"
                   >
-                    <img :src="img.data.startsWith('data:') ? img.data : `data:${img.mediaType};base64,${img.data}`" :alt="img.name" />
+                    <img
+                      v-if="imageSource(img)"
+                      :src="imageSource(img)"
+                      :alt="img.name"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   </div>
                 </div>
                 <span v-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ImageAttachment } from '../../../api/sessions'
+import { imageSource } from '../../../shared/imageSource'
 
 const props = defineProps<{
   images: ImageAttachment[]
@@ -26,7 +27,7 @@ function formatSize(bytes: number): string {
       :title="`${img.name} (${formatSize(img.size)})`"
     >
       <div class="image-thumb" @click="emit('preview', img)">
-        <img :src="img.data.startsWith('data:') ? img.data : `data:${img.mediaType};base64,${img.data}`" :alt="img.name" />
+        <img :src="imageSource(img)" :alt="img.name" />
       </div>
       <div class="image-info">
         <span class="image-name">{{ img.name }}</span>
