@@ -45,7 +45,7 @@
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
 ③ 领域服务   internal/app/{sessions, instances, agentmodels, projects, chat, platformtools, tasks, terminal, settings, auth, ...}
 ⑤ 异构适配   internal/providers/{opencode, pi, deepseek, builtin}（实现 core 契约，向组合根导出 Descriptor）
-传输编排     internal/transport/http（路由编排、AccessLog 中间件、静态资源 SPA 托管）+ desktop/src/main/proxy.ts（桌面透明反代）
+传输编排     internal/transport/http（路由编排、AccessLog 与 gzip 压缩中间件、静态资源 SPA 托管）+ desktop/src/main/proxy.ts（桌面透明反代）
 ② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
 ```
 
@@ -648,6 +648,11 @@ web/src/
    - 全局服务端在 `router.go` 挂载 `auth.RequireCSRF()` 中间件；
    - 令牌由传输层（`client.ts`）统一从 `auth` store 中拉取并自动轮转，禁止任何业务代码直接 `fetch`、手写 `X-CSRF-Token` 或将 `csrfToken` 作为函数参数传递；
    - 前端守卫测试 `web/src/tests/csrf-coverage.spec.ts` 会在源码静态分析层面拦截违规调用；后端 `csrf_matrix_guard_test.go` 遍历所有非安全路由测试防御有效性。
+3. **HTTP 响应压缩**：
+   - 中间件链为 `AccessLog → Compress(gzip) → Recovery → RequireCSRF → ...`；`Compress` 位于 `internal/transport/http/compress.go`，对协商了 gzip 的可压缩响应启用压缩；
+   - 压缩成功时设置 `Content-Encoding: gzip`、`Vary: Accept-Encoding`，并删除 `Content-Length` 与 `Accept-Ranges`；已知 `Content-Length < 1KB` 的响应跳过；
+   - SSE（`text/event-stream`）、WebSocket Upgrade、Range/206、204/304、已有 `Content-Encoding`、带 ETag 或 `Cache-Control: no-transform` 的响应一律跳过；
+   - 包装器实现 `Unwrap()`，保证 SSE handler 的 `http.NewResponseController(c.Writer).SetWriteDeadline` 仍能触达底层连接。
 
 ---
 

@@ -40,7 +40,7 @@ top to bottom direction
 
 actor "浏览器 / Vue 工作台" as Web
 
-rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
+rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Compress(gzip) → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
 
 rectangle "领域服务 internal/app（97 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 23\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
 
@@ -69,7 +69,7 @@ end note
 
 ## 3. 鉴权与请求管线
 
-`NewRouter` 的中间件顺序是：`AccessLog → Recovery → RequireCSRF → limitRequestBody(/api 组) → RequireSession(受保护组) → Handler`。`/api/health` 在 `RequireCSRF` 安装之前注册，因此不受 CSRF 与会话约束。
+`NewRouter` 的中间件顺序是：`AccessLog → Compress(gzip) → Recovery → RequireCSRF → limitRequestBody(/api 组) → RequireSession(受保护组) → Handler`。`/api/health` 在 `RequireCSRF` 安装之前注册，因此不受 CSRF 与会话约束。
 
 ```plantuml
 @startuml
@@ -78,7 +78,7 @@ title 图2 /api 请求管线与短路点
 skinparam componentStyle rectangle
 left to right direction
 
-[AccessLog\n+ Recovery] as L
+[AccessLog\n+ Compress\n+ Recovery] as L
 [RequireCSRF\n变更方法] as C
 [limitRequestBody\n1 MiB] as B
 [RequireSession\n受保护组] as S
@@ -102,7 +102,7 @@ end note
 
 note top of L
   /api/health 在 RequireCSRF 之前注册，
-  因此只经过 AccessLog + Recovery。
+  因此只经过 AccessLog + Compress + Recovery。
 end note
 @enduml
 ```
