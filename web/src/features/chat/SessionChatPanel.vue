@@ -104,6 +104,9 @@ const currentActivePreviewFile = computed(() =>
 
 function selectPreviewTab(tabKey: string) {
   activePreviewTab.value = tabKey
+  if (tabKey === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
 }
 
 function openFileInPreview(
@@ -148,7 +151,8 @@ function closeFileTab(path: string, event?: MouseEvent) {
       const nextIdx = Math.min(idx, openFileTabs.value.length - 1)
       activePreviewTab.value = openFileTabs.value[nextIdx].path
     } else {
-      activePreviewTab.value = ''
+      activePreviewTab.value = 'activity'
+      scrollActivityToBottomReliably(false)
     }
   }
 }
@@ -359,9 +363,15 @@ function onDrop(event: DragEvent) {
 // hand in jsdom tests, so every read and write of the scroller geometry goes
 // through the element itself.
 const logScroll = ref<HTMLElement | null>(null)
+const activityScroll = ref<HTMLElement | null>(null)
 // Whether the activity pane is collapsed (persisted in localStorage).
 // Defaults to collapsed, presenting a floating FAB that opens an in-tab drawer.
-const pane = useActivityPane()
+const pane = useActivityPane(() => {
+  // Expanding returns to the newest activity when the pane is showing activity.
+  if (activePreviewTab.value === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
+})
 const {
   previewCollapsed,
   setPreviewCollapsed,
@@ -434,7 +444,7 @@ watch(
   () => [props.projectId, props.sessionId],
   () => {
     openFileTabs.value = []
-    activePreviewTab.value = ''
+    activePreviewTab.value = 'activity'
   },
 )
 
@@ -501,6 +511,66 @@ function onLogScroll() {
     viewportStore.saveSessionScroll(props.sessionId, logScroll.value.scrollTop, pinnedToBottom.value)
   }
 }
+
+// The activity pane's change signal mirrors the message log but counts only
+// thinking/tool entries, so a new user/agent message never scrolls the right
+// pane, and new activity never touches the left column's jump button.
+const activitySignature = computed(() => {
+  let count = 0
+  let open = 0
+  for (const entry of activeMessages.value) {
+    if (
+      (entry.kind === 'thinking' || entry.kind === 'tool_call' || entry.kind === 'tool_result') &&
+      !isQuestionCall(entry)
+    ) {
+      count += 1
+      if (entry.streaming) open += entry.text.length
+    }
+  }
+  return `${props.sessionId}:${count}:${open}`
+})
+const activityCount = computed(() => {
+  let count = 0
+  for (const entry of activeMessages.value) {
+    if ((entry.kind === 'thinking' || entry.kind === 'tool_call') && !isQuestionCall(entry)) count += 1
+  }
+  return count
+})
+
+// The message column and the activity pane each follow their own scroller:
+// reaching the bottom resumes following and hides the jump button; scrolling
+// away parks the view. See shared/scrollFollow.
+const activityFollow = useBottomFollow(activityScroll, activitySignature)
+
+function onActivityScroll() {
+  activityFollow.onScroll()
+  if (props.sessionId && activityScroll.value) {
+    viewportStore.saveActivityScroll(props.sessionId, activityScroll.value.scrollTop, activityPinned.value)
+  }
+}
+
+const scrollActivityToBottom = activityFollow.scrollToBottom
+const showJumpActivity = activityFollow.showJump
+const activityPinned = activityFollow.pinned
+
+function scrollActivityToBottomReliably(smooth = false) {
+  activityPinned.value = true
+  showJumpActivity.value = false
+  void nextTick(() => {
+    scrollActivityToBottom(smooth)
+    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        scrollActivityToBottom(smooth)
+      })
+    }
+  })
+}
+
+watch(activePreviewTab, (newTab) => {
+  if (newTab === 'activity') {
+    scrollActivityToBottomReliably(false)
+  }
+})
 
 const scrollToBottom = logFollow.scrollToBottom
 const showJumpToLatest = logFollow.showJump
@@ -603,6 +673,13 @@ onBeforeUnmount(() => {
     if (logScroll.value) {
       viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
     }
+    if (activityScroll.value) {
+      viewportStore.saveActivityScroll(
+        currentSessionId,
+        activityScroll.value.scrollTop,
+        activityPinned.value,
+      )
+    }
   }
   if (currentSessionId && !isRestoringDraft) {
     draftsStore.setSessionDraft(currentSessionId, {
@@ -637,6 +714,7 @@ async function open() {
   modelOk.value = true
 
   const savedLogState = viewportStore.getSessionScroll(props.sessionId)
+  const savedActivityState = viewportStore.getActivityScroll(props.sessionId)
 
   if (savedLogState && !savedLogState.pinned) {
     pinnedToBottom.value = false
@@ -644,6 +722,14 @@ async function open() {
   } else {
     pinnedToBottom.value = true
     showJumpToLatest.value = false
+  }
+
+  if (savedActivityState && !savedActivityState.pinned) {
+    activityPinned.value = false
+    showJumpActivity.value = true
+  } else {
+    activityPinned.value = true
+    showJumpActivity.value = false
   }
 
   // The instance list is loaded only to label the conversation's working
@@ -685,6 +771,16 @@ async function open() {
       showJumpToLatest.value = true
     } else {
       scrollToBottom(false)
+    }
+
+    if (savedActivityState && !savedActivityState.pinned) {
+      if (activityScroll.value) {
+        activityScroll.value.scrollTop = savedActivityState.scrollTop
+      }
+      activityPinned.value = false
+      showJumpActivity.value = true
+    } else {
+      scrollActivityToBottomReliably(false)
     }
 
     if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
@@ -1138,7 +1234,27 @@ async function removeSession() {
 
               <header class="preview-head activity-head">
                 <div class="preview-tabs-list" role="tablist">
-                  <!-- Dynamic Tabs: Opened files only (No fixed 思考与工具 tab) -->
+                  <!-- Tab 0: Fixed 链路 (thinking & tool activity) -->
+                  <button
+                    type="button"
+                    class="pane-tab activity-title"
+                    :class="{ 'is-active': activePreviewTab === 'activity' }"
+                    role="tab"
+                    :aria-selected="activePreviewTab === 'activity'"
+                    data-test="tab-activity"
+                    title="链路"
+                    @click="selectPreviewTab('activity')"
+                  >
+                    <span>链路</span>
+                    <span
+                      v-if="activityCount > 0"
+                      class="activity-count"
+                      data-test="activity-count"
+                      >{{ activityCount }}</span
+                    >
+                  </button>
+
+                  <!-- Dynamic Tabs: Opened files -->
                   <div
                     v-for="fileTab in openFileTabs"
                     :key="fileTab.path"
@@ -1191,9 +1307,41 @@ async function removeSession() {
               </header>
 
               <div class="preview-content">
-                <div v-if="openFileTabs.length === 0" class="preview-empty-state" data-test="preview-empty-state">
+                <!-- Content 1: 链路 (thinking & tool activity) -->
+                <div v-show="activePreviewTab === 'activity'" class="activity-pane-view">
+                  <div
+                    class="activity-scroll"
+                    data-test="activity-scroll"
+                    ref="activityScroll"
+                    @scroll.passive="onActivityScroll"
+                  >
+                    <MessageView
+                      :messages="activeMessages"
+                      :capabilities="activeSession.capabilities"
+                      :stream-status="streamStatus"
+                      :running="isRunning"
+                      display="activity"
+                    />
+                  </div>
+                  <button
+                    v-if="showJumpActivity"
+                    type="button"
+                    class="jump-latest"
+                    data-test="jump-activity"
+                    @click="scrollActivityToBottom(true)"
+                  >
+                    ↓ 最新链路
+                  </button>
+                </div>
+
+                <!-- Content 2: 文件预览（空状态与文件查看器互斥，仅当非链路 Tab 时可见） -->
+                <div
+                  v-show="activePreviewTab !== 'activity' && openFileTabs.length === 0"
+                  class="preview-empty-state"
+                  data-test="preview-empty-state"
+                >
                   <div class="empty-icon-wrap p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                       <polyline points="14 2 14 8 20 8" />
                       <line x1="16" y1="13" x2="8" y2="13" />
@@ -1205,10 +1353,10 @@ async function removeSession() {
                     在右侧文件树中选择文件即可在此快速预览文件内容与变更
                   </p>
                 </div>
-                <div v-else class="preview-file-viewer">
+                <div v-show="activePreviewTab !== 'activity' && openFileTabs.length > 0" class="preview-file-viewer">
                   <FileViewer
                     :project-id="props.projectId"
-                    :active-path="activePreviewTab"
+                    :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
                     :hide-tabs="true"
                     :mode="currentActivePreviewFile?.mode || 'view'"
                     :commit-ref="currentActivePreviewFile?.commitRef"

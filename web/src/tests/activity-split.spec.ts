@@ -492,7 +492,8 @@ describe('activity pane floating button and in-tab popup', () => {
 
     await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="preview-empty-state"]').exists()).toBe(true)
+    // The workspace pane restores the fixed 链路 tab (its scroll area) on expand
+    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
     // Preview pane itself has no collapse/hide button (managed via session tabs layout toggle)
     expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
@@ -534,7 +535,7 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
   })
 
-  it('keeps conversation area clean without thinking and tool calls, and keeps preview pane for files only', async () => {
+  it('keeps conversation area clean without thinking and tool calls, restoring the 链路 tab', async () => {
     const sessionsStore = useSessionsStore()
     const wrapper = await mountPanel()
 
@@ -550,13 +551,19 @@ describe('activity pane floating button and in-tab popup', () => {
     const conversationArea = wrapper.find('.conversation-area')
     expect(conversationArea.text()).toContain('hi')
     expect(conversationArea.text()).not.toContain('thinking...')
-    expect(conversationArea.text()).not.toContain('read')
+    expect(conversationArea.text()).not.toContain('call')
 
-    // Preview pane does not have activity title/count
+    // The preview pane restores the fixed 链路 tab with a count badge
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
-    expect(pane.find('.activity-title').exists()).toBe(false)
-    expect(pane.find('[data-test="activity-count"]').exists()).toBe(false)
+    expect(pane.find('.activity-title').exists()).toBe(true)
+    expect(pane.find('.activity-title').text()).toContain('链路')
+    expect(pane.find('.activity-title').classes()).toContain('is-active')
+    expect(pane.find('[data-test="activity-count"]').exists()).toBe(true)
+    expect(pane.find('[data-test="activity-count"]').text()).toBe('2')
+
+    // The activity scroll area inside the tab shows the flat activity stream
+    expect(wrapper.find('[data-test="activity-scroll"]').exists()).toBe(true)
   })
 })
 
@@ -615,8 +622,12 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     const preview = wrapper.find('[data-test="activity-pane"]')
     expect(preview.exists()).toBe(true)
 
-    // File preview pane starts with empty state when no files opened
-    expect(preview.find('[data-test="tab-activity"]').exists()).toBe(false)
+    // The fixed 链路 tab is the default active tab
+    expect(preview.find('[data-test="tab-activity"]').exists()).toBe(true)
+    expect(preview.find('[data-test="tab-activity"]').text()).toContain('链路')
+    expect(preview.find('[data-test="tab-activity"]').classes()).toContain('is-active')
+    expect(preview.find('[data-test="activity-scroll"]').exists()).toBe(true)
+    // File preview empty state only shows on the file tab side
     expect(preview.find('[data-test="preview-empty-state"]').exists()).toBe(true)
 
     // File tree drawer (docked by default, placed on the right inside workspace)
@@ -696,13 +707,13 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(fileTabs[0].text()).toContain('README.md')
     expect(fileTabs[0].classes()).toContain('is-active')
 
-    // Close README.md tab -> falls back to empty preview state
+    // Close README.md tab -> falls back to the fixed 链路 tab
     const closeReadmeBtn = fileTabs[0].find('[data-test="close-file-tab"]')
     await closeReadmeBtn.trigger('click')
     await flushPromises()
 
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
-    expect(preview.find('[data-test="preview-empty-state"]').exists()).toBe(true)
+    expect(preview.find('[data-test="tab-activity"]').classes()).toContain('is-active')
   })
 
   it('when preview pane is expanded, file tree expands and collapses eating preview width, not conversation width', async () => {
