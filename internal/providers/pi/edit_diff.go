@@ -50,7 +50,14 @@ func editFileDiff(resultRaw, argsRaw json.RawMessage) json.RawMessage {
 	if err := json.Unmarshal(resultRaw, &env); err != nil {
 		return nil
 	}
-	if env.Details == nil {
+	return fileDiffFromDetails(env.Details, argsRaw)
+}
+
+// fileDiffFromDetails builds the shared metadata from pi's persisted or live
+// edit details. History records store details without the surrounding result
+// envelope, so both paths share this builder.
+func fileDiffFromDetails(details *editDetails, argsRaw json.RawMessage) json.RawMessage {
+	if details == nil {
 		return nil
 	}
 	var args editArgs
@@ -58,17 +65,17 @@ func editFileDiff(resultRaw, argsRaw json.RawMessage) json.RawMessage {
 		_ = json.Unmarshal(argsRaw, &args)
 	}
 	file := args.file()
-	if env.Details.Patch != "" {
-		additions, deletions := agents.CountPatchLines(env.Details.Patch)
+	if details.Patch != "" {
+		additions, deletions := agents.CountPatchLines(details.Patch)
 		if additions == 0 && deletions == 0 {
 			return nil
 		}
 		return agents.MarshalToolResultMetadata([]agents.FileDiff{
-			{File: file, Patch: env.Details.Patch, Additions: additions, Deletions: deletions, Status: "modified"},
+			{File: file, Patch: details.Patch, Additions: additions, Deletions: deletions, Status: "modified"},
 		})
 	}
-	if env.Details.Diff != "" {
-		additions, deletions := countPiDisplayDiff(env.Details.Diff)
+	if details.Diff != "" {
+		additions, deletions := countPiDisplayDiff(details.Diff)
 		if additions == 0 && deletions == 0 {
 			return nil
 		}

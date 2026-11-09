@@ -463,3 +463,32 @@ func TestParserTurnBoundaries(t *testing.T) {
 		t.Errorf("two runs share turn id %q", turns[0].ID)
 	}
 }
+
+// TestParserEditResultCarriesFileDiffMetadata pins the live edit metadata:
+// the start record's arguments supply the file path and the end record's
+// details supply the unified patch and counts.
+func TestParserEditResultCarriesFileDiffMetadata(t *testing.T) {
+	input := strings.Join([]string{
+		`{"type":"tool_execution_start","toolCallId":"call-edit","toolName":"edit","args":{"path":"foo.ts"}}`,
+		`{"type":"tool_execution_end","toolCallId":"call-edit","toolName":"edit","result":{"content":[{"type":"text","text":"ok"}],"details":{"patch":"--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-a\n+b\n"}},"isError":false}`,
+	}, "\n") + "\n"
+
+	events := collect(t, input)
+	var result *agents.NormalizedEvent
+	for i := range events {
+		if events[i].Type == agents.EventToolResult {
+			result = &events[i]
+		}
+	}
+	if result == nil || result.ToolResult == nil {
+		t.Fatalf("events = %+v, want a tool result", events)
+	}
+	meta := agents.ParseToolResultMetadata(result.ToolResult.Metadata)
+	if meta == nil || meta.FirstChangedFile() == nil {
+		t.Fatalf("metadata = %s, want a file diff", result.ToolResult.Metadata)
+	}
+	diff := meta.FirstChangedFile()
+	if diff.File != "foo.ts" || diff.Additions != 1 || diff.Deletions != 1 || diff.Patch == "" {
+		t.Fatalf("diff = %+v, want foo.ts +1/-1 with patch", diff)
+	}
+}

@@ -236,7 +236,7 @@ web/src/
        • EventTurn (started)
        • EventMessage (text_delta, reasoning_delta)
        • EventThinking (思考内容流式输出)
-       • EventToolCall (各后端提问工具如 ask_user_question 由适配器统一归一化为标准 question 契约；入参原样透传，不做裁剪) / EventToolResult (输出为工具原始输出，不做摘要；问答工具保留完整答案 payload 供前端结构化解析)
+       • EventToolCall (各后端提问工具如 ask_user_question 由适配器统一归一化为标准 question 契约；入参原样透传，不做裁剪) / EventToolResult (输出为工具原始输出，不做摘要；编辑工具经 metadata.files 携带统一 diff 供前端渲染 +N/-N 与补丁，缺失时回退纯文本；问答工具保留完整答案 payload 供前端结构化解析)
        • EventTurn (ended, completed/failed/cancelled)
            │
            ▼

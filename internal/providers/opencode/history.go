@@ -265,6 +265,7 @@ func toolHistoryEvents(envelope agents.NormalizedEvent, block ContentBlock) []ag
 		}
 		result.ToolResult.Output = rawOutput
 		result.ToolResult.IsError = isError
+		result.ToolResult.Metadata = boundedMetadata(block.State.Metadata)
 	}
 	return []agents.NormalizedEvent{call, result}
 }

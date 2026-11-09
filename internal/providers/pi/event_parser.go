@@ -78,6 +78,29 @@ type parser struct {
 	// newTurnID mints turn ids unique within the instance; a parser without
 	// one numbers its own turns.
 	newTurnID func() string
+	// toolArgs keeps the start record's arguments until the matching end
+	// record, so an edit result can name the file it changed even when pi
+	// omits args on tool_execution_end.
+	toolArgs map[string]json.RawMessage
+}
+
+func (p *parser) rememberToolArgs(callID string, args json.RawMessage) {
+	if callID == "" || len(args) == 0 {
+		return
+	}
+	if p.toolArgs == nil {
+		p.toolArgs = make(map[string]json.RawMessage)
+	}
+	p.toolArgs[callID] = args
+}
+
+func (p *parser) takeToolArgs(callID string) json.RawMessage {
+	if p.toolArgs == nil {
+		return nil
+	}
+	args := p.toolArgs[callID]
+	delete(p.toolArgs, callID)
+	return args
 }
 
 // newParser builds a parser for one prompt process. now stamps event times; a
@@ -332,6 +355,7 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			name = agents.StandardToolQuestion
 			args = agents.NormalizeQuestionToolInput(args)
 		}
+		p.rememberToolArgs(event.ToolCallID, event.Args)
 		out := p.event()
 		out.Type = agents.EventToolCall
 		out.ToolCall = &agents.ToolCallPayload{
@@ -345,9 +369,18 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 		return nil
 
 	case "tool_execution_end":
+		args := event.Args
+		if remembered := p.takeToolArgs(event.ToolCallID); len(args) == 0 {
+			args = remembered
+		}
 		out := p.event()
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: event.ToolCallID, Output: resultText(event.Result), IsError: event.IsError}
+		out.ToolResult = &agents.ToolResultPayload{
+			CallID:   event.ToolCallID,
+			Output:   resultText(event.Result),
+			IsError:  event.IsError,
+			Metadata: editFileDiff(event.Result, args),
+		}
 		return []agents.NormalizedEvent{out}
 
 	case "error":

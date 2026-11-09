@@ -23,7 +23,17 @@
             "status": "completed",
             "input": { "code": "ls -la" },
             "content": [{ "type": "text", "text": "历史里的工具输出" }],
-            "metadata": {}
+            "metadata": {
+              "files": [
+                {
+                  "file": "foo.ts",
+                  "patch": "--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-a\n+b\n",
+                  "additions": 1,
+                  "deletions": 1,
+                  "status": "modified"
+                }
+              ]
+            }
           },
           "time": { "created": 1791600000100, "ran": 1791600000200, "completed": 1791600000300 }
         }

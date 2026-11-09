@@ -297,3 +297,39 @@ func TestListHistoryPreservesMultiPartModel(t *testing.T) {
 		t.Errorf("assistant model.Provider = %q, want occ-commandcode-o", assistant.Message.Model.Provider)
 	}
 }
+
+// TestListHistoryCarriesEditFileDiffMetadata pins the replayed edit metadata:
+// pi persists the tool result's details, and history pairs them with the
+// tool call's arguments to render the same diff as the live stream.
+func TestListHistoryCarriesEditFileDiffMetadata(t *testing.T) {
+	dir := t.TempDir()
+	sessionRoot := t.TempDir()
+	const sessionID = "sess-edit-1"
+
+	content := strings.Join([]string{
+		`{"type":"session","version":3,"id":"` + sessionID + `","timestamp":"2026-10-09T00:00:00.000Z","cwd":"` + dir + `"}`,
+		`{"type":"message","id":"a1","timestamp":"2026-10-09T00:00:01.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_e","name":"edit","arguments":{"path":"foo.ts"}}]}}`,
+		`{"type":"message","id":"r1","timestamp":"2026-10-09T00:00:02.000Z","message":{"role":"toolResult","toolCallId":"call_e","toolName":"edit","isError":false,"content":[{"type":"text","text":"ok"}],"details":{"patch":"--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-a\n+b\n"}}}`,
+	}, "\n") + "\n"
+	writeTranscriptFile(t, sessionRoot, dir, sessionID, content)
+
+	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
+	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID}).Events
+	var result *agents.NormalizedEvent
+	for i := range events {
+		if events[i].Type == agents.EventToolResult {
+			result = &events[i]
+		}
+	}
+	if result == nil || result.ToolResult == nil {
+		t.Fatalf("events = %+v, want a tool result", events)
+	}
+	meta := agents.ParseToolResultMetadata(result.ToolResult.Metadata)
+	if meta == nil || meta.FirstChangedFile() == nil {
+		t.Fatalf("metadata = %s, want a file diff", result.ToolResult.Metadata)
+	}
+	diff := meta.FirstChangedFile()
+	if diff.File != "foo.ts" || diff.Additions != 1 || diff.Deletions != 1 || diff.Patch == "" {
+		t.Fatalf("diff = %+v, want foo.ts +1/-1 with patch", diff)
+	}
+}

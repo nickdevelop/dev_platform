@@ -6,9 +6,11 @@ import (
 )
 
 // FileDiff is the backend-agnostic edit summary the workbench renders
-// desktop-style: a unified patch plus its line counts. opencode already
-// produces it as metadata.files[0]; pi's details.{patch,diff} are
-// normalized into the same shape so one frontend component serves both.
+// desktop-style: a unified patch plus its line counts. opencode surfaces it
+// as metadata.files; pi's details.{patch,diff} are normalized into the same
+// shape so one frontend component serves both. Backends without structured
+// edit data (builtin, deepseek) leave metadata absent and the workbench falls
+// back to the raw output text.
 type FileDiff struct {
 	File      string `json:"file"`
 	Patch     string `json:"patch,omitempty"`

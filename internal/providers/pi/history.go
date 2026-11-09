@@ -98,17 +98,22 @@ func (a *Adapter) historyFile(request agents.ListHistoryRequest) (string, error)
 // provider-reported usage on them); standalone usage records are cost
 // bookkeeping, not context, and are skipped.
 type historyRecord struct {
-	Type      string    `json:"type"`
-	Timestamp time.Time `json:"timestamp"`
-	Provider  string    `json:"provider"`
-	ModelID   string    `json:"modelId"`
-	Message   *struct {
-		Role       string          `json:"role"`
-		Content    json.RawMessage `json:"content"`
-		ToolCallID string          `json:"toolCallId"`
-		IsError    bool            `json:"isError"`
-		Usage      *wireUsage      `json:"usage"`
-	} `json:"message"`
+	Type      string          `json:"type"`
+	Timestamp time.Time       `json:"timestamp"`
+	Provider  string          `json:"provider"`
+	ModelID   string          `json:"modelId"`
+	Message   *historyMessage `json:"message"`
+}
+
+// historyMessage is one persisted pi message. Details carries an edit tool's
+// structured diff when the transcript preserved it.
+type historyMessage struct {
+	Role       string          `json:"role"`
+	Content    json.RawMessage `json:"content"`
+	ToolCallID string          `json:"toolCallId"`
+	IsError    bool            `json:"isError"`
+	Usage      *wireUsage      `json:"usage"`
+	Details    *editDetails    `json:"details"`
 }
 
 // wireUsage mirrors pi's Usage: per-message provider-reported tokens with the
@@ -171,6 +176,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 
 	events := make([]agents.NormalizedEvent, 0, 16)
 	var currentModel *agents.MessageModel
+	toolArgs := make(map[string]json.RawMessage)
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -189,7 +195,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 				Provider: record.Provider,
 			}
 		}
-		events = append(events, normalizeHistoryRecord(record, currentModel)...)
+		events = append(events, normalizeHistoryRecord(record, currentModel, toolArgs)...)
 	}
 	if err := scanner.Err(); err != nil {
 		// An unreadable or oversized record ended the read before the end.
@@ -201,7 +207,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 // normalizeHistoryRecord translates one transcript record. A record can yield
 // two events (an assistant message that both speaks and calls a tool) or none
 // (the session header, model changes, system preamble, thinking).
-func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []agents.NormalizedEvent {
+func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel, toolArgs map[string]json.RawMessage) []agents.NormalizedEvent {
 	if record.Type != "message" || record.Message == nil {
 		return nil
 	}
@@ -244,6 +250,9 @@ func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []
 				if record.Message.Role != "assistant" {
 					continue
 				}
+				if toolArgs != nil && block.ID != "" {
+					toolArgs[block.ID] = block.Arguments
+				}
 				event := envelope
 				event.Type = agents.EventToolCall
 				event.ToolCall = &agents.ToolCallPayload{
@@ -270,12 +279,18 @@ func normalizeHistoryRecord(record historyRecord, model *agents.MessageModel) []
 				output.WriteString(block.Text)
 			}
 		}
+		var args json.RawMessage
+		if toolArgs != nil {
+			args = toolArgs[record.Message.ToolCallID]
+			delete(toolArgs, record.Message.ToolCallID)
+		}
 		event := envelope
 		event.Type = agents.EventToolResult
 		event.ToolResult = &agents.ToolResultPayload{
-			CallID:  record.Message.ToolCallID,
-			Output:  output.String(),
-			IsError: record.Message.IsError,
+			CallID:   record.Message.ToolCallID,
+			Output:   output.String(),
+			IsError:  record.Message.IsError,
+			Metadata: fileDiffFromDetails(record.Message.Details, args),
 		}
 		return []agents.NormalizedEvent{event}
 	default:

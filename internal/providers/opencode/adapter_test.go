@@ -541,7 +541,7 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 		sseEvent("evt_5", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_2","ordinal":2,"text":"complete"}`, "/x"),
 		sseEvent("evt_6", "session.tool.input.started", `{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","name":"bash"}`, "/x"),
 		sseEvent("evt_7", "session.tool.called", `{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","input":{"cmd":"ls"},"executed":true}`, "/x"),
-		sseEvent("evt_8", "session.tool.success", `{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","content":[{"type":"text","text":"ok"}],"executed":true}`, "/x"),
+		sseEvent("evt_8", "session.tool.success", `{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","content":[{"type":"text","text":"ok"}],"metadata":{"files":[{"file":"foo.ts","patch":"--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-a\n+b\n","additions":1,"deletions":1,"status":"modified"}]},"executed":true}`, "/x"),
 		sseEvent("evt_9", "session.execution.failed", `{"sessionID":"ses_1","error":{"type":"provider.internal","message":"boom","status":502}}`, ""),
 		sseEvent("evt_10", "session.mystery", `{"sessionID":"ses_1","foo":"bar"}`, "/x"),
 		sseEvent("evt_11", "session.text.delta", `{"sessionID":"ses_other","delta":"nope"}`, "/other"),
@@ -604,6 +604,10 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	}
 	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "ok" || got[6].ToolResult.IsError {
 		t.Fatalf("event 6 = %+v", got[6])
+	}
+	if meta := agents.ParseToolResultMetadata(got[6].ToolResult.Metadata); meta == nil || meta.FirstChangedFile() == nil ||
+		meta.FirstChangedFile().File != "foo.ts" || meta.FirstChangedFile().Additions != 1 {
+		t.Fatalf("event 6 metadata = %s, want foo.ts +1/-1", got[6].ToolResult.Metadata)
 	}
 	// 8: this execution never started in the stream, so its failure has no
 	// open turn to end and is reported as the error alone.
@@ -1266,6 +1270,10 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 	if events[4].Type != agents.EventToolResult || events[4].ToolResult == nil ||
 		events[4].ToolResult.CallID != "call_1" || events[4].ToolResult.Output != "历史里的工具输出" || events[4].ToolResult.IsError {
 		t.Errorf("events[4] = %+v, want the completed tool result with its raw output", events[4])
+	}
+	if meta := agents.ParseToolResultMetadata(events[4].ToolResult.Metadata); meta == nil || meta.FirstChangedFile() == nil ||
+		meta.FirstChangedFile().File != "foo.ts" {
+		t.Errorf("events[4] metadata = %s, want foo.ts", events[4].ToolResult.Metadata)
 	}
 	if events[5].Type != agents.EventToolCall || events[5].ToolCall == nil || events[5].ToolCall.CallID != "call_2" {
 		t.Fatalf("events[5] = %+v, want the second tool call", events[5])

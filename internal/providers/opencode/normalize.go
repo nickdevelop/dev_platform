@@ -410,7 +410,12 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		inst.forgetTool(sessionID, data.AssistantMessageID, data.ID)
 		out := inst.event(sessionID)
 		out.Type = agents.EventToolResult
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: flattenRawContent(data.Content), IsError: false}
+		out.ToolResult = &agents.ToolResultPayload{
+			CallID:   data.ID,
+			Output:   flattenRawContent(data.Content),
+			IsError:  false,
+			Metadata: boundedMetadata(data.Metadata),
+		}
 		return []agents.NormalizedEvent{out}
 
 	case "session.tool.failed":
@@ -421,7 +426,12 @@ func (inst *instance) normalize(event *Event) []agents.NormalizedEvent {
 		if output == "" {
 			output = structuredErrorMessage(data, nil)
 		}
-		out.ToolResult = &agents.ToolResultPayload{CallID: data.ID, Output: output, IsError: true}
+		out.ToolResult = &agents.ToolResultPayload{
+			CallID:   data.ID,
+			Output:   output,
+			IsError:  true,
+			Metadata: boundedMetadata(data.Metadata),
+		}
 		return []agents.NormalizedEvent{out}
 
 	case "session.execution.started":
