@@ -12,6 +12,7 @@ import { describeApiError } from '../../api/client'
 import {
   listAgentBackendModels,
   refreshAgentBackendModels,
+  setAllAgentBackendModelsEnabled,
   updateAgentBackendModel,
   type AgentServiceStatus,
   type ModelInfo,
@@ -66,6 +67,38 @@ const models = reactive<Record<string, ModelInfo[]>>({})
 const modelsUpdatedAt = reactive<Record<string, string | null>>({})
 const modelsLoading = reactive<Record<string, boolean>>({})
 const modelsError = reactive<Record<string, string>>({})
+const modelSearch = reactive<Record<string, string>>({})
+const modelsBulkSaving = reactive<Record<string, boolean>>({})
+
+// The settings list keeps enabled models at the top so a long catalog stays
+// readable after the operator has chosen what to expose. Search filters by the
+// friendly name and the wire id, and the sort is a stable partition: both
+// groups keep the backend's reported order.
+const visibleModels = computed<Record<string, ModelInfo[]>>(() => {
+  const result: Record<string, ModelInfo[]> = {}
+  for (const [backend, list] of Object.entries(models)) {
+    const query = (modelSearch[backend] ?? '').trim().toLowerCase()
+    const filtered = query
+      ? list.filter(
+          (model) =>
+            (model.name || '').toLowerCase().includes(query) ||
+            model.id.toLowerCase().includes(query),
+        )
+      : list
+    result[backend] = [...filtered].sort(
+      (a, b) => Number(b.enabled !== false) - Number(a.enabled !== false),
+    )
+  }
+  return result
+})
+
+function visibleModelsFor(backend: string): ModelInfo[] {
+  return visibleModels.value[backend] ?? []
+}
+
+function enabledModelCount(backend: string): number {
+  return (models[backend] ?? []).filter((model) => model.enabled !== false).length
+}
 
 const diagnosticsByBackend = computed(() => {
   const byBackend = new Map<string, (typeof agents.diagnostics)[number]>()
@@ -202,6 +235,24 @@ function updatedAtLabel(backend: string): string {
   const parsed = new Date(raw)
   if (Number.isNaN(parsed.getTime())) return '上次同步时间未知'
   return `上次同步于 ${parsed.toLocaleString()}`
+}
+
+// One click enables or clears every model of the backend. The server applies
+// both states atomically, so the UI never shows a half-applied selection.
+async function setAllModelsEnabled(backend: string, enabled: boolean) {
+  if (!(models[backend] ?? []).length) return
+  modelsBulkSaving[backend] = true
+  modelsError[backend] = ''
+  try {
+    const list = await setAllAgentBackendModelsEnabled(backend, enabled)
+    models[backend] = list.models
+    modelsUpdatedAt[backend] = list.updatedAt
+    rememberModels(backend, list.models)
+  } catch (error) {
+    modelsError[backend] = describeApiError(error)
+  } finally {
+    modelsBulkSaving[backend] = false
+  }
 }
 
 interface EditingModelState {
@@ -662,14 +713,56 @@ function cancelStop() {
           </UiButton>
         </div>
 
+        <div class="model-toolbar flex items-center gap-2 flex-wrap">
+          <UiInput
+            v-model="modelSearch[agent.backend]"
+            size="sm"
+            clearable
+            placeholder="按模型名称搜索"
+            class="flex-1 min-w-[12rem]"
+            :data-test="`agent-models-search-${agent.backend}`"
+          />
+          <UiButton
+            size="sm"
+            variant="secondary"
+            :data-test="`agent-models-select-all-${agent.backend}`"
+            :disabled="
+              modelsLoading[agent.backend] === true ||
+              modelsBulkSaving[agent.backend] === true ||
+              !(models[agent.backend] ?? []).length ||
+              enabledModelCount(agent.backend) === (models[agent.backend] ?? []).length
+            "
+            :loading="modelsBulkSaving[agent.backend] === true"
+            @click="setAllModelsEnabled(agent.backend, true)"
+          >
+            全选
+          </UiButton>
+          <UiButton
+            size="sm"
+            variant="secondary"
+            :data-test="`agent-models-clear-all-${agent.backend}`"
+            :disabled="
+              modelsLoading[agent.backend] === true ||
+              modelsBulkSaving[agent.backend] === true ||
+              enabledModelCount(agent.backend) === 0
+            "
+            @click="setAllModelsEnabled(agent.backend, false)"
+          >
+            清空
+          </UiButton>
+          <span class="text-2xs text-slate-400 tabular-nums">
+            已启用 {{ enabledModelCount(agent.backend) }}/{{ (models[agent.backend] ?? []).length }}
+          </span>
+        </div>
+
         <p v-if="modelsLoading[agent.backend]" class="models-line text-xs text-slate-400">正在同步模型目录…</p>
         <UiAlert v-if="modelsError[agent.backend]" variant="error" class="models-line bad">
           {{ modelsError[agent.backend] }}
         </UiAlert>
 
-        <ul v-if="models[agent.backend]?.length" class="model-list space-y-1.5 max-h-64 overflow-y-auto pr-1">
+        <ul v-if="visibleModelsFor(agent.backend).length" class="model-list space-y-1.5 max-h-64 overflow-y-auto pr-1">
           <li
-            v-for="model in models[agent.backend]"
+            v-for="model in visibleModelsFor(agent.backend)"
             :key="model.id"
             :data-agent-model="model.id"
             class="model-item p-2.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs gap-2.5 hover:border-slate-300 dark:hover:border-slate-700 transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between"
@@ -725,8 +818,14 @@ function cancelStop() {
             </div>
           </li>
         </ul>
-        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400 py-1">
+        <p
+          v-else-if="!modelsLoading[agent.backend] && !(models[agent.backend] ?? []).length"
+          class="models-line text-xs text-slate-400 py-1"
+        >
           尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
+        </p>
+        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-slate-400 py-1">
+          没有匹配的模型。
         </p>
 
         <!-- Model edit form inline -->

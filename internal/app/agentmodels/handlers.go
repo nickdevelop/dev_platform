@@ -23,6 +23,9 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	// Both /models and /models/*model forms are supported to handle model IDs containing slashes.
 	r.PATCH("/agent-backends/:backend/models", s.handleUpdateModel)
 	r.PATCH("/agent-backends/:backend/models/*model", s.handleUpdateModel)
+	// Bulk enablement backs the settings page's select-all/clear-all actions.
+	// It is a PUT because applying the same state twice is idempotent.
+	r.PUT("/agent-backends/:backend/models/enabled", s.handleSetAllEnabled)
 }
 
 // errorResponse is the JSON error envelope for model catalog failures.
@@ -150,4 +153,28 @@ func (s *Service) handleUpdateModel(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, updated)
+}
+
+type setAllEnabledRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// handleSetAllEnabled applies one enabled state to every persisted model of a
+// backend and returns the updated snapshot.
+func (s *Service) handleSetAllEnabled(c *gin.Context) {
+	backend, ok := backendID(c)
+	if !ok {
+		return
+	}
+	var req setAllEnabledRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		respondError(c, http.StatusBadRequest, "invalid_payload")
+		return
+	}
+	list, err := s.SetAllEnabled(c.Request.Context(), backend, *req.Enabled)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, list)
 }

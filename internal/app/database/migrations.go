@@ -439,6 +439,34 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 37, name: "agent_model_customized_names", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&AgentModel{}) {
+			return nil
+		}
+		if !tx.Migrator().HasColumn(&AgentModel{}, "name_customized") {
+			if err := tx.Migrator().AddColumn(&AgentModel{}, "name_customized"); err != nil {
+				return err
+			}
+		}
+		// Older snapshots stored the backend's raw model id as the name when
+		// the catalog did not expose a display name. Treat exactly that shape
+		// as non-customized so the next refresh can adopt the real name, while
+		// leaving names an operator may have edited alone.
+		return tx.Exec(`
+			UPDATE agent_models
+			SET name_customized = CASE
+				WHEN name IS NULL OR name = '' THEN 0
+				WHEN name = model_id THEN 0
+				WHEN name = CASE
+					WHEN provider IS NOT NULL AND provider <> ''
+						AND substr(model_id, 1, length(provider) + 1) = provider || '/'
+					THEN substr(model_id, length(provider) + 2)
+					ELSE model_id
+				END THEN 0
+				ELSE 1
+			END
+		`).Error
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

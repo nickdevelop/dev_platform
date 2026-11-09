@@ -1,12 +1,16 @@
 <script setup lang="ts">
 // Dedicated Activity Panel view for session reasoning, tool executions, and subagent tasks.
-// Extracted from MessageView to enforce single-responsibility and decouple live tool monitoring
-// from markdown message rendering.
+// The pane is a detail-first stream: every block shows the full reasoning, tool
+// input and tool output instead of a one-line summary. Blocks are separated by
+// a horizontal rule and carry no surrounding card or border; long diffs and
+// outputs keep their existing fold controls so the panel stays usable.
 
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import RunningIndicator from '../../../shared/components/RunningIndicator.vue'
 import type { Capabilities } from '../../../api/sessions'
 import type { ChatEntry } from '../state/entry'
+import EditDiffBody from './EditDiffBody.vue'
+import ToolOutput from './ToolOutput.vue'
 import * as log from './logModel'
 
 const props = defineProps<{
@@ -15,9 +19,9 @@ const props = defineProps<{
   running?: boolean
 }>()
 
-const subagentModal = ref<ChatEntry | null>(null)
-
 const model = computed(() => log.buildLogModel(props.messages))
+
+const resultForCall = (entry: ChatEntry): ChatEntry | undefined => model.value.resultForCall(entry)
 
 function toolEventsVisible(): boolean {
   return log.toolEventsVisible(props.capabilities)
@@ -45,51 +49,24 @@ const flatActivityEntries = computed<ChatEntry[]>(() =>
 
 const runningAction = computed(() => log.deriveRunningAction(props.messages))
 
-const resultForCall = (entry: ChatEntry): ChatEntry | undefined => model.value.resultForCall(entry)
-
-function toolSummaryText(entry: ChatEntry): string {
-  return log.toolSummaryText(entry, resultForCall)
-}
-
-function toolIcon(entry: ChatEntry): string {
-  return log.toolIcon(entry)
-}
-
 function toolKind(entry: ChatEntry): log.ToolKind {
   return log.toolKind(entry)
-}
-
-function isSubagentCall(entry: ChatEntry): boolean {
-  return log.isSubagentCall(entry, resultForCall)
-}
-
-function subagentName(entry: ChatEntry): string {
-  return log.subagentName(entry)
-}
-
-function subagentSessionId(entry: ChatEntry): string {
-  return log.subagentSessionId(entry, resultForCall)
 }
 
 function toolName(entry: ChatEntry): string {
   return log.toolName(entry)
 }
 
-function toolArgument(entry: ChatEntry): string {
-  return log.toolArgument(entry)
-}
-
 function prettyInput(entry: ChatEntry): string {
   return log.prettyInput(entry)
 }
 
-function openSubagent(entry: ChatEntry) {
-  subagentModal.value = entry
-}
-
-function closeSubagent() {
-  subagentModal.value = null
-}
+const isSubagentCall = (entry: ChatEntry) => log.isSubagentCall(entry, resultForCall)
+const subagentName = (entry: ChatEntry) => log.subagentName(entry)
+const subagentSessionId = (entry: ChatEntry) => log.subagentSessionId(entry, resultForCall)
+const isEditCall = log.isEditCall
+const editPathFor = (entry: ChatEntry) => log.editPathFor(entry)
+const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
 </script>
 
 <template>
@@ -117,7 +94,7 @@ function closeSubagent() {
           <p class="thinking-text">{{ entry.text }}</p>
         </div>
 
-        <!-- A subagent/task call is a named row plus a button that opens its detail -->
+        <!-- A subagent/task call shows its full prompt and result inline. -->
         <div
           v-else-if="isSubagentCall(entry)"
           class="flat-tool flat-subagent"
@@ -136,21 +113,41 @@ function closeSubagent() {
             <span class="tool-name">子任务</span>
             <span v-if="subagentName(entry)" class="tool-arg">{{ subagentName(entry) }}</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
-          <button
-            type="button"
-            class="subagent-open"
-            data-test="subagent-open"
-            @click="openSubagent(entry)"
-          >
-            查看子任务详情
-          </button>
+          <p v-if="subagentSessionId(entry)" class="subagent-session">会话 {{ subagentSessionId(entry) }}</p>
+          <pre v-if="prettyInput(entry)" class="tool-args" data-test="tool-input">{{ prettyInput(entry) }}</pre>
+          <ToolOutput
+            v-if="resultForCall(entry)"
+            :text="resultForCall(entry)?.text ?? ''"
+            :is-error="resultForCall(entry)?.isError"
+          />
         </div>
 
-        <!-- 所有其它工具只展示摘要行 -->
+        <!-- An edit call with a diff shows the patch directly. -->
+        <div
+          v-else-if="entry.kind === 'tool_call' && isEditCall(entry) && editDiffFor(entry)?.patch"
+          class="flat-tool flat-edit"
+          data-test="tool-call"
+        >
+          <div class="flat-head" data-test="flat-head">
+            <span class="tool-icon" aria-hidden="true">
+              <svg class="glyph-svg" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+              </svg>
+            </span>
+            <span class="tool-name">edit</span>
+            <span v-if="editPathFor(entry)" class="tool-arg">{{ editPathFor(entry) }}</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
+          </div>
+          <EditDiffBody :patch="editDiffFor(entry)?.patch" />
+        </div>
+
+        <!-- Every other tool call shows its name, full input and output. -->
         <div
           v-else-if="entry.kind === 'tool_call' && toolEventsVisible()"
-          class="flat-tool flat-summary"
+          class="flat-tool flat-detail"
           data-test="tool-call"
         >
           <div class="flat-head" data-test="flat-head">
@@ -198,16 +195,22 @@ function closeSubagent() {
                 </svg>
               </template>
             </span>
-            <span class="tool-name">{{ toolSummaryText(entry) }}</span>
+            <span class="tool-name">{{ toolName(entry) }}</span>
             <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
             <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
+          <pre v-if="prettyInput(entry)" class="tool-args" data-test="tool-input">{{ prettyInput(entry) }}</pre>
+          <ToolOutput
+            v-if="resultForCall(entry)"
+            :text="resultForCall(entry)?.text ?? ''"
+            :is-error="resultForCall(entry)?.isError"
+          />
         </div>
 
-        <!-- A result whose call is missing shows as a summary line as well -->
+        <!-- A result whose call is missing still shows its full output. -->
         <div
           v-else-if="entry.kind === 'tool_result' && toolEventsVisible()"
-          class="flat-tool flat-summary"
+          class="flat-tool flat-detail"
           data-test="tool-result"
         >
           <div class="flat-head" data-test="flat-head">
@@ -216,8 +219,9 @@ function closeSubagent() {
                 <path d="M14 10l-4-4M10 2a3.5 3.5 0 0 0-4.8 4.8L2 10v4h4l3.2-3.2A3.5 3.5 0 0 0 14 6V2h-4z" />
               </svg>
             </span>
-            <span class="tool-name">{{ entry.text || '工具结果' }}</span>
+            <span class="tool-name">工具结果</span>
           </div>
+          <ToolOutput :text="entry.text" :is-error="entry.isError" />
         </div>
       </li>
 
@@ -237,33 +241,6 @@ function closeSubagent() {
     </ol>
 
     <p v-if="flatActivityEntries.length === 0" class="empty">暂无活动。</p>
-
-    <!-- Subagent detail dialog modal -->
-    <div
-      v-if="subagentModal"
-      class="subagent-backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="子 Agent 详情"
-      data-test="subagent-dialog"
-      @click.self="closeSubagent"
-    >
-      <div class="subagent-panel">
-        <div class="subagent-head">
-          <p class="subagent-title">子 Agent · {{ toolName(subagentModal) }}</p>
-          <button type="button" class="subagent-close" data-test="subagent-close" @click="closeSubagent">关闭</button>
-        </div>
-        <p v-if="subagentSessionId(subagentModal)" class="subagent-session">会话 {{ subagentSessionId(subagentModal) }}</p>
-        <p v-if="toolArgument(subagentModal)" class="subagent-arg">{{ toolArgument(subagentModal) }}</p>
-        <pre v-if="prettyInput(subagentModal)" class="subagent-input">{{ prettyInput(subagentModal) }}</pre>
-        <pre
-          v-if="resultForCall(subagentModal)"
-          class="subagent-output"
-          :class="{ 'is-error': resultForCall(subagentModal)?.isError }"
-        >{{ resultForCall(subagentModal)?.text }}</pre>
-        <p v-else class="tool-running">运行中…</p>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -281,31 +258,33 @@ function closeSubagent() {
 }
 
 .flat-activity {
-  gap: 0.5rem;
+  gap: 0;
 }
 
-.chat-entry {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-
-.flat-thinking {
+/* Each activity block is separated by a rule instead of being wrapped in a
+   card, so the pane reads as one continuous transcript. */
+.flat-activity > .chat-entry {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  padding: 0.45rem 0.6rem;
+  padding: 0.65rem 0;
 }
 
+.flat-activity > .chat-entry:first-child {
+  padding-top: 0;
+}
+
+.flat-activity > .chat-entry + .chat-entry {
+  border-top: 1px solid var(--color-border);
+}
+
+.flat-thinking,
 .flat-tool {
   box-sizing: border-box;
   width: 100%;
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 0.25rem 0.2rem;
+  padding: 0;
 }
 
 .flat-head {
@@ -337,10 +316,6 @@ function closeSubagent() {
   word-break: break-word;
   overflow-wrap: anywhere;
   line-height: 1.45;
-}
-
-.flat-subagent .flat-head .tool-name {
-  flex-shrink: 0;
 }
 
 .flat-head .tool-arg {
@@ -375,18 +350,14 @@ function closeSubagent() {
   color: var(--color-danger, #dc2626);
 }
 
-.flat-thinking-direct {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  border-left: 2px solid var(--color-border-strong, #94a3b8);
-  padding: 0.5rem 0.75rem;
+.flat-thinking-direct .thinking-text {
+  margin-top: 0.35rem;
 }
 
 .thinking-direct-header {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  margin-bottom: 0.25rem;
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--color-text-muted);
@@ -399,41 +370,54 @@ function closeSubagent() {
 .thinking-text {
   margin: 0;
   font-size: 0.82rem;
-  line-height: 1.45;
+  line-height: 1.55;
   color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.flat-subagent {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.subagent-open {
-  align-self: flex-start;
-  font-size: 0.75rem;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface-muted, rgba(0, 0, 0, 0.04));
+/* Tool input is literal data: wrap anywhere so a long token cannot widen the
+   pane, and keep it visually subordinate to the tool name. */
+.tool-args {
+  margin: 0.35rem 0 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 0.78rem;
+  line-height: 1.5;
   color: var(--color-text);
-  cursor: pointer;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
-.subagent-open:hover {
-  background: var(--color-border-strong, rgba(0, 0, 0, 0.08));
+.tool-args + :deep(.tool-output-wrap),
+.flat-detail :deep(.tool-output-wrap),
+.flat-subagent :deep(.tool-output-wrap),
+.flat-edit :deep(.edit-diff-wrap) {
+  margin-top: 0.4rem;
+}
+
+.subagent-session {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text-muted);
+}
+
+.tool-running {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 .running-indicator-card {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   font-size: 0.85rem;
   color: var(--color-text-muted);
 }
@@ -441,10 +425,9 @@ function closeSubagent() {
 .running-code {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 0.75rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  padding: 0.1rem 0.35rem;
-  border-radius: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
   max-width: 360px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -470,78 +453,5 @@ function closeSubagent() {
   text-align: center;
   font-size: 0.85rem;
   color: var(--color-text-muted);
-}
-
-/* Subagent popup modal */
-.subagent-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  padding: 1rem;
-}
-
-.subagent-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
-  max-width: 600px;
-  width: 100%;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  padding: 1rem;
-  gap: 0.75rem;
-  overflow: hidden;
-}
-
-.subagent-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.subagent-title {
-  margin: 0;
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.subagent-close {
-  background: none;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.subagent-session,
-.subagent-arg {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  font-family: var(--font-mono, monospace);
-}
-
-.subagent-input,
-.subagent-output {
-  margin: 0;
-  font-size: 0.8rem;
-  background: var(--color-bg, #f8fafc);
-  padding: 0.5rem;
-  border-radius: 4px;
-  overflow: auto;
-  max-height: 200px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.subagent-output.is-error {
-  color: var(--color-danger, #dc2626);
 }
 </style>

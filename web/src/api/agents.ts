@@ -250,3 +250,19 @@ export function updateAgentBackendModel(
     { modelId, ...patch },
   )
 }
+
+// PUT /api/agent-backends/{backend}/models/enabled
+//
+// Applies one enabled state to every persisted model of a backend. The settings
+// page's select-all/clear-all actions use this instead of a burst of per-model
+// PATCH requests, so one click is one server transaction.
+export function setAllAgentBackendModelsEnabled(
+  backend: BackendId,
+  enabled: boolean,
+): Promise<AgentModelList> {
+  return mutate<AgentModelList>(
+    'PUT',
+    `/agent-backends/${encodeURIComponent(backend)}/models/enabled`,
+    { enabled },
+  )
+}

@@ -157,6 +157,32 @@ func (s *Service) UpdateModel(ctx context.Context, backend agents.BackendID, mod
 	return model, nil
 }
 
+// SetAllEnabled enables or disables every model in a backend's persisted
+// snapshot. It is the bulk form of UpdateModel used by the settings page's
+// select-all/clear-all actions, so one click stays one transaction.
+func (s *Service) SetAllEnabled(ctx context.Context, backend agents.BackendID, enabled bool) (ModelList, error) {
+	if !backend.Valid() {
+		return ModelList{}, fmt.Errorf("%w: %q", ErrUnknownBackend, backend)
+	}
+	adapter, ok := s.registry.Get(backend)
+	if !ok {
+		return ModelList{}, fmt.Errorf("%w: %q (%w)", ErrUnknownBackend, backend, agents.ErrBackendNotRegistered)
+	}
+	if !adapter.Capabilities().ModelSelection {
+		return ModelList{}, fmt.Errorf("%w: %q", ErrUnsupportedCapability, backend)
+	}
+	if err := ctx.Err(); err != nil {
+		return ModelList{}, err
+	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	if err := s.repo.SetAllEnabled(backend, enabled); err != nil {
+		return ModelList{}, fmt.Errorf("%w: %w", ErrStorage, err)
+	}
+	return s.List(backend)
+}
+
 // normalizeModels drops empty ids and duplicate ids while preserving the
 // backend's order. The first occurrence of an id wins.
 func normalizeModels(models []agents.ModelInfo) []agents.ModelInfo {

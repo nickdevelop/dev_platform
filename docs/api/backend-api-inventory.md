@@ -185,6 +185,7 @@ end note
 | 30 | POST | `/projects/{id}/instances/{instanceId}/stop` | 停止实例 | 会话+CSRF | 200 |
 | 31 | GET | `/agent-backends/{backend}/models` | 读取平台持久化的 Agent 模型快照（不调用 Agent） | 会话 | 200 |
 | 31a | POST | `/agent-backends/{backend}/models/refresh` | 调用 Agent 并原子替换模型快照 | 会话+CSRF | 200 / 409 / 502 |
+| 31b | PUT | `/agent-backends/{backend}/models/enabled` | 全量启用或清空该后端的模型 | 会话+CSRF | 200 / 400 / 409 |
 | 32 | GET | `/agent-services/{backend}` | 探测机器级服务状态 | 会话 | 200 |
 | 33 | POST | `/agent-services/{backend}/start` | 启动机器级服务 | 会话+CSRF | 200 |
 | 34 | POST | `/agent-services/{backend}/stop` | 停止机器级服务 | 会话+CSRF | 200 |

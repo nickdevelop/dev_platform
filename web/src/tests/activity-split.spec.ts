@@ -111,7 +111,7 @@ describe('split message/activity log', () => {
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(false)
   })
 
-  it('starts thinking directly and displays tools as concise summaries', async () => {
+  it('starts thinking directly and shows full tool input and output', () => {
     const entries: ChatEntry[] = [
       { id: 'u1', kind: 'message', role: 'user', text: 'hi', streaming: false },
       { id: 't1', kind: 'thinking', role: 'assistant', text: 'plan', streaming: false },
@@ -130,7 +130,7 @@ describe('split message/activity log', () => {
     const wrapper = mount(MessageView, {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
-    // No step-group wrapper, no <details>: every entry is its own card.
+    // No step-group wrapper, no <details>: every entry is its own block.
     expect(wrapper.find('[data-test="step-group"]').exists()).toBe(false)
     expect(wrapper.findAll('details').length).toBe(0)
     expect(wrapper.find('[data-test="thinking"]').exists()).toBe(true)
@@ -144,17 +144,16 @@ describe('split message/activity log', () => {
     const read = calls[0]
     const shell = calls[1]
 
-    // Tools show as a one-line summary: no fold, no raw body.
-    expect(read.find('[data-test="flat-toggle"]').exists()).toBe(false)
-    expect(read.text()).toContain('读取了 /a.md 文件')
-    expect(read.find('.tool-output').exists()).toBe(false)
+    // Tools expose their full input and output instead of a summary line.
+    expect(read.find('[data-test="tool-input"]').text()).toContain('/a.md')
+    expect(read.find('.tool-output').text()).toContain('读取了 /a.md 文件')
+    expect(read.text()).not.toContain('运行中…')
 
-    expect(shell.find('[data-test="flat-toggle"]').exists()).toBe(false)
-    expect(shell.text()).toContain('执行了 ls -la 命令')
-    expect(shell.find('.tool-output').exists()).toBe(false)
+    expect(shell.find('[data-test="tool-input"]').text()).toContain('ls -la')
+    expect(shell.find('.tool-output').text()).toContain('执行了 ls -la 命令')
   })
 
-  it('renders an edit call as a concise summary', () => {
+  it('renders an edit call with its diff body', () => {
     const entries: ChatEntry[] = [
       {
         id: 'c1', kind: 'tool_call', role: 'assistant', text: 'edit', name: 'edit', callId: 'c1',
@@ -169,11 +168,11 @@ describe('split message/activity log', () => {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
     const call = wrapper.find('[data-test="tool-call"]')
-    expect(call.text()).toContain('编辑了 foo.ts 文件')
-    expect(call.find('[data-test="edit-tool"]').exists()).toBe(false)
+    expect(call.text()).toContain('foo.ts')
+    expect(call.find('[data-test="edit-diff"]').exists()).toBe(true)
   })
 
-  it('reduces a subagent call to a named row and a detail button', async () => {
+  it('shows a subagent call with its full input and result inline', () => {
     const entries: ChatEntry[] = [
       {
         id: 'c1', kind: 'tool_call', role: 'assistant', text: 'task', name: 'task', callId: 'call-9',
@@ -185,13 +184,11 @@ describe('split message/activity log', () => {
       props: { messages: entries, capabilities: capabilities(), display: 'activity' },
     })
     const row = wrapper.find('[data-test="tool-call"]')
-    expect(row.find('[data-test="subagent-open"]').exists()).toBe(true)
+    expect(row.find('[data-test="subagent-open"]').exists()).toBe(false)
     expect(row.text()).toContain('sub job')
-    // The subagent's detail is behind the button, never inline.
-    expect(row.text()).not.toContain('SECRET-DETAILS')
-
-    await row.find('[data-test="subagent-open"]').trigger('click')
-    expect(wrapper.find('[data-test="subagent-dialog"]').text()).toContain('SECRET-DETAILS')
+    expect(row.text()).toContain('do it')
+    expect(row.text()).toContain('SECRET-DETAILS')
+    expect(wrapper.find('[data-test="subagent-dialog"]').exists()).toBe(false)
   })
 
   it('renders question tool in the message column and excludes it from activity pane', async () => {
@@ -846,7 +843,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(split.find('[data-test="chat-side-rail-right"]').exists()).toBe(false)
   })
 
-  it('renders thinking with card styling while tools render without border and with full wrap summary', async () => {
+  it('renders thinking and tools as flat detail blocks with full arguments', async () => {
     const longCommand = 'git status --porcelain && npm test && cargo build --release --verbose --package dev-platform'
     const entries: ChatEntry[] = [
       { id: 't1', kind: 'thinking', role: 'assistant', text: 'detailed reasoning steps', streaming: false },
@@ -870,21 +867,20 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
       },
     })
 
-    // Thinking element is styled as card
+    // Both kinds are flat activity blocks; neither is wrapped in a card.
     const thinkingEl = wrapper.find('[data-test="thinking"]')
     expect(thinkingEl.exists()).toBe(true)
     expect(thinkingEl.classes()).toContain('flat-thinking')
 
-    // Tool call element is flat-tool (no border) and displays the summary text
     const toolEl = wrapper.find('[data-test="tool-call"]')
     expect(toolEl.exists()).toBe(true)
     expect(toolEl.classes()).toContain('flat-tool')
     expect(toolEl.classes()).not.toContain('flat-thinking')
 
-    // Summary text displays the long command and is not truncated
-    const summaryTextEl = toolEl.find('.tool-name')
-    expect(summaryTextEl.exists()).toBe(true)
-    expect(summaryTextEl.text()).toContain(longCommand)
+    // The complete command is present in the tool input, not just a summary.
+    const inputEl = toolEl.find('[data-test="tool-input"]')
+    expect(inputEl.exists()).toBe(true)
+    expect(inputEl.text()).toContain(longCommand)
   })
 })
 

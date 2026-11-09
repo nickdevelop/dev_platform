@@ -27,6 +27,11 @@ type Repository interface {
 
 	// Update updates configuration fields of a single persisted agent model.
 	Update(backend agents.BackendID, modelID string, patch ModelPatch) (agents.ModelInfo, error)
+
+	// SetAllEnabled enables or disables every persisted model of a backend in
+	// one operation. It is used by the settings page's select-all/clear-all
+	// controls so one click is one transaction instead of N requests.
+	SetAllEnabled(backend agents.BackendID, enabled bool) error
 }
 
 // ModelPatch carries the fields that can be updated on an agent model.
@@ -112,10 +117,11 @@ func (r *gormRepository) Replace(backend agents.BackendID, models []agents.Model
 			}
 
 			if existing, ok := existingMap[model.ID]; ok {
-				// Preserve user customizations (name, contextLimit, supportsImages, enabled)
-				// while updating backend-reported fields and order.
+				// Preserve an operator-edited display name; otherwise adopt the
+				// backend's latest name so a catalog that previously reported
+				// only an id can gain a readable name on a later refresh.
 				name := existing.Name
-				if name == "" {
+				if !existing.NameCustomized && model.Name != "" {
 					name = model.Name
 				}
 				contextLimit := existing.ContextLimit
@@ -181,6 +187,7 @@ func (r *gormRepository) Update(backend agents.BackendID, modelID string, patch 
 	}
 	if patch.Name != nil {
 		row.Name = *patch.Name
+		row.NameCustomized = true
 	}
 	if patch.ContextLimit != nil {
 		row.ContextLimit = patch.ContextLimit
@@ -205,4 +212,16 @@ func (r *gormRepository) Update(backend agents.BackendID, modelID string, patch 
 		_ = json.Unmarshal([]byte(row.Variants), &model.Variants)
 	}
 	return model, nil
+}
+
+// SetAllEnabled updates the enabled flag of every model in one backend. The
+// service serializes this with refreshes, so the bulk write cannot interleave
+// with a snapshot replacement.
+func (r *gormRepository) SetAllEnabled(backend agents.BackendID, enabled bool) error {
+	if err := r.db.Model(&database.AgentModel{}).
+		Where("backend = ?", string(backend)).
+		Update("enabled", enabled).Error; err != nil {
+		return fmt.Errorf("set all agent models enabled: %w", err)
+	}
+	return nil
 }

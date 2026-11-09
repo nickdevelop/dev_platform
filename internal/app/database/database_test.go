@@ -156,6 +156,64 @@ func TestMigrateCreatesAgentModelTables(t *testing.T) {
 	if !db.Migrator().HasColumn(&AgentModel{}, "enabled") {
 		t.Error("agent_models enabled column is missing")
 	}
+	if !db.Migrator().HasColumn(&AgentModel{}, "name_customized") {
+		t.Error("agent_models name_customized column is missing")
+	}
+}
+
+func TestMigration37MarksAutoNamesForRefresh(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	if err := db.Exec(`
+		CREATE TABLE agent_models (
+			id integer primary key autoincrement,
+			backend text not null,
+			model_id text not null,
+			name text,
+			provider text,
+			variants text,
+			context_limit integer,
+			supports_images numeric not null default false,
+			sort_order integer not null default 0,
+			enabled numeric not null default true
+		)
+	`).Error; err != nil {
+		t.Fatalf("create legacy agent_models: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO agent_models (backend, model_id, name, provider, enabled) VALUES
+			('pi', 'commandcode/deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4.1-flash', 'commandcode', 1),
+			('pi', 'commandcode/claude-haiku-5-5', 'Claude Haiku 5.5', 'commandcode', 1)
+	`).Error; err != nil {
+		t.Fatalf("insert legacy rows: %v", err)
+	}
+
+	var step *migrationStep
+	for i := range migrationSteps {
+		if migrationSteps[i].version == 37 {
+			step = &migrationSteps[i]
+			break
+		}
+	}
+	if step == nil {
+		t.Fatal("migration 37 is not registered")
+	}
+	if err := step.run(db); err != nil {
+		t.Fatalf("migration 37: %v", err)
+	}
+
+	var rows []AgentModel
+	if err := db.Order("id asc").Find(&rows).Error; err != nil {
+		t.Fatalf("read migrated rows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].NameCustomized {
+		t.Error("raw-id auto name was marked customized; a refresh could no longer fix it")
+	}
+	if !rows[1].NameCustomized {
+		t.Error("an operator-looking display name was not marked customized")
+	}
 }
 
 func TestMigrateCreatesChatTables(t *testing.T) {

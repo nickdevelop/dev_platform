@@ -1,11 +1,36 @@
 package pi
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	"devplatform/internal/core/agents"
 )
+
+// TestListModelsWithoutInstanceUsesRPCNames verifies the catalog probe does not
+// depend on a running session: a short-lived RPC child still supplies the
+// display name that `--list-models` omits.
+func TestListModelsWithoutInstanceUsesRPCNames(t *testing.T) {
+	adapter := newRPCAdapter(t, t.TempDir(), "multi-part-models")
+	models, err := adapter.ListModels(context.Background(), "")
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("ListModels() returned %d models, want 2: %+v", len(models), models)
+	}
+	ds := models[1]
+	if ds.Name != "DeepSeek V4.1 Flash" {
+		t.Errorf("model.Name = %q, want the RPC display name", ds.Name)
+	}
+	if ds.ID != "occ-commandcode-o/deepseek/deepseek-v4.1-flash" {
+		t.Errorf("model.ID = %q, want the qualified native id", ds.ID)
+	}
+	if ds.ContextLimit == nil || *ds.ContextLimit != 1000000 || !ds.SupportsImages {
+		t.Errorf("model metadata = %+v, want context and image support", ds)
+	}
+}
 
 // TestParseModelListHandlesCRLF verifies Windows CRLF output parses exactly
 // like LF output.

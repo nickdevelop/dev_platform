@@ -9,7 +9,7 @@
 `dev_platform` 是一个面向团队和个人开发者的**多 Agent 协同 AI 研发工作台**。其核心目标在于解决不同终端 AI Coding Agent（如 OpenCode V2、Pi、DeepSeek CLI）协议各异、交互割裂、缺乏集中管控的问题，提供中性同构的平台层封装：
 
 1. **多后端统一协同**：统一接入异构的 AI Coding Agent，支持开箱即用的多 Agent 实例隔离、生命周期管理与并发会话。
-2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；右侧面板整合为统一的右侧工作区工作台（包含左侧文件预览区与右侧文件树，且移除最右侧冗余的竖向导航条，在顶层 Tab 栏最右侧提供纯图标布局控制开关，操作按钮全面纯图标化；文件预览区恢复固定的「链路」Tab——以扁平活动流实时展示思考过程与工具调用步骤卡片，带计数徽标、独立底部跟随滚动与滚动位置持久化，与文件预览 Tab 互斥切换）；面板整体锁定外框总宽度，文件树在面板内部靠右展开或向右折叠，内部弹性伸缩（flex: 1 撑满），主对话区宽度恒定，彻底消灭对话内容跳动与晃动。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；提示词模板下拉仅提供流程类（flow）模板（角色类模板保留给角色库与纯对话助手，历史草稿中的角色类选择会被自动清理）；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
+2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；右侧面板整合为统一的右侧工作区工作台（包含左侧文件预览区与右侧文件树，且移除最右侧冗余的竖向导航条，在顶层 Tab 栏最右侧提供纯图标布局控制开关，操作按钮全面纯图标化；文件预览区恢复固定的「链路」Tab——以扁平活动流实时展示思考过程、工具完整入参与输出，块间以横线分隔且不使用卡片方框包裹，带计数徽标、独立底部跟随滚动与滚动位置持久化，与文件预览 Tab 互斥切换）；面板整体锁定外框总宽度，文件树在面板内部靠右展开或向右折叠，内部弹性伸缩（flex: 1 撑满），主对话区宽度恒定，彻底消灭对话内容跳动与晃动。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；提示词模板下拉仅提供流程类（flow）模板（角色类模板保留给角色库与纯对话助手，历史草稿中的角色类选择会被自动清理）；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口（26px 紧凑设计，默认 0.3 半透明，悬浮与展开时高亮过渡），以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的对应助手分组，与主 Chat 页面共享模型配置但使用独立事件流。
@@ -25,7 +25,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v36，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v37，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记区分后端同步名称与用户自定义名称） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
@@ -78,7 +78,7 @@
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
 | **`agentservices/`** | 机器级 Agent 后台守护服务管理。负责机器级第三方后台服务（如 OpenCode service）的健康探测、运维手动启停与启动门控。 | `service.go`（探测与启停协调）、`handlers.go`（运维管理 API） | 仅在后台服务支持的后端生效；不承担模型缓存失效职责。 |
-| **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态。 | `service.go`（List/Refresh/UpdateModel）、`repository.go`（快照读写与增量合并）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
+| **`agentmodels/`** | 平台级 Agent 模型快照与治理。持久化每个后端最近一次刷新的模型清单，并支持平台级启用/停用及配置修改（显示名称、上下文上限、图片支持）；默认读取数据库，不调用 Agent；手动刷新时调用适配器并执行增量原子合并，保留用户自定义配置与启用状态；提供单模型编辑与全量启用/清空批量接口（`PUT /agent-backends/{backend}/models/enabled`）。 | `service.go`（List/Refresh/UpdateModel/SetAllEnabled）、`repository.go`（快照读写、增量合并与批量启停）、`handlers.go`（模型 API） | 只依赖 `core/agents` 契约、注册表与数据库；不感知具体后端；不提供项目级清单。 |
 | **`auth/`** | 用户认证鉴权与安全防御。用户密码哈希校验、Session 令牌生命周期、本机首次免命令行密码设置引导、全局 CSRF 双提交校验与自动轮转中间件。 | `middleware.go`（`RequireCSRF` / `RequireSession`）、`csrf.go`（令牌生成与双提交比对）、`handlers.go`（登录/登出/首次密码设置） | 全局路由拦截第一关。 |
 | **`secrets/`** | 敏感凭据脱敏与安全存储。管理第三方 API Key 与 SSH 密码，提供流式/日志敏感数据实时脱敏过滤器。 | `store.go`（加密存储与读写）、`redact.go`（正则脱敏过滤） | 用于模型配置、终端 SSH 凭据以及防止日志泄露。 |
 | **`settings/`** | 平台全局偏好设置。管理外观主题（浅色/暖阳/冷灰，移除深色；字号仅接受 12/14/16 三档，历史 12–20 值读取时归并到最近档位）、快捷助手开关、全局 Agent 系统提示词（AGENTS.md）落盘与跨后端配置同步、Tab 隔离的多 Agent 后端开关配置、可执行文件路径与运行模式、以及 dsh 守护进程空闲断开时长；并新增后端工具权限模式（confirm / auto）配置与"平台持久化会话数据"门控标志（`sessionDataOwner`，由 Descriptor 声明）。 | `service.go`（系统偏好与快捷助手开关）、`general.go`（全局系统提示词文件管理与跨 Agent 同步）、`agents.go`（各 Backend 的配置状态、空闲超时与权限模式）、`handlers_agents.go`（设置 API 与 agent DTO） | 仅消费契约的 `Catalog`，不直接感知后端实现细节；全局提示词以平台数据目录 `dataDir/AGENTS.md` 为唯一权威源，跨平台文件同步写入各后端，不依赖 Windows 受限的软链接；快捷助手开关独立于外观配置存储。 |
@@ -86,7 +86,7 @@
 | **`prompts/`** | 平台提示词模板管理。管理角色类（`role`）与流程类（`flow`）模板，支持 `{user_prompt}` 变量占位符、多维度关键词与分类筛选，供角色管理、纯对话助手及多 Agent 协同流程作为统一权威源引用；新建项目会话入口仅消费流程类模板，角色类模板不对该入口开放。 | `model.go`（模型定义）、`service.go`（CRUD 与分类过滤）、`repository.go`（持久化存储）、`handlers.go`（REST 路由） | 供平台各中心与 `platformtools` 组合调用。 |
 | **`agentdata/`** | 内置 Agent 转写数据域服务。承载"声明拥有自身会话数据"（Descriptor `OwnsSessionData`）的后端在平台数据库中的会话转写：adapter 侧经组合根注入的 `TranscriptStore` 契约读写，设置中心侧提供会话数据管理（分页列表 / 单条删除 / 批量清空，路由 `GET/DELETE /api/settings/agent-data/sessions...`）。删除时联动清理会话工作台索引行（组合根绑定 `sessions.Service.DeleteIndexByNative`），运行中的轮次拒绝删除（409 `session_busy`）；本包不出现任何后端 ID 字面量，服务的目标后端由组合根绑定。 | `store.go`（GORM 转写表读写与生命周期管理）、`handlers.go`（管理 REST API） | 只依赖 `database` 与 `core/agents`；purger 与 activity gate 为组合根注入的函数钩子，保持包的完全后端中立。 |
 | **`roles/`** | 全局专家角色管理。将多 Agent 协同流程中的角色抽取为平台一等实体，统一人设名称、职责描述、执行引擎（Backend）、分配模型（Model）与标识色彩；统一关联并动态同步提示词库中的角色类提示词，供多 Agent 协同流程与对话助手按需选用与复用。 | `model.go`（角色模型与 DTO）、`service.go`（角色 CRUD 与提示词动态同步）、`repository.go`（持久化存储与平滑兼容转换）、`handlers.go`（REST API 路由） | 依赖 `core/agents` 契约与 `prompts.Service` 接口，与具体后端实现解耦。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v36 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v37 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`；v37 为 `agent_models` 增加 `name_customized` 并回填旧自动名称）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -249,7 +249,7 @@ web/src/
    - 消费 SSE 事件帧，更新 sessionLog 状态
    - 问答交互工具与纯净对话流（MessageView display="messages"），完整承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；底部待回答问答面板支持向下收起/展开，展开时限高并在内部滚动，避免面板过大挤压对话审阅区；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
    - 主对话流动态运行状态指示（MessageView kind-running）：移除原有静态“正在运行...”，采用 deriveRunningAction 基于最新活动动态解析动作语义（如“正在思考...”、“执行 <cmd>”、“编辑 <path>”、“读取 <path>”、“搜索 <query>”等）并以微动效卡片实时呈现
-   - 右侧面板整合为统一工作区面板（首个固定 Tab 为「链路」实时呈现思考与工具调用活动流，文件 Tab 承载左侧文件预览与 Diff 比对，右侧为文件树），由顶层 Tab 栏最右侧纯图标布局按钮统一控制显隐；文件树在右侧面板内展开或向右折叠，内部弹性伸缩（flex: 1 撑满），外框总宽度恒定锁定，绝不占用或晃动主对话窗口宽度；操作按钮全面纯图标化。
+   - 右侧面板整合为统一工作区面板（首个固定 Tab 为「链路」实时呈现思考与工具的完整详细内容，块间横线分隔、无卡片方框，文件 Tab 承载左侧文件预览与 Diff 比对，右侧为文件树），由顶层 Tab 栏最右侧纯图标布局按钮统一控制显隐；文件树在右侧面板内展开或向右折叠，内部弹性伸缩（flex: 1 撑满），外框总宽度恒定锁定，绝不占用或晃动主对话窗口宽度；操作按钮全面纯图标化。
    - 会话历史全量回放与渲染对等（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务原样透传适配器返回的全部历史事件（EventMessage、EventError、EventThinking 及成对的 EventToolCall/EventToolResult，含问答交互工具），与 live SSE 事件流保持严格对等——线上期间与刷新后的会话在主对话流（display="messages"）与右侧「链路」Tab（display="activity"）中的呈现完全一致；体积治理由 provider 层既有的工具输出摘要化（SummarizeToolResult）与裁剪（PruneToolInput）承担，窗口截断仍以 Truncated 标记兜底（该接口此前曾按需过滤 thinking 与非问答工具事件，现随「链路」面板恢复而回归全量回放）
    - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则平滑跟随最新内容。
    - 轮次结束时将会话状态恢复为 TurnIdle
@@ -414,10 +414,10 @@ web/src/
 ### 6. 平台级 Agent 诊断与模型快照流（Diagnostics & Model Snapshot）
 
 - **诊断归属**：`GET /api/agent-backends/diagnostics` 是平台级接口。前端只在「平台设置 → Agent」中展示：每张 Agent 卡片内提供可折叠诊断详情，`warning` / `error` 默认展开。项目设置不再读取诊断，也不再展示 machine service 提示。
-- **模型持久化与治理**：`internal/app/agentmodels` 管理平台级模型快照与治理。`agent_models` 保存每个 backend 的模型行（含 `enabled` 开关、显示名称、上下文上限等个性化配置），`agent_model_catalogs` 保存最后同步时间；唯一索引为 `(backend, model_id)`。
+- **模型持久化与治理**：`internal/app/agentmodels` 管理平台级模型快照与治理。`agent_models` 保存每个 backend 的模型行（含 `enabled` 开关、显示名称、上下文上限等个性化配置，并以 `name_customized` 区分用户自定义名称与后端同步名称），`agent_model_catalogs` 保存最后同步时间；唯一索引为 `(backend, model_id)`。
 - **读取**：`GET /api/agent-backends/{backend}/models` 只读数据库，不调用 Agent；Agent 离线时仍返回上次成功快照。从未刷新返回 `models: []` 与 `updatedAt: null`。
-- **手动刷新与增量合并**：`POST /api/agent-backends/{backend}/models/refresh` 调用适配器 `ListModels(ctx, "")`。刷新采用**增量差量合并（Upsert/Merge）算法**：保留用户已配置的启用/停用状态及修改后的名称与上下文限制，补充/更新后端新模型或属性，清理已废弃模型。刷新失败保留旧快照；空结果清空模型但更新同步时间。
-- **模型配置修改与启用/停用**：`PATCH /api/agent-backends/{backend}/models`（支持带 `/*model` 或请求体指定 `modelId`）支持更新指定模型的启用状态、自定义名称、上下文上限 Token 限制及多模态图片输入支持。前端 Agent 设置页提供快捷启停 Checkbox 与模型编辑抽屉。
+- **手动刷新与增量合并**：`POST /api/agent-backends/{backend}/models/refresh` 调用适配器 `ListModels(ctx, "")`。刷新采用**增量差量合并（Upsert/Merge）算法**：保留用户已配置的启用/停用状态、用户自定义名称与上下文限制；未被用户自定义的名称会跟随后端最新名称更新（pi 无实例时通过短生命周期 RPC 读取带显示名称的目录），补充/更新后端新模型或属性，清理已废弃模型。刷新失败保留旧快照；空结果清空模型但更新同步时间。
+- **模型配置修改与启用/停用**：`PATCH /api/agent-backends/{backend}/models`（支持带 `/*model` 或请求体指定 `modelId`）支持更新指定模型的启用状态、自定义名称、上下文上限 Token 限制及多模态图片输入支持。`PUT /api/agent-backends/{backend}/models/enabled` 提供全量启用/清空，供 Agent 设置页一键全选/清空使用。前端 Agent 设置页提供按名称搜索、已启用优先排序、快捷启停 Checkbox 与模型编辑表单。
 - **下游消费端过滤**：工作台会话模型选择器（`ModelSelect.vue`）与计划任务创建器（`TaskManageDialog.vue`）自动过滤 `enabled: false` 的模型，只向终端用户展示已启用的模型；若历史选中的模型被停用，选择器平滑回退至首个可用模型。
 - **刷新失败可观测性**：HTTP 响应只给稳定错误码（`model_list_failed` / `service_not_running` / `unsupported_capability`），适配器返回的底层原因（例如 deepseek 共享宿主启动超时）在服务端日志以 `agent models: refresh <backend> failed: ...` 记录并做密钥脱敏；排障时先看这条日志，不要只看 access log 的 502。
 - **deepseek 宿主启动预算**：deepseek 的刷新会懒启动共享 `dsh` 宿主，启动超时默认 30s（`dsh` 自身打印 launch URL 实测 4.9~5.3s，因此不可下调到秒级；可用 `DEEPSEEK_STARTUP_TIMEOUT` 覆盖）。参见 `docs/agent-compatibility.md` 的 deepseek transport 小节。

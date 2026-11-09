@@ -108,6 +108,16 @@ func (f *fakeRepository) Update(_ agents.BackendID, modelID string, patch ModelP
 	return agents.ModelInfo{}, ErrModelNotFound
 }
 
+func (f *fakeRepository) SetAllEnabled(_ agents.BackendID, enabled bool) error {
+	if f.listErr != nil {
+		return f.listErr
+	}
+	for i := range f.models {
+		f.models[i].Enabled = enabled
+	}
+	return nil
+}
+
 func newService(t *testing.T, caps agents.Capabilities, repo Repository) (*Service, *stubAdapter) {
 	t.Helper()
 
@@ -368,5 +378,47 @@ func TestUpdateModelServiceAndRoutes(t *testing.T) {
 	router.ServeHTTP(recMismatch, reqMismatch)
 	if recMismatch.Code != http.StatusBadRequest {
 		t.Errorf("PATCH mismatch = %d, want 400", recMismatch.Code)
+	}
+}
+
+func TestSetAllEnabledServiceAndRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &fakeRepository{
+		models: []agents.ModelInfo{
+			{ID: "openai/gpt-4o", Name: "GPT-4o", Provider: "openai", Enabled: true},
+			{ID: "openai/gpt-4o-mini", Name: "GPT-4o mini", Provider: "openai", Enabled: true},
+		},
+	}
+	service, _ := newService(t, agents.Capabilities{ModelSelection: true}, repo)
+	router := gin.New()
+	service.RegisterRoutes(router)
+
+	req := httptest.NewRequest(http.MethodPut, "/agent-backends/pi/models/enabled", strings.NewReader(`{"enabled":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT enabled = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var list ModelList
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list.Models) != 2 {
+		t.Fatalf("models = %+v, want two models", list.Models)
+	}
+	for _, model := range list.Models {
+		if model.Enabled {
+			t.Errorf("model %q still enabled after clear-all", model.ID)
+		}
+	}
+
+	// A missing enabled field is a payload error, not a silent default.
+	bad := httptest.NewRequest(http.MethodPut, "/agent-backends/pi/models/enabled", strings.NewReader(`{}`))
+	bad.Header.Set("Content-Type", "application/json")
+	badRec := httptest.NewRecorder()
+	router.ServeHTTP(badRec, bad)
+	if badRec.Code != http.StatusBadRequest {
+		t.Errorf("PUT without enabled = %d, want 400", badRec.Code)
 	}
 }

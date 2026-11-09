@@ -256,6 +256,11 @@ type AgentModel struct {
 	Backend        string `gorm:"column:backend;not null;uniqueIndex:idx_agent_model_backend_model"`
 	ModelID        string `gorm:"column:model_id;not null;uniqueIndex:idx_agent_model_backend_model"`
 	Name           string `gorm:"column:name"`
+	// NameCustomized records that an operator explicitly edited the display
+	// name. A refresh keeps such a name; otherwise the backend's latest name is
+	// adopted, so a catalog that first reported only an id can gain a display
+	// name later.
+	NameCustomized bool   `gorm:"column:name_customized;not null;default:false"`
 	Provider       string `gorm:"column:provider"`
 	Variants       string `gorm:"column:variants"`
 	ContextLimit   *int   `gorm:"column:context_limit"`

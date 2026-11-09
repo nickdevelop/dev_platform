@@ -167,3 +167,85 @@ func TestRepositoryUpdateAndPreserveOnRefresh(t *testing.T) {
 		t.Errorf("got[1] = %+v, want new enabled model", got[1])
 	}
 }
+
+func TestRepositoryRefreshAdoptsBackendNameUntilCustomized(t *testing.T) {
+	repo := NewGORMRepository(openTestDB(t))
+	t1 := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	// The first refresh represents a catalog that only exposed the raw id as
+	// the display name (the old pi CLI path).
+	if err := repo.Replace(agents.BackendPi, []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "gpt", Provider: "acme"},
+	}, t1); err != nil {
+		t.Fatalf("Replace initial: %v", err)
+	}
+
+	// A later refresh reports the real display name; it must replace the old
+	// auto-derived one.
+	if err := repo.Replace(agents.BackendPi, []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "GPT Flagship", Provider: "acme"},
+	}, t1.Add(time.Hour)); err != nil {
+		t.Fatalf("Replace display name: %v", err)
+	}
+	got, _, err := repo.List(agents.BackendPi)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "GPT Flagship" {
+		t.Fatalf("models = %+v, want the backend display name", got)
+	}
+
+	// Once an operator edits the name, subsequent refreshes keep it.
+	custom := "My GPT"
+	if _, err := repo.Update(agents.BackendPi, "acme/gpt", ModelPatch{Name: &custom}); err != nil {
+		t.Fatalf("Update name: %v", err)
+	}
+	if err := repo.Replace(agents.BackendPi, []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "GPT Renamed Upstream", Provider: "acme"},
+	}, t1.Add(2*time.Hour)); err != nil {
+		t.Fatalf("Replace after customization: %v", err)
+	}
+	got, _, err = repo.List(agents.BackendPi)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != custom {
+		t.Fatalf("models = %+v, want the operator's custom name", got)
+	}
+}
+
+func TestRepositorySetAllEnabled(t *testing.T) {
+	repo := NewGORMRepository(openTestDB(t))
+	synced := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	if err := repo.Replace(agents.BackendPi, []agents.ModelInfo{
+		{ID: "acme/gpt", Name: "GPT", Provider: "acme"},
+		{ID: "acme/small", Name: "Small", Provider: "acme"},
+	}, synced); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	if err := repo.Replace(agents.BackendOpenCodeV2, []agents.ModelInfo{
+		{ID: "acme/other", Name: "Other", Provider: "acme"},
+	}, synced); err != nil {
+		t.Fatalf("Replace other backend: %v", err)
+	}
+
+	if err := repo.SetAllEnabled(agents.BackendPi, false); err != nil {
+		t.Fatalf("SetAllEnabled: %v", err)
+	}
+	got, _, err := repo.List(agents.BackendPi)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, model := range got {
+		if model.Enabled {
+			t.Errorf("model %q still enabled", model.ID)
+		}
+	}
+	// Another backend's rows are untouched.
+	other, _, err := repo.List(agents.BackendOpenCodeV2)
+	if err != nil {
+		t.Fatalf("List other backend: %v", err)
+	}
+	if len(other) != 1 || !other[0].Enabled {
+		t.Fatalf("other backend models = %+v, want still enabled", other)
+	}
+}

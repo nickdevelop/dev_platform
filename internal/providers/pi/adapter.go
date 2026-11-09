@@ -586,21 +586,29 @@ func isStreamingRejection(message string) bool {
 // configuration — not a session's or an instance's property — so a caller with
 // no instance yet gets the same answer as one that has: when an RPC child is
 // already running it is asked with get_available_models (it holds the loaded
-// configuration), otherwise `pi --list-models` answers in a short-lived
-// process. pi's catalog does not depend on the working directory, so the
-// directory is not consulted.
+// configuration), otherwise a short-lived RPC child answers the same command.
+// The RPC payload carries model display names, which `--list-models` does not;
+// only when RPC is unavailable does the CLI table serve as a fallback. pi's
+// catalog does not depend on the working directory, so the directory is not
+// consulted.
 func (a *Adapter) ListModels(ctx context.Context, _ string) ([]agents.ModelInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if child := a.anyChild(); child != nil {
 		rpcCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
 		if response, err := child.conn.request(rpcCtx, newGetAvailableModelsCommand(""), rpcCommandTimeout); err == nil && response.Success {
 			if models, err := parseAvailableModels(response.Data); err == nil && len(models) > 0 {
+				cancel()
 				return models, nil
 			}
 		}
+		cancel()
+	}
+	// No live child (or it could not answer): a one-shot RPC probe is still
+	// authoritative and, unlike the CLI table, includes display names.
+	if models, err := a.listModelsViaRPC(ctx); err == nil && len(models) > 0 {
+		return models, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

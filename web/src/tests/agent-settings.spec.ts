@@ -169,6 +169,93 @@ describe('AgentSettings diagnostics and models', () => {
     expect(block.text()).toContain('Small')
   })
 
+  it('orders enabled models first and filters by name', async () => {
+    stubFetch({
+      'GET /agent-backends/opencode-v2/models': {
+        models: [
+          { id: 'acme/plain', name: 'Plain Model', provider: 'acme', enabled: false },
+          { id: 'acme/small', name: 'Small Model', provider: 'acme', enabled: true },
+          { id: 'acme/vision', name: 'Vision Model', provider: 'acme', enabled: true },
+        ],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+    })
+    const wrapper = await mountView()
+
+    const block = wrapper.find('[data-test="agent-models-opencode-v2"]')
+    let ids = block.findAll('[data-agent-model]').map((el) => el.attributes('data-agent-model'))
+    // Enabled models keep their relative order and move above the disabled one.
+    expect(ids).toEqual(['acme/small', 'acme/vision', 'acme/plain'])
+
+    await block.find('[data-test="agent-models-search-opencode-v2"]').setValue('vision')
+    await flushPromises()
+    ids = block.findAll('[data-agent-model]').map((el) => el.attributes('data-agent-model'))
+    expect(ids).toEqual(['acme/vision'])
+    expect(block.text()).not.toContain('Plain Model')
+  })
+
+  it('selects all and clears all models through the bulk endpoint', async () => {
+    const calls = stubFetch({
+      'GET /agent-backends/opencode-v2/models': {
+        models: [
+          { id: 'acme/one', name: 'One', provider: 'acme', enabled: true },
+          { id: 'acme/two', name: 'Two', provider: 'acme', enabled: true },
+        ],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+      'PUT /agent-backends/opencode-v2/models/enabled': {
+        models: [
+          { id: 'acme/one', name: 'One', provider: 'acme', enabled: false },
+          { id: 'acme/two', name: 'Two', provider: 'acme', enabled: false },
+        ],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+    })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-test="agent-models-clear-all-opencode-v2"]').trigger('click')
+    await flushPromises()
+
+    const clear = calls.find(
+      (c) => c.method === 'PUT' && c.path === '/agent-backends/opencode-v2/models/enabled',
+    )
+    expect(clear?.body).toEqual({ enabled: false })
+    for (const toggle of wrapper.findAll('[data-agent-model-toggle]')) {
+      expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    }
+  })
+
+  it('selects all models through the bulk endpoint', async () => {
+    const calls = stubFetch({
+      'GET /agent-backends/opencode-v2/models': {
+        models: [
+          { id: 'acme/one', name: 'One', provider: 'acme', enabled: false },
+          { id: 'acme/two', name: 'Two', provider: 'acme', enabled: false },
+        ],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+      'PUT /agent-backends/opencode-v2/models/enabled': {
+        models: [
+          { id: 'acme/one', name: 'One', provider: 'acme', enabled: true },
+          { id: 'acme/two', name: 'Two', provider: 'acme', enabled: true },
+        ],
+        updatedAt: '2026-10-23T12:00:00Z',
+      },
+    })
+    const wrapper = await mountView()
+
+    await wrapper.find('[data-test="agent-models-select-all-opencode-v2"]').trigger('click')
+    await flushPromises()
+
+    const clear = calls.find(
+      (c) => c.method === 'PUT' && c.path === '/agent-backends/opencode-v2/models/enabled',
+    )
+    expect(clear?.body).toEqual({ enabled: true })
+    for (const toggle of wrapper.findAll('[data-agent-model-toggle]')) {
+      expect((toggle.element as HTMLInputElement).checked).toBe(true)
+    }
+  })
+
   it('explains that a backend has never been synced instead of asking it', async () => {
     const calls = stubFetch()
     const wrapper = await mountView()

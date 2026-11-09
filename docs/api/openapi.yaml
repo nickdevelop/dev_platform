@@ -1407,6 +1407,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /agent-backends/{backend}/models/enabled:
+    put:
+      summary: Enable or disable every model of an agent backend
+      description: >-
+        Applies one enabled state to every model in the backend's persisted
+        snapshot. This backs the settings page's select-all and clear-all
+        actions: one request is one transaction instead of a burst of
+        per-model updates. It never contacts the agent.
+      operationId: setAllAgentBackendModelsEnabled
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: The updated model snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentModelList'
+        '400':
+          description: The backend id or payload is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: The backend does not declare model selection (unsupported_capability).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /agent-backends:
     get:
       summary: List agent backends and their capabilities
