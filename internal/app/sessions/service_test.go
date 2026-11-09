@@ -1406,10 +1406,11 @@ func TestHistoryStampsEnvelopeAndReturnsEvents(t *testing.T) {
 	}
 }
 
-// TestHistoryFiltersThinkingAndNonQuestionTools verifies that the history API
-// strips thinking and general tools (e.g. bash, edit), while preserving
-// chat messages, error events, and question interaction tools paired with results.
-func TestHistoryFiltersThinkingAndNonQuestionTools(t *testing.T) {
+// TestHistoryKeepsThinkingAndToolEvents verifies that the history API replays
+// the full transcript — chat messages, errors, thinking, and general tools
+// (e.g. bash, edit) paired with results — matching the live stream and the
+// restored 链路 activity pane in the web workspace.
+func TestHistoryKeepsThinkingAndToolEvents(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-filter")
 	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
@@ -1475,13 +1476,17 @@ func TestHistoryFiltersThinkingAndNonQuestionTools(t *testing.T) {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Should keep: user message, q-1 tool_call, q-1 tool_result, assistant message (4 events total)
-	if len(history.Events) != 4 {
-		t.Fatalf("History returned %d events, want 4. Got: %+v", len(history.Events), history.Events)
+	// Full transcript parity with the live stream: user message, thinking,
+	// bash tool pair, question tool pair, assistant message (7 events total).
+	if len(history.Events) != 7 {
+		t.Fatalf("History returned %d events, want 7. Got: %+v", len(history.Events), history.Events)
 	}
 
 	expectedTypes := []agents.EventType{
 		agents.EventMessage,
+		agents.EventThinking,
+		agents.EventToolCall,
+		agents.EventToolResult,
 		agents.EventToolCall,
 		agents.EventToolResult,
 		agents.EventMessage,
@@ -1491,11 +1496,17 @@ func TestHistoryFiltersThinkingAndNonQuestionTools(t *testing.T) {
 			t.Errorf("history.Events[%d].Type = %s, want %s", i, history.Events[i].Type, wantType)
 		}
 	}
-	if history.Events[1].ToolCall.CallID != "q-1" {
-		t.Errorf("tool_call callId = %s, want q-1", history.Events[1].ToolCall.CallID)
+	if history.Events[2].ToolCall.CallID != "bash-1" {
+		t.Errorf("tool_call callId = %s, want bash-1", history.Events[2].ToolCall.CallID)
 	}
-	if history.Events[2].ToolResult.CallID != "q-1" {
-		t.Errorf("tool_result callId = %s, want q-1", history.Events[2].ToolResult.CallID)
+	if history.Events[3].ToolResult.CallID != "bash-1" {
+		t.Errorf("tool_result callId = %s, want bash-1", history.Events[3].ToolResult.CallID)
+	}
+	if history.Events[4].ToolCall.CallID != "q-1" {
+		t.Errorf("tool_call callId = %s, want q-1", history.Events[4].ToolCall.CallID)
+	}
+	if history.Events[5].ToolResult.CallID != "q-1" {
+		t.Errorf("tool_result callId = %s, want q-1", history.Events[5].ToolResult.CallID)
 	}
 }
 

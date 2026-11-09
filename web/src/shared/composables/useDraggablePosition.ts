@@ -1,11 +1,28 @@
-// Draggable position for the quick-assistant launcher and floating dialog.
-// The toolbar and the panel positions are completely decoupled and independently
-// draggable and persistable. Panel placement stays inside the viewport.
+// Draggable position for floating launchers and dialogs (shared neutral composable).
+// The button and the panel positions are completely decoupled and independently
+// draggable and persistable under per-feature storage keys (pass options to
+// override; the defaults keep the quick-assistant behavior).
 
 import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 
 export const POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-position'
 export const PANEL_POSITION_STORAGE_KEY = 'dev-platform-quick-assistant-panel-position'
+
+export type DefaultCorner = 'top-right' | 'bottom-right'
+
+export interface DraggablePositionOptions {
+  // localStorage key for the button position; defaults to the quick-assistant key.
+  storageKey?: string
+  // Where the button docks when no stored position exists.
+  defaultCorner?: DefaultCorner
+}
+
+export interface DraggablePanelOptions {
+  // localStorage key for the panel position; defaults to the quick-assistant key.
+  panelStorageKey?: string
+  // Preferred panel size; clamped to the viewport.
+  panelSize?: Size
+}
 // The initial placement docks the button flush against the top-right corner.
 export const BUTTON_DEFAULT_OFFSET = 0
 // The drag area covers the whole viewport; this margin only prevents the
@@ -43,10 +60,15 @@ export function clampButtonPosition(point: Point, button: Size, viewport: Viewpo
   }
 }
 
-export function defaultButtonPosition(button: Size, viewport: Viewport): Point {
+export function defaultButtonPosition(
+  button: Size,
+  viewport: Viewport,
+  corner: DefaultCorner = 'top-right',
+): Point {
+  const maxTop = Math.max(0, viewport.height - button.height)
   return {
     left: Math.max(0, viewport.width - button.width),
-    top: 0,
+    top: corner === 'bottom-right' ? maxTop : 0,
   }
 }
 
@@ -84,9 +106,9 @@ export function placePanel(
   return { left, top, width, height }
 }
 
-export function readStoredPosition(): Point | null {
+export function readStoredPosition(key: string = POSITION_STORAGE_KEY): Point | null {
   try {
-    const raw = localStorage.getItem(POSITION_STORAGE_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<Point>
     if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null
@@ -97,17 +119,17 @@ export function readStoredPosition(): Point | null {
   }
 }
 
-function persistPosition(point: Point) {
+function persistPosition(point: Point, key: string = POSITION_STORAGE_KEY) {
   try {
-    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(point))
+    localStorage.setItem(key, JSON.stringify(point))
   } catch {
     // Best-effort preference only.
   }
 }
 
-export function readStoredPanelPosition(): Point | null {
+export function readStoredPanelPosition(key: string = PANEL_POSITION_STORAGE_KEY): Point | null {
   try {
-    const raw = localStorage.getItem(PANEL_POSITION_STORAGE_KEY)
+    const raw = localStorage.getItem(key)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<Point>
     if (typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null
@@ -118,9 +140,9 @@ export function readStoredPanelPosition(): Point | null {
   }
 }
 
-export function persistPanelPosition(point: Point) {
+export function persistPanelPosition(point: Point, key: string = PANEL_POSITION_STORAGE_KEY) {
   try {
-    localStorage.setItem(PANEL_POSITION_STORAGE_KEY, JSON.stringify(point))
+    localStorage.setItem(key, JSON.stringify(point))
   } catch {
     // Best-effort preference only.
   }
@@ -142,7 +164,12 @@ interface DragState {
   moved: boolean
 }
 
-export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
+export function useDraggablePosition(
+  buttonRef: Ref<HTMLElement | null>,
+  options: DraggablePositionOptions = {},
+) {
+  const storageKey = options.storageKey ?? POSITION_STORAGE_KEY
+  const defaultCorner = options.defaultCorner ?? 'top-right'
   const position = ref<Point | null>(null)
   const buttonSize = ref<Size>({ width: 0, height: 0 })
   const viewport = ref<Viewport>({
@@ -171,9 +198,9 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
       width: window.innerWidth,
       height: window.innerHeight,
     }
-    const stored = readStoredPosition()
+    const stored = readStoredPosition(storageKey)
     if (!stored) {
-      position.value = defaultButtonPosition(buttonSize.value, viewport.value)
+      position.value = defaultButtonPosition(buttonSize.value, viewport.value, defaultCorner)
     } else if (position.value) {
       setPosition(position.value)
     }
@@ -181,10 +208,10 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
 
   onMounted(() => {
     const size = measureButton()
-    const stored = readStoredPosition()
+    const stored = readStoredPosition(storageKey)
     position.value = stored
       ? clampButtonPosition(stored, size, viewport.value)
-      : defaultButtonPosition(size, viewport.value)
+      : defaultButtonPosition(size, viewport.value, defaultCorner)
     window.addEventListener('resize', refreshOnResize)
   })
 
@@ -239,7 +266,7 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
       } catch {
         // Already released.
       }
-      if (position.value) persistPosition(position.value)
+      if (position.value) persistPosition(position.value, storageKey)
       // The click event follows pointerup; swallow exactly that one so dragging
       // never toggles the popover.
       suppressClick = true
@@ -288,9 +315,10 @@ export function useDraggablePosition(buttonRef: Ref<HTMLElement | null>) {
   }
 }
 
-export function useDraggablePanel() {
+export function useDraggablePanel(options: DraggablePanelOptions = {}) {
+  const panelStorageKey = options.panelStorageKey ?? PANEL_POSITION_STORAGE_KEY
   const panelPosition = ref<Point | null>(null)
-  const panelSize = ref<Size>(DEFAULT_PANEL_SIZE)
+  const panelSize = ref<Size>(options.panelSize ?? DEFAULT_PANEL_SIZE)
   const viewport = ref<Viewport>({
     width: typeof window === 'undefined' ? 1024 : window.innerWidth,
     height: typeof window === 'undefined' ? 768 : window.innerHeight,
@@ -319,7 +347,7 @@ export function useDraggablePanel() {
   }
 
   onMounted(() => {
-    const stored = readStoredPanelPosition()
+    const stored = readStoredPanelPosition(panelStorageKey)
     const size = actualPanelSize()
     panelPosition.value = clampPanelPosition(
       stored ?? initialPanelPosition(viewport.value, size),
@@ -378,7 +406,7 @@ export function useDraggablePanel() {
       // Already released
     }
     if (moved && panelPosition.value) {
-      persistPanelPosition(panelPosition.value)
+      persistPanelPosition(panelPosition.value, panelStorageKey)
     }
   }
 

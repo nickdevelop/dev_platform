@@ -120,9 +120,10 @@
 ```
 web/src/
   ├── api/             ── 网络传输层（client.ts 统管 CSRF，子文件映射后端 RESTful API）
-  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, viewport, ...）
+  ├── stores/          ── 全局领域状态（agents, projects, settings, auth, models, chats, quickAssistant, drafts, viewport, debugPanel, ...）
   ├── shared/          ── Provider 中性通用控件与工具（Markdown、PlantUML、Color、Format）
-  │     ├── events/    ── 统一事件总线前端设施（event-bus.worker.ts 跨标签页单连接 SharedWorker：连接 error/CLOSED 后 3s 自愈重拨且状态保持 `reconnecting`（触发主线程 reconnectListeners 的带序号重订重放）、busId 所有权仲裁（首个 tab 建立 bus，后续 tab 经 init 回复采纳胜者 busId 并持久化，杜绝多 tab 各持 sessionStorage busId 互踩单连接）；UnifiedEventBusClient.ts 主线程单例与 fallback 本地 EventSource（CLOSED 同样自愈重拨）；event-types.ts 全线事件类型单一来源清单（worker 与 fallback 共享，含 `lifecycle/unknown/ready`，防漂移））
+  │     ├── events/    ── 统一事件总线前端设施（event-bus.worker.ts 跨标签页单连接 SharedWorker：连接 error/CLOSED 后 3s 自愈重拨且状态保持 `reconnecting`（触发主线程 reconnectListeners 的带序号重订重放）、busId 所有权仲裁（首个 tab 建立 bus，后续 tab 经 init 回复采纳胜者 busId 并持久化，杜绝多 tab 各持 sessionStorage busId 互踩单连接）；UnifiedEventBusClient.ts 主线程单例与 fallback 本地 EventSource（CLOSED 同样自愈重拨）；`addEnvelopeTap` 观测钩子：在 `dispatchEnvelope` 单一分发汇聚点 try-catch 隔离地通报每一条信封（SharedWorker 与 fallback 双路径、含 `dispatchRawFrame` 兜底合成信封天然全覆盖），供调试捕获等纯观测消费者挂接，tap 内抛出异常绝不影响正常消息分发；event-types.ts 全线事件类型单一来源清单（worker 与 fallback 共享，含 `lifecycle/unknown/ready`，防漂移））
+  │     ├── composables/ ── Provider 中性浮动拖拽定位设施（useDraggablePosition.ts：悬浮按钮与浮层两套独立自由拖拽 + clamp + localStorage 位置持久化，支持 `storageKey` / `defaultCorner` / `panelSize` 选项参数化；快捷助手为历史默认键，调试面板等新消费者经选项传自己的 storage key）
   │     ├── components/── Provider 中性业务通用控件（CronBuilder.vue 可视化 Cron 生成器，支持秒/分/时/日/月/周/年 7 位配置、反解析与后10次执行时间推断；RunningIndicator.vue 呼吸态标识；BackendTag.vue；BackendDiagnostics.vue）
   │     └── ui/        ── 平台标准 UI 组件库（纯中性业务解耦设计，基于 Tailwind CSS）：
   │           ├── atomic/    ── 原子组件（UiButton, UiInput, UiTextarea, UiSelect, UiDropdown, UiBadge, UiProgress, UiTooltip, UiTabs, UiAlert, UiEmpty, UiSpinner, UiDivider）
@@ -137,15 +138,16 @@ web/src/
   │     │     ├── rendering/     ── MessageView.vue 消息/工具卡片渲染（主对话流只渲染消息/问答/审批，思考与工具以 display="activity" 供右侧「链路」Tab 的扁平活动流展示）、logModel.ts 纯逻辑
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
-  │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位与最近对话下拉
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、会话 Tab
+  │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位（复用 shared/composables/useDraggablePosition）与最近对话下拉
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
-  │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接，无缝对齐 AppShell 单头部规范）
+  │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、调试面板设置（DebugSettings.vue，localStorage 本浏览器开关控制全局调试入口显隐，不落库）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接 → 调试面板，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
   │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建，中控调度模型基于已配置 Chat 文本模型下拉选取，团队协同角色直接从角色库选用并展示）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡，内建完备的 `.markdown-body` 排版体系、代码块复制与代码内 `@角色` 保护、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板，支持从全局角色库导入专家角色并统一引用提示词）
   │     ├── prompts/   ── 提示词管理核心组件与模版逻辑（PromptManageDialog.vue 支持角色类与流程类单选区分、promptTemplate.ts 变量槽替换）
-  │     └── files/     ── 文件查看器（FileViewer.vue，支持普通查看与 Diff 双模式）、变更树组件（ChangeTree.vue，树形层级展示变动文件，支持暂存/取消暂存/放弃修改悬浮操作）、本地分支选择器（BranchSelector.vue，支持分支切换与快速新建）、Git 提交操作栏（GitCommitBar.vue，支持 Ctrl+Enter 快捷提交与自动暂存闭环）、Diff 预览器（DiffViewer.vue，Unified Diff 高亮对比与双列行号）、Markdown/PlantUML/图片 Artifact 预览、HTML 源码高亮与“🌐 预览”独立弹窗沙箱预览（HtmlArtifactView.vue、HtmlPreviewModal.vue）
+  │     ├── files/     ── 文件查看器（FileViewer.vue，支持普通查看与 Diff 双模式）、变更树组件（ChangeTree.vue，树形层级展示变动文件，支持暂存/取消暂存/放弃修改悬浮操作）、本地分支选择器（BranchSelector.vue，支持分支切换与快速新建）、Git 提交操作栏（GitCommitBar.vue，支持 Ctrl+Enter 快捷提交与自动暂存闭环）、Diff 预览器（DiffViewer.vue，Unified Diff 高亮对比与双列行号）、Markdown/PlantUML/图片 Artifact 预览、HTML 源码高亮与“🌐 预览”独立弹窗沙箱预览（HtmlArtifactView.vue、HtmlPreviewModal.vue）
+  │     └── debug/     ── SSE 总线调试面板（settings 开关 + 全局浮动入口按钮 + 可拖拽调试抽屉：仅"开关开启 + 面板打开"双条件同时满足时经 unifiedEventBus.addEnvelopeTap 捕获本浏览器实际收到的全部总线信封；频道/标识关键字/事件类型三重过滤，环形缓冲最近 500 帧、超限计数丢弃提示；关闭抽屉即停捕并清空，不持久化任何消息；开关仅存本浏览器 localStorage `dev-platform-debug-panel-v1`，纯观测、零后端改动）
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```
 
@@ -247,8 +249,8 @@ web/src/
    - 消费 SSE 事件帧，更新 sessionLog 状态
    - 问答交互工具与纯净对话流（MessageView display="messages"），完整承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；底部待回答问答面板支持向下收起/展开，展开时限高并在内部滚动，避免面板过大挤压对话审阅区；答案在所有题目输出完成后于底部统一展示，解析 JSON 答案并以 1 2 3 序号每行逐项对应
    - 主对话流动态运行状态指示（MessageView kind-running）：移除原有静态“正在运行...”，采用 deriveRunningAction 基于最新活动动态解析动作语义（如“正在思考...”、“执行 <cmd>”、“编辑 <path>”、“读取 <path>”、“搜索 <query>”等）并以微动效卡片实时呈现
-   - 右侧面板整合为统一工作区面板（左侧为文件预览与 Diff 比对，右侧为文件树），由顶层 Tab 栏最右侧纯图标布局按钮统一控制显隐；文件树在右侧面板内展开或向右折叠，内部弹性伸缩（flex: 1 撑满），外框总宽度恒定锁定，绝不占用或晃动主对话窗口宽度；操作按钮全面纯图标化。
-   - 会话历史读取瘦身（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务统一对适配器历史事件进行按需瘦身过滤，仅保留主对话视图所需的消息（EventMessage、EventError）以及成对的问答交互工具（IsQuestionTool 识别之 EventToolCall 及配套 EventToolResult），海量思维链 EventThinking 与非问答类工具事件均不透传，进一步压降前后端交互体量
+   - 右侧面板整合为统一工作区面板（首个固定 Tab 为「链路」实时呈现思考与工具调用活动流，文件 Tab 承载左侧文件预览与 Diff 比对，右侧为文件树），由顶层 Tab 栏最右侧纯图标布局按钮统一控制显隐；文件树在右侧面板内展开或向右折叠，内部弹性伸缩（flex: 1 撑满），外框总宽度恒定锁定，绝不占用或晃动主对话窗口宽度；操作按钮全面纯图标化。
+   - 会话历史全量回放与渲染对等（GET /projects/{id}/sessions/{sessionId}/history）：会话领域服务原样透传适配器返回的全部历史事件（EventMessage、EventError、EventThinking 及成对的 EventToolCall/EventToolResult，含问答交互工具），与 live SSE 事件流保持严格对等——线上期间与刷新后的会话在主对话流（display="messages"）与右侧「链路」Tab（display="activity"）中的呈现完全一致；体积治理由 provider 层既有的工具输出摘要化（SummarizeToolResult）与裁剪（PruneToolInput）承担，窗口截断仍以 Truncated 标记兜底（该接口此前曾按需过滤 thinking 与非问答工具事件，现随「链路」面板恢复而回归全量回放）
    - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则平滑跟随最新内容。
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
