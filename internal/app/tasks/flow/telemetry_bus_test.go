@@ -2,6 +2,7 @@ package flow
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,7 +12,8 @@ import (
 )
 
 type fakeSessionManager struct {
-	sessions map[string]sessions.Session
+	mu        sync.Mutex
+	sessions  map[string]sessions.Session
 	histories map[string]sessions.History
 }
 
@@ -24,6 +26,8 @@ func (m *fakeSessionManager) Send(ctx context.Context, projectID uint, sessionID
 }
 
 func (m *fakeSessionManager) Get(projectID uint, sessionID string) (sessions.Session, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if s, ok := m.sessions[sessionID]; ok {
 		return s, nil
 	}
@@ -31,6 +35,8 @@ func (m *fakeSessionManager) Get(projectID uint, sessionID string) (sessions.Ses
 }
 
 func (m *fakeSessionManager) History(ctx context.Context, projectID uint, sessionID string) (sessions.History, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if h, ok := m.histories[sessionID]; ok {
 		return h, nil
 	}
@@ -73,9 +79,11 @@ func TestTelemetryBusCollectSessionTurn(t *testing.T) {
 	// Simulate turn changing from Running to Idle after 200ms
 	go func() {
 		time.Sleep(200 * time.Millisecond)
+		mgr.mu.Lock()
 		s := mgr.sessions["sess-1"]
 		s.Turn = turns.Idle
 		mgr.sessions["sess-1"] = s
+		mgr.mu.Unlock()
 	}()
 
 	outcome, err := telemetry.CollectSessionTurn(ctx, 1, "sess-1", "开发工程师", 10, 1*time.Second)

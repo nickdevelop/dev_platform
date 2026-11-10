@@ -35,8 +35,16 @@ type Service struct {
 	sessions       SessionLauncher
 	flowController FlowController
 	eventsMgr      *events.Manager
-	flowSubs       map[uint]func()
+	flowSubs       map[uint]*flowSubscription
 	subMu          sync.Mutex
+}
+
+// flowSubscription owns one engine subscription per subscribed run. The
+// release func is idempotent: it is safe for both the unified bus
+// OnUnsubscribe hook and the forwarding goroutine's exit path to call it,
+// whichever happens first.
+type flowSubscription struct {
+	release func()
 }
 
 // NewService creates a new tasks service.
@@ -44,7 +52,7 @@ func NewService(repo *Repository, sessionLauncher SessionLauncher) *Service {
 	return &Service{
 		repo:      repo,
 		sessions:  sessionLauncher,
-		flowSubs:  make(map[uint]func()),
+		flowSubs:  make(map[uint]*flowSubscription),
 	}
 }
 
@@ -534,14 +542,25 @@ func (s *Service) ensureFlowSubscription(runID uint) {
 	}
 
 	ch, unsub := s.flowController.SubscribeEvents(runID)
-	s.flowSubs[runID] = unsub
+	var releaseOnce sync.Once
+	sub := &flowSubscription{
+		release: func() {
+			releaseOnce.Do(unsub)
+		},
+	}
+	s.flowSubs[runID] = sub
 
 	go func() {
 		defer func() {
 			s.subMu.Lock()
-			delete(s.flowSubs, runID)
+			// Only reclaim the entry we own: a faster unsubscribe may have
+			// already dropped it and a new subscription may have taken its
+			// place meanwhile.
+			if s.flowSubs[runID] == sub {
+				delete(s.flowSubs, runID)
+			}
 			s.subMu.Unlock()
-			unsub()
+			sub.release()
 		}()
 
 		runIDStr := strconv.FormatUint(uint64(runID), 10)
@@ -570,7 +589,29 @@ func (s *Service) OnSubscribe(ctx context.Context, busID string, req events.Subs
 }
 
 // OnUnsubscribe implements events.ChannelHandler for the "tasks" channel.
+// Dropping the last subscriber for a run tears down the flow engine
+// subscription: unsub() closes the upstream channel, which ends the
+// ensureFlowSubscription forwarding goroutine and removes its flowSubs entry,
+// so long-lived services do not accumulate one goroutine per subscribed run.
 func (s *Service) OnUnsubscribe(ctx context.Context, busID string, channel string, targetID string) error {
+	if channel != events.ChannelTasks {
+		return nil
+	}
+	runID, err := strconv.ParseUint(targetID, 10, 64)
+	if err != nil || runID == 0 {
+		return nil
+	}
+
+	s.subMu.Lock()
+	sub, ok := s.flowSubs[uint(runID)]
+	if ok {
+		delete(s.flowSubs, uint(runID))
+	}
+	s.subMu.Unlock()
+
+	if ok {
+		sub.release()
+	}
 	return nil
 }
 

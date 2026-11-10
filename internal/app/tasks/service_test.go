@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/events"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/core/agents"
 )
@@ -345,6 +347,101 @@ func TestScheduleValidationAndNextRun(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("expected error for once schedule in past")
+	}
+}
+
+type stubFlowController struct {
+	subscribes int
+	unsubs     int
+}
+
+func (f *stubFlowController) StartRun(ctx context.Context, task Task, triggerType string, initialPrompt string) (FlowRun, error) {
+	return FlowRun{}, nil
+}
+
+func (f *stubFlowController) PostUserMessage(ctx context.Context, runID uint, content string) (FlowMessage, error) {
+	return FlowMessage{}, nil
+}
+
+func (f *stubFlowController) CancelRun(runID uint) error { return nil }
+
+func (f *stubFlowController) SubscribeEvents(runID uint) (<-chan FlowEvent, func()) {
+	f.subscribes++
+	ch := make(chan FlowEvent, 4)
+	var once sync.Once
+	return ch, func() {
+		once.Do(func() {
+			f.unsubs++
+			close(ch)
+		})
+	}
+}
+
+// TestFlowSubscriptionRecycledOnUnsubscribe pins the events-channel hygiene:
+// subscribing to a flow run registers exactly one engine subscription and one
+// forwarding goroutine, and the unified bus unsubscribe hook must release both
+// so a long-lived service does not accumulate one goroutine per subscribed run.
+func TestFlowSubscriptionRecycledOnUnsubscribe(t *testing.T) {
+	db := setupTestDB(t)
+	svc := NewService(NewRepository(db), &fakeSessionLauncher{})
+	controller := &stubFlowController{}
+	svc.SetFlowController(controller)
+	svc.SetEventsManager(events.NewManager())
+
+	run, err := NewRepository(db).CreateFlowRun(FlowRun{
+		TaskID:    1,
+		ProjectID: 1,
+		Status:    FlowRunRunning,
+	})
+	if err != nil {
+		t.Fatalf("create flow run: %v", err)
+	}
+	target := strconv.FormatUint(uint64(run.ID), 10)
+
+	if _, err := svc.OnSubscribe(context.Background(), "bus-1", events.SubscribeRequest{Channel: events.ChannelTasks, TargetID: target}); err != nil {
+		t.Fatalf("OnSubscribe: %v", err)
+	}
+	if controller.subscribes != 1 {
+		t.Fatalf("expected 1 flow controller subscribe, got %d", controller.subscribes)
+	}
+
+	svc.subMu.Lock()
+	registered := len(svc.flowSubs)
+	svc.subMu.Unlock()
+	if registered != 1 {
+		t.Fatalf("expected 1 registered flow subscription, got %d", registered)
+	}
+
+	// Re-subscribing the same run must not stack a second goroutine.
+	if _, err := svc.OnSubscribe(context.Background(), "bus-1", events.SubscribeRequest{Channel: events.ChannelTasks, TargetID: target}); err != nil {
+		t.Fatalf("OnSubscribe (repeat): %v", err)
+	}
+	controller.unsubs = 0
+	svc.OnUnsubscribe(context.Background(), "bus-1", events.ChannelTasks, target)
+	if controller.unsubs != 1 {
+		t.Fatalf("expected exactly 1 unsubscribe after repeat subscribe, got %d", controller.unsubs)
+	}
+
+	if err := svc.OnUnsubscribe(context.Background(), "bus-1", events.ChannelTasks, target); err != nil {
+		t.Fatalf("OnUnsubscribe: %v", err)
+	}
+	if controller.unsubs != 1 {
+		t.Fatalf("expected exactly 1 unsubscribe call, got %d", controller.unsubs)
+	}
+
+	svc.subMu.Lock()
+	registered = len(svc.flowSubs)
+	svc.subMu.Unlock()
+	if registered != 0 {
+		t.Fatalf("expected flow subscriptions to be recycled, got %d remaining", registered)
+	}
+
+	// Unknown targets and foreign channels are harmless no-ops.
+	if err := svc.OnUnsubscribe(context.Background(), "bus-1", events.ChannelTasks, "424242"); err != nil {
+		t.Fatalf("OnUnsubscribe (unknown target): %v", err)
+	}
+	if err := svc.OnUnsubscribe(context.Background(), "bus-1", events.ChannelSessions, target); err != nil {
+		t.Fatalf("OnUnsubscribe (foreign channel): %v", err)
 	}
 }
 
