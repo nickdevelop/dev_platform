@@ -127,7 +127,7 @@ onMounted(() => {
       <div>
         <div class="flex items-center gap-2.5">
           <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务代理与 Demo 预览</h1>
-          <UiBadge variant="neutral" size="sm">ContextPath Proxy</UiBadge>
+          <UiBadge variant="default" size="sm">ContextPath Proxy</UiBadge>
         </div>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
           将服务器上的静态构建目录或本地端口 HTTP 服务以平台端口的独立二级路径（<code>/proxy/:alias/</code>）直接暴露访问，支持免登录分享与 WebSocket HMR 热更新。
@@ -143,7 +143,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <UiAlert v-if="errorMessage" variant="danger" dismissible @dismiss="errorMessage = ''">
+    <UiAlert v-if="errorMessage" variant="error" dismissible @dismiss="errorMessage = ''">
       {{ errorMessage }}
     </UiAlert>
 
@@ -178,7 +178,7 @@ onMounted(() => {
             <span class="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">
               {{ p.name }}
             </span>
-            <UiBadge :variant="p.type === 'directory' ? 'neutral' : 'info'" size="sm">
+            <UiBadge :variant="p.type === 'directory' ? 'default' : 'info'" size="sm">
               {{ p.type === 'directory' ? '静态目录' : '端口反代' }}
             </UiBadge>
             <template v-if="p.type === 'port'">
@@ -220,13 +220,13 @@ onMounted(() => {
             <code class="font-semibold text-blue-600 dark:text-blue-400 truncate">{{ getFullUrl(p.alias) }}</code>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
-            <UiButton variant="secondary" size="xs" @click="copyUrl(p)">
+            <UiButton variant="secondary" size="sm" @click="copyUrl(p)">
               <svg v-if="copiedId === p.id" class="inline-block mr-1" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="3 8 6 11 13 4" />
               </svg>
               <span>{{ copiedId === p.id ? '已复制' : '复制链接' }}</span>
             </UiButton>
-            <UiButton variant="secondary" size="xs" :disabled="!p.enabled" @click="openUrl(p)">
+            <UiButton variant="secondary" size="sm" :disabled="!p.enabled" @click="openUrl(p)">
               在浏览器打开 ↗
             </UiButton>
           </div>

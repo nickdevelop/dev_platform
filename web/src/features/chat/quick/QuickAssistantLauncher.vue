@@ -128,7 +128,7 @@ watch(open, (value, previous) => {
         :aria-label="activeAssistant ? `助手 · ${activeAssistant.name}` : '快捷助手'"
         :title="activeAssistant ? `助手 · ${activeAssistant.name}（点击打开/关闭对话）` : '快捷助手'"
         aria-controls="quick-assistant-popover"
-        :aria-expanded="open.toString()"
+        :aria-expanded="open ? 'true' : 'false'"
         data-test="quick-assistant-button"
         @click="toggle"
       >

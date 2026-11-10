@@ -88,7 +88,7 @@ onMounted(() => {
         </code>
       </div>
 
-      <UiAlert v-if="errorMessage" variant="danger" dismissible @dismiss="errorMessage = ''">
+      <UiAlert v-if="errorMessage" variant="error" dismissible @dismiss="errorMessage = ''">
         {{ errorMessage }}
       </UiAlert>
 

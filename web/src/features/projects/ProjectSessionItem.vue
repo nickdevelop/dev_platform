@@ -35,7 +35,7 @@ const logoTone = computed(() => {
   return 'tone-neutral'
 })
 
-const logoStyle = computed<Record<string, string>>(() =>
+const logoStyle = computed<Record<string, string>>((): Record<string, string> =>
   declaredColor.value ? { '--logo-base': declaredColor.value } : {},
 )
 

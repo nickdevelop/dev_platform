@@ -190,10 +190,9 @@ watch(selectedProjectId, (newId, oldId) => {
     isRestoringDraft = true
     const targetDraft = draftsStore.getNewSessionDraft(newId)
     messageText.value = targetDraft.messageText || ''
-    const preferredBackend =
-      targetDraft.backend ||
-      projectsStore.byId(Number(newId))?.defaultBackend ||
-      firstSelectableBackend()
+    // Drafts carry the backend explicitly; the project entity itself is
+    // backend-agnostic, so fall straight to the first selectable backend.
+    const preferredBackend = targetDraft.backend || firstSelectableBackend()
     selectedBackend.value = selectableBackends.value.some(
       (entry) => entry.backend === preferredBackend,
     )
@@ -254,12 +253,13 @@ const dropdown = useComposerDropdown({
       () => '',
       () => selectedBackend.value || '',
     ),
-    new WorkspaceFileSource({
-      projectId: () => selectedProjectId.value ?? 0,
-    }),
-    new SessionMentionSource({
-      projectId: () => selectedProjectId.value ?? 0,
-    }),
+    new WorkspaceFileSource(() => selectedProjectId.value ?? 0),
+    // The panel has no open session yet, so mentions resolve against the
+    // project's previously loaded session index.
+    new SessionMentionSource(
+      () => (selectedProjectId.value ? sessions.sessionsByProject[selectedProjectId.value] ?? [] : []),
+      () => '',
+    ),
   ],
   text: messageText,
   onApplyText: (newText, newCursor) => {
@@ -677,6 +677,7 @@ async function createSession() {
     <ImagePreviewModal
       v-if="previewModalImage"
       :image="previewModalImage"
+      :visible="true"
       @close="previewModalImage = null"
     />
   </section>

@@ -63,7 +63,7 @@ async function submit() {
   errorMessage.value = ''
 
   try {
-    let saved: Prompt
+    let saved: Prompt | undefined
     if (isEditing.value && props.prompt) {
       saved = await promptsStore.updatePrompt(props.prompt.id, {
         name: name.value.trim(),
@@ -79,8 +79,12 @@ async function submit() {
         content: content.value,
       })
     }
-    emit('saved', saved)
-    emit('close')
+    // The store returns undefined when authentication expired mid-save
+    // (the session store shows the re-auth flow); do nothing here.
+    if (saved) {
+      emit('saved', saved)
+      emit('close')
+    }
   } catch (err) {
     errorMessage.value = describeApiError(err)
   } finally {

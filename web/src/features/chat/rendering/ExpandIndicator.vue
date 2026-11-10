@@ -14,7 +14,7 @@ defineEmits<{ toggle: [] }>()
       type="button"
       class="expand-button"
       data-test="output-more-toggle"
-      :aria-expanded="(!collapsed).toString()"
+      :aria-expanded="!collapsed ? 'true' : 'false'"
       :aria-label="collapsed ? '展开全部内容' : '收起内容'"
       :title="collapsed ? '展开全部内容' : '收起内容'"
       @click="$emit('toggle')"

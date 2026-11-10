@@ -606,7 +606,10 @@ async function onSubmitted(kind: DialogKind) {
   const removed = dialog.value?.project ?? null
   await projects.load()
   if (kind === 'unregister' && removed) {
-    for (const tab of openTabs.tabs.filter((entry) => entry.projectId === removed.id)) {
+    for (const tab of openTabs.tabs.filter(
+      (entry): entry is Extract<OpenTab, { projectId: number }> =>
+        'projectId' in entry && entry.projectId === removed.id,
+    )) {
       if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
       openTabs.closeTabByKey(tabKey(tab))
     }
@@ -706,7 +709,7 @@ watch(
             :class="{ pinned: isDocked }"
             :title="isDocked ? '取消固定' : '固定侧边栏'"
             :aria-label="isDocked ? '取消固定' : '固定侧边栏'"
-            :aria-pressed="isDocked.toString()"
+            :aria-pressed="isDocked ? 'true' : 'false'"
             @click="toggleSidebarPinned"
           >
             <svg class="dock-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

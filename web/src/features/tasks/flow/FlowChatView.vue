@@ -15,10 +15,6 @@ const props = defineProps<{
   runId?: number
 }>()
 
-const emit = defineEmits<{
-  back?: []
-}>()
-
 const tasksStore = useTasksStore()
 const projectsStore = useProjectsStore()
 
@@ -202,20 +198,10 @@ function getRoleById(roleId?: number): FlowRole | null {
     <!-- 1. Top Bar: Title, Step Progress, Status and Actions -->
     <header class="chat-header px-4 py-2.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-between gap-4 shrink-0">
       <div class="flex items-center gap-3 min-w-0">
-        <!-- Back button if triggered from list -->
-        <button
-          v-if="emit('back')"
-          type="button"
-          class="p-1 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-          title="返回列表"
-          @click="emit('back')"
-        >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="10 3 5 8 10 13" />
-          </svg>
-        </button>
-
-        <div class="space-y-0.5 truncate">
+        <!-- Back button if triggered from list: not rendered — the only current
+             usage embeds FlowChatView directly inside TaskDetailView, which has
+             no 'back' listener, and emit() cannot report whether one exists. -->
+        <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-semibold border border-blue-500/20">
               多 Agent 协同群聊
@@ -231,7 +217,7 @@ function getRoleById(roleId?: number): FlowRole | null {
               步骤: {{ activeRun.currentStep }} / {{ activeRun.maxSteps }}
             </span>
             <span v-else class="text-slate-400">
-              步骤: 0 / {{ task.maxSteps || 20 }}
+              步骤: 0 / 20
             </span>
           </div>
         </div>

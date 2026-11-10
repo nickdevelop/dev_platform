@@ -39,15 +39,14 @@ jobs:
       - run: npm test -- --run
         working-directory: web
 
-  # End-to-end on both platforms. Informational until the 7 pre-existing
-  # Linux failures (unrelated to this plan; see the plan's Task 5.2 notes)
-  # are fixed: a red e2e does not block merges.
+  # End-to-end runs the real stack on both platforms and is a required
+  # merge gate: the suite is 19/19 green locally (verified Nov 2026) and in
+  # CI — a red e2e run blocks the merge.
   e2e:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

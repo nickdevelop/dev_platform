@@ -28,7 +28,7 @@ const tone = computed(() => {
 // The descriptor supplies the exact brand hue. CSS mixes that hue into a soft
 // surface and keeps the text in the brand colour, matching the existing tag
 // style instead of turning the tag into a solid chip.
-const tagStyle = computed<Record<string, string>>(() =>
+const tagStyle = computed<Record<string, string>>((): Record<string, string> =>
   declaredColor.value ? { '--tag-base': declaredColor.value } : {},
 )
 </script>

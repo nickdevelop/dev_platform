@@ -17,6 +17,7 @@ import {
   setAgentIdleTimeout,
   setAgentMode,
   setAgentPath,
+  setAgentPermissionMode,
   type AgentDetection,
   type AgentDto,
   type AgentGeneralSettings,
@@ -164,6 +165,18 @@ export const useSettingsStore = defineStore('settings', {
     async setAgentMode(backend: string, mode: string): Promise<boolean> {
       try {
         await setAgentMode(backend, mode)
+        await this.loadAgents()
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentsError = describeApiError(error)
+        return false
+      }
+    },
+
+    async setAgentPermissionMode(backend: string, mode: string): Promise<boolean> {
+      try {
+        await setAgentPermissionMode(backend, mode)
         await this.loadAgents()
         return true
       } catch (error) {

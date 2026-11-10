@@ -100,6 +100,7 @@ export function useSessionInteractions(options: SessionInteractionOptions) {
     toolNotice,
     pendingToolCall,
     pendingForms,
+    answeringForm,
     confirmTool,
     denyTool,
     answerForm,

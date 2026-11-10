@@ -87,7 +87,7 @@ function selectOption(option: SelectMenuItem<T>) {
   close()
 }
 
-function handleClear(e: MouseEvent) {
+function handleClear(e: Event) {
   e.stopPropagation()
   emit('update:modelValue', '' as unknown as T)
   emit('change', '' as unknown as T)

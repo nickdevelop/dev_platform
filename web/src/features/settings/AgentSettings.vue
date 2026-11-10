@@ -182,7 +182,7 @@ function onModeChange(backend: string, mode: string) {
 
 async function onPermissionModeChange(backend: string, mode: string) {
   try {
-    await setAgentPermissionMode(backend, mode)
+    await settings.setAgentPermissionMode(backend, mode)
     void settings.loadAgents()
   } catch {
     // The select falls back to the persisted value on the next reload.
@@ -266,6 +266,21 @@ interface EditingModelState {
   error: string
 }
 const editingModel = ref<EditingModelState | null>(null)
+
+// v-model bridge for the context-limit field: the store keeps `number | null`
+// ("blank = backend default") while UiInput binds `string | number | undefined`.
+const editingContextLimit = computed<string | number | undefined>({
+  get: () => editingModel.value?.contextLimit ?? undefined,
+  set: (value) => {
+    if (!editingModel.value) return
+    if (typeof value === 'number') {
+      editingModel.value.contextLimit = value
+    } else if (typeof value === 'string') {
+      const trimmed = value.trim()
+      editingModel.value.contextLimit = trimmed === '' ? null : Number(trimmed) || null
+    }
+  },
+})
 
 function openEditModel(backend: string, model: ModelInfo) {
   editingModel.value = {
@@ -855,7 +870,7 @@ function cancelStop() {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
                 <label class="block text-2xs font-medium text-slate-600 dark:text-slate-400 mb-1">上下文 Token 限制 (留空按默认)</label>
-                <UiInput v-model.number="editingModel.contextLimit" type="number" min="0" placeholder="如 128000" block />
+                <UiInput v-model="editingContextLimit" type="number" min="0" placeholder="如 128000" block />
               </div>
               <div class="flex flex-col justify-end gap-1.5 pb-1">
                 <label class="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">

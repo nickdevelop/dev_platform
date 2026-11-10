@@ -130,7 +130,7 @@ describe('ChangeTree.vue with Actions', () => {
         nodes: [
           { name: 'app.vue', path: 'app.vue', isDir: false, status: 'modified' },
         ],
-        expandedPaths: new Set(),
+        expandedPaths: new Set<string>(),
         showActions: true,
         isStaged: false,
       },
@@ -152,7 +152,7 @@ describe('ChangeTree.vue with Actions', () => {
         nodes: [
           { name: 'app.vue', path: 'app.vue', isDir: false, status: 'modified' },
         ],
-        expandedPaths: new Set(),
+        expandedPaths: new Set<string>(),
         showActions: true,
         isStaged: true,
       },

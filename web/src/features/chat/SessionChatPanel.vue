@@ -665,6 +665,7 @@ const {
   toolNotice,
   pendingToolCall,
   pendingForms,
+  answeringForm,
   confirmTool: onConfirmTool,
   denyTool: onDenyTool,
   answerForm: onAnswerForm,
@@ -1325,7 +1326,7 @@ async function removeSession() {
                     :class="{ 'is-active': isFileTreeVisible }"
                     :title="isFileTreeVisible ? '收起文件树' : '展开文件树'"
                     :aria-label="isFileTreeVisible ? '收起文件树' : '展开文件树'"
-                    :aria-pressed="isFileTreeVisible.toString()"
+                    :aria-pressed="isFileTreeVisible ? 'true' : 'false'"
                     @click="toggleFileTree"
                   >
                     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -1421,7 +1422,7 @@ async function removeSession() {
                     :class="{ pinned: isFileTreeDocked }"
                     :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
                     :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
-                    :aria-pressed="isFileTreeDocked.toString()"
+                    :aria-pressed="isFileTreeDocked ? 'true' : 'false'"
                     @click="toggleFileTreePinned"
                   >
                     <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -1463,7 +1464,7 @@ async function removeSession() {
           data-test="toggle-preview-btn"
           title="展开预览面板"
           aria-label="展开预览面板"
-          :aria-pressed="(!previewCollapsed).toString()"
+          :aria-pressed="!previewCollapsed ? 'true' : 'false'"
           @click="setPreviewCollapsed(false)"
         >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">

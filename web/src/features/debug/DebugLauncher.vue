@@ -51,7 +51,7 @@ function onKeydown(event: KeyboardEvent) {
       class="debug-launch-trigger"
       aria-label="SSE 总线调试面板"
       :title="'SSE 总线调试面板（点击打开/关闭）'"
-      :aria-expanded="debug.open.toString()"
+      :aria-expanded="debug.open ? 'true' : 'false'"
       data-test="debug-launch-trigger"
       @click="toggle"
       @keydown="onKeydown"
