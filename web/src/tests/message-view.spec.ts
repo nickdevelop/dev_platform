@@ -70,6 +70,45 @@ describe('MessageView markdown', () => {
   })
 })
 
+describe('MessageView prompt blocks', () => {
+  it('renders a role prompt as a labelled, foldable block plus the user input', () => {
+    const text = '<Role name="代码审查">\n请审查以下代码\n</Role>\n\n修复登录问题'
+    const wrapper = mount(MessageView, {
+      props: { messages: [message('user', text)], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="prompt-block"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="prompt-block-label"]').text()).toBe('启用角色：代码审查')
+    expect(wrapper.find('[data-test="prompt-block-body"]').text()).toBe('请审查以下代码')
+    expect(wrapper.find('[data-test="prompt-block-rest"]').text()).toBe('修复登录问题')
+    expect(wrapper.text()).not.toContain('查看提示词')
+    expect(wrapper.find('[data-test="prompt-block-head"]').attributes('title')).toBe(
+      '点击展开或收起提示词',
+    )
+    expect(wrapper.find('.bubble-user').text()).not.toContain('<Role')
+    expect(wrapper.find('.bubble-user').text()).not.toContain('</Role>')
+  })
+
+  it('renders a flow prompt with the flow label', () => {
+    const text = '<Flow name="并行评审">\n先拆解再执行\n</Flow>\n\n开始'
+    const wrapper = mount(MessageView, {
+      props: { messages: [message('user', text)], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="prompt-block-label"]').text()).toBe('启用流程：并行评审')
+    expect(wrapper.find('[data-test="prompt-block-rest"]').text()).toBe('开始')
+  })
+
+  it('leaves an ordinary user message unchanged', () => {
+    const wrapper = mount(MessageView, {
+      props: { messages: [message('user', '普通消息')], capabilities: capabilities() },
+    })
+
+    expect(wrapper.find('[data-test="prompt-block"]').exists()).toBe(false)
+    expect(wrapper.find('.bubble-user .message-text').text()).toBe('普通消息')
+  })
+})
+
 describe('MessageView tool and thinking blocks', () => {
   it('merges a tool call and its result into one expandable block', async () => {
     const entries: ChatEntry[] = [

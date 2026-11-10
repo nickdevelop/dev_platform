@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { describeApiError } from '../../api/client'
 import type { Prompt } from '../../api/prompts'
 import { usePromptsStore } from '../../stores/prompts'
 import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
-import { USER_PROMPT_PLACEHOLDER } from './promptTemplate'
 
 const props = defineProps<{
   prompt?: Prompt | null
@@ -22,32 +21,11 @@ const name = ref(props.prompt?.name ?? '')
 const type = ref<'role' | 'flow'>(props.prompt?.type ?? props.defaultType ?? 'role')
 const description = ref(props.prompt?.description ?? '')
 const content = ref(props.prompt?.content ?? '')
-const contentTextareaRef = ref<HTMLTextAreaElement | null>(null)
 
 const saving = ref(false)
 const errorMessage = ref('')
 
 const isEditing = computed(() => !!props.prompt)
-
-function insertPlaceholder() {
-  const textarea = contentTextareaRef.value
-  if (!textarea) {
-    content.value += USER_PROMPT_PLACEHOLDER
-    return
-  }
-
-  const start = textarea.selectionStart ?? content.value.length
-  const end = textarea.selectionEnd ?? content.value.length
-  const before = content.value.substring(0, start)
-  const after = content.value.substring(end)
-  content.value = before + USER_PROMPT_PLACEHOLDER + after
-
-  const newCursor = start + USER_PROMPT_PLACEHOLDER.length
-  void nextTick(() => {
-    textarea.focus()
-    textarea.setSelectionRange(newCursor, newCursor)
-  })
-}
 
 async function submit() {
   if (!name.value.trim()) {
@@ -95,7 +73,7 @@ async function submit() {
 
 <template>
   <UiDialog
-    :title="isEditing ? '编辑提示词模版' : '新建提示词模版'"
+    :title="isEditing ? '编辑提示词' : '新建提示词'"
     width-class="w-full max-w-xl"
     @close="emit('close')"
   >
@@ -188,32 +166,17 @@ async function submit() {
         />
       </div>
 
-      <!-- 3. Content Textarea with Toolbar -->
+      <!-- 3. Content Textarea -->
       <div class="space-y-1.5">
-        <div class="content-header flex items-center justify-between gap-2">
-          <label for="prompt-content" class="text-xs font-medium text-[var(--color-text)]">
-            模版内容 <span class="text-red-500">*</span>
-          </label>
-          <button
-            type="button"
-            class="btn-insert-placeholder inline-flex items-center gap-1 text-2xs font-mono px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors"
-            title="在光标处插入占位符"
-            data-test="btn-insert-placeholder"
-            @click="insertPlaceholder"
-          >
-            <span>+ 插入 {user_prompt} 占位符</span>
-          </button>
-        </div>
-        <p class="field-hint text-2xs text-[var(--color-text-muted)] leading-relaxed">
-          可使用 <code>{user_prompt}</code> 作为变量槽。在实际创建会话或触发任务时，用户的输入消息将自动填充该位置。
-        </p>
+        <label for="prompt-content" class="text-xs font-medium text-[var(--color-text)]">
+          提示词内容 <span class="text-red-500">*</span>
+        </label>
         <textarea
           id="prompt-content"
-          ref="contentTextareaRef"
           v-model="content"
           rows="8"
           class="w-full rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] p-3 text-xs font-mono text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-primary)] transition-colors leading-relaxed resize-y"
-          placeholder="输入提示词模版，例如：&#10;请对以下代码进行审查，并指出潜在缺陷与优化建议：&#10;&#10;{user_prompt}"
+          placeholder="输入提示词内容，例如：&#10;请对以下代码进行审查，并指出潜在缺陷与优化建议。"
           required
           data-test="prompt-content-input"
         ></textarea>

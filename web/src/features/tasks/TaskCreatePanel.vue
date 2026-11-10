@@ -15,7 +15,6 @@ import { useRolesStore } from '../../stores/roles'
 import { useModelsStore } from '../../stores/models'
 import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
-import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../prompts/promptTemplate'
 import {
   UiButton,
   UiInput,
@@ -352,10 +351,10 @@ async function handleCreateTask() {
     return
   }
 
+  // The textarea is the task's prompt. Selecting a preset seeds it; the user
+  // may edit it freely. There is no placeholder substitution.
   const finalPrompt = selectedPrompt.value
-    ? hasUserPromptPlaceholder(selectedPrompt.value.content)
-      ? applyUserPromptTemplate(selectedPrompt.value.content, promptText.value)
-      : promptText.value || selectedPrompt.value.content
+    ? promptText.value.trim() || selectedPrompt.value.content
     : promptText.value.trim()
 
   creating.value = true

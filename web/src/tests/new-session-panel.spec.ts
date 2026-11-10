@@ -153,7 +153,11 @@ describe('NewSessionPanel', () => {
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
-    expect(createSpy).toHaveBeenCalledWith(1, { backend: 'pi', message: '帮我检查构建' })
+    expect(createSpy).toHaveBeenCalledWith(
+      1,
+      { backend: 'pi', message: '帮我检查构建' },
+      { userMessage: '帮我检查构建' },
+    )
     const body = createSpy.mock.calls[0][1]
     expect(body).not.toHaveProperty('title')
     expect(body).not.toHaveProperty('instanceId')
@@ -353,7 +357,11 @@ describe('NewSessionPanel', () => {
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
-    expect(createSpy).toHaveBeenCalledWith(2, expect.objectContaining({ backend: 'opencode-v2' }))
+    expect(createSpy).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ backend: 'opencode-v2' }),
+      { userMessage: '' },
+    )
   })
 
   it('offers worktrees for a git project and sends the chosen worktreeId', async () => {
@@ -405,7 +413,10 @@ describe('NewSessionPanel', () => {
 
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
-    expect(createSpy).toHaveBeenCalledWith(1, expect.objectContaining({ worktreeId: 5 }))
+    const [projectId, body, options] = createSpy.mock.calls[0]
+    expect(projectId).toBe(1)
+    expect(body).toEqual(expect.objectContaining({ worktreeId: 5 }))
+    expect(options).toEqual({ userMessage: body.message ?? '' })
   })
 
   it('hides the worktree selector for a non-git project', async () => {
@@ -462,16 +473,16 @@ describe('NewSessionPanel', () => {
     expect(select.element.value).toBe('3')
   })
 
-  it('selects a prompt template and substitutes {user_prompt} with user message', async () => {
+  it('wraps a role prompt and keeps the user message after it', async () => {
     const { wrapper, createSpy } = setup()
     const promptsStore = usePromptsStore()
     promptsStore.prompts = [
       {
         id: 10,
         name: '代码审查',
-        type: 'flow',
+        type: 'role',
         description: '审查代码',
-        content: '请对以下代码进行审查：\n\n{user_prompt}\n\n给出优化建议。',
+        content: '请审查 {user_prompt} 并给出优化建议。',
         createdAt: '',
         updatedAt: '',
       },
@@ -484,17 +495,20 @@ describe('NewSessionPanel', () => {
     await select.setValue('10')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="prompt-preview-snippet"]').text()).toContain('请对以下代码进行审查')
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').text()).toContain('请审查')
     await wrapper.find('#first-message').setValue('function add(a, b) { return a + b }')
     await wrapper.find('form.create-session').trigger('submit')
     await flushPromises()
 
     expect(createSpy).toHaveBeenCalledTimes(1)
     const body = createSpy.mock.calls[0][1]
-    expect(body.message).toBe('请对以下代码进行审查：\n\nfunction add(a, b) { return a + b }\n\n给出优化建议。')
+    expect(body.message).toBe(
+      '<Role name="代码审查">\n请审查 {user_prompt} 并给出优化建议。\n</Role>\n\nfunction add(a, b) { return a + b }',
+    )
+    expect(createSpy.mock.calls[0][2]).toEqual({ userMessage: 'function add(a, b) { return a + b }' })
   })
 
-  it('selects a prompt template without user input and replaces {user_prompt} with empty string', async () => {
+  it('wraps a flow prompt and sends the block alone without user input', async () => {
     const { wrapper, createSpy } = setup()
     const promptsStore = usePromptsStore()
     promptsStore.prompts = [
@@ -503,7 +517,7 @@ describe('NewSessionPanel', () => {
         name: '系统自检',
         type: 'flow',
         description: '系统体检',
-        content: '执行完整自检：{user_prompt}',
+        content: '执行完整自检。',
         createdAt: '',
         updatedAt: '',
       },
@@ -522,7 +536,8 @@ describe('NewSessionPanel', () => {
 
     expect(createSpy).toHaveBeenCalledTimes(1)
     const body = createSpy.mock.calls[0][1]
-    expect(body.message).toBe('执行完整自检：')
+    expect(body.message).toBe('<Flow name="系统自检">\n执行完整自检。\n</Flow>')
+    expect(createSpy.mock.calls[0][2]).toEqual({ userMessage: '' })
   })
 
   it('allows clearing the selected prompt via clear button', async () => {
@@ -534,7 +549,7 @@ describe('NewSessionPanel', () => {
         name: '代码审查',
         type: 'flow',
         description: '审查代码',
-        content: '审查：{user_prompt}',
+        content: '审查代码。',
         createdAt: '',
         updatedAt: '',
       },
@@ -553,7 +568,7 @@ describe('NewSessionPanel', () => {
     expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
   })
 
-  it('offers only flow prompt templates to a new project session', async () => {
+  it('offers both role and flow prompts to a new project session', async () => {
     const { wrapper } = setup()
     const promptsStore = usePromptsStore()
     promptsStore.prompts = [
@@ -562,7 +577,7 @@ describe('NewSessionPanel', () => {
         name: '角色：代码审查',
         type: 'role',
         description: '角色类提示词',
-        content: '角色提示词：{user_prompt}',
+        content: '角色提示词。',
         createdAt: '',
         updatedAt: '',
       },
@@ -571,7 +586,7 @@ describe('NewSessionPanel', () => {
         name: '流程：并行评审',
         type: 'flow',
         description: '流程类提示词',
-        content: '流程提示词：{user_prompt}',
+        content: '流程提示词。',
         createdAt: '',
         updatedAt: '',
       },
@@ -580,11 +595,11 @@ describe('NewSessionPanel', () => {
 
     const select = wrapper.find<HTMLSelectElement>('[data-test="prompt-select"]')
     const labels = select.findAll('option').map((option) => option.text())
+    expect(labels).toContain('角色：代码审查')
     expect(labels).toContain('流程：并行评审')
-    expect(labels).not.toContain('角色：代码审查')
   })
 
-  it('clears a restored role prompt draft instead of applying it', async () => {
+  it('restores a role prompt draft instead of clearing it', async () => {
     setActivePinia(createPinia())
     const agents = useAgentsStore()
     agents.backends = [
@@ -611,7 +626,7 @@ describe('NewSessionPanel', () => {
         name: '角色：代码审查',
         type: 'role',
         description: '角色类提示词',
-        content: '角色提示词：{user_prompt}',
+        content: '角色提示词。',
         createdAt: '',
         updatedAt: '',
       },
@@ -624,8 +639,9 @@ describe('NewSessionPanel', () => {
     const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
     await flushPromises()
 
-    expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(false)
-    expect(draftsStore.getNewSessionDraft(1).promptId).toBe('')
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="prompt-preview-snippet"]').text()).toContain('角色提示词。')
+    expect(draftsStore.getNewSessionDraft(1).promptId).toBe(10)
   })
 
   it('preserves user input and selected project across remounts via draftsStore (prevents resetting to first project)', async () => {

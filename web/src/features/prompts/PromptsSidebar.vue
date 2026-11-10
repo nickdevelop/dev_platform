@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Prompt } from '../../api/prompts'
 import { usePromptsStore } from '../../stores/prompts'
 import PromptManageDialog from './PromptManageDialog.vue'
-import { hasUserPromptPlaceholder } from './promptTemplate'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,7 +61,7 @@ function onSaved(prompt: Prompt) {
         type="button"
         class="action-btn new-prompt-btn"
         data-test="new-prompt-btn"
-        title="新建提示词模板"
+        title="新建提示词"
         @click="openCreateDialog"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -129,16 +128,9 @@ function onSaved(prompt: Prompt) {
         @keydown.enter.prevent="selectPrompt(prompt.id)"
         @keydown.space.prevent="selectPrompt(prompt.id)"
       >
-        <!-- Row 1: Name + Placeholder Pill -->
+        <!-- Row 1: Name -->
         <div class="prompt-card-top sidebar-card-row-top">
           <span class="prompt-card-name sidebar-card-title" :title="prompt.name">{{ prompt.name }}</span>
-          <span
-            v-if="hasUserPromptPlaceholder(prompt.content)"
-            class="placeholder-tag sidebar-card-badge"
-            title="包含 {user_prompt} 动态插值"
-          >
-            {user_prompt}
-          </span>
         </div>
 
         <!-- Row 2: Description or content preview + Hover Action -->
@@ -182,16 +174,6 @@ function onSaved(prompt: Prompt) {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-}
-
-.placeholder-tag {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: var(--text-size-10);
-  color: var(--color-accent, #4a8ad6);
-  background: var(--color-surface-muted, #f1f5f9);
-  padding: 1px 4px;
-  border-radius: 3px;
-  border: 1px solid var(--color-border);
 }
 
 .prompt-card-desc,

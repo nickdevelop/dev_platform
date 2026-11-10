@@ -6,7 +6,6 @@ import { computed, onMounted, ref } from 'vue'
 import { usePromptsStore } from '../../stores/prompts'
 import type { Prompt, PromptType } from '../../api/prompts'
 import PromptManageDialog from '../prompts/PromptManageDialog.vue'
-import { hasUserPromptPlaceholder } from '../prompts/promptTemplate'
 import { UiButton, UiInput } from '../../shared/ui'
 
 const promptsStore = usePromptsStore()
@@ -97,7 +96,7 @@ function formatDate(iso: string): string {
       <div>
         <h1 class="text-2xl font-semibold text-[var(--color-text)] tracking-tight">提示词管理</h1>
         <p class="text-xs text-[var(--color-text-muted)] mt-1">
-          管理角色类人设与流程类协同模板，供角色管理、对话助手与多 Agent 协同流程统一引用。
+          管理角色类人设与流程类协同提示词，供角色管理、对话助手与多 Agent 协同流程统一引用。
         </p>
       </div>
 
@@ -198,14 +197,6 @@ function formatDate(iso: string): string {
               >
                 {{ prompt.type === 'role' ? '角色类' : '流程类' }}
               </span>
-              <!-- Placeholder Badge -->
-              <span
-                v-if="hasUserPromptPlaceholder(prompt.content)"
-                class="text-3xs px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]"
-                title="包含 {user_prompt} 占位符"
-              >
-                {user_prompt}
-              </span>
             </div>
 
             <div class="flex items-center gap-1.5 flex-shrink-0">
@@ -259,7 +250,7 @@ function formatDate(iso: string): string {
       class="p-12 text-center rounded-[var(--radius,6px)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)]/40 space-y-3"
     >
       <div class="text-sm font-medium text-[var(--color-text)]">
-        {{ activeTab === 'all' ? '尚未创建任何提示词模版' : activeTab === 'role' ? '暂无角色类提示词' : '暂无流程类提示词' }}
+        {{ activeTab === 'all' ? '尚未创建任何提示词' : activeTab === 'role' ? '暂无角色类提示词' : '暂无流程类提示词' }}
       </div>
       <p class="text-xs text-[var(--color-text-muted)] max-w-md mx-auto">
         {{ activeTab === 'role' ? '角色类提示词用于设定 Agent 人设、专业背景与思考准则，可在角色管理与对话助手中引用。' : '流程类提示词偏向工作流程与协同任务规范，可在多 Agent 协同流程中引用。' }}
@@ -269,7 +260,7 @@ function formatDate(iso: string): string {
         class="text-xs px-3.5 py-1.5 mt-2"
         @click="openCreateDialog(activeTab === 'flow' ? 'flow' : 'role')"
       >
-        新建提示词模版
+        新建提示词
       </UiButton>
     </div>
 

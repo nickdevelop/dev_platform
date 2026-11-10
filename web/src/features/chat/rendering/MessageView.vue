@@ -33,6 +33,7 @@ import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
 import ImagePreviewModal from './ImagePreviewModal.vue'
 import RunningIndicator from '../../../shared/components/RunningIndicator.vue'
+import { parsePromptMessage, promptBlockLabel, type PromptBlock } from '../../prompts/promptBlock'
 import type { Capabilities } from '../../../api/sessions'
 import type { ImageAttachment } from '../../../api/messageTypes'
 import type { ChatEntry } from '../state/entry'
@@ -61,6 +62,20 @@ const emit = defineEmits<{
 // display mode, the manually-opened state and the flat-activity fold state.
 const model = computed(() => log.buildLogModel(props.messages))
 const resultForCall = (entry: ChatEntry) => model.value.resultForCall(entry)
+
+// A user message may open with a Role/Flow prompt block. Parsing is done once
+// per entry so the template can ask for the block without re-parsing the full
+// message on every expression.
+const promptBlocks = computed(() => {
+  const map = new Map<string, PromptBlock>()
+  for (const entry of props.messages) {
+    if (entry.kind !== 'message' || entry.role !== 'user') continue
+    const block = parsePromptMessage(entry.text)
+    if (block) map.set(entry.id, block)
+  }
+  return map
+})
+const promptBlockFor = (entry: ChatEntry): PromptBlock | null => promptBlocks.value.get(entry.id) ?? null
 
 // Template-facing helpers: same names the template already uses, each backed
 // by the pure model. The lookup-carrying ones (subagent facts, step summary,
@@ -290,7 +305,55 @@ async function handleMarkdownClick(event: MouseEvent) {
                     />
                   </div>
                 </div>
-                <span v-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>
+                <template v-if="promptBlockFor(block.entry)">
+                  <details class="prompt-block" data-test="prompt-block">
+                    <summary
+                      class="prompt-block-head"
+                      data-test="prompt-block-head"
+                      title="点击展开或收起提示词"
+                    >
+                      <span class="prompt-block-icon" aria-hidden="true">
+                        <svg
+                          v-if="promptBlockFor(block.entry)?.kind === 'role'"
+                          class="glyph-svg"
+                          viewBox="0 0 16 16"
+                          width="13"
+                          height="13"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                        >
+                          <circle cx="8" cy="5" r="2.5" />
+                          <path d="M3 13c0-2.2 2.2-4 5-4s5 1.8 5 4" />
+                        </svg>
+                        <svg
+                          v-else
+                          class="glyph-svg"
+                          viewBox="0 0 16 16"
+                          width="13"
+                          height="13"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="1.8"
+                        >
+                          <rect x="2.5" y="2.5" width="4" height="4" rx="1" />
+                          <rect x="9.5" y="9.5" width="4" height="4" rx="1" />
+                          <path d="M6.5 4.5h4a2 2 0 0 1 2 2v3" />
+                        </svg>
+                      </span>
+                      <span class="prompt-block-label" data-test="prompt-block-label">
+                        {{ promptBlockLabel(promptBlockFor(block.entry)!) }}
+                      </span>
+                    </summary>
+                    <pre class="prompt-block-body" data-test="prompt-block-body">{{ promptBlockFor(block.entry)!.body }}</pre>
+                  </details>
+                  <span
+                    v-if="promptBlockFor(block.entry)!.rest"
+                    class="message-text"
+                    data-test="prompt-block-rest"
+                  >{{ promptBlockFor(block.entry)!.rest }}</span>
+                </template>
+                <span v-else-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>
               </template>
               <div v-else class="message-text markdown-body" @click="handleMarkdownClick">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
@@ -770,6 +833,57 @@ async function handleMarkdownClick(event: MouseEvent) {
    whose block elements carry their own spacing. */
 .bubble-user .message-text {
   white-space: pre-wrap;
+}
+
+/* A Role/Flow prompt block rides in front of the user's own text. Its body is
+   folded by default so a long prompt never dominates the conversation. */
+.prompt-block {
+  margin: 0 0 0.4rem;
+}
+
+.prompt-block-head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.prompt-block-head::-webkit-details-marker {
+  display: none;
+}
+
+.prompt-block-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.prompt-block-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.prompt-block-head:hover .prompt-block-label {
+  text-decoration: underline;
+}
+
+.prompt-block-body {
+  margin: 0.4rem 0 0.1rem;
+  padding: 0.5rem 0.65rem;
+  max-height: 16rem;
+  overflow: auto;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.14);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-images-grid {

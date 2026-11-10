@@ -17,7 +17,7 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { useWorktreesStore } from '../../../stores/worktrees'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
-import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
+import { buildPromptMessage, promptKindLabel } from '../../prompts/promptBlock'
 import { getSessionHistory, type BackendId, type ImageAttachment } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
@@ -72,13 +72,11 @@ const initialDraft = draftsStore.getNewSessionDraft(initialProjectId)
 let isRestoringDraft = false
 
 const selectedPromptId = ref<number | ''>(initialDraft.promptId ?? '')
-// A new project session only offers flow prompts (role prompts belong to the
-// role library and the pure-chat assistants). The type check is the safety net
-// against a draft that still names a role prompt from before this restriction.
+// Both prompt kinds are valid here: a role prompt becomes a <Role> block and a
+// flow prompt a <Flow> block, with the user's own message after it.
 const selectedPrompt = computed(() => {
   if (selectedPromptId.value === '') return null
-  const prompt = promptsStore.byId(Number(selectedPromptId.value))
-  return prompt && prompt.type === 'flow' ? prompt : null
+  return promptsStore.byId(Number(selectedPromptId.value)) ?? null
 })
 
 const {
@@ -96,10 +94,7 @@ const composerHint = computed(
 
 const textareaPlaceholder = computed(() => {
   if (selectedPrompt.value) {
-    if (hasUserPromptPlaceholder(selectedPrompt.value.content)) {
-      return `输入的内容将替换模版中的 {user_prompt} 并发送给 Agent… (可选，留空则替换为空；${composerHint.value})`
-    }
-    return `输入的内容将追加在模版后发送给 Agent… (可选；${composerHint.value})`
+    return `输入的内容将追加在所选提示词之后发送给 Agent… (可选；${composerHint.value})`
   }
   return `描述会话，例如：帮我检查构建失败的原因… (${composerHint.value})`
 })
@@ -187,27 +182,32 @@ const promptOptions = computed<SelectMenuItem<number | ''>[]>(() => {
   const items: SelectMenuItem<number | ''>[] = [
     { value: '', label: '不使用提示词（默认）' },
   ]
-  for (const p of promptsStore.flowPrompts) {
+  for (const p of promptsStore.prompts ?? []) {
     items.push({
       value: p.id,
       label: p.name,
       sublabel: p.description || undefined,
+      tag: promptKindLabel(p.type),
     })
   }
   return items
 })
 
-// Drops a restored draft selection that is no longer offered here. Keeping it
-// would silently inject a role prompt into the first message while the picker
-// no longer shows it; an unknown id (prompt list not loaded yet) is left alone
-// because selectedPrompt already refuses to apply it.
-function clearInvalidPromptSelection() {
+// Drops a restored draft selection whose prompt was deleted. A list that has
+// not loaded yet is left alone so a valid draft is never cleared prematurely.
+function clearMissingPromptSelection() {
   if (selectedPromptId.value === '') return
-  const prompt = promptsStore.byId(Number(selectedPromptId.value))
-  if (!prompt || prompt.type === 'flow') return
+  const list = promptsStore.prompts
+  if (!Array.isArray(list) || list.length === 0) return
+  if (list.some((p) => p.id === Number(selectedPromptId.value))) return
   selectedPromptId.value = ''
   draftsStore.setNewSessionDraft({ promptId: '' }, selectedProjectId.value)
 }
+
+watch(
+  () => promptsStore.prompts,
+  () => clearMissingPromptSelection(),
+)
 
 watch(
   () => [props.projectId, route?.params?.projectId],
@@ -278,7 +278,7 @@ watch(selectedProjectId, (newId, oldId) => {
     } else {
       selectedWorktreeId.value = 0
     }
-    clearInvalidPromptSelection()
+    clearMissingPromptSelection()
     attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
     void nextTick(() => {
       isRestoringDraft = false
@@ -477,9 +477,9 @@ const createLabel = computed(() => {
 
 onMounted(async () => {
   void promptsStore.loadPrompts().then(() => {
-    // The prompt list arrives asynchronously, so a role prompt in the restored
-    // draft can only be recognised and cleared here.
-    clearInvalidPromptSelection()
+    // The prompt list arrives asynchronously; a draft naming a prompt since
+    // deleted can only be recognised here.
+    clearMissingPromptSelection()
   })
   await agents.loadBackends()
   if (Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0) {
@@ -523,7 +523,7 @@ async function createSession() {
         )
       : ''
   const finalMessage = selectedPrompt.value
-    ? applyUserPromptTemplate(selectedPrompt.value.content, textToSend)
+    ? buildPromptMessage(selectedPrompt.value, textToSend)
     : textToSend
   // The model is part of the session's identity, not only of its first turn, so
   // it rides the create request even when no message is sent: the session is
@@ -532,15 +532,21 @@ async function createSession() {
     selectedCapabilities.value?.modelSelection === true &&
     modelOk.value &&
     selectedModel.value !== ''
-  const created = await sessions.createSession(targetProjectId, {
-    backend: selectedBackend.value,
-    ...(projectIsGit.value && selectedWorktreeId.value > 0
-      ? { worktreeId: selectedWorktreeId.value }
-      : {}),
-    ...(finalMessage !== '' ? { message: finalMessage } : {}),
-    ...(withModel ? { model: selectedModel.value } : {}),
-    ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
-  })
+  const created = await sessions.createSession(
+    targetProjectId,
+    {
+      backend: selectedBackend.value,
+      ...(projectIsGit.value && selectedWorktreeId.value > 0
+        ? { worktreeId: selectedWorktreeId.value }
+        : {}),
+      ...(finalMessage !== '' ? { message: finalMessage } : {}),
+      ...(withModel ? { model: selectedModel.value } : {}),
+      ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
+    },
+    // A failed first message re-opens the composer with the user's own text
+    // only, never the prompt block that rides in front of it.
+    { userMessage: textToSend },
+  )
   creating.value = false
   if (created) {
     draftsStore.clearNewSessionDraft(targetProjectId)
@@ -613,13 +619,7 @@ async function createSession() {
 
         <div class="prompt-selector-group">
           <div class="prompt-selector-header">
-            <label for="prompt-select" class="prompt-label">提示词模板</label>
-            <span
-              v-if="selectedPrompt && hasUserPromptPlaceholder(selectedPrompt.content)"
-              class="prompt-placeholder-hint"
-            >
-              输入内容将填充到模版的 {user_prompt} 处
-            </span>
+            <label for="prompt-select" class="prompt-label">提示词</label>
           </div>
           <div class="prompt-select-row">
             <UiSelectMenu
@@ -647,7 +647,7 @@ async function createSession() {
             </button>
           </div>
           <div v-if="selectedPrompt" class="prompt-preview-snippet" data-test="prompt-preview-snippet">
-            <div class="snippet-title">模板预览：</div>
+            <div class="snippet-title">提示词预览：</div>
             <pre class="snippet-text">{{ selectedPrompt.content }}</pre>
           </div>
         </div>
@@ -950,11 +950,6 @@ async function createSession() {
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--color-text-muted);
-}
-
-.prompt-placeholder-hint {
-  font-size: 0.75rem;
-  color: var(--color-primary);
 }
 
 .prompt-select-row {

@@ -48,7 +48,7 @@ func TestPromptHandlers(t *testing.T) {
 		body, _ := json.Marshal(CreatePromptRequest{
 			Name:        "Test Prompt",
 			Description: "For testing API",
-			Content:     "Hello {user_prompt}",
+			Content:     "Hello",
 		})
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("POST", "/api/prompts", bytes.NewReader(body))

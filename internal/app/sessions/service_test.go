@@ -1847,6 +1847,80 @@ func TestCreateWithFirstMessageAdmitsTheTurn(t *testing.T) {
 	}
 }
 
+// TestCreateWithPromptBlockDerivesTitleFromUserInput verifies a role/flow
+// prompt block does not leak into the session title: the title comes from the
+// user's own message after the block.
+func TestCreateWithPromptBlockDerivesTitleFromUserInput(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createFn = func(instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
+		return &agents.SessionRef{InstanceID: instanceID, Backend: agents.BackendPi, SessionID: "native-prompt", Title: options.Title}, nil
+	}
+	env.fake.mu.Unlock()
+
+	const text = "<Role name=\"代码审查\">\n请审查以下代码\n</Role>\n\n修复登录问题"
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", text, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if outcome.Session.Title != "修复登录问题" {
+		t.Errorf("session title = %q, want the user's own input", outcome.Session.Title)
+	}
+	if len(env.fake.createOpts) != 1 || env.fake.createOpts[0].Title != "修复登录问题" {
+		t.Errorf("createOpts = %+v, want the user-derived title", env.fake.createOpts)
+	}
+}
+
+// TestCreateWithPromptOnlyFallsBackToPromptName pins the prompt-only case: no
+// user input after the block leaves the prompt name as the title.
+func TestCreateWithPromptOnlyFallsBackToPromptName(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createFn = func(instanceID string, options agents.CreateSessionOptions) (*agents.SessionRef, error) {
+		return &agents.SessionRef{InstanceID: instanceID, Backend: agents.BackendPi, SessionID: "native-prompt-only", Title: options.Title}, nil
+	}
+	env.fake.mu.Unlock()
+
+	const text = "<Flow name=\"并行评审\">\n先拆解再执行\n</Flow>"
+	outcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", text, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if outcome.Session.Title != "并行评审" {
+		t.Errorf("session title = %q, want the prompt name fallback", outcome.Session.Title)
+	}
+}
+
+// TestSendDerivesTitleFromUserInputAfterPromptBlock covers the send path: an
+// untitled session's first message may carry a prompt block too.
+func TestSendDerivesTitleFromUserInputAfterPromptBlock(t *testing.T) {
+	env := newTestEnv(t)
+	env.fake.mu.Lock()
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-send-prompt"}
+	env.fake.mu.Unlock()
+	created, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.Session.Title != "" {
+		t.Fatalf("created session title = %q, want empty", created.Session.Title)
+	}
+
+	const text = "<Flow name=\"并行评审\">\n先拆解再执行\n</Flow>\n\n部署日志系统"
+	sent, err := env.svc.Send(context.Background(), env.projectID, created.Session.ID, text, "")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if sent.Title != "部署日志系统" {
+		t.Errorf("sent session title = %q, want the user's own input", sent.Title)
+	}
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.sentRefs) != 1 || env.fake.sentRefs[0].Title != "部署日志系统" {
+		t.Errorf("adapter sentRefs = %+v, want the user-derived title", env.fake.sentRefs)
+	}
+}
+
 // TestCreateWithFirstMessageFailureKeepsSession pins the recovery contract: a
 // refused first message does not fail the create — the session stays indexed
 // and the outcome carries the failure code the workbench reports.

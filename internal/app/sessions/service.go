@@ -22,6 +22,7 @@ import (
 	"devplatform/internal/app/sessions/store"
 	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/textutil"
 )
 
 // SessionStatus is the platform's view of a session's run state. It is derived
@@ -574,7 +575,9 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 	// same way a first composer message would.
 	message = strings.TrimSpace(message)
 	if title == "" && message != "" {
-		title = agents.DeriveTitle(message)
+		// A role/flow prompt block leads the message; the title comes from the
+		// user's own input so sessions sharing one prompt stay distinguishable.
+		title = textutil.DeriveSessionTitle(message)
 	}
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
 	if err != nil {
@@ -995,7 +998,7 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	// travels down: the adapter carries it to the backend for persistence.
 	if row.Title == "" {
 		if strings.TrimSpace(text) != "" {
-			row.Title = agents.DeriveTitle(text)
+			row.Title = textutil.DeriveSessionTitle(text)
 		} else if len(attachedImages) > 0 {
 			row.Title = "图片分析"
 		}

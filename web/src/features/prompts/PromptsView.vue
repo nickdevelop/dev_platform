@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Prompt } from '../../api/prompts'
 import { usePromptsStore } from '../../stores/prompts'
 import PromptManageDialog from './PromptManageDialog.vue'
-import { hasUserPromptPlaceholder } from './promptTemplate'
 import { UiButton } from '../../shared/ui'
 
 const route = useRoute()
@@ -12,7 +11,7 @@ const router = useRouter()
 const promptsStore = usePromptsStore()
 
 const showEditDialog = ref(false)
-const copiedTemplate = ref(false)
+const copiedContent = ref(false)
 
 onMounted(async () => {
   if (promptsStore.prompts.length === 0) {
@@ -78,11 +77,11 @@ function formatDate(iso: string): string {
   }
 }
 
-async function copyTemplate(text: string) {
+async function copyContent(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    copiedTemplate.value = true
-    setTimeout(() => (copiedTemplate.value = false), 2000)
+    copiedContent.value = true
+    setTimeout(() => (copiedContent.value = false), 2000)
   } catch {
     // Ignore clipboard errors
   }
@@ -100,12 +99,6 @@ async function copyTemplate(text: string) {
             <h1 class="text-xl md:text-2xl font-semibold text-[var(--color-text)] tracking-tight">
               {{ activePrompt.name }}
             </h1>
-            <span
-              v-if="hasUserPromptPlaceholder(activePrompt.content)"
-              class="placeholder-badge inline-flex items-center gap-1 font-mono text-2xs px-2 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-primary)] border border-[var(--color-border)]"
-            >
-              <span>包含 {user_prompt} 占位符</span>
-            </span>
           </div>
 
           <p v-if="activePrompt.description" class="header-desc text-xs md:text-sm text-[var(--color-text-muted)] leading-relaxed">
@@ -125,15 +118,15 @@ async function copyTemplate(text: string) {
           <UiButton
             variant="ghost"
             class="action-btn copy-btn text-xs"
-            title="复制模版原始内容"
+            title="复制提示词原始内容"
             data-test="copy-template-btn"
-            @click="copyTemplate(activePrompt.content)"
+            @click="copyContent(activePrompt.content)"
           >
             <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" class="mr-1 inline-block">
               <rect x="5" y="5" width="8" height="8" rx="1" />
               <path d="M3 11V3h8" />
             </svg>
-            <span>{{ copiedTemplate ? '已复制' : '复制模版' }}</span>
+            <span>{{ copiedContent ? '已复制' : '复制提示词' }}</span>
           </UiButton>
           <UiButton
             variant="secondary"
@@ -163,7 +156,7 @@ async function copyTemplate(text: string) {
               <line x1="5.5" y1="6" x2="10.5" y2="6" />
               <line x1="5.5" y1="9" x2="8.5" y2="9" />
             </svg>
-            <h2 class="text-sm font-semibold text-[var(--color-text)]">提示词模版正文</h2>
+            <h2 class="text-sm font-semibold text-[var(--color-text)]">提示词正文</h2>
           </div>
           <span class="text-xs text-[var(--color-text-muted)] font-mono tabular-nums">
             {{ activePrompt.content.length }} 字符
@@ -171,7 +164,7 @@ async function copyTemplate(text: string) {
         </div>
 
         <p class="text-xs text-[var(--color-text-muted)] leading-relaxed">
-          用于向 Agent 注入标准化系统上下文或任务规则。若包含 <code>{user_prompt}</code>，在新建会话或任务调度时将自动替换为具体输入。
+          新建 Agent 会话选择该提示词后，角色类将以 <code>&lt;Role&gt;</code>、流程类将以 <code>&lt;Flow&gt;</code> 标签作为首条用户提示词发送；正文可在会话中展开查看。
         </p>
 
         <div class="template-content-box rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] overflow-hidden">
@@ -202,7 +195,7 @@ async function copyTemplate(text: string) {
         <div class="space-y-2">
           <h2 class="text-xl font-semibold text-[var(--color-text)] tracking-tight">未选择提示词</h2>
           <p class="text-xs md:text-sm text-[var(--color-text-muted)] leading-relaxed max-w-md">
-            从左侧列表中选择一个提示词查看模版详情，或新建提示词模版以提升会话与自动化任务的复用效率。
+            从左侧列表中选择一个提示词查看详情，或新建提示词以提升会话与自动化任务的复用效率。
           </p>
         </div>
       </div>

@@ -59,7 +59,7 @@ describe('prompts store', () => {
         id: 3,
         name: 'New Prompt',
         description: 'New Desc',
-        content: 'New {user_prompt}',
+        content: 'New content',
         createdAt: '',
         updatedAt: '',
       },
@@ -68,7 +68,7 @@ describe('prompts store', () => {
     const created = await store.createPrompt({
       name: 'New Prompt',
       description: 'New Desc',
-      content: 'New {user_prompt}',
+      content: 'New content',
     })
     expect(created?.id).toBe(3)
     expect(store.prompts).toHaveLength(1)

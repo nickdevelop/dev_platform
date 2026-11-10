@@ -253,11 +253,11 @@ end note
 
 | # | 方法 | 路径 | 说明 | 鉴权 | 响应 |
 |---:|---|---|---|---|---|
-| 75 | GET | `/prompts` | 列出提示词模板（支持 `?q=`） | 会话 | 200 |
-| 76 | POST | `/prompts` | 新建提示词模板 | 会话+CSRF | 201 |
-| 77 | GET | `/prompts/{id}` | 读取模板 | 会话 | 200 |
-| 78 | PUT | `/prompts/{id}` | 更新模板 | 会话+CSRF | 200 |
-| 79 | DELETE | `/prompts/{id}` | 删除模板 | 会话+CSRF | 200 |
+| 75 | GET | `/prompts` | 列出提示词（支持 `?q=`） | 会话 | 200 |
+| 76 | POST | `/prompts` | 新建提示词 | 会话+CSRF | 201 |
+| 77 | GET | `/prompts/{id}` | 读取提示词 | 会话 | 200 |
+| 78 | PUT | `/prompts/{id}` | 更新提示词 | 会话+CSRF | 200 |
+| 79 | DELETE | `/prompts/{id}` | 删除提示词 | 会话+CSRF | 200 |
 
 ### 4.9 终端（8）
 

@@ -43,12 +43,12 @@ func TestPromptServiceCRUD(t *testing.T) {
 	p1, err := svc.Create(CreatePromptRequest{
 		Name:        "Code Review",
 		Description: "Review code changes",
-		Content:     "Please review this code:\n{user_prompt}",
+		Content:     "Please review this code.",
 	})
 	if err != nil {
 		t.Fatalf("create prompt: %v", err)
 	}
-	if p1.ID == 0 || p1.Name != "Code Review" || p1.Content != "Please review this code:\n{user_prompt}" {
+	if p1.ID == 0 || p1.Name != "Code Review" || p1.Content != "Please review this code." {
 		t.Fatalf("unexpected prompt: %+v", p1)
 	}
 
@@ -66,7 +66,7 @@ func TestPromptServiceCRUD(t *testing.T) {
 	p2, err := svc.Create(CreatePromptRequest{
 		Name:        "Commit Message",
 		Description: "Generate commit msg",
-		Content:     "Write git commit message for:\n{user_prompt}",
+		Content:     "Write git commit message for the change.",
 	})
 	if err != nil {
 		t.Fatalf("create p2: %v", err)
@@ -116,7 +116,7 @@ func TestPromptServiceCRUD(t *testing.T) {
 
 	// Update
 	newName := "Advanced Code Review"
-	newContent := "Perform advanced review:\n{user_prompt}"
+	newContent := "Perform advanced review."
 	updated, err := svc.Update(p1.ID, UpdatePromptRequest{
 		Name:    &newName,
 		Content: &newContent,

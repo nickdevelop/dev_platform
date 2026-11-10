@@ -108,7 +108,7 @@ const rolePrompts = computed(() => {
 
 const promptSelectOptions = computed<SelectMenuItem<number | 0>[]>(() => {
   const items: SelectMenuItem<number | 0>[] = [
-    { value: 0, label: '选择提示词模板…' },
+    { value: 0, label: '选择提示词…' },
   ]
   for (const p of rolePrompts.value) {
     items.push({

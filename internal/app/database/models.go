@@ -431,7 +431,8 @@ type TaskRun struct {
 // TableName pins the table name for TaskRun.
 func (TaskRun) TableName() string { return "task_runs" }
 
-// Prompt is a reusable prompt template with optional {user_prompt} placeholder.
+// Prompt is a reusable role or flow prompt. It carries no placeholder syntax;
+// the agent-session form wraps it in a Role/Flow block when starting a session.
 // Table: prompts.
 type Prompt struct {
 	ID          uint   `gorm:"primaryKey;column:id"`

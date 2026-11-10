@@ -318,7 +318,11 @@ export const useSessionsStore = defineStore('sessions', {
       }
     },
 
-    async createSession(projectId: number, body: CreateSessionBody) {
+    async createSession(
+      projectId: number,
+      body: CreateSessionBody,
+      options?: { userMessage?: string },
+    ) {
       try {
         const result = await createProjectSession(projectId, body)
         const created = result.session
@@ -340,10 +344,12 @@ export const useSessionsStore = defineStore('sessions', {
         }
         // A refused first message keeps the session but reports the failure to
         // the chat panel, which pre-fills the composer so the user can send
-        // again without retyping.
+        // again without retyping. A prompt-block message carries the user's
+        // text separately, so the block is never pre-filled back into the
+        // composer.
         if (created && result.messageError !== undefined) {
           this.firstMessageFailures[created.id] = {
-            text: (body.message ?? '').trim(),
+            text: (options?.userMessage ?? body.message ?? '').trim(),
             error: result.messageError,
           }
         }

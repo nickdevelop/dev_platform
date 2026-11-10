@@ -1394,6 +1394,19 @@ describe('sessions store create with first message', () => {
     expect(record).toEqual({ text: 'hello pi', error: 'agent_operation_failed' })
     expect(sessions.consumeFirstMessageFailure('s1')).toBeNull()
   })
+
+  it('records only the user message when a prompt block leads the refused first message', async () => {
+    const sessions = useSessionsStore()
+    stubCreate({ session: session('s1', 1), messageError: 'agent_operation_failed' })
+    const message = '<Role name="代码审查">\n审查代码\n</Role>\n\nhello pi'
+
+    await sessions.createSession(1, { backend: 'pi', message }, { userMessage: 'hello pi' })
+
+    expect(sessions.firstMessageFailures['s1']).toEqual({
+      text: 'hello pi',
+      error: 'agent_operation_failed',
+    })
+  })
 })
 
 // A turn that finished before the stream opened leaves entries streaming:

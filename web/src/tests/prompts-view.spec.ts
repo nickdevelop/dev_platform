@@ -26,14 +26,14 @@ describe('Prompts UI Components', () => {
     vi.restoreAllMocks()
   })
 
-  it('PromptManageDialog validates inputs and inserts {user_prompt} placeholder', async () => {
+  it('PromptManageDialog validates inputs and saves the prompt content', async () => {
     const store = usePromptsStore()
     const createSpy = vi.spyOn(store, 'createPrompt').mockResolvedValue({
       id: 1,
-      name: '测试模板',
+      name: '测试提示词',
       type: 'role',
       description: '描述',
-      content: 'Hello {user_prompt}',
+      content: 'Hello',
       createdAt: '',
       updatedAt: '',
     })
@@ -46,22 +46,22 @@ describe('Prompts UI Components', () => {
     await flushPromises()
     expect(createSpy).not.toHaveBeenCalled()
 
-    // Fill name
-    await wrapper.find('[data-test="prompt-name-input"]').setValue('测试模板')
-    // Click insert placeholder
-    await wrapper.find('[data-test="btn-insert-placeholder"]').trigger('click')
-    await flushPromises()
+    // The placeholder-insertion control is gone.
+    expect(wrapper.find('[data-test="btn-insert-placeholder"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('提示词内容')
+    expect(wrapper.text()).not.toContain('模版')
 
-    const textarea = wrapper.find<HTMLTextAreaElement>('[data-test="prompt-content-input"]')
-    expect(textarea.element.value).toContain('{user_prompt}')
+    // Fill name and content directly.
+    await wrapper.find('[data-test="prompt-name-input"]').setValue('测试提示词')
+    await wrapper.find('[data-test="prompt-content-input"]').setValue('Hello')
 
     // Submit valid
     await wrapper.find('form.prompt-dialog-form').trigger('submit')
     await flushPromises()
     expect(createSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: '测试模板',
-        content: '{user_prompt}',
+        name: '测试提示词',
+        content: 'Hello',
       }),
     )
     expect(wrapper.emitted('saved')).toBeTruthy()
@@ -70,7 +70,7 @@ describe('Prompts UI Components', () => {
   it('PromptsSidebar displays list, supports filtering, and opens create dialog', async () => {
     const store = usePromptsStore()
     store.prompts = [
-      { id: 1, name: 'Code Review', type: 'role', description: 'Review code', content: '{user_prompt}', createdAt: '', updatedAt: '' },
+      { id: 1, name: 'Code Review', type: 'role', description: 'Review code', content: 'Review the code', createdAt: '', updatedAt: '' },
       { id: 2, name: 'Commit Helper', type: 'role', description: 'Write git commit', content: 'commit', createdAt: '', updatedAt: '' },
     ]
     vi.spyOn(store, 'loadPrompts').mockResolvedValue(undefined as never)
@@ -104,7 +104,7 @@ describe('Prompts UI Components', () => {
     expect(wrapper.findComponent(PromptManageDialog).exists()).toBe(true)
   })
 
-  it('PromptsView shows template content and removes real-time synthesis preview', async () => {
+  it('PromptsView shows prompt content without placeholder badges', async () => {
     const store = usePromptsStore()
     store.prompts = [
       {
@@ -112,7 +112,7 @@ describe('Prompts UI Components', () => {
         name: '代码审查',
         type: 'role',
         description: '审查代码',
-        content: '请审查：\n\n{user_prompt}\n\n谢谢。',
+        content: '请审查以下代码并给出建议。',
         createdAt: '2026-10-18T10:00:00Z',
         updatedAt: '2026-10-18T12:00:00Z',
       },
@@ -123,8 +123,10 @@ describe('Prompts UI Components', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('代码审查')
-    expect(wrapper.text()).toContain('请审查：')
-    expect(wrapper.text()).toContain('{user_prompt}')
+    expect(wrapper.text()).toContain('请审查以下代码并给出建议。')
+    expect(wrapper.text()).toContain('提示词正文')
+    expect(wrapper.text()).not.toContain('{user_prompt}')
+    expect(wrapper.text()).not.toContain('模版')
 
     // Verify real-time synthesis input and output are removed
     expect(wrapper.find('[data-test="prompt-test-input"]').exists()).toBe(false)
