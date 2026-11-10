@@ -48,23 +48,23 @@ type GitInfo struct {
 // comes from the platform record, never from caller input. A missing project is
 // ErrProjectNotFound; any git-level failure degrades to IsGit false (see
 // probeGitDir), so branch display never blocks the page that shows it.
-func (s *Service) GitInfo(ctx context.Context, projectID uint) (GitInfo, error) {
-	row, err := s.load(projectID)
+func (s *Service) GitInfo(ctx context.Context, projectID uint, worktreeID ...uint) (GitInfo, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return GitInfo{}, err
 	}
-	return probeGitDir(ctx, row.Path), nil
+	return probeGitDir(ctx, rootDir), nil
 }
 
 // GitCommits returns the recent commits of a project's git repository.
 // If the directory is not inside a git work tree, git is unavailable, or the repository
 // has no commits yet, it returns an empty slice without an error.
-func (s *Service) GitCommits(ctx context.Context, projectID uint, limit int) ([]GitCommitItem, error) {
-	row, err := s.load(projectID)
+func (s *Service) GitCommits(ctx context.Context, projectID uint, limit int, worktreeID ...uint) ([]GitCommitItem, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return []GitCommitItem{}, nil
 	}
 
@@ -75,7 +75,7 @@ func (s *Service) GitCommits(ctx context.Context, projectID uint, limit int) ([]
 	}
 
 	// Format: <hash>\x00<shortHash>\x00<authorName>\x00<unixTimestamp>\x00<subject>\n
-	out, err := gitOutputLimit(ctx, row.Path, 1<<20, "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x00%h%x00%an%x00%at%x00%s")
+	out, err := gitOutputLimit(ctx, rootDir, 1<<20, "log", "-n", strconv.Itoa(limit), "--pretty=format:%H%x00%h%x00%an%x00%at%x00%s")
 	if err != nil || strings.TrimSpace(out) == "" {
 		return []GitCommitItem{}, nil
 	}

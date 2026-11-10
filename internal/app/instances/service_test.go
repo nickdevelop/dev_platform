@@ -13,9 +13,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"devplatform/internal/core/agents"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/core/agents"
 )
 
 // openTestDB opens and migrates a throwaway platform database. The GORM logger
@@ -1155,5 +1155,39 @@ func TestReconcileOrphans(t *testing.T) {
 	}
 	if stoppedInst.Error != "" {
 		t.Errorf("already-stopped Error = %q, want empty", stoppedInst.Error)
+	}
+}
+
+func TestStopProjectWorktreeInstancesOnlyTouchesThatWorktree(t *testing.T) {
+	svc, _, projectID, dir, fake := newTestService(t)
+	now := time.Now().UTC()
+	for _, inst := range []Instance{
+		{ID: "wt-instance", ProjectID: projectID, Backend: agents.BackendPi, WorktreeID: 7, Directory: dir, Status: agents.InstanceRunning, CreatedAt: now, UpdatedAt: now},
+		{ID: "main-instance", ProjectID: projectID, Backend: agents.BackendPi, Directory: dir, Status: agents.InstanceRunning, CreatedAt: now, UpdatedAt: now},
+	} {
+		if err := svc.repo.Create(inst); err != nil {
+			t.Fatalf("Create %s: %v", inst.ID, err)
+		}
+	}
+
+	if err := svc.StopProjectWorktreeInstances(context.Background(), projectID, 7); err != nil {
+		t.Fatalf("StopProjectWorktreeInstances: %v", err)
+	}
+	stopped, err := svc.Get("wt-instance")
+	if err != nil {
+		t.Fatalf("Get worktree instance: %v", err)
+	}
+	if stopped.Status != agents.InstanceStopped {
+		t.Fatalf("worktree instance status = %s, want stopped", stopped.Status)
+	}
+	main, err := svc.Get("main-instance")
+	if err != nil {
+		t.Fatalf("Get main instance: %v", err)
+	}
+	if main.Status != agents.InstanceRunning {
+		t.Fatalf("main instance status = %s, want running", main.Status)
+	}
+	if len(fake.stopped) != 1 || fake.stopped[0] != "wt-instance" {
+		t.Fatalf("adapter stopped = %v, want [wt-instance]", fake.stopped)
 	}
 }

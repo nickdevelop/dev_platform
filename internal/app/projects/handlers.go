@@ -26,6 +26,9 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.PUT("/projects/:id/name", s.handleUpdateName)
 	r.POST("/projects/:id/unregister", s.handleUnregister)
 	r.GET("/projects/:id/git-info", s.handleGitInfo)
+	r.GET("/projects/:id/worktrees", s.handleListWorktrees)
+	r.POST("/projects/:id/worktrees", s.handleCreateWorktree)
+	r.DELETE("/projects/:id/worktrees/:worktreeId", s.handleRemoveWorktree)
 	r.GET("/projects/:id/files", s.handleSearchFiles)
 	r.GET("/projects/:id/files/tree", s.handleFileTree)
 	r.GET("/projects/:id/files/content", s.handleFileContent)
@@ -86,6 +89,12 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "path_escaped")
 	case errors.Is(err, ErrNotGitRepo):
 		respondError(c, http.StatusBadRequest, "not_a_git_repo")
+	case errors.Is(err, ErrWorktreeNotFound):
+		respondError(c, http.StatusNotFound, "worktree_not_found")
+	case errors.Is(err, ErrWorktreeExists):
+		respondError(c, http.StatusConflict, "worktree_exists")
+	case errors.Is(err, ErrWorktreeDirty):
+		respondError(c, http.StatusConflict, "worktree_dirty")
 	case errors.Is(err, ErrEmptyCommitMessage):
 		respondError(c, http.StatusBadRequest, "empty_commit_message")
 	case errors.Is(err, ErrInvalidBranchName):
@@ -279,12 +288,72 @@ func (s *Service) handleGitInfo(c *gin.Context) {
 	if !ok {
 		return
 	}
-	info, err := s.GitInfo(c.Request.Context(), id)
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	info, err := s.GitInfo(c.Request.Context(), id, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, info)
+}
+
+// listWorktreesResponse is the JSON body of GET /api/projects/:id/worktrees.
+type listWorktreesResponse struct {
+	Worktrees []Worktree `json:"worktrees"`
+}
+
+// handleListWorktrees returns the project's registered git worktrees.
+func (s *Service) handleListWorktrees(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	list, err := s.ListWorktrees(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, listWorktreesResponse{Worktrees: list})
+}
+
+// handleCreateWorktree creates one git worktree with a new branch.
+func (s *Service) handleCreateWorktree(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var req CreateWorktreeInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	worktree, err := s.CreateWorktree(c.Request.Context(), id, req)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusCreated, worktree)
+}
+
+// handleRemoveWorktree stops the worktree's instances, removes its directory
+// through git and drops the platform record. The branch is kept.
+func (s *Service) handleRemoveWorktree(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := worktreeIDParam(c)
+	if !ok {
+		return
+	}
+	if err := s.RemoveWorktree(c.Request.Context(), id, worktreeID); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 // filesResponse is the JSON body of GET /api/projects/:id/files.
@@ -298,6 +367,10 @@ func (s *Service) handleSearchFiles(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	query := c.Query("q")
 	limit := 50
 	if limitStr := c.Query("limit"); limitStr != "" {
@@ -306,7 +379,7 @@ func (s *Service) handleSearchFiles(c *gin.Context) {
 		}
 	}
 
-	files, err := s.SearchFiles(c.Request.Context(), id, query, limit)
+	files, err := s.SearchFiles(c.Request.Context(), id, query, limit, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -324,6 +397,31 @@ func projectID(c *gin.Context) (uint, bool) {
 	return uint(id), true
 }
 
+// worktreeIDParam parses the :worktreeId path parameter.
+func worktreeIDParam(c *gin.Context) (uint, bool) {
+	id, err := strconv.ParseUint(c.Param("worktreeId"), 10, 64)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return 0, false
+	}
+	return uint(id), true
+}
+
+// optionalWorktreeID parses the optional worktreeId query parameter. Absent or
+// zero means the project's main working directory.
+func optionalWorktreeID(c *gin.Context) (uint, bool) {
+	raw := strings.TrimSpace(c.Query("worktreeId"))
+	if raw == "" || raw == "0" {
+		return 0, true
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return 0, false
+	}
+	return uint(id), true
+}
+
 // handleFileTree returns the directory tree of the project workspace.
 // By default or with ?path=<dir>, it returns direct children for lazy loading.
 // Pass ?all=true or ?recursive=true to retrieve the full recursive tree.
@@ -332,9 +430,13 @@ func (s *Service) handleFileTree(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 
 	if c.Query("all") == "true" || c.Query("recursive") == "true" {
-		tree, err := s.GetFileTree(c.Request.Context(), id)
+		tree, err := s.GetFileTree(c.Request.Context(), id, worktreeID)
 		if err != nil {
 			respondServiceError(c, err)
 			return
@@ -344,7 +446,7 @@ func (s *Service) handleFileTree(c *gin.Context) {
 	}
 
 	subPath := c.Query("path")
-	tree, err := s.GetFileTreeShallow(c.Request.Context(), id, subPath)
+	tree, err := s.GetFileTreeShallow(c.Request.Context(), id, subPath, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -361,12 +463,16 @@ func (s *Service) handleFileContent(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	filePath := c.Query("path")
 	if filePath == "" {
 		respondError(c, http.StatusBadRequest, "missing_path")
 		return
 	}
-	resp, err := s.ReadFileContent(c.Request.Context(), id, filePath)
+	resp, err := s.ReadFileContent(c.Request.Context(), id, filePath, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -380,12 +486,16 @@ func (s *Service) handleFileRaw(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	filePath := c.Query("path")
 	if filePath == "" {
 		respondError(c, http.StatusBadRequest, "missing_path")
 		return
 	}
-	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, filePath)
+	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, filePath, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -400,7 +510,11 @@ func (s *Service) handleCreatePreviewTicket(c *gin.Context) {
 	if !ok {
 		return
 	}
-	ticket, err := s.CreatePreviewTicket(c.Request.Context(), id)
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	ticket, err := s.CreatePreviewTicket(c.Request.Context(), id, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -415,7 +529,8 @@ func (s *Service) handlePreviewFile(c *gin.Context) {
 		return
 	}
 	ticket := c.Param("ticket")
-	if !s.ValidatePreviewTicket(ticket, id) {
+	worktreeID, ok := s.PreviewTicketScope(ticket, id)
+	if !ok {
 		respondError(c, http.StatusForbidden, "invalid_preview_ticket")
 		return
 	}
@@ -427,7 +542,7 @@ func (s *Service) handlePreviewFile(c *gin.Context) {
 		return
 	}
 
-	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, relPath)
+	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, relPath, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -446,8 +561,12 @@ func (s *Service) handleGitStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	commitRef := c.Query("commit")
-	items, err := s.GitStatusWithRef(c.Request.Context(), id, commitRef)
+	items, err := s.GitStatusWithRef(c.Request.Context(), id, commitRef, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -466,13 +585,17 @@ func (s *Service) handleGitCommits(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	limit := 20
 	if limitStr := c.Query("limit"); limitStr != "" {
 		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
 			limit = parsed
 		}
 	}
-	commits, err := s.GitCommits(c.Request.Context(), id, limit)
+	commits, err := s.GitCommits(c.Request.Context(), id, limit, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -486,13 +609,17 @@ func (s *Service) handleGitDiff(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	filePath := c.Query("path")
 	if filePath == "" {
 		respondError(c, http.StatusBadRequest, "missing_path")
 		return
 	}
 	commitRef := c.Query("commit")
-	diff, err := s.GitFileDiff(c.Request.Context(), id, filePath, commitRef)
+	diff, err := s.GitFileDiff(c.Request.Context(), id, filePath, commitRef, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -523,12 +650,16 @@ func (s *Service) handleGitStage(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	var req gitPathsRequest
 	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	if err := s.StageFiles(c.Request.Context(), id, req.Paths); err != nil {
+	if err := s.StageFiles(c.Request.Context(), id, req.Paths, worktreeID); err != nil {
 		respondServiceError(c, err)
 		return
 	}
@@ -541,12 +672,16 @@ func (s *Service) handleGitUnstage(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	var req gitPathsRequest
 	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	if err := s.UnstageFiles(c.Request.Context(), id, req.Paths); err != nil {
+	if err := s.UnstageFiles(c.Request.Context(), id, req.Paths, worktreeID); err != nil {
 		respondServiceError(c, err)
 		return
 	}
@@ -559,6 +694,10 @@ func (s *Service) handleGitDiscard(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	var req gitDiscardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "invalid_request")
@@ -568,7 +707,7 @@ func (s *Service) handleGitDiscard(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "missing_path")
 		return
 	}
-	if err := s.DiscardFileChanges(c.Request.Context(), id, req.Path); err != nil {
+	if err := s.DiscardFileChanges(c.Request.Context(), id, req.Path, worktreeID); err != nil {
 		respondServiceError(c, err)
 		return
 	}
@@ -581,12 +720,16 @@ func (s *Service) handleGitCommit(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	var req gitCommitRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	commit, err := s.CommitChanges(c.Request.Context(), id, req.Message)
+	commit, err := s.CommitChanges(c.Request.Context(), id, req.Message, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -600,7 +743,11 @@ func (s *Service) handleGitBranches(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := s.ListBranches(c.Request.Context(), id)
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	result, err := s.ListBranches(c.Request.Context(), id, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return
@@ -614,6 +761,10 @@ func (s *Service) handleGitCheckoutBranch(c *gin.Context) {
 	if !ok {
 		return
 	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
 	var req gitCheckoutRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, "invalid_request")
@@ -623,7 +774,7 @@ func (s *Service) handleGitCheckoutBranch(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_branch_name")
 		return
 	}
-	if err := s.CheckoutBranch(c.Request.Context(), id, req.Branch, req.Create); err != nil {
+	if err := s.CheckoutBranch(c.Request.Context(), id, req.Branch, req.Create, worktreeID); err != nil {
 		respondServiceError(c, err)
 		return
 	}

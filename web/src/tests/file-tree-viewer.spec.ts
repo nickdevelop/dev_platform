@@ -191,7 +191,7 @@ describe('FileSidebar.vue', () => {
     await srcRow?.trigger('click')
     await flushPromises()
 
-    expect(getFileTreeSpy).toHaveBeenCalledWith(1, 'src')
+    expect(getFileTreeSpy).toHaveBeenCalledWith(1, 'src', undefined)
     expect(wrapper.text()).toContain('index.ts')
   })
   it('switches between changes and all files tabs', async () => {
@@ -269,7 +269,7 @@ describe('FileSidebar.vue', () => {
     expect(select.exists()).toBe(true)
     await select.setValue('c1234567890abcdef')
 
-    expect(statusSpy).toHaveBeenCalledWith(1, 'c1234567890abcdef')
+    expect(statusSpy).toHaveBeenCalledWith(1, 'c1234567890abcdef', undefined)
   })
 
   it('does not render discard dialog initially when tree expands', async () => {
@@ -346,7 +346,7 @@ describe('FileSidebar.vue', () => {
     await confirmBtn.trigger('click')
     await flushPromises()
 
-    expect(discardSpy).toHaveBeenCalledWith(1, 'file-to-discard.txt')
+    expect(discardSpy).toHaveBeenCalledWith(1, 'file-to-discard.txt', undefined)
     expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
   })
 })
@@ -696,7 +696,7 @@ describe('HtmlArtifactView.vue', () => {
     await browseBtn.trigger('click')
     await flushPromises()
 
-    expect(createTicketSpy).toHaveBeenCalledWith(42)
+    expect(createTicketSpy).toHaveBeenCalledWith(42, undefined)
     const modal = wrapper.findComponent(HtmlPreviewModal)
     expect(modal.exists()).toBe(true)
     expect(modal.props('visible')).toBe(true)

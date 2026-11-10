@@ -11,6 +11,7 @@ export interface GitInfo {
 }
 
 // GET /api/projects/{id}/git-info
-export function getProjectGitInfo(projectId: number): Promise<GitInfo> {
-  return get<GitInfo>(`/projects/${projectId}/git-info`)
+export function getProjectGitInfo(projectId: number, worktreeId?: number): Promise<GitInfo> {
+  const query = worktreeId ? `?worktreeId=${worktreeId}` : ''
+  return get<GitInfo>(`/projects/${projectId}/git-info${query}`)
 }

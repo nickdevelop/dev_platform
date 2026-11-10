@@ -59,6 +59,16 @@ func (f *fakeStopper) StopProjectInstances(_ context.Context, projectID uint) er
 	return f.err
 }
 
+func (f *fakeStopper) StopProjectWorktreeInstances(_ context.Context, projectID, _ uint) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, projectID)
+	if f.onStop != nil {
+		f.onStop(projectID)
+	}
+	return f.err
+}
+
 func (f *fakeStopper) stopCalls() []uint {
 	f.mu.Lock()
 	defer f.mu.Unlock()

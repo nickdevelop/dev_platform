@@ -48,6 +48,21 @@ type Project struct {
 	UpdatedAt time.Time
 }
 
+// ProjectWorktree is one git worktree created by the platform for a project.
+// Branch is the branch checked out in the worktree, BaseBranch records what it
+// was created from, and Path is the canonical absolute directory. The row is
+// the platform's registry only: removing it never deletes the branch. Table:
+// project_worktrees.
+type ProjectWorktree struct {
+	ID         uint   `gorm:"primaryKey;column:id"`
+	ProjectID  uint   `gorm:"column:project_id;not null;index;uniqueIndex:idx_project_worktree_branch"`
+	Path       string `gorm:"column:path;not null;uniqueIndex"`
+	Branch     string `gorm:"column:branch;not null;uniqueIndex:idx_project_worktree_branch"`
+	BaseBranch string `gorm:"column:base_branch"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 // AgentBackendConfig is a legacy per-project backend switch. Migration 5
 // creates its table and migration 18 drops it; no current code reads or writes
 // it. The platform-level agent setting is the only enable/disable.
@@ -71,12 +86,15 @@ type AgentInstance struct {
 	ID        string `gorm:"primaryKey;column:id;not null"`
 	ProjectID uint   `gorm:"column:project_id;not null;index"`
 	Backend   string `gorm:"column:backend;not null"`
-	Directory string `gorm:"column:directory;not null"`
-	Status    string `gorm:"column:status;not null"`
-	Endpoint  string `gorm:"column:endpoint"`
-	Error     string `gorm:"column:error"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// WorktreeID scopes the instance to one platform-managed git worktree.
+	// 0 means the project's main working directory.
+	WorktreeID uint   `gorm:"column:worktree_id;not null;default:0;index"`
+	Directory  string `gorm:"column:directory;not null"`
+	Status     string `gorm:"column:status;not null"`
+	Endpoint   string `gorm:"column:endpoint"`
+	Error      string `gorm:"column:error"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // AgentSession is the platform's index entry for one agent-native session. It
@@ -95,7 +113,10 @@ type AgentSession struct {
 	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_agent_session_project_backend_native"`
 	// InstanceID is the platform instance currently or last hosting this native
 	// session. It is only the runtime host, not part of the session identity.
-	InstanceID      string `gorm:"column:instance_id;not null;index"`
+	InstanceID string `gorm:"column:instance_id;not null;index"`
+	// WorktreeID is the platform-managed git worktree the session was created
+	// in. 0 means the project's main working directory.
+	WorktreeID      uint   `gorm:"column:worktree_id;not null;default:0;index"`
 	NativeSessionID string `gorm:"column:native_session_id;not null;uniqueIndex:idx_agent_session_project_backend_native"`
 	Title           string `gorm:"column:title"`
 	Model           string `gorm:"column:model"`
@@ -251,10 +272,10 @@ type ModelDef struct {
 // the platform only caches its catalog so reads do not touch the backend.
 // Table: agent_models.
 type AgentModel struct {
-	ID             uint   `gorm:"primaryKey;column:id"`
-	Backend        string `gorm:"column:backend;not null;uniqueIndex:idx_agent_model_backend_model"`
-	ModelID        string `gorm:"column:model_id;not null;uniqueIndex:idx_agent_model_backend_model"`
-	Name           string `gorm:"column:name"`
+	ID      uint   `gorm:"primaryKey;column:id"`
+	Backend string `gorm:"column:backend;not null;uniqueIndex:idx_agent_model_backend_model"`
+	ModelID string `gorm:"column:model_id;not null;uniqueIndex:idx_agent_model_backend_model"`
+	Name    string `gorm:"column:name"`
 	// NameCustomized records that an operator explicitly edited the display
 	// name. A refresh keeps such a name; otherwise the backend's latest name is
 	// adopted, so a catalog that first reported only an id can gain a display
@@ -287,15 +308,15 @@ func (AgentModelCatalog) TableName() string { return "agent_model_catalogs" }
 // definition with its own default model, system prompt, icon and floating button presence.
 // Table: chat_groups.
 type ChatGroup struct {
-	ID             uint    `gorm:"primaryKey;column:id"`
-	Name           string  `gorm:"column:name;not null"`
-	DefaultModelID uint    `gorm:"column:default_model_id;not null;default:0"`
-	PromptID       uint    `gorm:"column:prompt_id;not null;default:0;index:idx_chat_groups_prompt"`
-	SystemPrompt   string  `gorm:"column:system_prompt;type:text"`
-	Icon           string  `gorm:"column:icon;size:32"`
-	ShowInFloat    bool    `gorm:"column:show_in_float;not null;default:false"`
-	EnablePlatformTools bool `gorm:"column:enable_platform_tools;not null;default:false"`
-	MaxToolSteps        int  `gorm:"column:max_tool_steps;not null;default:5"`
+	ID                  uint   `gorm:"primaryKey;column:id"`
+	Name                string `gorm:"column:name;not null"`
+	DefaultModelID      uint   `gorm:"column:default_model_id;not null;default:0"`
+	PromptID            uint   `gorm:"column:prompt_id;not null;default:0;index:idx_chat_groups_prompt"`
+	SystemPrompt        string `gorm:"column:system_prompt;type:text"`
+	Icon                string `gorm:"column:icon;size:32"`
+	ShowInFloat         bool   `gorm:"column:show_in_float;not null;default:false"`
+	EnablePlatformTools bool   `gorm:"column:enable_platform_tools;not null;default:false"`
+	MaxToolSteps        int    `gorm:"column:max_tool_steps;not null;default:5"`
 	// SystemKey was used for legacy platform-reserved groups. It is now kept
 	// nullable and unused as fixed groups are removed.
 	SystemKey *string `gorm:"column:system_key;size:64;uniqueIndex:idx_chat_group_system_key"`
@@ -355,21 +376,21 @@ func (ChatMessage) TableName() string { return "chat_messages" }
 // Task is one managed task with template prompt, agent/model binding and scheduling.
 // Table: tasks.
 type Task struct {
-	ID              uint       `gorm:"primaryKey;column:id"`
-	Title           string     `gorm:"column:title;not null"`
-	Description     string     `gorm:"column:description"`
-	TaskType        string     `gorm:"column:task_type;not null;default:'standard'"` // "standard" | "flow"
-	ProjectID       uint       `gorm:"column:project_id;not null;index"`
-	Backend         string     `gorm:"column:backend;not null"`
-	Model           string     `gorm:"column:model;not null"`
-	PromptTemplate  string     `gorm:"column:prompt_template;type:text"`
-	ScheduleType    string     `gorm:"column:schedule_type;not null;default:'manual'"` // "manual" | "once" | "cron"
-	ScheduledAt     *time.Time `gorm:"column:scheduled_at"`
-	CronExpr        string     `gorm:"column:cron_expr"`
-	ScheduleEnabled bool       `gorm:"column:schedule_enabled;not null;default:false"`
-	LastRunAt       *time.Time `gorm:"column:last_run_at"`
-	NextRunAt       *time.Time `gorm:"column:next_run_at"`
-	LastRunStatus   string     `gorm:"column:last_run_status"` // "idle" | "running" | "success" | "failed"
+	ID                uint       `gorm:"primaryKey;column:id"`
+	Title             string     `gorm:"column:title;not null"`
+	Description       string     `gorm:"column:description"`
+	TaskType          string     `gorm:"column:task_type;not null;default:'standard'"` // "standard" | "flow"
+	ProjectID         uint       `gorm:"column:project_id;not null;index"`
+	Backend           string     `gorm:"column:backend;not null"`
+	Model             string     `gorm:"column:model;not null"`
+	PromptTemplate    string     `gorm:"column:prompt_template;type:text"`
+	ScheduleType      string     `gorm:"column:schedule_type;not null;default:'manual'"` // "manual" | "once" | "cron"
+	ScheduledAt       *time.Time `gorm:"column:scheduled_at"`
+	CronExpr          string     `gorm:"column:cron_expr"`
+	ScheduleEnabled   bool       `gorm:"column:schedule_enabled;not null;default:false"`
+	LastRunAt         *time.Time `gorm:"column:last_run_at"`
+	NextRunAt         *time.Time `gorm:"column:next_run_at"`
+	LastRunStatus     string     `gorm:"column:last_run_status"`                  // "idle" | "running" | "success" | "failed"
 	Status            string     `gorm:"column:status;not null;default:'active'"` // "active" | "disabled"
 	OrchestratorModel string     `gorm:"column:orchestrator_model"`
 
@@ -383,8 +404,8 @@ type Task struct {
 	ActiveSessionID string `gorm:"column:active_session_id;index"`
 	ExecutionPrompt string `gorm:"column:execution_prompt;type:text"`
 
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // TableName pins the table name for Task.
@@ -413,11 +434,11 @@ func (TaskRun) TableName() string { return "task_runs" }
 // Prompt is a reusable prompt template with optional {user_prompt} placeholder.
 // Table: prompts.
 type Prompt struct {
-	ID          uint      `gorm:"primaryKey;column:id"`
-	Name        string    `gorm:"column:name;not null;uniqueIndex"`
-	Type        string    `gorm:"column:type;not null;default:'role';index:idx_prompts_type"`
-	Description string    `gorm:"column:description"`
-	Content     string    `gorm:"column:content;type:text;not null"`
+	ID          uint   `gorm:"primaryKey;column:id"`
+	Name        string `gorm:"column:name;not null;uniqueIndex"`
+	Type        string `gorm:"column:type;not null;default:'role';index:idx_prompts_type"`
+	Description string `gorm:"column:description"`
+	Content     string `gorm:"column:content;type:text;not null"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -428,14 +449,14 @@ func (Prompt) TableName() string { return "prompts" }
 // TerminalServer records a server configuration for terminal connections.
 // Table: terminal_servers.
 type TerminalServer struct {
-	ID        uint      `gorm:"primaryKey;column:id"`
-	Name      string    `gorm:"column:name;not null"`
-	Host      string    `gorm:"column:host;not null"`
-	Port      int       `gorm:"column:port;not null;default:22"`
-	Username  string    `gorm:"column:username;not null"`
-	AuthType  string    `gorm:"column:auth_type;not null;default:'password'"` // "password" | "key"
-	SecretRef string    `gorm:"column:secret_ref"`                           // reference in secrets.Store
-	IsLocal   bool      `gorm:"column:is_local;not null;default:false"`
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Name      string `gorm:"column:name;not null"`
+	Host      string `gorm:"column:host;not null"`
+	Port      int    `gorm:"column:port;not null;default:22"`
+	Username  string `gorm:"column:username;not null"`
+	AuthType  string `gorm:"column:auth_type;not null;default:'password'"` // "password" | "key"
+	SecretRef string `gorm:"column:secret_ref"`                            // reference in secrets.Store
+	IsLocal   bool   `gorm:"column:is_local;not null;default:false"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -446,12 +467,12 @@ func (TerminalServer) TableName() string { return "terminal_servers" }
 // ServiceProxy records a proxy mapping exposing a local directory or port via a contextpath.
 // Table: service_proxies.
 type ServiceProxy struct {
-	ID        uint      `gorm:"primaryKey;column:id"`
-	Name      string    `gorm:"column:name;not null"`
-	Alias     string    `gorm:"column:alias;not null;uniqueIndex"`
-	Type      string    `gorm:"column:type;not null"` // "directory" | "port"
-	Target    string    `gorm:"column:target;not null"`
-	Enabled   bool      `gorm:"column:enabled;not null;default:true"`
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Name      string `gorm:"column:name;not null"`
+	Alias     string `gorm:"column:alias;not null;uniqueIndex"`
+	Type      string `gorm:"column:type;not null"` // "directory" | "port"
+	Target    string `gorm:"column:target;not null"`
+	Enabled   bool   `gorm:"column:enabled;not null;default:true"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -462,15 +483,15 @@ func (ServiceProxy) TableName() string { return "service_proxies" }
 // AgentRole defines a global agent role in the platform.
 // Table: agent_roles.
 type AgentRole struct {
-	ID           uint      `gorm:"primaryKey;column:id"`
-	Name         string    `gorm:"column:name;not null"`
-	Description  string    `gorm:"column:description"`
-	Backend      string    `gorm:"column:backend;not null"`
-	Model        string    `gorm:"column:model;not null"`
-	PromptID     uint      `gorm:"column:prompt_id;not null;default:0;index"`
-	SystemPrompt string    `gorm:"column:system_prompt;type:text"`
-	Icon         string    `gorm:"column:icon;size:32"`
-	Color        string    `gorm:"column:color;size:32"`
+	ID           uint   `gorm:"primaryKey;column:id"`
+	Name         string `gorm:"column:name;not null"`
+	Description  string `gorm:"column:description"`
+	Backend      string `gorm:"column:backend;not null"`
+	Model        string `gorm:"column:model;not null"`
+	PromptID     uint   `gorm:"column:prompt_id;not null;default:0;index"`
+	SystemPrompt string `gorm:"column:system_prompt;type:text"`
+	Icon         string `gorm:"column:icon;size:32"`
+	Color        string `gorm:"column:color;size:32"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -481,16 +502,16 @@ func (AgentRole) TableName() string { return "agent_roles" }
 // FlowRole defines an agent role in a collaborative flow task.
 // Table: flow_roles.
 type FlowRole struct {
-	ID           uint      `gorm:"primaryKey;column:id"`
-	TaskID       uint      `gorm:"column:task_id;not null;default:0;index"`
-	Name         string    `gorm:"column:name;not null"`
-	Description  string    `gorm:"column:description"`
-	Backend      string    `gorm:"column:backend;not null"`
-	Model        string    `gorm:"column:model;not null"`
-	PromptID     uint      `gorm:"column:prompt_id;not null;default:0;index"`
-	SystemPrompt string    `gorm:"column:system_prompt;type:text"`
-	Icon         string    `gorm:"column:icon;size:32"`
-	Color        string    `gorm:"column:color;size:32"`
+	ID           uint   `gorm:"primaryKey;column:id"`
+	TaskID       uint   `gorm:"column:task_id;not null;default:0;index"`
+	Name         string `gorm:"column:name;not null"`
+	Description  string `gorm:"column:description"`
+	Backend      string `gorm:"column:backend;not null"`
+	Model        string `gorm:"column:model;not null"`
+	PromptID     uint   `gorm:"column:prompt_id;not null;default:0;index"`
+	SystemPrompt string `gorm:"column:system_prompt;type:text"`
+	Icon         string `gorm:"column:icon;size:32"`
+	Color        string `gorm:"column:color;size:32"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
@@ -501,16 +522,16 @@ func (FlowRole) TableName() string { return "flow_roles" }
 // FlowRun records one concrete execution run of a collaborative flow task.
 // Table: flow_runs.
 type FlowRun struct {
-	ID                uint       `gorm:"primaryKey;column:id"`
-	TaskID            uint       `gorm:"column:task_id;not null;index"`
-	ProjectID         uint       `gorm:"column:project_id;not null;index"`
-	Status            string     `gorm:"column:status;not null;default:'running'"` // "running" | "waiting_user" | "completed" | "failed" | "cancelled"
-	CurrentStep       int        `gorm:"column:current_step;not null;default:0"`
-	MaxSteps          int        `gorm:"column:max_steps;not null;default:15"`
-	OrchestratorModel string     `gorm:"column:orchestrator_model;not null"`
-	TriggerType       string     `gorm:"column:trigger_type;not null;default:'manual'"` // "manual" | "once" | "cron"
-	Prompt            string     `gorm:"column:prompt;type:text"`
-	Error             string     `gorm:"column:error"`
+	ID                uint   `gorm:"primaryKey;column:id"`
+	TaskID            uint   `gorm:"column:task_id;not null;index"`
+	ProjectID         uint   `gorm:"column:project_id;not null;index"`
+	Status            string `gorm:"column:status;not null;default:'running'"` // "running" | "waiting_user" | "completed" | "failed" | "cancelled"
+	CurrentStep       int    `gorm:"column:current_step;not null;default:0"`
+	MaxSteps          int    `gorm:"column:max_steps;not null;default:15"`
+	OrchestratorModel string `gorm:"column:orchestrator_model;not null"`
+	TriggerType       string `gorm:"column:trigger_type;not null;default:'manual'"` // "manual" | "once" | "cron"
+	Prompt            string `gorm:"column:prompt;type:text"`
+	Error             string `gorm:"column:error"`
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	FinishedAt        *time.Time `gorm:"column:finished_at"`
@@ -522,21 +543,19 @@ func (FlowRun) TableName() string { return "flow_runs" }
 // FlowMessage is one persisted message inside a collaborative flow conversation (IM stream).
 // Table: flow_messages.
 type FlowMessage struct {
-	ID           uint      `gorm:"primaryKey;column:id"`
-	RunID        uint      `gorm:"column:run_id;not null;index"`
-	SenderType   string    `gorm:"column:sender_type;not null"` // "user" | "orchestrator" | "agent" | "system"
-	SenderName   string    `gorm:"column:sender_name;not null"`
-	RoleID       uint      `gorm:"column:role_id;not null;default:0"`
-	TargetRoleID uint      `gorm:"column:target_role_id;not null;default:0"`
-	Content      string    `gorm:"column:content;type:text"`
-	Reasoning    string    `gorm:"column:reasoning;type:text"`
-	SessionID    string    `gorm:"column:session_id"` // related agent session id if coding agent was dispatched
-	Status       string    `gorm:"column:status;not null;default:'complete'"` // "pending" | "streaming" | "complete" | "failed"
+	ID           uint   `gorm:"primaryKey;column:id"`
+	RunID        uint   `gorm:"column:run_id;not null;index"`
+	SenderType   string `gorm:"column:sender_type;not null"` // "user" | "orchestrator" | "agent" | "system"
+	SenderName   string `gorm:"column:sender_name;not null"`
+	RoleID       uint   `gorm:"column:role_id;not null;default:0"`
+	TargetRoleID uint   `gorm:"column:target_role_id;not null;default:0"`
+	Content      string `gorm:"column:content;type:text"`
+	Reasoning    string `gorm:"column:reasoning;type:text"`
+	SessionID    string `gorm:"column:session_id"`                         // related agent session id if coding agent was dispatched
+	Status       string `gorm:"column:status;not null;default:'complete'"` // "pending" | "streaming" | "complete" | "failed"
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
 // TableName pins the table name for FlowMessage.
 func (FlowMessage) TableName() string { return "flow_messages" }
-
-

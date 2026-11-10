@@ -5,6 +5,7 @@ import type { GitCommitItem } from './types'
 
 const props = defineProps<{
   projectId: number
+  worktreeId?: number
   stagedCount: number
   unstagedCount: number
 }>()
@@ -38,7 +39,7 @@ async function submitCommit() {
 
   committing.value = true
   try {
-    const commit = await commitGitChanges(props.projectId, msg)
+    const commit = await commitGitChanges(props.projectId, msg, props.worktreeId)
     commitMessage.value = ''
     emit('committed', commit)
   } catch (err) {

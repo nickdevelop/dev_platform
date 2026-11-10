@@ -90,6 +90,10 @@ type Project struct {
 	ID   uint   `json:"id"`
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// IsGit reports that the project root carries git metadata (a .git
+	// directory or the .git file of a linked worktree). It is a cheap
+	// marker; GitInfo carries the detailed branch/dirty state.
+	IsGit bool `json:"isGit"`
 }
 
 // InstanceStopper stops every live agent instance of one project. The
@@ -98,12 +102,16 @@ type Project struct {
 // call back into this Service.
 type InstanceStopper interface {
 	StopProjectInstances(ctx context.Context, projectID uint) error
+	// StopProjectWorktreeInstances stops every live agent instance scoped to
+	// one worktree. It is used before the worktree directory is removed.
+	StopProjectWorktreeInstances(ctx context.Context, projectID, worktreeID uint) error
 }
 
 // previewTicketInfo holds metadata for a short-lived file preview ticket.
 type previewTicketInfo struct {
-	projectID uint
-	expiresAt time.Time
+	projectID  uint
+	worktreeID uint
+	expiresAt  time.Time
 }
 
 // Service manages project records and their directories. All operations are
@@ -149,7 +157,14 @@ func (s *Service) SetInstanceStopper(stopper InstanceStopper) {
 
 // List returns the registered projects in creation order.
 func (s *Service) List() ([]Project, error) {
-	return s.repo.List()
+	list, err := s.repo.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		list[i].IsGit = isGitProject(list[i].Path)
+	}
+	return list, nil
 }
 
 // GetDisplayConfig returns the sidebar order and visibility configuration for projects.
@@ -266,7 +281,12 @@ func (s *Service) UpdateName(id uint, name string) (Project, error) {
 	if row.Name == name {
 		return row, nil
 	}
-	return s.repo.Update(row.ID, name, row.Path)
+	updated, err := s.repo.Update(row.ID, name, row.Path)
+	if err != nil {
+		return Project{}, err
+	}
+	updated.IsGit = isGitProject(updated.Path)
+	return updated, nil
 }
 
 // Move moves the project directory to the authorized destination path. The
@@ -378,12 +398,18 @@ func (s *Service) relocate(row Project, target, name string) (Project, error) {
 		}
 		return Project{}, err
 	}
+	updated.IsGit = isGitProject(updated.Path)
 	return updated, nil
 }
 
 // insertProject records a directory as a project in its own transaction.
 func (s *Service) insertProject(path, name string) (Project, error) {
-	return s.repo.Create(name, path)
+	p, err := s.repo.Create(name, path)
+	if err != nil {
+		return Project{}, err
+	}
+	p.IsGit = isGitProject(p.Path)
+	return p, nil
 }
 
 // removeProject deletes a project and everything the platform owns for it.
@@ -400,7 +426,23 @@ func (s *Service) Get(id uint) (Project, error) {
 
 // load reads the project record with the given id.
 func (s *Service) load(id uint) (Project, error) {
-	return s.repo.Get(id)
+	p, err := s.repo.Get(id)
+	if err != nil {
+		return Project{}, err
+	}
+	p.IsGit = isGitProject(p.Path)
+	return p, nil
+}
+
+// isGitProject reports whether the project root carries git metadata. A linked
+// worktree has a .git file rather than a directory, so Lstat is the correct
+// probe. Detailed git failures still surface through GitInfo and git commands.
+func isGitProject(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Lstat(filepath.Join(path, ".git"))
+	return err == nil
 }
 
 // resolve canonicalizes input into the absolute path to operate on. The
@@ -501,9 +543,19 @@ func pathWithin(parent, child string) bool {
 const previewTicketTTL = 10 * time.Minute
 
 // CreatePreviewTicket generates a 32-byte cryptographic random ticket for previewing project files.
-func (s *Service) CreatePreviewTicket(ctx context.Context, projectID uint) (string, error) {
+// A non-zero worktreeID scopes the ticket to that worktree's directory.
+func (s *Service) CreatePreviewTicket(ctx context.Context, projectID uint, worktreeID ...uint) (string, error) {
 	if _, err := s.repo.Get(projectID); err != nil {
 		return "", err
+	}
+	scope := uint(0)
+	if len(worktreeID) > 0 {
+		scope = worktreeID[0]
+	}
+	if scope != 0 {
+		if _, err := s.repo.GetWorktree(projectID, scope); err != nil {
+			return "", err
+		}
 	}
 
 	b := make([]byte, 32)
@@ -523,8 +575,9 @@ func (s *Service) CreatePreviewTicket(ctx context.Context, projectID uint) (stri
 	}
 
 	s.previewTickets[ticket] = previewTicketInfo{
-		projectID: projectID,
-		expiresAt: now.Add(previewTicketTTL),
+		projectID:  projectID,
+		worktreeID: scope,
+		expiresAt:  now.Add(previewTicketTTL),
 	}
 
 	return ticket, nil
@@ -532,22 +585,28 @@ func (s *Service) CreatePreviewTicket(ctx context.Context, projectID uint) (stri
 
 // ValidatePreviewTicket checks whether a ticket is valid, unexpired, and matches the given project ID.
 func (s *Service) ValidatePreviewTicket(ticket string, projectID uint) bool {
+	_, ok := s.PreviewTicketScope(ticket, projectID)
+	return ok
+}
+
+// PreviewTicketScope returns the worktree scope of a valid ticket. A zero
+// worktree id means the project's main working directory.
+func (s *Service) PreviewTicketScope(ticket string, projectID uint) (uint, bool) {
 	if ticket == "" {
-		return false
+		return 0, false
 	}
 	s.previewMu.RLock()
 	defer s.previewMu.RUnlock()
 
 	info, ok := s.previewTickets[ticket]
 	if !ok {
-		return false
+		return 0, false
 	}
 	if info.projectID != projectID {
-		return false
+		return 0, false
 	}
 	if time.Now().After(info.expiresAt) {
-		return false
+		return 0, false
 	}
-	return true
+	return info.worktreeID, true
 }
-

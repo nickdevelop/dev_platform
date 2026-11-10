@@ -21,15 +21,14 @@ type GitFileDiffResponse struct {
 }
 
 // resolveProjectRelativePath validates that relPath stays safely inside the project workspace boundary.
-func (s *Service) resolveProjectRelativePath(projectID uint, relPath string) (string, string, error) {
+func (s *Service) resolveProjectRelativePath(projectID uint, relPath string, worktreeID ...uint) (string, string, error) {
 	if strings.ContainsRune(relPath, 0) {
 		return "", "", ErrInvalidTarget
 	}
-	proj, err := s.repo.Get(projectID)
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return "", "", err
 	}
-	rootDir := proj.Path
 	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
 	cleanRel = strings.TrimPrefix(cleanRel, "/")
 	if cleanRel == "" || cleanRel == "." {
@@ -43,8 +42,8 @@ func (s *Service) resolveProjectRelativePath(projectID uint, relPath string) (st
 
 // GitFileDiff returns the unified diff for a single file within the project,
 // either for working tree changes (when commitRef is empty) or for a specific commit.
-func (s *Service) GitFileDiff(ctx context.Context, projectID uint, relPath, commitRef string) (*GitFileDiffResponse, error) {
-	rootDir, cleanRel, err := s.resolveProjectRelativePath(projectID, relPath)
+func (s *Service) GitFileDiff(ctx context.Context, projectID uint, relPath, commitRef string, worktreeID ...uint) (*GitFileDiffResponse, error) {
+	rootDir, cleanRel, err := s.resolveProjectRelativePath(projectID, relPath, worktreeID...)
 	if err != nil {
 		return nil, err
 	}

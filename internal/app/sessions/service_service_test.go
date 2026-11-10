@@ -11,11 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"devplatform/internal/core/agents"
 	"devplatform/internal/app/agentservices"
-	"devplatform/internal/app/instances"
 	"devplatform/internal/app/database"
+	"devplatform/internal/app/instances"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/core/agents"
 )
 
 // gatedAdapter is an opencode-shaped adapter with a machine-level service the
@@ -204,7 +204,7 @@ func TestInstanceForBackendSkipsGateWhenAnInstanceRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start instance: %v", err)
 	}
-	got, err := env.svc.instanceForBackend(context.Background(), env.projectID, agents.BackendOpenCodeV2)
+	got, err := env.svc.instanceForBackend(context.Background(), env.projectID, 0, agents.BackendOpenCodeV2)
 	if err != nil {
 		t.Fatalf("instanceForBackend with a running instance: %v", err)
 	}

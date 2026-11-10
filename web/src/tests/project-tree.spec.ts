@@ -29,8 +29,8 @@ function noCapabilities(): Capabilities {
   }
 }
 
-function project(id: number, name: string): Project {
-  return { id, name, path: `/workspace/${name}` } as Project
+function project(id: number, name: string, isGit = false): Project {
+  return { id, name, path: `/workspace/${name}`, isGit } as Project
 }
 
 function session(overrides: Partial<AgentSession> = {}): AgentSession {
@@ -122,7 +122,9 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('Session A')
     expect(wrapper.text()).not.toContain('Session B')
-    expect(requested).toEqual(['/api/projects/1/sessions'])
+    expect(requested.filter((url) => url.endsWith('/sessions'))).toEqual([
+      '/api/projects/1/sessions',
+    ])
   })
 
   it('marks a running turn with an animated icon and hides idle status', async () => {
@@ -168,19 +170,21 @@ describe('ProjectTree', () => {
     sessionsStore.sessionTurns['s1'] = 'running'
     const wrapper = mountTree({ activeProjectId: 1, activeSessionId: 's1' })
     await flushPromises()
-    expect(requested).toEqual(['/api/projects/1/sessions'])
+    expect(requested.filter((url) => url.endsWith('/sessions'))).toEqual([
+      '/api/projects/1/sessions',
+    ])
 
     // No periodic polling requests issued over time
     vi.advanceTimersByTime(4000)
     await flushPromises()
-    expect(requested.length).toBe(1)
+    expect(requested.filter((url) => url.endsWith('/sessions')).length).toBe(1)
 
     // When the active running session completes, status is updated in place
     expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(true)
     sessionsStore.sessionTurns['s1'] = 'idle'
     await flushPromises()
     expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
-    expect(requested.length).toBe(1)
+    expect(requested.filter((url) => url.endsWith('/sessions')).length).toBe(1)
   })
 
   it('keeps the active session selected and emits nothing when search has no match', async () => {
@@ -224,7 +228,7 @@ describe('ProjectTree', () => {
       .findAll('.project-row button')
       .map((button) => button.classes().join(' '))
     const newSessionIndex = classes.findIndex((value) => value.includes('project-new-session'))
-    const editIndex = classes.findIndex((value) => value.includes('project-edit'))
+    const editIndex = classes.findIndex((value) => value.includes('project-settings-btn'))
     expect(newSessionIndex).toBeGreaterThanOrEqual(0)
     expect(newSessionIndex).toBeLessThan(editIndex)
     const newSession = wrapper.find('.project-new-session')
@@ -361,16 +365,15 @@ describe('ProjectTree', () => {
     expect(wrapper.text()).not.toContain('Session A')
   })
 
-  it('opens the project edit dialog from the edit control', async () => {
+  it('opens project settings from the row gear', async () => {
     stubSessions({ 1: [] })
     const wrapper = mountTree({ activeProjectId: null })
     await flushPromises()
 
-    await wrapper.find('[data-test="project-edit"]').trigger('click')
-    // Editing is handled by the shell's single project dialog; the tree never
-    // navigates to a project page, because there is none.
-    expect(wrapper.emitted('edit')).toEqual([[1]])
-    expect(wrapper.emitted('select-project')).toBeUndefined()
+    await wrapper.find('[data-test="project-settings"]').trigger('click')
+    // Project settings are a workbench tab opened by the shell; the tree only
+    // asks for the project.
+    expect(wrapper.emitted('open-settings')).toEqual([[1]])
   })
 
   it('expands a project from its name without asking to navigate anywhere', async () => {
@@ -386,6 +389,16 @@ describe('ProjectTree', () => {
     expect(wrapper.find('.project-toggle').attributes('aria-expanded')).toBe('true')
     expect(wrapper.emitted('edit')).toBeUndefined()
     expect(wrapper.emitted('select-project')).toBeUndefined()
+  })
+
+  it('shows a git marker before the name of a git project', async () => {
+    stubSessions({ 1: [] })
+    useProjectsStore().projects = [project(1, 'alpha', true)]
+    const wrapper = mountTree({ activeProjectId: null })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="project-git-badge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="project-git-badge"]').attributes('aria-label')).toBe('Git 项目')
   })
 
   it('shows the untitled placeholder instead of the internal id, in list and in search', async () => {

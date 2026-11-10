@@ -1,14 +1,10 @@
-// Unit tests for the project management dialog: edit prefills and saves the
-// display name only, and unregister keeps the directory. Directory move and
-// directory rename are deliberately not offered any more.
+// Unit tests for the project creation dialog. Editing and unregistering moved
+// to the project settings and projects management pages.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
-import type { Project } from '../api/projects'
 import { installTestCSRF } from './csrf-fixture'
-
-const project: Project = { id: 7, name: 'alpha', path: '/workspace/alpha' } as Project
 
 function stubResponse(status: number, body: unknown = {}) {
   vi.stubGlobal(
@@ -17,9 +13,9 @@ function stubResponse(status: number, body: unknown = {}) {
   )
 }
 
-function mountDialog(kind: 'edit' | 'unregister' | 'register' | 'create') {
+function mountDialog(kind: 'register' | 'create') {
   return mount(ProjectManageDialog, {
-    props: { kind, project: kind === 'register' || kind === 'create' ? null : project },
+    props: { kind },
     attachTo: document.body,
   })
 }
@@ -39,54 +35,41 @@ describe('ProjectManageDialog', () => {
     document.body.innerHTML = ''
   })
 
-  it('prefills the display name and saves it without touching the directory', async () => {
-    stubResponse(200, { ...project, name: 'beta' })
-    const wrapper = mountDialog('edit')
+  it('registers an existing directory', async () => {
+    stubResponse(201, { id: 7, name: 'alpha', path: '/workspace/alpha', isGit: false })
+    const wrapper = mountDialog('register')
     await flushPromises()
 
-    const nameInput = wrapper.find<HTMLInputElement>('#dialog-display-name')
-    expect(nameInput.element.value).toBe('alpha')
-    expect(wrapper.text()).toContain('/workspace/alpha')
-
-    await nameInput.setValue('beta')
+    await wrapper.find('#dialog-path').setValue('/workspace/alpha')
     await confirmButton(wrapper).trigger('click')
     await flushPromises()
 
     const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
-    expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/projects/7/name')
+    expect(url).toBe('/api/projects')
     expect(init.method).toBe('POST')
-    expect(JSON.parse(String(init.body))).toEqual({ name: 'beta' })
-    expect(wrapper.emitted('submitted')).toEqual([['edit']])
+    expect(JSON.parse(String(init.body))).toEqual({ path: '/workspace/alpha' })
+    expect(wrapper.emitted('submitted')).toEqual([['register']])
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('does not render directory move or rename controls', async () => {
-    stubResponse(200, { ...project })
-    const wrapper = mountDialog('edit')
+  it('creates a project directory under a parent', async () => {
+    stubResponse(201, { id: 8, name: 'demo', path: '/workspace/demo', isGit: false })
+    const wrapper = mountDialog('create')
     await flushPromises()
 
-    expect(wrapper.find('#dialog-name').exists()).toBe(false)
-    expect(wrapper.find('#dialog-confirm-name').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('重命名目录')
-    expect(wrapper.text()).not.toContain('目标完整路径')
-    wrapper.unmount()
-  })
-
-  it('needs no typed name to unregister and reports success', async () => {
-    stubResponse(200, {})
-    const wrapper = mountDialog('unregister')
-    expect(wrapper.find('#dialog-confirm-name').exists()).toBe(false)
-    expect(wrapper.text()).toContain('磁盘上的目录')
-    expect(wrapper.text()).not.toContain('删除')
-
+    await wrapper.find('#dialog-project-name').setValue('demo')
+    await wrapper.find('#dialog-path').setValue('/workspace')
     await confirmButton(wrapper).trigger('click')
     await flushPromises()
 
-    expect(wrapper.emitted('submitted')).toEqual([['unregister']])
-    expect(wrapper.emitted('close')).toHaveLength(1)
+    const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/projects/create')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ parent: '/workspace', name: 'demo' })
+    expect(wrapper.emitted('submitted')).toEqual([['create']])
     wrapper.unmount()
   })
 })

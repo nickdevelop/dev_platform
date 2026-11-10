@@ -84,6 +84,18 @@ func (m *memoryRepo) SetDisplayConfig(cfg DisplayConfig) error {
 	return nil
 }
 
+func (m *memoryRepo) ListWorktrees(uint) ([]Worktree, error) { return nil, nil }
+
+func (m *memoryRepo) GetWorktree(uint, uint) (Worktree, error) {
+	return Worktree{}, ErrWorktreeNotFound
+}
+
+func (m *memoryRepo) CreateWorktree(worktree Worktree) (Worktree, error) { return worktree, nil }
+
+func (m *memoryRepo) UpdateWorktreeBranch(uint, uint, string) error { return nil }
+
+func (m *memoryRepo) DeleteWorktree(uint, uint) error { return nil }
+
 func setupTestProject(t *testing.T) (*Service, uint, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -663,5 +675,3 @@ func TestPreviewTicketAndFileHandler(t *testing.T) {
 		t.Fatalf("preview with fake ticket status = %d, want 403", w.Code)
 	}
 }
-
-

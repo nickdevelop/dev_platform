@@ -9,14 +9,14 @@
 
 | 指标 | 数值 | 说明 |
 |---|---:|---|
-| API 端点（operation） | **98** | 不含 SPA 静态路由 |
+| API 端点（operation） | **101** | 不含 SPA 静态路由 |
 | 唯一路径（path） | **78** | 多个方法共享同一路径 |
 | 一级分组 | **10** | 基础认证、项目、模型、Agent、会话、设置、任务、提示词、终端、纯 Chat |
 | HTTP 方法 | GET 42 / POST 36 / PUT 12 / DELETE 8 | 无 PATCH |
 | 协议形态 | JSON 92 / 文件流 1 / SSE 4 / WebSocket 1 | |
 | 公开端点 | 2 | `GET /health`、`GET /auth/session` |
 | 仅 CSRF、不需会话 | 1 | `POST /auth/login` |
-| 需要会话 | 95 | 其中 53 个变更方法还需 CSRF |
+| 需要会话 | 98 | 其中 55 个变更方法还需 CSRF |
 | OpenAPI 覆盖 | 78 paths / 98 operations | 数量与实现相等，但集合仍有偏差（见第 6 节） |
 
 几个值得先说的结论：
@@ -42,7 +42,7 @@ actor "浏览器 / Vue 工作台" as Web
 
 rectangle "传输层 internal/transport/http\nGin Engine\nAccessLog → Compress(gzip) → Recovery → RequireCSRF\n→ limitRequestBody（1 MiB）→ RequireSession" as T
 
-rectangle "领域服务 internal/app（99 个端点）\nauth 3 · projects 14 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 24\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
+rectangle "领域服务 internal/app（102 个端点）\nauth 3 · projects 17 · modelconfig 9\ninstances 3 · agentservices 3 · agentmodels 2 · sessions 24\nsettings 9 · tasks 8 · prompts 5 · terminal 8 · chat 10" as D
 
 rectangle "契约 internal/core/agents\nBackendID · Capabilities · AgentAdapter" as C
 rectangle "适配 internal/providers\nopencode · pi" as P
@@ -63,7 +63,7 @@ end note
 
 **读图要点**
 
-- 99 个端点中 98 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
+- 102 个端点中 101 个由 12 个领域服务注册；`health` 是唯一直接挂在 Engine 上的路由。
 - `sessions` 的 24 个端点包含 `agent-backends` 目录（2 个）、`opencode` 交互（5 个）与历史图片读取（1 个），因此它同时依赖 `core/agents` 契约与 SQLite 索引。
 - `terminal` 的 WebSocket 不走 `core/agents`，只依赖 `core/platform` 的 PTY/SSH 能力。
 
@@ -146,7 +146,10 @@ end note
 | 10 | POST | `/projects/{id}/name` | 更新显示名（旧前端兼容入口） | 会话+CSRF | 200 |
 | 11 | PUT | `/projects/{id}/name` | 更新显示名（推荐入口） | 会话+CSRF | 200 |
 | 12 | POST | `/projects/{id}/unregister` | 取消登记，先停实例，不动磁盘 | 会话+CSRF | 204 |
-| 13 | GET | `/projects/{id}/git-info` | Git 概要（是否仓库、分支等） | 会话 | 200 |
+| 13 | GET | `/projects/{id}/git-info` | Git 概要（是否仓库、分支等，可带 worktreeId） | 会话 | 200 |
+| 13a | GET | `/projects/{id}/worktrees` | 列出平台登记的 Git 工作树 | 会话 | 200 |
+| 13b | POST | `/projects/{id}/worktrees` | 创建 Git 工作树与新分支 | 会话+CSRF | 201 |
+| 13c | DELETE | `/projects/{id}/worktrees/{worktreeId}` | 移除工作树（保留分支） | 会话+CSRF | 204 / 409 |
 | 14 | GET | `/projects/{id}/files` | 按关键词搜索工作区文件 | 会话 | 200 |
 | 15 | GET | `/projects/{id}/files/tree` | 懒加载文件树 | 会话 | 200 |
 | 16 | GET | `/projects/{id}/files/content` | 读取文本文件内容 | 会话 | 200 |
@@ -459,7 +462,7 @@ BOTH --> CODE : 实现独有 5
 
 **附：统计口径复核**
 
-- 99 = auth 3 + health 1 + projects 14 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 24 + settings 9 + tasks 8 + prompts 5 + terminal 8 + chat 10。
+- 102 = auth 3 + health 1 + projects 17 + modelconfig 9 + instances 3 + agentservices 3 + agentmodels 2 + sessions 24 + settings 9 + tasks 8 + prompts 5 + terminal 8 + chat 10。
 - 方法分布：GET 42 + POST 36 + PUT 12 + DELETE 8 = 98。
 - 路径分布：`/projects/*` 34、`/tasks/*` 8、`/terminal/*` 8、`/chats/*` 7、`/model-services/*` 6、`/prompts/*` 5、`/agents/*` 5、`/events/*` 4、`/agent-services/*` 3、`/models/*` 3、`/auth/*` 3、`/settings/*` 4、`/agent-backends/*` 4、`/health` 1。
 - 2026-10-23 变更：新增 `GET/PUT /settings/quick-assistant` 快捷助手开关与 `GET /chats?groupId=` 分组过滤；Chat 增加“快捷助手”固定分组治理。

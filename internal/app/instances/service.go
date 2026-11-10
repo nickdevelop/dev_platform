@@ -21,10 +21,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"devplatform/internal/core/agents"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/paths"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/core/agents"
 )
 
 // Service errors. Handlers map them to HTTP status codes; callers test them
@@ -49,6 +49,9 @@ var (
 	ErrAgentDisabled = errors.New("instances: agent is disabled platform-wide")
 	// ErrDirectoryUnavailable reports that the project directory is missing or not a directory.
 	ErrDirectoryUnavailable = errors.New("instances: project directory unavailable")
+	// ErrWorktreeUnavailable reports that a worktree's directory is missing,
+	// unregistered, or no longer canonical.
+	ErrWorktreeUnavailable = errors.New("instances: worktree directory unavailable")
 	// ErrProjectNotAuthorized reports that the project path is invalid or outside authorized roots.
 	ErrProjectNotAuthorized = errors.New("instances: project path not authorized")
 )
@@ -62,6 +65,10 @@ type ProjectDirectoryResolver interface {
 	// workspace roots. It returns projects.ErrProjectNotFound when no project
 	// exists.
 	ResolveDirectory(id uint) (string, error)
+	// ResolveWorktreeDirectory returns the canonical working directory of one
+	// platform-managed git worktree. It returns projects.ErrWorktreeNotFound
+	// when the worktree is not registered for the project.
+	ResolveWorktreeDirectory(projectID uint, worktreeID uint) (string, error)
 }
 
 // Instance is the JSON-stable API representation of an agent instance. GORM
@@ -73,6 +80,9 @@ type Instance struct {
 	ProjectID uint `json:"projectId"`
 	// Backend names the agent backend this instance runs.
 	Backend agents.BackendID `json:"backend"`
+	// WorktreeID scopes the instance to one platform-managed git worktree.
+	// Zero means the project's main working directory.
+	WorktreeID uint `json:"worktreeId,omitempty"`
 	// Directory is the instance's authorized working directory.
 	Directory string `json:"directory"`
 	// Status is the instance's current lifecycle state.
@@ -131,9 +141,9 @@ func NewService(db *gorm.DB, registry *agents.Registry, projects ProjectDirector
 // NewServiceWithRepository builds the instance service over a custom repository.
 func NewServiceWithRepository(repo Repository, registry *agents.Registry, projects ProjectDirectoryResolver, opts ...Option) *Service {
 	s := &Service{
-		repo:         repo,
-		registry:     registry,
-		projects:     projects,
+		repo:      repo,
+		registry:  registry,
+		projects:  projects,
 		newID:     randomID,
 		now:       func() time.Time { return time.Now().UTC() },
 		streams:   make(map[string]*stream),
@@ -168,12 +178,19 @@ func randomID() (string, error) {
 	return hex.EncodeToString(buf[:]), nil
 }
 
-// Start resolves the project's authorized directory, asks the registered
-// adapter to bring up an instance of the backend there, and persists the
-// result under the adapter-assigned id. A start failure is recorded as a failed
+// Start resolves the project's authorized main directory and starts an instance
+// there. It is StartInWorktree with worktreeID 0.
+func (s *Service) Start(ctx context.Context, projectID uint, backend agents.BackendID) (Instance, error) {
+	return s.StartInWorktree(ctx, projectID, 0, backend)
+}
+
+// StartInWorktree resolves the authorized directory of the project's main
+// checkout (worktreeID 0) or one of its git worktrees, asks the registered
+// adapter to bring up an instance of the backend there, and persists the result
+// under the adapter-assigned id. A start failure is recorded as a failed
 // instance (with a generated id) so the failure stays visible; it never affects
 // other instances.
-func (s *Service) Start(ctx context.Context, projectID uint, backend agents.BackendID) (Instance, error) {
+func (s *Service) StartInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID) (Instance, error) {
 	if !backend.Valid() {
 		return Instance{}, fmt.Errorf("%w: %q", ErrUnknownBackend, backend)
 	}
@@ -182,7 +199,7 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 		return Instance{}, fmt.Errorf("%w: %q (%w)", ErrUnknownBackend, backend, agents.ErrBackendNotRegistered)
 	}
 
-	directory, err := s.resolveProject(projectID)
+	directory, err := s.resolveWorkspace(projectID, worktreeID)
 	if err != nil {
 		return Instance{}, err
 	}
@@ -195,10 +212,10 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 
 	started, startErr := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: directory})
 	if startErr != nil {
-		return s.recordStartFailure(projectID, backend, directory, startErr)
+		return s.recordStartFailure(projectID, worktreeID, backend, directory, startErr)
 	}
 	if started == nil || started.ID == "" {
-		return s.recordStartFailure(projectID, backend, directory, errors.New("adapter returned no usable instance"))
+		return s.recordStartFailure(projectID, worktreeID, backend, directory, errors.New("adapter returned no usable instance"))
 	}
 
 	status := started.Status
@@ -207,14 +224,15 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 	}
 	now := s.now()
 	inst := Instance{
-		ID:        started.ID,
-		ProjectID: projectID,
-		Backend:   backend,
-		Directory: directory,
-		Status:    status,
-		Endpoint:  started.Endpoint,
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         started.ID,
+		ProjectID:  projectID,
+		Backend:    backend,
+		WorktreeID: worktreeID,
+		Directory:  directory,
+		Status:     status,
+		Endpoint:   started.Endpoint,
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := s.repo.Create(inst); err != nil {
 		// The adapter believes an instance is running under started.ID; stop
@@ -227,21 +245,22 @@ func (s *Service) Start(ctx context.Context, projectID uint, backend agents.Back
 
 // recordStartFailure persists a failed instance for a start attempt that never
 // produced a usable adapter id, then reports ErrStartFailed wrapping the cause.
-func (s *Service) recordStartFailure(projectID uint, backend agents.BackendID, directory string, cause error) (Instance, error) {
+func (s *Service) recordStartFailure(projectID uint, worktreeID uint, backend agents.BackendID, directory string, cause error) (Instance, error) {
 	id, err := s.newID()
 	if err != nil {
 		return Instance{}, fmt.Errorf("%w: %v (could not allocate a failure id: %v)", ErrStartFailed, cause, err)
 	}
 	now := s.now()
 	inst := Instance{
-		ID:        id,
-		ProjectID: projectID,
-		Backend:   backend,
-		Directory: directory,
-		Status:    agents.InstanceFailed,
-		Error:     cause.Error(),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:         id,
+		ProjectID:  projectID,
+		Backend:    backend,
+		WorktreeID: worktreeID,
+		Directory:  directory,
+		Status:     agents.InstanceFailed,
+		Error:      cause.Error(),
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	if err := s.repo.Create(inst); err != nil {
 		return Instance{}, fmt.Errorf("%w: %w (could not record the failure: %v)", ErrStartFailed, cause, err)
@@ -340,6 +359,29 @@ func (s *Service) StopProjectInstances(ctx context.Context, projectID uint) erro
 	}
 	var errs []error
 	for _, inst := range list {
+		if inst.Status == agents.InstanceStopped || inst.Status == agents.InstanceFailed {
+			continue
+		}
+		if _, err := s.Stop(ctx, inst.ID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// StopProjectWorktreeInstances stops every live instance scoped to one
+// worktree. Removing a worktree calls it before deleting the directory, so no
+// agent process keeps running against a path that is about to disappear.
+func (s *Service) StopProjectWorktreeInstances(ctx context.Context, projectID, worktreeID uint) error {
+	list, err := s.List(projectID)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, inst := range list {
+		if inst.WorktreeID != worktreeID {
+			continue
+		}
 		if inst.Status == agents.InstanceStopped || inst.Status == agents.InstanceFailed {
 			continue
 		}
@@ -456,7 +498,33 @@ func (s *Service) ReplaySince(instanceID string, after uint64) ([]agents.Normali
 	return st.ring.since(after)
 }
 
-// resolveProject maps a project id to its authorized directory, translating
+// resolveWorkspace maps a project id and optional worktree id to the authorized
+// working directory, translating not-found sentinels and wrapping authorization
+// errors. A zero worktree id means the project's main checkout.
+func (s *Service) resolveWorkspace(projectID uint, worktreeID uint) (string, error) {
+	if worktreeID == 0 {
+		return s.resolveProject(projectID)
+	}
+	directory, err := s.projects.ResolveWorktreeDirectory(projectID, worktreeID)
+	if err != nil {
+		if errors.Is(err, projects.ErrWorktreeNotFound) {
+			return "", fmt.Errorf("%w: %d", ErrWorktreeUnavailable, worktreeID)
+		}
+		if errors.Is(err, projects.ErrProjectNotFound) {
+			return "", fmt.Errorf("%w: %d", ErrProjectNotFound, projectID)
+		}
+		if errors.Is(err, projects.ErrDirectoryMissing) || errors.Is(err, projects.ErrNotDirectory) {
+			return "", fmt.Errorf("%w: %w", ErrWorktreeUnavailable, err)
+		}
+		if errors.Is(err, paths.ErrInvalidPath) || errors.Is(err, projects.ErrPathChanged) {
+			return "", fmt.Errorf("%w: %w", ErrWorktreeUnavailable, err)
+		}
+		return "", err
+	}
+	return directory, nil
+}
+
+// resolveProject maps a project id to its authorized main directory, translating
 // the project repository's not-found sentinel and wrapping authorization errors.
 func (s *Service) resolveProject(projectID uint) (string, error) {
 	directory, err := s.projects.ResolveDirectory(projectID)
@@ -483,15 +551,16 @@ func (s *Service) load(instanceID string) (Instance, error) {
 // instanceFromModel maps the persistence model to the JSON-stable DTO.
 func instanceFromModel(row database.AgentInstance) Instance {
 	return Instance{
-		ID:        row.ID,
-		ProjectID: row.ProjectID,
-		Backend:   agents.BackendID(row.Backend),
-		Directory: row.Directory,
-		Status:    agents.InstanceStatus(row.Status),
-		Endpoint:  row.Endpoint,
-		Error:     row.Error,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:         row.ID,
+		ProjectID:  row.ProjectID,
+		Backend:    agents.BackendID(row.Backend),
+		WorktreeID: row.WorktreeID,
+		Directory:  row.Directory,
+		Status:     agents.InstanceStatus(row.Status),
+		Endpoint:   row.Endpoint,
+		Error:      row.Error,
+		CreatedAt:  row.CreatedAt,
+		UpdatedAt:  row.UpdatedAt,
 	}
 }
 

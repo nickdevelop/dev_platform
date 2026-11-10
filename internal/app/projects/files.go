@@ -42,19 +42,18 @@ type FileContentResponse struct {
 // SearchFiles scans the project's directory and returns relative paths matching query.
 // It searches all workspace files without filtering by .gitignore or dotfile prefixes,
 // only skipping the .git version control metadata directory.
-func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string, limit int) ([]FileItem, error) {
+func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string, limit int, worktreeID ...uint) ([]FileItem, error) {
 	if limit <= 0 {
 		limit = 50
 	} else if limit > 100 {
 		limit = 100
 	}
 
-	proj, err := s.repo.Get(projectID)
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
 
-	rootDir := proj.Path
 	normQuery := strings.ToLower(strings.TrimSpace(query))
 
 	return s.searchWorkspaceFiles(ctx, rootDir, normQuery, limit)
@@ -123,17 +122,16 @@ const maxFileReadBytes = 5 * 1024 * 1024
 
 // resolveProjectSafePath ensures the requested path is safe, absolute, inside the project directory,
 // and does not escape the project boundary via traversal or symlinks.
-func (s *Service) resolveProjectSafePath(projectID uint, relPath string) (string, string, error) {
+func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktreeID ...uint) (string, string, error) {
 	if strings.ContainsRune(relPath, 0) {
 		return "", "", ErrInvalidTarget
 	}
 
-	proj, err := s.repo.Get(projectID)
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return "", "", err
 	}
 
-	rootDir := proj.Path
 	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
 	cleanRel = strings.TrimPrefix(cleanRel, "/")
 
@@ -176,13 +174,12 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string) (string
 // GetFileTree returns the multi-level directory tree of the project workspace.
 // It returns all files without filtering by .gitignore or dotfile prefixes,
 // only skipping the .git version control metadata directory.
-func (s *Service) GetFileTree(ctx context.Context, projectID uint) ([]FileTreeNode, error) {
-	proj, err := s.repo.Get(projectID)
+func (s *Service) GetFileTree(ctx context.Context, projectID uint, worktreeID ...uint) ([]FileTreeNode, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
 
-	rootDir := proj.Path
 	var filePaths []string
 
 	_ = filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
@@ -276,17 +273,16 @@ func buildTreeFromPaths(paths []string) []FileTreeNode {
 
 // resolveProjectSafeDir ensures the requested directory path is inside the project workspace
 // and does not escape via traversal (..) or symlinks. An empty relPath represents the project root.
-func (s *Service) resolveProjectSafeDir(projectID uint, relPath string) (string, string, error) {
+func (s *Service) resolveProjectSafeDir(projectID uint, relPath string, worktreeID ...uint) (string, string, error) {
 	if strings.ContainsRune(relPath, 0) {
 		return "", "", ErrInvalidTarget
 	}
 
-	proj, err := s.repo.Get(projectID)
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return "", "", err
 	}
 
-	rootDir := proj.Path
 	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
 	cleanRel = strings.TrimPrefix(cleanRel, "/")
 
@@ -331,8 +327,8 @@ func (s *Service) resolveProjectSafeDir(projectID uint, relPath string) (string,
 // without recursively expanding deeper directories. This powers lazy loading of workspace file trees.
 // It returns all items without filtering by .gitignore or dotfile prefixes,
 // only skipping the .git version control metadata directory.
-func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPath string) ([]FileTreeNode, error) {
-	rootDir, targetDir, err := s.resolveProjectSafeDir(projectID, subPath)
+func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPath string, worktreeID ...uint) ([]FileTreeNode, error) {
+	rootDir, targetDir, err := s.resolveProjectSafeDir(projectID, subPath, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
@@ -404,8 +400,8 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 }
 
 // ReadFileContent safely reads a file's content and returns its inspection metadata.
-func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath string) (*FileContentResponse, error) {
-	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath)
+func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) (*FileContentResponse, error) {
+	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
@@ -472,8 +468,8 @@ func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath s
 }
 
 // ReadFileRaw opens the file for streaming raw content (e.g. for previewing images/media).
-func (s *Service) ReadFileRaw(ctx context.Context, projectID uint, relPath string) (io.ReadCloser, string, int64, error) {
-	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath)
+func (s *Service) ReadFileRaw(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) (io.ReadCloser, string, int64, error) {
+	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)
 	if err != nil {
 		return nil, "", 0, err
 	}

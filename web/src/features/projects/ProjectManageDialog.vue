@@ -1,27 +1,23 @@
 <script setup lang="ts">
-// Project management dialog for one action: register, create, edit (display name)
-// or unregister. Unregister removes the project from the platform (stopping its
-// live agent instances and dropping their sessions) and never touches the
-// directory on disk. Directory move and directory rename are deliberately not
-// offered: the platform only edits its own metadata. The parent owns visibility:
-// it receives `submitted` and `close`.
-import { computed, onMounted, ref, watch } from 'vue'
+// Project creation dialog for one action: register an existing directory or
+// create a new one. Display-name editing and git worktree management live on
+// the project settings tab; unregister lives on the projects management page.
+// The parent owns visibility: it receives `submitted` and `close`.
+import { computed, ref, watch } from 'vue'
 import { describeApiError, UnauthorizedError } from '../../api/client'
 import {
   createProject,
   registerProject,
   updateProjectName,
-  unregisterProject,
   type Project,
 } from '../../api/projects'
 import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
 import ProxyDirectoryPicker from '../proxies/ProxyDirectoryPicker.vue'
 
-type DialogKind = 'register' | 'create' | 'edit' | 'unregister'
+type DialogKind = 'register' | 'create'
 
 const props = defineProps<{
   kind: DialogKind
-  project: Project | null
 }>()
 
 const emit = defineEmits<{
@@ -55,23 +51,12 @@ function onDirectorySelected(path: string) {
   showDirPicker.value = false
 }
 
-onMounted(() => {
-  if (props.kind === 'edit' && props.project) {
-    nameInput.value = props.project.name
-  }
-})
-
 const dialogTitle = computed(() => {
-  const name = props.project?.name
   switch (props.kind) {
     case 'register':
       return '打开已有项目目录'
     case 'create':
       return '新建项目'
-    case 'edit':
-      return name ? `编辑项目 ${name}` : '编辑项目'
-    case 'unregister':
-      return '解除项目登记（保留目录）'
   }
 })
 
@@ -81,30 +66,20 @@ const confirmLabel = computed(() => {
       return '打开'
     case 'create':
       return '确定'
-    case 'edit':
-      return '保存'
-    case 'unregister':
-      return '解除登记'
   }
 })
 
 const canSubmit = computed(() => {
   if (submitting.value) return false
-  if (props.kind === 'create') {
-    if (!nameInput.value.trim() || !pathInput.value.trim()) return false
-    if (createNewDir.value && !subDirName.value.trim()) return false
-    return true
-  }
-  if (props.kind === 'edit') {
-    return nameInput.value.trim() !== ''
-  }
+  if (props.kind === 'register') return pathInput.value.trim() !== ''
+  if (!nameInput.value.trim() || !pathInput.value.trim()) return false
+  if (createNewDir.value && !subDirName.value.trim()) return false
   return true
 })
 
 async function submit() {
   if (!canSubmit.value) return
   const kind = props.kind
-  const project = props.project
   submitting.value = true
   dialogError.value = ''
   try {
@@ -123,16 +98,13 @@ async function submit() {
           created = await registerProject(trimmedPath)
         }
         if (trimmedName && created.name !== trimmedName) {
+          // Creating with a friendly name uses the register/create endpoints
+          // plus one display-name update; later edits live on the project
+          // settings tab.
           await updateProjectName(created.id, trimmedName)
         }
         break
       }
-      case 'edit':
-        await updateProjectName(project!.id, nameInput.value.trim())
-        break
-      case 'unregister':
-        await unregisterProject(project!.id)
-        break
     }
     emit('submitted', kind)
     emit('close')
@@ -229,25 +201,6 @@ async function submit() {
         </div>
       </template>
 
-      <template v-else-if="kind === 'edit'">
-        <div class="flex flex-col gap-1.5">
-          <label for="dialog-display-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目显示名称</label>
-          <UiInput id="dialog-display-name" v-model="nameInput" autocomplete="off" spellcheck="false" block />
-          <p class="hint text-xs text-slate-400">仅修改在平台中展示的项目名称，不会修改磁盘上的物理目录。</p>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目路径</span>
-          <code class="project-path font-mono text-xs text-slate-500 dark:text-slate-400 break-all">{{ project?.path }}</code>
-          <p class="hint text-xs text-slate-400">平台只记录该路径，不会移动或重命名磁盘目录。</p>
-        </div>
-      </template>
-
-      <template v-else-if="kind === 'unregister'">
-        <p class="text-sm text-slate-700 dark:text-slate-300">将从平台移除项目 {{ project?.name }}，同时停止它正在运行的 Agent 实例，并清除其会话索引。</p>
-        <p class="safe-note text-xs text-emerald-600 dark:text-emerald-400 font-medium">磁盘上的目录 {{ project?.path }} 会被完整保留，不受影响。</p>
-        <p class="hint text-xs text-slate-400">如有实例无法停止，移除会被中止，项目保持登记。</p>
-      </template>
-
       <UiAlert v-if="dialogError" variant="error" class="dialog-error">
         {{ dialogError }}
       </UiAlert>
@@ -263,7 +216,7 @@ async function submit() {
         </UiButton>
         <UiButton
           type="button"
-          :variant="kind === 'unregister' ? 'danger' : 'primary'"
+          variant="primary"
           class="confirm"
           :disabled="!canSubmit"
           :loading="submitting"

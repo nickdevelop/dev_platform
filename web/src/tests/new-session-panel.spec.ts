@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
+import { UiSelectMenu } from '../shared/ui'
 import { useSessionsStore } from '../stores/sessions'
 import { usePromptsStore } from '../stores/prompts'
 import { useDraftsStore } from '../stores/drafts'
@@ -353,6 +354,69 @@ describe('NewSessionPanel', () => {
     await flushPromises()
 
     expect(createSpy).toHaveBeenCalledWith(2, expect.objectContaining({ backend: 'opencode-v2' }))
+  })
+
+  it('offers worktrees for a git project and sends the chosen worktreeId', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/api/projects/1/worktrees')) {
+          return {
+            status: 200,
+            json: async () => ({
+              worktrees: [
+                {
+                  id: 5,
+                  projectId: 1,
+                  path: '/data/alpha-worktrees/feature-login',
+                  branch: 'feature/login',
+                  baseBranch: 'main',
+                  available: true,
+                  createdAt: '2026-11-10T10:00:00Z',
+                  updatedAt: '2026-11-10T10:00:00Z',
+                },
+              ],
+            }),
+          } as Response
+        }
+        return { status: 200, json: async () => ({}) } as Response
+      }),
+    )
+    const { wrapper, createSpy } = setup()
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: 'alpha', path: '/data/alpha', isGit: true },
+    ] as Project[]
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="worktree-selector"]').exists()).toBe(true)
+    const selector = wrapper
+      .findAllComponents(UiSelectMenu)
+      .find((entry) => (entry.props() as { id?: string }).id === 'worktree-select')
+    expect((selector?.props() as { options?: unknown[] }).options).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 0, label: '主工作区' }),
+        expect.objectContaining({ value: 5, label: 'feature/login' }),
+      ]),
+    )
+    selector?.vm.$emit('update:modelValue', 5)
+    await flushPromises()
+
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+    expect(createSpy).toHaveBeenCalledWith(1, expect.objectContaining({ worktreeId: 5 }))
+  })
+
+  it('hides the worktree selector for a non-git project', async () => {
+    const { wrapper } = setup()
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: 'plain', path: '/data/plain', isGit: false },
+    ] as Project[]
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="worktree-selector"]').exists()).toBe(false)
   })
 
   it('synchronizes the route URL when the selected project changes', async () => {

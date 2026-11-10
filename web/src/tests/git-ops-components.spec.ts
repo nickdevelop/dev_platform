@@ -56,7 +56,7 @@ describe('GitCommitBar.vue', () => {
     await wrapper.find('textarea').setValue('feat: add login')
     await wrapper.find('button').trigger('click')
 
-    expect(commitSpy).toHaveBeenCalledWith(1, 'feat: add login')
+    expect(commitSpy).toHaveBeenCalledWith(1, 'feat: add login', undefined)
     expect(wrapper.emitted('committed')).toBeTruthy()
   })
 
@@ -118,7 +118,7 @@ describe('BranchSelector.vue', () => {
     expect(branchItems.length).toBe(2)
 
     await branchItems[1].trigger('click')
-    expect(checkoutSpy).toHaveBeenCalledWith(1, 'feat/login', false)
+    expect(checkoutSpy).toHaveBeenCalledWith(1, 'feat/login', false, undefined)
     expect(wrapper.emitted('branchChanged')).toBeTruthy()
   })
 })

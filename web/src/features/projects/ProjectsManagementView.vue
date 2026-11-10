@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useProjectsStore } from '../../stores/projects'
-import { updateProjectName, unregisterProject, type Project } from '../../api/projects'
+import { unregisterProject, type Project } from '../../api/projects'
 import { describeApiError } from '../../api/client'
-import { UiButton, UiInput, UiAlert, UiDialog } from '../../shared/ui'
+import { UiButton, UiAlert, UiDialog } from '../../shared/ui'
 
 const projectsStore = useProjectsStore()
+const router = useRouter()
 
-const editingProject = ref<Project | null>(null)
-const editNameInput = ref('')
 const unregisteringProject = ref<Project | null>(null)
 const actionError = ref('')
 const submitting = ref(false)
@@ -33,28 +33,8 @@ function moveDown(id: number) {
   projectsStore.moveProjectDown(id)
 }
 
-function startEditName(project: Project) {
-  editingProject.value = project
-  editNameInput.value = project.name
-  actionError.value = ''
-}
-
-async function saveEditName() {
-  if (!editingProject.value || !editNameInput.value.trim() || submitting.value) return
-  submitting.value = true
-  actionError.value = ''
-  try {
-    const updated = await updateProjectName(editingProject.value.id, editNameInput.value.trim())
-    const target = projectsStore.projects.find((p) => p.id === updated.id)
-    if (target) {
-      target.name = updated.name
-    }
-    editingProject.value = null
-  } catch (err) {
-    actionError.value = describeApiError(err)
-  } finally {
-    submitting.value = false
-  }
+function openProjectSettings(project: Project) {
+  void router.push({ name: 'project-settings', params: { projectId: String(project.id) } })
 }
 
 function startUnregister(project: Project) {
@@ -156,17 +136,6 @@ async function confirmUnregister() {
             <!-- Project Name -->
             <div class="col-name name-wrap">
               <span class="name-text" :title="project.name">{{ project.name }}</span>
-              <button
-                type="button"
-                class="edit-name-btn"
-                title="修改项目显示名称"
-                aria-label="修改项目显示名称"
-                @click="startEditName(project)"
-              >
-                <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <path d="M11 2l3 3-9 9H2v-3l9-9z" />
-                </svg>
-              </button>
             </div>
 
             <!-- Project Absolute Path -->
@@ -195,6 +164,15 @@ async function confirmUnregister() {
             <div class="col-actions actions-cell">
               <button
                 type="button"
+                class="action-link"
+                title="打开项目设置（改名与 Git 工作树）"
+                data-test="open-project-settings"
+                @click="openProjectSettings(project)"
+              >
+                设置
+              </button>
+              <button
+                type="button"
                 class="action-link text-danger"
                 title="从平台解除登记（保留磁盘目录）"
                 @click="startUnregister(project)"
@@ -206,26 +184,6 @@ async function confirmUnregister() {
         </ul>
       </div>
     </div>
-
-    <!-- Edit Name Dialog -->
-    <UiDialog
-      v-if="editingProject"
-      title="修改项目名称"
-      width-class="w-full max-w-sm"
-      @close="editingProject = null"
-    >
-      <form class="space-y-4" @submit.prevent="saveEditName">
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-700 dark:text-slate-300">项目显示名称</label>
-          <UiInput v-model="editNameInput" autocomplete="off" block />
-          <p class="text-xs text-slate-400">仅修改在平台中展示的友好名称，磁盘物理目录不受影响。</p>
-        </div>
-        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <UiButton type="button" variant="secondary" size="sm" @click="editingProject = null">取消</UiButton>
-          <UiButton type="submit" variant="primary" size="sm" :loading="submitting" :disabled="!editNameInput.trim()">保存</UiButton>
-        </div>
-      </form>
-    </UiDialog>
 
     <!-- Unregister Confirm Dialog -->
     <UiDialog

@@ -21,11 +21,14 @@ import type { FileTreeNode, GitCommitItem, GitFileChangeStatus, GitStatusItem } 
 const props = defineProps<{
   projectId: number
   activePath?: string
+  // Non-zero scopes every file and git call to one git worktree.
+  worktreeId?: number
 }>()
 
 const emit = defineEmits<{
   select: [path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }]
   dragstart: [event: DragEvent, path: string]
+  'branch-changed': [branch: string]
 }>()
 
 const activeTab = ref<'changes' | 'all'>('all')
@@ -102,9 +105,9 @@ async function refresh() {
   error.value = ''
   try {
     const [tree, status, recentCommits] = await Promise.all([
-      getFileTree(props.projectId),
-      getGitStatus(props.projectId, selectedCommit.value).catch(() => []),
-      getGitCommits(props.projectId, 20).catch(() => []),
+      getFileTree(props.projectId, undefined, props.worktreeId),
+      getGitStatus(props.projectId, selectedCommit.value, props.worktreeId).catch(() => []),
+      getGitCommits(props.projectId, 20, props.worktreeId).catch(() => []),
     ])
     treeNodes.value = tree
     gitChanges.value = status
@@ -122,7 +125,7 @@ async function loadCommitChanges() {
   loading.value = true
   error.value = ''
   try {
-    const status = await getGitStatus(props.projectId, selectedCommit.value)
+    const status = await getGitStatus(props.projectId, selectedCommit.value, props.worktreeId)
     gitChanges.value = status
     updateExpandedChangeDirs()
   } catch (err) {
@@ -162,7 +165,7 @@ async function onLoadChildren(node: FileTreeNode) {
   if (node.loading || node.loaded) return
   node.loading = true
   try {
-    const children = await getFileTree(props.projectId, node.path)
+    const children = await getFileTree(props.projectId, node.path, props.worktreeId)
     node.children = children
     node.loaded = true
   } catch (err) {
@@ -175,7 +178,7 @@ async function onLoadChildren(node: FileTreeNode) {
 // Git Stage / Unstage / Discard handlers
 async function onStageFile(path: string) {
   try {
-    await stageGitFiles(props.projectId, [path])
+    await stageGitFiles(props.projectId, [path], props.worktreeId)
     await refresh()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '暂存失败'
@@ -184,7 +187,7 @@ async function onStageFile(path: string) {
 
 async function onUnstageFile(path: string) {
   try {
-    await unstageGitFiles(props.projectId, [path])
+    await unstageGitFiles(props.projectId, [path], props.worktreeId)
     await refresh()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '取消暂存失败'
@@ -193,7 +196,7 @@ async function onUnstageFile(path: string) {
 
 async function onStageAll() {
   try {
-    await stageGitFiles(props.projectId)
+    await stageGitFiles(props.projectId, undefined, props.worktreeId)
     await refresh()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '暂存全部失败'
@@ -202,7 +205,7 @@ async function onStageAll() {
 
 async function onUnstageAll() {
   try {
-    await unstageGitFiles(props.projectId)
+    await unstageGitFiles(props.projectId, undefined, props.worktreeId)
     await refresh()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '取消全部暂存失败'
@@ -224,7 +227,7 @@ async function confirmDiscard() {
   if (!discardConfirmPath.value || discarding.value) return
   discarding.value = true
   try {
-    await discardGitFile(props.projectId, discardConfirmPath.value)
+    await discardGitFile(props.projectId, discardConfirmPath.value, props.worktreeId)
     discardModalOpen.value = false
     discardConfirmPath.value = ''
     await refresh()
@@ -237,8 +240,8 @@ async function confirmDiscard() {
 
 async function onStageAllAndCommit(message: string) {
   try {
-    await stageGitFiles(props.projectId)
-    await commitGitChanges(props.projectId, message)
+    await stageGitFiles(props.projectId, undefined, props.worktreeId)
+    await commitGitChanges(props.projectId, message, props.worktreeId)
     await refresh()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '提交失败'
@@ -246,7 +249,7 @@ async function onStageAllAndCommit(message: string) {
 }
 
 watch(
-  () => props.projectId,
+  () => [props.projectId, props.worktreeId],
   () => {
     selectedCommit.value = ''
     void refresh()
@@ -269,7 +272,7 @@ watch(searchQuery, (newQuery) => {
   searchLoading.value = true
   searchTimer = setTimeout(async () => {
     try {
-      const resp = await searchProjectFiles(props.projectId, q, 50)
+      const resp = await searchProjectFiles(props.projectId, q, 50, props.worktreeId)
       if (searchQuery.value.trim() === q) {
         searchResults.value = resp.files || []
       }
@@ -342,7 +345,8 @@ function onDragStart(event: DragEvent, path: string) {
         <BranchSelector
           v-if="activeTab === 'changes' && !isHistoryCommit"
           :project-id="props.projectId"
-          @branch-changed="refresh"
+          :worktree-id="props.worktreeId"
+          @branch-changed="refresh(); emit('branch-changed', $event)"
           @error="error = $event"
         />
 
@@ -599,6 +603,7 @@ function onDragStart(event: DragEvent, path: string) {
     <GitCommitBar
       v-if="activeTab === 'changes' && !isHistoryCommit"
       :project-id="props.projectId"
+      :worktree-id="props.worktreeId"
       :staged-count="stagedItems.length"
       :unstaged-count="unstagedItems.length"
       @committed="refresh"

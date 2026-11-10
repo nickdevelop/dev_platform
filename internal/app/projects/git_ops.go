@@ -67,102 +67,102 @@ func gitRun(ctx context.Context, directory string, args ...string) (string, erro
 }
 
 // StageFiles stages files in the git workspace. If paths is empty, it stages all changes (git add -A).
-func (s *Service) StageFiles(ctx context.Context, projectID uint, paths []string) error {
-	row, err := s.load(projectID)
+func (s *Service) StageFiles(ctx context.Context, projectID uint, paths []string, worktreeID ...uint) error {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return ErrNotGitRepo
 	}
 
 	if len(paths) == 0 {
-		_, err := gitRun(ctx, row.Path, "add", "-A")
+		_, err := gitRun(ctx, rootDir, "add", "-A")
 		return err
 	}
 
 	args := []string{"add", "-A", "--"}
 	for _, p := range paths {
-		valid, err := s.validateProjectRelPath(row.Path, p)
+		valid, err := s.validateProjectRelPath(rootDir, p)
 		if err != nil {
 			return err
 		}
 		args = append(args, valid)
 	}
 
-	_, err = gitRun(ctx, row.Path, args...)
+	_, err = gitRun(ctx, rootDir, args...)
 	return err
 }
 
 // UnstageFiles removes files from the git staging area. If paths is empty, it unstages all files.
-func (s *Service) UnstageFiles(ctx context.Context, projectID uint, paths []string) error {
-	row, err := s.load(projectID)
+func (s *Service) UnstageFiles(ctx context.Context, projectID uint, paths []string, worktreeID ...uint) error {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return ErrNotGitRepo
 	}
 
 	// Check if repository has commits
-	_, hasCommitsErr := gitOutput(ctx, row.Path, "rev-parse", "--verify", "HEAD")
+	_, hasCommitsErr := gitOutput(ctx, rootDir, "rev-parse", "--verify", "HEAD")
 	if hasCommitsErr != nil {
 		// New repository with no commits yet: use git rm --cached
 		if len(paths) == 0 {
-			_, err := gitRun(ctx, row.Path, "rm", "-r", "--cached", "--ignore-unmatch", ".")
+			_, err := gitRun(ctx, rootDir, "rm", "-r", "--cached", "--ignore-unmatch", ".")
 			return err
 		}
 		args := []string{"rm", "-r", "--cached", "--ignore-unmatch", "--"}
 		for _, p := range paths {
-			valid, err := s.validateProjectRelPath(row.Path, p)
+			valid, err := s.validateProjectRelPath(rootDir, p)
 			if err != nil {
 				return err
 			}
 			args = append(args, valid)
 		}
-		_, err := gitRun(ctx, row.Path, args...)
+		_, err := gitRun(ctx, rootDir, args...)
 		return err
 	}
 
 	if len(paths) == 0 {
-		_, err := gitRun(ctx, row.Path, "reset", "HEAD", "--", ".")
+		_, err := gitRun(ctx, rootDir, "reset", "HEAD", "--", ".")
 		return err
 	}
 
 	args := []string{"reset", "HEAD", "--"}
 	for _, p := range paths {
-		valid, err := s.validateProjectRelPath(row.Path, p)
+		valid, err := s.validateProjectRelPath(rootDir, p)
 		if err != nil {
 			return err
 		}
 		args = append(args, valid)
 	}
 
-	_, err = gitRun(ctx, row.Path, args...)
+	_, err = gitRun(ctx, rootDir, args...)
 	return err
 }
 
 // DiscardFileChanges discards working directory changes for a specific file.
 // If the file is untracked, it deletes the file from the filesystem.
 // If the file is tracked, it restores it using git checkout HEAD -- <path>.
-func (s *Service) DiscardFileChanges(ctx context.Context, projectID uint, relPath string) error {
-	row, err := s.load(projectID)
+func (s *Service) DiscardFileChanges(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) error {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return ErrNotGitRepo
 	}
 
-	valid, err := s.validateProjectRelPath(row.Path, relPath)
+	valid, err := s.validateProjectRelPath(rootDir, relPath)
 	if err != nil {
 		return err
 	}
 
-	fullPath := filepath.Join(row.Path, filepath.FromSlash(valid))
+	fullPath := filepath.Join(rootDir, filepath.FromSlash(valid))
 
 	// Check status of this file to determine if untracked
-	items, err := s.GitStatus(ctx, projectID)
+	items, err := s.GitStatus(ctx, projectID, worktreeID...)
 	if err != nil {
 		return err
 	}
@@ -184,20 +184,20 @@ func (s *Service) DiscardFileChanges(ctx context.Context, projectID uint, relPat
 	}
 
 	// First try unstage if it was also staged
-	_, _ = gitRun(ctx, row.Path, "reset", "HEAD", "--", valid)
+	_, _ = gitRun(ctx, rootDir, "reset", "HEAD", "--", valid)
 
 	// Restore from HEAD / worktree
-	_, err = gitRun(ctx, row.Path, "checkout", "--", valid)
+	_, err = gitRun(ctx, rootDir, "checkout", "--", valid)
 	return err
 }
 
 // CommitChanges commits the staged changes with the provided commit message.
-func (s *Service) CommitChanges(ctx context.Context, projectID uint, message string) (*GitCommitItem, error) {
-	row, err := s.load(projectID)
+func (s *Service) CommitChanges(ctx context.Context, projectID uint, message string, worktreeID ...uint) (*GitCommitItem, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return nil, ErrNotGitRepo
 	}
 
@@ -206,11 +206,11 @@ func (s *Service) CommitChanges(ctx context.Context, projectID uint, message str
 		return nil, ErrEmptyCommitMessage
 	}
 
-	if _, err := gitRun(ctx, row.Path, "commit", "-m", cleanMsg); err != nil {
+	if _, err := gitRun(ctx, rootDir, "commit", "-m", cleanMsg); err != nil {
 		return nil, err
 	}
 
-	commits, err := s.GitCommits(ctx, projectID, 1)
+	commits, err := s.GitCommits(ctx, projectID, 1, worktreeID...)
 	if err != nil || len(commits) == 0 {
 		return &GitCommitItem{Message: cleanMsg}, nil
 	}
@@ -225,16 +225,16 @@ type GitBranchesResult struct {
 }
 
 // ListBranches returns all local branches and the currently checked out branch.
-func (s *Service) ListBranches(ctx context.Context, projectID uint) (*GitBranchesResult, error) {
-	row, err := s.load(projectID)
+func (s *Service) ListBranches(ctx context.Context, projectID uint, worktreeID ...uint) (*GitBranchesResult, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return nil, ErrNotGitRepo
 	}
 
-	out, err := gitRun(ctx, row.Path, "branch", "--list", "--no-color")
+	out, err := gitRun(ctx, rootDir, "branch", "--list", "--no-color")
 	if err != nil {
 		return nil, err
 	}
@@ -265,12 +265,12 @@ func (s *Service) ListBranches(ctx context.Context, projectID uint) (*GitBranche
 }
 
 // CheckoutBranch switches to an existing branch or creates and switches to a new one.
-func (s *Service) CheckoutBranch(ctx context.Context, projectID uint, branch string, create bool) error {
-	row, err := s.load(projectID)
+func (s *Service) CheckoutBranch(ctx context.Context, projectID uint, branch string, create bool, worktreeID ...uint) error {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return ErrNotGitRepo
 	}
 
@@ -280,9 +280,19 @@ func (s *Service) CheckoutBranch(ctx context.Context, projectID uint, branch str
 	}
 
 	if create {
-		_, err = gitRun(ctx, row.Path, "checkout", "-b", cleanBranch)
+		_, err = gitRun(ctx, rootDir, "checkout", "-b", cleanBranch)
 	} else {
-		_, err = gitRun(ctx, row.Path, "checkout", cleanBranch)
+		_, err = gitRun(ctx, rootDir, "checkout", cleanBranch)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// The worktree's stored branch is what the project settings list and the
+	// session selector display; keep it in step with the checkout.
+	if len(worktreeID) > 0 && worktreeID[0] != 0 {
+		if updateErr := s.repo.UpdateWorktreeBranch(projectID, worktreeID[0], cleanBranch); updateErr != nil {
+			return updateErr
+		}
+	}
+	return nil
 }

@@ -115,6 +115,7 @@ type Session struct {
 	ProjectID       uint                `json:"projectId"`
 	Backend         agents.BackendID    `json:"backend"`
 	InstanceID      string              `json:"instanceId"`
+	WorktreeID      uint                `json:"worktreeId,omitempty"`
 	NativeSessionID string              `json:"nativeSessionId"`
 	Title           string              `json:"title,omitempty"`
 	Model           string              `json:"model,omitempty"`
@@ -162,6 +163,9 @@ type InstanceService interface {
 	// session layer's auto-start path for creating a session on a backend with
 	// no running instance.
 	Start(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error)
+	// StartInWorktree brings up a new instance in one git worktree (0 = the
+	// project's main checkout).
+	StartInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID) (instances.Instance, error)
 	// Subscribe returns the instance's normalized event stream.
 	Subscribe(ctx context.Context, instanceID string) (<-chan agents.NormalizedEvent, error)
 	// ReplaySince returns the instance's buffered events with Sequence past
@@ -531,13 +535,22 @@ type CreateOutcome struct {
 // admitted does not fail the create — the session is already live and the caller
 // surfaces MessageError instead.
 func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (CreateOutcome, error) {
+	return s.CreateInWorktree(ctx, projectID, 0, backend, title, message, model, images...)
+}
+
+// CreateInWorktree starts a new agent-native session in the project's main
+// checkout (worktreeID 0) or one of its git worktrees. It reuses the most
+// recently created running instance of that backend in the same worktree and
+// starts one when none is running, then indexes the new session. The rest of
+// the behavior matches Create.
+func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (CreateOutcome, error) {
 	if !backend.Valid() {
 		return CreateOutcome{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
 	}
 	if s.agentDisabled(backend) {
 		return CreateOutcome{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
 	}
-	inst, err := s.instanceForBackend(ctx, projectID, backend)
+	inst, err := s.instanceForBackend(ctx, projectID, worktreeID, backend)
 	if err != nil {
 		return CreateOutcome{}, err
 	}
@@ -551,6 +564,11 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	if err != nil {
 		return CreateOutcome{}, err
 	}
+	if inst.WorktreeID != worktreeID {
+		// Defensive: a mismatched instance would run the session in the wrong
+		// working tree, which is worse than refusing the create.
+		return CreateOutcome{}, fmt.Errorf("%w: instance worktree mismatch", ErrInvalidRequest)
+	}
 	// Backends do not name new sessions themselves (pi only records a name
 	// when one is given), so an untitled first message names the session the
 	// same way a first composer message would.
@@ -560,7 +578,7 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 	}
 	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
 	if err != nil {
-		if newInst, startErr := s.instances.Start(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+		if newInst, startErr := s.instances.StartInWorktree(ctx, projectID, worktreeID, backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
 			ref, err = adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
 		}
@@ -606,7 +624,7 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 // failures the caller surfaces unchanged. When no instance runs and the backend's
 // machine-level service is down, the call is refused with ErrServiceNotRunning:
 // starting the service is an operator's decision, not this request's to make.
-func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backend agents.BackendID) (instances.Instance, error) {
+func (s *Service) instanceForBackend(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID) (instances.Instance, error) {
 	list, err := s.instances.List(projectID)
 	if err != nil {
 		return instances.Instance{}, err
@@ -615,7 +633,7 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 	found := false
 	for _, inst := range list {
 		// List is in creation order, so the last match is the most recent.
-		if inst.Backend == backend && inst.Status == agents.InstanceRunning {
+		if inst.Backend == backend && inst.WorktreeID == worktreeID && inst.Status == agents.InstanceRunning {
 			chosen = inst
 			found = true
 		}
@@ -631,7 +649,7 @@ func (s *Service) instanceForBackend(ctx context.Context, projectID uint, backen
 			return instances.Instance{}, fmt.Errorf("%w: %q (%w)", ErrServiceNotRunning, backend, err)
 		}
 	}
-	return s.instances.Start(ctx, projectID, backend)
+	return s.instances.StartInWorktree(ctx, projectID, worktreeID, backend)
 }
 
 // Discover lists an instance's agent-native sessions and indexes each valid one
@@ -664,7 +682,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 		return Session{}, err
 	}
 	if err != nil || !instanceRunnable(inst) {
-		inst, err = s.instanceForBackend(ctx, projectID, backend)
+		inst, err = s.instanceForBackend(ctx, projectID, row.WorktreeID, backend)
 		if err != nil {
 			return Session{}, err
 		}
@@ -683,7 +701,7 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	}
 	updated, err := adapter.ContinueSession(ctx, ref)
 	if err != nil {
-		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+		if newInst, startErr := s.instanceForBackend(ctx, projectID, row.WorktreeID, backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
 			row.InstanceID = inst.ID
 			ref.InstanceID = inst.ID
@@ -793,7 +811,7 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 		if errors.Is(err, agents.ErrInvalidHistoryCursor) {
 			return History{}, err
 		}
-		if newInst, startErr := s.instanceForBackend(ctx, projectID, backend); startErr == nil && newInst.ID != inst.ID {
+		if newInst, startErr := s.instanceForBackend(ctx, projectID, row.WorktreeID, backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
 			row.InstanceID = inst.ID
 			_ = s.store.UpdateInstanceID(row.ID, inst.ID)
@@ -1540,6 +1558,7 @@ func (s *Service) newSessionRow(projectID uint, inst instances.Instance, ref age
 		ProjectID:       projectID,
 		Backend:         string(inst.Backend),
 		InstanceID:      inst.ID,
+		WorktreeID:      inst.WorktreeID,
 		NativeSessionID: ref.SessionID,
 		Title:           title,
 		Status:          string(status),
@@ -1557,6 +1576,7 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		ProjectID:       row.ProjectID,
 		Backend:         backend,
 		InstanceID:      row.InstanceID,
+		WorktreeID:      row.WorktreeID,
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
 		Model:           row.Model,

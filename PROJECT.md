@@ -9,7 +9,7 @@
 `dev_platform` 是一个面向团队和个人开发者的**多 Agent 协同 AI 研发工作台**。其核心目标在于解决不同终端 AI Coding Agent（如 OpenCode V2、Pi、DeepSeek CLI）协议各异、交互割裂、缺乏集中管控的问题，提供中性同构的平台层封装：
 
 1. **多后端统一协同**：统一接入异构的 AI Coding Agent，支持开箱即用的多 Agent 实例隔离、生命周期管理与并发会话。
-2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；右侧面板整合为统一的右侧工作区工作台（包含左侧文件预览区与右侧文件树，且移除最右侧冗余的竖向导航条，在顶层 Tab 栏最右侧提供纯图标布局控制开关，操作按钮全面纯图标化；文件预览区恢复固定的「链路」Tab——以扁平活动流实时展示思考过程、工具完整入参与输出，块间以横线分隔且不使用卡片方框包裹，带计数徽标、独立底部跟随滚动与滚动位置持久化，与文件预览 Tab 互斥切换）；面板整体锁定外框总宽度，文件树在面板内部靠右展开或向右折叠，内部弹性伸缩（flex: 1 撑满），主对话区宽度恒定，彻底消灭对话内容跳动与晃动。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；提示词模板下拉仅提供流程类（flow）模板（角色类模板保留给角色库与纯对话助手，历史草稿中的角色类选择会被自动清理）；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
+2. **实时交互工作台**：统一的 Web 端会话界面，支持类型化轮次追踪、流式响应（SSE）、代码 Diff 预览、富文本 Markdown 清洗与 PlantUML 架构图渲染；主对话流纯净承载用户消息与答复、人机问答交互卡片（已将思考过程与工具调用过程移出会话对话流，保持高信噪比与高阅读舒适度）；右侧面板整合为统一的右侧工作区工作台（包含左侧文件预览区与右侧文件树，且移除最右侧冗余的竖向导航条，在顶层 Tab 栏最右侧提供纯图标布局控制开关，操作按钮全面纯图标化；文件预览区恢复固定的「链路」Tab——以扁平活动流实时展示思考过程、工具完整入参与输出，块间以横线分隔且不使用卡片方框包裹，带计数徽标、独立底部跟随滚动与滚动位置持久化，与文件预览 Tab 互斥切换）；面板整体锁定外框总宽度，文件树在面板内部靠右展开或向右折叠，内部弹性伸缩（flex: 1 撑满），主对话区宽度恒定，彻底消灭对话内容跳动与晃动。新建会话表单将项目选择与 Agent 分段开关（Switch 形态）各自独立成行（Agent 行紧随项目行），Git 项目在项目行后增加“工作树”选择（主工作区或已创建的工作树，草稿按项目保存 worktreeId）；会话右侧文件树、文件预览与 Git 面板按该会话的 worktreeId 作用域读取，与 Agent 实际工作目录一致；输入框工具栏整合模型选择、权限下拉模式与统一发送按钮；提示词模板下拉仅提供流程类（flow）模板（角色类模板保留给角色库与纯对话助手，历史草稿中的角色类选择会被自动清理）；发送快捷键提示内嵌于输入框占位文本，不在输入组件下方额外占行。
 3. **闭环人机确认**：提供权限确认（Permission）与结构化表单（Form）的人机交互流，杜绝客户端轮询，所有交互直接挂接在会话标准事件流中。
 4. **全功能研发辅助**：集成基于 PTY/WebSocket 的跨平台在线终端、支持 Cron 表达式的定时任务调度、提示词（Prompts）模板管理，以及独立于 Agent 会话的通用大模型纯 Chat 对话。
 5. **快捷助手**：可在平台设置中开启的横向方形半透明工具栏入口（26px 紧凑设计，默认 0.3 半透明，悬浮与展开时高亮过渡），以 480×600 弹窗新建快捷对话，历史对话通过 Header 的最近对话下拉自行选择；工具栏与弹窗位置解绑且弹窗支持视口内自由拖拽；其会话统一沉淀在 Chat 的对应助手分组，与主 Chat 页面共享模型配置但使用独立事件流。
@@ -25,7 +25,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v37，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记区分后端同步名称与用户自定义名称） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v38，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`，以及最新升级：`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` / `chats` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记区分后端同步名称与用户自定义名称，以及 **v38 Git 工作树体系**：新增 `project_worktrees` 表，`agent_instances` / `agent_sessions` 增加 `worktree_id` 以支持同一项目多工作树并行实例） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
@@ -68,9 +68,9 @@
 | 模块目录 | 核心职责与功能边界 | 关键入口与核心文件 | 协作与边界约束 |
 |---|---|---|---|
 | **`events/`** | **统一多路复用事件网关**。平台级统一事件中枢与 SSE 网关服务（`UnifiedEventBusManager`）。下行事件多路复用统一收敛至单连接 `/api/events/bus/:uuid`，解耦具体业务领域（支持 `sessions`、`chat`、`tasks`、`system` 频道），通过动态主题订阅接口（`POST/DELETE .../subscriptions`）实现各业务页面即插即拔；统一心跳保活（15s keep-alive）与客户端断开内存垃圾回收（GC TTL 60s）；具备关键帧入队保护（对 `turn_ended`、`interaction_requested` 等核心状态机事件与 `message/thinking/delta/chunk` 流内容帧在缓冲满时提供 100ms 等待入队保底）、慢客户端丢帧警告日志与原子丢帧计数器（`DroppedCount`）；**缓冲溢出可靠性闭环**：关键帧丢弃、流内容帧每第 8 次丢弃或累计第 64 次丢弃时主动踢断该 bus 的 SSE 连接（kick），迫使客户端带序号重订并经 `instances.ReplaySince` 环形重放或 resync 全量重建补齐缺口——把"在线静默丢帧"转化为可恢复转移；每帧写入前施加 45s 递进写超时（write deadline = 3×心跳），防止 TCP 停滞的客户端令 StreamBus 循环永久阻塞而缓冲无限溢出；提供 `GET /api/events/diagnostics` 诊断端点（各 bus 的 active/订阅计数/积压帧数/丢帧计数）；彻底取代原先各业务烟囱式独立建长连接的历史架构，与前端 SharedWorker 协同彻底消灭浏览器同域名 6 连接耗尽假死问题。 | `service.go`（服务封装与依赖编排）、`bus.go`（多路复用总线与心跳调度、溢出 kick、诊断快照）、`handlers.go`（统一 SSE 与订阅 REST API、diagnostics 路由）、`models.go`（通用信封协议 `EventEnvelope` 与 `ChannelHandler` 契约） | 纯通用同构层，定义 `ChannelHandler` 接口供各业务领域实现快照与生命周期钩子，不直接耦合底层 Agent 或特定业务逻辑。 |
-| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、人机交互决策仲裁、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳；下行状态事件与交互快照统一接入全局事件网关（`events.Manager`，channel: `sessions`），废除原私有 bus 路由。 | `service.go`（会话主逻辑与 ChannelHandler 实现）、`handlers.go`（HTTP 路由处理）、`event_bus.go`（实例流监听与事件转发）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
-| **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（按 16 MiB / 2048 条双上限淘汰，保留连续事件后缀）。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
-| **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、Git 状态与提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket 及显示配置持久化）、`files.go`（工作区文件树与内容读取）、`handlers.go`（项目与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成与差异比对） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程。 |
+| **`sessions/`** | Agent 会话工作台核心领域。维护会话元数据索引、类型化轮次追踪、人机交互决策仲裁、平台斜杠命令定义与调度（ListCommands/ExecuteCommand/CompactSession）。会话索引记录所属项目的 `worktree_id`：0 表示主工作区，非 0 表示平台登记的 Git 工作树；创建时经 `CreateInWorktree` 在该作用域复用/启动实例，续接、历史读取与重绑均回到原工作树。平台拥有命令统一定义权（分为功能类 action 与提示词注入类 prompt），当前实现功能类上下文压缩（compact），由各 Agent 适配层通过 SessionCompactor 落实。会话索引列表（全量 List 与分页 ListPaged）统一遵循 `updated_at DESC, created_at DESC, id DESC` 降序排序；对实例重绑（rebind）与模型更新等非交互写库操作使用列级更新保护 `updated_at`，杜绝历史会话被意外刷新时间戳；下行状态事件与交互快照统一接入全局事件网关（`events.Manager`，channel: `sessions`），废除原私有 bus 路由。 | `service.go`（会话主逻辑、工作树作用域与 ChannelHandler 实现）、`handlers.go`（HTTP 路由处理与 `worktreeId`）、`event_bus.go`（实例流监听与事件转发）、`service_interactions.go`（审批管理） | 子包 `turns/` 专注轮次状态机；子包 `store/` 专注索引持久化；不关心底层进程如何生成，仅依赖 `internal/core/agents`。 |
+| **`instances/`** | Agent 运行时实例生命周期管理。管理宿主子进程派生、退出监控、事件流单向上游订阅、环形重放缓冲（按 16 MiB / 2048 条双上限淘汰，保留连续事件后缀）。实例按“项目 + 后端 + `worktree_id`”隔离：主工作区为 0，非 0 时经 `ProjectDirectoryResolver.ResolveWorktreeDirectory` 取得工作树目录；支持 `StartInWorktree` 与 `StopProjectWorktreeInstances`。定义领域级哨兵错误（`ErrDirectoryUnavailable`、`ErrWorktreeUnavailable`、`ErrProjectNotAuthorized`）隔离外部工作区异常。 | `service.go`（实例调度、工作树启动/停止与停止）、`replay.go`（断线重放缓存）、`repository.go`（实例持久化与自愈，含 `worktree_id`） | 保证实例间严格逻辑隔离；不触碰会话层业务逻辑；停止实例走此路径。 |
+| **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、项目 Git 状态（`IsGit` 标记与 `GitInfo`）、Git 提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。**Git Worktree 生命周期**：`ListWorktrees` / `CreateWorktree` / `RemoveWorktree`，默认创建到仓库同级 `<repo>-worktrees/<branch-slug>`，分支名严格校验，移除前停止该工作树全部实例并拒绝脏工作区，分支保留；所有文件/Git/预览接口支持可选 `worktreeId` 作用域（0 为主工作区）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket、工作树服务与显示配置）、`worktree.go`（工作树创建/移除/目录解析）、`files.go`（工作区文件树与内容读取，支持工作树作用域）、`handlers.go`（项目、工作树与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成、差异比对与工作树作用域） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程；移除工作树通过 `InstanceStopper` 停止该工作树实例。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；下行生成增量与消息事件统一接入全局事件网关（`events.Manager`，channel: `chat`），废除原 `/api/chat-events/:uuid*` 私有总线路由。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分）、`event_bus.go`（多路复用事件适配器） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线统一由 `events.Manager` 调度。 |
 | **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）、提示词模板管理（`prompts.Service`）以及会话索引查询（`sessions.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`、`platform_list_sessions`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，使 Chat 中的轻量级 Agent 能够自主查询与管理平台项目、会话与提示词，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects`、`prompts` 与 `sessions` 领域服务，不直接接触数据库与底层进程。 |
 | **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；配备独立的流程数据采集总线（`TelemetryBus`），实现对下游 Agent 会话数据流的实时采集转发与轮次终结 Promise 自动汇聚；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
@@ -86,7 +86,7 @@
 | **`prompts/`** | 平台提示词模板管理。管理角色类（`role`）与流程类（`flow`）模板，支持 `{user_prompt}` 变量占位符、多维度关键词与分类筛选，供角色管理、纯对话助手及多 Agent 协同流程作为统一权威源引用；新建项目会话入口仅消费流程类模板，角色类模板不对该入口开放。 | `model.go`（模型定义）、`service.go`（CRUD 与分类过滤）、`repository.go`（持久化存储）、`handlers.go`（REST 路由） | 供平台各中心与 `platformtools` 组合调用。 |
 | **`agentdata/`** | 内置 Agent 转写数据域服务。承载"声明拥有自身会话数据"（Descriptor `OwnsSessionData`）的后端在平台数据库中的会话转写：adapter 侧经组合根注入的 `TranscriptStore` 契约读写，设置中心侧提供会话数据管理（分页列表 / 单条删除 / 批量清空，路由 `GET/DELETE /api/settings/agent-data/sessions...`）。删除时联动清理会话工作台索引行（组合根绑定 `sessions.Service.DeleteIndexByNative`），运行中的轮次拒绝删除（409 `session_busy`）；本包不出现任何后端 ID 字面量，服务的目标后端由组合根绑定。 | `store.go`（GORM 转写表读写与生命周期管理）、`handlers.go`（管理 REST API） | 只依赖 `database` 与 `core/agents`；purger 与 activity gate 为组合根注入的函数钩子，保持包的完全后端中立。 |
 | **`roles/`** | 全局专家角色管理。将多 Agent 协同流程中的角色抽取为平台一等实体，统一人设名称、职责描述、执行引擎（Backend）、分配模型（Model）与标识色彩；统一关联并动态同步提示词库中的角色类提示词，供多 Agent 协同流程与对话助手按需选用与复用。 | `model.go`（角色模型与 DTO）、`service.go`（角色 CRUD 与提示词动态同步）、`repository.go`（持久化存储与平滑兼容转换）、`handlers.go`（REST API 路由） | 依赖 `core/agents` 契约与 `prompts.Service` 接口，与具体后端实现解耦。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v37 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`；v37 为 `agent_models` 增加 `name_customized` 并回填旧自动名称）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v38 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`；v37 为 `agent_models` 增加 `name_customized` 并回填旧自动名称；v38 新增 `project_worktrees` 工作树表，并为 `agent_instances` / `agent_sessions` 增加 `worktree_id`）。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -140,7 +140,7 @@ web/src/
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位（复用 shared/composables/useDraggablePosition）与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 设置）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
-  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目设置】/Zone B 检索与过滤/Zone C 树容器）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐，操作栏支持就地改名与解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；项目标题行提供铅笔编辑入口）、会话卡片项（ProjectSessionItem.vue）、统一项目弹窗（ProjectManageDialog.vue，register/create/edit/unregister 四种模式，其中 edit 仅修改平台展示名称并只读展示路径）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
+  │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目管理】/Zone B 检索与过滤/Zone C 树容器）、项目设置 Tab 页面（ProjectSettingsView.vue，项目改名、路径只读、Git 状态、工作树创建/列表/移除与非 Git 说明）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐、打开项目设置、解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；Git 项目名称前显示 Git 标识；项目行提供新建会话与项目设置入口；展开项目时加载工作树标签）、会话卡片项（ProjectSessionItem.vue，展示工作树分支标签）、统一项目弹窗（ProjectManageDialog.vue，仅 register/create 两种模式）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词模版）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、调试面板设置（DebugSettings.vue，localStorage 本浏览器开关控制全局调试入口显隐，不落库）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接 → 调试面板，无缝对齐 AppShell 单头部规范）
   │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
@@ -637,6 +637,52 @@ web/src/
      - 原会话总线：`/api/events/:uuid`、`/api/events/:uuid/subscriptions`
      - 原纯对话总线：`/api/chat-events/:uuid`、`/api/chat-events/:uuid/subscriptions`
      - 原协同流程任务端点：`/api/tasks/flows/:runId/events`
+
+---
+
+### 12. Git Worktree 并行开发与工作区作用域流（Git Worktree Flow）
+
+```
+ [ 项目设置 Tab：ProjectSettingsView ]
+                 │
+                 ▼
+ 1. 项目设置 (internal/app/projects/worktree.go)
+    - GET  /api/projects/:id/worktrees
+    - POST /api/projects/:id/worktrees  { branch, baseBranch?, path? }
+    - DELETE /api/projects/:id/worktrees/:worktreeId
+    - 默认目录：<项目父目录>/<仓库名>-worktrees/<branch-slug>
+    - 创建：git worktree add -b <branch> <path> <base>
+    - 移除：先校验脏工作区 → StopProjectWorktreeInstances → git worktree remove
+    - 分支保留，工作树记录删除
+                 │
+                 ▼
+ 2. 会话创建 (POST /api/projects/:id/sessions, worktreeId 可选)
+    - sessions.CreateInWorktree
+    - instanceForBackend 按 (projectId, backend, worktreeId) 精确复用实例
+    - 无实例时 instances.StartInWorktree → 经
+      ProjectDirectoryResolver.ResolveWorktreeDirectory 取得规范化目录
+    - agent_instances.worktree_id / agent_sessions.worktree_id 同时落库
+                 │
+                 ▼
+ 3. 会话内文件与 Git 面板
+    - 所有文件/Git/预览接口接受可选 ?worktreeId=
+    - projects.workspaceRoot 统一解析作用域：0 = 主工作区，非 0 = 工作树
+    - 预览 Ticket 保存 projectId + worktreeId，跨作用域无法复用
+    - 分支切换成功后同步 project_worktrees.branch
+                 │
+                 ▼
+ 4. 前端状态
+    - stores/worktrees.ts 按项目缓存工作树，创建/移除同步刷新
+    - NewSessionPanel 仅对 Git 项目展示“工作树”选择，草稿保存 worktreeId
+    - SessionChatPanel 以 activeSession.worktreeId 作为文件/Git 面板作用域
+    - ProjectTree / ProjectSessionItem 展示工作树分支标签
+```
+
+**边界与语义**：
+- 工作树只能在 Git 仓库根目录创建；项目子目录不算仓库根。
+- 自定义目录必须是绝对路径、位于项目工作区之外、目标不存在。
+- 移除工作树会停止其运行实例；历史会话仍保留索引，但续接会返回 `worktree_unavailable`。
+- 项目解除登记只删除平台记录与工作树记录，磁盘上的项目目录与工作树目录均保留。
 
 ---
 

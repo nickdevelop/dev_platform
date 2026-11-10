@@ -12,9 +12,11 @@ const props = withDefaults(
   defineProps<{
     session: AgentSession
     isSelected?: boolean
+    worktreeLabel?: string
   }>(),
   {
     isSelected: false,
+    worktreeLabel: '',
   },
 )
 
@@ -122,6 +124,20 @@ const modelLabel = computed(() => {
     <!-- Row 2: Model tag on the left, right-aligned time and delete action on the right -->
     <div class="session-row-bottom flex items-center justify-between gap-1 text-2xs text-platform-text-muted">
       <div class="session-bottom-left flex items-center gap-1.5 min-w-0">
+        <span
+          v-if="props.worktreeLabel"
+          class="session-worktree flex items-center gap-1 text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
+          :title="`工作树：${props.worktreeLabel}`"
+          data-test="session-worktree"
+        >
+          <svg viewBox="0 0 16 16" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="4.5" cy="3.5" r="1.4" />
+            <circle cx="4.5" cy="12.5" r="1.4" />
+            <circle cx="11.5" cy="6.5" r="1.4" />
+            <path d="M4.5 5v6M6 6.5h3.5a2 2 0 0 1 2 2" />
+          </svg>
+          <span class="truncate">{{ props.worktreeLabel }}</span>
+        </span>
         <span
           v-if="modelLabel"
           class="session-model text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"

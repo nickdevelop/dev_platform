@@ -16,6 +16,7 @@ const props = withDefaults(
     mode?: 'view' | 'diff'
     commitRef?: string
     commitMessage?: string
+    worktreeId?: number
   }>(),
   {
     hideTabs: false,
@@ -127,7 +128,7 @@ async function loadCurrentFile() {
   loading.value = true
   error.value = ''
   try {
-    const data = await getFileContent(projId, currentPath)
+    const data = await getFileContent(projId, currentPath, props.worktreeId)
     fileData.value = data
   } catch (err) {
     error.value = err instanceof Error ? err.message : '读取文件失败'
@@ -138,7 +139,7 @@ async function loadCurrentFile() {
 }
 
 watch(
-  [() => props.projectId, activeTabPath, isDiffMode],
+  [() => props.projectId, () => props.worktreeId, activeTabPath, isDiffMode],
   () => {
     if (!isDiffMode.value) {
       void loadCurrentFile()
@@ -212,6 +213,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
       <template v-else-if="isDiffMode">
         <DiffViewer
           :project-id="props.projectId"
+          :worktree-id="props.worktreeId"
           :file-path="activeTabPath"
           :commit-ref="activeCommitRef"
           :commit-message="props.commitMessage"
@@ -252,6 +254,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
         <HtmlArtifactView
           v-else-if="currentFileType === 'html'"
           :project-id="props.projectId"
+          :worktree-id="props.worktreeId"
           :file-path="activeTabPath"
           :content="fileData.content || ''"
           :file-size="fileData.size"
@@ -261,7 +264,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
         <!-- Image view -->
         <ArtifactImageView
           v-else-if="currentFileType === 'image'"
-          :raw-url="getFileRawUrl(props.projectId, activeTabPath)"
+          :raw-url="getFileRawUrl(props.projectId, activeTabPath, props.worktreeId)"
           :file-name="getFileName(activeTabPath)"
           :file-size="fileData.size"
         />

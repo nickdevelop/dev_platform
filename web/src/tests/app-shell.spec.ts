@@ -9,7 +9,6 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { Component } from 'vue'
 import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
-import ProjectManageDialog from '../features/projects/ProjectManageDialog.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 import ChatPanel from '../features/chat/pure/ChatPanel.vue'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
@@ -80,18 +79,6 @@ describe('three-pane app shell', () => {
     expect(chat?.attributes('disabled')).toBeUndefined()
   })
 
-  it('opens the project edit dialog from the project row edit action', async () => {
-    const { wrapper } = await setup('/')
-    const tree = wrapper.findComponent(ProjectTree)
-    tree.vm.$emit('edit', 1)
-    await flushPromises()
-
-    const dialog = wrapper.findComponent(ProjectManageDialog)
-    expect(dialog.exists()).toBe(true)
-    expect(dialog.props('kind')).toBe('edit')
-    expect((dialog.props('project') as { id: number }).id).toBe(1)
-  })
-
   it('opens the pure chat area from the rail and passes a conversation id', async () => {
     const { wrapper, router } = await setup('/chat/5', { ChatPanel: true, ChatSidebar: true })
 
@@ -104,10 +91,11 @@ describe('three-pane app shell', () => {
     expect(tabs).toHaveLength(0)
   })
 
-  it('redirects /projects/:projectId/settings to projects-management', async () => {
-    const { router } = await setup('/projects/1/settings')
+  it('opens /projects/:projectId/settings as its own tab', async () => {
+    const { wrapper, router } = await setup('/projects/1/settings')
 
-    expect(router.currentRoute.value.name).toBe('projects-management')
+    expect(router.currentRoute.value.name).toBe('project-settings')
+    expect(wrapper.find('[data-tab-key="project-settings:1"]').exists()).toBe(true)
   })
 
   it('opens one projects-management tab however often it is visited', async () => {
@@ -402,7 +390,7 @@ describe('three-pane app shell', () => {
     expect(createBtn.exists()).toBe(true)
     expect(createBtn.text()).toBe('新建项目')
     expect(settingsBtn.exists()).toBe(true)
-    expect(settingsBtn.text()).toBe('设置')
+    expect(settingsBtn.text()).toBe('管理')
 
     // Dock controls are present and isolated from action buttons
     const dockControls = sidebar.find('.sidebar-dock-controls')

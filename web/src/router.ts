@@ -14,6 +14,7 @@ import AppShell from './features/workspace/AppShell.vue'
 import EmptyWorkspace from './features/workspace/EmptyWorkspace.vue'
 import LoginView from './views/LoginView.vue'
 import ProjectsManagementView from './features/projects/ProjectsManagementView.vue'
+import ProjectSettingsView from './features/projects/ProjectSettingsView.vue'
 import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
 import ChatPanel from './features/chat/pure/ChatPanel.vue'
@@ -54,7 +55,9 @@ export function createAppRouter() {
           },
           {
             path: 'projects/:projectId/settings',
-            redirect: { name: 'projects-management' },
+            name: 'project-settings',
+            component: ProjectSettingsView,
+            props: (route) => ({ projectId: Number(route.params.projectId) }),
           },
           {
             path: 'chat',

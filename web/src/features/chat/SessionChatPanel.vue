@@ -19,6 +19,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } fro
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../../stores/sessions'
+import { useWorktreesStore } from '../../stores/worktrees'
 import { useInteractionsStore } from '../../stores/interactions'
 import { useActivityPane } from './pane/useActivityPane'
 import ChatSideRail from './pane/ChatSideRail.vue'
@@ -73,6 +74,7 @@ const props = withDefaults(
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const interactions = useInteractionsStore()
+const worktreesStore = useWorktreesStore()
 const draftsStore = useDraftsStore()
 const viewportStore = useViewportStore()
 const router = useRouter()
@@ -220,7 +222,11 @@ const platformSlashSource = new PlatformSlashSource(
   () => props.sessionId,
   () => activeSession.value?.backend,
 )
-const fileSource = new WorkspaceFileSource(() => props.projectId)
+const fileSource = new WorkspaceFileSource(
+  () => props.projectId,
+  () => sessions.sessionById(props.sessionId)?.worktreeId ?? 0,
+)
+
 const sessionSource = new SessionMentionSource(
   () => sessions.sessions,
   () => props.sessionId,
@@ -455,6 +461,24 @@ const FOLLOW_THRESHOLD_PX = 24
 
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
+const activeWorktreeId = computed(() => activeSession.value?.worktreeId ?? 0)
+
+watch(
+  () => props.projectId,
+  (projectId) => {
+    if (projectId) void worktreesStore.load(projectId)
+  },
+  { immediate: true },
+)
+
+watch(activeWorktreeId, () => {
+  if (activeSession.value) void loadGit(true)
+})
+
+function onFileTreeBranchChanged() {
+  void worktreesStore.load(props.projectId, true)
+  void loadGit(true)
+}
 const activeMessages = computed<ChatEntry[]>(() => sessions.messagesFor(props.sessionId))
 
 // The composer context (model choice, workdir row, context meter) lives in the
@@ -482,6 +506,7 @@ const {
   contextBarWidth,
 } = useComposerContext({
   projectId: toRef(props, 'projectId'),
+  worktreeId: activeWorktreeId,
   sessionId: toRef(props, 'sessionId'),
   activeSession,
   activeMessages,
@@ -1386,6 +1411,7 @@ async function removeSession() {
                 <div v-show="activePreviewTab !== 'activity' && openFileTabs.length > 0" class="preview-file-viewer">
                   <FileViewer
                     :project-id="props.projectId"
+                    :worktree-id="activeWorktreeId"
                     :active-path="activePreviewTab !== 'activity' ? activePreviewTab : ''"
                     :hide-tabs="true"
                     :mode="currentActivePreviewFile?.mode || 'view'"
@@ -1448,8 +1474,10 @@ async function removeSession() {
               <div class="filetree-body">
                 <FileSidebar
                   :project-id="props.projectId"
+                  :worktree-id="activeWorktreeId"
                   :active-path="activePreviewTab"
                   @select="onSelectWorkspaceFile"
+                  @branch-changed="onFileTreeBranchChanged"
                 />
               </div>
             </aside>

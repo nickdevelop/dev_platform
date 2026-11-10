@@ -9,6 +9,8 @@ export interface NewSessionDraft {
   promptId: number | ''
   messageText: string
   attachedImages: ImageAttachment[]
+  // Selected git worktree; 0 means the project's main working directory.
+  worktreeId: number
 }
 
 export interface SessionDraft {
@@ -75,7 +77,18 @@ const defaultNewSessionDraft = (projectId: number | null = null): NewSessionDraf
   promptId: '',
   messageText: '',
   attachedImages: [],
+  worktreeId: 0,
 })
+
+// normalizeNewSessionDraft fills fields added after a draft was persisted.
+// A missing worktreeId means the project's main working directory.
+function normalizeNewSessionDraft(draft: NewSessionDraft): NewSessionDraft {
+  return {
+    ...draft,
+    worktreeId: typeof draft.worktreeId === 'number' ? draft.worktreeId : 0,
+    attachedImages: Array.isArray(draft.attachedImages) ? draft.attachedImages : [],
+  }
+}
 
 const defaultTaskCreateDraft = (): TaskCreateDraft => ({
   taskType: 'standard',
@@ -147,16 +160,16 @@ export const useDraftsStore = defineStore('drafts', {
       if (state.lastNewSessionProjectId !== null && state.lastNewSessionProjectId !== undefined) {
         const activeKey = draftKeyForProject(state.lastNewSessionProjectId)
         if (state.newSessionDrafts[activeKey]) {
-          return state.newSessionDrafts[activeKey]
+          return normalizeNewSessionDraft(state.newSessionDrafts[activeKey])
         }
       }
       if (state.newSessionDrafts['global']) {
-        return state.newSessionDrafts['global']
+        return normalizeNewSessionDraft(state.newSessionDrafts['global'])
       }
       // If any project draft exists, return the first one
       const keys = Object.keys(state.newSessionDrafts)
       if (keys.length > 0 && state.newSessionDrafts[keys[0]]) {
-        return state.newSessionDrafts[keys[0]]
+        return normalizeNewSessionDraft(state.newSessionDrafts[keys[0]])
       }
       return defaultNewSessionDraft(null)
     },
@@ -166,10 +179,8 @@ export const useDraftsStore = defineStore('drafts', {
     // --- New Session Draft Actions (Per-Project & Global) ---
     getNewSessionDraft(projectId?: number | null): NewSessionDraft {
       const key = draftKeyForProject(projectId)
-      return (
-        this.newSessionDrafts[key] ??
-        defaultNewSessionDraft(projectId ?? null)
-      )
+      const stored = this.newSessionDrafts[key]
+      return stored ? normalizeNewSessionDraft(stored) : defaultNewSessionDraft(projectId ?? null)
     },
 
     setNewSessionDraft(patch: Partial<NewSessionDraft>, explicitProjectId?: number | null) {

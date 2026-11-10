@@ -27,6 +27,7 @@ export interface AgentSession {
   backend: BackendId
   instanceId: string
   nativeSessionId: string
+  worktreeId?: number
   title?: string
   model?: string
   status: SessionStatus
@@ -55,6 +56,7 @@ export interface ListSessionsOptions {
 // the same request.
 export interface CreateSessionBody {
   backend: BackendId
+  worktreeId?: number
   title?: string
   message?: string
   model?: string

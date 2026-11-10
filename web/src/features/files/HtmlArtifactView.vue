@@ -10,6 +10,7 @@ const props = defineProps<{
   content: string
   fileSize?: number
   lines?: number
+  worktreeId?: number
 }>()
 
 const isModalVisible = ref(false)
@@ -36,7 +37,7 @@ async function openInBrowserModal() {
   isLoadingTicket.value = true
   errorMessage.value = ''
   try {
-    const ticket = await createPreviewTicket(props.projectId)
+    const ticket = await createPreviewTicket(props.projectId, props.worktreeId)
     previewUrl.value = getPreviewFileUrl(props.projectId, ticket, props.filePath)
     isModalVisible.value = true
   } catch (err) {

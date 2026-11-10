@@ -18,6 +18,7 @@ describe('useDraftsStore', () => {
         promptId: '',
         messageText: '',
         attachedImages: [],
+        worktreeId: 0,
       })
     })
 

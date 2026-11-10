@@ -4,6 +4,7 @@ import { checkoutGitBranch, getGitBranches } from '../../api/files'
 
 const props = defineProps<{
   projectId: number
+  worktreeId?: number
   currentBranch?: string
 }>()
 
@@ -25,7 +26,7 @@ async function fetchBranches() {
   if (!props.projectId) return
   loading.value = true
   try {
-    const res = await getGitBranches(props.projectId)
+    const res = await getGitBranches(props.projectId, props.worktreeId)
     branches.value = res.branches || []
     activeBranch.value = res.current || ''
   } catch {
@@ -71,7 +72,7 @@ async function selectBranch(branch: string, isCreate = false) {
   if (switching.value) return
   switching.value = true
   try {
-    await checkoutGitBranch(props.projectId, branch, isCreate)
+    await checkoutGitBranch(props.projectId, branch, isCreate, props.worktreeId)
     activeBranch.value = branch
     isOpen.value = false
     emit('branchChanged', branch)

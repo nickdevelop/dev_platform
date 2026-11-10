@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProjectSession, getSessionHistory, interruptProjectSession } from '../api/sessions'
 import { listAgentBackendModels, refreshAgentBackendModels } from '../api/agents'
 import { getProjectGitInfo } from '../api/git'
+import { createProjectWorktree, listProjectWorktrees, removeProjectWorktree } from '../api/worktrees'
 import { createService, fetchModels, testModel } from '../api/models'
 import { getAppearance, listAgents, putAppearance, setAgentEnabled } from '../api/settings'
 import { installTestCSRF, testCSRFToken } from './csrf-fixture'
@@ -100,8 +101,38 @@ describe('agents API contracts', () => {
   })
 })
 
-describe('session history API contract', () => {
-  it('reads history from the session history route without a CSRF token', async () => {
+describe('worktree API contracts', () => {
+  it('lists worktrees from the project worktree route', async () => {
+    const calls = stubJson({ worktrees: [{ id: 3, branch: 'feature/x' }] })
+
+    const result = await listProjectWorktrees(7)
+
+    expect(calls[0].url).toBe('/api/projects/7/worktrees')
+    expect(calls[0].init?.method).toBe('GET')
+    expect(result[0].branch).toBe('feature/x')
+  })
+
+  it('creates and removes worktrees through CSRF-protected routes', async () => {
+    installTestCSRF()
+    const calls = stubJson({ id: 3 })
+
+    await createProjectWorktree(7, { branch: 'feature/x', baseBranch: 'main' })
+    expect(calls[0].url).toBe('/api/projects/7/worktrees')
+    expect(calls[0].init?.method).toBe('POST')
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      branch: 'feature/x',
+      baseBranch: 'main',
+    })
+    expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
+
+    await removeProjectWorktree(7, 3)
+    expect(calls[1].url).toBe('/api/projects/7/worktrees/3')
+    expect(calls[1].init?.method).toBe('DELETE')
+    expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
+  })
+})
+
+describe('session history API contract', () => {  it('reads history from the session history route without a CSRF token', async () => {
     const calls = stubJson({ events: [], truncated: true })
 
     const history = await getSessionHistory(7, 'ses/1')

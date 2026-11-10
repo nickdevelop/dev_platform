@@ -16,6 +16,9 @@ import { ellipsisMiddle, formatTokens } from '../../../shared/format'
 
 export interface ComposerContextOptions {
   projectId: Ref<number>
+  // worktreeId scopes the git probe to the session's working tree; 0 is the
+  // project's main checkout.
+  worktreeId?: ComputedRef<number>
   sessionId: Ref<string>
   activeSession: ComputedRef<AgentSession | null>
   activeMessages: ComputedRef<ChatEntry[]>
@@ -66,21 +69,22 @@ export function useComposerContext(options: ComposerContextOptions) {
       gitInfo.value = null
       return
     }
-    // The git state belongs to the project's directory, so one probe per
-    // project serves every session of it.
-    const key = String(options.projectId.value)
+    // The git state belongs to the session's working directory, so one probe
+    // per (project, worktree) serves every session in that scope.
+    const worktreeId = options.worktreeId?.value ?? 0
+    const key = `${options.projectId.value}:${worktreeId}`
     if (!force && gitCache.has(key)) {
       gitInfo.value = gitCache.get(key) ?? null
       return
     }
     try {
-      const info = await getProjectGitInfo(options.projectId.value)
+      const info = await getProjectGitInfo(options.projectId.value, worktreeId || undefined)
       gitCache.set(key, info)
-      if (String(options.projectId.value) === key && options.activeSession.value) gitInfo.value = info
+      if (`${options.projectId.value}:${options.worktreeId?.value ?? 0}` === key && options.activeSession.value) gitInfo.value = info
     } catch {
       // Branch display is best-effort: a failed probe leaves the row without
       // the branch chip rather than breaking the session.
-      if (String(options.projectId.value) === key && options.activeSession.value) gitInfo.value = null
+      if (`${options.projectId.value}:${options.worktreeId?.value ?? 0}` === key && options.activeSession.value) gitInfo.value = null
     }
   }
   const branchLabel = computed(() => {

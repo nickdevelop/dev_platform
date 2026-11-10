@@ -9,6 +9,7 @@ const props = defineProps<{
   filePath: string
   commitRef?: string
   commitMessage?: string
+  worktreeId?: number
 }>()
 
 const emit = defineEmits<{
@@ -89,7 +90,7 @@ async function fetchDiff() {
   loading.value = true
   error.value = ''
   try {
-    const res = await getGitFileDiff(props.projectId, props.filePath, props.commitRef)
+    const res = await getGitFileDiff(props.projectId, props.filePath, props.commitRef, props.worktreeId)
     diffData.value = res
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取文件 Diff 失败'

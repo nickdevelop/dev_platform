@@ -49,7 +49,7 @@ export const useProjectsStore = defineStore('projects', {
 
   getters: {
     byId: (state) => (id: number): Project | undefined =>
-      state.projects.find((project) => project.id === id),
+      (state.projects ?? []).find((project) => project.id === id),
 
     orderedProjects: (state): Project[] => {
       const order = state.displayConfig.order

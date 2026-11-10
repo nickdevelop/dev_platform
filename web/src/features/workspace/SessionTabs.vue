@@ -41,6 +41,10 @@ const emit = defineEmits<{
 
 function label(tab: OpenTab): string {
   if (tab.kind === 'projects-management') return '项目管理'
+  if (tab.kind === 'project-settings') {
+    const project = props.projectNames?.[tab.projectId]
+    return project ? `${project} · 设置` : '项目设置'
+  }
   if (tab.kind === 'new-session') return 'new'
   if (tab.kind === 'new-chat') return '新对话'
   if (tab.kind === 'platform-settings') return '设置'
@@ -54,6 +58,10 @@ function titleOf(tab: OpenTab): string {
   if (tab.kind === 'new-chat') return '新对话'
   if (tab.kind === 'platform-settings') return '平台设置'
   if (tab.kind === 'projects-management') return '项目管理'
+  if (tab.kind === 'project-settings') {
+    const project = props.projectNames?.[tab.projectId]
+    return project ? `${project} · 项目设置` : '项目设置'
+  }
   if (tab.kind === 'task') return label(tab)
   if (tab.kind === 'chat') return label(tab)
   const project = props.projectNames?.[tab.projectId]
@@ -62,13 +70,18 @@ function titleOf(tab: OpenTab): string {
 }
 
 function isSettings(tab: OpenTab): boolean {
-  return tab.kind === 'platform-settings' || tab.kind === 'projects-management'
+  return (
+    tab.kind === 'platform-settings' ||
+    tab.kind === 'projects-management' ||
+    tab.kind === 'project-settings'
+  )
 }
 
 // The strip's close control label and the pin metadata branch on kind only to
 // talk about the right thing; identity stays a tab key everywhere.
 function closeLabel(tab: OpenTab): string {
   if (tab.kind === 'projects-management') return '关闭项目管理'
+  if (tab.kind === 'project-settings') return '关闭项目设置'
   if (isSettings(tab)) return '关闭设置'
   if (tab.kind === 'task') return `关闭任务：${label(tab)}`
   if (tab.kind === 'new-session') return '关闭新建会话'

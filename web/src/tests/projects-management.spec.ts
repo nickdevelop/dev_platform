@@ -16,9 +16,9 @@ describe('projects management, display ordering, and task dialog minimal mode', 
   it('manages project display order and visibility in projects store', () => {
     const store = useProjectsStore()
     store.projects = [
-      { id: 1, name: 'Project A', path: '/path/a' },
-      { id: 2, name: 'Project B', path: '/path/b' },
-      { id: 3, name: 'Project C', path: '/path/c' },
+      { id: 1, name: 'Project A', path: '/path/a', isGit: false },
+      { id: 2, name: 'Project B', path: '/path/b', isGit: true },
+      { id: 3, name: 'Project C', path: '/path/c', isGit: false },
     ]
 
     expect(store.orderedProjects.map((p) => p.id)).toEqual([1, 2, 3])
@@ -67,8 +67,8 @@ describe('projects management, display ordering, and task dialog minimal mode', 
   it('renders ProjectsManagementView with order controls and visibility toggles', async () => {
     const projectsStore = useProjectsStore()
     projectsStore.projects = [
-      { id: 10, name: 'Alpha', path: '/data/alpha' },
-      { id: 20, name: 'Beta', path: '/data/beta' },
+      { id: 10, name: 'Alpha', path: '/data/alpha', isGit: false },
+      { id: 20, name: 'Beta', path: '/data/beta', isGit: true },
     ]
 
     const wrapper = mount(ProjectsManagementView)

@@ -34,15 +34,16 @@ func NewGORMRepository(db *gorm.DB) Repository {
 
 func (r *gormRepository) Create(inst Instance) error {
 	row := database.AgentInstance{
-		ID:        inst.ID,
-		ProjectID: inst.ProjectID,
-		Backend:   string(inst.Backend),
-		Directory: inst.Directory,
-		Status:    string(inst.Status),
-		Endpoint:  inst.Endpoint,
-		Error:     inst.Error,
-		CreatedAt: inst.CreatedAt,
-		UpdatedAt: inst.UpdatedAt,
+		ID:         inst.ID,
+		ProjectID:  inst.ProjectID,
+		Backend:    string(inst.Backend),
+		WorktreeID: inst.WorktreeID,
+		Directory:  inst.Directory,
+		Status:     string(inst.Status),
+		Endpoint:   inst.Endpoint,
+		Error:      inst.Error,
+		CreatedAt:  inst.CreatedAt,
+		UpdatedAt:  inst.UpdatedAt,
 	}
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return tx.Create(&row).Error

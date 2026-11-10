@@ -467,6 +467,26 @@ var migrationSteps = []migrationStep{
 			END
 		`).Error
 	}},
+	{version: 38, name: "project_worktrees_and_worktree_scope", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&ProjectWorktree{}) {
+			if err := tx.Migrator().CreateTable(&ProjectWorktree{}); err != nil {
+				return err
+			}
+		}
+		// Instances and sessions created before worktrees stay on the project's
+		// main working directory: 0 is the explicit "main checkout" scope.
+		if tx.Migrator().HasTable(&AgentInstance{}) && !tx.Migrator().HasColumn(&AgentInstance{}, "worktree_id") {
+			if err := tx.Migrator().AddColumn(&AgentInstance{}, "worktree_id"); err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable(&AgentSession{}) && !tx.Migrator().HasColumn(&AgentSession{}, "worktree_id") {
+			if err := tx.Migrator().AddColumn(&AgentSession{}, "worktree_id"); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

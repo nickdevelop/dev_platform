@@ -14,6 +14,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
 import { useSessionsStore } from '../../../stores/sessions'
+import { useWorktreesStore } from '../../../stores/worktrees'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
 import { applyUserPromptTemplate, hasUserPromptPlaceholder } from '../../prompts/promptTemplate'
@@ -42,6 +43,7 @@ const emit = defineEmits<{
 const agents = useAgentsStore()
 const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
+const worktreesStore = useWorktreesStore()
 const promptsStore = usePromptsStore()
 const draftsStore = useDraftsStore()
 const router = useRouter()
@@ -103,6 +105,75 @@ const textareaPlaceholder = computed(() => {
 })
 
 const selectedProjectId = ref<number | null>(initialProjectId)
+const selectedWorktreeId = ref<number>(initialDraft.worktreeId ?? 0)
+
+const selectedProject = computed(() =>
+  selectedProjectId.value === null ? undefined : projectsStore.byId(Number(selectedProjectId.value)),
+)
+
+const projectIsGit = computed(() => selectedProject.value?.isGit === true)
+
+const projectWorktrees = computed(() =>
+  selectedProjectId.value === null ? [] : worktreesStore.forProject(Number(selectedProjectId.value)),
+)
+
+const worktreeOptions = computed<SelectMenuItem<number>[]>(() => {
+  const project = selectedProject.value
+  const options: SelectMenuItem<number>[] = [
+    {
+      value: 0,
+      label: '主工作区',
+      sublabel: project?.path,
+    },
+  ]
+  for (const worktree of projectWorktrees.value) {
+    options.push({
+      value: worktree.id,
+      label: worktree.branch,
+      sublabel: worktree.available ? worktree.path : `${worktree.path}（路径缺失）`,
+      disabled: !worktree.available,
+    })
+  }
+  return options
+})
+
+// A restored draft may name a worktree that was removed or belongs to a
+// non-git project: fall back to the main checkout rather than sending an id
+// the server must reject.
+function clampWorktreeSelection() {
+  if (!projectIsGit.value || selectedWorktreeId.value === 0) {
+    selectedWorktreeId.value = 0
+    return
+  }
+  const exists = projectWorktrees.value.some(
+    (entry) => entry.id === selectedWorktreeId.value && entry.available,
+  )
+  if (!exists) selectedWorktreeId.value = 0
+}
+
+watch(selectedProjectId, (id) => {
+  if (id === null) {
+    selectedWorktreeId.value = 0
+    return
+  }
+  if (projectsStore.byId(Number(id))?.isGit) {
+    void worktreesStore.load(Number(id)).then(clampWorktreeSelection)
+  } else {
+    selectedWorktreeId.value = 0
+  }
+})
+
+watch(projectWorktrees, clampWorktreeSelection)
+
+watch(projectIsGit, (isGit) => {
+  if (!isGit) {
+    selectedWorktreeId.value = 0
+    return
+  }
+  if (selectedProjectId.value !== null) {
+    void worktreesStore.load(Number(selectedProjectId.value)).then(clampWorktreeSelection)
+  }
+})
 
 const projectOptions = computed<SelectMenuItem<number | null>[]>(() => {
   return (projectsStore.projects ?? []).map((p) => ({
@@ -181,6 +252,7 @@ watch(selectedProjectId, (newId, oldId) => {
         promptId: selectedPromptId.value,
         messageText: messageText.value,
         attachedImages: attachedImages.value,
+        worktreeId: selectedWorktreeId.value,
       },
       oldId,
     )
@@ -200,6 +272,12 @@ watch(selectedProjectId, (newId, oldId) => {
       : firstSelectableBackend()
     selectedModel.value = targetDraft.model || ''
     selectedPromptId.value = targetDraft.promptId || ''
+    selectedWorktreeId.value = targetDraft.worktreeId ?? 0
+    if (projectsStore.byId(Number(newId))?.isGit) {
+      void worktreesStore.load(Number(newId)).then(clampWorktreeSelection)
+    } else {
+      selectedWorktreeId.value = 0
+    }
     clearInvalidPromptSelection()
     attachedImages.value = Array.isArray(targetDraft.attachedImages) ? [...targetDraft.attachedImages] : []
     void nextTick(() => {
@@ -237,6 +315,11 @@ watch(selectedPromptId, (val) => {
   draftsStore.setNewSessionDraft({ promptId: val }, selectedProjectId.value)
 })
 
+watch(selectedWorktreeId, (val) => {
+  if (isRestoringDraft) return
+  draftsStore.setNewSessionDraft({ worktreeId: val }, selectedProjectId.value)
+})
+
 const selectedCapabilities = computed(() =>
   selectedBackend.value === '' ? null : agents.capabilitiesFor(selectedBackend.value),
 )
@@ -253,7 +336,10 @@ const dropdown = useComposerDropdown({
       () => '',
       () => selectedBackend.value || '',
     ),
-    new WorkspaceFileSource(() => selectedProjectId.value ?? 0),
+    new WorkspaceFileSource(
+      () => selectedProjectId.value ?? 0,
+      () => selectedWorktreeId.value,
+    ),
     // The panel has no open session yet, so mentions resolve against the
     // project's previously loaded session index.
     new SessionMentionSource(
@@ -448,6 +534,9 @@ async function createSession() {
     selectedModel.value !== ''
   const created = await sessions.createSession(targetProjectId, {
     backend: selectedBackend.value,
+    ...(projectIsGit.value && selectedWorktreeId.value > 0
+      ? { worktreeId: selectedWorktreeId.value }
+      : {}),
     ...(finalMessage !== '' ? { message: finalMessage } : {}),
     ...(withModel ? { model: selectedModel.value } : {}),
     ...(attachedImages.value.length > 0 ? { images: attachedImages.value } : {}),
@@ -493,6 +582,28 @@ async function createSession() {
               新建项目
             </button>
           </div>
+        </div>
+
+        <div v-if="projectIsGit" class="worktree-selector-group" data-test="worktree-selector">
+          <div class="worktree-selector-head">
+            <label for="worktree-select" class="worktree-label">工作树</label>
+            <RouterLink
+              v-if="projectWorktrees.length === 0 && !worktreesStore.isLoading(Number(selectedProjectId))"
+              class="worktree-settings-link"
+              :to="{ name: 'project-settings', params: { projectId: String(selectedProjectId) } }"
+            >
+              前往项目设置创建工作树
+            </RouterLink>
+          </div>
+          <UiSelectMenu
+            id="worktree-select"
+            v-model="selectedWorktreeId"
+            class="worktree-select"
+            data-test="worktree-select"
+            :options="worktreeOptions"
+            placeholder="主工作区"
+            block
+          />
         </div>
 
         <div class="agent-selector-group">
@@ -635,7 +746,11 @@ async function createSession() {
                     data-test="send-shortcut-enter"
                     @click="chooseSendShortcut('enter')"
                   >
-                    <span class="menu-check">{{ sendShortcut === 'enter' ? '✓' : '' }}</span>
+                    <span class="menu-check">
+                      <svg v-if="sendShortcut === 'enter'" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 8.5 6.5 12 13 4.5" />
+                      </svg>
+                    </span>
                     <span class="menu-label">按 Enter 发送</span>
                     <span class="menu-hint">Shift+Enter 换行</span>
                   </button>
@@ -646,7 +761,11 @@ async function createSession() {
                     data-test="send-shortcut-ctrl-enter"
                     @click="chooseSendShortcut('ctrl-enter')"
                   >
-                    <span class="menu-check">{{ sendShortcut === 'ctrl-enter' ? '✓' : '' }}</span>
+                    <span class="menu-check">
+                      <svg v-if="sendShortcut === 'ctrl-enter'" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 8.5 6.5 12 13 4.5" />
+                      </svg>
+                    </span>
                     <span class="menu-label">按 Ctrl+Enter 发送</span>
                     <span class="menu-hint">Enter 换行</span>
                   </button>
@@ -744,6 +863,47 @@ async function createSession() {
 
 .project-select:focus {
   border-color: var(--color-primary);
+}
+
+.worktree-selector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.worktree-selector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.worktree-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.worktree-settings-link {
+  font-size: 0.75rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.worktree-settings-link:hover {
+  text-decoration: underline;
+}
+
+.worktree-select {
+  flex: 1;
+  min-width: 0;
 }
 
 .no-projects-hint {

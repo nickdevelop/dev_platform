@@ -69,6 +69,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusConflict, "service_not_running")
 	case errors.Is(err, instances.ErrStartFailed):
 		respondError(c, http.StatusBadGateway, "instance_start_failed")
+	case errors.Is(err, instances.ErrWorktreeUnavailable):
+		respondError(c, http.StatusConflict, "worktree_unavailable")
+	case errors.Is(err, instances.ErrDirectoryUnavailable):
+		respondError(c, http.StatusConflict, "directory_unavailable")
 	case errors.Is(err, agents.ErrInvalidHistoryCursor):
 		respondError(c, http.StatusBadRequest, "invalid_history_cursor")
 	case errors.Is(err, agents.ErrHistoryImageNotFound):
@@ -113,11 +117,12 @@ type backendDiagnosticsResponse struct {
 // Message and model are optional: when present, the session is created on the
 // model and the message is admitted as its first turn in the same request.
 type createSessionRequest struct {
-	Backend agents.BackendID         `json:"backend"`
-	Title   string                   `json:"title,omitempty"`
-	Message string                   `json:"message,omitempty"`
-	Model   string                   `json:"model,omitempty"`
-	Images  []agents.ImageAttachment `json:"images,omitempty"`
+	Backend    agents.BackendID         `json:"backend"`
+	WorktreeID uint                     `json:"worktreeId,omitempty"`
+	Title      string                   `json:"title,omitempty"`
+	Message    string                   `json:"message,omitempty"`
+	Model      string                   `json:"model,omitempty"`
+	Images     []agents.ImageAttachment `json:"images,omitempty"`
 }
 
 // createSessionResponse is the JSON body of a successful create. MessageError
@@ -233,7 +238,7 @@ func (s *Service) handleCreate(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, "invalid_request")
 		return
 	}
-	outcome, err := s.Create(c.Request.Context(), id, req.Backend, req.Title, req.Message, req.Model, req.Images)
+	outcome, err := s.CreateInWorktree(c.Request.Context(), id, req.WorktreeID, req.Backend, req.Title, req.Message, req.Model, req.Images)
 	if err != nil {
 		respondServiceError(c, err)
 		return

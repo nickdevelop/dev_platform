@@ -10,7 +10,6 @@
 // any panel, so a stale or foreign URL never renders another project's content.
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import type { Project } from '../../api/projects'
 import { useAgentsStore } from '../../stores/agents'
 import { useAuthStore } from '../../stores/auth'
 import { useProjectsStore } from '../../stores/projects'
@@ -36,7 +35,7 @@ import DebugLauncher from '../debug/DebugLauncher.vue'
 import DebugPanel from '../debug/DebugPanel.vue'
 import { useDebugPanelStore } from '../../stores/debugPanel'
 
-type DialogKind = 'register' | 'create' | 'edit' | 'unregister'
+type DialogKind = 'register' | 'create'
 
 const route = useRoute()
 const router = useRouter()
@@ -61,7 +60,7 @@ setOpenTabsTrimGuard(
 )
 
 const ready = ref(false)
-const dialog = ref<{ kind: DialogKind; project: Project | null } | null>(null)
+const dialog = ref<{ kind: DialogKind } | null>(null)
 
 // The middle column (project tree, task list or settings menu) can be pinned (docked)
 // or floating (unpinned/drawer), and can be collapsed from the dock controls or rail.
@@ -186,6 +185,7 @@ const sessionId = computed<string | null>(() =>
 // form, task details and the platform settings each map onto their tab key the
 // strip renders.
 const projectsManagementRoute = computed(() => route.name === 'projects-management')
+const projectSettingsRoute = computed(() => route.name === 'project-settings')
 const platformSettingsRoute = computed(
   () => typeof route.name === 'string' && route.name.startsWith('settings-'),
 )
@@ -222,7 +222,8 @@ const workspaceTabs = computed(() =>
     (entry) =>
       entry.kind === 'session' ||
       entry.kind === 'new-session' ||
-      entry.kind === 'projects-management',
+      entry.kind === 'projects-management' ||
+      entry.kind === 'project-settings',
   ),
 )
 
@@ -236,6 +237,9 @@ const chatTabs = computed(() =>
 const activeKey = computed<string | null>(() => {
   if (!projectActive.value) return null
   if (projectsManagementRoute.value) return 'projects-management'
+  if (projectSettingsRoute.value && projectId.value !== null) {
+    return `project-settings:${projectId.value}`
+  }
   if (newSessionRoute.value) return 'new-session'
   return sessionId.value
 })
@@ -322,6 +326,10 @@ function syncTabWithRoute() {
       openTabs.openProjectsManagement()
       return
     }
+    if (projectSettingsRoute.value && projectId.value !== null) {
+      openTabs.openProjectSettings(projectId.value)
+      return
+    }
     if (projectId.value === null) return
     if (sessionId.value === null) return
     const known = sessions.sessionById(sessionId.value)
@@ -406,6 +414,10 @@ function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
   if (tab.kind === 'projects-management') {
     void router.push({ name: 'projects-management' })
+    return
+  }
+  if (tab.kind === 'project-settings') {
+    void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
     return
   }
   if (tab.kind === 'new-session') {
@@ -548,12 +560,11 @@ function togglePinTab(tab: OpenTab) {
   openTabs.togglePin(tabKey(tab))
 }
 
-// The pencil in a project row opens the shell's single project dialog in edit
-// mode. Project configuration (unregister and other project facts) stays a
-// workbench tab reachable from the project list view.
-function openProjectEdit(id: number) {
-  const project = projects.byId(id)
-  if (project) openManage('edit', project)
+// The gear in a project row opens that project's settings tab. Project
+// configuration (rename, git worktrees) lives there; the projects management
+// page keeps ordering, visibility and unregister.
+function openProjectSettings(id: number) {
+  void router.push({ name: 'project-settings', params: { projectId: String(id) } })
 }
 
 function onOpenProjectsManagement() {
@@ -595,28 +606,14 @@ function onNewTab() {
   }
 }
 
-function openManage(kind: DialogKind, project: Project | null = null) {
-  dialog.value = { kind, project }
+function openManage(kind: DialogKind) {
+  dialog.value = { kind }
 }
 
-// A removed project's open pages must not outlive it, so the shell returns home
-// after unregister and drops that project's tabs. Editing keeps the id and the
-// user stays where they are.
-async function onSubmitted(kind: DialogKind) {
-  const removed = dialog.value?.project ?? null
+// Creating or registering a project changes the list; no existing tab needs
+// closing. Unregister stays on the projects management page.
+async function onSubmitted(_kind: DialogKind) {
   await projects.load()
-  if (kind === 'unregister' && removed) {
-    for (const tab of openTabs.tabs.filter(
-      (entry): entry is Extract<OpenTab, { projectId: number }> =>
-        'projectId' in entry && entry.projectId === removed.id,
-    )) {
-      if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
-      openTabs.closeTabByKey(tabKey(tab))
-    }
-    if (projectId.value === removed.id) {
-      void router.push({ name: 'home' })
-    }
-  }
 }
 
 async function logout() {
@@ -745,7 +742,7 @@ watch(
         :active-project-id="projectId"
         :active-session-id="sessionId"
         @manage="openManage($event)"
-        @edit="openProjectEdit"
+        @open-settings="openProjectSettings"
         @open-projects-management="onOpenProjectsManagement"
         @select-session="openSessionTab"
         @new-session="openNewSession"
@@ -795,7 +792,6 @@ watch(
     <ProjectManageDialog
       v-if="dialog"
       :kind="dialog.kind"
-      :project="dialog.project"
       @close="dialog = null"
       @submitted="onSubmitted"
     />

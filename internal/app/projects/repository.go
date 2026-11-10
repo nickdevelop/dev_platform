@@ -29,6 +29,11 @@ type Repository interface {
 	RemoveProject(id uint) error
 	GetDisplayConfig() (DisplayConfig, error)
 	SetDisplayConfig(cfg DisplayConfig) error
+	ListWorktrees(projectID uint) ([]Worktree, error)
+	GetWorktree(projectID, id uint) (Worktree, error)
+	CreateWorktree(worktree Worktree) (Worktree, error)
+	UpdateWorktreeBranch(projectID, id uint, branch string) error
+	DeleteWorktree(projectID, id uint) error
 }
 
 type gormRepository struct {
@@ -114,7 +119,7 @@ func (r *gormRepository) RemoveProject(id uint) error {
 			return fmt.Errorf("%w: %d instance(s) of project %d are still live", ErrInstanceStop, live, id)
 		}
 
-		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}} {
+		for _, model := range []any{&database.AgentSession{}, &database.AgentInstance{}, &database.ProjectWorktree{}} {
 			if err := tx.Where("project_id = ?", id).Delete(model).Error; err != nil {
 				return fmt.Errorf("projects: delete project %d rows: %w", id, err)
 			}
@@ -129,6 +134,81 @@ func (r *gormRepository) RemoveProject(id uint) error {
 // projectFromModel maps the persistence model to the JSON-stable DTO.
 func projectFromModel(row database.Project) Project {
 	return Project{ID: row.ID, Name: row.Name, Path: row.Path}
+}
+
+func (r *gormRepository) ListWorktrees(projectID uint) ([]Worktree, error) {
+	var rows []database.ProjectWorktree
+	if err := r.db.Where("project_id = ?", projectID).Order("created_at ASC, id ASC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("projects: list worktrees of %d: %w", projectID, err)
+	}
+	out := make([]Worktree, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, worktreeFromModel(row))
+	}
+	return out, nil
+}
+
+func (r *gormRepository) GetWorktree(projectID, id uint) (Worktree, error) {
+	var row database.ProjectWorktree
+	if err := r.db.Where("id = ? AND project_id = ?", id, projectID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Worktree{}, ErrWorktreeNotFound
+		}
+		return Worktree{}, fmt.Errorf("projects: load worktree %d of project %d: %w", id, projectID, err)
+	}
+	return worktreeFromModel(row), nil
+}
+
+func (r *gormRepository) CreateWorktree(worktree Worktree) (Worktree, error) {
+	row := database.ProjectWorktree{
+		ProjectID:  worktree.ProjectID,
+		Path:       worktree.Path,
+		Branch:     worktree.Branch,
+		BaseBranch: worktree.BaseBranch,
+	}
+	if err := r.db.Transaction(func(tx *gorm.DB) error { return tx.Create(&row).Error }); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return Worktree{}, fmt.Errorf("%w: %q", ErrWorktreeExists, worktree.Branch)
+		}
+		return Worktree{}, fmt.Errorf("projects: record worktree %q: %w", worktree.Path, err)
+	}
+	return worktreeFromModel(row), nil
+}
+
+func (r *gormRepository) UpdateWorktreeBranch(projectID, id uint, branch string) error {
+	res := r.db.Model(&database.ProjectWorktree{}).
+		Where("id = ? AND project_id = ?", id, projectID).
+		UpdateColumn("branch", branch)
+	if res.Error != nil {
+		return fmt.Errorf("projects: update worktree %d branch: %w", id, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrWorktreeNotFound
+	}
+	return nil
+}
+
+func (r *gormRepository) DeleteWorktree(projectID, id uint) error {
+	res := r.db.Where("id = ? AND project_id = ?", id, projectID).Delete(&database.ProjectWorktree{})
+	if res.Error != nil {
+		return fmt.Errorf("projects: delete worktree %d: %w", id, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrWorktreeNotFound
+	}
+	return nil
+}
+
+func worktreeFromModel(row database.ProjectWorktree) Worktree {
+	return Worktree{
+		ID:         row.ID,
+		ProjectID:  row.ProjectID,
+		Path:       row.Path,
+		Branch:     row.Branch,
+		BaseBranch: row.BaseBranch,
+		CreatedAt:  row.CreatedAt,
+		UpdatedAt:  row.UpdatedAt,
+	}
 }
 
 func (r *gormRepository) GetDisplayConfig() (DisplayConfig, error) {

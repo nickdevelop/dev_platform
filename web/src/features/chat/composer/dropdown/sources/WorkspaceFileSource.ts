@@ -5,7 +5,10 @@ export class WorkspaceFileSource implements DropdownSource {
   readonly id = 'workspace-file'
   readonly trigger = '@' as const
 
-  constructor(private readonly getProjectId: () => number) {}
+  constructor(
+    private readonly getProjectId: () => number,
+    private readonly getWorktreeId?: () => number,
+  ) {}
 
   match(text: string, cursor: number): TriggerMatch | null {
     const before = text.slice(0, cursor)
@@ -36,7 +39,12 @@ export class WorkspaceFileSource implements DropdownSource {
     if (!projectId) return []
 
     try {
-      const resp = await searchProjectFiles(projectId, match.query, 50)
+      const resp = await searchProjectFiles(
+        projectId,
+        match.query,
+        50,
+        this.getWorktreeId?.() || undefined,
+      )
       if (signal.aborted) return []
 
       return resp.files.map((file): DropdownItem => {

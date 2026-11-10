@@ -15,7 +15,7 @@ defineProps<{
 
 const emit = defineEmits<{
   manage: [kind: 'register' | 'create']
-  edit: [projectId: number]
+  'open-settings': [projectId: number]
   'open-projects-management': []
   'select-session': [projectId: number, sessionId: string]
   'new-session': [projectId: number]
@@ -79,7 +79,7 @@ function onShowTaskSessionsChange() {
           <circle cx="8" cy="8" r="2.5" />
           <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" />
         </svg>
-        <span>设置</span>
+        <span>管理</span>
       </button>
     </div>
 
@@ -130,7 +130,7 @@ function onShowTaskSessionsChange() {
         :active-session-id="activeSessionId"
         :search="search"
         :show-task-sessions="showTaskSessions"
-        @edit="emit('edit', $event)"
+        @open-settings="emit('open-settings', $event)"
         @select-session="(pId, sId) => emit('select-session', pId, sId)"
         @new-session="emit('new-session', $event)"
         @delete-session="(pId, sId) => emit('delete-session', pId, sId)"

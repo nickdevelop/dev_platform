@@ -9,6 +9,7 @@ export interface Project {
   id: number
   name: string
   path: string
+  isGit: boolean
 }
 
 // Mirrors #/components/schemas/ProjectList.
@@ -68,10 +69,12 @@ export function searchProjectFiles(
   projectId: number,
   query = '',
   limit = 50,
+  worktreeId?: number,
 ): Promise<ProjectFilesResponse> {
   const params = new URLSearchParams()
   if (query) params.set('q', query)
   if (limit) params.set('limit', String(limit))
+  if (worktreeId) params.set('worktreeId', String(worktreeId))
   const qs = params.toString() ? `?${params.toString()}` : ''
   return get<ProjectFilesResponse>(`/projects/${projectId}/files${qs}`)
 }

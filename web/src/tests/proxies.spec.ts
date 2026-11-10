@@ -88,6 +88,7 @@ describe('Service Proxies UI Components', () => {
         id: 1,
         name: 'MyWeb',
         path: '/data/projects/my-web',
+        isGit: false,
       },
     ]
 

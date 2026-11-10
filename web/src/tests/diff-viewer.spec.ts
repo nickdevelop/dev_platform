@@ -38,7 +38,7 @@ index 1234..5678 100644
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('src/main.ts'))
 
-    expect(diffSpy).toHaveBeenCalledWith(1, 'src/main.ts', 'a1b2c3d4e5f6')
+    expect(diffSpy).toHaveBeenCalledWith(1, 'src/main.ts', 'a1b2c3d4e5f6', undefined)
 
     // Expect additions and deletions stats
     expect(wrapper.text()).toContain('+2')

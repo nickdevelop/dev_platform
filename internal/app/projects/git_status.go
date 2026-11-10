@@ -17,18 +17,18 @@ type GitStatusItem struct {
 // GitStatus inspects the working directory with `git status --porcelain`.
 // If the directory is not inside a git work tree or git is unavailable,
 // it returns an empty slice without an error.
-func (s *Service) GitStatus(ctx context.Context, projectID uint) ([]GitStatusItem, error) {
-	return s.GitStatusWithRef(ctx, projectID, "")
+func (s *Service) GitStatus(ctx context.Context, projectID uint, worktreeID ...uint) ([]GitStatusItem, error) {
+	return s.GitStatusWithRef(ctx, projectID, "", worktreeID...)
 }
 
 // GitStatusWithRef inspects changed files in the working directory (when commitRef is empty)
 // or within a specific commit (when commitRef is provided).
-func (s *Service) GitStatusWithRef(ctx context.Context, projectID uint, commitRef string) ([]GitStatusItem, error) {
-	row, err := s.load(projectID)
+func (s *Service) GitStatusWithRef(ctx context.Context, projectID uint, commitRef string, worktreeID ...uint) ([]GitStatusItem, error) {
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGitDir(ctx, row.Path) {
+	if !s.isGitDir(ctx, rootDir) {
 		return []GitStatusItem{}, nil
 	}
 
@@ -37,10 +37,10 @@ func (s *Service) GitStatusWithRef(ctx context.Context, projectID uint, commitRe
 		if !isValidCommitRef(cleanRef) {
 			return nil, ErrInvalidTarget
 		}
-		return s.gitCommitStatus(ctx, row.Path, cleanRef)
+		return s.gitCommitStatus(ctx, rootDir, cleanRef)
 	}
 
-	return s.gitWorkingStatus(ctx, row.Path)
+	return s.gitWorkingStatus(ctx, rootDir)
 }
 
 func (s *Service) gitWorkingStatus(ctx context.Context, rootDir string) ([]GitStatusItem, error) {

@@ -696,6 +696,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: q
           in: query
           required: false
@@ -743,6 +744,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
       responses:
         '200':
           description: Project directory tree.
@@ -775,6 +777,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: path
           in: query
           required: true
@@ -809,6 +812,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: path
           in: query
           required: true
@@ -844,6 +848,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - $ref: '#/components/parameters/CSRFToken'
       responses:
         '200':
@@ -870,6 +875,122 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/worktrees:
+    get:
+      summary: List a project's git worktrees
+      description: >-
+        Returns the platform-registered git worktrees of the project. The main
+        checkout is not listed; it is addressed by worktreeId 0. A worktree whose
+        directory was removed outside the platform stays listed with available
+        false.
+      operationId: listProjectWorktrees
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Registered worktrees in creation order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - worktrees
+                properties:
+                  worktrees:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProjectWorktree'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      summary: Create a git worktree with a new branch
+      description: >-
+        Creates a new branch from baseBranch (default HEAD) and checks it out in
+        a new worktree directory. The directory defaults to a sibling
+        <repo>-worktrees/<branch-slug> directory; an explicit absolute path may
+        be supplied. Existing targets are never reused.
+      operationId: createProjectWorktree
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectWorktreeRequest'
+      responses:
+        '201':
+          description: Worktree created and registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectWorktree'
+        '400':
+          description: Invalid branch name, invalid target, or the project is not a git repository root.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The branch or directory is already registered, or git could not create the worktree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /projects/{id}/worktrees/{worktreeId}:
+    delete:
+      summary: Remove a git worktree
+      description: >-
+        Stops every live agent instance in the worktree, refuses to remove a
+        working tree with uncommitted or untracked changes, removes the directory
+        through git, and drops the platform record. The branch is kept.
+      operationId: removeProjectWorktree
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeIdPath'
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Worktree removed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: No such project or worktree.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The working tree is dirty, an instance could not be stopped, or git refused the removal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/git-info:
     get:
       summary: Git state of a project working directory
@@ -888,6 +1009,7 @@ paths:
           schema:
             type: integer
             format: int64
+        - $ref: '#/components/parameters/WorktreeScope'
       responses:
         '200':
           description: The project's git state.
@@ -914,6 +1036,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: commit
           in: query
           required: false
@@ -952,6 +1075,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: limit
           in: query
           required: false
@@ -991,6 +1115,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - name: path
           in: query
           required: true
@@ -1035,6 +1160,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: false
@@ -1076,6 +1202,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: false
@@ -1117,6 +1244,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
@@ -1158,6 +1286,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
         - $ref: '#/components/parameters/CSRFToken'
       requestBody:
         required: true
@@ -1196,6 +1325,7 @@ paths:
         - cookieAuth: []
       parameters:
         - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
       responses:
         '200':
           description: Branch list and active branch.
@@ -5381,6 +5511,24 @@ components:
       schema:
         type: integer
         format: int64
+    WorktreeIdPath:
+      name: worktreeId
+      in: path
+      required: true
+      description: Identifier of a platform-registered git worktree.
+      schema:
+        type: integer
+        format: int64
+    WorktreeScope:
+      name: worktreeId
+      in: query
+      required: false
+      description: >-
+        Scope the operation to one platform-registered git worktree. Omitted or
+        0 addresses the project's main checkout.
+      schema:
+        type: integer
+        format: int64
     SessionId:
       name: sessionId
       in: path
@@ -5464,6 +5612,7 @@ components:
         - id
         - name
         - path
+        - isGit
       properties:
         id:
           type: integer
@@ -5475,6 +5624,68 @@ components:
         path:
           type: string
           description: Canonical absolute directory path of the project.
+        isGit:
+          type: boolean
+          description: >-
+            True when the project root carries git metadata (.git directory or
+            the .git file of a linked worktree). Detailed branch and dirty state
+            is reported by GET /projects/{id}/git-info.
+      additionalProperties: false
+    ProjectWorktree:
+      type: object
+      required:
+        - id
+        - projectId
+        - path
+        - branch
+        - available
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Stable platform worktree identifier, scoped to the project.
+        projectId:
+          type: integer
+          format: int64
+          description: Identifier of the owning project.
+        path:
+          type: string
+          description: Canonical absolute working directory of the worktree.
+        branch:
+          type: string
+          description: Branch currently checked out in the worktree.
+        baseBranch:
+          type: string
+          description: Branch the worktree's branch was created from.
+        available:
+          type: boolean
+          description: False when the directory no longer exists on disk.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    CreateProjectWorktreeRequest:
+      type: object
+      required:
+        - branch
+      properties:
+        branch:
+          type: string
+          description: New branch to create and check out in the worktree.
+        baseBranch:
+          type: string
+          description: Branch to start from; omitted means HEAD.
+        path:
+          type: string
+          description: >-
+            Optional absolute target directory. Omitted uses the default sibling
+            directory. The target must not exist and must be outside the project
+            working tree.
       additionalProperties: false
     ProjectDisplayConfig:
       type: object
@@ -5624,6 +5835,12 @@ components:
           enum:
             - opencode-v2
             - pi
+        worktreeId:
+          type: integer
+          format: int64
+          description: >-
+            Platform-registered git worktree the instance runs in. Absent or 0
+            means the project's main checkout.
         directory:
           type: string
           description: Authorized working directory of the instance.
@@ -5968,6 +6185,12 @@ components:
         instanceId:
           type: string
           description: Durable identifier of the instance running the session.
+        worktreeId:
+          type: integer
+          format: int64
+          description: >-
+            Platform-registered git worktree the session was created in.
+            Absent or 0 means the project's main checkout.
         nativeSessionId:
           type: string
           description: The agent-native session identifier.
@@ -6125,8 +6348,14 @@ components:
             - pi
           description: >-
             Backend to create the session on. The server reuses the project's
-            most recently created running instance of this backend, starting
-            one when none is running.
+            most recently created running instance of this backend in the same
+            worktree, starting one when none is running.
+        worktreeId:
+          type: integer
+          format: int64
+          description: >-
+            Optional platform-registered git worktree the session runs in.
+            Omitted or 0 means the project's main checkout.
         title:
           type: string
           description: >-
