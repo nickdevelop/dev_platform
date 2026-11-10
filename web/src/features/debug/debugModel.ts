@@ -146,6 +146,54 @@ export function filterEntries(entries: DebugEntry[], filter: DebugFilter): Debug
   return entries.filter((entry) => matchesFilter(entry, filter))
 }
 
+// channelCounts counts the current buffer per channel, plus the 'all' total.
+// The channel tabs read these counts so a channel with a real zero prints 0
+// instead of disappearing.
+export function channelCounts(entries: ReadonlyArray<DebugEntry>): Record<string, number> {
+  const counts: Record<string, number> = { all: entries.length }
+  for (const entry of entries) {
+    counts[entry.channel] = (counts[entry.channel] ?? 0) + 1
+  }
+  return counts
+}
+
+// A badge is one identity string shown on a row: session / chat / run /
+// instance / backend. backend is flagged so the row can style it apart without
+// hardcoding provider ids.
+export interface DebugBadge {
+  key: string
+  value: string
+  label: string
+  backend: boolean
+}
+
+export interface DebugBadgeSet {
+  badges: DebugBadge[]
+  hidden: number
+}
+
+// identityBadges flattens the identity groups into display order and folds the
+// tail into a count. The full values remain available in the expanded payload.
+export function identityBadges(identity: DebugEntryIdentities, limit = 3): DebugBadgeSet {
+  const badges: DebugBadge[] = []
+  const push = (key: string, values: string[], prefix = '') => {
+    for (const value of values) {
+      badges.push({ key, value, label: prefix ? `${prefix} ${value}` : value, backend: false })
+    }
+  }
+
+  push('sessionId', identity.sessionIds)
+  push('chatId', identity.chatIds, 'chat')
+  push('runId', identity.runIds, 'run')
+  push('instanceId', identity.instanceIds, 'inst')
+  for (const backend of identity.backends) {
+    badges.push({ key: 'backend', value: backend, label: backend, backend: true })
+  }
+
+  const shown = badges.slice(0, Math.max(0, limit))
+  return { badges: shown, hidden: Math.max(0, badges.length - shown.length) }
+}
+
 // formatClock renders receive time as local HH:MM:SS.mmm with tabular digits.
 export function formatClock(timestamp: number): string {
   if (!Number.isFinite(timestamp)) return '--:--:--.---'

@@ -8,11 +8,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import {
   DEBUG_BUFFER_LIMIT,
   appendEntry,
+  channelCounts,
   createEntry,
   emptyDebugFilter,
   extractIdentities,
   filterEntries,
   formatClock,
+  identityBadges,
   matchesFilter,
   prettyJSON,
   type DebugEntry,
@@ -125,6 +127,57 @@ describe('debugModel · filtering', () => {
 
   it('matchesFilter respects the channel=all escape hatch', () => {
     expect(matchesFilter(entries[0], { ...emptyDebugFilter(), channel: 'all' })).toBe(true)
+  })
+})
+
+describe('debugModel · ledger helpers', () => {
+  const entries: DebugEntry[] = [
+    { seq: 1, receivedAt: 0, channel: 'sessions', targetId: 'session-a', eventType: 'delta', payload: {} },
+    { seq: 2, receivedAt: 0, channel: 'sessions', targetId: 'session-b', eventType: 'error', payload: {} },
+    { seq: 3, receivedAt: 0, channel: 'chat', targetId: '17', eventType: 'delta', payload: {} },
+    { seq: 4, receivedAt: 0, channel: 'tasks', targetId: '9', eventType: 'chunk', payload: {} },
+  ]
+
+  it('channelCounts counts the current buffer per channel plus the total', () => {
+    expect(channelCounts(entries)).toEqual({ all: 4, sessions: 2, chat: 1, tasks: 1 })
+    expect(channelCounts([])).toEqual({ all: 0 })
+  })
+
+  it('channelCounts keeps real zeros out of the object so the UI can print 0', () => {
+    expect(channelCounts(entries).system ?? 0).toBe(0)
+  })
+
+  it('identityBadges orders session → chat → run → instance → backend and folds the tail', () => {
+    const identity = {
+      targetId: 'session-1',
+      sessionIds: ['sess_a'],
+      chatIds: ['42'],
+      runIds: ['9'],
+      instanceIds: ['inst-1'],
+      backends: ['opencode'],
+    }
+    const folded = identityBadges(identity, 3)
+    expect(folded.badges.map((badge) => badge.label)).toEqual(['sess_a', 'chat 42', 'run 9'])
+    expect(folded.hidden).toBe(2)
+    expect(folded.badges.every((badge) => !badge.backend)).toBe(true)
+
+    const full = identityBadges(identity, 10)
+    expect(full.hidden).toBe(0)
+    expect(full.badges[3]).toMatchObject({ key: 'instanceId', label: 'inst inst-1' })
+    expect(full.badges[4]).toMatchObject({ key: 'backend', label: 'opencode', backend: true })
+  })
+
+  it('identityBadges tolerates an identity with no captured fields', () => {
+    const empty = identityBadges({
+      targetId: 'session-1',
+      sessionIds: [],
+      chatIds: [],
+      instanceIds: [],
+      backends: [],
+      runIds: [],
+    })
+    expect(empty.badges).toEqual([])
+    expect(empty.hidden).toBe(0)
   })
 })
 
