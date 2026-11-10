@@ -31,6 +31,13 @@ export class DesktopProxy {
   private server: http.Server
   private port: number = 0
   private webDir: string
+  // Long-lived data connections currently threaded to the active backend:
+  // SSE event streams and WebSocket upgrades. getTarget() is re-resolved per
+  // request, so a connection switch only affects future requests — these
+  // established sockets keep piping frames from the OLD backend environment
+  // until set ends. closeAllConnections() must be called on switch so clients
+  // reconnect (and their subscriptions re-establish) against the new target.
+  private activeConnections = new Set<{ client: stream.Duplex; target: stream.Duplex }>()
 
   constructor(
     private connectionStore: ConnectionStore,
@@ -95,6 +102,20 @@ export class DesktopProxy {
 
   public getPort(): number {
     return this.port
+  }
+
+  /**
+   * Hard-cut every long-lived connection piped to the current backend target.
+   * Called on connection switch: without it, established SSE/WS streams keep
+   * delivering events from the previous environment while new subscriptions
+   * reach the new one (lost or cross-environment events).
+   */
+  public closeAllConnections(): void {
+    for (const { client, target } of [...this.activeConnections]) {
+      client.destroy()
+      target.destroy()
+    }
+    this.activeConnections.clear()
   }
 
   public async stop(): Promise<void> {
@@ -218,6 +239,22 @@ export class DesktopProxy {
           res.flushHeaders()
         }
         // Stream response body (works for JSON, SSE, binaries)
+        // SSE responses stay alive across a possible backend switch later:
+        // register the piped pair so closeAllConnections() can cut it.
+        const isEventStream = (targetRes.headers['content-type'] || '').includes('text/event-stream')
+        if (isEventStream && res.socket && targetRes.socket) {
+          const entry = { client: res.socket, target: targetRes.socket }
+          const cleanup = () => {
+            this.activeConnections.delete(entry)
+            res.off('close', cleanup)
+            targetRes.off('close', cleanup)
+            targetRes.off('error', cleanup)
+          }
+          res.on('close', cleanup)
+          targetRes.on('close', cleanup)
+          targetRes.on('error', cleanup)
+          this.activeConnections.add(entry)
+        }
         targetRes.pipe(res)
       },
     )
@@ -269,6 +306,18 @@ export class DesktopProxy {
       if (head && head.length > 0) {
         targetSocket.write(head)
       }
+      // Register the piped pair so closeAllConnections() can cut the tunnel
+      // on a backend switch.
+      const wsEntry = { client: socket, target: targetSocket }
+      const wsCleanup = () => {
+        this.activeConnections.delete(wsEntry)
+        socket.off('close', wsCleanup)
+        targetSocket.off('close', wsCleanup)
+      }
+      socket.on('close', wsCleanup)
+      targetSocket.on('close', wsCleanup)
+      this.activeConnections.add(wsEntry)
+
       // Bi-directional streaming for WebSocket
       socket.pipe(targetSocket)
       targetSocket.pipe(socket)

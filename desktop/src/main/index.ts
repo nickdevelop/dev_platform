@@ -147,6 +147,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('desktop:switch-connection', async (_event, id) => {
     connectionStore.setActiveId(id)
+    // Cut piped robustness: any SSE stream or WebSocket tunnel established
+    // against the previous target keeps delivering old-environment frames;
+    // destroy them so clients self-heal and re-subscribe to the new backend.
+    proxy.closeAllConnections()
     const active = connectionStore.getActiveConnection()
 
     if (active.type === 'local') {

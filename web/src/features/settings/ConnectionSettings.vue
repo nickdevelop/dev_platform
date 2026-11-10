@@ -12,6 +12,7 @@ import {
 } from '../../shared/desktop'
 import { useAuthStore } from '../../stores/auth'
 import { useOpenTabsStore } from '../../stores/openTabs'
+import { unifiedEventBus } from '../../shared/events/UnifiedEventBusClient'
 import {
   UiButton,
   UiBadge,
@@ -127,6 +128,11 @@ async function handleSwitch(conn: ServerConnection) {
   switchError.value = ''
   try {
     await switchTarget(conn.id)
+    // Reset the multiplexed event stream: its connection (and persisted
+    // busId) belongs to the previous backend environment — the main process
+    // has already hard-cut the old pipes, so drop all client state and let
+    // pages re-subscribe against the new environment.
+    unifiedEventBus.resetBusId()
     // Clear in-memory tabs and auth session
     openTabsStore.tabs = []
     authStore.reset()

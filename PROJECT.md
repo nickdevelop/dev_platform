@@ -542,8 +542,11 @@ web/src/
                          ▼
 3. 渲染进程与连接管理器 (features/settings/ConnectionSettings.vue & shared/desktop.ts)
    - 通过 preload 注入的 window.desktopAPI 暴露连接增删改查、连通性实时探测与动态切换；
-   - 用户切换目标连接时：原子化重置前端活动 Tab、断开正在运行的 SSE 与 WebSocket 连接，清空
-     CSRF/Auth Store，平滑过渡至目标服务环境，保证状态绝对物理隔离。
+   - 用户切换目标连接时：主进程先硬切断经透明代理建立的全部 SSE 与 WebSocket 管道连接
+     （DesktopProxy.closeAllConnections()，逐请求重解析的 getTarget() 只影响新连接，
+     既有长连接 必须 destroy 以免旧环境事件串流），渲染进程随后调用 unifiedEventBus.resetBusId()
+     清空持久化 busId 与订阅状态，同时原子化重置前端活动 Tab、清空 CSRF/Auth Store，
+     各页面在新环境自愈重连并带序号重订重放，平滑过渡至目标服务环境，保证状态绝对物理隔离。
 ```
 
 ---
