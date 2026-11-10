@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -141,6 +140,14 @@ func (e *Engine) getRunLock(runID uint) *sync.Mutex {
 		e.runLocks[runID] = lock
 	}
 	return lock
+}
+
+// deleteRunLock drops the per-run mutex so finished run IDs do not accumulate
+// entries in the engine map for the lifetime of the process.
+func (e *Engine) deleteRunLock(runID uint) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	delete(e.runLocks, runID)
 }
 
 // StartRun creates a new FlowRun and triggers the coordinator loop.
@@ -322,9 +329,10 @@ func (e *Engine) triggerLoop(runID uint) {
 func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 	lock := e.getRunLock(runID)
 	lock.Lock()
-	defer lock.Unlock()
-
-	mentionRegex := regexp.MustCompile(`@([^\s:：,，\n]+)`)
+	defer func() {
+		lock.Unlock()
+		e.deleteRunLock(runID)
+	}()
 
 	for {
 		select {
@@ -440,52 +448,33 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			return
 		}
 
-		// 3. Fallback text parsing if no tool was invoked (backward compatibility)
+		// 3. No tool invocation means the orchestrator failed to act. The
+		// collaborative flow protocol is tool-only (flow_dispatch_role,
+		// flow_wait_session, flow_ask_user, flow_complete_task), so plain text
+		// can neither advance roles nor finish a run: any completion claim
+		// without a tool call would be a false success.
 		if !stepOutcome.ToolInvoked {
-			isFinished := strings.Contains(stepOutcome.Content, "[流程完成]") ||
-				strings.Contains(stepOutcome.Content, "[任务完成]") ||
-				strings.Contains(stepOutcome.Content, "【流程完成】") ||
-				strings.Contains(stepOutcome.Content, "【任务完成】")
+			err := fmt.Errorf("orchestrator produced no tool call (step %d)", run.CurrentStep+1)
+			log.Printf("flow: %v: %q", err, stepOutcome.Content)
+			now := time.Now().UTC()
+			run.Status = tasks.FlowRunFailed
+			run.Error = err.Error()
+			run.FinishedAt = &now
+			_ = e.repo.UpdateFlowRun(run)
 
-			matches := mentionRegex.FindAllStringSubmatch(stepOutcome.Content, -1)
-			var targetRole *tasks.FlowRole
-			if len(matches) > 0 {
-				for _, m := range matches {
-					candidateName := strings.TrimSpace(m[1])
-					for _, r := range roles {
-						if strings.EqualFold(r.Name, candidateName) {
-							targetRole = &r
-							break
-						}
-					}
-					if targetRole != nil {
-						break
-					}
-				}
-			}
+			task.LastRunStatus = tasks.RunFailed
+			_ = e.repo.Update(task)
 
-			if isFinished || targetRole == nil {
-				now := time.Now().UTC()
-				run.Status = tasks.FlowRunCompleted
-				run.FinishedAt = &now
-				_ = e.repo.UpdateFlowRun(run)
-
-				task.LastRunStatus = tasks.RunSuccess
-				_ = e.repo.Update(task)
-
-				e.eventBus.Publish(run.ID, FlowEvent{
-					Type:  EventStatus,
-					RunID: run.ID,
-					Payload: FlowStatusPayload{
-						Status:      string(tasks.FlowRunCompleted),
-						CurrentStep: run.CurrentStep,
-					},
-				})
-				return
-			}
-
-			// Dispatch text to target role
-			_ = e.executeRoleStep(ctx, run, task, *targetRole, stepOutcome.Content, "")
+			e.eventBus.Publish(run.ID, FlowEvent{
+				Type:  EventStatus,
+				RunID: run.ID,
+				Payload: FlowStatusPayload{
+					Status:      string(tasks.FlowRunFailed),
+					CurrentStep: run.CurrentStep,
+					Error:       err.Error(),
+				},
+			})
+			return
 		}
 
 		// Increment step counter

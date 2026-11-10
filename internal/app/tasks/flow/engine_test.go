@@ -42,7 +42,7 @@ func (f *fakeCompleter) Stream(ctx context.Context, req chat.CompletionRequest, 
 	if idx < len(f.responses) {
 		resp = f.responses[idx]
 	} else {
-		resp = "默认完成答复 [任务完成]"
+		resp = "默认完成答复"
 	}
 	f.mu.Unlock()
 
@@ -193,12 +193,14 @@ func (f *fakeSessionLauncher) Delete(projectID uint, sessionID string) error {
 	return nil
 }
 
-func TestFlowEngineCollaborativeExecution(t *testing.T) {
+func TestFlowEngineTextOnlyTurnFailsRun(t *testing.T) {
+	// The collaborative flow protocol is tool-only: a plain-language turn that
+	// neither invokes a tool nor asks the user must fail the run. Legacy text
+	// markers ("[任务完成]", "@角色") must not resurrect the old fallback.
 	repo := newFakeTaskRepo()
 	task := tasks.Task{
 		ID:                10,
 		Title:             "构建多Agent协作功能",
-		Description:       "架构设计与开发落地",
 		TaskType:          tasks.TaskTypeFlow,
 		ProjectID:         1,
 		OrchestratorModel: "gpt-4o",
@@ -215,15 +217,6 @@ func TestFlowEngineCollaborativeExecution(t *testing.T) {
 			Model:        "gpt-4o",
 			SystemPrompt: "你是首席架构师",
 		},
-		{
-			ID:           2,
-			TaskID:       10,
-			Name:         "开发工程师",
-			Description:  "负责编码实现",
-			Backend:      agents.BackendOpenCodeV2,
-			Model:        "gpt-4o",
-			SystemPrompt: "你是开发工程师",
-		},
 	}
 
 	resolver := &fakeModelResolver{
@@ -237,25 +230,16 @@ func TestFlowEngineCollaborativeExecution(t *testing.T) {
 
 	completer := &fakeCompleter{
 		responses: []string{
-			// Turn 1 Orchestrator: Dispatches to Architect
-			"收到目标，首先派发给架构师梳理模块。@架构师 请输出核心模块设计方案",
-			// Turn 1 Role Architect Reply:
-			"已完成架构方案设计，定义了三大组件：中控、事件总线与角色适配器。",
-			// Turn 2 Orchestrator: Evaluates and completes
-			"架构方案非常完备，经审阅无误，所有设计要求已达成。[任务完成]",
+			// Turn 1: the model only narrates and mentions the role in text —
+			// no flow_dispatch_role tool call, no completion marker semantics.
+			"收到目标，设计的方案已达成，[任务完成] @架构师 请输出核心模块设计方案",
 		},
 	}
 
 	launcher := &fakeSessionLauncher{}
-	bus := NewEventBus()
-	engine := NewEngine(repo, launcher, resolver, completer, bus)
+	engine := NewEngine(repo, launcher, resolver, completer, NewEventBus())
 
-	// Subscribe to bus events
-	events, unsubscribe := bus.Subscribe(1)
-	defer unsubscribe()
-
-	ctx := context.Background()
-	run, err := engine.StartRun(ctx, task, "manual", "")
+	run, err := engine.StartRun(context.Background(), task, "manual", "")
 	if err != nil {
 		t.Fatalf("StartRun: %v", err)
 	}
@@ -264,60 +248,47 @@ func TestFlowEngineCollaborativeExecution(t *testing.T) {
 		t.Fatalf("expected run status running, got %s", run.Status)
 	}
 
-	// Wait for execution loop to reach completion
-	timeout := time.After(3 * time.Second)
-	completed := false
-	for !completed {
-		select {
-		case <-timeout:
-			t.Fatal("timed out waiting for flow run to complete")
-		default:
-			time.Sleep(50 * time.Millisecond)
-			r, err := repo.GetFlowRun(run.ID)
-			if err == nil && r.Status == tasks.FlowRunCompleted {
-				completed = true
-			}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		r, err := repo.GetFlowRun(run.ID)
+		if err == nil && r.Status == tasks.FlowRunCompleted {
+			t.Fatal("a text-only turn must never complete the run")
 		}
-	}
+		if err == nil && r.Status == tasks.FlowRunFailed {
+			if !strings.Contains(r.Error, "no tool call") {
+				t.Fatalf("expected no-tool-call error, got %q", r.Error)
+			}
 
-	// Verify messages in repository
-	msgs, err := repo.ListFlowMessages(run.ID)
-	if err != nil {
-		t.Fatalf("list messages: %v", err)
-	}
+			updatedTask, err := repo.Get(task.ID)
+			if err != nil {
+				t.Fatalf("repo.Get: %v", err)
+			}
+			if updatedTask.LastRunStatus != tasks.RunFailed {
+				t.Fatalf("expected task last run status failed, got %s", updatedTask.LastRunStatus)
+			}
 
-	// Expect:
-	// 1. Initial user goal
-	// 2. Orchestrator turn 1 (@架构师)
-	// 3. Architect reply
-	// 4. Orchestrator turn 2 ([任务完成])
-	if len(msgs) < 4 {
-		t.Fatalf("expected at least 4 messages in chat history, got %d", len(msgs))
-	}
+			// Text mentions must not dispatch roles: no agent session launched.
+			if len(launcher.created) != 0 {
+				t.Fatalf("expected no dispatched role sessions, got %v", launcher.created)
+			}
 
-	if msgs[0].SenderType != tasks.SenderUser {
-		t.Errorf("msg[0] should be user, got %s", msgs[0].SenderType)
+			// The orchestrator's own message recorded the narration, so the
+			// chat holds the user goal plus that single turn.
+			msgs, err := repo.ListFlowMessages(run.ID)
+			if err != nil {
+				t.Fatalf("ListFlowMessages: %v", err)
+			}
+			if len(msgs) != 2 {
+				t.Fatalf("expected 2 messages (user goal + orchestrator turn), got %d", len(msgs))
+			}
+			if msgs[1].SenderType != tasks.SenderOrchestrator {
+				t.Errorf("msg[1] should be orchestrator, got %s", msgs[1].SenderType)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	if msgs[1].SenderType != tasks.SenderOrchestrator || !strings.Contains(msgs[1].Content, "@架构师") {
-		t.Errorf("msg[1] should be orchestrator @架构师, got %s: %s", msgs[1].SenderType, msgs[1].Content)
-	}
-	if msgs[2].SenderType != tasks.SenderAgent || msgs[2].SenderName != "架构师" {
-		t.Errorf("msg[2] should be agent 架构师, got %s: %s", msgs[2].SenderType, msgs[2].SenderName)
-	}
-	if msgs[3].SenderType != tasks.SenderOrchestrator || !strings.Contains(msgs[3].Content, "[任务完成]") {
-		t.Errorf("msg[3] should be orchestrator completion, got %s: %s", msgs[3].SenderType, msgs[3].Content)
-	}
-
-	// Verify events were published
-	hasEvents := false
-	select {
-	case <-events:
-		hasEvents = true
-	default:
-	}
-	if !hasEvents {
-		t.Log("events stream consumed successfully")
-	}
+	t.Fatal("timed out waiting for flow run to fail")
 }
 
 func TestFlowEngineCancel(t *testing.T) {
@@ -450,11 +421,10 @@ func TestFlowEngineWaitsForDelayedAgentSession(t *testing.T) {
 	resolver := &fakeModelResolver{
 		model: modelconfig.ResolvedModel{ModelID: "gpt-4o"},
 	}
-	completer := &fakeCompleter{
-		responses: []string{
-			"开始分工：@DSH开发者 请执行前端重构",
-			"【任务完成】所有工作已就绪。",
-		},
+	completer := &fakeToolCompleter{
+		roleName:    "DSH开发者",
+		instruction: "执行前端重构",
+		summary:     "所有前端模块重构已完成并验收通过",
 	}
 	launcher := &fakeDelayedSessionLauncher{}
 	engine := NewEngine(repo, launcher, resolver, completer, nil)
@@ -504,6 +474,11 @@ func TestFlowEngineWaitsForDelayedAgentSession(t *testing.T) {
 type fakeToolCompleter struct {
 	mu   sync.Mutex
 	step int
+	// roleName / instruction drive the flow_dispatch_role call issued on the
+	// first step; summary drives the flow_complete_task call on the second.
+	roleName    string
+	instruction string
+	summary     string
 }
 
 func (f *fakeToolCompleter) Stream(ctx context.Context, req chat.CompletionRequest, onDelta func(chat.CompletionDelta) error) error {
@@ -513,8 +488,8 @@ func (f *fakeToolCompleter) Stream(ctx context.Context, req chat.CompletionReque
 	f.mu.Unlock()
 
 	if step == 0 {
-		_ = onDelta(chat.CompletionDelta{Text: "正在分析整体方案，指派开发工程师进行核心编码。"})
-		argsJSON := `{"role_name":"开发工程师","instruction":"编写用户认证模块核心逻辑"}`
+		_ = onDelta(chat.CompletionDelta{Text: fmt.Sprintf("正在分析整体方案，指派%s进行执行。", f.roleName)})
+		argsJSON := fmt.Sprintf(`{"role_name":%q,"instruction":%q}`, f.roleName, f.instruction)
 		_ = onDelta(chat.CompletionDelta{
 			ToolCalls: []chat.ToolCall{
 				{
@@ -529,8 +504,8 @@ func (f *fakeToolCompleter) Stream(ctx context.Context, req chat.CompletionReque
 	}
 
 	if step == 1 {
-		_ = onDelta(chat.CompletionDelta{Text: "开发工程师产出质量合格，满足验收标准。"})
-		argsJSON := `{"summary":"用户认证模块已全部开发完毕并验收通过"}`
+		_ = onDelta(chat.CompletionDelta{Text: "角色产出质量合格，满足验收标准。"})
+		argsJSON := fmt.Sprintf(`{"summary":%q}`, f.summary)
 		_ = onDelta(chat.CompletionDelta{
 			ToolCalls: []chat.ToolCall{
 				{
@@ -575,7 +550,11 @@ func TestFlowEngineToolCallingOrchestration(t *testing.T) {
 	resolver := &fakeModelResolver{
 		model: modelconfig.ResolvedModel{ModelID: "gpt-4o"},
 	}
-	completer := &fakeToolCompleter{}
+	completer := &fakeToolCompleter{
+		roleName:    "开发工程师",
+		instruction: "编写用户认证模块核心逻辑",
+		summary:     "用户认证模块已全部开发完毕并验收通过",
+	}
 	launcher := &fakeDelayedSessionLauncher{}
 	bus := NewEventBus()
 	engine := NewEngine(repo, launcher, resolver, completer, bus)
