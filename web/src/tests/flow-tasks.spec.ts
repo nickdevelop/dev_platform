@@ -184,6 +184,38 @@ describe('Collaborative Flow Tasks Unit Tests', () => {
     expect(wrapper.text()).toContain('新建 Agent 角色')
   })
 
+  it('FlowRoleManager removes a role only after confirming in the shared dialog', async () => {
+    setActivePinia(createPinia())
+    const roles: FlowRole[] = [
+      {
+        id: 1,
+        taskId: 10,
+        name: '架构师',
+        description: '系统架构分析与方案拆解',
+        backend: 'llm',
+        model: 'gpt-4o',
+        systemPrompt: '你是系统架构师',
+        color: '#8b5cf6',
+        createdAt: '',
+        updatedAt: '',
+      },
+    ]
+    const tasksStore = useTasksStore()
+    const deleteSpy = vi.spyOn(tasksStore, 'deleteRole').mockResolvedValue(undefined as never)
+
+    const wrapper = mount(FlowRoleManager, {
+      props: { taskId: 10, roles },
+    })
+
+    await wrapper.find('button[title="移除角色"]').trigger('click')
+    expect(wrapper.text()).toContain('确定要移除角色「架构师」吗？')
+    expect(deleteSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await flushPromises()
+    expect(deleteSpy).toHaveBeenCalledWith(10, 1)
+  })
+
   it('FlowChatView renders group chat workbench, team roles strip, and input area', async () => {
     setActivePinia(createPinia())
     const mockTask: Task = {

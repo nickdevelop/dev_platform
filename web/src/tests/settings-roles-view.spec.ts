@@ -6,6 +6,7 @@ import { useRolesStore } from '../stores/roles'
 import { usePromptsStore } from '../stores/prompts'
 import { useModelsStore } from '../stores/models'
 import { useAgentsStore } from '../stores/agents'
+import type { AgentRole } from '../api/roles'
 import { installTestCSRF } from './csrf-fixture'
 
 const routerPush = vi.fn()
@@ -223,5 +224,37 @@ describe('SettingsRolesView Unit Tests', () => {
 
     // Now opencode ModelSelect is active and loads its models
     expect(wrapper.find('.model-select-wrapper').exists()).toBe(true)
+  })
+
+  it('deletes a role only after confirming in the shared dialog', async () => {
+    const rolesStore = useRolesStore()
+    const role: AgentRole = {
+      id: 1,
+      name: '架构师',
+      description: '负责系统架构',
+      backend: 'llm',
+      model: 'gpt-4o',
+      promptId: 0,
+      systemPrompt: '',
+      color: '#3b82f6',
+      createdAt: '',
+      updatedAt: '',
+    }
+
+    const wrapper = mount(SettingsRolesView, {
+      global: { stubs: { Teleport: true } },
+    })
+    await flushPromises()
+    rolesStore.roles = [role]
+    await flushPromises()
+
+    const deleteSpy = vi.spyOn(rolesStore, 'deleteRole').mockResolvedValue(undefined as never)
+    await wrapper.find('button[title="删除角色"]').trigger('click')
+    expect(wrapper.text()).toContain('确定要删除角色「架构师」吗？')
+    expect(deleteSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await flushPromises()
+    expect(deleteSpy).toHaveBeenCalledWith(1)
   })
 })

@@ -6,7 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import { usePromptsStore } from '../../stores/prompts'
 import type { Prompt, PromptType } from '../../api/prompts'
 import PromptManageDialog from '../prompts/PromptManageDialog.vue'
-import { UiButton, UiInput } from '../../shared/ui'
+import { UiButton, UiInput, UiConfirmDialog } from '../../shared/ui'
 
 const promptsStore = usePromptsStore()
 
@@ -14,6 +14,9 @@ const keyword = ref('')
 const activeTab = ref<'all' | 'role' | 'flow'>('all')
 const showEditDialog = ref(false)
 const editingPrompt = ref<Prompt | null>(null)
+const pendingDelete = ref<Prompt | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 const copiedId = ref<number | null>(null)
 
 onMounted(async () => {
@@ -50,12 +53,23 @@ function openEditDialog(prompt: Prompt) {
   showEditDialog.value = true
 }
 
-async function handleDeletePrompt(prompt: Prompt) {
-  if (!confirm(`确定要删除提示词「${prompt.name}」吗？`)) return
+function handleDeletePrompt(prompt: Prompt) {
+  deleteError.value = ''
+  pendingDelete.value = prompt
+}
+
+async function confirmDeletePrompt() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await promptsStore.deletePrompt(prompt.id)
+    await promptsStore.deletePrompt(target.id)
+    pendingDelete.value = null
   } catch (err: any) {
-    alert(err.message || '删除提示词失败')
+    deleteError.value = promptsStore.error || err.message || '删除提示词失败'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -274,6 +288,18 @@ function formatDate(iso: string): string {
         @saved="showEditDialog = false"
       />
     </Teleport>
+
+    <UiConfirmDialog
+      v-if="pendingDelete"
+      title="删除提示词"
+      :message="`确定要删除提示词「${pendingDelete.name}」吗？`"
+      detail="引用该提示词的角色或会话将无法继续读取其内容。"
+      confirm-label="删除"
+      :loading="deleting"
+      :error="deleteError"
+      @close="pendingDelete = null"
+      @confirm="confirmDeletePrompt"
+    />
   </section>
 </template>
 

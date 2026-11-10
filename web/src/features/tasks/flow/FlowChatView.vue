@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // FlowChatView: Main IM collaborative group chat interface for multi-agent workflows
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { Task, FlowRole } from '../../../api/tasks'
+import type { Task, FlowRole, FlowRun } from '../../../api/tasks'
 import { useTasksStore } from '../../../stores/tasks'
 import { useProjectsStore } from '../../../stores/projects'
 import FlowMessageItem from './FlowMessageItem.vue'
 import FlowRoleBadge from './FlowRoleBadge.vue'
 import FlowRoleManager from './FlowRoleManager.vue'
 import TaskChatDialog from '../TaskChatDialog.vue'
-import { UiButton, UiDialog, UiAlert } from '../../../shared/ui'
+import { UiButton, UiDialog, UiAlert, UiConfirmDialog } from '../../../shared/ui'
 
 const props = defineProps<{
   task: Task
@@ -22,6 +22,9 @@ const messagesContainer = ref<HTMLElement | null>(null)
 const userInput = ref('')
 const sending = ref(false)
 const canceling = ref(false)
+const flowError = ref('')
+const pendingCancel = ref<FlowRun | null>(null)
+const cancelError = ref('')
 const showRoleManager = ref(false)
 
 // Session Drawer state
@@ -132,12 +135,13 @@ async function handleSendMessage() {
   if (!text || !activeRun.value || sending.value) return
 
   sending.value = true
+  flowError.value = ''
   userInput.value = ''
   try {
     await tasksStore.postFlowMessage(activeRun.value.id, text)
     scrollToBottom()
   } catch (err: any) {
-    alert(err.message || '发送消息失败')
+    flowError.value = err.message || '发送消息失败'
   } finally {
     sending.value = false
   }
@@ -151,15 +155,22 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 // Cancel flow run
-async function handleCancel() {
+function handleCancel() {
   if (!activeRun.value || canceling.value) return
-  if (!confirm('确定要中止当前正在运行的协同流程吗？')) return
+  cancelError.value = ''
+  pendingCancel.value = activeRun.value
+}
 
+async function confirmCancel() {
+  if (!pendingCancel.value || canceling.value) return
+  const target = pendingCancel.value
   canceling.value = true
+  cancelError.value = ''
   try {
-    await tasksStore.cancelFlowRun(activeRun.value.id)
+    await tasksStore.cancelFlowRun(target.id)
+    pendingCancel.value = null
   } catch (err: any) {
-    alert(err.message || '中止流程失败')
+    cancelError.value = err.message || '中止流程失败'
   } finally {
     canceling.value = false
   }
@@ -168,6 +179,7 @@ async function handleCancel() {
 // Trigger a fresh execution
 async function handleRestart() {
   if (isRunning.value) return
+  flowError.value = ''
   try {
     const res = await tasksStore.triggerExecution(props.task.id, 'manual')
     if (res.run) {
@@ -178,7 +190,7 @@ async function handleRestart() {
       }
     }
   } catch (err: any) {
-    alert(err.message || '启动协同流程失败')
+    flowError.value = err.message || '启动协同流程失败'
   }
 }
 
@@ -302,6 +314,10 @@ function getRoleById(roleId?: number): FlowRole | null {
         </UiButton>
       </div>
     </header>
+
+    <UiAlert v-if="flowError" variant="error" closable class="mx-4 mt-3 shrink-0" @close="flowError = ''">
+      {{ flowError }}
+    </UiAlert>
 
     <!-- 2. Roles Sub-header: Quick access strip -->
     <section class="roles-strip px-4 py-2 bg-[var(--color-surface)]/70 border-b border-[var(--color-border)] flex items-center gap-2 overflow-x-auto shrink-0 select-none">
@@ -449,6 +465,18 @@ function getRoleById(roleId?: number): FlowRole | null {
       :project-id="task.projectId"
       :session-id="viewingSessionId"
       @close="showSessionDialog = false"
+    />
+
+    <UiConfirmDialog
+      v-if="pendingCancel"
+      title="中止协同流程"
+      message="确定要中止当前正在运行的协同流程吗？"
+      detail="当前推进中的步骤将被中断，已产生的群聊消息与子会话记录会保留。"
+      confirm-label="中止执行"
+      :loading="canceling"
+      :error="cancelError"
+      @close="pendingCancel = null"
+      @confirm="confirmCancel"
     />
   </div>
 </template>

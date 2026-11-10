@@ -156,7 +156,7 @@ web/src/
 
 1. **纯中性设计与业务解耦**：
    - 提取的组件严格置于 `shared/ui/`，保持与具体业务领域（Chat、Tasks、Projects 等）彻底解耦。
-   - 例如：`UiSelectMenu` 提炼为通用的现代下拉选择器（支持触发器展示主副文本、弹出浮层、搜索过滤、快捷清除与多选/单选无障碍支持，彻底替代各业务模块的裸露原生 `<select>`）；`UiProgress` 抽离为支持 Tooltip 提示的通用进度条组件；`UiComposer` 抽离为通用可拖拽高度的复合输入交互容器；`UiTree` 抽象通用的树形层级交互骨架。
+   - 例如：`UiSelectMenu` 提炼为通用的现代下拉选择器（支持触发器展示主副文本、弹出浮层、搜索过滤、快捷清除与多选/单选无障碍支持，彻底替代各业务模块的裸露原生 `<select>`）；`UiProgress` 抽离为支持 Tooltip 提示的通用进度条组件；`UiComposer` 抽离为通用可拖拽高度的复合输入交互容器；`UiTree` 抽象通用的树形层级交互骨架；`UiConfirmDialog` 统一承载删除、中止等二次确认，默认 Danger 按钮、支持加载态与弹窗内错误展示。
 2. **第二栏与侧边栏列表标准规范（基于 design-taste-frontend 深度重构）**：
    - 全平台第二栏（中间导航与对象索引栏：项目、对话、任务、提示词、终端、设置全部 6 个菜单）统一采用**三段式紧凑架构（Header & Actions / Search & Filter / Entity List）**，样式统一由 `shared/styles/sidebar.css` 标准化承载：
      - **Zone A 紧凑 Header 与标准化操作区**：标题高度收敛（13px，`font-weight: 600`），右侧集成 22px 微型方圆角停靠与展开控制按钮（`var(--radius, 4px)`）；操作按钮统一收敛为 26px 极简扁平微圆角按钮，前置 1.5px 几何矢量 SVG 加号图标（消除纯字符 `+`）；设置页彻底移除内部冗余二级标题，与外壳单头部绝对对齐。
@@ -177,7 +177,8 @@ web/src/
      - **交互激活（The Move）**：所有 Tab 标签、导航项、范围选择器的激活状态统一使用紧贴底边或侧边的 1px/2px 科技蓝强调线（`--color-accent: #4a8ad6`）。
      - **纯净矢量图标系统**：全站杜绝原生 UI Emoji，统一升级为 1.5px/1.8px 细线条极简几何矢量 SVG 图标。
 4. **操作体验规范统一**：
-   - 弹窗操作顺序统一规范：取消按钮居左（Secondary 样式），确认/执行按钮居右（Primary 或 Danger 样式）；全量统一使用 `UiDialog` / `UiFormDialog`，消除各业务自造的手写遮罩层；全量支持 Esc 关闭与 Tab 焦点陷阱。
+   - 弹窗操作顺序统一规范：取消按钮居左（Secondary 样式），确认/执行按钮居右（Primary 或 Danger 样式）；全量统一使用 `UiDialog` / `UiFormDialog`，二次确认统一使用 `UiConfirmDialog`，消除各业务自造的手写遮罩层；全量支持 Esc 关闭与 Tab 焦点陷阱。
+   - **禁止在生产代码中调用浏览器原生 `window.confirm` / `window.alert` / `window.prompt`**；确认统一使用 `UiConfirmDialog`，错误提示统一使用 `UiAlert`，并由 `web/src/tests/native-dialog-guard.spec.ts` 扫描源码阻断回归。
    - 破坏性/危险操作一律采用 Danger 红色警示按钮。
    - 异常状态与重试引导统一使用 `UiAlert`。
 ```

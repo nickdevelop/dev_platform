@@ -133,4 +133,33 @@ describe('Prompts UI Components', () => {
     expect(wrapper.find('[data-test="prompt-preview-output"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="copy-template-btn"]').exists()).toBe(true)
   })
+
+  it('deletes a prompt only after confirming in the shared dialog', async () => {
+    const store = usePromptsStore()
+    store.prompts = [
+      {
+        id: 1,
+        name: '代码审查',
+        type: 'role',
+        description: '审查代码',
+        content: '请审查以下代码并给出建议。',
+        createdAt: '2026-10-18T10:00:00Z',
+        updatedAt: '2026-10-18T12:00:00Z',
+      },
+    ]
+    routeParams.promptId = '1'
+    const deleteSpy = vi.spyOn(store, 'deletePrompt').mockResolvedValue(undefined as never)
+
+    const wrapper = mount(PromptsView)
+    await flushPromises()
+
+    await wrapper.find('[data-test="delete-prompt-btn"]').trigger('click')
+    expect(wrapper.text()).toContain('确定要删除提示词「代码审查」吗？')
+    expect(deleteSpy).not.toHaveBeenCalled()
+
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await flushPromises()
+    expect(deleteSpy).toHaveBeenCalledWith(1)
+    expect(routerPush).toHaveBeenCalledWith({ name: 'prompts' })
+  })
 })

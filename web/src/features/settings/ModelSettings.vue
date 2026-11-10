@@ -8,13 +8,16 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useModelsStore } from '../../stores/models'
 import type { ModelDto, RemoteModel, ServiceDto } from '../../api/models'
-import { UiButton, UiInput, UiBadge, UiAlert } from '../../shared/ui'
+import { UiButton, UiInput, UiBadge, UiAlert, UiConfirmDialog } from '../../shared/ui'
 
 const models = useModelsStore()
 
 const showServiceForm = ref(false)
 const serviceForm = reactive({ name: '', baseUrl: '', apiKey: '', enabled: true })
 const editingServiceId = ref<number | null>(null)
+const pendingRemove = ref<ServiceDto | null>(null)
+const removing = ref(false)
+const removeError = ref('')
 
 const candidates = reactive<Record<number, RemoteModel[]>>({})
 const selected = reactive<Record<number, Record<string, boolean>>>({})
@@ -62,9 +65,26 @@ async function submitService() {
   if (ok) showServiceForm.value = false
 }
 
-async function removeService(service: ServiceDto) {
-  if (!window.confirm(`删除服务「${service.name}」及其全部模型？`)) return
-  await models.removeService(service.id)
+function removeService(service: ServiceDto) {
+  removeError.value = ''
+  pendingRemove.value = service
+}
+
+async function confirmRemoveService() {
+  if (!pendingRemove.value || removing.value) return
+  const target = pendingRemove.value
+  removing.value = true
+  removeError.value = ''
+  try {
+    const ok = await models.removeService(target.id)
+    if (ok) {
+      pendingRemove.value = null
+    } else {
+      removeError.value = models.error || '删除服务失败'
+    }
+  } finally {
+    removing.value = false
+  }
 }
 
 async function fetchCandidates(service: ServiceDto) {
@@ -401,5 +421,17 @@ async function runTest(service: ServiceDto, model: ModelDto) {
         <UiButton variant="primary" size="sm" type="submit">保存模型</UiButton>
       </div>
     </form>
+
+    <UiConfirmDialog
+      v-if="pendingRemove"
+      title="删除模型服务"
+      :message="`确定要删除服务「${pendingRemove.name}」吗？`"
+      :detail="`该服务下的 ${pendingRemove.models?.length || 0} 个模型配置将一并删除，且无法恢复。`"
+      confirm-label="删除"
+      :loading="removing"
+      :error="removeError"
+      @close="pendingRemove = null"
+      @confirm="confirmRemoveService"
+    />
   </section>
 </template>

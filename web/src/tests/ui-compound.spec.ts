@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   UiDialog,
   UiFormDialog,
+  UiConfirmDialog,
   UiComposer,
   UiScrollFollow,
   UiBubble,
@@ -50,6 +51,50 @@ describe('UiFormDialog', () => {
     const cancelBtn = wrapper.find('[data-test="dialog-cancel-btn"]')
     await cancelBtn.trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+})
+
+describe('UiConfirmDialog', () => {
+  it('renders message, detail and emits confirm/cancel', async () => {
+    const wrapper = mount(UiConfirmDialog, {
+      props: {
+        title: '删除任务',
+        message: '确定要删除任务「示例」吗？',
+        detail: '删除后无法恢复。',
+        confirmLabel: '删除',
+      },
+      attachTo: document.body,
+    })
+    expect(wrapper.text()).toContain('删除任务')
+    expect(wrapper.text()).toContain('确定要删除任务「示例」吗？')
+    expect(wrapper.text()).toContain('删除后无法恢复。')
+
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+
+    await wrapper.find('[data-test="confirm-cancel-btn"]').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('shows an error and blocks closing while loading', async () => {
+    const wrapper = mount(UiConfirmDialog, {
+      props: {
+        title: '删除角色',
+        message: '确定要删除吗？',
+        error: '删除角色失败',
+        loading: true,
+      },
+      attachTo: document.body,
+    })
+    expect(wrapper.text()).toContain('删除角色失败')
+
+    await wrapper.find('[data-test="confirm-cancel-btn"]').trigger('click')
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await wrapper.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(wrapper.emitted('confirm')).toBeUndefined()
     wrapper.unmount()
   })
 })

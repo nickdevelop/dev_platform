@@ -18,6 +18,7 @@ import {
   UiTextarea,
   UiDialog,
   UiAlert,
+  UiConfirmDialog,
   UiSelectMenu,
   type SelectMenuItem,
 } from '../../shared/ui'
@@ -33,6 +34,9 @@ const showEditDialog = ref(false)
 const editingRoleId = ref<number | null>(null)
 const submitting = ref(false)
 const dialogError = ref('')
+const pendingDelete = ref<AgentRole | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 const defaultColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
@@ -235,12 +239,23 @@ async function handleSaveRole() {
   }
 }
 
-async function handleDeleteRole(role: AgentRole) {
-  if (!confirm(`确定要删除角色「${role.name}」吗？`)) return
+function handleDeleteRole(role: AgentRole) {
+  deleteError.value = ''
+  pendingDelete.value = role
+}
+
+async function confirmDeleteRole() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await rolesStore.deleteRole(role.id)
+    await rolesStore.deleteRole(target.id)
+    pendingDelete.value = null
   } catch (err: any) {
-    alert(err.message || '删除角色失败')
+    deleteError.value = rolesStore.error || err.message || '删除角色失败'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -614,6 +629,18 @@ function goToPromptsSetting() {
         </form>
       </UiDialog>
     </Teleport>
+
+    <UiConfirmDialog
+      v-if="pendingDelete"
+      title="删除角色"
+      :message="`确定要删除角色「${pendingDelete.name}」吗？`"
+      detail="该角色将从角色库中移除，已配置到协同任务中的同名副本不受影响。"
+      confirm-label="删除"
+      :loading="deleting"
+      :error="deleteError"
+      @close="pendingDelete = null"
+      @confirm="confirmDeleteRole"
+    />
   </section>
 </template>
 

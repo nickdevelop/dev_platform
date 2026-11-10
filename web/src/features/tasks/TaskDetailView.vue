@@ -17,7 +17,7 @@ import TaskChatDialog from './TaskChatDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
 import FlowChatView from './flow/FlowChatView.vue'
 import FlowRoleManager from './flow/FlowRoleManager.vue'
-import { UiButton, UiBadge, UiAlert } from '../../shared/ui'
+import { UiButton, UiBadge, UiAlert, UiConfirmDialog } from '../../shared/ui'
 
 const props = defineProps<{
   taskId: number
@@ -32,6 +32,9 @@ const projectsStore = useProjectsStore()
 
 const triggering = ref(false)
 const actionError = ref('')
+const pendingDelete = ref<Task | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 const showEditDialog = ref(false)
 const copiedTemplate = ref(false)
 const flowViewMode = ref<'chat' | 'overview'>('chat')
@@ -143,14 +146,25 @@ function openRunSession(run: TaskRun) {
   showChatDialog.value = true
 }
 
-async function handleDelete() {
+function handleDelete() {
   if (!task.value) return
-  if (!confirm(`确定要删除任务「${task.value.title}」吗？`)) return
+  deleteError.value = ''
+  pendingDelete.value = task.value
+}
+
+async function confirmDelete() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await tasksStore.deleteTask(task.value.id)
+    await tasksStore.deleteTask(target.id)
+    pendingDelete.value = null
     emit('deleted')
   } catch (err: any) {
-    actionError.value = err.message || '删除任务失败'
+    deleteError.value = err.message || '删除任务失败'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -548,6 +562,18 @@ async function copyPromptTemplate() {
         :backend="task.backend"
         :model="task.model"
         @close="showChatDialog = false"
+      />
+
+      <UiConfirmDialog
+        v-if="pendingDelete"
+        title="删除任务"
+        :message="`确定要删除任务「${pendingDelete.title}」吗？`"
+        detail="任务配置与全部执行记录将被删除，且无法恢复。"
+        confirm-label="删除"
+        :loading="deleting"
+        :error="deleteError"
+        @close="pendingDelete = null"
+        @confirm="confirmDelete"
       />
     </div>
   </div>

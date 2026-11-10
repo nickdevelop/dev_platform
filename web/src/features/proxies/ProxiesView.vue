@@ -4,7 +4,7 @@
 // Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
 // flat surfaces, zero resting shadows, tabular figures, pale status pills).
 import { ref, onMounted } from 'vue'
-import { UiButton, UiBadge, UiEmpty, UiSpinner, UiAlert } from '../../shared/ui'
+import { UiButton, UiBadge, UiEmpty, UiSpinner, UiAlert, UiConfirmDialog } from '../../shared/ui'
 import ProxyEditDialog from './ProxyEditDialog.vue'
 import {
   listProxies,
@@ -16,6 +16,9 @@ import {
 const proxies = ref<ServiceProxy[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const pendingDelete = ref<ServiceProxy | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 const isDialogOpen = ref(false)
 const activeProxy = ref<ServiceProxy | null>(null)
@@ -93,15 +96,24 @@ async function handleToggle(proxy: ServiceProxy) {
   }
 }
 
-async function handleDelete(proxy: ServiceProxy) {
-  if (!confirm(`确定要删除代理 "${proxy.name}" (alias: ${proxy.alias}) 吗？`)) {
-    return
-  }
+function handleDelete(proxy: ServiceProxy) {
+  deleteError.value = ''
+  pendingDelete.value = proxy
+}
+
+async function confirmDelete() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await deleteProxy(proxy.id)
-    proxies.value = proxies.value.filter((p) => p.id !== proxy.id)
+    await deleteProxy(target.id)
+    proxies.value = proxies.value.filter((p) => p.id !== target.id)
+    pendingDelete.value = null
   } catch (err: any) {
-    errorMessage.value = err?.error || err?.message || '删除代理失败'
+    deleteError.value = err?.error || err?.message || '删除代理失败'
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -143,7 +155,7 @@ onMounted(() => {
       </div>
     </header>
 
-    <UiAlert v-if="errorMessage" variant="error" dismissible @dismiss="errorMessage = ''">
+    <UiAlert v-if="errorMessage" variant="error" closable @close="errorMessage = ''">
       {{ errorMessage }}
     </UiAlert>
 
@@ -253,6 +265,18 @@ onMounted(() => {
       :proxy="activeProxy"
       @close="isDialogOpen = false"
       @saved="onDialogSaved"
+    />
+
+    <UiConfirmDialog
+      v-if="pendingDelete"
+      title="删除代理"
+      :message="`确定要删除代理「${pendingDelete.name}」吗？`"
+      :detail="`别名 ${pendingDelete.alias} 删除后，原 /proxy/${pendingDelete.alias}/ 访问地址将立即失效。`"
+      confirm-label="删除"
+      :loading="deleting"
+      :error="deleteError"
+      @close="pendingDelete = null"
+      @confirm="confirmDelete"
     />
   </section>
 </template>

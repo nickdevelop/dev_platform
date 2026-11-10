@@ -12,6 +12,7 @@ import {
   UiTextarea,
   UiDialog,
   UiAlert,
+  UiConfirmDialog,
   UiSelectMenu,
   type SelectMenuItem,
 } from '../../../shared/ui'
@@ -37,6 +38,10 @@ const selectedImportRoleId = ref<number | 0>(0)
 const editingRoleId = ref<number | null>(null)
 const submitting = ref(false)
 const formError = ref('')
+const importError = ref('')
+const pendingDelete = ref<FlowRole | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 
 const defaultColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
@@ -175,12 +180,19 @@ async function handleSaveRole() {
   }
 }
 
+function openImportDialog() {
+  selectedImportRoleId.value = 0
+  importError.value = ''
+  showImportDialog.value = true
+}
+
 async function handleImportRole() {
   if (!selectedImportRoleId.value) return
   const role = rolesStore.byId(selectedImportRoleId.value)
   if (!role) return
 
   submitting.value = true
+  importError.value = ''
   try {
     await tasksStore.createRole(props.taskId, {
       name: role.name,
@@ -194,20 +206,31 @@ async function handleImportRole() {
     showImportDialog.value = false
     emit('updated')
   } catch (err: any) {
-    alert(err.message || '导入角色失败')
+    importError.value = err.message || '导入角色失败'
   } finally {
     submitting.value = false
   }
 }
 
-async function handleDeleteRole(role: FlowRole) {
+function handleDeleteRole(role: FlowRole) {
   if (props.readOnly) return
-  if (!confirm(`确定要移除角色「${role.name}」吗？`)) return
+  deleteError.value = ''
+  pendingDelete.value = role
+}
+
+async function confirmDeleteRole() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
   try {
-    await tasksStore.deleteRole(props.taskId, role.id)
+    await tasksStore.deleteRole(props.taskId, target.id)
+    pendingDelete.value = null
     emit('updated')
   } catch (err: any) {
-    alert(err.message || '删除角色失败')
+    deleteError.value = err.message || '删除角色失败'
+  } finally {
+    deleting.value = false
   }
 }
 </script>
@@ -234,7 +257,7 @@ async function handleDeleteRole(role: FlowRole) {
           variant="secondary"
           class="text-xs px-2.5 py-1"
           data-test="btn-import-role"
-          @click="showImportDialog = true; selectedImportRoleId = 0"
+          @click="openImportDialog"
         >
           从角色库添加
         </UiButton>
@@ -318,7 +341,7 @@ async function handleDeleteRole(role: FlowRole) {
           v-if="rolesStore.roles.length > 0"
           variant="secondary"
           class="text-xs px-3 py-1.5"
-          @click="showImportDialog = true; selectedImportRoleId = 0"
+          @click="openImportDialog"
         >
           从角色库快速添加
         </UiButton>
@@ -343,6 +366,10 @@ async function handleDeleteRole(role: FlowRole) {
         <p class="text-xs text-[var(--color-text-muted)]">
           选择已在平台设置中配置的专家角色加入当前协同任务。
         </p>
+
+        <UiAlert v-if="importError" variant="error">
+          {{ importError }}
+        </UiAlert>
 
         <UiSelectMenu
           v-model="selectedImportRoleId"
@@ -520,5 +547,17 @@ async function handleDeleteRole(role: FlowRole) {
         </div>
       </form>
     </UiDialog>
+
+    <UiConfirmDialog
+      v-if="pendingDelete"
+      title="移除协同角色"
+      :message="`确定要移除角色「${pendingDelete.name}」吗？`"
+      detail="移除后中控将不再向该角色派发任务，已产生的历史消息会保留。"
+      confirm-label="移除"
+      :loading="deleting"
+      :error="deleteError"
+      @close="pendingDelete = null"
+      @confirm="confirmDeleteRole"
+    />
   </div>
 </template>

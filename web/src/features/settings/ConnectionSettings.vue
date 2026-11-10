@@ -19,6 +19,7 @@ import {
   UiAlert,
   UiInput,
   UiSpinner,
+  UiConfirmDialog,
 } from '../../shared/ui'
 
 const router = useRouter()
@@ -48,6 +49,9 @@ const isTesting = ref(false)
 const testResult = ref<TestConnectionResult | null>(null)
 const isSwitching = ref(false)
 const switchError = ref('')
+const pendingRemove = ref<ServerConnection | null>(null)
+const removing = ref(false)
+const removeError = ref('')
 
 function openCreateForm() {
   formId.value = undefined
@@ -117,9 +121,28 @@ async function handleSaveConnection() {
   }
 }
 
-async function handleRemoveConnection(id: string) {
-  if (!confirm('确定删除该远程服务器连接吗？')) return
-  await remove(id)
+function handleRemoveConnection(conn: ServerConnection) {
+  removeError.value = ''
+  pendingRemove.value = conn
+}
+
+async function confirmRemoveConnection() {
+  if (!pendingRemove.value || removing.value) return
+  const target = pendingRemove.value
+  removing.value = true
+  removeError.value = ''
+  try {
+    const ok = await remove(target.id)
+    if (ok === false) {
+      removeError.value = '删除远程连接失败'
+      return
+    }
+    pendingRemove.value = null
+  } catch (err: any) {
+    removeError.value = err.message || '删除远程连接失败'
+  } finally {
+    removing.value = false
+  }
 }
 
 async function handleSwitch(conn: ServerConnection) {
@@ -299,7 +322,7 @@ async function handleSwitch(conn: ServerConnection) {
                   type="button"
                   title="删除"
                   class="p-1.5 text-slate-400 hover:text-red-600 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  @click="handleRemoveConnection(conn.id)"
+                  @click="handleRemoveConnection(conn)"
                 >
                   <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="3 6 5 6 21 6" />
@@ -416,6 +439,18 @@ async function handleSwitch(conn: ServerConnection) {
         </div>
       </fieldset>
     </div>
+
+    <UiConfirmDialog
+      v-if="pendingRemove"
+      title="删除远程连接"
+      :message="`确定要删除连接「${pendingRemove.name}」吗？`"
+      :detail="pendingRemove.url"
+      confirm-label="删除"
+      :loading="removing"
+      :error="removeError"
+      @close="pendingRemove = null"
+      @confirm="confirmRemoveConnection"
+    />
   </section>
 </template>
 

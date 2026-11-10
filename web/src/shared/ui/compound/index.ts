@@ -1,5 +1,6 @@
 export { default as UiDialog } from './UiDialog.vue'
 export { default as UiFormDialog } from './UiFormDialog.vue'
+export { default as UiConfirmDialog } from './UiConfirmDialog.vue'
 export { default as UiComposer } from './UiComposer.vue'
 export { default as UiScrollFollow } from './UiScrollFollow.vue'
 export { default as UiBubble } from './UiBubble.vue'

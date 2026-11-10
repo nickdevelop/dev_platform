@@ -4,13 +4,16 @@ import { useRoute, useRouter } from 'vue-router'
 import type { Prompt } from '../../api/prompts'
 import { usePromptsStore } from '../../stores/prompts'
 import PromptManageDialog from './PromptManageDialog.vue'
-import { UiButton } from '../../shared/ui'
+import { UiButton, UiConfirmDialog } from '../../shared/ui'
 
 const route = useRoute()
 const router = useRouter()
 const promptsStore = usePromptsStore()
 
 const showEditDialog = ref(false)
+const pendingDelete = ref<Prompt | null>(null)
+const deleting = ref(false)
+const deleteError = ref('')
 const copiedContent = ref(false)
 
 onMounted(async () => {
@@ -45,12 +48,26 @@ watch(
   { immediate: true },
 )
 
-async function deleteCurrentPrompt() {
+function deleteCurrentPrompt() {
   if (!activePrompt.value) return
-  if (!confirm(`确定要删除提示词「${activePrompt.value.name}」吗？`)) return
-  const idToDelete = activePrompt.value.id
-  await promptsStore.deletePrompt(idToDelete)
-  void router.push({ name: 'prompts' })
+  deleteError.value = ''
+  pendingDelete.value = activePrompt.value
+}
+
+async function confirmDeleteCurrentPrompt() {
+  if (!pendingDelete.value || deleting.value) return
+  const target = pendingDelete.value
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await promptsStore.deletePrompt(target.id)
+    pendingDelete.value = null
+    void router.push({ name: 'prompts' })
+  } catch (err: any) {
+    deleteError.value = promptsStore.error || err.message || '删除提示词失败'
+  } finally {
+    deleting.value = false
+  }
 }
 
 function onSaved(updated: Prompt) {
@@ -181,6 +198,18 @@ async function copyContent(text: string) {
           @saved="onSaved"
         />
       </Teleport>
+
+      <UiConfirmDialog
+        v-if="pendingDelete"
+        title="删除提示词"
+        :message="`确定要删除提示词「${pendingDelete.name}」吗？`"
+        detail="引用该提示词的角色或会话将无法继续读取其内容。"
+        confirm-label="删除"
+        :loading="deleting"
+        :error="deleteError"
+        @close="pendingDelete = null"
+        @confirm="confirmDeleteCurrentPrompt"
+      />
     </div>
 
     <!-- Empty Workspace State -->

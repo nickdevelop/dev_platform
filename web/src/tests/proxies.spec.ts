@@ -49,7 +49,6 @@ describe('Service Proxies UI Components', () => {
       enabled: false,
     })
     const deleteSpy = vi.spyOn(proxiesApi, 'deleteProxy').mockResolvedValue()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mount(ProxiesView)
     await flushPromises()
@@ -66,9 +65,12 @@ describe('Service Proxies UI Components', () => {
     await checkbox.trigger('change')
     expect(toggleSpy).toHaveBeenCalledWith(1)
 
-    // Delete
+    // Delete opens the shared confirmation dialog instead of window.confirm.
     const deleteBtn = wrapper.find('button.text-red-500')
     await deleteBtn.trigger('click')
+    expect(wrapper.text()).toContain('确定要删除代理「Web Demo」吗？')
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await flushPromises()
     expect(deleteSpy).toHaveBeenCalledWith(1)
   })
 

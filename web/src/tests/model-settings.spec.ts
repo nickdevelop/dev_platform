@@ -107,4 +107,19 @@ describe('ModelSettings', () => {
     expect(probe?.headers['X-CSRF-Token']).toBe(testCSRFToken)
     expect(wrapper.text()).toContain('正常')
   })
+
+  it('deletes a service only after confirming in the shared dialog', async () => {
+    const calls = stubFetch()
+    const wrapper = await mountView()
+
+    const deleteBtn = wrapper.findAll('.service-actions button').find((btn) => btn.text() === '删除')
+    expect(deleteBtn?.exists()).toBe(true)
+    await deleteBtn!.trigger('click')
+    expect(wrapper.text()).toContain('确定要删除服务「Local」吗？')
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
+
+    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    await flushPromises()
+    expect(calls.some((c) => c.method === 'DELETE' && c.path === '/model-services/1')).toBe(true)
+  })
 })
