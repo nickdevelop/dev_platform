@@ -93,10 +93,28 @@ export function buildLogModel(messages: ChatEntry[]): LogModel {
   // A result whose call is present renders inside that call's block, so it is
   // dropped from the top-level list. A result with no matching call (a
   // truncated history, say) stays on its own so its output is never lost.
-  const visibleEntries = messages.filter(
-    (entry) => !(entry.kind === 'tool_result' && entry.callId !== undefined && callIds.has(entry.callId)),
-  )
+  // A call id seen twice (legacy transcripts recorded both the handoff batch
+  // and the per-call write) keeps only its first card: both copies answer the
+  // same result, so the second one would merely repeat the invocation.
+  const seenCalls = new Set<string>()
+  const visibleEntries = messages.filter((entry) => {
+    if (entry.kind === 'tool_result' && entry.callId !== undefined && callIds.has(entry.callId)) {
+      return false
+    }
+    if (entry.kind === 'tool_call' && entry.callId) {
+      if (seenCalls.has(entry.callId)) return false
+      seenCalls.add(entry.callId)
+    }
+    return true
+  })
   return { resultsByCall, callIds, resultForCall, visibleEntries }
+}
+
+// pendingToolLabel names a tool call that has no result yet. While the turn
+// runs it is still working; once the turn ended nothing will answer it, and
+// saying "running" forever would leave the user waiting on a call that is gone.
+export function pendingToolLabel(running: boolean): string {
+  return running ? '运行中…' : '未完成'
 }
 
 // --- Step grouping (opencode desktop style) ---
@@ -185,7 +203,7 @@ export function blocksForDisplay(blocks: RenderBlock[], display: string): Render
 // whose call is present is already merged into that call's card (see
 // buildLogModel), so it is not listed twice.
 
-export function stepSummary(entries: ChatEntry[], resultForCall: ResultLookup): string {
+export function stepSummary(entries: ChatEntry[], resultForCall: ResultLookup, turnRunning = true): string {
   const tools = entries.filter((entry) => entry.kind === 'tool_call')
   const thinkings = entries.filter((entry) => entry.kind === 'thinking')
   const parts: string[] = []
@@ -194,8 +212,11 @@ export function stepSummary(entries: ChatEntry[], resultForCall: ResultLookup): 
     parts.push(`${tools.length} 个工具 · ${names.join('、')}`)
   }
   if (thinkings.length > 0) parts.push('思考')
-  const running = entries.some((entry) => entry.kind === 'tool_call' && !resultForCall(entry))
-  return parts.length > 0 ? parts.join(' · ') + (running ? ' · 运行中' : '') : 'Agent 活动'
+  // An unanswered call is "running" only while its turn is alive: once the
+  // turn ended nothing can answer it, so the group reads as unfinished too.
+  const pending = entries.some((entry) => entry.kind === 'tool_call' && !resultForCall(entry))
+  const suffix = pending ? (turnRunning ? ' · 运行中' : ' · 未完成') : ''
+  return parts.length > 0 ? parts.join(' · ') + suffix : 'Agent 活动'
 }
 
 // --- Subagent popup ---

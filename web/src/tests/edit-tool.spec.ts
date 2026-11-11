@@ -170,7 +170,9 @@ describe('MessageView edit tool block', () => {
     const entries: ChatEntry[] = [
       { id: 'call-1', kind: 'tool_call', role: 'assistant', text: 'edit', name: 'EDIT', input: { path: 'foo.ts' }, streaming: false, callId: 'c1' },
     ]
-    const wrapper = mount(MessageView, { props: { messages: entries, capabilities: capabilities() } })
+    const wrapper = mount(MessageView, {
+      props: { messages: entries, capabilities: capabilities(), running: true },
+    })
     await flushPromises()
     expect(wrapper.find('[data-test="edit-tool"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('运行中')

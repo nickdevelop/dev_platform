@@ -35,7 +35,46 @@ func (a *Adapter) loadTranscriptRecords(ctx context.Context, sessionID string) (
 // -> dropped, error -> inline note.
 func renderHistoryMessages(records []TranscriptRecord, endpoint ModelEndpoint) []chatMessage {
 	messages := make([]chatMessage, 0, len(records))
+	// A call is only replayable when it carries a usable id: a model that omits
+	// one leaves the record unanswerable, and an assistant tool_calls message
+	// without its matching tool replies is rejected by OpenAI-compatible
+	// services.
+	callIDs := make(map[string]bool)
 	for _, record := range records {
+		if record.Kind != TranscriptToolCall {
+			continue
+		}
+		var payload toolCallRecord
+		if err := json.Unmarshal(record.Payload, &payload); err != nil {
+			continue
+		}
+		if payload.Name != "" && payload.CallID != "" {
+			callIDs[payload.CallID] = true
+		}
+	}
+	emitted := make(map[string]bool, len(callIDs))
+	// Tools of one step arrive as consecutive call records; they are gathered
+	// into one assistant message and flushed when their replies start, so the
+	// rebuilt context always pairs calls and replies.
+	pending := make([]wireToolCall, 0, 2)
+	flushCalls := func() {
+		if len(pending) == 0 {
+			return
+		}
+		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: pending})
+		pending = nil
+	}
+	dropCalls := func() {
+		// A call the transcript never answered cannot be sent back: the tool
+		// reply OpenAI expects next is missing, and inventing one would feed
+		// the model a result that never happened.
+		pending = nil
+	}
+
+	for _, record := range records {
+		if record.Kind != TranscriptToolCall && record.Kind != TranscriptToolResult && len(pending) > 0 {
+			dropCalls()
+		}
 		switch record.Kind {
 		case TranscriptUser:
 			var payload userRecord
@@ -65,21 +104,29 @@ func renderHistoryMessages(records []TranscriptRecord, endpoint ModelEndpoint) [
 			messages = append(messages, textMessage("assistant", record.Content))
 		case TranscriptToolCall:
 			var payload toolCallRecord
-			if err := json.Unmarshal(record.Payload, &payload); err != nil || payload.Name == "" {
+			if err := json.Unmarshal(record.Payload, &payload); err != nil || payload.Name == "" || payload.CallID == "" {
 				continue
 			}
-			messages = append(messages, chatMessage{
-				Role: "assistant",
-				ToolCalls: []wireToolCall{{
-					ID:       payload.CallID,
-					Type:     "function",
-					Function: wireFunctionCall{Name: payload.Name, Arguments: string(payload.Input)},
-				}},
+			if !callIDs[payload.CallID] || emitted[payload.CallID] {
+				// A legacy duplicate write of a call already announced.
+				continue
+			}
+			emitted[payload.CallID] = true
+			pending = append(pending, wireToolCall{
+				ID:       payload.CallID,
+				Type:     "function",
+				Function: wireFunctionCall{Name: payload.Name, Arguments: string(payload.Input)},
 			})
 		case TranscriptToolResult:
 			var payload toolResultRecord
 			if err := json.Unmarshal(record.Payload, &payload); err != nil {
 				payload.Output = compactJSONString(record.Payload)
+			}
+			flushCalls()
+			if !callIDs[payload.CallID] {
+				// No call on record answers this output: sending an orphan tool
+				// message would break the same protocol invariant.
+				continue
 			}
 			messages = append(messages, chatMessage{
 				Role:       "tool",
@@ -96,6 +143,7 @@ func renderHistoryMessages(records []TranscriptRecord, endpoint ModelEndpoint) [
 			messages = append(messages, textMessage("user", note))
 		}
 	}
+	flushCalls()
 	return messages
 }
 
@@ -147,6 +195,7 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 // applies the shared page bound; Sequence is renumbered there.
 func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 	events := make([]agents.NormalizedEvent, 0, len(records))
+	seenCalls := make(map[string]bool)
 	for index, record := range records {
 		timestamp := record.CreatedAt
 		event := agents.NormalizedEvent{
@@ -169,6 +218,25 @@ func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 			var payload toolCallRecord
 			if err := json.Unmarshal(record.Payload, &payload); err != nil {
 				continue
+			}
+			if payload.CallID != "" {
+				if seenCalls[payload.CallID] {
+					// Legacy transcripts recorded every call twice (the
+					// handoff batch plus the per-call write); replay shows the
+					// invocation once so the log does not repeat the card.
+					continue
+				}
+				seenCalls[payload.CallID] = true
+			} else if index+1 < len(records) && records[index+1].Kind == TranscriptToolCall {
+				// A legacy call whose model omitted the id: the identified
+				// twin written right after it is the same invocation, so the
+				// anonymous copy is dropped instead of rendering a card no
+				// result can ever answer.
+				var next toolCallRecord
+				if json.Unmarshal(records[index+1].Payload, &next) == nil && next.CallID != "" &&
+					next.Name == payload.Name && string(next.Input) == string(payload.Input) {
+					continue
+				}
 			}
 			event.Type = agents.EventToolCall
 			event.ToolCall = &agents.ToolCallPayload{

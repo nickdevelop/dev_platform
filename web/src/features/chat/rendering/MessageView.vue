@@ -62,6 +62,10 @@ const emit = defineEmits<{
 // display mode, the manually-opened state and the flat-activity fold state.
 const model = computed(() => log.buildLogModel(props.messages))
 const resultForCall = (entry: ChatEntry) => model.value.resultForCall(entry)
+// A call with no result reads "running" only while its turn is alive; after the
+// turn ended nothing can answer it, so it reads as unfinished instead of
+// spinning forever.
+const pendingToolLabel = () => log.pendingToolLabel(props.running === true)
 
 // A user message may open with a Role/Flow prompt block. Parsing is done once
 // per entry so the template can ask for the block without re-parsing the full
@@ -87,7 +91,7 @@ function toolEventsVisible(): boolean {
   return log.toolEventsVisible(props.capabilities)
 }
 const modelLabel = (m: NonNullable<ChatEntry['model']>) => log.modelLabel(m)
-const stepSummary = (entries: ChatEntry[]) => log.stepSummary(entries, resultForCall)
+const stepSummary = (entries: ChatEntry[]) => log.stepSummary(entries, resultForCall, props.running === true)
 const isSubagentCall = (entry: ChatEntry) => log.isSubagentCall(entry, resultForCall)
 const subagentSessionId = (entry: ChatEntry) => log.subagentSessionId(entry, resultForCall)
 const subagentName = (entry: ChatEntry) => log.subagentName(entry)
@@ -711,7 +715,7 @@ async function handleMarkdownClick(event: MouseEvent) {
                         :text="resultForCall(entry)?.text ?? ''"
                         :is-error="resultForCall(entry)?.isError"
                       />
-                      <p v-else class="tool-running" role="status">运行中…</p>
+                      <p v-else class="tool-running" role="status">{{ pendingToolLabel() }}</p>
                     </template>
                     <button
                       v-if="isSubagentCall(entry)"
@@ -790,7 +794,7 @@ async function handleMarkdownClick(event: MouseEvent) {
           class="subagent-output"
           :class="{ 'is-error': resultForCall(subagentModal)?.isError }"
         >{{ resultForCall(subagentModal)?.text }}</pre>
-        <p v-else class="tool-running">运行中…</p>
+        <p v-else class="tool-running">{{ pendingToolLabel() }}</p>
       </div>
     </div>
 

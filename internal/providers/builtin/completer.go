@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -231,8 +232,16 @@ func (c *completer) streamChat(ctx context.Context, endpoint ModelEndpoint, hist
 			onDelta(delta)
 		}
 	}
-	for _, call := range toolCalls {
-		result.ToolCalls = append(result.ToolCalls, *call)
+	// Tool calls are keyed by the stream's index; a map walk would hand them
+	// back in random order, so the turn would execute, announce and record the
+	// same step's tools in a different order on every run.
+	indexes := make([]int, 0, len(toolCalls))
+	for index := range toolCalls {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	for _, index := range indexes {
+		result.ToolCalls = append(result.ToolCalls, *toolCalls[index])
 	}
 	return result, nil
 }

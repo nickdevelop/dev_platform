@@ -129,15 +129,14 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 			return
 		}
 
-		var stepEvents []agents.NormalizedEvent
+		// Deltas are published as they arrive. Buffering them until the
+		// completion ends put the step's text behind the tool calls it
+		// preceded, so a client saw the card before the sentence explaining it.
 		result, streamErr := a.completions.streamChat(ctx, endpoint, messages, schemas, func(delta streamDelta) {
-			if events := mapStreamDelta(ref, delta, a.now()); len(events) > 0 {
-				stepEvents = append(stepEvents, events...)
+			for _, event := range mapStreamDelta(ref, delta, a.now()) {
+				inst.publish(event)
 			}
 		})
-		for _, event := range stepEvents {
-			inst.publish(event)
-		}
 		if streamErr != nil {
 			if ctx.Err() != nil {
 				a.cancelTurn(inst, ref, current, resultTextOf(result))
@@ -163,10 +162,12 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 		}
 
 		// One assistant handoff message carries every tool call of the step;
-		// each tool result answers against its call id.
+		// each tool result answers against its call id. The handoff records only
+		// the assistant's note: executeToolCall is the single write point of the
+		// call records, so replay never sees a duplicated invocation.
 		messages = append(messages, chatMessage{Role: "assistant", ToolCalls: result.ToolCalls})
 		a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
-			return buildToolHandoffRecords(seq, result, a.now()), nil
+			return buildAssistantNoteRecords(seq, result, a.now()), nil
 		})
 
 		for _, call := range result.ToolCalls {
@@ -275,6 +276,9 @@ func (a *Adapter) executeToolCall(
 		},
 	})
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
+		// The record must use the same id the call event and its result carry,
+		// including the generated fallback: recording the raw model id left the
+		// replay unable to pair a result with its call.
 		return []TranscriptRecord{buildToolCallRecord(seq, toolName, callID, json.RawMessage(inputJSON), a.now())}, nil
 	})
 
@@ -285,6 +289,9 @@ func (a *Adapter) executeToolCall(
 	output, isErr := "", false
 	switch {
 	case cancelled:
+		// The call was announced before the interrupt landed. Answer it anyway,
+		// so the card settles instead of showing "running" forever.
+		a.publishToolResult(inst, ref, state, callID, "工具调用已中断，未产生结果。", true)
 		return toolLoopExitCancelled
 	case !approved:
 		output = "用户拒绝本次执行。如果需要继续，请先解释方案并重新请求授权。"
@@ -292,6 +299,7 @@ func (a *Adapter) executeToolCall(
 	default:
 		executed, execErr := a.registry.Execute(ctx, inst.directory, toolName, inputJSON)
 		if execErr != nil && ctx.Err() != nil {
+			a.publishToolResult(inst, ref, state, callID, "工具调用已中断，未产生结果。", true)
 			return toolLoopExitCancelled
 		}
 		if execErr != nil {
@@ -303,6 +311,20 @@ func (a *Adapter) executeToolCall(
 	}
 	// Publish the raw tool output; the stored transcript keeps the same
 	// model-facing output so later turns rebuild an honest context.
+	a.publishToolResult(inst, ref, state, callID, output, isErr)
+
+	*messages = append(*messages, chatMessage{
+		Role:       "tool",
+		Content:    jsonOrString(output),
+		ToolCallID: callID,
+	})
+	return toolLoopExitContinue
+}
+
+// publishToolResult publishes one tool outcome and records it. The event and
+// the record always carry the same call id, so a replay pairs them exactly as
+// the live stream did.
+func (a *Adapter) publishToolResult(inst *instance, ref agents.SessionRef, state *sessionState, callID, output string, isErr bool) {
 	inst.publish(agents.NormalizedEvent{
 		Type:      agents.EventToolResult,
 		SessionID: ref.SessionID,
@@ -316,13 +338,6 @@ func (a *Adapter) executeToolCall(
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
 		return []TranscriptRecord{buildToolResultRecord(seq, callID, output, isErr, a.now())}, nil
 	})
-
-	*messages = append(*messages, chatMessage{
-		Role:       "tool",
-		Content:    jsonOrString(output),
-		ToolCallID: callID,
-	})
-	return toolLoopExitContinue
 }
 
 // gateToolCall blocks for a permission decision in confirm mode. It reports

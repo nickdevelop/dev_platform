@@ -22,6 +22,9 @@ const props = defineProps<{
 const model = computed(() => log.buildLogModel(props.messages))
 
 const resultForCall = (entry: ChatEntry): ChatEntry | undefined => model.value.resultForCall(entry)
+// A call with no result reads "running" only while its turn is alive; after the
+// turn ended nothing can answer it, so it reads as unfinished instead.
+const pendingToolLabel = () => log.pendingToolLabel(props.running === true)
 
 function toolEventsVisible(): boolean {
   return log.toolEventsVisible(props.capabilities)
@@ -114,7 +117,7 @@ const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
             </span>
             <span class="tool-name">子任务</span>
             <span v-if="subagentName(entry)" class="tool-arg">{{ subagentName(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">{{ pendingToolLabel() }}</span>
             <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
           <p v-if="subagentSessionId(entry)" class="subagent-session">会话 {{ subagentSessionId(entry) }}</p>
@@ -140,7 +143,7 @@ const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
             </span>
             <span class="tool-name">edit</span>
             <span v-if="editPathFor(entry)" class="tool-arg">{{ editPathFor(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">{{ pendingToolLabel() }}</span>
             <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
           <EditDiffBody :patch="editDiffFor(entry)?.patch" />
@@ -198,7 +201,7 @@ const editDiffFor = (entry: ChatEntry) => log.editDiffFor(entry, resultForCall)
               </template>
             </span>
             <span class="tool-name">{{ toolName(entry) }}</span>
-            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">运行中…</span>
+            <span v-if="entry.streaming || !resultForCall(entry)" class="tool-running" role="status">{{ pendingToolLabel() }}</span>
             <span v-else-if="resultForCall(entry)?.isError" class="tool-status-error" role="status">失败</span>
           </div>
           <pre v-if="prettyInput(entry)" class="tool-args" data-test="tool-input">{{ prettyInput(entry) }}</pre>

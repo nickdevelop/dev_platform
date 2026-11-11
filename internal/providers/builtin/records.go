@@ -32,24 +32,21 @@ func buildUserRecord(seq int, message agents.SendMessageRequest, now time.Time) 
 	}
 }
 
-// buildToolHandoffRecords stores the text of the assistant's pre-call note
-// plus one record per tool invocation with its full arguments.
-func buildToolHandoffRecords(seq int, result *assistantResult, now time.Time) []TranscriptRecord {
-	records := make([]TranscriptRecord, 0, len(result.ToolCalls)+1)
-	if result.Text != "" {
-		records = append(records, TranscriptRecord{
-			Seq:       seq,
-			Kind:      TranscriptAssistant,
-			Content:   result.Text,
-			CreatedAt: now,
-		})
-		seq++
+// buildAssistantNoteRecords stores the text the assistant wrote before asking
+// for its tools. The calls themselves are recorded by executeToolCall, their
+// single write point: recording them here as well duplicated every invocation
+// in the transcript, so replay read call, call, call, result and the rebuilt
+// model context carried the same call twice.
+func buildAssistantNoteRecords(seq int, result *assistantResult, now time.Time) []TranscriptRecord {
+	if result.Text == "" {
+		return nil
 	}
-	for _, call := range result.ToolCalls {
-		records = append(records, buildToolCallRecord(seq, call.Function.Name, call.ID, json.RawMessage(call.Function.Arguments), now))
-		seq++
-	}
-	return records
+	return []TranscriptRecord{{
+		Seq:       seq,
+		Kind:      TranscriptAssistant,
+		Content:   result.Text,
+		CreatedAt: now,
+	}}
 }
 
 // buildToolCallRecord stores one tool invocation with its full arguments. A
