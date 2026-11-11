@@ -165,3 +165,88 @@ func TestChatEventBusStreamAndGC(t *testing.T) {
 		t.Errorf("expected bus %s to be garbage-collected after disconnect", busUUID)
 	}
 }
+
+func TestChatEventBusConnectionDisplacement(t *testing.T) {
+	completer := &fakeCompleter{}
+	service, _, _ := testService(t, completer)
+
+	busMgr := service.eventBus
+	busUUID := "bus-test-uuid-displace"
+
+	// 1. Conn 1 starts
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	var buf1 bytes.Buffer
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- busMgr.StreamBus(ctx1, busUUID, &buf1, nil)
+	}()
+
+	time.Sleep(30 * time.Millisecond)
+
+	bus := busMgr.GetOrCreate(busUUID)
+	bus.mu.Lock()
+	if !bus.active || bus.connID != 1 {
+		bus.mu.Unlock()
+		t.Fatalf("expected bus active with connID 1, got active=%v, connID=%d", bus.active, bus.connID)
+	}
+	bus.mu.Unlock()
+
+	// 2. Conn 2 connects to the same busUUID
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+
+	var buf2 bytes.Buffer
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- busMgr.StreamBus(ctx2, busUUID, &buf2, nil)
+	}()
+
+	// Conn 1 should be displaced and terminated promptly
+	select {
+	case <-done1:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("conn 1 was not displaced promptly")
+	}
+
+	// Verify bus is still active with connID 2
+	bus.mu.Lock()
+	if !bus.active || bus.connID != 2 {
+		bus.mu.Unlock()
+		t.Fatalf("expected bus active with connID 2, got active=%v, connID=%d", bus.active, bus.connID)
+	}
+	bus.mu.Unlock()
+
+	// Subscribe bus to chat ID 999
+	bus.mu.Lock()
+	bus.chats[999] = struct{}{}
+	bus.mu.Unlock()
+
+	// 3. Broadcast 5 events
+	for i := 1; i <= 5; i++ {
+		busMgr.Broadcast(Event{
+			ChatID:    999,
+			Timestamp: time.Now().UTC(),
+			Type:      EventDelta,
+			Delta:     &Delta{MessageID: uint(i), Text: "delta-text"},
+		})
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	cancel2()
+	<-done2
+
+	// Conn 1 should not have received any delta events
+	out1 := buf1.String()
+	if strings.Contains(out1, "delta-text") {
+		t.Fatalf("conn 1 received events after displacement: %q", out1)
+	}
+
+	// Conn 2 must have received all 5 delta events
+	out2 := buf2.String()
+	occurrences := strings.Count(out2, "delta-text")
+	if occurrences != 5 {
+		t.Fatalf("conn 2 expected 5 delta events, got %d in: %q", occurrences, out2)
+	}
+}

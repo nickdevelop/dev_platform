@@ -68,6 +68,7 @@ type ClientBus struct {
 	out        chan busEnvelope
 	active     bool
 	gcTimer    *time.Timer
+	connID     uint64
 	connCancel context.CancelFunc
 }
 
@@ -145,22 +146,67 @@ func (b *ClientBus) close() {
 }
 
 // onConnect is invoked when a client establishes or re-establishes an SSE connection.
-func (b *ClientBus) onConnect(cancel context.CancelFunc) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// It assigns a new monotonic connID, cancels any previous connection to displace it,
+// migrates unread messages to a fresh channel so the old connection cannot interleave
+// or consume events, and returns the current connID and delivery channel.
+func (b *ClientBus) onConnect(cancel context.CancelFunc) (uint64, chan busEnvelope) {
+	var oldCancel context.CancelFunc
+	var myConnID uint64
+	var newOut chan busEnvelope
 
+	b.mu.Lock()
 	if b.gcTimer != nil {
 		b.gcTimer.Stop()
 		b.gcTimer = nil
 	}
-	b.active = true
+
+	b.connID++
+	myConnID = b.connID
+	oldCancel = b.connCancel
 	b.connCancel = cancel
+	b.active = true
+
+	oldOut := b.out
+	bufSize := b.mgr.bufSize
+	if bufSize <= 0 {
+		bufSize = defaultBusBufSize
+	}
+	newOut = make(chan busEnvelope, bufSize)
+	if oldOut != nil {
+	drainLoop:
+		for {
+			select {
+			case env := <-oldOut:
+				select {
+				case newOut <- env:
+				default:
+					break drainLoop
+				}
+			default:
+				break drainLoop
+			}
+		}
+	}
+	b.out = newOut
+	b.mu.Unlock()
+
+	if oldCancel != nil {
+		oldCancel()
+	}
+
+	return myConnID, newOut
 }
 
 // onDisconnect is invoked when an SSE connection drops.
-func (b *ClientBus) onDisconnect() {
+func (b *ClientBus) onDisconnect(connID uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// If this connection has already been displaced by a newer connection,
+	// do not alter active status or schedule GC.
+	if b.connID != connID {
+		return
+	}
 
 	b.active = false
 	b.connCancel = nil
@@ -469,8 +515,8 @@ func (m *EventBusManager) StreamBus(ctx context.Context, uuid string, w io.Write
 	connCtx, connCancel := context.WithCancel(ctx)
 	defer connCancel()
 
-	bus.onConnect(connCancel)
-	defer bus.onDisconnect()
+	connID, outCh := bus.onConnect(connCancel)
+	defer bus.onDisconnect(connID)
 
 	// Send initial ready frame
 	if _, err := io.WriteString(w, "event: ready\ndata: {}\n\n"); err != nil {
@@ -496,7 +542,7 @@ func (m *EventBusManager) StreamBus(ctx context.Context, uuid string, w io.Write
 			if flush != nil {
 				flush()
 			}
-		case env, ok := <-bus.out:
+		case env, ok := <-outCh:
 			if !ok {
 				if slow.Load() {
 					return errSlowClient

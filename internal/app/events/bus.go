@@ -38,6 +38,7 @@ type ClientBus struct {
 	out          chan EventEnvelope
 	active       bool
 	gcTimer      *time.Timer
+	connID       uint64
 	connCancel   context.CancelFunc
 	droppedCount atomic.Uint64
 	streamDrops  atomic.Uint64
@@ -65,22 +66,67 @@ func (b *ClientBus) close() {
 }
 
 // onConnect is invoked when an SSE connection is established.
-func (b *ClientBus) onConnect(cancel context.CancelFunc) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+// It assigns a new monotonic connID, cancels any previous connection to displace it,
+// migrates unread messages to a fresh channel so the old connection cannot interleave
+// or consume events, and returns the current connID and delivery channel.
+func (b *ClientBus) onConnect(cancel context.CancelFunc) (uint64, chan EventEnvelope) {
+	var oldCancel context.CancelFunc
+	var myConnID uint64
+	var newOut chan EventEnvelope
 
+	b.mu.Lock()
 	if b.gcTimer != nil {
 		b.gcTimer.Stop()
 		b.gcTimer = nil
 	}
-	b.active = true
+
+	b.connID++
+	myConnID = b.connID
+	oldCancel = b.connCancel
 	b.connCancel = cancel
+	b.active = true
+
+	oldOut := b.out
+	bufSize := b.mgr.bufSize
+	if bufSize <= 0 {
+		bufSize = defaultBusBufSize
+	}
+	newOut = make(chan EventEnvelope, bufSize)
+	if oldOut != nil {
+	drainLoop:
+		for {
+			select {
+			case env := <-oldOut:
+				select {
+				case newOut <- env:
+				default:
+					break drainLoop
+				}
+			default:
+				break drainLoop
+			}
+		}
+	}
+	b.out = newOut
+	b.mu.Unlock()
+
+	if oldCancel != nil {
+		oldCancel()
+	}
+
+	return myConnID, newOut
 }
 
 // onDisconnect is invoked when an SSE connection drops.
-func (b *ClientBus) onDisconnect() {
+func (b *ClientBus) onDisconnect(connID uint64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// If this connection has already been displaced by a newer connection,
+	// do not alter active status or schedule GC.
+	if b.connID != connID {
+		return
+	}
 
 	b.active = false
 	b.connCancel = nil
@@ -303,8 +349,16 @@ func isStreamContentEvent(eventType string) bool {
 // Non-critical events are dropped if the channel is full.
 // Critical and streaming content events wait briefly (up to 100ms) for space before dropping, and drops are logged and counted.
 func (b *ClientBus) enqueue(env EventEnvelope) {
+	b.mu.Lock()
+	outCh := b.out
+	b.mu.Unlock()
+
+	if outCh == nil {
+		return
+	}
+
 	select {
-	case b.out <- env:
+	case outCh <- env:
 		return
 	default:
 	}
@@ -314,7 +368,7 @@ func (b *ClientBus) enqueue(env EventEnvelope) {
 		timer := time.NewTimer(100 * time.Millisecond)
 		defer timer.Stop()
 		select {
-		case b.out <- env:
+		case outCh <- env:
 			return
 		case <-timer.C:
 		}
@@ -324,7 +378,7 @@ func (b *ClientBus) enqueue(env EventEnvelope) {
 	count := b.droppedCount.Add(1)
 	if count == 1 || count%50 == 0 {
 		log.Printf("[EventBus] bus %s buffer full (%d), dropped %s event on channel %s/%s (total dropped: %d)",
-			b.id, cap(b.out), env.EventType, env.Channel, env.TargetID, count)
+			b.id, cap(outCh), env.EventType, env.Channel, env.TargetID, count)
 	}
 
 	// A dropped critical or streaming-content event would corrupt the client
@@ -401,20 +455,22 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 	connCtx, connCancel := context.WithCancel(ctx)
 	defer connCancel()
 
-	bus.onConnect(connCancel)
-	defer bus.onDisconnect()
-
-	// Drop everything still queued when the stream loop exits: a kick or a
-	// disconnect leaves undrained frames behind, and the client re-subscribes
-	// with its sequence and receives the same range replayed from the
-	// instance ring — leftovers would surface as duplicate renders.
+	connID, outCh := bus.onConnect(connCancel)
 	defer func() {
-		for {
-			select {
-			case <-bus.out:
-				continue
-			default:
-				return
+		bus.onDisconnect(connID)
+		bus.mu.Lock()
+		shouldDrain := (bus.connID == connID && !bus.active)
+		outToDrain := bus.out
+		bus.mu.Unlock()
+
+		if shouldDrain && outToDrain != nil {
+			for {
+				select {
+				case <-outToDrain:
+					continue
+				default:
+					return
+				}
 			}
 		}
 	}()
@@ -455,7 +511,7 @@ func (m *Manager) StreamBus(ctx context.Context, uuid string, w io.Writer, flush
 			if err := write(":keep-alive\n\n"); err != nil {
 				return err
 			}
-		case env, ok := <-bus.out:
+		case env, ok := <-outCh:
 			if !ok {
 				return nil
 			}
@@ -505,13 +561,17 @@ func (m *Manager) Diagnostics() []BusDiagnostics {
 		for ch, targets := range b.subs {
 			channels[ch] = len(targets)
 		}
+		queued := 0
+		if b.out != nil {
+			queued = len(b.out)
+		}
 		res = append(res, BusDiagnostics{
 			BusID:       b.id,
 			Active:      b.active,
 			Channels:    channels,
 			Dropped:     b.droppedCount.Load(),
 			StreamDrops: b.streamDrops.Load(),
-			Queued:      len(b.out),
+			Queued:      queued,
 		})
 		b.mu.Unlock()
 	}

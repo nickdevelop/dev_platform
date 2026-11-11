@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -227,5 +229,78 @@ func TestEventBusHTTPHandlers(t *testing.T) {
 	_ = json.Unmarshal(recListAfter.Body.Bytes(), &listRespAfter)
 	if len(listRespAfter.Subscriptions["sessions"]) != 0 {
 		t.Errorf("after delete, subscriptions = %v, want []", listRespAfter.Subscriptions["sessions"])
+	}
+}
+
+// TestEventBusConnectionDisplacement verifies that when a new SSE connection attaches
+// to the same bus UUID, the previous connection is displaced/terminated, and all subsequent
+// events are delivered exclusively to the new connection without splitting or missing.
+func TestEventBusConnectionDisplacement(t *testing.T) {
+	env := newTestEnv(t)
+	s := createNativeSession(t, env, "native-displace")
+
+	busID := "uuid-displace-bus"
+
+	// 1. Conn 1 starts
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+
+	w1 := &recordingWriter{}
+	done1 := make(chan error, 1)
+	go func() {
+		done1 <- env.svc.eventBus.StreamBus(ctx1, busID, w1, nil)
+	}()
+
+	waitForFrames(t, w1, 1) // ready frame
+
+	// Subscribe to session s
+	_, err := env.svc.eventBus.SubscribeSession(ctx1, busID, env.projectID, s.ID, 0)
+	if err != nil {
+		t.Fatalf("SubscribeSession: %v", err)
+	}
+
+	// 2. Conn 2 connects to the same busID
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+
+	w2 := &recordingWriter{}
+	done2 := make(chan error, 1)
+	go func() {
+		done2 <- env.svc.eventBus.StreamBus(ctx2, busID, w2, nil)
+	}()
+
+	// Conn 1 should be displaced and exit promptly
+	select {
+	case <-done1:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("conn 1 was not displaced promptly")
+	}
+
+	waitForFrames(t, w2, 1) // ready frame on conn 2
+
+	// Emit 5 sequential message events
+	for i := 1; i <= 5; i++ {
+		env.fake.emit(t, env.instanceID, streamMessageEvent(uint64(i), "native-displace", fmt.Sprintf("msg-%d", i)))
+	}
+
+	// Wait for 5 messages on conn 2 (ready + 5 = 6 frames)
+	waitForFrames(t, w2, 6)
+
+	// Conn 1 must NOT have received any of the 5 messages
+	frames1 := parseFrames(t, w1.Bytes())
+	if len(frames1) != 1 {
+		t.Fatalf("conn 1 received unexpected frames: %+v", frames1)
+	}
+
+	// Conn 2 must have received all 5 messages sequentially
+	frames2 := parseFrames(t, w2.Bytes())
+	if len(frames2) != 6 {
+		t.Fatalf("conn 2 got %d frames, want 6", len(frames2))
+	}
+	for i := 1; i <= 5; i++ {
+		expectedID := strconv.Itoa(i)
+		if frames2[i].id != expectedID {
+			t.Errorf("frame %d id = %s, want %s", i, frames2[i].id, expectedID)
+		}
 	}
 }
