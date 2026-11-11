@@ -9,8 +9,12 @@ import type { EventEnvelope } from '../../api/events'
 export const DEBUG_BUFFER_LIMIT = 500
 
 export interface DebugEntry {
-  // Monotonic capture index within one open-drawer session.
+  // Monotonic capture index for this page session. It is only a local list key
+  // and expansion id; it is NOT the number shown in the list.
   seq: number
+  // The bus envelope's own SSE id / sequence. Null when the wire frame carried
+  // no id (some broadcast frames); the list then prints a dash.
+  sequence: number | null
   // Date.now() at receive time.
   receivedAt: number
   channel: string
@@ -49,6 +53,7 @@ export function emptyDebugFilter(): DebugFilter {
 export function createEntry(seq: number, envelope: EventEnvelope): DebugEntry {
   return {
     seq,
+    sequence: typeof envelope.id === 'number' && Number.isFinite(envelope.id) ? envelope.id : null,
     receivedAt: typeof envelope.timestamp === 'number' ? envelope.timestamp : Date.now(),
     channel: envelope.channel,
     targetId: envelope.targetId,

@@ -147,7 +147,7 @@ web/src/
   │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建，中控调度模型基于已配置 Chat 文本模型下拉选取，团队协同角色直接从角色库选用并展示）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡，内建完备的 `.markdown-body` 排版体系、代码块复制与代码内 `@角色` 保护、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板，支持从全局角色库导入专家角色并统一引用提示词）
   │     ├── prompts/   ── 提示词管理核心组件（PromptManageDialog.vue 支持角色类与流程类单选区分、promptBlock.ts 角色/流程标签构造与解析；会话首条提示词与消息渲染共用该协议）
   │     ├── files/     ── 文件查看器（FileViewer.vue，支持普通查看与 Diff 双模式）、变更树组件（ChangeTree.vue，树形层级展示变动文件，支持暂存/取消暂存/放弃修改悬浮操作）、本地分支选择器（BranchSelector.vue，支持分支切换与快速新建）、Git 提交操作栏（GitCommitBar.vue，支持 Ctrl+Enter 快捷提交与自动暂存闭环）、Diff 预览器（DiffViewer.vue，Unified Diff 高亮对比与双列行号）、Markdown/PlantUML/图片 Artifact 预览、HTML 源码高亮与“🌐 预览”独立弹窗沙箱预览（HtmlArtifactView.vue、HtmlPreviewModal.vue）
-  │     └── debug/     ── SSE 总线调试面板（settings 开关 + 全局浮动入口按钮 + 可拖拽调试抽屉：仅"开关开启 + 面板打开"双条件同时满足时经 unifiedEventBus.addEnvelopeTap 捕获本浏览器实际收到的全部总线信封；频道/标识关键字/事件类型三重过滤，环形缓冲最近 500 帧、超限计数丢弃提示；关闭抽屉即停捕并清空，不持久化任何消息；开关仅存本浏览器 localStorage `dev-platform-debug-panel-v1`，纯观测、零后端改动。浅色台账式界面：顶部四格捕获摘要（缓冲 / 命中 / 丢弃 / 错误）、频道计数标签、列表序列号与时间/事件/频道/目标/标识列、行内展开原始载荷并一键复制、平板与手机端两行自适应）
+  │     └── debug/     ── SSE 总线调试面板（settings 开关只控制全局浮动入口按钮；抽屉内「开启 / 停止」显式控制经 unifiedEventBus.addEnvelopeTap 的捕获，关闭抽屉不停止捕获、不清空已捕获帧，停止后再开启按暂停/续接处理；关闭入口开关会停止捕获并保留当前缓冲；频道/标识关键字/事件类型三重过滤，环形缓冲最近 500 帧、超限计数丢弃提示；列表序号直接取统一总线信封的 SSE id / sequence，缺失显示 —，不在前端重新编号；不持久化任何消息；开关仅存本浏览器 localStorage `dev-platform-debug-panel-v1`，纯观测、零后端改动。浅色台账式界面：顶部四格捕获摘要（缓冲 / 当前命中 / 缓冲丢弃 / 错误，错误可点击直达）、频道计数标签、时间/事件/频道/目标/标识列、行内展开原始载荷并一键复制、平板与手机端两行自适应）
   └── router.ts        ── 路由映射与鉴权守卫（SPA 路由入口）
 ```
 

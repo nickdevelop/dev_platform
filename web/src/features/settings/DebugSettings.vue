@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Debug panel settings: a per-browser switch that only controls whether the
-// floating debug launch button is shown. No server round-trip by design — the
-// debug panel is a developer aid, its captured messages never persist and the
-// switch itself lives in localStorage.
+// floating debug launch button is shown. Capture itself is started/stopped
+// inside the panel and is independent of the drawer's visibility. No server
+// round-trip by design — the debug panel is a developer aid, its captured frames
+// never persist and the switch itself lives in localStorage.
 import { useDebugPanelStore } from '../../stores/debugPanel'
 
 const debug = useDebugPanelStore()
@@ -25,7 +26,7 @@ function toggleDebugPanel(event: Event) {
       <div class="group-header">
         <legend class="text-sm font-semibold text-slate-800 dark:text-slate-200 px-0">启用入口</legend>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-          开启后，全站右下角显示调试入口按钮；点击按钮打开浮动调试抽屉并开始捕获。
+          开启后，全站右下角显示调试入口按钮；打开抽屉后点击「开启」开始捕获，关闭抽屉不会停止捕获或清空已捕获帧。
         </p>
       </div>
 
@@ -33,8 +34,8 @@ function toggleDebugPanel(event: Event) {
         <span class="min-w-0">
           <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">显示调试面板入口</span>
           <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1 leading-5">
-            仅有"开关开启 + 面板打开"两个条件同时满足时才捕获与显示总线消息；关闭面板立即停止捕获并清空数据。
-            开关状态仅保存在本浏览器，不随账号同步，也不保存任何历史消息。
+            捕获由面板内的「开启 / 停止」控制；关闭面板不会停止捕获，也不会清空已捕获帧。
+            关闭此入口开关会停止捕获并保留当前缓冲；数据仅保存在本浏览器内存，不落库。
           </span>
         </span>
         <input

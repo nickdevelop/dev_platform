@@ -1,13 +1,14 @@
 <script setup lang="ts">
-// Floating debug drawer for the SSE bus. Visible (and capturing) only while the
-// settings toggle is on AND the drawer itself is open; closing it wipes the
-// buffer entirely. Pure observation: unlike the quick-assistant dialog it never
-// inherits modal focus trapping, so messages stay dispatchable while debugging.
+// Floating debug drawer for the SSE bus. The settings toggle only shows the
+// launcher. Capture is explicit: the panel's start/stop controls attach or
+// detach the envelope tap, and closing the drawer keeps both the running capture
+// and the captured frames. The list's 序号 is the envelope's own SSE id /
+// sequence; the store's local capture index is only a list key.
 //
 // The presentation is a light ledger: a capture summary strip, channel counts,
-// a dense frame table with a capture sequence column, and an inline payload
-// detail. Counts and visible rows are all derived from the same buffer, so the
-// header figures can never disagree with the list.
+// a dense frame table with the wire sequence column, and an inline payload
+// detail. Pure observation: it never inherits modal focus trapping, so messages
+// stay dispatchable while debugging.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDebugPanelStore, type DebugRow } from '../../stores/debugPanel'
 import {
@@ -260,6 +261,29 @@ async function writeClipboard(text: string): Promise<boolean> {
       </span>
       <span class="debug-scope">本浏览器总线</span>
       <div class="debug-actions" @pointerdown.stop>
+        <div class="debug-capture" role="group" aria-label="捕获控制">
+          <span
+            class="debug-capture-dot"
+            :class="{ 'is-live': debug.capturing }"
+            :title="debug.capturing ? '捕获已开启' : '捕获已停止'"
+            aria-hidden="true"
+          ></span>
+          <button
+            type="button"
+            class="debug-text-btn"
+            :disabled="debug.capturing"
+            aria-label="开启捕获"
+            @click="debug.startCapture()"
+          >开启</button>
+          <button
+            type="button"
+            class="debug-text-btn"
+            :disabled="!debug.capturing"
+            aria-label="停止捕获"
+            @click="debug.stopCapture()"
+          >停止</button>
+          <span class="debug-sr" aria-live="polite">{{ debug.capturing ? '捕获已开启' : '捕获已停止' }}</span>
+        </div>
         <button
           type="button"
           class="debug-text-btn"
@@ -364,7 +388,7 @@ async function writeClipboard(text: string): Promise<boolean> {
     </div>
 
     <div class="debug-columns" aria-hidden="true">
-      <span title="本次打开面板后的捕获序号；清空缓冲后继续递增">序号</span>
+      <span title="报文序号（SSE id / sequence）；缺失显示 —">序号</span>
       <span>时间</span>
       <span>事件</span>
       <span>频道</span>
@@ -381,9 +405,14 @@ async function writeClipboard(text: string): Promise<boolean> {
           <span>调整频道、关键字或事件类型，或重置过滤条件。</span>
           <button type="button" class="debug-text-btn" @click="resetFilters">重置过滤</button>
         </template>
+        <template v-else-if="!debug.capturing">
+          <strong>捕获已停止</strong>
+          <span>点击「开启」开始接收本浏览器的总线帧；已捕获的帧会保留在内存中。</span>
+          <button type="button" class="debug-text-btn" @click="debug.startCapture()">开启捕获</button>
+        </template>
         <template v-else>
           <strong>等待总线消息…</strong>
-          <span>面板打开期间，本浏览器收到的会话、对话、任务与系统事件会实时出现在这里。</span>
+          <span>捕获开启后，本浏览器收到的会话、对话、任务与系统事件会实时出现在这里。</span>
         </template>
       </div>
 
@@ -403,7 +432,7 @@ async function writeClipboard(text: string): Promise<boolean> {
           @click="toggleExpanded(entry)"
         >
           <span class="debug-row-primary">
-            <span class="debug-seq" :title="`捕获序号 #${entry.seq}`">#{{ entry.seq }}</span>
+            <span class="debug-seq" :title="entry.sequence === null ? '报文中没有 sequence / SSE id' : `报文序号 ${entry.sequence}`">{{ entry.sequence ?? '—' }}</span>
             <span class="debug-event" :class="{ 'is-error': isErrorEntry(entry) }" :title="entry.eventType">
               <span v-if="isErrorEntry(entry)" class="debug-error-dot" aria-hidden="true"></span>
               <span class="debug-event-name">{{ entry.eventType }}</span>
@@ -454,7 +483,8 @@ async function writeClipboard(text: string): Promise<boolean> {
 
     <!-- Footer semantics reminder -->
     <footer class="debug-foot">
-      <span>仅在面板打开期间捕获本浏览器收到的总线帧 · 关闭即停止并清空</span>
+      <span v-if="debug.capturing">捕获中 · 关闭面板不会停止捕获，已捕获帧保留在内存</span>
+      <span v-else>已停止 · 已捕获帧保留在内存，点击「开启」继续捕获</span>
       <span class="debug-foot-right" title="捕获数据不写入任何存储">纯观测 · 不落库</span>
     </footer>
   </div>
@@ -559,6 +589,52 @@ async function writeClipboard(text: string): Promise<boolean> {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* Capture switch: the dot is the state, the enabled button is the next action */
+.debug-capture {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 2px;
+}
+
+.debug-capture-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-muted, #64748b);
+}
+
+.debug-capture-dot.is-live {
+  background: var(--color-success, #15803d);
+}
+
+.debug-capture .debug-text-btn {
+  color: var(--color-text, #1f2328);
+}
+
+.debug-capture .debug-text-btn:disabled {
+  color: var(--color-text-muted, #64748b);
+  opacity: 0.65;
+  cursor: default;
+}
+
+.debug-capture .debug-text-btn:disabled:hover {
+  color: var(--color-text-muted, #64748b);
+  background: transparent;
+}
+
+.debug-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .debug-text-btn {
@@ -820,7 +896,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 .debug-columns {
   flex: none;
   display: grid;
-  grid-template-columns: 42px 96px minmax(150px, 1.2fr) 68px 128px minmax(0, 1.8fr) 14px;
+  grid-template-columns: 56px 96px minmax(150px, 1.2fr) 68px 128px minmax(0, 1.8fr) 14px;
   align-items: center;
   gap: 8px;
   height: 24px;
@@ -850,7 +926,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 
 .debug-row {
   display: grid;
-  grid-template-columns: 42px 96px minmax(150px, 1.2fr) 68px 128px minmax(0, 1.8fr) 14px;
+  grid-template-columns: 56px 96px minmax(150px, 1.2fr) 68px 128px minmax(0, 1.8fr) 14px;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -1074,6 +1150,7 @@ async function writeClipboard(text: string): Promise<boolean> {
 
 .debug-empty .debug-text-btn {
   margin-top: 2px;
+  color: var(--color-text, #1f2328);
 }
 
 .debug-foot {

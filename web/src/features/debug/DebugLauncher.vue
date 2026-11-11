@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Floating entry button for the SSE bus debug panel. Shown only while the
-// settings toggle is on; clicking toggles the debug drawer, whose open state
-// lives in the debug store (capture runs exactly while the drawer is open).
+// settings toggle is on; clicking toggles the debug drawer. Capture has its own
+// start/stop state in the store, so the dot keeps reporting a running capture
+// even while the drawer is closed.
 import { ref } from 'vue'
 import { useDebugPanelStore } from '../../stores/debugPanel'
 import {
@@ -42,15 +43,17 @@ function onKeydown(event: KeyboardEvent) {
   <div
     ref="buttonRef"
     class="debug-launcher"
-    :class="{ dragging, active: debug.open }"
+    :class="{ dragging, active: debug.open, capturing: debug.capturing }"
     :style="buttonStyle"
     data-test="debug-launcher"
   >
     <button
       type="button"
       class="debug-launch-trigger"
-      aria-label="SSE 总线调试面板"
-      :title="'SSE 总线调试面板（点击打开/关闭）'"
+      :aria-label="debug.capturing ? 'SSE 总线调试面板（捕获中）' : 'SSE 总线调试面板'"
+      :title="debug.capturing
+        ? 'SSE 总线调试面板（捕获中，点击打开/关闭）'
+        : 'SSE 总线调试面板（点击打开/关闭）'"
       :aria-expanded="debug.open ? 'true' : 'false'"
       data-test="debug-launch-trigger"
       @click="toggle"
@@ -73,7 +76,12 @@ function onKeydown(event: KeyboardEvent) {
         <path d="M6 14.5h3M10.5 14.5h2M15 14.5h3" />
         <path d="M6 12.5h5M13 12.5h5" />
       </svg>
-      <span v-if="debug.open" class="debug-launch-dot" aria-hidden="true"></span>
+      <span
+        v-if="debug.open || debug.capturing"
+        class="debug-launch-dot"
+        :class="{ 'is-capturing': debug.capturing }"
+        aria-hidden="true"
+      ></span>
     </button>
   </div>
 </template>
@@ -88,6 +96,10 @@ function onKeydown(event: KeyboardEvent) {
 
 .debug-launcher.dragging {
   cursor: grabbing;
+}
+
+.debug-launcher.capturing .debug-launch-trigger {
+  opacity: 0.9;
 }
 
 .debug-launch-trigger {
@@ -127,5 +139,9 @@ function onKeydown(event: KeyboardEvent) {
   height: 5px;
   border-radius: 9999px;
   background: var(--color-accent, #4a8ad6);
+}
+
+.debug-launch-dot.is-capturing {
+  background: var(--color-success, #15803d);
 }
 </style>

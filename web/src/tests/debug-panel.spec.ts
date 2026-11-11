@@ -2,7 +2,7 @@
 // the envelope tap that feeds it. Component rendering is covered by manual
 // acceptance since the panel is a developer aid, but every behavior rule here
 // is asserted in isolation without network dependencies.
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { installTestCSRF } from './csrf-fixture'
 import { createPinia, setActivePinia } from 'pinia'
 import {
@@ -39,10 +39,16 @@ describe('debugModel · capture ring buffer', () => {
   it('createEntry snapshots the envelope identity and receive time', () => {
     const entry = createEntry(7, envelope())
     expect(entry.seq).toBe(7)
+    expect(entry.sequence).toBe(1)
     expect(entry.channel).toBe('sessions')
     expect(entry.targetId).toBe('session-1')
     expect(entry.eventType).toBe('message')
     expect(entry.receivedAt).toBe(1730770800123)
+  })
+
+  it('createEntry keeps the wire sequence and lets an absent id stay null', () => {
+    expect(createEntry(1, envelope({ id: 42 })).sequence).toBe(42)
+    expect(createEntry(1, envelope({ id: undefined })).sequence).toBeNull()
   })
 
   it('createEntry falls back to wall time when the envelope lacks a timestamp', () => {
@@ -91,10 +97,10 @@ describe('debugModel · identity extraction', () => {
 
 describe('debugModel · filtering', () => {
   const entries: DebugEntry[] = [
-    { seq: 1, receivedAt: 0, channel: 'sessions', targetId: 'session-a', eventType: 'delta', payload: {} },
-    { seq: 2, receivedAt: 0, channel: 'sessions', targetId: 'session-b', eventType: 'turn', payload: { sessionId: 'session-a' } },
-    { seq: 3, receivedAt: 0, channel: 'chat', targetId: '17', eventType: 'delta', payload: { chatId: 17 } },
-    { seq: 4, receivedAt: 0, channel: 'tasks', targetId: '9', eventType: 'chunk', payload: {} },
+    { seq: 1, sequence: null, receivedAt: 0, channel: 'sessions', targetId: 'session-a', eventType: 'delta', payload: {} },
+    { seq: 2, sequence: null, receivedAt: 0, channel: 'sessions', targetId: 'session-b', eventType: 'turn', payload: { sessionId: 'session-a' } },
+    { seq: 3, sequence: null, receivedAt: 0, channel: 'chat', targetId: '17', eventType: 'delta', payload: { chatId: 17 } },
+    { seq: 4, sequence: null, receivedAt: 0, channel: 'tasks', targetId: '9', eventType: 'chunk', payload: {} },
   ]
 
   it('an empty filter passes everything through by reference', () => {
@@ -132,10 +138,10 @@ describe('debugModel · filtering', () => {
 
 describe('debugModel · ledger helpers', () => {
   const entries: DebugEntry[] = [
-    { seq: 1, receivedAt: 0, channel: 'sessions', targetId: 'session-a', eventType: 'delta', payload: {} },
-    { seq: 2, receivedAt: 0, channel: 'sessions', targetId: 'session-b', eventType: 'error', payload: {} },
-    { seq: 3, receivedAt: 0, channel: 'chat', targetId: '17', eventType: 'delta', payload: {} },
-    { seq: 4, receivedAt: 0, channel: 'tasks', targetId: '9', eventType: 'chunk', payload: {} },
+    { seq: 1, sequence: null, receivedAt: 0, channel: 'sessions', targetId: 'session-a', eventType: 'delta', payload: {} },
+    { seq: 2, sequence: null, receivedAt: 0, channel: 'sessions', targetId: 'session-b', eventType: 'error', payload: {} },
+    { seq: 3, sequence: null, receivedAt: 0, channel: 'chat', targetId: '17', eventType: 'delta', payload: {} },
+    { seq: 4, sequence: null, receivedAt: 0, channel: 'tasks', targetId: '9', eventType: 'chunk', payload: {} },
   ]
 
   it('channelCounts counts the current buffer per channel plus the total', () => {
@@ -265,50 +271,112 @@ describe('UnifiedEventBusClient · envelope taps', () => {
 describe('debugPanel store · capture lifecycle', () => {
   setActivePinia(createPinia())
 
-  it('closeDrawer wipes entries, dropped counter and filter — no history survives', () => {
+  afterEach(() => {
     const store = useDebugPanelStore()
-    store.setEnabled(true)
-    store.openDrawer()
-    store.recordEnvelope(envelope())
-    expect(store.entries).toHaveLength(1)
+    store.stopCapture()
+    store.clearBuffer()
     store.closeDrawer()
-    expect(store.entries).toHaveLength(0)
-    expect(store.dropped).toBe(0)
-    expect(store.filter.channel).toBe('all')
-    expect(store.open).toBe(false)
+    store.setEnabled(false)
+    store.$reset()
   })
 
-  it('setEnabled(false) closes an open drawer and detaches capture', () => {
+  it('openDrawer alone neither starts capture nor clears the buffer', () => {
     const store = useDebugPanelStore()
     store.setEnabled(true)
     store.openDrawer()
+    expect(store.open).toBe(true)
+    expect(store.capturing).toBe(false)
+    store.recordEnvelope(envelope())
+    expect(store.entries).toHaveLength(0)
+
+    store.startCapture()
+    store.recordEnvelope(envelope({ id: 2 }))
+    expect(store.entries).toHaveLength(1)
+  })
+
+  it('closing the drawer keeps a running capture and every captured frame', () => {
+    const store = useDebugPanelStore()
+    store.setEnabled(true)
+    store.openDrawer()
+    store.startCapture()
+    store.recordEnvelope(envelope({ id: 1 }))
+    store.closeDrawer()
+    expect(store.open).toBe(false)
+    expect(store.capturing).toBe(true)
+    expect(store.entries).toHaveLength(1)
+
+    // Frames keep arriving while the panel is closed.
+    store.recordEnvelope(envelope({ id: 2, targetId: 'session-2' }))
+    expect(store.entries).toHaveLength(2)
+
+    // Reopening shows the same buffer; close cleared nothing.
+    store.openDrawer()
+    expect(store.entries).toHaveLength(2)
+  })
+
+  it('stopCapture detaches capture but keeps the buffer; startCapture resumes it', () => {
+    const store = useDebugPanelStore()
+    store.setEnabled(true)
+    store.startCapture()
+    store.recordEnvelope(envelope({ id: 1 }))
+    store.stopCapture()
+    expect(store.capturing).toBe(false)
+    expect(store.entries).toHaveLength(1)
+
+    store.recordEnvelope(envelope({ id: 2 }))
+    expect(store.entries).toHaveLength(1)
+
+    store.startCapture()
+    store.recordEnvelope(envelope({ id: 3 }))
+    expect(store.entries).toHaveLength(2)
+  })
+
+  it('setEnabled(false) stops capture, closes the drawer and keeps the buffer', () => {
+    const store = useDebugPanelStore()
+    store.setEnabled(true)
+    store.openDrawer()
+    store.startCapture()
+    store.recordEnvelope(envelope())
     store.setEnabled(false)
     expect(store.open).toBe(false)
-    // Closed panels capture nothing even when frames keep flowing.
-    const before = store.entries.length
-    store.recordEnvelope(envelope())
-    expect(store.entries).toHaveLength(before)
+    expect(store.capturing).toBe(false)
+    expect(store.entries).toHaveLength(1)
+
+    store.recordEnvelope(envelope({ id: 2 }))
+    expect(store.entries).toHaveLength(1)
   })
 
-  it('clearBuffer resets visible data without closing the drawer', () => {
+  it('clearBuffer empties the ledger without changing capture or drawer state', () => {
     const store = useDebugPanelStore()
     store.setEnabled(true)
     store.openDrawer()
+    store.startCapture()
     store.recordEnvelope(envelope())
     store.clearBuffer()
     expect(store.entries).toHaveLength(0)
     expect(store.open).toBe(true)
-    store.closeDrawer()
+    expect(store.capturing).toBe(true)
   })
 
-  it('an inactive drawer never records frames (open-only capture rule)', () => {
+  it('keeps the active filter across a close and reopen', () => {
     const store = useDebugPanelStore()
     store.setEnabled(true)
-    store.recordEnvelope(envelope())
-    expect(store.entries).toHaveLength(0)
     store.openDrawer()
-    store.recordEnvelope(envelope())
-    expect(store.entries).toHaveLength(1)
+    store.startCapture()
+    store.filter.channel = 'chat'
+    store.filter.keyword = '42'
     store.closeDrawer()
+    store.openDrawer()
+    expect(store.filter.channel).toBe('chat')
+    expect(store.filter.keyword).toBe('42')
+  })
+
+  it('stores the wire sequence separately from the local capture key', () => {
+    const store = useDebugPanelStore()
+    store.setEnabled(true)
+    store.startCapture()
+    store.recordEnvelope(envelope({ id: 42 }))
+    expect(store.entries[0].seq).toBe(1)
+    expect(store.entries[0].sequence).toBe(42)
   })
 })
