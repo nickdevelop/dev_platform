@@ -14,7 +14,10 @@ import (
 	"devplatform/internal/core/agents"
 )
 
-var userRequestTagRegex = regexp.MustCompile(`(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>`)
+var (
+	userRequestTagRegex = regexp.MustCompile(`(?s)<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>`)
+	modelSettingRegex   = regexp.MustCompile("`Model Selection` from [^ ]+ to ([^.\n\r]+)")
+)
 
 // TranscriptStep matches one JSON object in agy's transcript.jsonl.
 type TranscriptStep struct {
@@ -24,6 +27,7 @@ type TranscriptStep struct {
 	Status           string              `json:"status"` // "DONE", "ERROR"
 	CreatedAt        string              `json:"created_at"`
 	Content          string              `json:"content"`
+	Model            string              `json:"model,omitempty"`
 	Error            string              `json:"error,omitempty"`
 	InputTokens      int                 `json:"input_tokens,omitempty"`
 	OutputTokens     int                 `json:"output_tokens,omitempty"`
@@ -83,6 +87,7 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 	scanner.Buffer(buf, 4*1024*1024)
 
 	var lastToolCallID string
+	var currentModel string
 	turnIndex := 0
 	turnActive := false
 
@@ -140,6 +145,9 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 
 			// Extract clean user text
 			userText := step.Content
+			if m := modelSettingRegex.FindStringSubmatch(userText); len(m) > 1 {
+				currentModel = strings.TrimSpace(m[1])
+			}
 			if matches := userRequestTagRegex.FindStringSubmatch(userText); len(matches) > 1 {
 				userText = matches[1]
 			}
@@ -187,6 +195,12 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 						Output: step.OutputTokens,
 					}
 				}
+				var msgModel *agents.MessageModel
+				if step.Model != "" {
+					msgModel = &agents.MessageModel{ID: step.Model, Provider: string(agents.BackendAgy)}
+				} else if currentModel != "" {
+					msgModel = &agents.MessageModel{ID: currentModel, Provider: string(agents.BackendAgy)}
+				}
 				events = append(events, agents.NormalizedEvent{
 					InstanceID: instanceID,
 					SessionID:  sessionID,
@@ -198,6 +212,7 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 						Text:  step.Content,
 						Final: true,
 						Usage: usage,
+						Model: msgModel,
 					},
 				})
 			}

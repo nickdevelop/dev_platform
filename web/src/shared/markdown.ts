@@ -35,6 +35,43 @@ marked.use({
   },
 })
 
+// Safe URI schemes: includes file:// for local workspace paths produced by agents like agy.
+const SAFE_URI_REGEXP = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp|file):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+
+const DOMPURIFY_CONFIG = {
+  ALLOWED_URI_REGEXP: SAFE_URI_REGEXP,
+}
+
+// autoCloseCodeBlocks inspects trailing markdown fences and appends a matching closing
+// fence if the text ends within an unterminated code block, preventing layout shift
+// and broken formatting during live agent streaming.
+export function autoCloseCodeBlocks(text: string): string {
+  if (!text) return ''
+  const lines = text.split('\n')
+  let openFence: { char: string; len: number } | null = null
+
+  for (const line of lines) {
+    const trimmed = line.trimStart()
+    const match = trimmed.match(/^(`{3,}|~{3,})(.*)$/)
+    if (match) {
+      const fenceChar = match[1][0]
+      const fenceLen = match[1].length
+      if (!openFence) {
+        if (!(fenceChar === '`' && match[2].includes('`'))) {
+          openFence = { char: fenceChar, len: fenceLen }
+        }
+      } else if (openFence.char === fenceChar && fenceLen >= openFence.len && match[2].trim() === '') {
+        openFence = null
+      }
+    }
+  }
+
+  if (openFence) {
+    return text + '\n' + openFence.char.repeat(openFence.len)
+  }
+  return text
+}
+
 const MAX_CACHE_SIZE = 1000
 const markdownCache = new Map<string, string>()
 
@@ -52,8 +89,9 @@ export function renderMarkdown(source: string): string {
     return cached
   }
 
-  const html = marked.parse(source, { async: false }) as string
-  const sanitized = DOMPurify.sanitize(html)
+  const normalized = autoCloseCodeBlocks(source)
+  const html = marked.parse(normalized, { async: false }) as string
+  const sanitized = DOMPurify.sanitize(html, DOMPURIFY_CONFIG) as string
 
   if (markdownCache.size >= MAX_CACHE_SIZE) {
     const oldestKey = markdownCache.keys().next().value

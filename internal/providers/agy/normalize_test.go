@@ -12,6 +12,7 @@ func TestEventNormalizer(t *testing.T) {
 	fixedTime := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	now := func() time.Time { return fixedTime }
 	normalizer := NewEventNormalizer("inst-1", "ses-1", now)
+	normalizer.SetModel("gemini-2.0-flash")
 
 	// 1. Test init event
 	initJSON := `{"event":"init","conversation_id":"ses-1","init":{"cwd":"/workspace","tools":["run_command"],"permission_mode":"always-proceed"}}`
@@ -41,6 +42,9 @@ func TestEventNormalizer(t *testing.T) {
 	}
 	if events[1].Type != agents.EventMessage || events[1].Message.Text != "Hello world" {
 		t.Errorf("event[1] = %+v, want message 'Hello world'", events[1])
+	}
+	if events[1].Message.Model == nil || events[1].Message.Model.ID != "gemini-2.0-flash" {
+		t.Errorf("expected model gemini-2.0-flash, got %+v", events[1].Message.Model)
 	}
 
 	// 3. Test tool call active

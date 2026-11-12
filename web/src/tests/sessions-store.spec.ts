@@ -1322,6 +1322,17 @@ describe('sessions store composer model', () => {
     expect(sessions.modelFor('s1')).toBe('pi/chosen')
   })
 
+  it('restores model directly from session.model when re-entering session', () => {
+    const sessions = useSessionsStore()
+    sessions.projectId = 1
+    const s = session('s-saved', 1)
+    s.model = 'gemini-1.5-pro'
+    sessions.sessions = [s]
+    sessions.setAutoModel('s-saved', 'fallback-first-model')
+
+    expect(sessions.modelFor('s-saved')).toBe('gemini-1.5-pro')
+  })
+
   it('sessionDisplayModel prioritizes session metadata and avoids autoModels fallback', () => {
     const sessions = useSessionsStore()
     sessions.setAutoModel('s1', 'fallback-first-model')

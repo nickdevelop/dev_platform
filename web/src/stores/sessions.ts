@@ -242,6 +242,8 @@ export const useSessionsStore = defineStore('sessions', {
       if (explicit !== undefined && explicit !== '') return explicit
       const created = state.creationModels[sessionId]
       if (created !== undefined && created !== '') return created
+      const session = state.sessions.find((entry) => entry.id === sessionId)
+      if (session?.model && session.model.trim() !== '') return session.model.trim()
       const used = sessionUsedModel(state.messages[sessionId] ?? [])
       if (used !== '') return used
       return state.autoModels[sessionId] ?? ''
@@ -879,6 +881,7 @@ export const useSessionsStore = defineStore('sessions', {
       const oldModel = this.modelFor(sessionId)
       if (this.selectedModels[sessionId] === model) return
       this.selectedModels[sessionId] = model
+      this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? { ...entry, model } : entry))
       if (model && oldModel && oldModel !== model && (this.messages[sessionId]?.length ?? 0) > 0) {
         this.appendNotice(sessionId, `已切换模型为: ${model}`)
       }

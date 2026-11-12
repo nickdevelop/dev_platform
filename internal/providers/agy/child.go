@@ -56,6 +56,8 @@ func newAgyChild(inst *instance, sessionID, model, permissionMode string, idleTi
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
+	norm := NewEventNormalizer(inst.id, sessionID, now)
+	norm.SetModel(model)
 	return &agyChild{
 		sessionID:      sessionID,
 		model:          model,
@@ -63,7 +65,7 @@ func newAgyChild(inst *instance, sessionID, model, permissionMode string, idleTi
 		inst:           inst,
 		idleTimeout:    idleTimeout,
 		now:            now,
-		normalizer:     NewEventNormalizer(inst.id, sessionID, now),
+		normalizer:     norm,
 		done:           make(chan struct{}),
 	}
 }

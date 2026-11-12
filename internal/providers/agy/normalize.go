@@ -78,6 +78,7 @@ type EventNormalizer struct {
 	instanceID string
 	sessionID  string
 	backend    agents.BackendID
+	model      string
 	now        func() time.Time
 
 	currentTurnID string
@@ -102,6 +103,21 @@ func NewEventNormalizer(instanceID, sessionID string, now func() time.Time) *Eve
 // SetSessionID updates the session ID if it was resolved from agy's init event.
 func (n *EventNormalizer) SetSessionID(sessionID string) {
 	n.sessionID = sessionID
+}
+
+// SetModel updates the model configured for this agy session normalizer.
+func (n *EventNormalizer) SetModel(model string) {
+	n.model = model
+}
+
+func (n *EventNormalizer) messageModel() *agents.MessageModel {
+	if n.model == "" {
+		return nil
+	}
+	return &agents.MessageModel{
+		ID:       n.model,
+		Provider: string(n.backend),
+	}
 }
 
 // SessionID returns the current session ID.
@@ -219,6 +235,7 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 					Role:  "assistant",
 					Text:  su.TextDelta,
 					Final: false,
+					Model: n.messageModel(),
 				},
 			})
 		}
@@ -315,6 +332,7 @@ func (n *EventNormalizer) normalizeResult(raw *RawagyEvent) ([]agents.Normalized
 			Text:  "",
 			Final: true,
 			Usage: usage,
+			Model: n.messageModel(),
 		},
 	})
 
