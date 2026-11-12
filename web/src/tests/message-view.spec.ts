@@ -590,6 +590,33 @@ describe('MessageView plantuml blocks', () => {
     expect(wrapper.find('.bubble-agent code').text()).toContain('fmt.Println')
   })
 
+  it('draws a closed fence immediately even while the reply is still streaming', async () => {
+    configureEngineLoader(fakeEngine('<svg><text>streamed-diag</text></svg>'))
+    const entry: ChatEntry = {
+      ...message('assistant', '前文\n\n```plantuml\n@startuml\nA->B\n@enduml\n```\n\n流式中的后文'),
+      streaming: true,
+    }
+    const wrapper = mount(MessageView, { props: { messages: [entry], capabilities: capabilities() } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="plantuml-canvas"] svg').exists()).toBe(true)
+    expect(wrapper.find('.bubble-agent').text()).toContain('流式中的后文')
+  })
+
+  it('renders uml and language prefix variants as diagram blocks', async () => {
+    configureEngineLoader(fakeEngine('<svg><text>variant-diag</text></svg>'))
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [message('assistant', '```plantuml:sequence\n@startuml\nA->B\n@enduml\n```')],
+        capabilities: capabilities(),
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="plantuml-block"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="plantuml-canvas"] svg').exists()).toBe(true)
+  })
+
   it('draws a closed fence whose event stream died mid-reply', async () => {
     // An EventSource that closes without a turn-ending event leaves the entry
     // flagged as streaming forever; the text is all there is and all there will be.

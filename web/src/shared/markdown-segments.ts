@@ -19,9 +19,9 @@ export type Segment =
   | { kind: 'markdown'; text: string }
   | { kind: 'plantuml'; text: string; closed: boolean }
 
-// Languages that mean "this is a diagram". Both spellings show up in agent
-// output.
-const DIAGRAM_LANGUAGES = ['plantuml', 'puml']
+// Languages that mean "this is a diagram". Standard tags and common model variants
+// (e.g. uml, plantuml:sequence, puml-activity).
+const DIAGRAM_LANGUAGES = new Set(['plantuml', 'puml', 'uml'])
 
 // A fence line: up to three leading spaces, three or more fence characters,
 // then an optional info string.
@@ -31,8 +31,12 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$/
 function diagramTag(line: string): boolean {
   const fence = FENCE.exec(line)
   if (!fence || !isFenceLine(fence)) return false
-  const language = fence[2].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-  return DIAGRAM_LANGUAGES.includes(language)
+  const rawLang = fence[2].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  if (!rawLang) return false
+  if (DIAGRAM_LANGUAGES.has(rawLang)) return true
+  // Support prefix notations such as plantuml:sequence, puml-activity, uml:class
+  const baseLang = rawLang.split(/[:\-_]/)[0]
+  return DIAGRAM_LANGUAGES.has(baseLang)
 }
 
 // A backtick fence whose info string holds a backtick is not a fence: it is a

@@ -387,6 +387,8 @@ watch(
 
 <style scoped>
 .plantuml-block {
+  display: block;
+  clear: both;
   margin: calc(var(--space-unit) * 2) 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -487,11 +489,12 @@ watch(
   padding: calc(var(--space-unit) * 2);
   background: var(--color-surface-muted);
   color: var(--color-text);
-  font-family: var(--font-family);
+  font-family: var(--font-mono, monospace);
   font-size: calc(var(--font-size-base) - 1px);
   line-height: 1.55;
   overflow: auto;
   white-space: pre;
+  border-top: 1px solid var(--color-border);
 }
 
 /* Enlarged viewer: the backdrop locks the page (body overflow is hidden while

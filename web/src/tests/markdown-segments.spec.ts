@@ -26,6 +26,18 @@ describe('splitDiagramBlocks', () => {
     ])
   })
 
+  it('accepts uml language tag and sub-language variants', () => {
+    expect(splitDiagramBlocks('```uml\n@startuml\nA -> B\n@enduml\n```')).toEqual([
+      { kind: 'plantuml', text: '@startuml\nA -> B\n@enduml', closed: true },
+    ])
+    expect(splitDiagramBlocks('```plantuml:sequence\n@startuml\nA -> B\n@enduml\n```')).toEqual([
+      { kind: 'plantuml', text: '@startuml\nA -> B\n@enduml', closed: true },
+    ])
+    expect(splitDiagramBlocks('```puml-activity\n@startuml\nA -> B\n@enduml\n```')).toEqual([
+      { kind: 'plantuml', text: '@startuml\nA -> B\n@enduml', closed: true },
+    ])
+  })
+
   it('leaves other languages in the markdown stream', () => {
     const source = '```go\nfmt.Println("hi")\n```'
     expect(splitDiagramBlocks(source)).toEqual([{ kind: 'markdown', text: source }])

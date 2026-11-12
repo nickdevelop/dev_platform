@@ -369,7 +369,7 @@ async function handleMarkdownClick(event: MouseEvent) {
                   <PlantumlBlock
                     v-else
                     :source="segment.text"
-                    :ready="segment.closed && settled(block.entry)"
+                    :ready="segment.closed"
                     :finished="settled(block.entry)"
                   />
                 </template>
@@ -920,6 +920,11 @@ async function handleMarkdownClick(event: MouseEvent) {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.markdown-seg {
+  display: flow-root;
+  width: 100%;
 }
 
 .markdown-body :deep(p) {
