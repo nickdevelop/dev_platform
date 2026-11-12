@@ -775,7 +775,19 @@ async function open() {
 
   // The instance list is loaded only to label the conversation's working
   // directory — the user never sees or operates an instance itself.
-  await Promise.all([sessions.loadSessions(props.projectId), agents.loadInstances(props.projectId)])
+  // Avoid re-fetching sessions and instances if already populated for this project.
+  const needsProjectSessions =
+    !sessions.sessionsByProject[props.projectId] ||
+    !sessions.sessionById(props.sessionId)
+  const needsInstances =
+    agents.projectId !== props.projectId || agents.instances.length === 0
+
+  const preloads: Promise<unknown>[] = []
+  if (needsProjectSessions) preloads.push(sessions.loadSessions(props.projectId))
+  if (needsInstances) preloads.push(agents.loadInstances(props.projectId))
+  if (preloads.length > 0) {
+    await Promise.all(preloads)
+  }
   ready.value = true
   if (sessions.error) {
     loadError.value = sessions.error
@@ -795,7 +807,11 @@ async function open() {
   try {
     // Opening subscribes the session's stream, whose first frame carries the
     // pending confirmations and forms; no separate approval load is needed.
-    await sessions.openSession(props.projectId, props.sessionId)
+    if (sessions.historyLoaded[props.sessionId] && sessions.streamStatus[props.sessionId] === 'open') {
+      sessions.activeSessionId = props.sessionId
+    } else {
+      await sessions.openSession(props.projectId, props.sessionId)
+    }
     // The workdir row is per-session metadata: it loads with the session and
     // never blocks the conversation. The context limit refreshes from the
     // picker's cache once its catalog lands (via onModelStatus).

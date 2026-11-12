@@ -99,9 +99,23 @@ export class LocalServiceManager {
 
     return new Promise<number>((resolve, reject) => {
       let resolved = false
+      let stdoutBuffer = ''
+      let childProcess: ChildProcess | null = null
+      let portMatchHandler: ((data: Buffer | string) => void) | null = null
+
+      const cleanupPortMatcher = () => {
+        if (childProcess && portMatchHandler) {
+          childProcess.stdout?.off('data', portMatchHandler)
+          childProcess.stderr?.off('data', portMatchHandler)
+          portMatchHandler = null
+        }
+        stdoutBuffer = ''
+      }
+
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true
+          cleanupPortMatcher()
           this.stop().catch(() => {})
           const err = 'Timeout waiting for local platform service to start (15s)'
           this.status = { running: false, error: err }
@@ -119,11 +133,10 @@ export class LocalServiceManager {
           },
         })
 
+        childProcess = child
         this.process = child
         this.status = { running: false }
         this.notify()
-
-        let stdoutBuffer = ''
 
         const checkPortMatch = (data: Buffer | string) => {
           stdoutBuffer += data.toString()
@@ -136,6 +149,7 @@ export class LocalServiceManager {
               .then(() => {
                 if (!resolved) {
                   resolved = true
+                  cleanupPortMatcher()
                   clearTimeout(timeout)
                   this.status = { running: true }
                   this.notify()
@@ -145,6 +159,7 @@ export class LocalServiceManager {
               .catch((err) => {
                 if (!resolved) {
                   resolved = true
+                  cleanupPortMatcher()
                   clearTimeout(timeout)
                   reject(err)
                 }
@@ -152,12 +167,14 @@ export class LocalServiceManager {
           }
         }
 
+        portMatchHandler = checkPortMatch
         child.stdout?.on('data', checkPortMatch)
         child.stderr?.on('data', checkPortMatch)
 
         child.on('error', (err) => {
           if (!resolved) {
             resolved = true
+            cleanupPortMatcher()
             clearTimeout(timeout)
             this.status = { running: false, error: err.message }
             this.notify()
@@ -166,6 +183,7 @@ export class LocalServiceManager {
         })
 
         child.on('exit', (code, signal) => {
+          cleanupPortMatcher()
           const msg = `Local platform process exited with code ${code}, signal ${signal}`
           this.process = null
           this.port = null
@@ -178,6 +196,7 @@ export class LocalServiceManager {
           }
         })
       } catch (err: any) {
+        cleanupPortMatcher()
         clearTimeout(timeout)
         this.status = { running: false, error: err.message }
         this.notify()

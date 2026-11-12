@@ -508,9 +508,12 @@ function focusAfterClose(activeRemoved: boolean, _closed?: OpenTab) {
 
 function releaseSessions(tabs: OpenTab[]) {
   // Releasing a closed session's streams keeps background sessions from
-  // lingering; the other kinds have no stream.
+  // lingering; evicting inactive logs frees memory from the working set.
   for (const tab of tabs) {
-    if (tab.kind === 'session') sessions.unsubscribe(tab.sessionId)
+    if (tab.kind === 'session') {
+      sessions.unsubscribe(tab.sessionId)
+      sessions.evictInactiveSession(tab.sessionId)
+    }
   }
 }
 
@@ -527,6 +530,7 @@ watch(
     for (const oldId of oldIds) {
       if (!currentSet.has(oldId)) {
         sessions.unsubscribe(oldId)
+        sessions.evictInactiveSession(oldId)
       }
     }
   },
@@ -772,13 +776,15 @@ watch(
           <RouterLink :to="{ name: 'home' }">返回</RouterLink>
         </div>
         <RouterView v-else-if="!terminalMode" v-slot="{ Component }">
-          <component
-            :is="Component"
-            v-if="Component"
-            :key="route.fullPath"
-            @manage="openManage"
-            @created="onCreated"
-          />
+          <KeepAlive :max="10">
+            <component
+              :is="Component"
+              v-if="Component"
+              :key="route.fullPath"
+              @manage="openManage"
+              @created="onCreated"
+            />
+          </KeepAlive>
         </RouterView>
         <!-- Terminal workspace kept alive so open tabs and pty/ssh processes never disconnect -->
         <TerminalWorkspace

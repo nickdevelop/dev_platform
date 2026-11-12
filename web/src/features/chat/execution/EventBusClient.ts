@@ -57,10 +57,14 @@ export function clearBusRepair() {
   // Maintained for backward compatibility
 }
 
+// Track connections that already have the resync listener attached to avoid duplicate registration
+const resyncBoundConnections = new WeakSet<EventSource>()
+
 // ensureBusConnection delegates to the unified bus
 export function ensureBusConnection(store?: StreamStore): EventSource | null {
   const conn = unifiedEventBus.ensureConnection()
-  if (conn) {
+  if (conn && !resyncBoundConnections.has(conn)) {
+    resyncBoundConnections.add(conn)
     conn.addEventListener('resync', (event) => {
       const frame = event as MessageEvent
       try {

@@ -297,6 +297,7 @@ watch(
 onBeforeUnmount(() => {
   disposed = true
   document.fonts?.removeEventListener?.('loadingdone', onFontLoadingDone)
+  document.fonts?.removeEventListener?.('loadingdone', onFontLoadingDone)
   if (resizeObserver && containerRef.value) {
     resizeObserver.unobserve(containerRef.value)
     resizeObserver.disconnect()

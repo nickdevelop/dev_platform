@@ -2,7 +2,7 @@
 // the trust boundary: agent text must become common markdown, but backend
 // content must never be able to inject live markup or event handlers.
 import { describe, expect, it } from 'vitest'
-import { renderMarkdown } from '../shared/markdown'
+import { renderMarkdown, clearMarkdownCache } from '../shared/markdown'
 
 describe('renderMarkdown', () => {
   it('renders common block and inline markdown', () => {
@@ -49,5 +49,13 @@ describe('renderMarkdown', () => {
     expect(html).toContain('class="code-copy-text">复制</span>')
     expect(html).toContain('<pre><code class="language-typescript">')
     expect(html).toContain('const a = 1 &lt; 2;')
+  })
+
+  it('reuses cached output for repeated inputs', () => {
+    clearMarkdownCache()
+    const text = 'Cached **text** test'
+    const first = renderMarkdown(text)
+    const second = renderMarkdown(text)
+    expect(second).toBe(first)
   })
 })

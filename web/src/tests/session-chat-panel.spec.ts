@@ -13,6 +13,7 @@ import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useInteractionsStore } from '../stores/interactions'
 import { clearModelCache, rememberModels } from '../shared/modelCache'
+import { clearGitCache } from '../features/chat/composer/useComposerContext'
 import type { AgentInstance } from '../api/agents'
 import type { AgentSession, Capabilities } from '../api/sessions'
 import { installTestCSRF } from './csrf-fixture'
@@ -226,6 +227,7 @@ describe('SessionChatPanel', () => {
     // opened by one test cannot make the next test skip its subscription.
     useSessionsStore().unsubscribeAll()
     clearModelCache()
+    clearGitCache()
     vi.unstubAllGlobals()
   })
 
@@ -253,6 +255,7 @@ describe('SessionChatPanel opencode approvals', () => {
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
     clearModelCache()
+    clearGitCache()
     vi.unstubAllGlobals()
   })
 
@@ -1009,6 +1012,7 @@ describe('SessionChatPanel conversation layout', () => {
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
     clearModelCache()
+    clearGitCache()
     vi.unstubAllGlobals()
   })
 
@@ -1234,6 +1238,7 @@ describe('SessionChatPanel scroll following', () => {
   afterEach(() => {
     useSessionsStore().unsubscribeAll()
     clearModelCache()
+    clearGitCache()
     vi.unstubAllGlobals()
   })
 

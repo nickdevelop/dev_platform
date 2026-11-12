@@ -24,6 +24,18 @@ export interface ComposerContextOptions {
   activeMessages: ComputedRef<ChatEntry[]>
 }
 
+// Shared gitCache across composer instances/tabs: key is `${projectId}:${worktreeId}`
+interface CachedGitInfo {
+  info: GitInfo
+  fetchedAt: number
+}
+const sharedGitCache = new Map<string, CachedGitInfo>()
+const GIT_CACHE_TTL_MS = 20000 // 20 seconds TTL
+
+export function clearGitCache() {
+  sharedGitCache.clear()
+}
+
 export function useComposerContext(options: ComposerContextOptions) {
   const agents = useAgentsStore()
   const sessions = useSessionsStore()
@@ -61,7 +73,6 @@ export function useComposerContext(options: ComposerContextOptions) {
   // git branch (with a dirty marker) when the directory is a git work tree.
   const shortDirectory = computed(() => ellipsisMiddle(instance.value?.directory ?? ''))
   const gitInfo = ref<GitInfo | null>(null)
-  const gitCache = new Map<string, GitInfo>()
   const copiedPath = ref(false)
   async function loadGit(force = false) {
     const session = options.activeSession.value
@@ -73,15 +84,18 @@ export function useComposerContext(options: ComposerContextOptions) {
     // per (project, worktree) serves every session in that scope.
     const worktreeId = options.worktreeId?.value ?? 0
     const key = `${options.projectId.value}:${worktreeId}`
-    if (!force && gitCache.has(key)) {
-      gitInfo.value = gitCache.get(key) ?? null
+    const now = Date.now()
+    const cached = sharedGitCache.get(key)
+    if (!force && cached && (now - cached.fetchedAt < GIT_CACHE_TTL_MS)) {
+      gitInfo.value = cached.info
       return
     }
     try {
       const info = await getProjectGitInfo(options.projectId.value, worktreeId || undefined)
-      gitCache.set(key, info)
+      sharedGitCache.set(key, { info, fetchedAt: Date.now() })
       if (`${options.projectId.value}:${options.worktreeId?.value ?? 0}` === key && options.activeSession.value) gitInfo.value = info
     } catch {
+      sharedGitCache.delete(key)
       // Branch display is best-effort: a failed probe leaves the row without
       // the branch chip rather than breaking the session.
       if (`${options.projectId.value}:${options.worktreeId?.value ?? 0}` === key && options.activeSession.value) gitInfo.value = null

@@ -35,7 +35,32 @@ marked.use({
   },
 })
 
+const MAX_CACHE_SIZE = 1000
+const markdownCache = new Map<string, string>()
+
+export function clearMarkdownCache(): void {
+  markdownCache.clear()
+}
+
 export function renderMarkdown(source: string): string {
-  const html = marked.parse(source, { async: false })
-  return DOMPurify.sanitize(html)
+  if (!source) return ''
+  const cached = markdownCache.get(source)
+  if (cached !== undefined) {
+    // Refresh LRU access order
+    markdownCache.delete(source)
+    markdownCache.set(source, cached)
+    return cached
+  }
+
+  const html = marked.parse(source, { async: false }) as string
+  const sanitized = DOMPurify.sanitize(html)
+
+  if (markdownCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = markdownCache.keys().next().value
+    if (oldestKey !== undefined) {
+      markdownCache.delete(oldestKey)
+    }
+  }
+  markdownCache.set(source, sanitized)
+  return sanitized
 }

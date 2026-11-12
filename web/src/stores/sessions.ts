@@ -449,6 +449,21 @@ export const useSessionsStore = defineStore('sessions', {
       return closeSessionStream(this, sessionId)
     },
 
+    evictInactiveSession(sessionId: string) {
+      if (this.sessionTurns[sessionId] === 'running') return
+      delete this.messages[sessionId]
+      delete this.historyLoaded[sessionId]
+      delete this.historyError[sessionId]
+      delete this.historyTruncated[sessionId]
+      delete this.historyTailGuard[sessionId]
+      delete this.historyCursor[sessionId]
+      delete this.historyHasMore[sessionId]
+      delete this.historyOlderLoading[sessionId]
+      delete this.historyOlderError[sessionId]
+      delete this.lifecycleUsage[sessionId]
+      forgetResumePosition(sessionId)
+    },
+
     unsubscribeAll() {
       closeAllSessionStreams(this)
     },
