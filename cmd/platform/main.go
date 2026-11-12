@@ -41,6 +41,7 @@ import (
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/agy"
 	"devplatform/internal/providers/builtin"
 	"devplatform/internal/providers/deepseek"
 	"devplatform/internal/providers/opencode"
@@ -280,7 +281,7 @@ func runServer(args []string) error {
 	// The catalog is built from the adapter packages' own descriptors before
 	// anything reads backend facts, so settings, diagnostics and the API all
 	// describe the same backends.
-	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor, deepseek.Descriptor, builtin.Descriptor)
+	catalog, err := agents.NewCatalog(opencode.Descriptor, pi.Descriptor, deepseek.Descriptor, builtin.Descriptor, agy.Descriptor)
 	if err != nil {
 		return fmt.Errorf("build backend catalog: %w", err)
 	}
@@ -329,6 +330,13 @@ func runServer(args []string) error {
 		WorkDir:            dataDir,
 	})); err != nil {
 		return fmt.Errorf("register deepseek adapter: %w", err)
+	}
+	if err := registry.Register(agents.BackendAgy, agy.New(agy.Options{
+		ResolveExecutable: func() string { return settingsService.Executable(agents.BackendAgy) },
+		PermissionMode:    func() string { return settingsService.AgentPermissionMode(agents.BackendAgy) },
+		DataDir:           dataDir,
+	})); err != nil {
+		return fmt.Errorf("register agy adapter: %w", err)
 	}
 	builtinAdapter := builtin.New(builtin.Options{
 		// TranscriptStore persists the builtin agent's sessions in the

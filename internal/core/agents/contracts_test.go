@@ -43,8 +43,11 @@ func TestContractsBackendIDs(t *testing.T) {
 	if BackendDeepSeek != "deepseek" {
 		t.Errorf("BackendDeepSeek = %q, want %q", BackendDeepSeek, "deepseek")
 	}
+	if BackendAgy != "agy" {
+		t.Errorf("BackendAgy = %q, want %q", BackendAgy, "agy")
+	}
 
-	for _, id := range []BackendID{BackendOpenCodeV2, BackendPi, BackendDeepSeek} {
+	for _, id := range []BackendID{BackendOpenCodeV2, BackendPi, BackendDeepSeek, BackendBuiltin, BackendAgy} {
 		if !id.Valid() {
 			t.Errorf("BackendID(%q).Valid() = false, want true", id)
 		}

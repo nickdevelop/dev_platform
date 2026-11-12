@@ -48,7 +48,7 @@ func TestChatStaysIndependentOfAgentLayers(t *testing.T) {
 // domain. A future backend integration belongs in providers or composition,
 // not here.
 func TestChatNamesNoBackend(t *testing.T) {
-	forbidden := []string{"BackendOpenCodeV2", "BackendPi", "BackendDeepSeek", `"opencode-v2"`, `"pi"`, `"deepseek"`}
+	forbidden := []string{"BackendOpenCodeV2", "BackendPi", "BackendDeepSeek", "BackendBuiltin", "BackendAgy", `"opencode-v2"`, `"pi"`, `"deepseek"`, `"builtin"`, `"agy"`}
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)

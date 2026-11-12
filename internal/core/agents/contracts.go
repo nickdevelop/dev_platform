@@ -63,12 +63,14 @@ const (
 	// session transcripts in the platform database. It is the fallback
 	// backend for machines without an external agent CLI.
 	BackendBuiltin BackendID = "builtin"
+	// BackendAgy is the Antigravity CLI backend, driven through its stream-json CLI.
+	BackendAgy BackendID = "agy"
 )
 
 // Valid reports whether the backend id is one the platform knows.
 func (b BackendID) Valid() bool {
 	switch b {
-	case BackendOpenCodeV2, BackendPi, BackendDeepSeek, BackendBuiltin:
+	case BackendOpenCodeV2, BackendPi, BackendDeepSeek, BackendBuiltin, BackendAgy:
 		return true
 	default:
 		return false

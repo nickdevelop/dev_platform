@@ -1,0 +1,105 @@
+package agy
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"devplatform/internal/core/agents"
+)
+
+func TestAdapterCapabilitiesDeclared(t *testing.T) {
+	adapter := New(Options{})
+	caps := adapter.Capabilities()
+
+	if !caps.Streaming {
+		t.Error("Streaming must be true")
+	}
+	if caps.SessionDiscovery {
+		t.Error("SessionDiscovery must be false")
+	}
+	if !caps.SessionContinue {
+		t.Error("SessionContinue must be true")
+	}
+	if !caps.Stop {
+		t.Error("Stop must be true")
+	}
+	if !caps.ModelSelection {
+		t.Error("ModelSelection must be true")
+	}
+	if !caps.ToolCallEvents {
+		t.Error("ToolCallEvents must be true")
+	}
+	if !caps.Interrupt {
+		t.Error("Interrupt must be true")
+	}
+	if !caps.SessionHistory {
+		t.Error("SessionHistory must be true")
+	}
+}
+
+func TestAdapterLifecycle(t *testing.T) {
+	ctx := context.Background()
+	seq := 0
+	adapter := New(Options{
+		NewID: func() (string, error) {
+			seq++
+			return "test-id-1", nil
+		},
+		Now: func() time.Time {
+			return time.Date(2026, 11, 12, 12, 0, 0, 0, time.UTC)
+		},
+	})
+
+	// Start instance
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{
+		Directory: "/mock/workspace",
+	})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+	if inst.ID != "test-id-1" || inst.Backend != agents.BackendAgy || inst.Status != agents.InstanceRunning {
+		t.Fatalf("unexpected instance: %+v", inst)
+	}
+
+	// Create session
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{
+		Title: "New AGY Session",
+		Model: "gemini-3.8-flash-high",
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if ref.Backend != agents.BackendAgy || ref.InstanceID != inst.ID || ref.Title != "New AGY Session" {
+		t.Fatalf("unexpected session ref: %+v", ref)
+	}
+
+	// Continue session
+	contRef, err := adapter.ContinueSession(ctx, *ref)
+	if err != nil {
+		t.Fatalf("ContinueSession: %v", err)
+	}
+	if contRef.SessionID != ref.SessionID || contRef.Title != "New AGY Session" {
+		t.Fatalf("unexpected continued ref: %+v", contRef)
+	}
+
+	// Subscribe
+	subCh, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if subCh == nil {
+		t.Fatal("expected non-nil subscriber channel")
+	}
+
+	// Stop instance
+	if err := adapter.StopInstance(ctx, inst.ID); err != nil {
+		t.Fatalf("StopInstance: %v", err)
+	}
+
+	// After stop, creating session on stopped instance should fail
+	_, err = adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{})
+	if err == nil {
+		t.Fatal("expected error creating session on stopped instance")
+	}
+}
