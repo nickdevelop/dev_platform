@@ -55,6 +55,7 @@ import {
   findOpenStreaming,
   keepSettledTurn,
   entryFromEvent,
+  isQuestionCall,
   nextEntryID,
   sessionUsedModel,
 } from '../features/chat/state/sessionLog'
@@ -78,6 +79,17 @@ const historyTailWindow = 100
 // page may be prepended, so it must not touch an open live block.
 function historyEntriesFromEvents(sessionId: string, events: NormalizedEvent[]): ChatEntry[] {
   const entries: ChatEntry[] = []
+  const questionCallIds = new Set<string>()
+
+  for (const event of events) {
+    if (event.type === 'tool_call' && event.toolCall) {
+      const entry = entryFromEvent(sessionId, event)
+      if (entry && isQuestionCall(entry) && entry.callId) {
+        questionCallIds.add(entry.callId)
+      }
+    }
+  }
+
   for (const event of events) {
     if (event.type === 'message' && event.message) {
       if (event.message.text === '' && (!event.message.images || event.message.images.length === 0)) continue
@@ -94,20 +106,19 @@ function historyEntriesFromEvents(sessionId: string, events: NormalizedEvent[]):
       })
       continue
     }
-    if (event.type === 'thinking' && event.thinking) {
-      if (event.thinking.text === '') continue
-      entries.push({
-        id: nextEntryID(sessionId, event.sequence, 'thinking'),
-        kind: 'thinking',
-        role: 'assistant',
-        text: event.thinking.text,
-        streaming: false,
-        timestamp: event.timestamp,
-      })
+    if (event.type === 'thinking') {
       continue
     }
     const entry = entryFromEvent(sessionId, event)
-    if (entry) entries.push(entry)
+    if (entry) {
+      if (entry.kind === 'tool_call' && !isQuestionCall(entry)) {
+        continue
+      }
+      if (entry.kind === 'tool_result' && (!entry.callId || !questionCallIds.has(entry.callId))) {
+        continue
+      }
+      entries.push(entry)
+    }
   }
   return entries
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
-import SessionChatPanel from '../chat/SessionChatPanel.vue'
+import { SessionChatPanel } from '../chat'
 
 const props = defineProps<{
   title: string

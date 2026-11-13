@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/platform"
 )
 
 var (
@@ -95,10 +96,29 @@ func (c *agyChild) start(ctx context.Context, executable string, env []string) e
 		return fmt.Errorf("agy: stdout pipe: %w", err)
 	}
 
+	if err := platform.New().Process().Configure(cmd); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		return fmt.Errorf("agy: configure child process: %w", err)
+	}
+
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		return platform.New().Process().Terminate(cmd.Process.Pid)
+	}
+	cmd.WaitDelay = 2 * time.Second
+
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
 		return fmt.Errorf("agy: start process: %w", err)
+	}
+	if err := platform.New().Process().Attach(cmd.Process); err != nil {
+		_ = platform.New().Process().Terminate(cmd.Process.Pid)
+		_ = cmd.Wait()
+		return fmt.Errorf("agy: supervise child process: %w", err)
 	}
 
 	c.cmd = cmd
@@ -277,7 +297,7 @@ func (c *agyChild) interrupt(ctx context.Context) error {
 
 	// Terminate the running process to stop generation
 	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+		_ = platform.New().Process().Terminate(c.cmd.Process.Pid)
 	}
 	c.turnRunning = false
 	c.closed = true
@@ -309,7 +329,7 @@ func (c *agyChild) closeLocked() error {
 		_ = c.stdin.Close()
 	}
 	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+		_ = platform.New().Process().Terminate(c.cmd.Process.Pid)
 	}
 	return nil
 }

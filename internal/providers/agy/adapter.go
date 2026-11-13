@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,17 @@ var (
 	_ agents.AgentAdapter  = (*Adapter)(nil)
 	_ agents.HistoryReader = (*Adapter)(nil)
 )
+
+const (
+	defaultStartTimeout = 60 * time.Second
+	// pendingSessionPrefix marks a session whose conversation agy has not
+	// started yet; its conversation id is bound on the first turn.
+	pendingSessionPrefix = "pending-"
+)
+
+func isPendingSession(sessionID string) bool {
+	return strings.HasPrefix(sessionID, pendingSessionPrefix)
+}
 
 // Options configures the agy adapter.
 type Options struct {
@@ -33,6 +45,9 @@ type Options struct {
 	Env []string
 	// IdleTimeout configures how long an idle agy child stays running.
 	IdleTimeout time.Duration
+	// StartTimeout bounds the wait for agy's init line when a child starts.
+	// Defaults to defaultStartTimeout.
+	StartTimeout time.Duration
 	// Now overrides the clock for deterministic testing.
 	Now func() time.Time
 	// NewID overrides UUID generation for testing.
@@ -50,9 +65,9 @@ type Adapter struct {
 	sessionDir         string
 	env                []string
 	idleTimeout        time.Duration
+	startTimeout       time.Duration
 	now                func() time.Time
 	newID              func() (string, error)
-	newIDOverride      bool
 	listModelsOverride func(ctx context.Context, directory string) ([]agents.ModelInfo, error)
 
 	mu        sync.Mutex
@@ -80,6 +95,7 @@ func New(options Options) *Adapter {
 		sessionDir:         options.SessionDir,
 		env:                options.Env,
 		idleTimeout:        options.IdleTimeout,
+		startTimeout:       options.StartTimeout,
 		now:                options.Now,
 		listModelsOverride: options.ListModelsOverride,
 		instances:          make(map[string]*instance),
@@ -88,12 +104,14 @@ func New(options Options) *Adapter {
 	if a.executable == "" {
 		a.executable = "agy"
 	}
+	if a.startTimeout <= 0 {
+		a.startTimeout = defaultStartTimeout
+	}
 	if a.now == nil {
 		a.now = func() time.Time { return time.Now().UTC() }
 	}
 	if options.NewID != nil {
 		a.newID = options.NewID
-		a.newIDOverride = true
 	} else {
 		a.newID = newUUID
 	}
@@ -216,29 +234,14 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 
 	_ = EnsureWorkspaceTrusted(inst.directory)
 
-	var sessionID string
-	if a.newIDOverride {
-		id, err := a.newID()
-		if err != nil {
-			return nil, fmt.Errorf("agy: allocate session id: %w", err)
-		}
-		sessionID = id
-	} else {
-		child := newAgyChild(inst, "", options.Model, a.permMode(), a.idleTimeout, a.now)
-		startCtx, cancel := context.WithTimeout(inst.ctx, 15*time.Second)
-		err := child.start(startCtx, a.execPath(), a.env)
-		cancel()
-		if err == nil && child.sessionID != "" {
-			sessionID = child.sessionID
-			inst.setChild(sessionID, child)
-		} else {
-			id, err := a.newID()
-			if err != nil {
-				return nil, fmt.Errorf("agy: allocate session id: %w", err)
-			}
-			sessionID = id
-		}
+	// agy assigns the conversation id when the first turn starts. The session
+	// is registered as pending and bound in SendMessage, so creating it never
+	// waits on agy's startup or invents an id agy does not know.
+	id, err := a.newID()
+	if err != nil {
+		return nil, fmt.Errorf("agy: allocate session id: %w", err)
 	}
+	sessionID := pendingSessionPrefix + id
 
 	a.mu.Lock()
 	a.sessions[sessionKey{instanceID: instanceID, sessionID: sessionID}] = &sessionState{
@@ -319,19 +322,74 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	}
 	a.mu.Unlock()
 
-	child := inst.getChild(ref.SessionID)
+	child := inst.getChild(inst.resolve(ref.SessionID))
 	if child == nil || child.closed {
-		child = newAgyChild(inst, ref.SessionID, model, a.permMode(), a.idleTimeout, a.now)
-		startCtx, cancel := context.WithTimeout(inst.ctx, 15*time.Second)
-		err := child.start(startCtx, a.execPath(), a.env)
-		cancel()
+		var err error
+		child, err = a.openChild(inst, ref.SessionID, model, message.OnNativeSessionBound)
 		if err != nil {
-			return fmt.Errorf("agy: start child for session %q: %w", ref.SessionID, err)
+			return err
 		}
-		inst.setChild(ref.SessionID, child)
 	}
 
 	return child.sendTurn(ctx, message.Text)
+}
+
+// openChild starts the child process serving a session. A pending session starts
+// a new conversation; the id agy reports is handed to bind before the child is
+// used, so the caller indexes it before any turn event carrying it is forwarded.
+// A native session resumes its own conversation.
+func (a *Adapter) openChild(inst *instance, sessionID, model string, bind func(nativeSessionID string) error) (*agyChild, error) {
+	inst.bindMu.Lock()
+	defer inst.bindMu.Unlock()
+
+	key := inst.resolve(sessionID)
+	if child := inst.getChild(key); child != nil && !child.closed {
+		return child, nil
+	}
+
+	pending := isPendingSession(key)
+	resumeID := key
+	if pending {
+		resumeID = ""
+	}
+	child := newAgyChild(inst, resumeID, model, a.permMode(), a.idleTimeout, a.now)
+	startCtx, cancel := context.WithTimeout(inst.ctx, a.startTimeout)
+	err := child.start(startCtx, a.execPath(), a.env)
+	cancel()
+	if err != nil {
+		return nil, fmt.Errorf("agy: start child for session %q: %w", sessionID, err)
+	}
+
+	if !pending {
+		inst.setChild(key, child)
+		return child, nil
+	}
+
+	native := child.sessionID
+	if native == "" {
+		_ = child.close()
+		return nil, fmt.Errorf("agy: start child for session %q: init reported no conversation id", sessionID)
+	}
+	if bind == nil {
+		_ = child.close()
+		return nil, fmt.Errorf("agy: session %q needs a native id binding", sessionID)
+	}
+	if err := bind(native); err != nil {
+		_ = child.close()
+		return nil, fmt.Errorf("agy: bind session %q: %w", sessionID, err)
+	}
+
+	a.mu.Lock()
+	pendingKey := sessionKey{instanceID: inst.id, sessionID: key}
+	if state, ok := a.sessions[pendingKey]; ok {
+		a.sessions[sessionKey{instanceID: inst.id, sessionID: native}] = state
+		delete(a.sessions, pendingKey)
+	}
+	a.mu.Unlock()
+
+	inst.setAlias(key, native)
+	inst.setChild(native, child)
+	return child, nil
 }
 
 // Subscribe returns the normalized event channel for the instance.
@@ -365,7 +423,7 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	if err != nil {
 		return err
 	}
-	child := inst.getChild(ref.SessionID)
+	child := inst.getChild(inst.resolve(ref.SessionID))
 	if child == nil {
 		return nil
 	}

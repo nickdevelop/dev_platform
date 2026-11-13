@@ -17,7 +17,7 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { useWorktreesStore } from '../../../stores/worktrees'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
-import { buildPromptMessage, promptKindLabel } from '../../prompts/promptBlock'
+import { buildPromptMessage, promptKindLabel } from '../../../shared/utils/promptBlock'
 import { getSessionHistory, type BackendId, type ImageAttachment } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
 import ModelSelect from './ModelSelect.vue'
@@ -211,13 +211,24 @@ watch(
 
 watch(
   () => [props.projectId, route?.params?.projectId],
-  ([propId, routeId]) => {
-    const candidate = propId ?? routeId
-    if (candidate !== undefined && candidate !== null && candidate !== '') {
-      const num = Number(candidate)
-      if (!isNaN(num)) {
-        selectedProjectId.value = num
+  ([propId, routeId], oldVal) => {
+    if (!oldVal) {
+      const candidate = propId ?? routeId
+      if (candidate !== undefined && candidate !== null && candidate !== '') {
+        const num = Number(candidate)
+        if (!isNaN(num)) {
+          selectedProjectId.value = num
+        }
       }
+      return
+    }
+    const [oldPropId, oldRouteId] = oldVal
+    if (propId !== oldPropId && propId !== undefined && propId !== null) {
+      const num = Number(propId)
+      if (!isNaN(num)) selectedProjectId.value = num
+    } else if (routeId !== oldRouteId && routeId !== undefined && routeId !== null && routeId !== '') {
+      const num = Number(routeId)
+      if (!isNaN(num)) selectedProjectId.value = num
     }
   },
   { immediate: true },

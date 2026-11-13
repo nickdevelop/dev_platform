@@ -30,7 +30,11 @@ import {
   settleStreaming,
   upsertMessage,
 } from '../features/chat/pure/chatEntries'
-import { createChatStream, type ChatStream } from '../features/chat/pure/useChatStream'
+import {
+  createChatStream,
+  type ChatStream,
+  type ChatStreamStore,
+} from '../features/chat/pure/useChatStream'
 import { useChatsStore } from './chats'
 
 const QUICK_ASSISTANT_GROUP_KEY = 'quick-assistant'
@@ -60,10 +64,26 @@ function persistModel(modelId: number) {
 // EventSource across store instances.
 const streams = new WeakMap<object, ChatStream>()
 
-function streamFor(store: object): ChatStream {
+function streamFor(store: any): ChatStream {
   let stream = streams.get(store)
   if (!stream) {
-    stream = createChatStream(store as Parameters<typeof createChatStream>[0])
+    const adapter: ChatStreamStore = {
+      get streamStatus() {
+        return store.chatId !== null ? { [store.chatId]: store.streamStatus } : {}
+      },
+      set streamStatus(val: Record<number, StreamStatus>) {
+        if (store.chatId !== null && val && val[store.chatId]) {
+          store.streamStatus = val[store.chatId]
+        }
+      },
+      applySnapshot: (s: ChatSnapshot) => store.applySnapshot(s),
+      applyDelta: (id: number, d: ChatDelta) => store.applyDelta(id, d),
+      applyMessageUpdate: (id: number, m: ChatMessage) => store.applyMessageUpdate(id, m),
+      applyConversation: (c: Chat) => store.applyConversation(c),
+      applyTurn: (id: number, t: ChatTurn) => store.applyTurn(id, t),
+      handleClosed: (id: number, r: string) => store.handleClosed(id, r),
+    }
+    stream = createChatStream(adapter)
     streams.set(store, stream)
   }
   return stream

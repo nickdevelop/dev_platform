@@ -25,7 +25,7 @@ import type {
   TurnPayload,
 } from '../../../api/sessions'
 import type { ChatEntry, StreamStatus } from '../state/sessionLog'
-import { entryFromEvent } from '../state/sessionLog'
+import { entryFromEvent, isQuestionCall } from '../state/sessionLog'
 
 // The slice of the session store the execution layer drives. A structural
 // interface instead of importing the store keeps the graph acyclic: the store
@@ -141,8 +141,6 @@ export function consumeEventFrame(store: StreamStore, sessionId: string, data: s
     return
   }
   if (event.type === 'thinking') {
-    if (!event.thinking) return
-    store.appendThinking(sessionId, event.thinking.text, event.thinking.final, event.sequence)
     return
   }
   if (event.type === 'lifecycle') {
@@ -159,6 +157,14 @@ export function consumeEventFrame(store: StreamStore, sessionId: string, data: s
   }
   const entry = entryFromEvent(sessionId, event)
   if (!entry) return
+  if (entry.kind === 'tool_call' && !isQuestionCall(entry)) return
+  if (entry.kind === 'tool_result') {
+    const msgs = store.messages[sessionId] ?? []
+    const hasQuestionCall = msgs.some(
+      (m) => m.kind === 'tool_call' && m.callId === entry.callId && isQuestionCall(m),
+    )
+    if (!hasQuestionCall) return
+  }
   store.pushEntry(sessionId, entry)
 }
 

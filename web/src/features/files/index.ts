@@ -1,0 +1,6 @@
+export { default as FileSidebar } from './FileSidebar.vue'
+export { default as FileViewer } from './FileViewer.vue'
+export { default as FileTree } from './FileTree.vue'
+export { default as DiffViewer } from './DiffViewer.vue'
+export { default as CodeView } from './CodeView.vue'
+export * from './types'

@@ -11,7 +11,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../../stores/openTabs'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
-import { useActivityPane } from '../chat/pane/useActivityPane'
+import { useActivityPane } from '../../shared/composables/useActivityPane'
 
 const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
 

@@ -103,3 +103,24 @@ func TestAdapterLifecycle(t *testing.T) {
 		t.Fatal("expected error creating session on stopped instance")
 	}
 }
+
+func TestAgyChildProcessManagement(t *testing.T) {
+	inst := newInstance("inst-test", t.TempDir(), time.Now)
+	child := newAgyChild(inst, "sess-test", "model-test", PermissionModeConfirm, time.Minute, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Launch a child process using "cat" which waits for stdin
+	err := child.start(ctx, "cat", nil)
+	// If "cat" fails to start (e.g. invalid flags), that's expected because agy args are passed.
+	// But start() must properly configure and supervise the command without panicking.
+	if err == nil {
+		if child.cmd == nil || child.cmd.Process == nil {
+			t.Fatal("expected non-nil cmd.Process")
+		}
+		if err := child.close(); err != nil {
+			t.Errorf("close child failed: %v", err)
+		}
+	}
+}

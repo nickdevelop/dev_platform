@@ -26,6 +26,74 @@ type migrationStep struct {
 	run     func(tx *gorm.DB) error
 }
 
+// Legacy migration models: these tables were created by early migrations and
+// subsequently dropped. They are kept private to migrations.go so the migration
+// history remains self-contained without polluting the active domain models.
+type legacyWorkspaceRoot struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	Path      string `gorm:"column:path;not null;uniqueIndex"`
+	CreatedAt time.Time
+}
+
+func (legacyWorkspaceRoot) TableName() string { return "workspace_roots" }
+
+type legacyAgentBackendConfig struct {
+	ID        uint   `gorm:"primaryKey;column:id"`
+	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_agent_backend_project"`
+	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_agent_backend_project"`
+	Enabled   bool   `gorm:"column:enabled;not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (legacyAgentBackendConfig) TableName() string { return "agent_backend_configs" }
+
+type legacyResource struct {
+	ID          uint   `gorm:"primaryKey;column:id"`
+	Kind        string `gorm:"column:kind;not null;index;uniqueIndex:idx_resource_kind_name"`
+	Name        string `gorm:"column:name;not null;uniqueIndex:idx_resource_kind_name"`
+	Description string `gorm:"column:description"`
+	Content     string `gorm:"column:content"`
+	Enabled     bool   `gorm:"column:enabled;not null;default:true"`
+	PromptScope string `gorm:"column:prompt_scope"`
+	SecretRef   string `gorm:"column:secret_ref"`
+	Backends    string `gorm:"column:backends"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (legacyResource) TableName() string { return "resources" }
+
+type legacyProjectResource struct {
+	ProjectID  uint `gorm:"primaryKey;column:project_id;not null;index"`
+	ResourceID uint `gorm:"primaryKey;column:resource_id;not null;index"`
+	CreatedAt  time.Time
+}
+
+func (legacyProjectResource) TableName() string { return "project_resources" }
+
+type legacySessionPrompt struct {
+	SessionID  string `gorm:"primaryKey;column:session_id;not null;index"`
+	ResourceID uint   `gorm:"primaryKey;column:resource_id;not null;index"`
+	CreatedAt  time.Time
+}
+
+func (legacySessionPrompt) TableName() string { return "session_prompts" }
+
+type legacyManagedResourceFile struct {
+	ID              uint   `gorm:"primaryKey;column:id"`
+	ProjectID       uint   `gorm:"column:project_id;not null;uniqueIndex:idx_managed_file_target"`
+	Backend         string `gorm:"column:backend;not null;uniqueIndex:idx_managed_file_target"`
+	Path            string `gorm:"column:path;not null;uniqueIndex:idx_managed_file_target"`
+	ManagedHash     string `gorm:"column:managed_hash;not null"`
+	BackupPath      string `gorm:"column:backup_path"`
+	ResourceVersion string `gorm:"column:resource_version"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+func (legacyManagedResourceFile) TableName() string { return "managed_resource_files" }
+
 // migrationSteps lists every schema version in order. Each step runs inside
 // a transaction together with its schema_migrations record, so a failed
 // migration leaves no half-applied state behind.
@@ -37,13 +105,13 @@ var migrationSteps = []migrationStep{
 		return tx.Migrator().CreateTable(&AuthSession{})
 	}},
 	{version: 3, name: "create_workspace_roots", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&WorkspaceRoot{})
+		return tx.Migrator().CreateTable(&legacyWorkspaceRoot{})
 	}},
 	{version: 4, name: "create_projects", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&Project{})
 	}},
 	{version: 5, name: "create_agent_backend_configs", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&AgentBackendConfig{})
+		return tx.Migrator().CreateTable(&legacyAgentBackendConfig{})
 	}},
 	{version: 6, name: "create_agent_instances", run: func(tx *gorm.DB) error {
 		return tx.Migrator().CreateTable(&AgentInstance{})
@@ -52,31 +120,31 @@ var migrationSteps = []migrationStep{
 		return tx.Migrator().CreateTable(&AgentSession{})
 	}},
 	{version: 8, name: "create_resources", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&Resource{})
+		return tx.Migrator().CreateTable(&legacyResource{})
 	}},
 	{version: 9, name: "create_project_resources", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&ProjectResource{})
+		return tx.Migrator().CreateTable(&legacyProjectResource{})
 	}},
 	{version: 10, name: "create_session_prompts", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&SessionPrompt{})
+		return tx.Migrator().CreateTable(&legacySessionPrompt{})
 	}},
 	{version: 11, name: "create_managed_resource_files", run: func(tx *gorm.DB) error {
-		return tx.Migrator().CreateTable(&ManagedResourceFile{})
+		return tx.Migrator().CreateTable(&legacyManagedResourceFile{})
 	}},
 	{version: 12, name: "create_resources_kind_name_index", run: func(tx *gorm.DB) error {
 		// A resource's (kind, name) is unique: two resources of the same kind
 		// render to the same managed target and would overwrite each other.
-		if tx.Migrator().HasIndex(&Resource{}, "idx_resource_kind_name") {
+		if tx.Migrator().HasIndex(&legacyResource{}, "idx_resource_kind_name") {
 			return nil
 		}
-		return tx.Migrator().CreateIndex(&Resource{}, "idx_resource_kind_name")
+		return tx.Migrator().CreateIndex(&legacyResource{}, "idx_resource_kind_name")
 	}},
 	{version: 13, name: "drop_workspace_roots", run: func(tx *gorm.DB) error {
 		// Workspace-root authorization was removed: projects may live in any
 		// directory the process can access, so the authorization list is dead
 		// data. Dropping the table never touches the directories themselves.
-		if tx.Migrator().HasTable(&WorkspaceRoot{}) {
-			return tx.Migrator().DropTable(&WorkspaceRoot{})
+		if tx.Migrator().HasTable(&legacyWorkspaceRoot{}) {
+			return tx.Migrator().DropTable(&legacyWorkspaceRoot{})
 		}
 		return nil
 	}},
@@ -99,7 +167,7 @@ var migrationSteps = []migrationStep{
 		// removed. The tables hold data no code reads any more; dropping them
 		// never touches project directories or the secret store. Dependents
 		// are dropped before the definitions they reference.
-		for _, table := range []any{&ManagedResourceFile{}, &SessionPrompt{}, &ProjectResource{}, &Resource{}} {
+		for _, table := range []any{&legacyManagedResourceFile{}, &legacySessionPrompt{}, &legacyProjectResource{}, &legacyResource{}} {
 			if tx.Migrator().HasTable(table) {
 				if err := tx.Migrator().DropTable(table); err != nil {
 					return err
@@ -112,8 +180,8 @@ var migrationSteps = []migrationStep{
 		// Per-project backend switches were removed: the platform-level agent
 		// setting is the only enable/disable. The table holds data no code
 		// reads any more, so it is dropped; project directories are untouched.
-		if tx.Migrator().HasTable(&AgentBackendConfig{}) {
-			return tx.Migrator().DropTable(&AgentBackendConfig{})
+		if tx.Migrator().HasTable(&legacyAgentBackendConfig{}) {
+			return tx.Migrator().DropTable(&legacyAgentBackendConfig{})
 		}
 		return nil
 	}},

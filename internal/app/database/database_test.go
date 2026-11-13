@@ -84,7 +84,7 @@ func TestOpenMigratesFreshDatabase(t *testing.T) {
 		}
 	}
 	// Migration 18 drops the per-project backend switch table.
-	if db.Migrator().HasTable(&AgentBackendConfig{}) {
+	if db.Migrator().HasTable("agent_backend_configs") {
 		t.Error("agent_backend_configs still exists after migration 18")
 	}
 
@@ -120,9 +120,9 @@ func TestMigrateDropsWorkspaceRoots(t *testing.T) {
 func TestMigrateDropsResourceLibrary(t *testing.T) {
 	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
 	mustMigrate(t, db)
-	for _, model := range []any{&ManagedResourceFile{}, &SessionPrompt{}, &ProjectResource{}, &Resource{}} {
-		if db.Migrator().HasTable(model) {
-			t.Errorf("table for %T still exists after migration", model)
+	for _, tableName := range []string{"managed_resource_files", "session_prompts", "project_resources", "resources"} {
+		if db.Migrator().HasTable(tableName) {
+			t.Errorf("table %s still exists after migration", tableName)
 		}
 	}
 }

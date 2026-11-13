@@ -432,7 +432,7 @@ describe('sessions store thinking entries', () => {
     return historyEvent({ instanceId: 'inst-1', type: 'thinking', sequence, replayed: false, thinking: { text, final } })
   }
 
-  it('accumulates streamed reasoning into one entry and closes it', () => {
+  it('ignores streamed reasoning events without adding them to messages', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -442,13 +442,10 @@ describe('sessions store thinking entries', () => {
     sessions.handleEvent('s1', JSON.stringify(thinkingEvent('', true, 3)))
 
     const entries = sessions.messagesFor('s1')
-    expect(entries).toHaveLength(1)
-    expect(entries[0].kind).toBe('thinking')
-    expect(entries[0].text).toBe('先看再看')
-    expect(entries[0].streaming).toBe(false)
+    expect(entries).toHaveLength(0)
   })
 
-  it('keeps reasoning as its own line before the reply', () => {
+  it('drops reasoning and preserves only reply message in live stream', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -457,11 +454,11 @@ describe('sessions store thinking entries', () => {
     sessions.handleEvent('s1', JSON.stringify(thinkingEvent('', true, 2)))
     sessions.handleEvent('s1', JSON.stringify({ ...historyEvent({ instanceId: 'inst-1', type: 'message', sequence: 3 }), message: { role: 'assistant', text: '答案', final: true } }))
 
-    expect(sessions.messagesFor('s1').map((entry) => entry.kind)).toEqual(['thinking', 'message'])
-    expect(sessions.messagesFor('s1')[1].text).toBe('答案')
+    expect(sessions.messagesFor('s1').map((entry) => entry.kind)).toEqual(['message'])
+    expect(sessions.messagesFor('s1')[0].text).toBe('答案')
   })
 
-  it('replays reasoning from history as a closed entry', async () => {
+  it('drops reasoning from history and keeps only reply message', async () => {
     const sessions = useSessionsStore()
     stubRoutes({
       '/history': {
@@ -476,8 +473,8 @@ describe('sessions store thinking entries', () => {
     await sessions.loadHistory(1, 's1')
 
     const entries = sessions.messagesFor('s1')
-    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message'])
-    expect(entries[0].text).toBe('历史推理')
+    expect(entries.map((entry) => entry.kind)).toEqual(['message'])
+    expect(entries[0].text).toBe('历史回答')
     expect(entries[0].streaming).toBe(false)
   })
 })
@@ -493,11 +490,12 @@ describe('sessions store tool entries', () => {  beforeEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('keeps a tool call input so the view can summarise it', () => {
+  it('drops general tool calls and preserves interactive question tool calls', () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
 
+    // General tool call is dropped
     sessions.handleEvent(
       's1',
       JSON.stringify(
@@ -509,11 +507,24 @@ describe('sessions store tool entries', () => {  beforeEach(() => {
         }),
       ),
     )
+    expect(sessions.messagesFor('s1')).toHaveLength(0)
 
+    // Interactive question tool call is preserved
+    sessions.handleEvent(
+      's1',
+      JSON.stringify(
+        historyEvent({
+          type: 'tool_call',
+          sequence: 2,
+          replayed: false,
+          toolCall: { callId: 'q-1', name: 'ask_question', input: { question: '确定继续？' } },
+        }),
+      ),
+    )
     const entries = sessions.messagesFor('s1')
     expect(entries).toHaveLength(1)
     expect(entries[0].kind).toBe('tool_call')
-    expect(entries[0].input).toEqual({ path: '/docs/models.md' })
+    expect(entries[0].name).toBe('ask_question')
   })
 })
 
@@ -611,11 +622,9 @@ describe('sessions store interleaved stream merging', () => {
     sessions.handleEvent('s1', JSON.stringify(liveMessage('assistant', '', true, 6)))
 
     const entries = sessions.messagesFor('s1')
-    expect(entries.map((entry) => entry.kind)).toEqual(['thinking', 'message'])
-    expect(entries[0].text).toBe('甲乙')
+    expect(entries.map((entry) => entry.kind)).toEqual(['message'])
+    expect(entries[0].text).toBe('AB')
     expect(entries[0].streaming).toBe(false)
-    expect(entries[1].text).toBe('AB')
-    expect(entries[1].streaming).toBe(false)
   })
 
   it('drops an orphan empty thinking terminator instead of opening an empty block', () => {
@@ -683,9 +692,8 @@ describe('sessions store interleaved stream merging', () => {
     expect(sessions.sessionById('s1')?.turn).toBe('running')
   })
 
-  // History replay must keep its old semantics: two complete thinking blocks
-  // in the transcript are two entries, never one merged block.
-  it('keeps two adjacent replayed thinking blocks as two entries', async () => {
+  // History replay strips thinking blocks from the transcript
+  it('strips replayed thinking blocks from the transcript', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     sessions.sessions = [session('s1', 1)]
@@ -702,10 +710,7 @@ describe('sessions store interleaved stream merging', () => {
     await sessions.loadHistory(1, 's1')
 
     const entries = sessions.messagesFor('s1')
-    expect(entries.filter((entry) => entry.kind === 'thinking').map((entry) => entry.text)).toEqual([
-      '第一段',
-      '第二段',
-    ])
+    expect(entries.filter((entry) => entry.kind === 'thinking')).toHaveLength(0)
   })
 })
 

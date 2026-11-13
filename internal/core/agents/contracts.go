@@ -336,6 +336,12 @@ type SendMessageRequest struct {
 	Model string `json:"model,omitempty"`
 	// Images carries optional image attachments sent with this turn.
 	Images []ImageAttachment `json:"images,omitempty"`
+	// OnNativeSessionBound is set when the session's native id may only be
+	// known once the backend starts it (a session created before its first
+	// turn). The adapter calls it once with the resolved id before the turn
+	// is delivered, so the caller indexes the id before any event carrying it
+	// is forwarded. A returned error aborts the send.
+	OnNativeSessionBound func(nativeSessionID string) error `json:"-"`
 }
 
 // AgentAdapter is the contract every agent backend implements so the

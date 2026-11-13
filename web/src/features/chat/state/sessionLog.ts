@@ -8,6 +8,27 @@ import type { ChatEntry } from './entry'
 
 export type { ChatEntry, StreamStatus } from './entry'
 
+const QUESTION_TOOL_NAMES = new Set([
+  'question',
+  'ask',
+  'askuserquestion',
+  'ask_user',
+  'ask_user_question',
+  'ask_question',
+  'ask_followup_question',
+  'inquire',
+])
+
+export function isQuestionCall(entry: ChatEntry): boolean {
+  if (entry.kind !== 'tool_call') return false
+  const name = (entry.name ?? entry.text ?? '').toLowerCase()
+  return (
+    QUESTION_TOOL_NAMES.has(name) ||
+    name.includes('ask_user') ||
+    name.includes('question')
+  )
+}
+
 let entryCounter = 0
 
 export function nextEntryID(sessionId: string, sequence: number, kind: string): string {

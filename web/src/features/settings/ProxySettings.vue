@@ -6,7 +6,7 @@
 // precise ContextPath affordances).
 import { ref, onMounted } from 'vue'
 import { UiButton, UiBadge, UiEmpty, UiSpinner, UiAlert, UiConfirmDialog } from '../../shared/ui'
-import ProxyEditDialog from '../proxies/ProxyEditDialog.vue'
+import { ProxyEditDialog } from '../proxies'
 import {
   listProxies,
   deleteProxy,

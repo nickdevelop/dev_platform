@@ -5,11 +5,21 @@
 // Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
 // flat surfaces, zero resting shadows, precise tactile swatches, accessible controls).
 import { onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useSettingsStore } from '../../stores/settings'
 import { fontSizes, resolveFontSizeKey, themes } from '../../theme/presets'
 import { UiAlert, UiInput } from '../../shared/ui'
 
 const settings = useSettingsStore()
+const {
+  appearance,
+  quickAssistant,
+  quickAssistantSaving,
+  quickAssistantLoading,
+  error,
+  quickAssistantError,
+} = storeToRefs(settings)
+const DEFAULT_PLANTUML_SERVER_URL = 'https://www.plantuml.com/plantuml'
 
 onMounted(() => {
   void settings.loadAppearance()
@@ -30,6 +40,11 @@ function selectPlantumlMode(mode: 'local' | 'online') {
 
 function updatePlantumlServerUrl(value: string) {
   void settings.saveAppearance({ plantumlServerUrl: value.trim() })
+}
+
+function onPlantumlServerUrlChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  updatePlantumlServerUrl(input.value)
 }
 
 async function toggleQuickAssistant(event: Event) {
@@ -63,7 +78,7 @@ async function toggleQuickAssistant(event: Event) {
           type="button"
           class="theme-card relative flex flex-col p-3 rounded-md border text-left cursor-pointer transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
-            settings.appearance.theme === theme.key
+            appearance.theme === theme.key
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-slate-900 dark:text-slate-100'
               : 'border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600 bg-slate-50/50 dark:bg-slate-800/30 text-slate-700 dark:text-slate-300',
           ]"
@@ -99,7 +114,7 @@ async function toggleQuickAssistant(event: Event) {
           <div class="flex items-center justify-between">
             <span class="text-xs font-medium">{{ theme.label }}</span>
             <span
-              v-if="settings.appearance.theme === theme.key"
+              v-if="appearance.theme === theme.key"
               class="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"
             ></span>
           </div>
@@ -121,7 +136,7 @@ async function toggleQuickAssistant(event: Event) {
           type="button"
           class="font-size-option flex-1 min-w-[90px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
-            resolveFontSizeKey(settings.appearance.fontSize) === opt.key
+            resolveFontSizeKey(appearance.fontSize) === opt.key
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'
               : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300',
           ]"
@@ -145,7 +160,7 @@ async function toggleQuickAssistant(event: Event) {
           type="button"
           class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
-            (settings.appearance.plantumlMode || 'local') === 'local'
+            (appearance.plantumlMode || 'local') === 'local'
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'
               : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300',
           ]"
@@ -159,7 +174,7 @@ async function toggleQuickAssistant(event: Event) {
           type="button"
           class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors select-none focus-visible:outline-2 focus-visible:outline-blue-600 focus-visible:outline-offset-2"
           :class="[
-            settings.appearance.plantumlMode === 'online'
+            appearance.plantumlMode === 'online'
               ? 'border-blue-600 bg-blue-50/20 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 font-medium'
               : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 text-slate-700 dark:text-slate-300',
           ]"
@@ -172,16 +187,16 @@ async function toggleQuickAssistant(event: Event) {
       </div>
 
       <!-- Online mode server URL input -->
-      <div v-if="settings.appearance.plantumlMode === 'online'" class="plantuml-url-field pt-2 space-y-1.5 border-t border-slate-100 dark:border-slate-800">
+      <div v-if="appearance.plantumlMode === 'online'" class="plantuml-url-field pt-2 space-y-1.5 border-t border-slate-100 dark:border-slate-800">
         <label class="field flex flex-col gap-1 text-xs font-medium text-slate-700 dark:text-slate-300">
           <span>服务器地址</span>
           <UiInput
             data-plantuml-url
             class="plantuml-url-input text-xs"
             placeholder="https://www.plantuml.com/plantuml"
-            :model-value="settings.appearance.plantumlServerUrl || 'https://www.plantuml.com/plantuml'"
+            :model-value="appearance.plantumlServerUrl || DEFAULT_PLANTUML_SERVER_URL"
             block
-            @change="(e: Event) => updatePlantumlServerUrl((e.target as HTMLInputElement).value)"
+            @change="onPlantumlServerUrlChange"
           />
         </label>
         <span class="field-hint text-2xs text-slate-400 dark:text-slate-500">
@@ -209,8 +224,8 @@ async function toggleQuickAssistant(event: Event) {
             type="checkbox"
             data-test="quick-assistant-toggle"
             class="sr-only peer"
-            :checked="settings.quickAssistant.enabled"
-            :disabled="settings.quickAssistantSaving || settings.quickAssistantLoading"
+            :checked="quickAssistant.enabled"
+            :disabled="quickAssistantSaving || quickAssistantLoading"
             @change="toggleQuickAssistant"
           />
           <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-transform dark:border-slate-600 peer-checked:bg-blue-600 relative"></div>
@@ -219,11 +234,11 @@ async function toggleQuickAssistant(event: Event) {
     </fieldset>
 
     <!-- Error alerts -->
-    <UiAlert v-if="settings.error" variant="error" class="error">
-      {{ settings.error }}
+    <UiAlert v-if="error" variant="error" class="error">
+      {{ error }}
     </UiAlert>
-    <UiAlert v-if="settings.quickAssistantError" variant="error" class="error">
-      {{ settings.quickAssistantError }}
+    <UiAlert v-if="quickAssistantError" variant="error" class="error">
+      {{ quickAssistantError }}
     </UiAlert>
   </section>
 </template>

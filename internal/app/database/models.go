@@ -27,15 +27,6 @@ type AuthSession struct {
 	CreatedAt time.Time
 }
 
-// WorkspaceRoot is a legacy table dropped by migration 13. It is retained only
-// because the historical migration 3 creates it; no current code reads or
-// writes it. Table: workspace_roots.
-type WorkspaceRoot struct {
-	ID        uint   `gorm:"primaryKey;column:id"`
-	Path      string `gorm:"column:path;not null;uniqueIndex"`
-	CreatedAt time.Time
-}
-
 // Project is a managed project directory registered with the platform.
 // The ID is the stable platform identifier: it survives renames and moves,
 // while Path tracks the directory's current location and is unique.
@@ -61,19 +52,6 @@ type ProjectWorktree struct {
 	BaseBranch string `gorm:"column:base_branch"`
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
-}
-
-// AgentBackendConfig is a legacy per-project backend switch. Migration 5
-// creates its table and migration 18 drops it; no current code reads or writes
-// it. The platform-level agent setting is the only enable/disable.
-// Table: agent_backend_configs.
-type AgentBackendConfig struct {
-	ID        uint   `gorm:"primaryKey;column:id"`
-	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_agent_backend_project"`
-	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_agent_backend_project"`
-	Enabled   bool   `gorm:"column:enabled;not null;default:true"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
 }
 
 // AgentInstance is one platform-managed agent occurrence scoped to a project.
@@ -166,72 +144,6 @@ type BuiltinAgentMessage struct {
 
 // TableName pins the transcript message table name.
 func (BuiltinAgentMessage) TableName() string { return "agent_builtin_messages" }
-
-// Resource is a legacy resource-library row. Migrations 8 and 12 create its
-// table and migration 17 drops it; no current code reads or writes it.
-// Resource is one canonical, reusable Skill, MCP or prompt definition owned
-// by the platform. Secret material is never stored here: an MCP definition
-// keeps only an opaque SecretRef, while the value itself lives in the
-// platform-private secret store. Backends is a comma-separated list of the
-// backend ids the resource applies to (empty means unrestricted).
-// Table: resources.
-type Resource struct {
-	ID          uint   `gorm:"primaryKey;column:id"`
-	Kind        string `gorm:"column:kind;not null;index;uniqueIndex:idx_resource_kind_name"`
-	Name        string `gorm:"column:name;not null;uniqueIndex:idx_resource_kind_name"`
-	Description string `gorm:"column:description"`
-	Content     string `gorm:"column:content"`
-	Enabled     bool   `gorm:"column:enabled;not null;default:true"`
-	PromptScope string `gorm:"column:prompt_scope"`
-	SecretRef   string `gorm:"column:secret_ref"`
-	Backends    string `gorm:"column:backends"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-// ProjectResource is a legacy resource-to-project link. Migration 9 creates its
-// table and migration 17 drops it; no current code reads or writes it.
-// ProjectResource links one resource to one project. The pair is the primary
-// key, so associating twice is idempotent rather than a duplicate row.
-// Table: project_resources.
-type ProjectResource struct {
-	ProjectID  uint `gorm:"primaryKey;column:project_id;not null;index"`
-	ResourceID uint `gorm:"primaryKey;column:resource_id;not null;index"`
-	CreatedAt  time.Time
-}
-
-// SessionPrompt is a legacy session prompt selection. Migration 10 creates its
-// table and migration 17 drops it; no current code reads or writes it.
-// SessionPrompt links one prompt resource to one platform session, recording
-// the prompts selected for that conversation. Table: session_prompts.
-type SessionPrompt struct {
-	SessionID  string `gorm:"primaryKey;column:session_id;not null;index"`
-	ResourceID uint   `gorm:"primaryKey;column:resource_id;not null;index"`
-	CreatedAt  time.Time
-}
-
-// ManagedResourceFile is a legacy managed-file ownership row. Migration 11
-// creates its table and migration 17 drops it; no current code reads or writes it.
-// ManagedResourceFile records platform ownership of one managed target file.
-// The tuple (project_id, backend, path) identifies the target; ManagedHash is
-// the digest of the last content the platform wrote, so an external edit is
-// detectable, and BackupPath points at the preserved prior content. Ownership
-// is written only after a successful, explicitly confirmed apply.
-// Table: managed_resource_files.
-type ManagedResourceFile struct {
-	ID        uint   `gorm:"primaryKey;column:id"`
-	ProjectID uint   `gorm:"column:project_id;not null;uniqueIndex:idx_managed_file_target"`
-	Backend   string `gorm:"column:backend;not null;uniqueIndex:idx_managed_file_target"`
-	Path      string `gorm:"column:path;not null;uniqueIndex:idx_managed_file_target"`
-	// ManagedHash is the hex digest of the last platform-written content.
-	ManagedHash string `gorm:"column:managed_hash;not null"`
-	// BackupPath is the last preserved prior content, when one exists.
-	BackupPath string `gorm:"column:backup_path"`
-	// ResourceVersion identifies the resource definition version last applied.
-	ResourceVersion string `gorm:"column:resource_version"`
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-}
 
 // ModelService is one OpenAI-compatible model service the operator configured.
 // The API key is never stored here: SecretRef is an opaque reference into the

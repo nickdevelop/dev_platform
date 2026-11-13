@@ -72,6 +72,9 @@ type fakeAdapter struct {
 	sendErr  error
 	sends    []agents.SendMessageRequest
 	sentRefs []agents.SessionRef
+	// bindTo simulates a backend that assigns the native id on the first turn
+	// of a pending session: SendMessage reports it through the callback.
+	bindTo string
 
 	// replyErr scripts the opencode-only permission/form reply path.
 	replyErr error
@@ -228,6 +231,11 @@ func (f *fakeAdapter) SendMessage(_ context.Context, ref agents.SessionRef, mess
 	defer f.mu.Unlock()
 	f.sends = append(f.sends, message)
 	f.sentRefs = append(f.sentRefs, ref)
+	if f.bindTo != "" && message.OnNativeSessionBound != nil {
+		if err := message.OnNativeSessionBound(f.bindTo); err != nil {
+			return err
+		}
+	}
 	return f.sendErr
 }
 
@@ -1421,11 +1429,10 @@ func TestHistoryStampsEnvelopeAndReturnsEvents(t *testing.T) {
 	}
 }
 
-// TestHistoryKeepsThinkingAndToolEvents verifies that the history API replays
-// the full transcript — chat messages, errors, thinking, and general tools
-// (e.g. bash, edit) paired with results — matching the live stream and the
-// restored 链路 activity pane in the web workspace.
-func TestHistoryKeepsThinkingAndToolEvents(t *testing.T) {
+// TestHistoryFiltersThinkingAndGeneralTools verifies that the history API strips
+// thinking blocks and general tools (e.g. bash, edit) while keeping user/assistant
+// messages and interactive question tools with their results.
+func TestHistoryFiltersThinkingAndGeneralTools(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-filter")
 	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
@@ -1491,17 +1498,14 @@ func TestHistoryKeepsThinkingAndToolEvents(t *testing.T) {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Full transcript parity with the live stream: user message, thinking,
-	// bash tool pair, question tool pair, assistant message (7 events total).
-	if len(history.Events) != 7 {
-		t.Fatalf("History returned %d events, want 7. Got: %+v", len(history.Events), history.Events)
+	// Thinking and general tools (bash) are filtered out, leaving 4 events:
+	// user message, question tool_call, question tool_result, assistant message.
+	if len(history.Events) != 4 {
+		t.Fatalf("History returned %d events, want 4. Got: %+v", len(history.Events), history.Events)
 	}
 
 	expectedTypes := []agents.EventType{
 		agents.EventMessage,
-		agents.EventThinking,
-		agents.EventToolCall,
-		agents.EventToolResult,
 		agents.EventToolCall,
 		agents.EventToolResult,
 		agents.EventMessage,
@@ -1511,17 +1515,11 @@ func TestHistoryKeepsThinkingAndToolEvents(t *testing.T) {
 			t.Errorf("history.Events[%d].Type = %s, want %s", i, history.Events[i].Type, wantType)
 		}
 	}
-	if history.Events[2].ToolCall.CallID != "bash-1" {
-		t.Errorf("tool_call callId = %s, want bash-1", history.Events[2].ToolCall.CallID)
+	if history.Events[1].ToolCall.CallID != "q-1" {
+		t.Errorf("tool_call callId = %s, want q-1", history.Events[1].ToolCall.CallID)
 	}
-	if history.Events[3].ToolResult.CallID != "bash-1" {
-		t.Errorf("tool_result callId = %s, want bash-1", history.Events[3].ToolResult.CallID)
-	}
-	if history.Events[4].ToolCall.CallID != "q-1" {
-		t.Errorf("tool_call callId = %s, want q-1", history.Events[4].ToolCall.CallID)
-	}
-	if history.Events[5].ToolResult.CallID != "q-1" {
-		t.Errorf("tool_result callId = %s, want q-1", history.Events[5].ToolResult.CallID)
+	if history.Events[2].ToolResult.CallID != "q-1" {
+		t.Errorf("tool_result callId = %s, want q-1", history.Events[2].ToolResult.CallID)
 	}
 }
 

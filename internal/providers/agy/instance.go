@@ -57,6 +57,11 @@ type instance struct {
 	seq      uint64
 	subs     map[*subscriber]struct{}
 	children map[string]*agyChild
+	// aliases maps a pending session id to the native id agy assigned to it.
+	aliases map[string]string
+	// bindMu serializes child starts so two first turns of one pending session
+	// cannot start two conversations.
+	bindMu sync.Mutex
 }
 
 func newInstance(id, directory string, now func() time.Time) *instance {
@@ -74,6 +79,7 @@ func newInstance(id, directory string, now func() time.Time) *instance {
 		done:      make(chan struct{}),
 		subs:      make(map[*subscriber]struct{}),
 		children:  make(map[string]*agyChild),
+		aliases:   make(map[string]string),
 	}
 }
 
@@ -136,6 +142,23 @@ func (inst *instance) getChild(sessionID string) *agyChild {
 	inst.mu.Lock()
 	defer inst.mu.Unlock()
 	return inst.children[sessionID]
+}
+
+// resolve returns the native id behind a session id, following a pending
+// session to the conversation it was bound to.
+func (inst *instance) resolve(sessionID string) string {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	if native, ok := inst.aliases[sessionID]; ok {
+		return native
+	}
+	return sessionID
+}
+
+func (inst *instance) setAlias(pendingID, nativeID string) {
+	inst.mu.Lock()
+	defer inst.mu.Unlock()
+	inst.aliases[pendingID] = nativeID
 }
 
 func (inst *instance) setChild(sessionID string, c *agyChild) {

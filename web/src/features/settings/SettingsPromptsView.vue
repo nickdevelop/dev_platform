@@ -5,7 +5,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { usePromptsStore } from '../../stores/prompts'
 import type { Prompt, PromptType } from '../../api/prompts'
-import PromptManageDialog from '../prompts/PromptManageDialog.vue'
+import { PromptManageDialog } from '../prompts'
 import { UiButton, UiInput, UiConfirmDialog } from '../../shared/ui'
 
 const promptsStore = usePromptsStore()

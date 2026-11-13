@@ -141,6 +141,14 @@ func (r *Store) UpdateInstanceID(id, instanceID string) error {
 	})
 }
 
+// UpdateNativeSessionID binds a pending session row to the native id its backend assigned.
+func (r *Store) UpdateNativeSessionID(id, nativeSessionID string) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return tx.Model(&database.AgentSession{}).Where("id = ?", id).
+			UpdateColumn("native_session_id", nativeSessionID).Error
+	})
+}
+
 // UpdateModel updates only the model column of one row, preserving its updated_at timestamp.
 func (r *Store) UpdateModel(id, model string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {

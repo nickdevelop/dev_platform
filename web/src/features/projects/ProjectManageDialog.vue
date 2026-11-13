@@ -12,7 +12,7 @@ import {
   type Project,
 } from '../../api/projects'
 import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
-import ProxyDirectoryPicker from '../proxies/ProxyDirectoryPicker.vue'
+import ServerDirectoryPicker from '../../shared/components/ServerDirectoryPicker.vue'
 
 type DialogKind = 'register' | 'create'
 
@@ -228,7 +228,7 @@ async function submit() {
     </form>
   </UiDialog>
 
-  <ProxyDirectoryPicker
+  <ServerDirectoryPicker
     v-if="showDirPicker"
     :initial-path="pathInput"
     @close="showDirPicker = false"

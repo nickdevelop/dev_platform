@@ -7,7 +7,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../features/chat/rendering/MessageView.vue'
 import { useSessionsStore } from '../stores/sessions'
-import type { AgentSession, Capabilities } from '../api/sessions'
+import { entryFromEvent } from '../features/chat/state/sessionLog'
+import type { AgentSession, Capabilities, NormalizedEvent } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'
 
 function capabilities(): Capabilities {
@@ -41,14 +42,14 @@ function session(): AgentSession {
   }
 }
 
-function event(overrides: Record<string, unknown> = {}) {
+function event(overrides: Partial<NormalizedEvent> = {}): NormalizedEvent {
   return {
     instanceId: 'inst-1',
     backend: 'pi',
     sequence: 1,
     timestamp: '2026-10-10T12:00:00Z',
     ...overrides,
-  }
+  } as NormalizedEvent
 }
 
 const PATCH = '--- a/foo.ts\n+++ b/foo.ts\n@@ -1,2 +1,2 @@\n context\n-removed\n+added\n'
@@ -62,47 +63,37 @@ describe('edit diff store normalization', () => {
   })
 
   it('keeps the first changed file from tool result metadata', () => {
-    const sessions = useSessionsStore()
-    sessions.projectId = 1
-    sessions.sessions = [session()]
-    sessions.handleEvent(
+    const entry = entryFromEvent(
       's1',
-      JSON.stringify(
-        event({
-          type: 'tool_result',
-          sequence: 1,
-          toolResult: {
-            callId: 'c1',
-            output: 'Edited foo.ts',
-            isError: false,
-            metadata: { files: [{ file: 'foo.ts', patch: PATCH, additions: 1, deletions: 1, status: 'modified' }] },
-          },
-        }),
-      ),
+      event({
+        type: 'tool_result',
+        sequence: 1,
+        toolResult: {
+          callId: 'c1',
+          output: 'Edited foo.ts',
+          isError: false,
+          metadata: { files: [{ file: 'foo.ts', patch: PATCH, additions: 1, deletions: 1, status: 'modified' }] },
+        },
+      }),
     )
-    expect(sessions.messagesFor('s1')[0].diff).toEqual({ file: 'foo.ts', patch: PATCH, additions: 1, deletions: 1 })
+    expect(entry?.diff).toEqual({ file: 'foo.ts', patch: PATCH, additions: 1, deletions: 1 })
   })
 
   it('drops zero-count and malformed diffs', () => {
-    const sessions = useSessionsStore()
-    sessions.projectId = 1
-    sessions.sessions = [session()]
-    sessions.handleEvent(
+    const entry1 = entryFromEvent(
       's1',
-      JSON.stringify(
-        event({
-          type: 'tool_result',
-          sequence: 1,
-          toolResult: { callId: 'c1', output: 'ok', isError: false, metadata: { files: [{ file: 'a', additions: 0, deletions: 0 }] } },
-        }),
-      ),
+      event({
+        type: 'tool_result',
+        sequence: 1,
+        toolResult: { callId: 'c1', output: 'ok', isError: false, metadata: { files: [{ file: 'a', additions: 0, deletions: 0 }] } },
+      }),
     )
-    sessions.handleEvent(
+    const entry2 = entryFromEvent(
       's1',
-      JSON.stringify(event({ type: 'tool_result', sequence: 2, toolResult: { callId: 'c2', output: 'ok', isError: false } })),
+      event({ type: 'tool_result', sequence: 2, toolResult: { callId: 'c2', output: 'ok', isError: false } }),
     )
-    expect(sessions.messagesFor('s1')[0].diff).toBeUndefined()
-    expect(sessions.messagesFor('s1')[1].diff).toBeUndefined()
+    expect(entry1?.diff).toBeUndefined()
+    expect(entry2?.diff).toBeUndefined()
   })
 })
 

@@ -204,12 +204,22 @@ describe('EventBusClient', () => {
       backend: 'pi',
       sequence: 20,
       timestamp: new Date().toISOString(),
-      type: 'thinking',
-      thinking: { text: 'thinking for s2', final: true },
+      type: 'message',
+      message: { role: 'assistant', text: 'hello s2', final: true },
     }
-    source.emit('thinking', JSON.stringify(eventS2), '20')
+    source.emit('message', JSON.stringify(eventS2), '20')
 
-    expect(store.appendThinking).toHaveBeenCalledWith('s2', 'thinking for s2', true, 20)
+    expect(store.appendMessage).toHaveBeenCalledWith(
+      's2',
+      'assistant',
+      'hello s2',
+      true,
+      20,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(String),
+    )
   })
 
   it('unsubscribes a session and issues DELETE call', async () => {

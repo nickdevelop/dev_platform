@@ -5,26 +5,28 @@
 // Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
 // flat surfaces, zero resting shadows, tabular figures for tokens and latency,
 // sentence-case 12px table headers, pale status pills).
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useModelsStore } from '../../stores/models'
 import type { ModelDto, RemoteModel, ServiceDto } from '../../api/models'
 import { UiButton, UiInput, UiBadge, UiAlert, UiConfirmDialog } from '../../shared/ui'
 
 const models = useModelsStore()
+const { services, error: modelsError } = storeToRefs(models)
 
 const showServiceForm = ref(false)
-const serviceForm = reactive({ name: '', baseUrl: '', apiKey: '', enabled: true })
+const serviceForm = ref({ name: '', baseUrl: '', apiKey: '', enabled: true })
 const editingServiceId = ref<number | null>(null)
 const pendingRemove = ref<ServiceDto | null>(null)
 const removing = ref(false)
 const removeError = ref('')
 
-const candidates = reactive<Record<number, RemoteModel[]>>({})
-const selected = reactive<Record<number, Record<string, boolean>>>({})
-const testMessage = reactive<Record<number, string>>({})
+const candidates = ref<Record<number, RemoteModel[]>>({})
+const selected = ref<Record<number, Record<string, boolean>>>({})
+const testMessage = ref<Record<number, string>>({})
 
 const editingModelId = ref<number | null>(null)
-const modelForm = reactive({
+const modelForm = ref({
   modelId: '',
   name: '',
   supportsText: true,
@@ -41,25 +43,30 @@ onMounted(() => {
 
 function openCreate() {
   editingServiceId.value = null
-  Object.assign(serviceForm, { name: '', baseUrl: '', apiKey: '', enabled: true })
+  serviceForm.value = { name: '', baseUrl: '', apiKey: '', enabled: true }
   showServiceForm.value = true
 }
 
 function openEdit(service: ServiceDto) {
   editingServiceId.value = service.id
-  Object.assign(serviceForm, {
+  serviceForm.value = {
     name: service.name,
     baseUrl: service.baseUrl,
     apiKey: '',
     enabled: service.enabled,
-  })
+  }
   showServiceForm.value = true
 }
 
 async function submitService() {
   const id = editingServiceId.value
   const ok = await models.saveService(
-    { name: serviceForm.name, baseUrl: serviceForm.baseUrl, apiKey: serviceForm.apiKey, enabled: serviceForm.enabled },
+    {
+      name: serviceForm.value.name,
+      baseUrl: serviceForm.value.baseUrl,
+      apiKey: serviceForm.value.apiKey,
+      enabled: serviceForm.value.enabled,
+    },
     id === null ? undefined : id,
   )
   if (ok) showServiceForm.value = false
@@ -80,7 +87,7 @@ async function confirmRemoveService() {
     if (ok) {
       pendingRemove.value = null
     } else {
-      removeError.value = models.error || '删除服务失败'
+      removeError.value = modelsError.value || '删除服务失败'
     }
   } finally {
     removing.value = false
@@ -88,19 +95,19 @@ async function confirmRemoveService() {
 }
 
 async function fetchCandidates(service: ServiceDto) {
-  candidates[service.id] = await models.fetchRemote({
+  candidates.value[service.id] = await models.fetchRemote({
     baseUrl: service.baseUrl,
     secretRef: service.hasKey ? service.secretRef : undefined,
   })
-  selected[service.id] = {}
+  selected.value[service.id] = {}
 }
 
 function isSelected(serviceId: number, modelId: string): boolean {
-  return selected[serviceId]?.[modelId] === true
+  return selected.value[serviceId]?.[modelId] === true
 }
 
 async function addSelected(service: ServiceDto) {
-  const picks = candidates[service.id] ?? []
+  const picks = candidates.value[service.id] ?? []
   for (const candidate of picks) {
     if (!isSelected(service.id, candidate.id)) continue
     await models.addModelTo(service.id, {
@@ -114,13 +121,13 @@ async function addSelected(service: ServiceDto) {
       enabled: true,
     })
   }
-  candidates[service.id] = []
-  selected[service.id] = {}
+  candidates.value[service.id] = []
+  selected.value[service.id] = {}
 }
 
 function openModelEdit(model: ModelDto) {
   editingModelId.value = model.id
-  Object.assign(modelForm, {
+  modelForm.value = {
     modelId: model.modelId,
     name: model.name,
     supportsText: model.supportsText,
@@ -129,12 +136,12 @@ function openModelEdit(model: ModelDto) {
     contextTokens: model.contextTokens,
     outputTokens: model.outputTokens,
     enabled: model.enabled,
-  })
+  }
 }
 
 async function submitModel() {
   if (editingModelId.value === null) return
-  const ok = await models.saveModel(editingModelId.value, { ...modelForm })
+  const ok = await models.saveModel(editingModelId.value, { ...modelForm.value })
   if (ok) editingModelId.value = null
 }
 
@@ -143,13 +150,13 @@ async function removeModel(model: ModelDto) {
 }
 
 async function runTest(service: ServiceDto, model: ModelDto) {
-  testMessage[model.id] = '测试中…'
+  testMessage.value[model.id] = '测试中…'
   const result = await models.test({
     baseUrl: service.baseUrl,
     secretRef: service.hasKey ? service.secretRef : undefined,
     modelId: model.modelId,
   })
-  testMessage[model.id] = result ? `调用正常（${result.latencyMs}ms）` : models.error || '测试失败'
+  testMessage.value[model.id] = result ? `调用正常（${result.latencyMs}ms）` : modelsError.value || '测试失败'
 }
 </script>
 
@@ -215,13 +222,13 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       </div>
     </form>
 
-    <UiAlert v-if="models.error" variant="error" class="error">
-      {{ models.error }}
+    <UiAlert v-if="modelsError" variant="error" class="error">
+      {{ modelsError }}
     </UiAlert>
 
     <!-- Services empty state -->
     <div
-      v-if="models.services.length === 0 && !showServiceForm"
+      v-if="services.length === 0 && !showServiceForm"
       class="p-12 text-center rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3"
     >
       <div class="text-sm font-medium text-slate-700 dark:text-slate-300">暂未配置模型服务</div>
@@ -235,7 +242,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
 
     <!-- Services list cards -->
     <article
-      v-for="service in models.services"
+      v-for="service in services"
       :key="service.id"
       class="service p-5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4"
       :data-service="service.id"

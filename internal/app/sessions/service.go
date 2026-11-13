@@ -190,6 +190,7 @@ type StoreRepository interface {
 	UpdateOnContinue(row database.AgentSession) error
 	UpdateStatus(id, status string) error
 	UpdateInstanceID(id, instanceID string) error
+	UpdateNativeSessionID(id, nativeSessionID string) error
 	UpdateModel(id, model string) error
 	TouchUpdatedAt(id string, at time.Time) error
 	Delete(id string) error
@@ -611,8 +612,18 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 	if len(images) > 0 {
 		imgs = images[0]
 	}
+	onBound := func(nativeSessionID string) error {
+		if nativeSessionID == outcome.Session.NativeSessionID {
+			return nil
+		}
+		if err := s.bindNativeSession(row.ID, nativeSessionID); err != nil {
+			return err
+		}
+		outcome.Session.NativeSessionID = nativeSessionID
+		return nil
+	}
 	if message != "" || len(imgs) > 0 {
-		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message, Images: imgs}); err != nil {
+		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message, Images: imgs, OnNativeSessionBound: onBound}); err != nil {
 			// The session stays; the workbench pre-fills the composer and
 			// reports the failure so the user can send again.
 			outcome.MessageError = "agent_operation_failed"
@@ -844,6 +855,8 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 		events = append(events, event)
 	}
 
+	events = FilterDeliverableEvents(events)
+
 	if !options.IncludeImages {
 		s.lazyHistoryImages(projectID, sessionID, events, adapter)
 	}
@@ -1009,7 +1022,17 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 		SessionID:  row.NativeSessionID,
 		Title:      row.Title,
 	}
-	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages}); err != nil {
+	onBound := func(nativeSessionID string) error {
+		if nativeSessionID == row.NativeSessionID {
+			return nil
+		}
+		if err := s.bindNativeSession(row.ID, nativeSessionID); err != nil {
+			return err
+		}
+		row.NativeSessionID = nativeSessionID
+		return nil
+	}
+	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
 	}
 	if model != "" {
@@ -1159,7 +1182,8 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 			}
 		} else {
 			watermark = resumeFrom
-			for _, ev := range replay {
+			deliverableReplay := FilterDeliverableEvents(replay)
+			for _, ev := range deliverableReplay {
 				if !matchesSession(row, ev) {
 					continue
 				}
@@ -1218,6 +1242,7 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 	queue := make(chan streamItem, s.streamBuffer)
 	queue <- streamItem{event: s.turnSnapshotEvent(row), join: true}
 	var slow atomic.Bool
+	liveFilter := newEventDeliverFilter()
 	go func() {
 		defer close(queue)
 		for {
@@ -1235,6 +1260,11 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 					// Already written from the replay buffer.
 					continue
 				}
+				filteredEv, ok := liveFilter.Filter(ev)
+				if !ok {
+					continue
+				}
+				ev = filteredEv
 				if ev.SessionID != "" {
 					ev.SessionID = row.ID
 				}
@@ -1541,6 +1571,18 @@ func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.S
 		return Session{}, err
 	}
 	return s.sessionFromModel(row), nil
+}
+
+// bindNativeSession records the native id a pending session acquired on its
+// first turn, so the index, the event subscriptions and later turns agree on it.
+func (s *Service) bindNativeSession(rowID, nativeSessionID string) error {
+	if err := s.store.UpdateNativeSessionID(rowID, nativeSessionID); err != nil {
+		return fmt.Errorf("bind native session: %w", err)
+	}
+	if s.eventBus != nil {
+		s.eventBus.RebindNativeSession(rowID, nativeSessionID)
+	}
+	return nil
 }
 
 // newSessionRow builds a fresh index row for a native session.

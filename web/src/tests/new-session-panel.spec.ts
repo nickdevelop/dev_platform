@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
 import { useAgentsStore } from '../stores/agents'
 import { useProjectsStore } from '../stores/projects'
@@ -32,6 +33,25 @@ function capabilities(overrides: Partial<Capabilities> = {}): Capabilities {
     rawEvents: false,
     ...overrides,
   }
+}
+
+function mountPanel(options: any = {}) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/projects/:projectId/sessions/new', name: 'session-new', component: { template: '<div />' } },
+      { path: '/sessions/new', name: 'session-new-global', component: { template: '<div />' } },
+      { path: '/projects/:projectId/sessions/:sessionId', name: 'session', component: { template: '<div />' } },
+    ],
+  })
+  return mount(NewSessionPanel, {
+    ...options,
+    global: {
+      ...options.global,
+      plugins: [router, ...(options.global?.plugins ?? [])],
+    },
+  })
 }
 
 function setup(options: {
@@ -66,7 +86,7 @@ function setup(options: {
 
   const sessions = useSessionsStore()
   const createSpy = vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-new' } as never)
-  const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+  const wrapper = mountPanel({ props: { projectId: 1 } })
   return { wrapper, createSpy, sessions, agents }
 }
 
@@ -313,7 +333,7 @@ describe('NewSessionPanel', () => {
       ),
     )
     const sessions = useSessionsStore()
-    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+    const wrapper = mountPanel({ props: { projectId: 1 } })
     await flushPromises()
 
     await wrapper.find('form.create-session').trigger('submit')
@@ -451,15 +471,11 @@ describe('NewSessionPanel', () => {
       { id: 3, name: '项目三', path: '/path/3', defaultBackend: 'opencode-v2' },
     ] as unknown as Project[]
 
-    const wrapper = mount(NewSessionPanel, {
+    const wrapper = mountPanel({
       props: { projectId: 1 },
       global: {
         mocks: {
           $router: { replace: replaceMock },
-        },
-        provide: {
-          // Provide mock router for vue-router useRouter()
-          router: { replace: replaceMock },
         },
       },
     })
@@ -636,7 +652,7 @@ describe('NewSessionPanel', () => {
     const draftsStore = useDraftsStore()
     draftsStore.setNewSessionDraft({ promptId: 10 }, 1)
 
-    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+    const wrapper = mountPanel({ props: { projectId: 1 } })
     await flushPromises()
 
     expect(wrapper.find('[data-test="prompt-preview-snippet"]').exists()).toBe(true)
@@ -664,7 +680,7 @@ describe('NewSessionPanel', () => {
     ] as unknown as Project[]
 
     // 1. First mount: user opens new session without projectId prop (global new session /sessions/new)
-    const wrapper1 = mount(NewSessionPanel, {})
+    const wrapper1 = mountPanel({})
     await flushPromises()
 
     const select1 = wrapper1.find<HTMLSelectElement>('[data-test="project-select"]')
@@ -678,7 +694,7 @@ describe('NewSessionPanel', () => {
     wrapper1.unmount()
 
     // 3. User switches back to new session tab (/sessions/new): NewSessionPanel remounts
-    const wrapper2 = mount(NewSessionPanel, {})
+    const wrapper2 = mountPanel({})
     await flushPromises()
 
     const select2 = wrapper2.find<HTMLSelectElement>('[data-test="project-select"]')
@@ -710,7 +726,7 @@ describe('NewSessionPanel', () => {
     const sessions = useSessionsStore()
     vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-created' } as never)
 
-    const wrapper = mount(NewSessionPanel, { props: { projectId: 2 } })
+    const wrapper = mountPanel({ props: { projectId: 2 } })
     await flushPromises()
 
     await wrapper.find('#first-message').setValue('Message to send')
@@ -723,7 +739,7 @@ describe('NewSessionPanel', () => {
 
     // Now remount NewSessionPanel: draft should be empty
     wrapper.unmount()
-    const freshWrapper = mount(NewSessionPanel, { props: { projectId: 2 } })
+    const freshWrapper = mountPanel({ props: { projectId: 2 } })
     await flushPromises()
 
     expect(freshWrapper.find<HTMLTextAreaElement>('#first-message').element.value).toBe('')
@@ -748,7 +764,7 @@ describe('NewSessionPanel', () => {
       { id: 2, name: '项目二', path: '/path/2', defaultBackend: 'opencode-v2' },
     ] as unknown as Project[]
 
-    const wrapper = mount(NewSessionPanel, { props: { projectId: 1 } })
+    const wrapper = mountPanel({ props: { projectId: 1 } })
     await flushPromises()
 
     // 1. User types in Project 1
