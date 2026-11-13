@@ -71,6 +71,11 @@ type Process interface {
 	// Configure prepares a child command before Start.
 	// unix: Setpgid; windows: CREATE_NEW_PROCESS_GROUP plus Job Object.
 	Configure(cmd *exec.Cmd) error
+	// ConfigureDetached prepares a child that must not share the platform's
+	// controlling terminal, for children that drive a terminal UI. unix: a new
+	// session (Setsid), so terminal access cannot stop the child as a
+	// background job; windows: same as Configure.
+	ConfigureDetached(cmd *exec.Cmd) error
 	// Attach enrolls an already-started platform child into supervision so
 	// nothing is left behind when the platform exits. Call it right after
 	// cmd.Start; a failed attach must fail the launch. unix is a no-op;

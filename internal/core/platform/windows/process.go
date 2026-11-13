@@ -28,6 +28,13 @@ func (Process) Configure(cmd *exec.Cmd) error {
 	return nil
 }
 
+// ConfigureDetached is Configure on windows: a console process group already
+// keeps the child off the platform's Ctrl+C, and windows has no job-control
+// stop to guard against.
+func (Process) ConfigureDetached(cmd *exec.Cmd) error {
+	return Process{}.Configure(cmd)
+}
+
 // Attach enrolls an already-started platform child in the platform Job
 // Object, so the OS reaps it when the platform exits. Call it right after
 // cmd.Start; the process handle only exists then.

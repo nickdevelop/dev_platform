@@ -81,6 +81,10 @@ func (windowsProcess) Configure(cmd *exec.Cmd) error {
 	return windows.Process{}.Configure(cmd)
 }
 
+func (windowsProcess) ConfigureDetached(cmd *exec.Cmd) error {
+	return windows.Process{}.ConfigureDetached(cmd)
+}
+
 func (windowsProcess) Attach(proc *os.Process) error {
 	return windows.Process{}.Attach(proc)
 }

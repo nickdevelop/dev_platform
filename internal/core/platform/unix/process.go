@@ -26,6 +26,18 @@ func (Process) Configure(cmd *exec.Cmd) error {
 	return nil
 }
 
+// ConfigureDetached starts the child in a new session: it leads its own process
+// group (so Terminate still signals the whole tree) and has no controlling
+// terminal, so it can never be stopped for touching the platform's terminal.
+func (Process) ConfigureDetached(cmd *exec.Cmd) error {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setsid = true
+	setPdeathsig(cmd)
+	return nil
+}
+
 // Attach enrolls an already-started platform child into supervision. Unix
 // needs nothing beyond the process group from Configure: a child outlives
 // nothing because the platform kills the group on stop.

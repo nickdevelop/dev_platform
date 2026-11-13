@@ -96,7 +96,10 @@ func (c *agyChild) start(ctx context.Context, executable string, env []string) e
 		return fmt.Errorf("agy: stdout pipe: %w", err)
 	}
 
-	if err := platform.New().Process().Configure(cmd); err != nil {
+	// agy is a terminal UI: in a process group of its own it is a background
+	// job of the platform's terminal, so its first terminal access stops it
+	// before init is printed. A new session detaches it from the terminal.
+	if err := platform.New().Process().ConfigureDetached(cmd); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
 		return fmt.Errorf("agy: configure child process: %w", err)
@@ -140,11 +143,11 @@ func (c *agyChild) start(ctx context.Context, executable string, env []string) e
 	var firstLine []byte
 	select {
 	case <-ctx.Done():
-		_ = c.closeLocked()
+		c.abortStartLocked(cmd)
 		return fmt.Errorf("agy: wait for child init: %w", ctx.Err())
 	case res := <-ch:
 		if res.err != nil {
-			_ = c.closeLocked()
+			c.abortStartLocked(cmd)
 			return fmt.Errorf("agy: read child init line: %w", res.err)
 		}
 		firstLine = res.line
@@ -315,6 +318,13 @@ func (c *agyChild) interrupt(ctx context.Context) error {
 		},
 	})
 	return nil
+}
+
+// abortStartLocked kills a child whose init line never arrived and reaps it, so
+// a failed start leaves no zombie behind.
+func (c *agyChild) abortStartLocked(cmd *exec.Cmd) {
+	_ = c.closeLocked()
+	_ = cmd.Wait()
 }
 
 func (c *agyChild) closeLocked() error {

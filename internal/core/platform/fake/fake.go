@@ -184,6 +184,11 @@ func (pr *Process) Configure(cmd *exec.Cmd) error {
 	return pr.ConfigureErr
 }
 
+func (pr *Process) ConfigureDetached(cmd *exec.Cmd) error {
+	pr.Configured = append(pr.Configured, cmd)
+	return pr.ConfigureErr
+}
+
 func (pr *Process) Attach(proc *os.Process) error {
 	pr.Attached = append(pr.Attached, proc)
 	return pr.AttachErr

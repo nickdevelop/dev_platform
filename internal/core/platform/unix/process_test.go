@@ -143,3 +143,29 @@ func TestTerminateMissingProcessIsSuccess(t *testing.T) {
 		t.Fatal("terminate an invalid pid succeeded, want an error")
 	}
 }
+
+// TestConfigureDetachedStartsNewSession pins the terminal-detached launch:
+// the child leads a new session (so it has no controlling terminal and cannot
+// be stopped as a background job) and is not left in a foreign group.
+func TestConfigureDetachedStartsNewSession(t *testing.T) {
+	cmd := exec.Command("sleep", "5")
+	if err := platform.New().Process().ConfigureDetached(cmd); err != nil {
+		t.Fatalf("ConfigureDetached: %v", err)
+	}
+	if !cmd.SysProcAttr.Setsid || cmd.SysProcAttr.Setpgid {
+		t.Fatalf("SysProcAttr = %+v, want Setsid without Setpgid", cmd.SysProcAttr)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() { _ = platform.New().Process().Terminate(cmd.Process.Pid); _, _ = cmd.Process.Wait() })
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(cmd.Process.Pid) + "/stat")
+	if err != nil {
+		t.Skipf("no /proc to read the session from: %v", err)
+	}
+	stat := string(raw)
+	fields := strings.Fields(stat[strings.LastIndexByte(stat, ')')+1:])
+	if len(fields) < 4 || fields[3] != strconv.Itoa(cmd.Process.Pid) {
+		t.Fatalf("session field = %v, want the child to lead its own session", fields)
+	}
+}

@@ -82,6 +82,10 @@ func (unixProcess) Configure(cmd *exec.Cmd) error {
 	return unix.Process{}.Configure(cmd)
 }
 
+func (unixProcess) ConfigureDetached(cmd *exec.Cmd) error {
+	return unix.Process{}.ConfigureDetached(cmd)
+}
+
 func (unixProcess) Attach(proc *os.Process) error {
 	return unix.Process{}.Attach(proc)
 }
