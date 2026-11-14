@@ -3,7 +3,7 @@
 // carries only chat concerns: transcript, stream status, model, composer,
 // rename/delete, stop, regenerate and edit-and-resend. No projects, agent
 // backends, tools, approvals, file tree or activity pane are involved.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import type { ImageAttachment } from '../../../api/messageTypes'
 import type { ChatEntry } from '../state/entry'
@@ -167,8 +167,26 @@ async function bootstrap() {
   }
 }
 
+let isInitialMount = true
+
 onMounted(() => {
   void bootstrap()
+  void nextTick(() => {
+    isInitialMount = false
+  })
+})
+
+onActivated(() => {
+  if (isInitialMount) return
+  if (props.chatId !== undefined && (chats.activeId !== props.chatId || !chats.active)) {
+    void bootstrap()
+  }
+})
+
+onDeactivated(() => {
+  if (props.chatId !== undefined && scroll.value) {
+    viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
+  }
 })
 
 onBeforeUnmount(() => {

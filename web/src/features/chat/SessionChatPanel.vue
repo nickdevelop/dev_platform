@@ -15,7 +15,7 @@
 // to resize the activity pane (width persisted); collapsing hides the pane
 // entirely so the messages take the full width. Below 900px the pane overlays
 // the messages instead of squeezing them.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../../stores/agents'
 import { useSessionsStore, type ChatEntry } from '../../stores/sessions'
@@ -587,10 +587,57 @@ const composerDisabled = computed(() => {
 // interaction layer's concern (see ./interactions/useSessionInteractions.ts);
 // the panel renders whatever that layer reports.
 
+let isInitialMount = true
+
 onMounted(() => {
   window.addEventListener('click', onWindowClick)
   void open()
+  void nextTick(() => {
+    isInitialMount = false
+  })
 })
+
+onActivated(() => {
+  if (isInitialMount) return
+  // If the session data was evicted (e.g. tab closed and reopened while kept alive)
+  // or stream is not open, re-open to reload history and re-subscribe.
+  if (
+    !sessions.historyLoaded[props.sessionId] ||
+    !sessions.messages[props.sessionId] ||
+    sessions.streamStatus[props.sessionId] !== 'open'
+  ) {
+    void open()
+  } else {
+    sessions.activeSessionId = props.sessionId
+    void nextTick(() => {
+      const savedLogState = viewportStore.getSessionScroll(props.sessionId)
+      if (savedLogState && !savedLogState.pinned) {
+        if (logScroll.value) {
+          logScroll.value.scrollTop = savedLogState.scrollTop
+        }
+        pinnedToBottom.value = false
+        showJumpToLatest.value = true
+      } else {
+        scrollToBottom(false)
+      }
+    })
+  }
+})
+
+onDeactivated(() => {
+  if (currentSessionId) {
+    if (logScroll.value) {
+      viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
+    }
+  }
+  if (currentSessionId && !isRestoringDraft) {
+    draftsStore.setSessionDraft(currentSessionId, {
+      messageText: messageText.value,
+      attachedImages: attachedImages.value,
+    })
+  }
+})
+
 watch(() => [props.projectId, props.sessionId], open)
 watch(
   () => props.sessionId,

@@ -3,6 +3,7 @@
 // switching sessions closes the previous stream and hides its messages, and
 // unsupported controls are not rendered.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, KeepAlive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -1482,5 +1483,53 @@ describe('SessionChatPanel scroll following', () => {
     // 4. Position 400 must be restored, not forced to bottom (2000), and jump button appears
     expect(el.scrollTop).toBe(400)
     expect(wrapper.find('[data-test="jump-latest"]').exists()).toBe(true)
+  })
+
+  it('re-opens session and reloads history when re-activated in KeepAlive after eviction', async () => {
+    const fetchSpy = stubSessionList([session('sess-keepalive', { backend: 'agy' })])
+    const sessionsStore = useSessionsStore()
+
+    const HostComponent = defineComponent({
+      props: {
+        active: { type: Boolean, default: true },
+      },
+      setup(props) {
+        return () =>
+          h(KeepAlive, null, {
+            default: () =>
+              props.active
+                ? h(SessionChatPanel, { projectId: 1, sessionId: 'sess-keepalive', key: 'sess-keepalive' })
+                : h('div', { class: 'empty' }, 'empty'),
+          })
+      },
+    })
+
+    const router = testRouter()
+    const wrapper = mount(HostComponent, {
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+
+    // 1. Initially mounted and loaded
+    expect(sessionsStore.historyLoaded['sess-keepalive']).toBe(true)
+    const initialContinueCount = continues(fetchSpy).filter((u) => u.includes('sess-keepalive')).length
+    expect(initialContinueCount).toBeGreaterThanOrEqual(1)
+
+    // 2. Tab closed: simulate navigating away so SessionChatPanel is deactivated,
+    // and store evicts inactive session data as releaseSessions does
+    await wrapper.setProps({ active: false })
+    await flushPromises()
+    sessionsStore.evictInactiveSession('sess-keepalive')
+    expect(sessionsStore.historyLoaded['sess-keepalive']).toBeUndefined()
+    expect(sessionsStore.messages['sess-keepalive']).toBeUndefined()
+
+    // 3. User re-opens the session from sidebar: KeepAlive activates cached instance
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+
+    // 4. onActivated must detect evicted state and trigger open(), restoring history
+    const reloadedContinueCount = continues(fetchSpy).filter((u) => u.includes('sess-keepalive')).length
+    expect(reloadedContinueCount).toBeGreaterThan(initialContinueCount)
+    expect(sessionsStore.historyLoaded['sess-keepalive']).toBe(true)
   })
 })
