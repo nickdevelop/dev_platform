@@ -12,7 +12,9 @@
 import { defineStore } from 'pinia'
 
 export type OpenTab =
-  | { kind: 'session'; projectId: number; sessionId: string; title: string; pinned?: boolean }
+  // backend is the agent behind the session, used for its logo on the strip.
+  // It is filled once known: opening the tab or the session list reporting it.
+  | { kind: 'session'; projectId: number; sessionId: string; title: string; backend?: string; pinned?: boolean }
   | { kind: 'projects-management'; pinned?: boolean }
   // One settings page per project, opened as its own workbench tab.
   | { kind: 'project-settings'; projectId: number; pinned?: boolean }
@@ -153,7 +155,8 @@ function normalize(entry: unknown): OpenTab | null {
     // A stored session tab may predate any title being set; only a string title is
     // carried over, so a hand-edited store cannot inject one.
     const title = typeof tab.title === 'string' ? tab.title : ''
-    return { kind: 'session', projectId: entry.projectId, sessionId: entry.sessionId, title, ...pinned }
+    const backend = typeof tab.backend === 'string' && tab.backend !== '' ? { backend: tab.backend } : {}
+    return { kind: 'session', projectId: entry.projectId, sessionId: entry.sessionId, title, ...backend, ...pinned }
   }
   return null
 }
@@ -286,7 +289,7 @@ export const useOpenTabsStore = defineStore('openTabs', {
 
     // Opens a session tab, or updates the existing one in place: re-opening the
     // session the user is already looking at must not reshuffle the strip.
-    openTab(projectId: number, sessionId: string, title = '') {
+    openTab(projectId: number, sessionId: string, title = '', backend = '') {
       const existing = this.tabs.find(
         (tab): tab is Extract<OpenTab, { kind: 'session' }> =>
           tab.kind === 'session' && tab.sessionId === sessionId,
@@ -294,8 +297,9 @@ export const useOpenTabsStore = defineStore('openTabs', {
       if (existing) {
         existing.projectId = projectId
         if (title !== '') existing.title = title
+        if (backend !== '') existing.backend = backend
       } else {
-        this.tabs.push({ kind: 'session', projectId, sessionId, title })
+        this.tabs.push({ kind: 'session', projectId, sessionId, title, ...(backend !== '' ? { backend } : {}) })
         trim(this.tabs)
       }
       this.setActiveKey(sessionId)
@@ -454,6 +458,19 @@ export const useOpenTabsStore = defineStore('openTabs', {
       )
       if (existing && existing.title !== title) {
         existing.title = title
+        persist(this.tabs)
+      }
+    },
+
+    // setSessionBackend records the agent behind a session tab once the session
+    // list reports it. A tab already carrying that backend is left untouched.
+    setSessionBackend(sessionId: string, backend: string) {
+      const existing = this.tabs.find(
+        (tab): tab is Extract<OpenTab, { kind: 'session' }> =>
+          tab.kind === 'session' && tab.sessionId === sessionId,
+      )
+      if (existing && backend !== '' && existing.backend !== backend) {
+        existing.backend = backend
         persist(this.tabs)
       }
     },

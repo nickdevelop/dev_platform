@@ -1632,6 +1632,34 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalError'
+  /agent-backends/{backend}/icon:
+    get:
+      summary: Fetch a backend's SVG logo
+      description: >-
+        Returns the logo the backend descriptor embeds. The document is served
+        with a sandboxing Content-Security-Policy and nosniff, so it is safe to
+        load as an image. A backend without a logo answers 404.
+      operationId: getAgentBackendIcon
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: backend
+          in: path
+          required: true
+          description: Agent backend id as listed by GET /api/agent-backends.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The backend's SVG logo.
+          content:
+            image/svg+xml:
+              schema:
+                type: string
+        '404':
+          description: The backend is unknown or declares no logo.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /agent-services/{backend}:
     get:
       summary: Detect a backend's machine-level service
@@ -6002,6 +6030,12 @@ components:
           description: >-
             Optional short logo identifier (e.g. "OC", "PI", "DS") from the
             backend descriptor.
+        iconUrl:
+          type: string
+          description: >-
+            API path of the backend's SVG logo, present only when the backend
+            descriptor declares one. The workbench falls back to shortName
+            when it is absent.
       additionalProperties: false
     AgentServiceStatusResponse:
       type: object

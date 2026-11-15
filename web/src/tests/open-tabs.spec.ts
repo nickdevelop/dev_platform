@@ -451,3 +451,54 @@ describe('open tabs store - pure chat support', () => {
 })
 
 
+
+describe('open tabs store - session backend', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('records the backend a session tab opens with and fills it in later', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-b', 'first', 'pi')
+    store.openTab(3, 'ses-c', 'second')
+    store.setSessionBackend('ses-c', 'opencode-v2')
+    store.setSessionBackend('ses-c', 'opencode-v2')
+
+    const [first, second] = store.tabs
+    expect(first).toMatchObject({ kind: 'session', sessionId: 'ses-b', backend: 'pi' })
+    expect(second).toMatchObject({ kind: 'session', sessionId: 'ses-c', backend: 'opencode-v2' })
+    expect(JSON.parse(localStorage.getItem('dev-platform-open-tabs-v2') ?? '[]')[1].backend).toBe('opencode-v2')
+  })
+
+  it('keeps a stored backend across reloads and drops a malformed one', () => {
+    localStorage.setItem(
+      'dev-platform-open-tabs-v2',
+      JSON.stringify([
+        { kind: 'session', projectId: 1, sessionId: 'ses-ok', title: 't', backend: 'deepseek' },
+        { kind: 'session', projectId: 1, sessionId: 'ses-bad', title: 't', backend: 7 },
+      ]),
+    )
+    const store = freshStore()
+    expect(store.tabs[0]).toMatchObject({ sessionId: 'ses-ok', backend: 'deepseek' })
+    expect(store.tabs[1]).not.toHaveProperty('backend')
+  })
+
+  it('promotes the new-session tab without losing its position', () => {
+    const store = freshStore()
+    store.openTab(3, 'ses-a', 'a', 'pi')
+    store.openNewSession()
+    store.promoteNewSession(3, 'ses-new')
+    expect(store.tabs.map((tab) => tab.kind === 'session' ? tab.sessionId : tab.kind)).toEqual(['ses-a', 'ses-new'])
+  })
+
+  it('renders the agent logo on session tabs and keeps the dot for unknown backends', () => {
+    const tabs: OpenTab[] = [
+      { kind: 'session', projectId: 1, sessionId: 'ses-logo', title: 'Logo', backend: 'pi' },
+      { kind: 'session', projectId: 1, sessionId: 'ses-plain', title: 'Plain' },
+    ]
+    const wrapper = mount(SessionTabs, { props: { tabs, activeKey: 'ses-logo' } })
+    const [logoTab, plainTab] = wrapper.findAll('[data-test="open-tab"]')
+    expect(logoTab.find('.agent-logo').exists()).toBe(true)
+    expect(logoTab.find('.tab-dot').exists()).toBe(false)
+    expect(plainTab.find('.agent-logo').exists()).toBe(false)
+    expect(plainTab.find('.tab-dot').exists()).toBe(true)
+  })
+})

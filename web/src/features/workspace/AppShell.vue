@@ -20,6 +20,7 @@ import { useTasksStore } from '../../stores/tasks'
 import { useDraftsStore } from '../../stores/drafts'
 import { useChatsStore } from '../../stores/chats'
 import { setOpenTabsTrimGuard } from '../../stores/openTabs'
+import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
@@ -44,6 +45,7 @@ const projects = useProjectsStore()
 const agents = useAgentsStore()
 const sessions = useSessionsStore()
 const openTabs = useOpenTabsStore()
+const fileTreeState = useFileTreeStateStore()
 const settings = useSettingsStore()
 const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
@@ -333,7 +335,7 @@ function syncTabWithRoute() {
     if (projectId.value === null) return
     if (sessionId.value === null) return
     const known = sessions.sessionById(sessionId.value)
-    openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '')
+    openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '', known?.backend ?? '')
     return
   }
 
@@ -374,13 +376,22 @@ watch(
   { immediate: true },
 )
 
+// Every close path (single, others, all, delete) ends with the session missing
+// from the strip, so one watch releases the remembered file trees of the rest.
+watch(
+  () => openTabs.tabs.flatMap((tab) => (tab.kind === 'session' ? [tab.sessionId] : [])).join(','),
+  (key) => fileTreeState.retainOnly(key === '' ? [] : key.split(',')),
+  { immediate: true },
+)
+
 // Session titles arrive after the list loads; keep the matching tab label
 // fresh without touching other tabs.
 watch(
-  () => sessions.sessions.map((entry) => `${entry.id}:${entry.title ?? ''}`).join(','),
+  () => sessions.sessions.map((entry) => `${entry.id}:${entry.title ?? ''}:${entry.backend}`).join(','),
   () => {
     for (const entry of sessions.sessions) {
       if (entry.title) openTabs.updateTitle(entry.id, entry.title)
+      openTabs.setSessionBackend(entry.id, entry.backend)
     }
     syncTabWithRoute()
   },

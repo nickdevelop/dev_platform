@@ -79,6 +79,11 @@ export const useAgentsStore = defineStore('agents', {
         return label.slice(0, 2).toUpperCase()
       }
     },
+    // API path of a backend's SVG logo, or '' when the backend declares none.
+    backendIconUrl() {
+      return (backend: BackendId | string): string =>
+        this.backendFor(backend)?.iconUrl ?? ''
+    },
     // Display visual tone preference for a backend tag.
     backendTone() {
       return (backend: BackendId | string): string =>

@@ -141,7 +141,7 @@ describe('ProjectTree', () => {
     expect(running).toBeDefined()
     const logo = running!.find('.agent-logo')
     expect(logo.exists()).toBe(true)
-    expect(logo.text()).toBe('OC')
+    expect(logo.find('img').attributes('src')).toBe('/api/agent-backends/opencode-v2/icon')
     expect(running!.find('[data-test="running-indicator"]').exists()).toBe(true)
     // The marker replaces the plain 运行中 text; the row announces it instead.
     expect(running!.text()).not.toContain('运行中')
@@ -485,14 +485,14 @@ describe('ProjectTree', () => {
     // First session: today -> HH:mm:ss
     const first = sessions[0]
     expect(first.find('.session-row-top .title').text()).toBe('Today Session')
-    expect(first.find('.session-row-top .agent-logo').text()).toBe('OC')
+    expect(first.find('.session-row-top .agent-logo img').attributes('src')).toBe('/api/agent-backends/opencode-v2/icon')
     expect(first.find('.session-row-bottom .session-time').text()).toMatch(/^\d{2}:\d{2}:\d{2}$/)
     expect(first.find('.session-delete').exists()).toBe(true)
 
     // Second session: yesterday -> YYYY-MM-DD
     const second = sessions[1]
     expect(second.find('.session-row-top .title').text()).toBe('Yesterday Session')
-    expect(second.find('.session-row-top .agent-logo').text()).toBe('PI')
+    expect(second.find('.session-row-top .agent-logo img').attributes('src')).toBe('/api/agent-backends/pi/icon')
     expect(second.find('.session-row-bottom .session-time').text()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
     // Click delete button: opens confirmation modal

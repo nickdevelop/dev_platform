@@ -1400,7 +1400,8 @@ async function removeSession() {
               <div class="filetree-body">
                 <FileSidebar
                   :project-id="props.projectId"
-                  :worktree-id="activeWorktreeId"
+                  :session-id="props.sessionId"
+                  :worktree-id="activeWorktreeId""
                   :active-path="activePreviewTab"
                   @select="onSelectWorkspaceFile"
                   @branch-changed="onFileTreeBranchChanged"

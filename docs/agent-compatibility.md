@@ -15,7 +15,10 @@ adapter's own tests (for example `TestAdapterCapabilitiesDeclared` in
 exports a `Descriptor` (display label, executable name, default enablement,
 tested version range, machine-service support) that the platform reads for
 settings, diagnostics and the UI; `internal/core/agents/*/descriptor_test.go` pins
-those values to the tables below. See `docs/architecture/backend-boundaries.md`.
+those values to the tables below. Its logo is an SVG the adapter embeds with
+`//go:embed` (`icon.svg`, wired through `Descriptor.Icon`) and is served at
+`GET /api/agent-backends/{backend}/icon`; a backend without one shows its
+`shortName` instead. See `docs/architecture/backend-boundaries.md`.
 
 Tested environment: Go 1.27.1, Node 22, `opencode` 2.0.24, `pi` 1.1.0. No live
 model provider was configured during verification (an opencode probe without

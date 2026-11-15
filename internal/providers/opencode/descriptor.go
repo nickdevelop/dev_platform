@@ -7,6 +7,7 @@ import "devplatform/internal/core/agents"
 var Descriptor = agents.BackendDescriptor{
 	ID:               agents.BackendOpenCodeV2,
 	Label:            "OpenCode",
+	Icon:             iconSVG,
 	ShortName:        "OC",
 	Binary:           "opencode",
 	DefaultEnabled:   true,

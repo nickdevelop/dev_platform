@@ -4,6 +4,7 @@ import { getFileContent, getFileRawUrl } from '../../api/files'
 import type { FileContentResponse, FileTab } from './types'
 import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
+import PlantumlArtifactView from './PlantumlArtifactView.vue'
 import HtmlArtifactView from './HtmlArtifactView.vue'
 import ArtifactImageView from './ArtifactImageView.vue'
 import DiffViewer from './DiffViewer.vue'
@@ -155,10 +156,11 @@ const isEmpty = computed(() => {
   return tabs.value.length === 0
 })
 
-const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'code'>(() => {
+const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'binary' | 'code'>(() => {
   if (!activeTabPath.value) return 'code'
   const ext = activeTabPath.value.split('.').pop()?.toLowerCase() || ''
   if (ext === 'md' || ext === 'markdown') return 'markdown'
+  if (['puml', 'plantuml', 'pu', 'uml'].includes(ext)) return 'plantuml'
   if (ext === 'html' || ext === 'htm') return 'html'
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image'
   if (fileData.value?.isBinary) return 'binary'
@@ -248,6 +250,15 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'binary' | 'cod
           :file-size="fileData.size"
           :lines="fileData.lines"
           @open-file="openTab"
+        />
+
+        <!-- PlantUML view: the drawing by default, the source one toggle away -->
+        <PlantumlArtifactView
+          v-else-if="currentFileType === 'plantuml'"
+          :file-path="activeTabPath"
+          :content="fileData.content || ''"
+          :file-size="fileData.size"
+          :lines="fileData.lines"
         />
 
         <!-- HTML view -->

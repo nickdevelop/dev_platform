@@ -10,6 +10,7 @@ import {
   unstageGitFiles,
 } from '../../api/files'
 import { searchProjectFiles } from '../../api/projects'
+import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import { UiButton, UiDialog } from '../../shared/ui'
 import BranchSelector from './BranchSelector.vue'
 import ChangeTree from './ChangeTree.vue'
@@ -20,10 +21,19 @@ import type { FileTreeNode, GitCommitItem, GitFileChangeStatus, GitStatusItem } 
 
 const props = defineProps<{
   projectId: number
+  // The session this tree belongs to. Its expansions, tab and search survive the
+  // sidebar unmounting when the panel or the tree is collapsed.
+  sessionId?: string
   activePath?: string
   // Non-zero scopes every file and git call to one git worktree.
   worktreeId?: number
 }>()
+
+const treeState = useFileTreeStateStore()
+const saved = props.sessionId ? treeState.snapshotOf(props.sessionId) : undefined
+// A change-tree that was seeded before (restored or already loaded) keeps the
+// user's expansions; only a fresh tree expands every directory once.
+let changeDirsSeeded = saved !== undefined
 
 const emit = defineEmits<{
   select: [path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }]
@@ -31,21 +41,22 @@ const emit = defineEmits<{
   'branch-changed': [branch: string]
 }>()
 
-const activeTab = ref<'changes' | 'all'>('all')
+const activeTab = ref<'changes' | 'all'>(saved?.activeTab ?? 'all')
 const loading = ref(false)
 const error = ref('')
 const treeNodes = ref<FileTreeNode[]>([])
 const gitChanges = ref<GitStatusItem[]>([])
 const commits = ref<GitCommitItem[]>([])
-const selectedCommit = ref<string>('') // empty means working tree
-const searchQuery = ref('')
+const selectedCommit = ref<string>(saved?.selectedCommit ?? '') // empty means working tree
+const searchQuery = ref(saved?.searchQuery ?? '')
 const searchResults = ref<Array<{ path: string; isDir: boolean }>>([])
 const searchLoading = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | undefined
 
-const isStagedGroupExpanded = ref(true)
-const isUnstagedGroupExpanded = ref(true)
-const expandedChangeDirs = ref<Set<string>>(new Set())
+const isStagedGroupExpanded = ref(saved?.isStagedGroupExpanded ?? true)
+const isUnstagedGroupExpanded = ref(saved?.isUnstagedGroupExpanded ?? true)
+const expandedChangeDirs = ref<Set<string>>(new Set(saved?.expandedChangeDirs ?? []))
+const expandedTreePaths = ref<Set<string>>(new Set(saved?.expandedTreePaths ?? []))
 
 // Discard confirmation dialog state
 const discardModalOpen = ref(false)
@@ -113,6 +124,7 @@ async function refresh() {
     gitChanges.value = status
     commits.value = recentCommits
     updateExpandedChangeDirs()
+    await loadExpandedChildren(tree)
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载文件失败'
   } finally {
@@ -136,8 +148,30 @@ async function loadCommitChanges() {
 }
 
 function updateExpandedChangeDirs() {
+  if (changeDirsSeeded) return
+  changeDirsSeeded = true
   const { allDirPaths } = buildChangeTree(gitChanges.value)
   expandedChangeDirs.value = new Set(allDirPaths)
+}
+
+function toggleTreePath(path: string) {
+  const next = new Set(expandedTreePaths.value)
+  if (next.has(path)) {
+    next.delete(path)
+  } else {
+    next.add(path)
+  }
+  expandedTreePaths.value = next
+}
+
+// A refresh replaces the nodes, so the children of directories the user has
+// open are fetched again; otherwise those directories would show as empty.
+async function loadExpandedChildren(nodes: FileTreeNode[]) {
+  for (const node of nodes) {
+    if (!node.isDir || !expandedTreePaths.value.has(node.path)) continue
+    if (!node.loaded) await onLoadChildren(node)
+    if (node.children && node.children.length > 0) await loadExpandedChildren(node.children)
+  }
 }
 
 function toggleChangeDir(dirPath: string) {
@@ -248,16 +282,40 @@ async function onStageAllAndCommit(message: string) {
   }
 }
 
+// The first run keeps a restored session's commit, tree and tab; a later switch
+// of project or worktree starts from a clean state.
+let initialized = false
 watch(
   () => [props.projectId, props.worktreeId],
   () => {
-    selectedCommit.value = ''
+    if (initialized) {
+      selectedCommit.value = ''
+      changeDirsSeeded = false
+      expandedTreePaths.value = new Set()
+    }
+    initialized = true
     void refresh()
   },
   { immediate: true },
 )
 
+watch(
+  () => ({
+    activeTab: activeTab.value,
+    selectedCommit: selectedCommit.value,
+    searchQuery: searchQuery.value,
+    isStagedGroupExpanded: isStagedGroupExpanded.value,
+    isUnstagedGroupExpanded: isUnstagedGroupExpanded.value,
+    expandedChangeDirs: [...expandedChangeDirs.value],
+    expandedTreePaths: [...expandedTreePaths.value],
+  }),
+  (snapshot) => {
+    if (props.sessionId) treeState.save(props.sessionId, snapshot)
+  },
+)
+
 watch(selectedCommit, () => {
+  changeDirsSeeded = false
   void loadCommitChanges()
 })
 
@@ -592,9 +650,11 @@ function onDragStart(event: DragEvent, path: string) {
           :nodes="treeNodes"
           :active-path="props.activePath"
           :git-changes-map="gitChangesMap"
+          :expanded-paths="expandedTreePaths"
           @select="onSelectAllFile"
           @dragstart="onDragStart"
           @load-children="onLoadChildren"
+          @toggle="toggleTreePath"
         />
       </div>
     </div>

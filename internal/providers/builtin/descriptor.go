@@ -12,6 +12,7 @@ import (
 var Descriptor = agents.BackendDescriptor{
 	ID:              agents.BackendBuiltin,
 	Label:           "平台内置 Agent",
+	Icon:            iconSVG,
 	ShortName:       "BI",
 	Embedded:        true,
 	DefaultEnabled:  true,

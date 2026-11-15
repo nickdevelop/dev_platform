@@ -52,6 +52,8 @@ export interface AgentBackend {
   color?: string
   // Optional short logo identifier (e.g. "OC", "PI", "DS") from the descriptor.
   shortName?: string
+  // API path of the backend's SVG logo; absent when the descriptor declares none.
+  iconUrl?: string
 }
 
 // Mirrors #/components/schemas/AgentBackendList.

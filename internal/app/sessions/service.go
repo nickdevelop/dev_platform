@@ -140,6 +140,9 @@ type BackendCapabilities struct {
 	Label string `json:"label"`
 	// ShortName is an optional short logo identifier from the descriptor.
 	ShortName string `json:"shortName,omitempty"`
+	// IconURL is the API path of the backend's SVG logo. It is empty when the
+	// descriptor declares no icon, and the workbench falls back to ShortName.
+	IconURL string `json:"iconUrl,omitempty"`
 	// Order is the catalog's presentation order.
 	Order int `json:"order"`
 	// ServiceSupported reports whether the backend runs a machine-level
@@ -366,6 +369,9 @@ func (s *Service) Backends() []BackendCapabilities {
 			entry.Tone = descriptor.Tone
 			entry.Color = descriptor.Color
 			entry.ShortName = descriptor.ShortName
+			if len(descriptor.Icon) > 0 {
+				entry.IconURL = "/api/agent-backends/" + string(id) + "/icon"
+			}
 		}
 		out = append(out, entry)
 	}

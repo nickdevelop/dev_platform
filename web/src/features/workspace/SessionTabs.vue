@@ -10,6 +10,7 @@
 // user pinned on purpose — and the store keeps them at the front.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../../stores/openTabs'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
 import { useActivityPane } from '../../shared/composables/useActivityPane'
 
@@ -88,6 +89,12 @@ function closeLabel(tab: OpenTab): string {
   if (tab.kind === 'new-chat') return '关闭新对话'
   if (tab.kind === 'chat') return `关闭对话：${label(tab)}`
   return `关闭会话：${label(tab)}`
+}
+
+// The agent behind a session tab, shown as its logo. Other kinds, and a session
+// whose backend is not known yet, show no logo.
+function backendOf(tab: OpenTab): string {
+  return tab.kind === 'session' ? (tab.backend ?? '') : ''
 }
 
 function isPinned(tab: OpenTab): boolean {
@@ -191,6 +198,7 @@ onBeforeUnmount(() => {
       @mousedown.middle.prevent
     >
       <button type="button" class="tab-select" @click="emit('select', tab)">
+        <BackendIcon v-if="backendOf(tab)" :backend="backendOf(tab)" size="sm" class="tab-logo" />
         <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">
           <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
             <line x1="8" y1="11" x2="8" y2="15" />
@@ -215,7 +223,7 @@ onBeforeUnmount(() => {
             <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
           </svg>
         </span>
-        <span v-else-if="!isRunning(tab)" class="tab-dot" aria-hidden="true"></span>
+        <span v-else-if="!isRunning(tab) && !backendOf(tab)" class="tab-dot" aria-hidden="true"></span>
         <RunningIndicator v-if="isRunning(tab)" />
         <span class="tab-label">{{ label(tab) }}</span>
       </button>
@@ -353,6 +361,10 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: var(--color-border-strong);
   flex-shrink: 0;
+}
+
+.tab-logo {
+  margin-right: 0.1rem;
 }
 
 .tab-icon,

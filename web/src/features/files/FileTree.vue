@@ -2,16 +2,21 @@
 import { computed, ref } from 'vue'
 import type { FileTreeNode, GitFileChangeStatus } from './types'
 
+// Expansion is either owned by the caller (pass expandedPaths and handle
+// toggle, so the state survives the tree unmounting) or kept here when the
+// caller does not care. Nested levels always receive the root's set.
 const props = withDefaults(
   defineProps<{
     nodes: FileTreeNode[]
     activePath?: string
     gitChangesMap?: Map<string, GitFileChangeStatus>
     level?: number
+    expandedPaths?: ReadonlySet<string>
   }>(),
   {
     level: 0,
     gitChangesMap: () => new Map(),
+    expandedPaths: undefined,
   },
 )
 
@@ -19,22 +24,28 @@ const emit = defineEmits<{
   select: [path: string]
   dragstart: [event: DragEvent, path: string]
   loadChildren: [node: FileTreeNode]
+  toggle: [path: string]
 }>()
 
-const expanded = ref<Set<string>>(new Set())
+const localExpanded = ref<Set<string>>(new Set())
+const expanded = computed<ReadonlySet<string>>(() => props.expandedPaths ?? localExpanded.value)
 
 function isExpanded(path: string): boolean {
   return expanded.value.has(path)
 }
 
 function toggleExpand(path: string) {
-  const next = new Set(expanded.value)
+  if (props.expandedPaths) {
+    emit('toggle', path)
+    return
+  }
+  const next = new Set(localExpanded.value)
   if (next.has(path)) {
     next.delete(path)
   } else {
     next.add(path)
   }
-  expanded.value = next
+  localExpanded.value = next
 }
 
 function onNodeClick(node: FileTreeNode) {
@@ -60,12 +71,13 @@ function onDragStart(event: DragEvent, path: string) {
   emit('dragstart', event, path)
 }
 
-export type FileKind = 'folder' | 'markdown' | 'image' | 'code' | 'config' | 'file'
+export type FileKind = 'folder' | 'markdown' | 'diagram' | 'image' | 'code' | 'config' | 'file'
 
 function getFileKind(name: string, isDir: boolean): FileKind {
   if (isDir) return 'folder'
   const ext = name.split('.').pop()?.toLowerCase() || ''
   if (ext === 'md' || ext === 'markdown') return 'markdown'
+  if (['puml', 'plantuml', 'pu', 'uml'].includes(ext)) return 'diagram'
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext)) return 'image'
   if (['ts', 'js', 'vue', 'go', 'rs', 'py', 'java', 'c', 'cpp', 'sh'].includes(ext)) return 'code'
   if (['json', 'yaml', 'yml', 'toml'].includes(ext)) return 'config'
@@ -141,6 +153,13 @@ defineExpose({
               <path d="M5 6v4l2-2 2 2V6" />
             </svg>
           </template>
+          <template v-else-if="getFileKind(node.name, node.isDir) === 'diagram'">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="1.5" y="2" width="5" height="4" rx="0.8" />
+              <rect x="9.5" y="10" width="5" height="4" rx="0.8" />
+              <path d="M6.5 4h2.5a1 1 0 0 1 1 1v5" />
+            </svg>
+          </template>
           <template v-else-if="getFileKind(node.name, node.isDir) === 'image'">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
               <rect x="2" y="2" width="12" height="12" rx="1" />
@@ -214,9 +233,11 @@ defineExpose({
         :active-path="props.activePath"
         :git-changes-map="props.gitChangesMap"
         :level="props.level + 1"
+        :expanded-paths="expanded"
         @select="(p) => emit('select', p)"
         @dragstart="(e, p) => emit('dragstart', e, p)"
         @load-children="(n) => emit('loadChildren', n)"
+        @toggle="toggleExpand"
       />
     </li>
   </ul>

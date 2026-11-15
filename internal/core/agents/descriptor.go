@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -72,6 +73,10 @@ type BackendDescriptor struct {
 	// takes precedence over Tone, so a backend can keep a precise identity
 	// colour without the UI hard-coding backend ids.
 	Color string
+	// Icon is the optional SVG logo served to the workbench in place of the
+	// short name. Nil means the backend has no logo and the UI falls back to
+	// ShortName. The bytes are embedded by the adapter package.
+	Icon []byte
 }
 
 // brandColorPattern is the only colour syntax a descriptor may declare. Keeping
@@ -100,6 +105,9 @@ func NewCatalog(descriptors ...BackendDescriptor) (*Catalog, error) {
 		}
 		if d.Color != "" && !brandColorPattern.MatchString(d.Color) {
 			return nil, fmt.Errorf("%w: backend %q has invalid colour %q", ErrCatalogEntry, d.ID, d.Color)
+		}
+		if len(d.Icon) > 0 && !bytes.Contains(d.Icon, []byte("<svg")) {
+			return nil, fmt.Errorf("%w: backend %q icon is not an SVG document", ErrCatalogEntry, d.ID)
 		}
 		if _, exists := c.byID[d.ID]; exists {
 			return nil, fmt.Errorf("%w: duplicate backend %q", ErrCatalogEntry, d.ID)

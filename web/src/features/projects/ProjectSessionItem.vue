@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Compact session item component inside the project tree.
-// Row 1: Logo (simplified agent short logo) + running indicator + session title.
+// Row 1: Agent logo (official icon, or short name) + running indicator + session title.
 // Row 2: Model tag on the left, right-aligned time tag and reserved delete button on the right.
 import { computed } from 'vue'
 import type { AgentSession } from '../../api/sessions'
-import { useAgentsStore } from '../../stores/agents'
 import { useSessionsStore } from '../../stores/sessions'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
 
 const props = withDefaults(
@@ -25,21 +25,7 @@ const emit = defineEmits<{
   delete: [sessionId: string]
 }>()
 
-const agentsStore = useAgentsStore()
 const sessionsStore = useSessionsStore()
-
-const logo = computed(() => agentsStore.backendShortName(props.session.backend))
-const declaredColor = computed(() => agentsStore.backendColor(props.session.backend))
-const declaredTone = computed(() => agentsStore.backendTone(props.session.backend))
-
-const logoTone = computed(() => {
-  if (declaredTone.value) return `tone-${declaredTone.value}`
-  return 'tone-neutral'
-})
-
-const logoStyle = computed<Record<string, string>>((): Record<string, string> =>
-  declaredColor.value ? { '--logo-base': declaredColor.value } : {},
-)
 
 const untitledLabel = '未命名会话'
 const isRunning = computed(() => props.session.turn === 'running')
@@ -104,14 +90,7 @@ const modelLabel = computed(() => {
   >
     <!-- Row 1: Logo + Title -->
     <div class="session-row-top flex items-center gap-1.5 mb-0.5 min-w-0">
-      <span
-        class="agent-logo"
-        :class="declaredColor ? 'has-color' : logoTone"
-        :style="logoStyle"
-        :data-test="`agent-logo-${session.backend}`"
-      >
-        {{ logo }}
-      </span>
+      <BackendIcon :backend="session.backend" />
       <RunningIndicator v-if="isRunning" />
       <span
         class="title truncate text-sm font-medium text-platform-text flex-1"
@@ -179,51 +158,3 @@ const modelLabel = computed(() => {
     </div>
   </div>
 </template>
-
-<style scoped>
-.agent-logo {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: var(--text-size-10);
-  font-weight: 700;
-  line-height: 1;
-  padding: 1.5px 3.5px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.agent-logo.has-color {
-  --logo-base: var(--color-info);
-  --logo-color: var(--logo-base);
-  --logo-surface: color-mix(in srgb, var(--logo-base) 14%, var(--color-surface, #fff));
-  background: var(--logo-surface);
-  color: var(--logo-color);
-  border: 1px solid color-mix(in srgb, var(--logo-base) 25%, transparent);
-}
-
-:global([data-theme='dark'] .agent-logo.has-color) {
-  --logo-color: color-mix(in srgb, var(--logo-base) 75%, var(--color-text, #fff));
-  --logo-surface: color-mix(in srgb, var(--logo-base) 22%, var(--color-surface, #1e293b));
-  border-color: color-mix(in srgb, var(--logo-base) 35%, transparent);
-}
-
-.agent-logo.tone-primary,
-.agent-logo.tone-info {
-  background: var(--color-info-soft, rgba(59, 130, 246, 0.12));
-  color: var(--color-info, #2563eb);
-}
-
-.agent-logo.tone-secondary {
-  background: var(--color-warning-soft, rgba(245, 158, 11, 0.12));
-  color: var(--color-warning, #d97706);
-}
-
-.agent-logo.tone-neutral {
-  background: var(--color-surface-muted, #f1f5f9);
-  color: var(--color-text-muted, #64748b);
-}
-</style>

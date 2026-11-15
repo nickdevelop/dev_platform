@@ -20,6 +20,7 @@ import (
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/agent-backends", s.handleBackends)
 	r.GET("/agent-backends/diagnostics", s.handleDiagnostics)
+	r.GET("/agent-backends/:backend/icon", s.handleBackendIcon)
 
 	r.GET("/projects/:id/sessions", s.handleList)
 	r.POST("/projects/:id/sessions", s.handleCreate)
@@ -170,6 +171,22 @@ func validateImages(images []agents.ImageAttachment) error {
 // capabilities so the workbench can hide unsupported controls.
 func (s *Service) handleBackends(c *gin.Context) {
 	c.JSON(http.StatusOK, backendListResponse{Backends: s.Backends()})
+}
+
+// handleBackendIcon serves a backend's SVG logo. The document is the one the
+// adapter embedded, so it is served with a sandboxing policy: as an image it
+// can never run script, and the browser must not sniff it into another type.
+// A backend without a logo answers 404 and the workbench shows its short name.
+func (s *Service) handleBackendIcon(c *gin.Context) {
+	descriptor, ok := s.catalog.Get(agents.BackendID(c.Param("backend")))
+	if !ok || len(descriptor.Icon) == 0 {
+		respondError(c, http.StatusNotFound, "icon_not_found")
+		return
+	}
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cache-Control", "private, max-age=86400")
+	c.Data(http.StatusOK, "image/svg+xml; charset=utf-8", descriptor.Icon)
 }
 
 // handleDiagnostics returns the per-backend startup diagnostics (executable,

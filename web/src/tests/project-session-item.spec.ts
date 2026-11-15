@@ -67,7 +67,7 @@ describe('ProjectSessionItem', () => {
     ]
   })
 
-  it('renders Row 1 with simplified agent logo and session title', () => {
+  it('renders Row 1 with the agent icon and session title', () => {
     const session = mockSession({ backend: 'opencode-v2', title: 'Feature Login' })
     const wrapper = mount(ProjectSessionItem, {
       props: { session },
@@ -76,26 +76,33 @@ describe('ProjectSessionItem', () => {
     const topRow = wrapper.find('.session-row-top')
     expect(topRow.exists()).toBe(true)
 
-    // Logo shows "OC" for OpenCode with brand color style
+    // The official OpenCode logo replaces the short name.
     const logo = topRow.find('.agent-logo')
-    expect(logo.text()).toBe('OC')
-    expect(logo.attributes('style')).toContain('--logo-base: #10B981')
+    expect(logo.find('img').attributes('src')).toBe('/api/agent-backends/opencode-v2/icon')
+    expect(logo.text()).toBe('')
 
     // Title
     expect(topRow.find('.title').text()).toBe('Feature Login')
     expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
   })
 
-  it('renders DS logo for DeepSeek and PI logo for Pi Agent', () => {
+  it('falls back to the DS chip for DeepSeek when it declares no logo', () => {
     const dsWrapper = mount(ProjectSessionItem, {
       props: { session: mockSession({ backend: 'deepseek' }) },
     })
+    expect(dsWrapper.find('.agent-logo img').exists()).toBe(false)
     expect(dsWrapper.find('.agent-logo').text()).toBe('DS')
     expect(dsWrapper.find('.agent-logo').attributes('style')).toContain('--logo-base: #1E40AF')
+  })
 
+  it('shows the PI icon for Pi Agent and the short name when the logo fails to load', async () => {
     const piWrapper = mount(ProjectSessionItem, {
       props: { session: mockSession({ backend: 'pi' }) },
     })
+    expect(piWrapper.find('.agent-logo img').attributes('src')).toBe('/api/agent-backends/pi/icon')
+
+    await piWrapper.find('.agent-logo img').trigger('error')
+    expect(piWrapper.find('.agent-logo img').exists()).toBe(false)
     expect(piWrapper.find('.agent-logo').text()).toBe('PI')
     expect(piWrapper.find('.agent-logo').attributes('style')).toContain('--logo-base: #F97316')
   })

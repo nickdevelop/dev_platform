@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { useFileTreeStateStore } from '../stores/fileTreeState'
 import { getDirectory, isExternalUrl, resolveRelativePath } from '../features/files/pathUtils'
 import FileTree from '../features/files/FileTree.vue'
 import FileSidebar from '../features/files/FileSidebar.vue'
@@ -158,6 +160,55 @@ describe('FileTree.vue', () => {
 })
 
 describe('FileSidebar.vue', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('keeps a session\'s expansions and tab across a remount, and isolates sessions', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockImplementation(async (_pid, path) => {
+      if (!path) return [{ name: 'src', path: 'src', isDir: true }]
+      return [{ name: 'index.ts', path: 'src/index.ts', isDir: false }]
+    })
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+
+    const first = mount(FileSidebar, { props: { projectId: 1, sessionId: 'ses-keep' } })
+    await vi.waitFor(() => expect(first.text()).toContain('src'))
+    await first.findAll('.file-tree-row').find((r) => r.text().includes('src'))!.trigger('click')
+    await flushPromises()
+    expect(first.text()).toContain('index.ts')
+    await first.findAll('.sidebar-tab').find((b) => b.text().includes('变更'))!.trigger('click')
+    first.unmount()
+
+    const remounted = mount(FileSidebar, { props: { projectId: 1, sessionId: 'ses-keep' } })
+    await flushPromises()
+    expect(remounted.findAll('.sidebar-tab').find((b) => b.text().includes('变更'))!.classes()).toContain('is-active')
+    await remounted.findAll('.sidebar-tab').find((b) => b.text().includes('所有文件'))!.trigger('click')
+    await vi.waitFor(() => expect(remounted.text()).toContain('index.ts'))
+
+    const other = mount(FileSidebar, { props: { projectId: 1, sessionId: 'ses-other' } })
+    await vi.waitFor(() => expect(other.text()).toContain('src'))
+    expect(other.text()).not.toContain('index.ts')
+    expect(other.findAll('.sidebar-tab').find((b) => b.text().includes('变更'))!.classes()).not.toContain('is-active')
+  })
+
+  it('releases the remembered tree of a session whose tab is closed', () => {
+    const store = useFileTreeStateStore()
+    store.save('ses-a', {
+      activeTab: 'all',
+      searchQuery: '',
+      selectedCommit: '',
+      expandedTreePaths: ['src'],
+      expandedChangeDirs: [],
+      isStagedGroupExpanded: true,
+      isUnstagedGroupExpanded: true,
+    })
+    store.save('ses-b', { ...store.snapshotOf('ses-a')!, expandedTreePaths: [] })
+    store.retainOnly(['ses-b'])
+    expect(store.snapshotOf('ses-a')).toBeUndefined()
+    expect(store.snapshotOf('ses-b')).toBeDefined()
+  })
+
   it('loads children on demand when a directory is expanded in lazy loading mode', async () => {
     const getFileTreeSpy = vi.spyOn(filesApi, 'getFileTree').mockImplementation(async (_pid, path) => {
       if (!path) {

@@ -13,6 +13,7 @@ func TestCatalogRejectsInvalidEntries(t *testing.T) {
 		"empty id":     {{Binary: "x"}},
 		"bad color":    {{ID: BackendPi, Binary: "pi", Color: "red"}},
 		"css color":    {{ID: BackendPi, Binary: "pi", Color: "#fff; position: fixed"}},
+		"non-svg icon": {{ID: BackendPi, Binary: "pi", Icon: []byte("<html></html>")}},
 	}
 	for name, descriptors := range cases {
 		if _, err := NewCatalog(descriptors...); !errors.Is(err, ErrCatalogEntry) {
