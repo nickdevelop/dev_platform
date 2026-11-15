@@ -861,8 +861,6 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 		events = append(events, event)
 	}
 
-	events = FilterDeliverableEvents(events)
-
 	if !options.IncludeImages {
 		s.lazyHistoryImages(projectID, sessionID, events, adapter)
 	}
@@ -1188,8 +1186,7 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 			}
 		} else {
 			watermark = resumeFrom
-			deliverableReplay := FilterDeliverableEvents(replay)
-			for _, ev := range deliverableReplay {
+			for _, ev := range replay {
 				if !matchesSession(row, ev) {
 					continue
 				}
@@ -1248,7 +1245,6 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 	queue := make(chan streamItem, s.streamBuffer)
 	queue <- streamItem{event: s.turnSnapshotEvent(row), join: true}
 	var slow atomic.Bool
-	liveFilter := newEventDeliverFilter()
 	go func() {
 		defer close(queue)
 		for {
@@ -1266,11 +1262,6 @@ func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID s
 					// Already written from the replay buffer.
 					continue
 				}
-				filteredEv, ok := liveFilter.Filter(ev)
-				if !ok {
-					continue
-				}
-				ev = filteredEv
 				if ev.SessionID != "" {
 					ev.SessionID = row.ID
 				}
@@ -1503,7 +1494,7 @@ func matchesSession(row database.AgentSession, ev agents.NormalizedEvent) bool {
 func isSessionStrictEvent(eventType agents.EventType) bool {
 	switch eventType {
 	case agents.EventInteraction, agents.EventTurn, agents.EventMessage,
-		agents.EventThinking, agents.EventToolCall, agents.EventToolResult:
+		agents.EventToolCall, agents.EventToolResult:
 		return true
 	default:
 		return false

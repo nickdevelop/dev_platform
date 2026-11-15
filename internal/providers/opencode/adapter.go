@@ -276,6 +276,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		sessionModels: make(map[string]agents.MessageModel),
 		toolCalls:     make(map[string]toolCallInfo),
 		turns:         make(map[string]string),
+		gate:          agents.NewDeliveryGate(),
 	}
 
 	a.mu.Lock()
@@ -514,6 +515,9 @@ type instance struct {
 	toolCalls     map[string]toolCallInfo
 	turns         map[string]string
 	turnSeq       uint64
+	// gate is owned by the stream pump, which is the only normalization path
+	// for live events; it survives reconnects so question results still pair.
+	gate *agents.DeliveryGate
 }
 
 func (inst *instance) ensureRunning() error {

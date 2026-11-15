@@ -272,6 +272,7 @@ func (a *Adapter) StartInstance(ctx context.Context, request agents.StartInstanc
 		now:       a.now,
 		done:      make(chan struct{}),
 		subs:      make(map[*subscriber]struct{}),
+		gate:      agents.NewDeliveryGate(),
 	}
 
 	a.mu.Lock()

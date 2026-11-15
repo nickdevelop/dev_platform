@@ -1,7 +1,6 @@
 package agy
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -53,11 +52,8 @@ func TestEventNormalizer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize tool active: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != agents.EventToolCall {
-		t.Fatalf("expected 1 tool call event, got %+v", events)
-	}
-	if events[0].ToolCall.Name != "run_command" || events[0].ToolCall.CallID != "call-2" {
-		t.Errorf("unexpected tool call: %+v", events[0].ToolCall)
+	if len(events) != 0 {
+		t.Fatalf("expected the ordinary tool call to be dropped, got %+v", events)
 	}
 
 	// 4. Test tool call done
@@ -66,11 +62,8 @@ func TestEventNormalizer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize tool done: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != agents.EventToolResult {
-		t.Fatalf("expected 1 tool result event, got %+v", events)
-	}
-	if events[0].ToolResult.CallID != "call-2" || events[0].ToolResult.Output != "Thu Nov 12 10:00:00 UTC 2026" || events[0].ToolResult.IsError {
-		t.Errorf("unexpected tool result: %+v", events[0].ToolResult)
+	if len(events) != 0 {
+		t.Fatalf("expected the ordinary tool result to be dropped, got %+v", events)
 	}
 
 	// 5. Test tool call error
@@ -79,11 +72,8 @@ func TestEventNormalizer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize tool error: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != agents.EventToolResult {
-		t.Fatalf("expected 1 tool result event, got %+v", events)
-	}
-	if !events[0].ToolResult.IsError || events[0].ToolResult.Output != "not found" {
-		t.Errorf("unexpected error tool result: %+v", events[0].ToolResult)
+	if len(events) != 0 {
+		t.Fatalf("expected the failed tool result to be dropped, got %+v", events)
 	}
 
 	// 6. Test result event
@@ -112,11 +102,7 @@ func TestEventNormalizer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize unknown: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != agents.EventUnknown {
-		t.Fatalf("expected 1 unknown event, got %+v", events)
-	}
-	var rawData map[string]any
-	if err := json.Unmarshal(events[0].Raw, &rawData); err != nil || rawData["event"] != "custom_alien_event" {
-		t.Errorf("unknown raw payload not preserved: %s", events[0].Raw)
+	if len(events) != 0 {
+		t.Fatalf("expected the unknown event to be dropped, got %+v", events)
 	}
 }

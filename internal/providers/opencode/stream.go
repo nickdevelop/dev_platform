@@ -274,6 +274,9 @@ func (inst *instance) pump(stream *EventStream, inflight *atomic.Bool) (int, err
 		}
 		events++
 		for _, normalized := range inst.normalize(event) {
+			if !inst.gate.Admit(normalized) {
+				continue
+			}
 			// Latch while a publish is in progress so the idle watchdog can
 			// tell downstream backpressure from a silent server.
 			inflight.Store(true)

@@ -264,7 +264,7 @@ func transcriptToEvents(records []TranscriptRecord) []agents.NormalizedEvent {
 		event.Sequence = uint64(index + 1)
 		events = append(events, event)
 	}
-	return events
+	return agents.NewDeliveryGate().AdmitAll(events)
 }
 
 // builtinHistoryImages parses the payload of one user record. Image ids are

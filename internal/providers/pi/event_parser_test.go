@@ -101,30 +101,25 @@ func TestParserNonStreamedAssistantKeepsText(t *testing.T) {
 	}
 }
 
-// TestParserToolEvents checks tool execution records map onto the typed tool
-// payloads.
+// TestParserToolEvents pins that ordinary tool execution records never leave
+// the parser, while a question tool's call and result still do.
 func TestParserToolEvents(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"tool_execution_start","toolCallId":"call-1","toolName":"bash","args":{"command":"ls"}}`,
 		`{"type":"tool_execution_end","toolCallId":"call-1","toolName":"bash","result":{"content":[{"type":"text","text":"file.go"}]},"isError":false}`,
+		`{"type":"tool_execution_start","toolCallId":"call-q","toolName":"ask_user_question","args":{"questions":[]}}`,
+		`{"type":"tool_execution_end","toolCallId":"call-q","toolName":"ask_user_question","result":{"content":[{"type":"text","text":"answered"}]},"isError":false}`,
 	}, "\n") + "\n"
 
 	got := collect(t, input)
 	if len(got) != 2 {
-		t.Fatalf("got %d events, want 2: %+v", len(got), got)
+		t.Fatalf("got %d events, want 2 (question call and result only): %v", len(got), eventTypes(got))
 	}
-	if got[0].Type != agents.EventToolCall || got[0].ToolCall == nil {
-		t.Fatalf("event[0] = %+v, want tool call", got[0])
+	if got[0].Type != agents.EventToolCall || got[0].ToolCall.CallID != "call-q" {
+		t.Errorf("event[0] = %+v, want the question tool call", got[0])
 	}
-	if got[0].ToolCall.CallID != "call-1" || got[0].ToolCall.Name != "bash" ||
-		string(got[0].ToolCall.Input) != `{"command":"ls"}` {
-		t.Errorf("tool call = %+v, want call-1/bash/{\"command\":\"ls\"}", got[0].ToolCall)
-	}
-	if got[1].Type != agents.EventToolResult || got[1].ToolResult == nil {
-		t.Fatalf("event[1] = %+v, want tool result", got[1])
-	}
-	if got[1].ToolResult.CallID != "call-1" || got[1].ToolResult.Output != "file.go" || got[1].ToolResult.IsError {
-		t.Errorf("tool result = %+v, want the raw tool output", got[1].ToolResult)
+	if got[1].Type != agents.EventToolResult || got[1].ToolResult.CallID != "call-q" || got[1].ToolResult.Output != "answered" {
+		t.Errorf("event[1] = %+v, want the question tool result", got[1])
 	}
 }
 
@@ -155,25 +150,13 @@ func TestParserMalformedAndPartialLines(t *testing.T) {
 	}
 }
 
-// TestParserUnknownEventPreserved pins that an unrecognized event kind keeps
-// its original bytes so nothing the backend reports is dropped.
-func TestParserUnknownEventPreserved(t *testing.T) {
+// TestParserUnknownEventDropped pins that an unrecognized event kind never
+// reaches the platform: the delivery gate removes unknown events at parse time.
+func TestParserUnknownEventDropped(t *testing.T) {
 	original := `{"type":"future_event","payload":{"a":1}}`
 	got := collect(t, original+"\n")
-	if len(got) != 1 {
-		t.Fatalf("got %d events, want 1: %+v", len(got), got)
-	}
-	if got[0].Type != agents.EventUnknown {
-		t.Fatalf("event type = %q, want unknown", got[0].Type)
-	}
-	if string(got[0].Raw) != original {
-		t.Errorf("raw = %s, want %s", got[0].Raw, original)
-	}
-	if got[0].SessionID != "sess-1" {
-		t.Errorf("SessionID = %q, want sess-1", got[0].SessionID)
-	}
-	if err := got[0].Validate(); err != nil {
-		t.Errorf("unknown event does not satisfy the contract: %v", err)
+	if len(got) != 0 {
+		t.Fatalf("got %d events, want 0: %+v", len(got), got)
 	}
 }
 
@@ -244,9 +227,8 @@ func TestParserEndOfStream(t *testing.T) {
 	}
 }
 
-// TestParserStreamsThinking checks that reasoning is carried as its own event
-// kind: deltas arrive non-final, and the block is closed by an empty final
-// terminator, exactly like a streamed assistant message.
+// TestParserStreamsThinking pins that reasoning deltas and their terminator
+// are dropped while the assistant message still closes normally.
 func TestParserStreamsThinking(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"session","version":3,"id":"sess-1","cwd":"/data/projects/demo"}`,
@@ -258,40 +240,22 @@ func TestParserStreamsThinking(t *testing.T) {
 	}, "\n") + "\n"
 
 	got := collect(t, input)
-	if len(got) != 5 {
-		t.Fatalf("got %d events, want 5 (lifecycle, two deltas, terminator, message): %+v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2 (lifecycle, message): %v", len(got), eventTypes(got))
 	}
-	for i, want := range map[int]string{1: "让我", 2: "想想"} {
-		event := got[i]
-		if event.Type != agents.EventThinking || event.Thinking == nil {
-			t.Fatalf("event[%d] = %+v, want a thinking event", i, event)
-		}
-		if event.Thinking.Text != want || event.Thinking.Final {
-			t.Errorf("event[%d] thinking = %+v, want a non-final chunk %q", i, event.Thinking, want)
-		}
-		if event.SessionID != "sess-1" {
-			t.Errorf("event[%d].SessionID = %q, want sess-1", i, event.SessionID)
-		}
-		if err := event.Validate(); err != nil {
-			t.Errorf("event[%d] does not validate: %v", i, err)
+	for _, event := range got {
+		if event.Type == agents.EventThinking {
+			t.Fatalf("thinking event delivered: %+v", event)
 		}
 	}
-
-	terminator := got[3]
-	if terminator.Type != agents.EventThinking || terminator.Thinking == nil ||
-		terminator.Thinking.Text != "" || !terminator.Thinking.Final {
-		t.Errorf("event[3] = %+v, want an empty final thinking terminator (deltas already carried the text)", terminator)
-	}
-
-	// The assistant message must still close normally alongside the reasoning.
-	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "好" {
-		t.Errorf("event[4] = %+v, want the assistant message", got[4])
+	if got[1].Type != agents.EventMessage || got[1].Message == nil || got[1].Message.Text != "好" {
+		t.Errorf("event[1] = %+v, want the assistant message", got[1])
 	}
 }
 
-// TestParserClosesDanglingThinking pins robustness: a turn that ends without a
-// thinking_end must not leave a streaming block open in the workbench.
-func TestParserClosesDanglingThinking(t *testing.T) {
+// TestParserDanglingThinkingDoesNotBlockMessage pins that a turn ending while
+// reasoning is open still delivers its reply and no reasoning terminator.
+func TestParserDanglingThinkingDoesNotBlockMessage(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"session","version":3,"id":"sess-1","cwd":"/data/projects/demo"}`,
 		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"半截"}}`,
@@ -299,14 +263,11 @@ func TestParserClosesDanglingThinking(t *testing.T) {
 	}, "\n") + "\n"
 
 	got := collect(t, input)
-	if len(got) != 4 {
-		t.Fatalf("got %d events, want 4 (lifecycle, delta, thinking terminator, message): %+v", len(got), got)
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2 (lifecycle, message): %v", len(got), eventTypes(got))
 	}
-	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || !got[2].Thinking.Final {
-		t.Errorf("event[2] = %+v, want a final thinking terminator before the message", got[2])
-	}
-	if got[3].Type != agents.EventMessage {
-		t.Errorf("event[3] = %+v, want the assistant message", got[3])
+	if got[1].Type != agents.EventMessage || got[1].Message == nil || got[1].Message.Text != "好" {
+		t.Errorf("event[1] = %+v, want the assistant message", got[1])
 	}
 }
 
@@ -378,11 +339,10 @@ func TestParserToolResultMessageIsNotChat(t *testing.T) {
 	}
 }
 
-// TestParserThinkingEndCarriesContentWhenNotStreamed covers providers that
-// report reasoning without streaming deltas: thinking_end's content is the
-// authoritative block text, so it must arrive as one final thinking event
-// instead of an empty terminator that leaves the workbench with a blank block.
-func TestParserThinkingEndCarriesContentWhenNotStreamed(t *testing.T) {
+// TestParserThinkingWithoutDeltasIsDropped pins that reasoning reported only as
+// thinking_end content, with no streamed deltas, is not delivered; the reply
+// still arrives.
+func TestParserThinkingWithoutDeltasIsDropped(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"session","version":3,"id":"sess-1","cwd":"/tmp"}`,
 		`{"type":"message_update","usage":{},"assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}`,
@@ -391,15 +351,11 @@ func TestParserThinkingEndCarriesContentWhenNotStreamed(t *testing.T) {
 	}, "\n") + "\n"
 
 	got := collect(t, input)
-	if len(got) != 3 {
-		t.Fatalf("got %d events, want 3 (lifecycle, final thinking, message): %v", len(got), eventTypes(got))
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2 (lifecycle, message): %v", len(got), eventTypes(got))
 	}
-	if got[1].Type != agents.EventThinking || got[1].Thinking == nil ||
-		!got[1].Thinking.Final || got[1].Thinking.Text != "完整推理" {
-		t.Errorf("event[1] = %+v, want final thinking carrying the authoritative content", got[1])
-	}
-	if got[2].Type != agents.EventMessage || got[2].Message == nil || got[2].Message.Text != "好" {
-		t.Errorf("event[2] = %+v, want the assistant message", got[2])
+	if got[1].Type != agents.EventMessage || got[1].Message == nil || got[1].Message.Text != "好" {
+		t.Errorf("event[1] = %+v, want the assistant message", got[1])
 	}
 }
 
@@ -464,31 +420,16 @@ func TestParserTurnBoundaries(t *testing.T) {
 	}
 }
 
-// TestParserEditResultCarriesFileDiffMetadata pins the live edit metadata:
-// the start record's arguments supply the file path and the end record's
-// details supply the unified patch and counts.
-func TestParserEditResultCarriesFileDiffMetadata(t *testing.T) {
+// TestParserEditResultIsNotDelivered pins that an ordinary edit tool's result,
+// including its file diff metadata, is removed by the delivery gate.
+func TestParserEditResultIsNotDelivered(t *testing.T) {
 	input := strings.Join([]string{
 		`{"type":"tool_execution_start","toolCallId":"call-edit","toolName":"edit","args":{"path":"foo.ts"}}`,
 		`{"type":"tool_execution_end","toolCallId":"call-edit","toolName":"edit","result":{"content":[{"type":"text","text":"ok"}],"details":{"patch":"--- a/foo.ts\n+++ b/foo.ts\n@@ -1 +1 @@\n-a\n+b\n"}},"isError":false}`,
 	}, "\n") + "\n"
 
 	events := collect(t, input)
-	var result *agents.NormalizedEvent
-	for i := range events {
-		if events[i].Type == agents.EventToolResult {
-			result = &events[i]
-		}
-	}
-	if result == nil || result.ToolResult == nil {
-		t.Fatalf("events = %+v, want a tool result", events)
-	}
-	meta := agents.ParseToolResultMetadata(result.ToolResult.Metadata)
-	if meta == nil || meta.FirstChangedFile() == nil {
-		t.Fatalf("metadata = %s, want a file diff", result.ToolResult.Metadata)
-	}
-	diff := meta.FirstChangedFile()
-	if diff.File != "foo.ts" || diff.Additions != 1 || diff.Deletions != 1 || diff.Patch == "" {
-		t.Fatalf("diff = %+v, want foo.ts +1/-1 with patch", diff)
+	if len(events) != 0 {
+		t.Fatalf("events = %v, want none for an ordinary edit tool", eventTypes(events))
 	}
 }

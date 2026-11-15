@@ -262,8 +262,8 @@ func TestAdapterStreamsNormalizedEvents(t *testing.T) {
 			sawToolResult = true
 		}
 	}
-	if !sawDelta || !sawToolCall || !sawToolResult {
-		t.Errorf("missed events: delta=%v toolCall=%v toolResult=%v in %+v", sawDelta, sawToolCall, sawToolResult, got)
+	if !sawDelta || sawToolCall || sawToolResult {
+		t.Errorf("events: delta=%v toolCall=%v toolResult=%v, want delta and no ordinary tool events, in %+v", sawDelta, sawToolCall, sawToolResult, got)
 	}
 	if !sawModel {
 		t.Errorf("assistant message was not stamped with model")

@@ -17,6 +17,7 @@ type SessionEventNormalizer struct {
 	currentContextWindow *int
 	currentModel         *agents.MessageModel
 	sequence             uint64
+	gate                 *agents.DeliveryGate
 }
 
 // NewSessionEventNormalizer creates a normalizer for a given instance and session.
@@ -24,6 +25,7 @@ func NewSessionEventNormalizer(instanceID, sessionID string) *SessionEventNormal
 	return &SessionEventNormalizer{
 		instanceID: instanceID,
 		sessionID:  sessionID,
+		gate:       agents.NewDeliveryGate(),
 	}
 }
 
@@ -46,8 +48,13 @@ func (n *SessionEventNormalizer) CurrentModel() *agents.MessageModel {
 	return &copy
 }
 
-// NormalizeFrame parses one incoming JSON frame from session/follow into zero or more NormalizedEvents.
+// NormalizeFrame parses one incoming JSON frame from session/follow into the
+// events the delivery gate admits from it.
 func (n *SessionEventNormalizer) NormalizeFrame(data []byte) []agents.NormalizedEvent {
+	return n.gate.AdmitAll(n.normalizeFrame(data))
+}
+
+func (n *SessionEventNormalizer) normalizeFrame(data []byte) []agents.NormalizedEvent {
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil
@@ -461,8 +468,13 @@ func intValue(v any) int {
 	return 0
 }
 
-// NormalizeProjection converts a projection update from session/control into zero or more NormalizedEvents.
+// NormalizeProjection converts a projection update from session/control into the
+// events the delivery gate admits from it.
 func (n *SessionEventNormalizer) NormalizeProjection(key string, val any) []agents.NormalizedEvent {
+	return n.gate.AdmitAll(n.normalizeProjection(key, val))
+}
+
+func (n *SessionEventNormalizer) normalizeProjection(key string, val any) []agents.NormalizedEvent {
 	if key != "contextPressure" {
 		return nil
 	}

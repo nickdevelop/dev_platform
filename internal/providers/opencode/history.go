@@ -21,11 +21,10 @@ var _ agents.HistoryImageReader = (*Adapter)(nil)
 // ListHistory reads a session's native message log and translates it into the
 // platform's normalized events.
 //
-// The translation mirrors the live stream: reasoning, replies and tool activity
-// all become their own event kinds in both, so a replayed conversation looks
-// like the one the user watched. Returned events leave InstanceID and
-// SessionID empty — the request names an instance-free scope — and are marked
-// Replayed.
+// The translation mirrors the live stream: both pass every event through the
+// delivery gate, so a replayed conversation carries the same deliverable events
+// the user watched. Returned events leave InstanceID and SessionID empty — the
+// request names an instance-free scope — and are marked Replayed.
 func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryRequest) (agents.HistoryResult, error) {
 	if err := ctx.Err(); err != nil {
 		return agents.HistoryResult{}, err
@@ -44,8 +43,9 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 	}
 
 	events := make([]agents.NormalizedEvent, 0, len(messages))
+	gate := agents.NewDeliveryGate()
 	for _, message := range messages {
-		events = append(events, normalizeHistoryMessage(message)...)
+		events = append(events, gate.AdmitAll(normalizeHistoryMessage(message))...)
 	}
 	return agents.PageHistory(events, request.Limit, request.Before)
 }

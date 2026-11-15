@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -88,6 +89,33 @@ func toolFrames(events []agents.NormalizedEvent) []string {
 	return frames
 }
 
+// storedToolFrames flattens a session's stored tool records into the same
+// labels, in transcript order. The transcript is what the model context is
+// rebuilt from, so call/result ordering and pairing are asserted there.
+func storedToolFrames(t *testing.T, adapter *Adapter, sessionID string) []string {
+	t.Helper()
+	records, err := adapter.store.Load(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	var frames []string
+	for _, record := range records {
+		switch record.Kind {
+		case TranscriptToolCall:
+			var payload toolCallRecord
+			if err := json.Unmarshal(record.Payload, &payload); err == nil {
+				frames = append(frames, "call:"+payload.CallID)
+			}
+		case TranscriptToolResult:
+			var payload toolResultRecord
+			if err := json.Unmarshal(record.Payload, &payload); err == nil {
+				frames = append(frames, "result:"+payload.CallID)
+			}
+		}
+	}
+	return frames
+}
+
 func TestMultipleToolCallsKeepAdjacentOrder(t *testing.T) {
 	workDir := t.TempDir()
 	_ = os.WriteFile(filepath.Join(workDir, "a.txt"), []byte("AAA"), 0o644)
@@ -108,9 +136,12 @@ func TestMultipleToolCallsKeepAdjacentOrder(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	events := drainUntilTurnEnd(t, h.stream)
-	got := toolFrames(events)
+	if live := toolFrames(events); len(live) != 0 {
+		t.Fatalf("ordinary tool frames reached the stream: %v", live)
+	}
+	got := storedToolFrames(t, h.adapter, h.ref.SessionID)
 	// Each announced call must be answered before the next one is announced:
-	// otherwise the workbench shows a card stuck on "running".
+	// otherwise the model context carries a call with no result.
 	wantCalls := map[string]bool{"call-1": true, "call-2": true}
 	if len(got) != 4 {
 		t.Fatalf("tool frames = %v, want 2 calls and 2 results", got)
@@ -144,17 +175,8 @@ func TestMultipleToolCallsKeepAdjacentOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHistory: %v", err)
 	}
-	replayed := toolFrames(history.Events)
-	if len(replayed) != 4 {
-		t.Fatalf("history tool frames = %v, want 2 calls and 2 results with no duplicate", replayed)
-	}
-	for i := 0; i < len(replayed); i += 2 {
-		if !strings.HasPrefix(replayed[i], "call:") || !strings.HasPrefix(replayed[i+1], "result:") {
-			t.Fatalf("history tool frames = %v, want call/result pairs", replayed)
-		}
-		if replayed[i][5:] != replayed[i+1][7:] {
-			t.Fatalf("history tool frames = %v, %q answers %q", replayed, replayed[i+1], replayed[i])
-		}
+	if replayed := toolFrames(history.Events); len(replayed) != 0 {
+		t.Fatalf("history tool frames = %v, want none", replayed)
 	}
 }
 
@@ -177,27 +199,20 @@ func TestToolCallWithoutIDKeepsHistoryPairing(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	drainUntilTurnEnd(t, h.stream)
-	history, err := h.adapter.ListHistory(context.Background(), agents.ListHistoryRequest{Directory: workDir, SessionID: h.ref.SessionID})
-	if err != nil {
-		t.Fatalf("ListHistory: %v", err)
-	}
-	calls := map[string]bool{}
-	results := map[string]bool{}
-	for _, event := range history.Events {
-		if event.Type == agents.EventToolCall {
-			calls[event.ToolCall.CallID] = true
-		}
-		if event.Type == agents.EventToolResult {
-			results[event.ToolResult.CallID] = true
+	var calls, results []string
+	for _, frame := range storedToolFrames(t, h.adapter, h.ref.SessionID) {
+		kind, id, _ := strings.Cut(frame, ":")
+		if kind == "call" {
+			calls = append(calls, id)
+		} else {
+			results = append(results, id)
 		}
 	}
 	if len(calls) != 1 || len(results) != 1 {
-		t.Fatalf("history calls=%v results=%v, want exactly one of each", calls, results)
+		t.Fatalf("stored calls=%v results=%v, want exactly one of each", calls, results)
 	}
-	for id := range calls {
-		if id == "" || !results[id] {
-			t.Fatalf("history calls=%v results=%v, want one non-empty shared id", calls, results)
-		}
+	if calls[0] == "" || results[0] != calls[0] {
+		t.Fatalf("stored calls=%v results=%v, want one non-empty shared id", calls, results)
 	}
 }
 
@@ -222,7 +237,6 @@ func TestInterruptAnswersAnnouncedToolCall(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	announced := false
-	result := ""
 	deadline := time.After(5 * time.Second)
 	for !announced {
 		select {
@@ -237,27 +251,11 @@ func TestInterruptAnswersAnnouncedToolCall(t *testing.T) {
 	if err := h.adapter.Interrupt(context.Background(), h.ref); err != nil {
 		t.Fatalf("Interrupt: %v", err)
 	}
-	for {
-		select {
-		case event, ok := <-h.stream:
-			if !ok {
-				if result == "" {
-					t.Fatal("interrupted call was never answered by a tool result")
-				}
-				return
-			}
-			if event.Type == agents.EventToolResult {
-				result = event.ToolResult.Output
-			}
-			if event.Type == agents.EventTurn && event.Turn.Phase == agents.TurnEnded {
-				if result == "" {
-					t.Fatal("interrupted call was never answered by a tool result")
-				}
-				return
-			}
-		case <-deadline:
-			t.Fatalf("turn did not end after interrupt (result %q)", result)
-		}
+	drainUntilTurnEnd(t, h.stream)
+	frames := storedToolFrames(t, h.adapter, h.ref.SessionID)
+	if len(frames) != 2 || !strings.HasPrefix(frames[0], "call:") ||
+		frames[1] != "result:"+strings.TrimPrefix(frames[0], "call:") {
+		t.Fatalf("stored tool frames = %v, want the interrupted call answered", frames)
 	}
 }
 
@@ -327,33 +325,12 @@ func TestLegacyTranscriptDuplicatesReplayCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListHistory: %v", err)
 	}
-	frames := toolFrames(history.Events)
-	if len(frames) != 4 {
-		t.Fatalf("history tool frames = %v, want the duplicate calls collapsed", frames)
-	}
-	// Legacy transcripts batch the calls of one step before their results, so
-	// the pairs cannot be re-interleaved without inventing order. What must
-	// hold is that every call appears once and every call has its result.
-	calls := map[string]bool{}
-	results := map[string]bool{}
-	for _, frame := range frames {
-		switch {
-		case strings.HasPrefix(frame, "call:"):
-			id := strings.TrimPrefix(frame, "call:")
-			if calls[id] {
-				t.Fatalf("history tool frames = %v, call %q repeated", frames, id)
-			}
-			calls[id] = true
-		case strings.HasPrefix(frame, "result:"):
-			results[strings.TrimPrefix(frame, "result:")] = true
-		}
-	}
-	for id := range calls {
-		if !results[id] {
-			t.Fatalf("history tool frames = %v, call %q has no result", frames, id)
-		}
+	if frames := toolFrames(history.Events); len(frames) != 0 {
+		t.Fatalf("history tool frames = %v, want none", frames)
 	}
 
+	// Legacy transcripts must still rebuild a valid model context: every call
+	// is paired with its result even when the duplicate records are present.
 	assertToolCallsPaired(t, renderHistoryMessages(legacy, ModelEndpoint{ModelID: "m"}))
 }
 
@@ -440,10 +417,10 @@ func TestStreamedTextPrecedesItsToolCalls(t *testing.T) {
 			callAt = index
 		}
 	}
-	if textAt < 0 || callAt < 0 {
-		t.Fatalf("stream lacks a text chunk (%d) or a tool call (%d)", textAt, callAt)
+	if textAt < 0 {
+		t.Fatalf("stream lacks the assistant text chunk")
 	}
-	if textAt > callAt {
-		t.Fatalf("text chunk arrived at %d, after the tool call at %d", textAt, callAt)
+	if callAt >= 0 {
+		t.Fatalf("ordinary tool call reached the stream at %d", callAt)
 	}
 }

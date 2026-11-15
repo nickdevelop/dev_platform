@@ -82,6 +82,9 @@ type parser struct {
 	// record, so an edit result can name the file it changed even when pi
 	// omits args on tool_execution_end.
 	toolArgs map[string]json.RawMessage
+	// gate admits only the events the workbench delivers. Events it rejects
+	// are dropped here, before they reach any subscriber or replay buffer.
+	gate *agents.DeliveryGate
 }
 
 func (p *parser) rememberToolArgs(callID string, args json.RawMessage) {
@@ -109,7 +112,7 @@ func newParser(instanceID, sessionID string, now func() time.Time) *parser {
 	if now == nil {
 		now = func() time.Time { return time.Now().UTC() }
 	}
-	return &parser{instanceID: instanceID, sessionID: sessionID, now: now}
+	return &parser{instanceID: instanceID, sessionID: sessionID, now: now, gate: agents.NewDeliveryGate()}
 }
 
 // run reads stdout to EOF, emitting one or more normalized events per record.
@@ -192,7 +195,9 @@ func (p *parser) parseLine(line []byte, emit func(agents.NormalizedEvent)) {
 		return
 	}
 	for _, normalized := range p.normalize(&event, record) {
-		emit(normalized)
+		if p.gate.Admit(normalized) {
+			emit(normalized)
+		}
 	}
 }
 
@@ -246,10 +251,9 @@ type piMessage struct {
 }
 
 // normalize maps one parsed pi record onto the normalized event union. Records
-// the adapter does not model are preserved as EventUnknown (with their raw
-// bytes) rather than dropped; a curated set of agent/turn lifecycle records
-// becomes EventLifecycle; embedded provider sub-events the union cannot express
-// are preserved as unknown alongside the typed events that pi already emits.
+// the adapter does not model come out as EventUnknown and a curated set of
+// agent/turn lifecycle records becomes EventLifecycle; the delivery gate in
+// parseLine decides which of them the platform keeps.
 func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent {
 	switch event.Type {
 	case "session":
@@ -314,8 +318,8 @@ func (p *parser) normalize(event *piEvent, raw []byte) []agents.NormalizedEvent 
 			return []agents.NormalizedEvent{p.errorEvent("provider", redactSecrets(firstNonEmpty(update.Error, update.Reason)))}
 		}
 		// toolcall_* snapshots, start and done are either redundant with the
-		// typed tool_execution_* records or have no normalized payload; keep
-		// them as bounded raw metadata.
+		// typed tool_execution_* records or have no normalized payload; they
+		// surface as unknown and the delivery gate drops them.
 		return []agents.NormalizedEvent{p.unknown(raw)}
 
 	case "message_end":

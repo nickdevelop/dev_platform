@@ -365,5 +365,5 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 		})
 	}
 
-	return events, nil
+	return agents.NewDeliveryGate().AdmitAll(events), nil
 }

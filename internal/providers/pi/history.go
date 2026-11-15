@@ -177,6 +177,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 	events := make([]agents.NormalizedEvent, 0, 16)
 	var currentModel *agents.MessageModel
 	toolArgs := make(map[string]json.RawMessage)
+	gate := agents.NewDeliveryGate()
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
@@ -195,7 +196,7 @@ func (a *Adapter) readHistory(ctx context.Context, path string) ([]agents.Normal
 				Provider: record.Provider,
 			}
 		}
-		events = append(events, normalizeHistoryRecord(record, currentModel, toolArgs)...)
+		events = append(events, gate.AdmitAll(normalizeHistoryRecord(record, currentModel, toolArgs))...)
 	}
 	if err := scanner.Err(); err != nil {
 		// An unreadable or oversized record ended the read before the end.

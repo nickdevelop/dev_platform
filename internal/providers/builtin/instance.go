@@ -26,6 +26,8 @@ type instance struct {
 	seq     uint64
 	turnSeq uint64
 	subs    map[*subscriber]struct{}
+	// gate admits events under mu, so a rejected event takes no sequence.
+	gate *agents.DeliveryGate
 }
 
 // ensureRunning reports whether the instance can accept work.
@@ -89,7 +91,7 @@ func (inst *instance) removeSubscriber(sub *subscriber) {
 // in turn applies backpressure to the turn loop.
 func (inst *instance) publish(event agents.NormalizedEvent) {
 	inst.mu.Lock()
-	if inst.closed {
+	if inst.closed || !inst.gate.Admit(event) {
 		inst.mu.Unlock()
 		return
 	}

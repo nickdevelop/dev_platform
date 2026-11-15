@@ -2,7 +2,6 @@ package pi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -54,10 +53,9 @@ func listHistory(t *testing.T, adapter *Adapter, request agents.ListHistoryReque
 	return result
 }
 
-// TestListHistoryMapsPiTranscript pins the whole translation: which records
-// become events, in what order, with which payloads, and which are skipped.
-// The skipped records (system preamble, thinking) are the ones that would make
-// a replayed conversation look different from the live one.
+// TestListHistoryMapsPiTranscript pins the translation: which records become
+// events, in what order, with which payloads. Reasoning and ordinary tool
+// records are removed by the delivery gate, so only the conversation remains.
 func TestListHistoryMapsPiTranscript(t *testing.T) {
 	dir := t.TempDir()
 	sessionRoot := t.TempDir()
@@ -66,8 +64,8 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
 	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID}).Events
-	if len(events) != 5 {
-		t.Fatalf("ListHistory() returned %d events, want 5 (user, reasoning, assistant text, tool call, tool result): %+v", len(events), events)
+	if len(events) != 2 {
+		t.Fatalf("ListHistory() returned %d events, want 2 (user, assistant text): %+v", len(events), events)
 	}
 
 	user := events[0]
@@ -76,38 +74,13 @@ func TestListHistoryMapsPiTranscript(t *testing.T) {
 		t.Errorf("events[0] = %+v, want a final user message", user)
 	}
 
-	reasoning := events[1]
-	if reasoning.Type != agents.EventThinking || reasoning.Thinking == nil ||
-		reasoning.Thinking.Text != "这段推理必须被跳过" || !reasoning.Thinking.Final {
-		t.Errorf("events[1] = %+v, want the replayed reasoning block", reasoning)
-	}
-
-	assistant := events[2]
+	assistant := events[1]
 	if assistant.Type != agents.EventMessage || assistant.Message == nil ||
 		assistant.Message.Role != "assistant" || assistant.Message.Text != "历史里的助手回复" || !assistant.Message.Final {
-		t.Errorf("events[2] = %+v, want a final assistant message", assistant)
+		t.Errorf("events[1] = %+v, want a final assistant message", assistant)
 	}
 	if assistant.Message.Model == nil || assistant.Message.Model.ID != "acme/acme-code" || assistant.Message.Model.Provider != "acme" {
 		t.Errorf("assistant model = %+v, want acme/acme-code (acme)", assistant.Message.Model)
-	}
-
-	call := events[3]
-	if call.Type != agents.EventToolCall || call.ToolCall == nil ||
-		call.ToolCall.CallID != "call_1" || call.ToolCall.Name != "bash" {
-		t.Fatalf("events[3] = %+v, want the bash tool call", call)
-	}
-	var input map[string]string
-	if err := json.Unmarshal(call.ToolCall.Input, &input); err != nil {
-		t.Fatalf("tool call input %s is not the fixture arguments: %v", call.ToolCall.Input, err)
-	}
-	if input["command"] != "ls -la" {
-		t.Errorf("tool call input = %v, want the fixture command", input)
-	}
-
-	result := events[4]
-	if result.Type != agents.EventToolResult || result.ToolResult == nil ||
-		result.ToolResult.CallID != "call_1" || !strings.Contains(result.ToolResult.Output, "历史里的工具输出") || !result.ToolResult.IsError {
-		t.Errorf("events[4] = %+v, want a failed tool result with the raw output for call_1", result)
 	}
 
 	for i, event := range events {
@@ -298,10 +271,9 @@ func TestListHistoryPreservesMultiPartModel(t *testing.T) {
 	}
 }
 
-// TestListHistoryCarriesEditFileDiffMetadata pins the replayed edit metadata:
-// pi persists the tool result's details, and history pairs them with the
-// tool call's arguments to render the same diff as the live stream.
-func TestListHistoryCarriesEditFileDiffMetadata(t *testing.T) {
+// TestListHistoryDropsEditToolRecords pins that replayed ordinary tool activity,
+// including edit diffs, is removed by the delivery gate like the live stream.
+func TestListHistoryDropsEditToolRecords(t *testing.T) {
 	dir := t.TempDir()
 	sessionRoot := t.TempDir()
 	const sessionID = "sess-edit-1"
@@ -315,21 +287,7 @@ func TestListHistoryCarriesEditFileDiffMetadata(t *testing.T) {
 
 	adapter := New(Options{Executable: "pi", SessionDir: sessionRoot})
 	events := listHistory(t, adapter, agents.ListHistoryRequest{Directory: dir, SessionID: sessionID}).Events
-	var result *agents.NormalizedEvent
-	for i := range events {
-		if events[i].Type == agents.EventToolResult {
-			result = &events[i]
-		}
-	}
-	if result == nil || result.ToolResult == nil {
-		t.Fatalf("events = %+v, want a tool result", events)
-	}
-	meta := agents.ParseToolResultMetadata(result.ToolResult.Metadata)
-	if meta == nil || meta.FirstChangedFile() == nil {
-		t.Fatalf("metadata = %s, want a file diff", result.ToolResult.Metadata)
-	}
-	diff := meta.FirstChangedFile()
-	if diff.File != "foo.ts" || diff.Additions != 1 || diff.Deletions != 1 || diff.Patch == "" {
-		t.Fatalf("diff = %+v, want foo.ts +1/-1 with patch", diff)
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want none for an ordinary edit tool", events)
 	}
 }

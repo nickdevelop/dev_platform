@@ -54,8 +54,8 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 1 || evs[0].Type != agents.EventThinking || evs[0].Thinking.Text != "I think..." {
-		t.Fatalf("reasoning-delta mismatch: %+v", evs)
+	if len(evs) != 0 {
+		t.Fatalf("reasoning-delta must be dropped by the delivery gate, got %+v", evs)
 	}
 
 	// 4. tool/call
@@ -70,8 +70,8 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 1 || evs[0].Type != agents.EventToolCall || evs[0].ToolCall.CallID != "call-1" || evs[0].ToolCall.Name != "read" {
-		t.Fatalf("tool/call mismatch: %+v", evs)
+	if len(evs) != 0 {
+		t.Fatalf("ordinary tool/call must be dropped by the delivery gate, got %+v", evs)
 	}
 
 	// 5. tool/result
@@ -88,8 +88,8 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 1 || evs[0].Type != agents.EventToolResult || evs[0].ToolResult.CallID != "call-1" || evs[0].ToolResult.Output != "package main" {
-		t.Fatalf("tool/result mismatch: %+v", evs)
+	if len(evs) != 0 {
+		t.Fatalf("ordinary tool/result must be dropped by the delivery gate, got %+v", evs)
 	}
 
 	// 6. token usage and content (assistant/message)
@@ -114,19 +114,16 @@ func TestEventNormalization(t *testing.T) {
 			}
 		}
 	}`))
-	if len(evs) != 3 {
-		t.Fatalf("assistant/message expected 3 events (thinking, message, lifecycle), got %d: %+v", len(evs), evs)
+	if len(evs) != 2 {
+		t.Fatalf("assistant/message expected 2 events (message, lifecycle), got %d: %+v", len(evs), evs)
 	}
-	if evs[0].Type != agents.EventThinking || evs[0].Thinking.Text != "Analyzing the codebase..." {
-		t.Errorf("thinking event mismatch: %+v", evs[0])
+	if evs[0].Type != agents.EventMessage || evs[0].Message.Role != "assistant" || evs[0].Message.Text != "Here is the result." {
+		t.Errorf("assistant message event mismatch: %+v", evs[0])
 	}
-	if evs[1].Type != agents.EventMessage || evs[1].Message.Role != "assistant" || evs[1].Message.Text != "Here is the result." {
-		t.Errorf("assistant message event mismatch: %+v", evs[1])
+	if evs[1].Type != agents.EventLifecycle || evs[1].Lifecycle.Usage == nil {
+		t.Fatalf("usage mismatch: %+v", evs[1])
 	}
-	if evs[2].Type != agents.EventLifecycle || evs[2].Lifecycle.Usage == nil {
-		t.Fatalf("usage mismatch: %+v", evs[2])
-	}
-	u := evs[2].Lifecycle.Usage
+	u := evs[1].Lifecycle.Usage
 	if u.Input != 100 || u.Output != 50 || u.CacheRead != 20 || u.CacheWrite != 5 {
 		t.Errorf("usage values mismatch: %+v", u)
 	}

@@ -35,7 +35,6 @@ type busSessionSub struct {
 	nativeSessionID string
 	instanceID      string
 	backend         agents.BackendID
-	filter          *eventDeliverFilter
 	// replayWatermark is the highest sequence a SubscribeSession replay
 	// delivered for this session. Live forwarding skips events at or below
 	// it so the ring replay is the sole delivery of that range — otherwise
@@ -276,7 +275,6 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 		nativeSessionID: row.NativeSessionID,
 		instanceID:      row.InstanceID,
 		backend:         agents.BackendID(row.Backend),
-		filter:          newEventDeliverFilter(),
 	}
 	instSub.sessions[row.ID] = sub
 	bus.sessions[row.ID] = sub
@@ -303,8 +301,7 @@ func (m *EventBusManager) SubscribeSession(ctx context.Context, uuid string, pro
 				})
 			}
 		} else {
-			deliverableReplay := FilterDeliverableEvents(replay)
-			for _, ev := range deliverableReplay {
+			for _, ev := range replay {
 				if !matchesSessionRow(sub, ev) {
 					continue
 				}
@@ -403,13 +400,6 @@ func (b *ClientBus) forwardInstanceEvents(ctx context.Context, instanceID string
 					continue
 				}
 				if matchesSessionRow(sub, ev) {
-					if sub.filter != nil {
-						filteredEv, ok := sub.filter.Filter(ev)
-						if !ok {
-							continue
-						}
-						ev = filteredEv
-					}
 					cloned := ev
 					if cloned.SessionID != "" {
 						cloned.SessionID = sub.sessionID

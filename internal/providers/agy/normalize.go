@@ -84,6 +84,7 @@ type EventNormalizer struct {
 	currentTurnID string
 	turnActive    bool
 	activeCalls   map[int]string // stepIndex -> toolName
+	gate          *agents.DeliveryGate
 }
 
 // NewEventNormalizer creates a normalizer for one agy session stream.
@@ -97,6 +98,7 @@ func NewEventNormalizer(instanceID, sessionID string, now func() time.Time) *Eve
 		backend:     agents.BackendAgy,
 		now:         now,
 		activeCalls: make(map[int]string),
+		gate:        agents.NewDeliveryGate(),
 	}
 }
 
@@ -125,8 +127,14 @@ func (n *EventNormalizer) SessionID() string {
 	return n.sessionID
 }
 
-// Normalize parses one raw JSON line from agy stdout and returns zero or more NormalizedEvents.
+// Normalize parses one raw JSON line from agy stdout and returns the events the
+// delivery gate admits from it.
 func (n *EventNormalizer) Normalize(line []byte) ([]agents.NormalizedEvent, error) {
+	events, err := n.normalize(line)
+	return n.gate.AdmitAll(events), err
+}
+
+func (n *EventNormalizer) normalize(line []byte) ([]agents.NormalizedEvent, error) {
 	trimmed := strings.TrimSpace(string(line))
 	if trimmed == "" {
 		return nil, nil

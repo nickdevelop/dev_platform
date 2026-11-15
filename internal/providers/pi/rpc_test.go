@@ -102,8 +102,8 @@ func TestRPCSendMessageStreamsEvents(t *testing.T) {
 			sawToolResult = true
 		}
 	}
-	if !sawDelta || !sawToolCall || !sawToolResult {
-		t.Errorf("missed events: delta=%v toolCall=%v toolResult=%v", sawDelta, sawToolCall, sawToolResult)
+	if !sawDelta || sawToolCall || sawToolResult {
+		t.Errorf("events: delta=%v toolCall=%v toolResult=%v, want delta and no ordinary tool events", sawDelta, sawToolCall, sawToolResult)
 	}
 
 	rawArgs, err := os.ReadFile(argsLog)
@@ -822,8 +822,8 @@ func TestRPCFixtureHandshake(t *testing.T) {
 			sawSettled = true
 		}
 	}
-	if !sawUser || !sawDelta || !sawFinal || !sawToolCall || !sawToolResult || !sawSettled {
-		t.Errorf("fixture events: user=%v delta=%v final=%v toolCall=%v toolResult=%v settled=%v",
+	if !sawUser || !sawDelta || !sawFinal || sawToolCall || sawToolResult || !sawSettled {
+		t.Errorf("fixture events: user=%v delta=%v final=%v toolCall=%v toolResult=%v settled=%v, want no ordinary tool events",
 			sawUser, sawDelta, sawFinal, sawToolCall, sawToolResult, sawSettled)
 	}
 	for _, event := range events {

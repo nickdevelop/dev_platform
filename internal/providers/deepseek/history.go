@@ -140,7 +140,7 @@ func (a *Adapter) ListHistory(ctx context.Context, request agents.ListHistoryReq
 		frameBytes, _ := json.Marshal(frame)
 		evs := normalizer.NormalizeFrame(frameBytes)
 		for _, ev := range evs {
-			if ev.Type == agents.EventMessage || ev.Type == agents.EventThinking ||
+			if ev.Type == agents.EventMessage ||
 				ev.Type == agents.EventToolCall || ev.Type == agents.EventToolResult ||
 				(ev.Type == agents.EventLifecycle && (ev.Lifecycle.Usage != nil || ev.Lifecycle.ContextLimit != nil)) {
 				collectedEvents = append(collectedEvents, ev)

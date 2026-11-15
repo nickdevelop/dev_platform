@@ -105,7 +105,6 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 
 	var types []agents.EventType
 	var finalText string
-	var publishedToolOutput string
 	var turnEnded bool
 	deadline := time.After(5 * time.Second)
 	collecting := true
@@ -120,9 +119,6 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 				t.Fatalf("invalid event: %v", err)
 			}
 			types = append(types, event.Type)
-			if event.Type == agents.EventToolResult && event.ToolResult != nil {
-				publishedToolOutput = event.ToolResult.Output
-			}
 			if event.Type == agents.EventMessage && event.Message != nil && event.Message.Final && event.Message.Role == "assistant" {
 				finalText = event.Message.Text
 			}
@@ -137,9 +133,7 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 			collecting = false
 		}
 	}
-	for _, want := range []agents.EventType{
-		agents.EventMessage, agents.EventTurn, agents.EventToolCall, agents.EventToolResult,
-	} {
+	for _, want := range []agents.EventType{agents.EventMessage, agents.EventTurn} {
 		found := false
 		for _, got := range types {
 			if got == want {
@@ -148,6 +142,11 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("event stream misses %v; got %v", want, types)
+		}
+	}
+	for _, got := range types {
+		if got == agents.EventToolCall || got == agents.EventToolResult {
+			t.Fatalf("ordinary tool event reached the stream; got %v", types)
 		}
 	}
 	if !turnEnded || finalText != "完成" {
@@ -193,28 +192,27 @@ func TestFullTurnRunsToolsPersistsAndPublishes(t *testing.T) {
 		}
 	}
 
-	// SSE and history must expose the same raw tool result, not a summary.
-	history, err := adapter.ListHistory(context.Background(), agents.ListHistoryRequest{
-		Directory: workDir,
-		SessionID: ref.SessionID,
-	})
+	// The stored tool result is the raw output the model is fed back, not a
+	// summary, and it is what a later context rebuild reads.
+	var storedToolOutput string
+	records, err = adapter.store.Load(context.Background(), ref.SessionID)
 	if err != nil {
-		t.Fatalf("ListHistory: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
-	var replayedToolOutput string
-	for _, event := range history.Events {
-		if event.Type == agents.EventToolResult && event.ToolResult != nil {
-			replayedToolOutput = event.ToolResult.Output
+	for _, record := range records {
+		if record.Kind != TranscriptToolResult {
+			continue
+		}
+		var payload toolResultRecord
+		if err := json.Unmarshal(record.Payload, &payload); err == nil {
+			storedToolOutput = payload.Output
 		}
 	}
-	if publishedToolOutput == "" {
-		t.Fatal("no tool result reached the live stream")
+	if storedToolOutput == "" {
+		t.Fatal("no tool result was stored")
 	}
-	if replayedToolOutput != publishedToolOutput {
-		t.Fatalf("history tool output = %q, live = %q", replayedToolOutput, publishedToolOutput)
-	}
-	if !strings.Contains(publishedToolOutput, "Successfully wrote") {
-		t.Fatalf("tool output = %q, want the raw write_file output", publishedToolOutput)
+	if !strings.Contains(storedToolOutput, "Successfully wrote") {
+		t.Fatalf("tool output = %q, want the raw write_file output", storedToolOutput)
 	}
 }
 
@@ -279,22 +277,28 @@ func TestConfirmModeBlocksUntilPermissionReply(t *testing.T) {
 	}
 
 	events := drainUntilTurnEnd(t, stream)
-	if _, exists := eventOfKind(events, agents.EventToolResult); !exists {
-		t.Fatal("no tool result event after reject")
+	if _, exists := eventOfKind(events, agents.EventToolResult); exists {
+		t.Fatal("ordinary tool result reached the stream")
 	}
 	if _, err := os.Stat(filepath.Join(workDir, "notes.txt")); !os.IsNotExist(err) {
 		t.Fatal("rejected tool ran anyway")
 	}
+	records, err := adapter.store.Load(context.Background(), ref.SessionID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
 	var rejectionSummary string
-	for _, event := range events {
-		if event.Type == agents.EventToolResult && event.ToolResult != nil {
-			if strings.Contains(event.ToolResult.Output, "拒绝") || strings.Contains(event.ToolResult.Output, "拒绝") {
-				rejectionSummary = event.ToolResult.Output
-			}
+	for _, record := range records {
+		if record.Kind != TranscriptToolResult {
+			continue
+		}
+		var payload toolResultRecord
+		if json.Unmarshal(record.Payload, &payload) == nil && strings.Contains(payload.Output, "拒绝") {
+			rejectionSummary = payload.Output
 		}
 	}
 	if rejectionSummary == "" {
-		t.Fatalf("the rejection never reached the model-facing output: %+v", events)
+		t.Fatalf("the rejection never reached the model-facing output: %+v", records)
 	}
 
 	// An expired reply is a clean 409-style error.

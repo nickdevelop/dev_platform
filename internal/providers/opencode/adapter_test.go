@@ -574,7 +574,7 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	}
 	defer adapter.StopInstance(context.Background(), instance.ID)
 
-	got := collectEvents(t, ch, 9)
+	got := collectEvents(t, ch, 6)
 
 	// 1-3: a streamed assistant message: deltas then a final full-text
 	// snapshot.
@@ -595,27 +595,10 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	if got[4].Type != agents.EventMessage || !got[4].Message.Final || got[4].Message.Text != "complete" {
 		t.Fatalf("event 4 = %+v", got[4])
 	}
-	// 6-7: tool call carries the name seen earlier and the argument JSON.
-	if got[5].Type != agents.EventToolCall || got[5].ToolCall.CallID != "tool_1" || got[5].ToolCall.Name != "bash" {
+	// 6-8: the ordinary tool call, its result and the unmapped event are
+	// removed by the delivery gate; only the failure reaches the stream.
+	if got[5].Type != agents.EventError || got[5].Error.Code != "execution_failed" || !strings.Contains(got[5].Error.Message, "boom") {
 		t.Fatalf("event 5 = %+v", got[5])
-	}
-	if string(got[5].ToolCall.Input) != `{"cmd":"ls"}` {
-		t.Fatalf("tool input = %s", got[5].ToolCall.Input)
-	}
-	if got[6].Type != agents.EventToolResult || got[6].ToolResult.CallID != "tool_1" || got[6].ToolResult.Output != "ok" || got[6].ToolResult.IsError {
-		t.Fatalf("event 6 = %+v", got[6])
-	}
-	if meta := agents.ParseToolResultMetadata(got[6].ToolResult.Metadata); meta == nil || meta.FirstChangedFile() == nil ||
-		meta.FirstChangedFile().File != "foo.ts" || meta.FirstChangedFile().Additions != 1 {
-		t.Fatalf("event 6 metadata = %s, want foo.ts +1/-1", got[6].ToolResult.Metadata)
-	}
-	// 8: this execution never started in the stream, so its failure has no
-	// open turn to end and is reported as the error alone.
-	if got[7].Type != agents.EventError || got[7].Error.Code != "execution_failed" || !strings.Contains(got[7].Error.Message, "boom") {
-		t.Fatalf("event 7 = %+v", got[7])
-	}
-	if got[8].Type != agents.EventUnknown || len(got[8].Raw) == 0 {
-		t.Fatalf("event 8 = %+v", got[8])
 	}
 
 	// Envelope: platform backend, this instance, increasing sequence, stamps.
@@ -635,15 +618,16 @@ func TestAdapterSubscribeMapsNativeEvents(t *testing.T) {
 	}
 }
 
-// TestAdapterSubscribeCarriesLargeToolResult proves an opencode event past the
-// raw-blob bound survives the stream as a fully normalized tool result instead
-// of aborting the read with "token too long". A tool result's output is display
-// text and is not itself bounded, so a large one arrives whole and validates.
-func TestAdapterSubscribeCarriesLargeToolResult(t *testing.T) {
+// TestAdapterSubscribeDropsLargeToolResult proves an opencode event past the
+// raw-blob bound does not abort the read with "token too long": an ordinary
+// tool result is removed by the delivery gate, and the events after it still
+// arrive.
+func TestAdapterSubscribeDropsLargeToolResult(t *testing.T) {
 	output := strings.Repeat("y", agents.MaxRawEventBytes*2)
 	events := sseEvent("evt_big", "session.tool.success",
 		fmt.Sprintf(`{"sessionID":"ses_1","assistantMessageID":"msg_2","id":"tool_1","content":[{"type":"text","text":%q}],"executed":true}`, output),
-		"/x")
+		"/x") +
+		sseEvent("evt_after", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_3","ordinal":3,"text":"after"}`, "/x")
 
 	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
 		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
@@ -672,26 +656,22 @@ func TestAdapterSubscribeCarriesLargeToolResult(t *testing.T) {
 	}
 	defer adapter.StopInstance(context.Background(), instance.ID)
 
-	// collectEvents runs Validate on every event, so this also pins that the
-	// normalized result stays within the contract.
+	// collectEvents runs Validate on every event. The first delivered event
+	// is the sentinel: the large tool result was dropped and the stream went on.
 	got := collectEvents(t, ch, 1)
-	if got[0].Type != agents.EventToolResult || got[0].ToolResult == nil {
-		t.Fatalf("event = %+v", got[0])
-	}
-	// Tool output is raw: a large result arrives whole rather than summarized.
-	if got[0].ToolResult.Output != output {
-		t.Fatalf("tool output should be the raw backend text (len %d, got %d)", len(output), len(got[0].ToolResult.Output))
+	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != "after" {
+		t.Fatalf("event = %+v, want the sentinel message after the dropped tool result", got[0])
 	}
 }
 
-// TestAdapterSubscribeBoundsOversizedUnknownEvent proves an unmapped event whose
-// body exceeds the raw-blob bound is preserved with a trimmed Raw that still
-// validates, rather than carrying a body the contract rejects and the event
-// being dropped downstream.
-func TestAdapterSubscribeBoundsOversizedUnknownEvent(t *testing.T) {
+// TestAdapterSubscribeDropsOversizedUnknownEvent proves an unmapped event whose
+// body exceeds the raw-blob bound is removed at normalization, and the stream
+// keeps delivering the events after it.
+func TestAdapterSubscribeDropsOversizedUnknownEvent(t *testing.T) {
 	filler := strings.Repeat("z", agents.MaxRawEventBytes*2)
 	events := sseEvent("evt_mystery", "session.mystery",
-		fmt.Sprintf(`{"sessionID":"ses_1","foo":%q}`, filler), "/x")
+		fmt.Sprintf(`{"sessionID":"ses_1","foo":%q}`, filler), "/x") +
+		sseEvent("evt_after", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_3","ordinal":3,"text":"after"}`, "/x")
 
 	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
 		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
@@ -721,11 +701,8 @@ func TestAdapterSubscribeBoundsOversizedUnknownEvent(t *testing.T) {
 	defer adapter.StopInstance(context.Background(), instance.ID)
 
 	got := collectEvents(t, ch, 1)
-	if got[0].Type != agents.EventUnknown {
-		t.Fatalf("event type = %q, want unknown", got[0].Type)
-	}
-	if len(got[0].Raw) != agents.MaxRawEventBytes {
-		t.Fatalf("raw length = %d, want the bound %d", len(got[0].Raw), agents.MaxRawEventBytes)
+	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != "after" {
+		t.Fatalf("event = %+v, want the sentinel message after the dropped unknown event", got[0])
 	}
 }
 
@@ -1230,62 +1207,29 @@ func TestListHistoryMapsOpenCodeMessages(t *testing.T) {
 		t.Fatalf("ListHistory: %v", err)
 	}
 	events := result.Events
-	if len(events) != 7 {
-		t.Fatalf("ListHistory returned %d events, want 7: %+v", len(events), events)
+	if len(events) != 2 {
+		t.Fatalf("ListHistory returned %d events, want 2 (user, assistant text): %+v", len(events), events)
 	}
 
 	if events[0].Type != agents.EventMessage || events[0].Message == nil ||
 		events[0].Message.Role != "user" || events[0].Message.Text != "历史里的用户消息" || !events[0].Message.Final {
 		t.Errorf("events[0] = %+v, want the user message", events[0])
 	}
-	// The reasoning block arrives before the reply it belongs to.
-	if events[1].Type != agents.EventThinking || events[1].Thinking == nil ||
-		events[1].Thinking.Text != "这段推理必须被跳过" || !events[1].Thinking.Final {
-		t.Errorf("events[1] = %+v, want the replayed reasoning block", events[1])
-	}
-	if events[2].Type != agents.EventMessage || events[2].Message == nil ||
-		events[2].Message.Role != "assistant" || events[2].Message.Text != "历史里的助手回复" {
-		t.Errorf("events[2] = %+v, want the assistant message", events[2])
+	if events[1].Type != agents.EventMessage || events[1].Message == nil ||
+		events[1].Message.Role != "assistant" || events[1].Message.Text != "历史里的助手回复" {
+		t.Errorf("events[1] = %+v, want the assistant message", events[1])
 	}
 	// The replayed assistant message carries the model that produced it, in
 	// the platform's provider/model form.
-	if events[2].Message == nil || events[2].Message.Model == nil ||
-		events[2].Message.Model.ID != "acme/acme-code" ||
-		events[2].Message.Model.Provider != "acme" ||
-		events[2].Message.Model.Variant != "default" {
-		t.Errorf("events[2].Message.Model = %+v, want acme/acme-code (acme, default)", events[2].Message.Model)
+	if events[1].Message == nil || events[1].Message.Model == nil ||
+		events[1].Message.Model.ID != "acme/acme-code" ||
+		events[1].Message.Model.Provider != "acme" ||
+		events[1].Message.Model.Variant != "default" {
+		t.Errorf("events[1].Message.Model = %+v, want acme/acme-code (acme, default)", events[1].Message.Model)
 	}
 	// A user message never carries a model.
 	if events[0].Message != nil && events[0].Message.Model != nil {
 		t.Errorf("events[0].Message.Model = %+v, want none on a user message", events[0].Message.Model)
-	}
-	if events[3].Type != agents.EventToolCall || events[3].ToolCall == nil ||
-		events[3].ToolCall.CallID != "call_1" || events[3].ToolCall.Name != "execute" {
-		t.Fatalf("events[3] = %+v, want the first tool call", events[3])
-	}
-	var input map[string]string
-	if err := json.Unmarshal(events[3].ToolCall.Input, &input); err != nil || input["code"] != "ls -la" {
-		t.Errorf("first tool call input = %s, want the fixture state.input", events[3].ToolCall.Input)
-	}
-	if events[4].Type != agents.EventToolResult || events[4].ToolResult == nil ||
-		events[4].ToolResult.CallID != "call_1" || events[4].ToolResult.Output != "历史里的工具输出" || events[4].ToolResult.IsError {
-		t.Errorf("events[4] = %+v, want the completed tool result with its raw output", events[4])
-	}
-	if meta := agents.ParseToolResultMetadata(events[4].ToolResult.Metadata); meta == nil || meta.FirstChangedFile() == nil ||
-		meta.FirstChangedFile().File != "foo.ts" {
-		t.Errorf("events[4] metadata = %s, want foo.ts", events[4].ToolResult.Metadata)
-	}
-	if events[5].Type != agents.EventToolCall || events[5].ToolCall == nil || events[5].ToolCall.CallID != "call_2" {
-		t.Fatalf("events[5] = %+v, want the second tool call", events[5])
-	}
-	if events[6].Type != agents.EventToolResult || events[6].ToolResult == nil ||
-		events[6].ToolResult.CallID != "call_2" || !events[6].ToolResult.IsError {
-		t.Errorf("events[6] = %+v, want a failed tool result for call_2", events[6])
-	}
-	// A failed block without content falls back to its structured error so
-	// the replay never renders an empty result.
-	if events[6].ToolResult == nil || !strings.Contains(events[6].ToolResult.Output, "工具失败原因") {
-		t.Errorf("events[6] = %+v, want the structured error summary", events[6])
 	}
 
 	for i, event := range events {
@@ -1423,32 +1367,25 @@ func TestAdapterSubscribeStreamsReasoning(t *testing.T) {
 	}
 	defer adapter.StopInstance(context.Background(), instance.ID)
 
-	got := collectEvents(t, stream, 5)
+	// Reasoning is removed by the delivery gate: the first delivered event is
+	// the reply itself, streamed and then closed.
+	got := collectEvents(t, stream, 2)
 
-	for i, want := range map[int]string{0: "先看", 1: "再看"} {
-		event := got[i]
-		if event.Type != agents.EventThinking || event.Thinking == nil ||
-			event.Thinking.Text != want || event.Thinking.Final {
-			t.Errorf("event[%d] = %+v, want a non-final thinking chunk %q", i, event, want)
-		}
+	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != "答案" || got[0].Message.Final {
+		t.Errorf("event[0] = %+v, want the streamed text delta", got[0])
 	}
-	if got[2].Type != agents.EventThinking || got[2].Thinking == nil || got[2].Thinking.Text != "先看再看" || !got[2].Thinking.Final {
-		t.Errorf("event[2] = %+v, want the final full-text thinking snapshot", got[2])
-	}
-	if got[3].Type != agents.EventMessage || got[3].Message == nil || got[3].Message.Text != "答案" || got[3].Message.Final {
-		t.Errorf("event[3] = %+v, want the streamed text delta", got[3])
-	}
-	if got[4].Type != agents.EventMessage || got[4].Message == nil || got[4].Message.Text != "答案" || !got[4].Message.Final {
-		t.Errorf("event[4] = %+v, want the final full-text text snapshot", got[4])
+	if got[1].Type != agents.EventMessage || got[1].Message == nil || got[1].Message.Text != "答案" || !got[1].Message.Final {
+		t.Errorf("event[1] = %+v, want the final full-text text snapshot", got[1])
 	}
 }
 
-// TestAdapterSubscribeReportsReasoningWithoutDeltas pins the non-streaming
-// shape: a single ended event with text and no preceding delta is carried
-// whole rather than dropped.
-func TestAdapterSubscribeReportsReasoningWithoutDeltas(t *testing.T) {
+// TestAdapterSubscribeDropsReasoningWithoutDeltas pins that a non-streamed
+// reasoning block is removed by the delivery gate and does not stall the
+// stream: the reply after it still arrives.
+func TestAdapterSubscribeDropsReasoningWithoutDeltas(t *testing.T) {
 	events := sseEvent("evt_1", "session.reasoning.ended",
-		`{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","text":"完整推理"}`, "/x")
+		`{"sessionID":"ses_1","assistantMessageID":"msg_1","reasoningID":"rs_1","text":"完整推理"}`, "/x") +
+		sseEvent("evt_2", "session.text.ended", `{"sessionID":"ses_1","assistantMessageID":"msg_3","ordinal":3,"text":"after"}`, "/x")
 
 	adapter, _, _ := newAdapterWithServer(t, queueHandler(map[string]http.HandlerFunc{
 		"POST /api/session": func(w http.ResponseWriter, r *http.Request) {
@@ -1479,9 +1416,8 @@ func TestAdapterSubscribeReportsReasoningWithoutDeltas(t *testing.T) {
 
 	got := collectEvents(t, stream, 1)
 
-	if got[0].Type != agents.EventThinking || got[0].Thinking == nil ||
-		got[0].Thinking.Text != "完整推理" || !got[0].Thinking.Final {
-		t.Errorf("event[0] = %+v, want the whole reasoning block", got[0])
+	if got[0].Type != agents.EventMessage || got[0].Message == nil || got[0].Message.Text != "after" {
+		t.Errorf("event[0] = %+v, want the reply after the dropped reasoning block", got[0])
 	}
 }
 

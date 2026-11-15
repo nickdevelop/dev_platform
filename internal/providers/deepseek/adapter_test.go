@@ -422,17 +422,14 @@ func TestAdapterHistoryReader(t *testing.T) {
 		t.Fatalf("ListHistory failed: %v", err)
 	}
 
-	if len(res.Events) != 2 {
-		t.Fatalf("ListHistory returned %d events, want 2", len(res.Events))
+	if len(res.Events) != 1 {
+		t.Fatalf("ListHistory returned %d events, want 1 (the user message; the ordinary tool call is dropped)", len(res.Events))
 	}
 	if res.Events[0].Type != agents.EventMessage || res.Events[0].Message.Text != "hello from user" {
 		t.Errorf("event 0 mismatch: %+v", res.Events[0])
 	}
-	if res.Events[1].Type != agents.EventToolCall || res.Events[1].ToolCall.CallID != "call-read-1" {
-		t.Errorf("event 1 mismatch: %+v", res.Events[1])
-	}
-	if res.Events[0].Sequence != 1 || res.Events[1].Sequence != 2 {
-		t.Errorf("sequences = %d, %d, want 1, 2", res.Events[0].Sequence, res.Events[1].Sequence)
+	if res.Events[0].Sequence != 1 {
+		t.Errorf("sequence = %d, want 1", res.Events[0].Sequence)
 	}
 	if res.Events[0].InstanceID != "" || res.Events[0].SessionID != "" {
 		t.Errorf("InstanceID and SessionID must be empty in HistoryResult")

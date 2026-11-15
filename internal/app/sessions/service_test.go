@@ -1429,10 +1429,10 @@ func TestHistoryStampsEnvelopeAndReturnsEvents(t *testing.T) {
 	}
 }
 
-// TestHistoryFiltersThinkingAndGeneralTools verifies that the history API strips
-// thinking blocks and general tools (e.g. bash, edit) while keeping user/assistant
-// messages and interactive question tools with their results.
-func TestHistoryFiltersThinkingAndGeneralTools(t *testing.T) {
+// TestHistoryPassesAdmittedEventsThrough verifies that the history API keeps
+// every event an adapter admits, in order. Thinking and general tools never
+// reach this layer: the adapter's delivery gate removes them at normalization.
+func TestHistoryPassesAdmittedEventsThrough(t *testing.T) {
 	env := newTestEnv(t)
 	session := createNativeSession(t, env, "native-filter")
 	observed := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
@@ -1444,27 +1444,6 @@ func TestHistoryFiltersThinkingAndGeneralTools(t *testing.T) {
 			Timestamp: observed,
 			Replayed:  true,
 			Message:   &agents.MessagePayload{Role: "user", Text: "请执行测试并问我问题", Final: true},
-		},
-		{
-			Type:      agents.EventThinking,
-			Backend:   agents.BackendPi,
-			Timestamp: observed.Add(time.Second),
-			Replayed:  true,
-			Thinking:  &agents.ThinkingPayload{Text: "正在思考计划...", Final: true},
-		},
-		{
-			Type:      agents.EventToolCall,
-			Backend:   agents.BackendPi,
-			Timestamp: observed.Add(2 * time.Second),
-			Replayed:  true,
-			ToolCall:  &agents.ToolCallPayload{CallID: "bash-1", Name: "bash"},
-		},
-		{
-			Type:       agents.EventToolResult,
-			Backend:    agents.BackendPi,
-			Timestamp:  observed.Add(3 * time.Second),
-			Replayed:   true,
-			ToolResult: &agents.ToolResultPayload{CallID: "bash-1", Output: "PASS"},
 		},
 		{
 			Type:      agents.EventToolCall,
@@ -1498,8 +1477,8 @@ func TestHistoryFiltersThinkingAndGeneralTools(t *testing.T) {
 		t.Fatalf("History: %v", err)
 	}
 
-	// Thinking and general tools (bash) are filtered out, leaving 4 events:
-	// user message, question tool_call, question tool_result, assistant message.
+	// The admitted stream is 4 events: user message, question tool_call,
+	// question tool_result, assistant message.
 	if len(history.Events) != 4 {
 		t.Fatalf("History returned %d events, want 4. Got: %+v", len(history.Events), history.Events)
 	}

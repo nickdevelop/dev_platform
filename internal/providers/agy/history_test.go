@@ -26,15 +26,13 @@ func TestParseTranscriptFile(t *testing.T) {
 		t.Fatalf("parse transcript: %v", err)
 	}
 
-	// Expected:
+	// Expected (tool activity is removed by the delivery gate):
 	// TurnStarted
 	// User message ("hello world")
 	// Assistant message ("Hello back!")
-	// ToolCall ("date")
-	// ToolResult ("2026-11-12T07:10:22Z")
 	// TurnEnded
-	if len(events) != 6 {
-		t.Fatalf("expected 6 events, got %d: %+v", len(events), events)
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d: %+v", len(events), events)
 	}
 
 	if events[0].Type != agents.EventTurn || events[0].Turn.Phase != agents.TurnStarted {
@@ -46,14 +44,8 @@ func TestParseTranscriptFile(t *testing.T) {
 	if events[2].Type != agents.EventMessage || events[2].Message.Text != "Hello back!" {
 		t.Errorf("expected assistant message, got %+v", events[2])
 	}
-	if events[3].Type != agents.EventToolCall || events[3].ToolCall.Name != "date" {
-		t.Errorf("expected tool call 'date', got %+v", events[3])
-	}
-	if events[4].Type != agents.EventToolResult || events[4].ToolResult.Output != "2026-11-12T07:10:22Z" {
-		t.Errorf("expected tool result, got %+v", events[4])
-	}
-	if events[5].Type != agents.EventTurn || events[5].Turn.Phase != agents.TurnEnded {
-		t.Errorf("expected TurnEnded, got %+v", events[5])
+	if events[3].Type != agents.EventTurn || events[3].Turn.Phase != agents.TurnEnded {
+		t.Errorf("expected TurnEnded, got %+v", events[3])
 	}
 }
 
