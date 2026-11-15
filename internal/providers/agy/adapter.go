@@ -14,8 +14,9 @@ import (
 
 // Proof of contract implementations.
 var (
-	_ agents.AgentAdapter  = (*Adapter)(nil)
-	_ agents.HistoryReader = (*Adapter)(nil)
+	_ agents.AgentAdapter      = (*Adapter)(nil)
+	_ agents.HistoryReader     = (*Adapter)(nil)
+	_ agents.PermissionReplier = (*Adapter)(nil)
 )
 
 const (
@@ -45,7 +46,7 @@ type Options struct {
 	Env []string
 	// IdleTimeout configures how long an idle agy child stays running.
 	IdleTimeout time.Duration
-	// StartTimeout bounds the wait for agy's init line when a child starts.
+	// StartTimeout bounds the wait for agy's init when a child starts.
 	// Defaults to defaultStartTimeout.
 	StartTimeout time.Duration
 	// Now overrides the clock for deterministic testing.
@@ -56,7 +57,7 @@ type Options struct {
 	ListModelsOverride func(ctx context.Context, directory string) ([]agents.ModelInfo, error)
 }
 
-// Adapter implements agents.AgentAdapter for Google Antigravity CLI.
+// Adapter implements agents.AgentAdapter for Google Antigravity CLI via ACP.
 type Adapter struct {
 	executable         string
 	resolveExecutable  func() string
@@ -104,6 +105,9 @@ func New(options Options) *Adapter {
 	if a.executable == "" {
 		a.executable = "agy"
 	}
+	if a.idleTimeout <= 0 {
+		a.idleTimeout = 10 * time.Minute
+	}
 	if a.startTimeout <= 0 {
 		a.startTimeout = defaultStartTimeout
 	}
@@ -136,7 +140,7 @@ func (a *Adapter) permMode() string {
 	return PermissionModeAuto
 }
 
-// Capabilities declares agy's supported features.
+// Capabilities declares agy's supported features under ACP.
 func (a *Adapter) Capabilities() agents.Capabilities {
 	return agents.Capabilities{
 		Streaming:        true,
@@ -145,7 +149,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		Stop:             true,
 		ModelSelection:   true,
 		ToolCallEvents:   true,
-		ToolConfirmation: false,
+		ToolConfirmation: true,
 		Interrupt:        true,
 		SessionHistory:   true,
 	}
@@ -234,9 +238,6 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 
 	_ = EnsureWorkspaceTrusted(inst.directory)
 
-	// agy assigns the conversation id when the first turn starts. The session
-	// is registered as pending and bound in SendMessage, so creating it never
-	// waits on agy's startup or invents an id agy does not know.
 	id, err := a.newID()
 	if err != nil {
 		return nil, fmt.Errorf("agy: allocate session id: %w", err)
@@ -258,7 +259,7 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 	}, nil
 }
 
-// ContinueSession attaches to an existing session reference.
+// ContinueSession resumes an existing agy session.
 func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*agents.SessionRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -273,6 +274,8 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	if err := inst.ensureRunning(); err != nil {
 		return nil, err
 	}
+
+	_ = EnsureWorkspaceTrusted(inst.directory)
 
 	a.mu.Lock()
 	key := sessionKey{instanceID: ref.InstanceID, sessionID: ref.SessionID}
@@ -291,7 +294,42 @@ func (a *Adapter) ContinueSession(ctx context.Context, ref agents.SessionRef) (*
 	}, nil
 }
 
-// SendMessage delivers one user turn to the agy child process.
+// ResumeSession adopts an external session reference into the adapter's state.
+func (a *Adapter) ResumeSession(ctx context.Context, ref agents.SessionRef) (*agents.SessionRef, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	if err := inst.ensureRunning(); err != nil {
+		return nil, err
+	}
+
+	_ = EnsureWorkspaceTrusted(inst.directory)
+
+	a.mu.Lock()
+	key := sessionKey{instanceID: ref.InstanceID, sessionID: ref.SessionID}
+	state, ok := a.sessions[key]
+	if !ok {
+		state = &sessionState{title: ref.Title}
+		a.sessions[key] = state
+	}
+	a.mu.Unlock()
+
+	return &agents.SessionRef{
+		InstanceID: ref.InstanceID,
+		Backend:    agents.BackendAgy,
+		SessionID:  ref.SessionID,
+		Title:      state.title,
+	}, nil
+}
+
+// SendMessage delivers one user turn to the agy child process via ACP.
 func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, message agents.SendMessageRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -331,13 +369,10 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		}
 	}
 
-	return child.sendTurn(ctx, message.Text)
+	return child.sendTurn(ctx, message.Text, message.Model)
 }
 
-// openChild starts the child process serving a session. A pending session starts
-// a new conversation; the id agy reports is handed to bind before the child is
-// used, so the caller indexes it before any turn event carrying it is forwarded.
-// A native session resumes its own conversation.
+// openChild starts the child process serving a session.
 func (a *Adapter) openChild(inst *instance, sessionID, model string, bind func(nativeSessionID string) error) (*agyChild, error) {
 	inst.bindMu.Lock()
 	defer inst.bindMu.Unlock()
@@ -354,7 +389,7 @@ func (a *Adapter) openChild(inst *instance, sessionID, model string, bind func(n
 	}
 	child := newAgyChild(inst, resumeID, model, a.permMode(), a.idleTimeout, a.now)
 	startCtx, cancel := context.WithTimeout(inst.ctx, a.startTimeout)
-	err := child.start(startCtx, a.execPath(), a.env)
+	err := child.start(startCtx, a.execPath(), a.env, bind)
 	cancel()
 	if err != nil {
 		return nil, fmt.Errorf("agy: start child for session %q: %w", sessionID, err)
@@ -368,15 +403,7 @@ func (a *Adapter) openChild(inst *instance, sessionID, model string, bind func(n
 	native := child.sessionID
 	if native == "" {
 		_ = child.close()
-		return nil, fmt.Errorf("agy: start child for session %q: init reported no conversation id", sessionID)
-	}
-	if bind == nil {
-		_ = child.close()
-		return nil, fmt.Errorf("agy: session %q needs a native id binding", sessionID)
-	}
-	if err := bind(native); err != nil {
-		_ = child.close()
-		return nil, fmt.Errorf("agy: bind session %q: %w", sessionID, err)
+		return nil, fmt.Errorf("agy: start child for session %q: acp reported no session id", sessionID)
 	}
 
 	a.mu.Lock()
@@ -390,6 +417,54 @@ func (a *Adapter) openChild(inst *instance, sessionID, model string, bind func(n
 	inst.setAlias(key, native)
 	inst.setChild(native, child)
 	return child, nil
+}
+
+// ListPermissions returns pending tool approvals for the session.
+func (a *Adapter) ListPermissions(ctx context.Context, ref agents.SessionRef) ([]agents.PermissionRequest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return nil, err
+	}
+	child := inst.getChild(inst.resolve(ref.SessionID))
+	if child == nil {
+		return []agents.PermissionRequest{}, nil
+	}
+	return child.listPermissions(), nil
+}
+
+// ReplyPermission answers a pending confirmation for the session.
+func (a *Adapter) ReplyPermission(ctx context.Context, ref agents.SessionRef, requestID, decision, message string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := ref.Validate(); err != nil {
+		return err
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return err
+	}
+	child := inst.getChild(inst.resolve(ref.SessionID))
+	if child == nil {
+		return fmt.Errorf("%w: agy: no live session %q", agents.ErrReplyExpired, ref.SessionID)
+	}
+	return child.replyPermission(requestID, decision)
+}
+
+// ListForms returns pending question forms (none for agy).
+func (a *Adapter) ListForms(ctx context.Context, ref agents.SessionRef) ([]agents.FormInfo, error) {
+	return []agents.FormInfo{}, nil
+}
+
+// ReplyForm answers a pending question form (none for agy).
+func (a *Adapter) ReplyForm(ctx context.Context, ref agents.SessionRef, formID string, answer map[string]any) error {
+	return nil
 }
 
 // Subscribe returns the normalized event channel for the instance.
@@ -411,7 +486,7 @@ func (a *Adapter) Subscribe(ctx context.Context, instanceID string) (<-chan agen
 	return sub.out, nil
 }
 
-// Interrupt interrupts the running turn of a session.
+// Interrupt interrupts the running turn of a session via ACP cancel.
 func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 	if err := ctx.Err(); err != nil {
 		return err

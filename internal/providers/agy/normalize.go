@@ -7,9 +7,10 @@ import (
 	"time"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/providers/agy/acp"
 )
 
-// RawagyEvent is the top-level NDJSON event shape produced by `agy --output-format stream-json`.
+// RawagyEvent is the legacy NDJSON event shape produced by `agy --output-format stream-json`.
 type RawagyEvent struct {
 	Event          string          `json:"event"`
 	ConversationID string          `json:"conversation_id,omitempty"`
@@ -27,14 +28,14 @@ type RawInitPayload struct {
 
 // RawStepUpdate carries one step progress update from agy.
 type RawStepUpdate struct {
-	ConversationID string        `json:"conversation_id,omitempty"`
-	StepIndex      int           `json:"step_index"`
-	State          string        `json:"state"`     // "ACTIVE", "DONE", "ERROR"
-	StepType       string        `json:"step_type"` // "user_input", "system_message", "agent_response", "tool"
-	TextDelta      string        `json:"text_delta,omitempty"`
-	ToolName       string        `json:"tool_name,omitempty"`
-	ToolInfo       *RawToolInfo  `json:"tool_info,omitempty"`
-	DurationSec    float64       `json:"duration_seconds,omitempty"`
+	ConversationID string         `json:"conversation_id,omitempty"`
+	StepIndex      int            `json:"step_index"`
+	State          string         `json:"state"`     // "ACTIVE", "DONE", "ERROR"
+	StepType       string         `json:"step_type"` // "user_input", "system_message", "agent_response", "tool"
+	TextDelta      string         `json:"text_delta,omitempty"`
+	ToolName       string         `json:"tool_name,omitempty"`
+	ToolInfo       *RawToolInfo   `json:"tool_info,omitempty"`
+	DurationSec    float64        `json:"duration_seconds,omitempty"`
 	Usage          *RawTokenUsage `json:"usage,omitempty"`
 }
 
@@ -54,26 +55,26 @@ type RawToolError struct {
 
 // RawResult carries the outcome of a turn from agy.
 type RawResult struct {
-	ConversationID string        `json:"conversation_id"`
-	Status         string        `json:"status"` // "SUCCESS", "ERROR"
-	Response       string        `json:"response,omitempty"`
-	Error          string        `json:"error,omitempty"`
-	DurationSec    float64       `json:"duration_seconds,omitempty"`
-	NumTurns       int           `json:"num_turns,omitempty"`
+	ConversationID string         `json:"conversation_id"`
+	Status         string         `json:"status"` // "SUCCESS", "ERROR"
+	Response       string         `json:"response,omitempty"`
+	Error          string         `json:"error,omitempty"`
+	DurationSec    float64        `json:"duration_seconds,omitempty"`
+	NumTurns       int            `json:"num_turns,omitempty"`
 	Usage          *RawTokenUsage `json:"usage,omitempty"`
-	FinishedReason string        `json:"finished_reason,omitempty"`
+	FinishedReason string         `json:"finished_reason,omitempty"`
 }
 
 // RawTokenUsage reports token usage statistics from agy.
 type RawTokenUsage struct {
-	InputTokens      int `json:"input_tokens"`
-	OutputTokens     int `json:"output_tokens"`
-	ThinkingTokens   int `json:"thinking_tokens"`
-	CacheReadTokens  int `json:"cache_read_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	InputTokens     int `json:"input_tokens"`
+	OutputTokens    int `json:"output_tokens"`
+	ThinkingTokens  int `json:"thinking_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
+	TotalTokens     int `json:"total_tokens"`
 }
 
-// EventNormalizer translates agy's stream-json output lines into platform NormalizedEvents.
+// EventNormalizer translates agy's ACP events and stream-json output lines into platform NormalizedEvents.
 type EventNormalizer struct {
 	instanceID string
 	sessionID  string
@@ -102,7 +103,7 @@ func NewEventNormalizer(instanceID, sessionID string, now func() time.Time) *Eve
 	}
 }
 
-// SetSessionID updates the session ID if it was resolved from agy's init event.
+// SetSessionID updates the session ID if it was resolved from agy.
 func (n *EventNormalizer) SetSessionID(sessionID string) {
 	n.sessionID = sessionID
 }
@@ -127,8 +128,152 @@ func (n *EventNormalizer) SessionID() string {
 	return n.sessionID
 }
 
+// StartTurn opens a turn with turnID.
+func (n *EventNormalizer) StartTurn(turnID string) {
+	n.currentTurnID = turnID
+	n.turnActive = true
+}
+
+// CurrentTurnID returns the active turn ID.
+func (n *EventNormalizer) CurrentTurnID() string {
+	return n.currentTurnID
+}
+
+// NormalizeACPUpdate converts an ACP sessionUpdate into platform NormalizedEvents admitted by the delivery gate.
+func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMessage) ([]agents.NormalizedEvent, error) {
+	ts := n.now()
+	var events []agents.NormalizedEvent
+
+	switch kind {
+	case "agent_message_chunk":
+		var chunk acp.AgentMessageChunkUpdate
+		if err := json.Unmarshal(updateJSON, &chunk); err != nil {
+			return nil, err
+		}
+		if chunk.Content.Text != "" {
+			events = append(events, agents.NormalizedEvent{
+				InstanceID: n.instanceID,
+				SessionID:  n.sessionID,
+				Backend:    n.backend,
+				Timestamp:  ts,
+				Type:       agents.EventMessage,
+				Message: &agents.MessagePayload{
+					Role:  "assistant",
+					Text:  chunk.Content.Text,
+					Final: false,
+					Model: n.messageModel(),
+				},
+			})
+		}
+
+	case "agent_thought_chunk":
+		var chunk acp.AgentThoughtChunkUpdate
+		if err := json.Unmarshal(updateJSON, &chunk); err != nil {
+			return nil, err
+		}
+		if chunk.Content.Text != "" {
+			events = append(events, agents.NormalizedEvent{
+				InstanceID: n.instanceID,
+				SessionID:  n.sessionID,
+				Backend:    n.backend,
+				Timestamp:  ts,
+				Type:       agents.EventThinking,
+				Thinking: &agents.ThinkingPayload{
+					Text:  chunk.Content.Text,
+					Final: false,
+				},
+			})
+		}
+
+	case "tool_call":
+		var tc acp.ToolCallUpdatePayload
+		if err := json.Unmarshal(updateJSON, &tc); err != nil {
+			return nil, err
+		}
+		events = append(events, agents.NormalizedEvent{
+			InstanceID: n.instanceID,
+			SessionID:  n.sessionID,
+			Backend:    n.backend,
+			Timestamp:  ts,
+			Type:       agents.EventToolCall,
+			ToolCall: &agents.ToolCallPayload{
+				CallID: tc.ToolCallID,
+				Name:   tc.Title,
+				Input:  tc.RawInput,
+			},
+		})
+
+	case "tool_call_update":
+		var tc acp.ToolCallUpdatePayload
+		if err := json.Unmarshal(updateJSON, &tc); err != nil {
+			return nil, err
+		}
+		events = append(events, agents.NormalizedEvent{
+			InstanceID: n.instanceID,
+			SessionID:  n.sessionID,
+			Backend:    n.backend,
+			Timestamp:  ts,
+			Type:       agents.EventToolResult,
+			ToolResult: &agents.ToolResultPayload{
+				CallID: tc.ToolCallID,
+				Output: string(tc.RawOutput),
+			},
+		})
+	}
+
+	return n.gate.AdmitAll(events), nil
+}
+
+// EndTurn produces the closing EventMessage (Final: true) and EventTurn (TurnEnded).
+func (n *EventNormalizer) EndTurn(outcome agents.TurnOutcome, usage *acp.UsageStats) []agents.NormalizedEvent {
+	ts := n.now()
+	var events []agents.NormalizedEvent
+
+	var msgUsage *agents.MessageUsage
+	if usage != nil {
+		msgUsage = &agents.MessageUsage{
+			Input:     usage.InputTokens,
+			Output:    usage.OutputTokens,
+			CacheRead: usage.CachedReadTokens,
+		}
+	}
+
+	// 1. Closing message chunk
+	events = append(events, agents.NormalizedEvent{
+		InstanceID: n.instanceID,
+		SessionID:  n.sessionID,
+		Backend:    n.backend,
+		Timestamp:  ts,
+		Type:       agents.EventMessage,
+		Message: &agents.MessagePayload{
+			Role:  "assistant",
+			Text:  "",
+			Final: true,
+			Usage: msgUsage,
+			Model: n.messageModel(),
+		},
+	})
+
+	// 2. Conclude turn
+	events = append(events, agents.NormalizedEvent{
+		InstanceID: n.instanceID,
+		SessionID:  n.sessionID,
+		Backend:    n.backend,
+		Timestamp:  ts,
+		Type:       agents.EventTurn,
+		Turn: &agents.TurnPayload{
+			ID:      n.currentTurnID,
+			Phase:   agents.TurnEnded,
+			Outcome: outcome,
+		},
+	})
+
+	n.turnActive = false
+	return n.gate.AdmitAll(events)
+}
+
 // Normalize parses one raw JSON line from agy stdout and returns the events the
-// delivery gate admits from it.
+// delivery gate admits from it. (Retained for backwards compatibility)
 func (n *EventNormalizer) Normalize(line []byte) ([]agents.NormalizedEvent, error) {
 	events, err := n.normalize(line)
 	return n.gate.AdmitAll(events), err
@@ -142,7 +287,6 @@ func (n *EventNormalizer) normalize(line []byte) ([]agents.NormalizedEvent, erro
 
 	var raw RawagyEvent
 	if err := json.Unmarshal([]byte(trimmed), &raw); err != nil {
-		// Emit unknown event retaining original body.
 		return []agents.NormalizedEvent{
 			{
 				InstanceID: n.instanceID,
@@ -184,7 +328,6 @@ func (n *EventNormalizer) normalizeInit(raw *RawagyEvent) ([]agents.NormalizedEv
 	if raw.ConversationID != "" && n.sessionID == "" {
 		n.sessionID = raw.ConversationID
 	}
-	// Initializing lifecycle event
 	detail := "agy session initialized"
 	if raw.Init != nil && raw.Init.PermissionMode != "" {
 		detail = fmt.Sprintf("agy initialized (mode: %s)", raw.Init.PermissionMode)
@@ -210,24 +353,25 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 		return nil, nil
 	}
 
-	var events []agents.NormalizedEvent
 	ts := n.now()
+	var events []agents.NormalizedEvent
 
-	// If a turn is not marked started yet, start it.
-	if !n.turnActive && su.StepType != "user_input" {
-		n.turnActive = true
-		n.currentTurnID = fmt.Sprintf("turn-%d", su.StepIndex)
-		events = append(events, agents.NormalizedEvent{
-			InstanceID: n.instanceID,
-			SessionID:  n.sessionID,
-			Backend:    n.backend,
-			Timestamp:  ts,
-			Type:       agents.EventTurn,
-			Turn: &agents.TurnPayload{
-				ID:    n.currentTurnID,
-				Phase: agents.TurnStarted,
-			},
-		})
+	if su.StepType != "user_input" && su.StepType != "system_message" {
+		if !n.turnActive {
+			n.turnActive = true
+			n.currentTurnID = fmt.Sprintf("turn-%d", su.StepIndex)
+			events = append(events, agents.NormalizedEvent{
+				InstanceID: n.instanceID,
+				SessionID:  n.sessionID,
+				Backend:    n.backend,
+				Timestamp:  ts,
+				Type:       agents.EventTurn,
+				Turn: &agents.TurnPayload{
+					ID:    n.currentTurnID,
+					Phase: agents.TurnStarted,
+				},
+			})
+		}
 	}
 
 	switch su.StepType {
@@ -257,11 +401,9 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 
 		if su.State == "ACTIVE" {
 			n.activeCalls[su.StepIndex] = toolName
-			var inputRaw json.RawMessage
+			var input json.RawMessage
 			if su.ToolInfo != nil && len(su.ToolInfo.Parameters) > 0 {
-				inputRaw = su.ToolInfo.Parameters
-			} else {
-				inputRaw = json.RawMessage("{}")
+				input = su.ToolInfo.Parameters
 			}
 			events = append(events, agents.NormalizedEvent{
 				InstanceID: n.instanceID,
@@ -272,23 +414,17 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 				ToolCall: &agents.ToolCallPayload{
 					CallID: callID,
 					Name:   toolName,
-					Input:  inputRaw,
+					Input:  input,
 				},
 			})
 		} else if su.State == "DONE" || su.State == "ERROR" {
+			delete(n.activeCalls, su.StepIndex)
 			output := ""
-			isErr := su.State == "ERROR"
 			if su.ToolInfo != nil {
 				if su.ToolInfo.Output != "" {
 					output = su.ToolInfo.Output
-				}
-				if su.ToolInfo.Error != nil {
-					isErr = true
-					if output == "" {
-						output = su.ToolInfo.Error.Message
-					} else {
-						output = fmt.Sprintf("%s\nError: %s", output, su.ToolInfo.Error.Message)
-					}
+				} else if su.ToolInfo.Error != nil {
+					output = su.ToolInfo.Error.Message
 				}
 			}
 			events = append(events, agents.NormalizedEvent{
@@ -298,16 +434,11 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 				Timestamp:  ts,
 				Type:       agents.EventToolResult,
 				ToolResult: &agents.ToolResultPayload{
-					CallID:  callID,
-					Output:  output,
-					IsError: isErr,
+					CallID: callID,
+					Output: output,
 				},
 			})
-			delete(n.activeCalls, su.StepIndex)
 		}
-
-	case "user_input", "system_message":
-		// Informational or internal to agy.
 	}
 
 	return events, nil
@@ -315,11 +446,15 @@ func (n *EventNormalizer) normalizeStepUpdate(raw *RawagyEvent) ([]agents.Normal
 
 func (n *EventNormalizer) normalizeResult(raw *RawagyEvent) ([]agents.NormalizedEvent, error) {
 	res := raw.Result
-	var events []agents.NormalizedEvent
+	if res == nil {
+		return nil, nil
+	}
+
 	ts := n.now()
+	var events []agents.NormalizedEvent
 
 	var usage *agents.MessageUsage
-	if res != nil && res.Usage != nil {
+	if res.Usage != nil {
 		usage = &agents.MessageUsage{
 			Input:     res.Usage.InputTokens,
 			Output:    res.Usage.OutputTokens,
@@ -328,7 +463,6 @@ func (n *EventNormalizer) normalizeResult(raw *RawagyEvent) ([]agents.Normalized
 		}
 	}
 
-	// Emit final assistant message frame if we had an active turn
 	events = append(events, agents.NormalizedEvent{
 		InstanceID: n.instanceID,
 		SessionID:  n.sessionID,
@@ -344,28 +478,16 @@ func (n *EventNormalizer) normalizeResult(raw *RawagyEvent) ([]agents.Normalized
 		},
 	})
 
-	// Conclude turn
+	outcome := agents.TurnCompleted
+	if res.Status == "ERROR" {
+		outcome = agents.TurnFailed
+	} else if res.FinishedReason == "CANCELLED" {
+		outcome = agents.TurnCancelled
+	}
+
 	turnID := n.currentTurnID
 	if turnID == "" {
 		turnID = "turn-final"
-	}
-
-	outcome := agents.TurnCompleted
-	if res != nil && res.Status == "ERROR" {
-		outcome = agents.TurnFailed
-		if res.Error != "" {
-			events = append(events, agents.NormalizedEvent{
-				InstanceID: n.instanceID,
-				SessionID:  n.sessionID,
-				Backend:    n.backend,
-				Timestamp:  ts,
-				Type:       agents.EventError,
-				Error: &agents.ErrorPayload{
-					Code:    "turn_error",
-					Message: res.Error,
-				},
-			})
-		}
 	}
 
 	events = append(events, agents.NormalizedEvent{
@@ -382,6 +504,5 @@ func (n *EventNormalizer) normalizeResult(raw *RawagyEvent) ([]agents.Normalized
 	})
 
 	n.turnActive = false
-	n.currentTurnID = ""
 	return events, nil
 }

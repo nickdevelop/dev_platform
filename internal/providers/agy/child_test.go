@@ -22,7 +22,7 @@ sleep 30`)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err := child.start(ctx, executable, nil); err == nil {
+	if err := child.start(ctx, executable, nil, nil); err == nil {
 		t.Fatal("start must fail when init never arrives")
 	}
 
@@ -53,7 +53,7 @@ func TestAgyChildInitUnderTerminal(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := child.start(ctx, "agy", nil); err != nil {
+	if err := child.start(ctx, "agy", nil, nil); err != nil {
 		t.Fatalf("start under a terminal: %v", err)
 	}
 	defer child.close()

@@ -1,41 +1,21 @@
 package agy
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
-// processSpec specifies an agy process invocation.
-type processSpec struct {
-	executable string
-	args       []string
-	dir        string
-	env        []string
-}
-
-// buildChildArgs returns the CLI arguments for an agy stream-json session child.
-func buildChildArgs(sessionID, model, permissionMode, dir string) []string {
-	args := []string{"--input-format", "stream-json", "--output-format", "stream-json"}
-	if sessionID != "" {
-		args = append(args, "--conversation", sessionID)
-	}
-	if model != "" {
-		args = append(args, "--model", model)
-	}
+// buildChildArgs returns the CLI arguments for an agy ACP stdio session child.
+func buildChildArgs(permissionMode, dir string) []string {
+	args := []string{"acp", "--stdio"}
 	if permissionMode == PermissionModeAuto {
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	if dir != "" {
 		cleanDir := filepath.Clean(dir)
-		settingsJSON, err := json.Marshal(map[string]any{
-			"trustedWorkspaces": []string{cleanDir},
-		})
-		if err == nil {
-			args = append(args, "--settings", string(settingsJSON))
-		}
+		args = append(args, "--add-dir", cleanDir)
 	}
 	return args
 }
@@ -61,35 +41,23 @@ func EnsureWorkspaceTrusted(dir string) error {
 		settingsMap = make(map[string]any)
 	}
 
-	rawWS, exists := settingsMap["trustedWorkspaces"]
-	var workspaces []string
-	if exists {
-		if list, ok := rawWS.([]any); ok {
-			for _, item := range list {
-				if s, ok := item.(string); ok {
-					workspaces = append(workspaces, filepath.Clean(s))
-				}
-			}
+	trusted, _ := settingsMap["trustedWorkspaces"].([]any)
+	for _, entry := range trusted {
+		if s, ok := entry.(string); ok && filepath.Clean(s) == cleanDir {
+			return nil
 		}
 	}
 
-	alreadyTrusted := false
-	for _, ws := range workspaces {
-		if ws == cleanDir {
-			alreadyTrusted = true
-			break
-		}
+	trusted = append(trusted, cleanDir)
+	settingsMap["trustedWorkspaces"] = trusted
+
+	data, err := json.MarshalIndent(settingsMap, "", "  ")
+	if err != nil {
+		return err
 	}
 
-	if !alreadyTrusted {
-		workspaces = append(workspaces, cleanDir)
-		settingsMap["trustedWorkspaces"] = workspaces
-		_ = os.MkdirAll(settingsDir, 0755)
-		if out, err := json.MarshalIndent(settingsMap, "", "  "); err == nil {
-			_ = os.WriteFile(settingsPath, out, 0644)
-		}
-	}
-	return nil
+	_ = os.MkdirAll(settingsDir, 0700)
+	return os.WriteFile(settingsPath, data, 0600)
 }
 
 // resolveExecutable looks up the binary on PATH or returns the specified executable.
@@ -101,19 +69,4 @@ func resolveExecutable(custom string) string {
 		return path
 	}
 	return "agy"
-}
-
-// findAgyTranscriptFile locates the transcript.jsonl file for a conversation.
-func findAgyTranscriptFile(baseDir, sessionID string) string {
-	return filepath.Join(baseDir, sessionID, ".system_generated", "logs", "transcript.jsonl")
-}
-
-// runVersionCommand runs `<executable> --version` to extract version string.
-func runVersionCommand(ctx context.Context, executable string) (string, error) {
-	cmd := exec.CommandContext(ctx, executable, "--version")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return string(out), nil
 }

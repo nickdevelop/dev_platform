@@ -13,7 +13,7 @@ import (
 )
 
 // writeFakeAgy writes a stand-in agy executable whose body runs after the
-// shell starts, so tests control whether and when the init line is printed.
+// shell starts, so tests control how the ACP server responds.
 func writeFakeAgy(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "agy")
@@ -51,8 +51,20 @@ func TestCreateSessionDoesNotWaitForAgy(t *testing.T) {
 
 func TestSendMessageBindsPendingSession(t *testing.T) {
 	const native = "conv-bound-1"
-	executable := writeFakeAgy(t, `echo '{"event":"init","conversation_id":"`+native+`"}'
-cat > /dev/null`)
+	executable := writeFakeAgy(t, `python3 -c '
+import sys, json
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    rid = req.get("id")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":1}}), flush=True)
+    elif method == "session/new":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"sessionId":"`+native+`"}}), flush=True)
+    elif method == "session/prompt":
+        # keep turn running
+        pass
+'`)
 	adapter := newPendingTestAdapter(t, executable, 10*time.Second)
 	ctx := context.Background()
 	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: t.TempDir()})
@@ -127,7 +139,7 @@ func TestSendMessagePendingFailsWhenInitTimesOut(t *testing.T) {
 			return nil
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "wait for child init") {
+	if err == nil || (!strings.Contains(err.Error(), "initialize acp") && !strings.Contains(err.Error(), "context deadline exceeded")) {
 		t.Fatalf("SendMessage error = %v, want an init timeout", err)
 	}
 	if liveInstance(t, adapter, inst.ID).resolve(ref.SessionID) != ref.SessionID {
@@ -136,8 +148,17 @@ func TestSendMessagePendingFailsWhenInitTimesOut(t *testing.T) {
 }
 
 func TestSendMessagePendingAbortsWhenBindFails(t *testing.T) {
-	executable := writeFakeAgy(t, `echo '{"event":"init","conversation_id":"conv-dup"}'
-cat > /dev/null`)
+	executable := writeFakeAgy(t, `python3 -c '
+import sys, json
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    rid = req.get("id")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":1}}), flush=True)
+    elif method == "session/new":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"sessionId":"conv-dup"}}), flush=True)
+'`)
 	adapter := newPendingTestAdapter(t, executable, 10*time.Second)
 	ctx := context.Background()
 	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: t.TempDir()})
