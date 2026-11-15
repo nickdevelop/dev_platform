@@ -1,7 +1,6 @@
 package agy
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +12,7 @@ import (
 
 	"devplatform/internal/core/agents"
 	"devplatform/internal/core/platform"
+	"devplatform/internal/providers/agy/acp"
 )
 
 var (
@@ -20,18 +20,13 @@ var (
 	errTurnInProgress = errors.New("agy: turn already in progress")
 )
 
-// StreamUserMessage is the NDJSON message sent to agy's stdin.
-type StreamUserMessage struct {
-	Event   string                 `json:"event"`
-	Message StreamUserContentBlock `json:"message"`
+type pendingPermission struct {
+	id          string
+	permRequest agents.PermissionRequest
+	replyCh     chan string
 }
 
-// StreamUserContentBlock wraps the message content.
-type StreamUserContentBlock struct {
-	Content string `json:"content"`
-}
-
-// agyChild represents a long-lived agy stream-json session child process.
+// agyChild represents a long-lived agy ACP stdio session child process.
 type agyChild struct {
 	sessionID      string
 	model          string
@@ -43,11 +38,15 @@ type agyChild struct {
 	mu          sync.Mutex
 	cmd         *exec.Cmd
 	stdin       io.WriteCloser
+	client      *acp.Client
 	normalizer  *EventNormalizer
 	idleTimer   *time.Timer
 	turnRunning bool
 	closed      bool
 	done        chan struct{}
+
+	permMu       sync.Mutex
+	pendingPerms map[string]*pendingPermission
 }
 
 func newAgyChild(inst *instance, sessionID, model, permissionMode string, idleTimeout time.Duration, now func() time.Time) *agyChild {
@@ -68,18 +67,18 @@ func newAgyChild(inst *instance, sessionID, model, permissionMode string, idleTi
 		now:            now,
 		normalizer:     norm,
 		done:           make(chan struct{}),
+		pendingPerms:   make(map[string]*pendingPermission),
 	}
 }
 
-func (c *agyChild) start(ctx context.Context, executable string, env []string) error {
+func (c *agyChild) start(ctx context.Context, executable string, env []string, onBound func(string) error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
 		return errChildClosed
 	}
 
-	args := buildChildArgs(c.sessionID, c.model, c.permissionMode, c.inst.directory)
-	// Process is bound to the instance context so it survives individual HTTP requests.
+	args := buildChildArgs(c.permissionMode, c.inst.directory)
 	cmd := exec.CommandContext(c.inst.ctx, executable, args...)
 	cmd.Dir = c.inst.directory
 	if len(env) > 0 {
@@ -96,9 +95,6 @@ func (c *agyChild) start(ctx context.Context, executable string, env []string) e
 		return fmt.Errorf("agy: stdout pipe: %w", err)
 	}
 
-	// agy is a terminal UI: in a process group of its own it is a background
-	// job of the platform's terminal, so its first terminal access stops it
-	// before init is printed. A new session detaches it from the terminal.
 	if err := platform.New().Process().ConfigureDetached(cmd); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
@@ -127,68 +123,91 @@ func (c *agyChild) start(ctx context.Context, executable string, env []string) e
 	c.cmd = cmd
 	c.stdin = stdin
 
-	reader := bufio.NewReader(stdout)
+	c.client = acp.NewClient(stdin, stdin, c.handleRequest, c.handleNotification)
 
-	// Read the first line synchronously to extract the conversation ID from the init event.
-	type readResult struct {
-		line []byte
-		err  error
-	}
-	ch := make(chan readResult, 1)
-	go func() {
-		line, err := reader.ReadBytes('\n')
-		ch <- readResult{line: line, err: err}
-	}()
+	go c.runClientLoop(stdout)
 
-	var firstLine []byte
-	select {
-	case <-ctx.Done():
+	// Step 1: initialize
+	var initRes acp.InitializeResult
+	if err := c.client.Call(ctx, acp.MethodInitialize, acp.InitializeParams{
+		ProtocolVersion: 1,
+		ClientCapabilities: acp.ClientCapabilities{
+			Terminal: true,
+			FS: &acp.FSCapabilities{
+				ReadTextFile:  true,
+				WriteTextFile: true,
+			},
+		},
+	}, &initRes); err != nil {
 		c.abortStartLocked(cmd)
-		return fmt.Errorf("agy: wait for child init: %w", ctx.Err())
-	case res := <-ch:
-		if res.err != nil {
+		return fmt.Errorf("agy: initialize acp: %w", err)
+	}
+
+	// Step 2: session/new or session/load
+	if c.sessionID == "" || isPendingSession(c.sessionID) {
+		var sessRes acp.SessionResult
+		if err := c.client.Call(ctx, acp.MethodSessionNew, acp.NewSessionParams{
+			CWD:        c.inst.directory,
+			MCPServers: []any{},
+		}, &sessRes); err != nil {
 			c.abortStartLocked(cmd)
-			return fmt.Errorf("agy: read child init line: %w", res.err)
+			return fmt.Errorf("agy: new acp session: %w", err)
 		}
-		firstLine = res.line
-	}
-
-	var raw RawagyEvent
-	if err := json.Unmarshal(firstLine, &raw); err == nil {
-		if raw.ConversationID != "" {
-			if c.sessionID == "" {
-				c.sessionID = raw.ConversationID
-			}
+		if sessRes.SessionID != "" {
+			c.sessionID = sessRes.SessionID
 			c.normalizer.SetSessionID(c.sessionID)
+			if onBound != nil {
+				if err := onBound(c.sessionID); err != nil {
+					c.abortStartLocked(cmd)
+					return err
+				}
+			}
+		}
+	} else {
+		var sessRes acp.SessionResult
+		if err := c.client.Call(ctx, acp.MethodSessionLoad, acp.LoadSessionParams{
+			SessionID: c.sessionID,
+			CWD:       c.inst.directory,
+		}, &sessRes); err != nil {
+			c.abortStartLocked(cmd)
+			return fmt.Errorf("agy: load acp session: %w", err)
 		}
 	}
 
-	events, err := c.normalizer.Normalize(firstLine)
-	if err == nil {
-		for _, ev := range events {
-			c.inst.broadcast(ev)
-		}
+	// Step 3: set model if configured
+	if c.model != "" {
+		_ = c.client.Call(ctx, acp.MethodSessionSetModel, acp.SetModelParams{
+			SessionID: c.sessionID,
+			ModelID:   c.model,
+		}, nil)
 	}
+
+	// Step 4: set mode if auto
+	if c.permissionMode == PermissionModeAuto {
+		_ = c.client.Call(ctx, acp.MethodSessionSetMode, acp.SetModeParams{
+			SessionID: c.sessionID,
+			ModeID:    "auto",
+		}, nil)
+	}
+
+	// Broadcast session initialized lifecycle event
+	c.inst.broadcast(agents.NormalizedEvent{
+		InstanceID: c.inst.id,
+		SessionID:  c.sessionID,
+		Backend:    agents.BackendAgy,
+		Timestamp:  c.now(),
+		Type:       agents.EventLifecycle,
+		Lifecycle: &agents.LifecycleEvent{
+			State:  "initialized",
+			Detail: "agy acp session initialized",
+		},
+	})
 
 	c.resetIdleTimerLocked()
-	go c.readLoop(stdout, reader)
 	return nil
 }
 
-func (c *agyChild) resetIdleTimerLocked() {
-	if c.idleTimer != nil {
-		c.idleTimer.Stop()
-	}
-	c.idleTimer = time.AfterFunc(c.idleTimeout, func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if !c.closed && !c.turnRunning {
-			_ = c.closeLocked()
-		}
-	})
-}
-
-func (c *agyChild) readLoop(stdout io.ReadCloser, reader *bufio.Reader) {
+func (c *agyChild) runClientLoop(stdout io.ReadCloser) {
 	defer stdout.Close()
 	defer close(c.done)
 	defer func() {
@@ -198,33 +217,7 @@ func (c *agyChild) readLoop(stdout io.ReadCloser, reader *bufio.Reader) {
 		c.inst.removeChild(c.sessionID)
 	}()
 
-	for {
-		line, err := reader.ReadBytes('\n')
-		if len(line) > 0 {
-			events, err := c.normalizer.Normalize(line)
-			if err == nil {
-				for _, ev := range events {
-					if ev.Type == agents.EventTurn && ev.Turn != nil {
-						c.mu.Lock()
-						if ev.Turn.Phase == agents.TurnStarted {
-							c.turnRunning = true
-							if c.idleTimer != nil {
-								c.idleTimer.Stop()
-							}
-						} else if ev.Turn.Phase == agents.TurnEnded {
-							c.turnRunning = false
-							c.resetIdleTimerLocked()
-						}
-						c.mu.Unlock()
-					}
-					c.inst.broadcast(ev)
-				}
-			}
-		}
-		if err != nil {
-			break
-		}
-	}
+	_ = c.client.ReadLoop(stdout)
 
 	c.mu.Lock()
 	wasRunning := c.turnRunning
@@ -232,7 +225,6 @@ func (c *agyChild) readLoop(stdout io.ReadCloser, reader *bufio.Reader) {
 	c.turnRunning = false
 	c.mu.Unlock()
 
-	// If the process exited unexpectedly while turn was running, emit turn failed
 	if wasRunning {
 		c.inst.broadcast(agents.NormalizedEvent{
 			InstanceID: c.inst.id,
@@ -249,7 +241,175 @@ func (c *agyChild) readLoop(stdout io.ReadCloser, reader *bufio.Reader) {
 	}
 }
 
-func (c *agyChild) sendTurn(ctx context.Context, text string) error {
+func (c *agyChild) handleNotification(method string, params json.RawMessage) {
+	if method != acp.MethodSessionUpdate {
+		return
+	}
+	var notif acp.SessionUpdateNotification
+	if err := json.Unmarshal(params, &notif); err != nil {
+		return
+	}
+
+	var header acp.SessionUpdateHeader
+	if err := json.Unmarshal(notif.Update, &header); err != nil {
+		return
+	}
+
+	events, err := c.normalizer.NormalizeACPUpdate(header.SessionUpdate, notif.Update)
+	if err == nil {
+		for _, ev := range events {
+			c.inst.broadcast(ev)
+		}
+	}
+}
+
+func (c *agyChild) handleRequest(ctx context.Context, id any, method string, params json.RawMessage) (any, error) {
+	if method != acp.MethodRequestPermission {
+		return nil, fmt.Errorf("unknown method: %s", method)
+	}
+
+	var permReq acp.RequestPermissionParams
+	if err := json.Unmarshal(params, &permReq); err != nil {
+		return nil, err
+	}
+
+	reqIDStr := fmt.Sprintf("%v", id)
+	if c.permissionMode == PermissionModeAuto {
+		selected := "allow_once"
+		for _, opt := range permReq.Options {
+			if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
+				selected = opt.OptionID
+				break
+			}
+		}
+		return acp.RequestPermissionResult{
+			Outcome: acp.PermissionOutcome{
+				Outcome:  "selected",
+				OptionID: selected,
+			},
+		}, nil
+	}
+
+	replyCh := make(chan string, 1)
+	perm := agents.PermissionRequest{
+		ID:        reqIDStr,
+		SessionID: c.sessionID,
+		Action:    permReq.ToolCall.Title,
+		Message:   permReq.ToolCall.Title,
+	}
+
+	c.permMu.Lock()
+	c.pendingPerms[reqIDStr] = &pendingPermission{
+		id:          reqIDStr,
+		permRequest: perm,
+		replyCh:     replyCh,
+	}
+	c.permMu.Unlock()
+
+	c.inst.broadcast(agents.NormalizedEvent{
+		InstanceID: c.inst.id,
+		SessionID:  c.sessionID,
+		Backend:    agents.BackendAgy,
+		Timestamp:  c.now(),
+		Type:       agents.EventInteraction,
+		Interaction: &agents.InteractionPayload{
+			ID:         reqIDStr,
+			Kind:       agents.InteractionPermission,
+			Phase:      agents.InteractionRequested,
+			Permission: &perm,
+		},
+	})
+
+	select {
+	case decision := <-replyCh:
+		if decision == "reject" {
+			selected := "reject_once"
+			for _, opt := range permReq.Options {
+				if opt.Kind == "reject_once" || opt.Kind == "reject_always" {
+					selected = opt.OptionID
+					break
+				}
+			}
+			return acp.RequestPermissionResult{
+				Outcome: acp.PermissionOutcome{
+					Outcome:  "selected",
+					OptionID: selected,
+				},
+			}, nil
+		}
+
+		selected := "allow_once"
+		for _, opt := range permReq.Options {
+			if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
+				selected = opt.OptionID
+				break
+			}
+		}
+		return acp.RequestPermissionResult{
+			Outcome: acp.PermissionOutcome{
+				Outcome:  "selected",
+				OptionID: selected,
+			},
+		}, nil
+	case <-c.done:
+		return nil, errChildClosed
+	}
+}
+
+func (c *agyChild) replyPermission(requestID, decision string) error {
+	c.permMu.Lock()
+	pending, ok := c.pendingPerms[requestID]
+	if ok {
+		delete(c.pendingPerms, requestID)
+	}
+	c.permMu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("%w: permission %q not pending", agents.ErrReplyExpired, requestID)
+	}
+
+	pending.replyCh <- decision
+
+	c.inst.broadcast(agents.NormalizedEvent{
+		InstanceID: c.inst.id,
+		SessionID:  c.sessionID,
+		Backend:    agents.BackendAgy,
+		Timestamp:  c.now(),
+		Type:       agents.EventInteraction,
+		Interaction: &agents.InteractionPayload{
+			ID:    requestID,
+			Kind:  agents.InteractionPermission,
+			Phase: agents.InteractionResolved,
+		},
+	})
+	return nil
+}
+
+func (c *agyChild) listPermissions() []agents.PermissionRequest {
+	c.permMu.Lock()
+	defer c.permMu.Unlock()
+
+	res := make([]agents.PermissionRequest, 0, len(c.pendingPerms))
+	for _, p := range c.pendingPerms {
+		res = append(res, p.permRequest)
+	}
+	return res
+}
+
+func (c *agyChild) resetIdleTimerLocked() {
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
+	c.idleTimer = time.AfterFunc(c.idleTimeout, func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if !c.closed && !c.turnRunning {
+			_ = c.closeLocked()
+		}
+	})
+}
+
+func (c *agyChild) sendTurn(ctx context.Context, text string, model string) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -265,29 +425,61 @@ func (c *agyChild) sendTurn(ctx context.Context, text string) error {
 	}
 	c.mu.Unlock()
 
-	msg := StreamUserMessage{
-		Event: "user",
-		Message: StreamUserContentBlock{
-			Content: text,
-		},
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		c.mu.Lock()
-		c.turnRunning = false
-		c.resetIdleTimerLocked()
-		c.mu.Unlock()
-		return fmt.Errorf("agy: marshal user turn: %w", err)
-	}
+	turnID := fmt.Sprintf("turn-%d", c.now().UnixNano())
+	c.normalizer.StartTurn(turnID)
 
-	data = append(data, '\n')
-	if _, err := c.stdin.Write(data); err != nil {
-		c.mu.Lock()
-		c.turnRunning = false
-		c.resetIdleTimerLocked()
-		c.mu.Unlock()
-		return fmt.Errorf("agy: write user turn: %w", err)
-	}
+	c.inst.broadcast(agents.NormalizedEvent{
+		InstanceID: c.inst.id,
+		SessionID:  c.sessionID,
+		Backend:    agents.BackendAgy,
+		Timestamp:  c.now(),
+		Type:       agents.EventTurn,
+		Turn: &agents.TurnPayload{
+			ID:    turnID,
+			Phase: agents.TurnStarted,
+		},
+	})
+
+	go func() {
+		defer func() {
+			c.mu.Lock()
+			c.turnRunning = false
+			c.resetIdleTimerLocked()
+			c.mu.Unlock()
+		}()
+
+		if model != "" && model != c.model {
+			c.model = model
+			c.normalizer.SetModel(model)
+			_ = c.client.Call(ctx, acp.MethodSessionSetModel, acp.SetModelParams{
+				SessionID: c.sessionID,
+				ModelID:   model,
+			}, nil)
+		}
+
+		var result acp.PromptResult
+		err := c.client.Call(ctx, acp.MethodSessionPrompt, acp.PromptParams{
+			SessionID: c.sessionID,
+			Prompt: []acp.PromptContent{
+				{Type: "text", Text: text},
+			},
+		}, &result)
+
+		outcome := agents.TurnCompleted
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				outcome = agents.TurnCancelled
+			} else {
+				outcome = agents.TurnFailed
+			}
+		}
+
+		endEvents := c.normalizer.EndTurn(outcome, result.Usage)
+		for _, ev := range endEvents {
+			c.inst.broadcast(ev)
+		}
+	}()
+
 	return nil
 }
 
@@ -298,30 +490,11 @@ func (c *agyChild) interrupt(ctx context.Context) error {
 		return nil
 	}
 
-	// Terminate the running process to stop generation
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = platform.New().Process().Terminate(c.cmd.Process.Pid)
-	}
-	c.turnRunning = false
-	c.closed = true
-
-	c.inst.broadcast(agents.NormalizedEvent{
-		InstanceID: c.inst.id,
-		SessionID:  c.sessionID,
-		Backend:    agents.BackendAgy,
-		Timestamp:  c.now(),
-		Type:       agents.EventTurn,
-		Turn: &agents.TurnPayload{
-			ID:      "turn-interrupted",
-			Phase:   agents.TurnEnded,
-			Outcome: agents.TurnCancelled,
-		},
-	})
-	return nil
+	return c.client.Call(ctx, acp.MethodSessionCancel, acp.CancelParams{
+		SessionID: c.sessionID,
+	}, nil)
 }
 
-// abortStartLocked kills a child whose init line never arrived and reaps it, so
-// a failed start leaves no zombie behind.
 func (c *agyChild) abortStartLocked(cmd *exec.Cmd) {
 	_ = c.closeLocked()
 	_ = cmd.Wait()
@@ -334,6 +507,9 @@ func (c *agyChild) closeLocked() error {
 	c.closed = true
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
+	}
+	if c.client != nil {
+		_ = c.client.Close()
 	}
 	if c.stdin != nil {
 		_ = c.stdin.Close()

@@ -2,10 +2,12 @@ package agy
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"devplatform/internal/core/agents"
+	"devplatform/internal/providers/agy/acp"
 )
 
 func TestAdapterCapabilitiesDeclared(t *testing.T) {
@@ -29,6 +31,9 @@ func TestAdapterCapabilitiesDeclared(t *testing.T) {
 	}
 	if !caps.ToolCallEvents {
 		t.Error("ToolCallEvents must be true")
+	}
+	if !caps.ToolConfirmation {
+		t.Error("ToolConfirmation must be true")
 	}
 	if !caps.Interrupt {
 		t.Error("Interrupt must be true")
@@ -112,9 +117,7 @@ func TestAgyChildProcessManagement(t *testing.T) {
 	defer cancel()
 
 	// Launch a child process using "cat" which waits for stdin
-	err := child.start(ctx, "cat", nil)
-	// If "cat" fails to start (e.g. invalid flags), that's expected because agy args are passed.
-	// But start() must properly configure and supervise the command without panicking.
+	err := child.start(ctx, "cat", nil, nil)
 	if err == nil {
 		if child.cmd == nil || child.cmd.Process == nil {
 			t.Fatal("expected non-nil cmd.Process")
@@ -122,5 +125,72 @@ func TestAgyChildProcessManagement(t *testing.T) {
 		if err := child.close(); err != nil {
 			t.Errorf("close child failed: %v", err)
 		}
+	}
+}
+
+func TestAgyPermissionReplier(t *testing.T) {
+	inst := newInstance("inst-perm", t.TempDir(), time.Now)
+	child := newAgyChild(inst, "sess-perm", "model-test", PermissionModeConfirm, time.Minute, time.Now)
+	inst.setChild("sess-perm", child)
+
+	adapter := New(Options{})
+	adapter.instances["inst-perm"] = inst
+
+	ref := agents.SessionRef{
+		InstanceID: "inst-perm",
+		SessionID:  "sess-perm",
+		Backend:    agents.BackendAgy,
+	}
+
+	// Check initially empty permissions
+	perms, err := adapter.ListPermissions(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("ListPermissions: %v", err)
+	}
+	if len(perms) != 0 {
+		t.Fatalf("expected 0 permissions, got %d", len(perms))
+	}
+
+	// Simulate incoming server request
+	go func() {
+		params := acp.RequestPermissionParams{
+			SessionID: "sess-perm",
+			ToolCall: acp.ToolCallUpdate{
+				ToolCallID: "tc-1",
+				Title:      "Run Command",
+			},
+			Options: []acp.PermissionOption{
+				{OptionID: "opt-allow", Name: "Allow", Kind: "allow_once"},
+				{OptionID: "opt-reject", Name: "Reject", Kind: "reject_once"},
+			},
+		}
+		b, _ := json.Marshal(params)
+		_, _ = child.handleRequest(context.Background(), "req-42", acp.MethodRequestPermission, b)
+	}()
+
+	// Wait for pending permission
+	time.Sleep(50 * time.Millisecond)
+
+	perms, err = adapter.ListPermissions(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("ListPermissions: %v", err)
+	}
+	if len(perms) != 1 || perms[0].ID != "req-42" {
+		t.Fatalf("expected 1 pending permission for req-42, got %+v", perms)
+	}
+
+	// Reply permission
+	err = adapter.ReplyPermission(context.Background(), ref, "req-42", "once", "")
+	if err != nil {
+		t.Fatalf("ReplyPermission: %v", err)
+	}
+
+	// Verify it resolved
+	perms, err = adapter.ListPermissions(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("ListPermissions: %v", err)
+	}
+	if len(perms) != 0 {
+		t.Fatalf("expected 0 permissions after resolution, got %d", len(perms))
 	}
 }
