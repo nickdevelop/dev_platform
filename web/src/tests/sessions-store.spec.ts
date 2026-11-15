@@ -104,6 +104,24 @@ describe('sessions store project list', () => {
     await second
     expect(sessions.sessions.map((entry) => entry.id)).toEqual(['b-1'])
   })
+
+  it('caches each project list even when another project requested in between', async () => {
+    const pending = deferredLists()
+    const sessions = useSessionsStore()
+
+    const first = sessions.loadSessions(1)
+    const second = sessions.loadSessions(2)
+    pending.get(2)!([session('b-1', 2)])
+    await second
+    pending.get(1)!([session('a-1', 1)])
+    await first
+
+    // A session of the project left behind must still be found by id, or the
+    // conversation opened from it would report that the session is gone.
+    expect(sessions.sessionById('a-1')).not.toBeNull()
+    expect(sessions.sessionsByProject[1].map((entry) => entry.id)).toEqual(['a-1'])
+    expect(sessions.sessionsByProject[2].map((entry) => entry.id)).toEqual(['b-1'])
+  })
 })
 
 describe('sessions store turn actions', () => {

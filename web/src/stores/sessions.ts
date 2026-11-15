@@ -130,6 +130,11 @@ function historyEntriesFromEvents(sessionId: string, events: NormalizedEvent[]):
 // and mutations the store owns on top of that vocabulary.
 
 
+// The newest list request issued per project. A response only replaces that
+// project's cached list when no newer request for the same project was issued,
+// so requests for different projects never discard each other's results.
+const latestListRequestByProject = new Map<number, number>()
+
 export const useSessionsStore = defineStore('sessions', {
   state: () => ({
     sessions: [] as AgentSession[],
@@ -289,6 +294,7 @@ export const useSessionsStore = defineStore('sessions', {
 
     async loadSessions(projectId: number) {
       const request = ++this.listRequest
+      latestListRequestByProject.set(projectId, request)
       if (this.projectId !== projectId) {
         // Preload session list from cache so UI updates immediately
         this.sessions = this.sessionsByProject[projectId] ?? []
@@ -299,9 +305,9 @@ export const useSessionsStore = defineStore('sessions', {
       this.projectId = projectId
       try {
         const list = await listProjectSessions(projectId)
-        if (request !== this.listRequest) return
+        if (latestListRequestByProject.get(projectId) !== request) return
         this.recordTurns(list.sessions)
-        this.sessions = list.sessions
+        if (this.projectId === projectId) this.sessions = list.sessions
         this.sessionsByProject[projectId] = list.sessions
         this.error = ''
       } catch (error) {
@@ -319,10 +325,12 @@ export const useSessionsStore = defineStore('sessions', {
     // quiet, because a poll must not surface a transient error.
     async refreshSessions(projectId: number) {
       const request = ++this.listRequest
+      latestListRequestByProject.set(projectId, request)
       try {
         const list = await listProjectSessions(projectId)
-        if (request !== this.listRequest) return
+        if (latestListRequestByProject.get(projectId) !== request) return
         this.recordTurns(list.sessions)
+        this.sessionsByProject[projectId] = list.sessions
         if (this.projectId !== projectId) return
         this.sessions = list.sessions
       } catch (error) {
