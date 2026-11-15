@@ -11,7 +11,7 @@ import (
 // read; there is no external binary to resolve.
 var Descriptor = agents.BackendDescriptor{
 	ID:              agents.BackendBuiltin,
-	Label:           "平台内置 Agent",
+	Label:           "内置Agent",
 	Icon:            iconSVG,
 	ShortName:       "BI",
 	Embedded:        true,

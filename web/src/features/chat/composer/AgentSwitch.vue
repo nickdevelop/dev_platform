@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // Segmented switch for choosing the agent backend of a new session. It is a
 // provider-neutral presentational control: every option comes from the backend
-// descriptor (label, enabled, order), so no backend id is special-cased here.
-// Platform-disabled backends stay visible but unpressable, because hiding them
-// would leave the user wondering where a familiar agent went.
+// descriptor (label, order), so no backend id is special-cased here. The caller
+// passes only the platform-enabled backends; disabled ones are not rendered.
 import { computed, ref } from 'vue'
 import type { BackendId } from '../../../api/sessions'
 import type { AgentBackend } from '../../../api/agents'
@@ -12,6 +11,7 @@ import BackendIcon from '../../../shared/components/BackendIcon.vue'
 const props = defineProps<{
   modelValue: BackendId | ''
   backends: AgentBackend[]
+  loaded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -20,16 +20,11 @@ const emit = defineEmits<{
 
 const root = ref<HTMLElement | null>(null)
 
-function isEnabled(backend: AgentBackend): boolean {
-  return backend.enabled !== false
-}
-
-// The active option is the roving tab stop; when the stored value points at a
-// disabled or unknown backend the first selectable option takes the tab stop.
+// The active option is the roving tab stop; when the stored value is not in the
+// list the first option takes the tab stop.
 const tabStopIndex = computed(() => {
   const selected = props.backends.findIndex((entry) => entry.backend === props.modelValue)
-  if (selected >= 0 && isEnabled(props.backends[selected])) return selected
-  return props.backends.findIndex((entry) => isEnabled(entry))
+  return selected >= 0 ? selected : 0
 })
 
 function optionButtons(): HTMLButtonElement[] {
@@ -39,7 +34,7 @@ function optionButtons(): HTMLButtonElement[] {
 }
 
 function choose(backend: AgentBackend) {
-  if (!isEnabled(backend) || backend.backend === props.modelValue) return
+  if (backend.backend === props.modelValue) return
   emit('update:modelValue', backend.backend)
 }
 
@@ -53,37 +48,24 @@ function focusIndex(index: number) {
 function onKeydown(event: KeyboardEvent) {
   const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End']
   if (!keys.includes(event.key)) return
-  const current = tabStopIndex.value
-  if (current < 0) return
-  const enabledIndexes = props.backends
-    .map((entry, index) => ({ entry, index }))
-    .filter(({ entry }) => isEnabled(entry))
-    .map(({ index }) => index)
-  if (enabledIndexes.length === 0) return
+  const count = props.backends.length
+  if (count === 0) return
 
   event.preventDefault()
-  const position = enabledIndexes.indexOf(current)
   let target: number
   if (event.key === 'Home') {
-    target = enabledIndexes[0]
+    target = 0
   } else if (event.key === 'End') {
-    target = enabledIndexes[enabledIndexes.length - 1]
+    target = count - 1
   } else {
     const delta = event.key === 'ArrowRight' ? 1 : -1
-    const base = position === -1 ? 0 : position
-    const next = (base + delta + enabledIndexes.length) % enabledIndexes.length
-    target = enabledIndexes[next]
+    target = (tabStopIndex.value + delta + count) % count
   }
 
   const backend = props.backends[target]
   if (!backend) return
   choose(backend)
   focusIndex(target)
-}
-
-function optionTitle(backend: AgentBackend): string {
-  if (!isEnabled(backend)) return `${backend.label || backend.backend} 已在平台设置中停用`
-  return `切换到 ${backend.label || backend.backend}`
 }
 </script>
 
@@ -102,12 +84,10 @@ function optionTitle(backend: AgentBackend): string {
       type="button"
       role="radio"
       class="agent-switch-option"
-      :class="{ active: backend.backend === modelValue, blocked: !isEnabled(backend) }"
+      :class="{ active: backend.backend === modelValue }"
       :aria-checked="backend.backend === modelValue"
-      :aria-disabled="!isEnabled(backend)"
-      :disabled="!isEnabled(backend)"
       :tabindex="index === tabStopIndex ? 0 : -1"
-      :title="optionTitle(backend)"
+      :title="`切换到 ${backend.label || backend.backend}`"
       :data-test="`agent-switch-${backend.backend}`"
       :data-backend="backend.backend"
       @click="choose(backend)"
@@ -115,7 +95,7 @@ function optionTitle(backend: AgentBackend): string {
       <BackendIcon :backend="backend.backend" size="sm" />
       {{ backend.label || backend.backend }}
     </button>
-    <span v-if="backends.length === 0" class="agent-switch-empty">加载中…</span>
+    <span v-if="backends.length === 0" class="agent-switch-empty">{{ loaded ? '暂无可用 Agent' : '加载中…' }}</span>
   </div>
 </template>
 
@@ -154,7 +134,7 @@ function optionTitle(backend: AgentBackend): string {
   transition: color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
-.agent-switch-option:hover:not(:disabled):not(.active) {
+.agent-switch-option:hover:not(.active) {
   color: var(--color-text);
   background: var(--color-surface);
 }
@@ -179,11 +159,6 @@ function optionTitle(backend: AgentBackend): string {
 .agent-switch-option:focus-visible {
   outline: 1px solid var(--color-accent, #4a8ad6);
   outline-offset: -1px;
-}
-
-.agent-switch-option:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .agent-switch-empty {

@@ -9,7 +9,7 @@ import (
 // range documented in docs/agent-compatibility.md.
 func TestDescriptorMatchesCompatibilityMatrix(t *testing.T) {
 	d := Descriptor
-	if d.ID != agents.BackendAgy || d.Binary != "agy" || d.Label != "Antigravity (AGY)" {
+	if d.ID != agents.BackendAgy || d.Binary != "agy" || d.Label != "Antigravity" {
 		t.Fatalf("identity = %+v", d)
 	}
 	if d.ShortName != "AGY" {

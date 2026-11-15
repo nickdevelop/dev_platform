@@ -456,11 +456,11 @@ const firstMessageReady = computed(() => {
 })
 
 // Only platform-enabled backends may be chosen for a new session. The server also
-// enforces this, but showing them disabled keeps the UI honest.
+// enforces this, and disabled backends are not offered in the switch at all.
 const selectableBackends = computed(() => agents.backends.filter((entry) => entry.enabled !== false))
 
 const sortedBackends = computed(() =>
-  [...agents.backends].sort((a, b) => a.order - b.order),
+  [...selectableBackends.value].sort((a, b) => a.order - b.order),
 )
 
 function firstSelectableBackend(): BackendId | '' {
@@ -644,7 +644,7 @@ async function createSession() {
 
         <div class="agent-selector-group">
           <span class="agent-label">Agent</span>
-          <AgentSwitch v-model="selectedBackend" :backends="sortedBackends" />
+          <AgentSwitch v-model="selectedBackend" :backends="sortedBackends" :loaded="agents.backendsLoaded" />
         </div>
 
         <div class="prompt-selector-group">
@@ -1056,8 +1056,8 @@ async function createSession() {
 
 .agent-selector-group {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.35rem;
   padding: 0.5rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);

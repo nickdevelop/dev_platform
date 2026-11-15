@@ -6,7 +6,7 @@ import "devplatform/internal/core/agents"
 // platform's settings, diagnostics and UI present for it.
 var Descriptor = agents.BackendDescriptor{
 	ID:               agents.BackendAgy,
-	Label:            "Antigravity (AGY)",
+	Label:            "Antigravity",
 	Icon:             iconSVG,
 	ShortName:        "AGY",
 	Binary:           "agy",

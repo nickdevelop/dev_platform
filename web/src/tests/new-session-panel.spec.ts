@@ -302,13 +302,12 @@ describe('NewSessionPanel', () => {
     expect(createSpy).not.toHaveBeenCalled()
   })
 
-  it('shows a backend disabled platform-wide as an unpressable option', async () => {
+  it('hides a backend disabled platform-wide from the agent switch', async () => {
     const { wrapper } = setup({ piEnabled: false })
     await flushPromises()
 
-    expect(backendButton(wrapper, 'pi').exists()).toBe(true)
-    expect(backendButton(wrapper, 'pi').attributes('disabled')).toBeDefined()
-    expect(backendButton(wrapper, 'pi').attributes('aria-disabled')).toBe('true')
+    expect(backendButton(wrapper, 'pi').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="agent-switch"] [role="radio"]')).toHaveLength(1)
     expect(backendButton(wrapper, 'opencode-v2').exists()).toBe(true)
     expect(backendButton(wrapper, 'opencode-v2').attributes('disabled')).toBeUndefined()
 
