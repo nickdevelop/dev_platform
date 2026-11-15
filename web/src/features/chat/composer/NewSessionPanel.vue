@@ -209,9 +209,15 @@ watch(
   () => clearMissingPromptSelection(),
 )
 
+// A kept-alive panel keeps its watchers while another page is shown; it must
+// not follow route changes made for that page.
+const isNewSessionRouteActive = () =>
+  route?.name === 'session-new' || route?.name === 'session-new-global'
+
 watch(
   () => [props.projectId, route?.params?.projectId],
   ([propId, routeId], oldVal) => {
+    if (!isNewSessionRouteActive()) return
     if (!oldVal) {
       const candidate = propId ?? routeId
       if (candidate !== undefined && candidate !== null && candidate !== '') {
@@ -296,7 +302,7 @@ watch(selectedProjectId, (newId, oldId) => {
     })
   }
 
-  if (newId && Number(newId) !== Number(props.projectId)) {
+  if (newId && Number(newId) !== Number(props.projectId) && isNewSessionRouteActive()) {
     if (router && typeof router.replace === 'function') {
       void router.replace({
         name: 'session-new',
@@ -516,6 +522,18 @@ function selectBackend(backend: BackendId) {
   modelOk.value = false
 }
 
+// The panel can stay mounted after a session is created (kept alive), so the
+// composer's own state is cleared too, not only the stored draft.
+function resetComposer() {
+  isRestoringDraft = true
+  messageText.value = ''
+  attachedImages.value = []
+  selectedPromptId.value = ''
+  void nextTick(() => {
+    isRestoringDraft = false
+  })
+}
+
 async function createSession() {
   const targetProjectId = selectedProjectId.value
   if (!targetProjectId) {
@@ -561,6 +579,7 @@ async function createSession() {
   creating.value = false
   if (created) {
     draftsStore.clearNewSessionDraft(targetProjectId)
+    resetComposer()
     emit('created', created.id, targetProjectId)
   }
 }
