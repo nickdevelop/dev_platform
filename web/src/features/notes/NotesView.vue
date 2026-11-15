@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useNotesStore, type NoteViewMode } from '../../stores/notes'
 import { useProjectsStore } from '../../stores/projects'
 import { renderMarkdown } from '../../shared/markdown'
+import { handleCodeCopyClick } from '../../shared/markdown-code-copy'
 import { UiEmpty, UiSpinner } from '../../shared/ui'
 
 const props = defineProps<{
@@ -283,7 +284,7 @@ onUnmounted(() => {
 
         <!-- 渲染预览面板 -->
         <section v-show="viewMode !== 'edit'" class="notes-pane preview-pane" aria-label="Markdown 实时预览">
-          <div class="markdown-body preview-body" v-html="renderedHtml" />
+          <div class="markdown-body preview-body" v-html="renderedHtml" @click="handleCodeCopyClick" />
         </section>
       </main>
     </div>

@@ -3,6 +3,7 @@
 import { computed } from 'vue'
 import type { FlowMessage, FlowRole } from '../../../api/tasks'
 import { renderMarkdown } from '../../../shared/markdown'
+import { handleCodeCopyClick } from '../../../shared/markdown-code-copy'
 import FlowRoleBadge from './FlowRoleBadge.vue'
 
 const props = defineProps<{
@@ -72,41 +73,6 @@ function handleOpenSession() {
   }
 }
 
-async function handleMarkdownClick(event: MouseEvent) {
-  const target = event.target as HTMLElement | null
-  const copyBtn = target?.closest('.code-copy-btn') as HTMLButtonElement | null
-  if (!copyBtn) return
-
-  event.preventDefault()
-  event.stopPropagation()
-
-  const wrapper = copyBtn.closest('.code-block-wrapper')
-  const pre = wrapper?.querySelector('pre')
-  const code = pre?.querySelector('code')
-  const text = (code?.textContent || pre?.textContent || '').replace(/\n$/, '')
-  if (!text) return
-
-  try {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const textarea = document.createElement('textarea')
-      textarea.value = text
-      textarea.style.position = 'fixed'
-      textarea.style.opacity = '0'
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      document.body.removeChild(textarea)
-    }
-    copyBtn.classList.add('is-copied')
-    window.setTimeout(() => {
-      copyBtn.classList.remove('is-copied')
-    }, 2000)
-  } catch (err) {
-    console.error('Failed to copy code snippet:', err)
-  }
-}
 </script>
 
 <template>
@@ -215,7 +181,7 @@ async function handleMarkdownClick(event: MouseEvent) {
         </div>
 
         <!-- Markdown Content -->
-        <div class="msg-content markdown-body select-text" v-html="formattedContent" @click="handleMarkdownClick" />
+        <div class="msg-content markdown-body select-text" v-html="formattedContent" @click="handleCodeCopyClick" />
 
         <!-- Attached Session Card if coding agent was spawned -->
         <div
@@ -338,74 +304,6 @@ async function handleMarkdownClick(event: MouseEvent) {
   color: inherit;
   font-size: inherit;
   white-space: pre;
-}
-
-/* Code block wrapper with floating copy button */
-.markdown-body :deep(.code-block-wrapper) {
-  position: relative;
-  margin: 0.5rem 0;
-}
-
-.markdown-body :deep(.code-block-wrapper pre) {
-  margin: 0;
-  padding-top: 1.85rem;
-}
-
-.markdown-body :deep(.code-copy-btn) {
-  position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.45rem;
-  font-size: var(--text-size-meta);
-  line-height: 1;
-  color: var(--color-text-muted);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease-in-out;
-  user-select: none;
-}
-
-.markdown-body :deep(.code-copy-btn:hover) {
-  background: var(--color-surface-muted);
-  color: var(--color-text);
-  border-color: var(--color-border-strong, var(--color-primary));
-}
-
-.markdown-body :deep(.code-copy-btn .code-copy-icon) {
-  width: 0.82rem;
-  height: 0.82rem;
-  flex-shrink: 0;
-}
-
-.markdown-body :deep(.code-copy-btn .code-copy-icon-copied),
-.markdown-body :deep(.code-copy-btn .code-copied-text) {
-  display: none;
-}
-
-.markdown-body :deep(.code-copy-btn.is-copied) {
-  background: var(--color-success-soft, rgba(22, 163, 74, 0.1));
-  border-color: var(--color-success, #16a34a);
-  color: var(--color-success, #16a34a);
-}
-
-.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-idle),
-.markdown-body :deep(.code-copy-btn.is-copied .code-copy-text) {
-  display: none;
-}
-
-.markdown-body :deep(.code-copy-btn.is-copied .code-copy-icon-copied) {
-  display: inline-block;
-  color: var(--color-success, #16a34a);
-}
-
-.markdown-body :deep(.code-copy-btn.is-copied .code-copied-text) {
-  display: inline;
 }
 
 /* 4. Blockquotes */
