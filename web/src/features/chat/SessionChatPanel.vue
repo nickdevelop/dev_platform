@@ -29,6 +29,7 @@ import { useBottomFollow } from '../../shared/scrollFollow'
 import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
 import { useViewportStore } from '../../stores/viewport'
+import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import type { GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
@@ -75,6 +76,7 @@ const interactions = useInteractionsStore()
 const worktreesStore = useWorktreesStore()
 const draftsStore = useDraftsStore()
 const viewportStore = useViewportStore()
+const fileTreeState = useFileTreeStateStore()
 const router = useRouter()
 
 let currentSessionId = props.sessionId
@@ -701,7 +703,11 @@ onBeforeUnmount(() => {
 // A finished turn may have switched branches (the agent commits) or consumed
 // context, so the workdir row refreshes exactly then instead of polling.
 watch(isRunning, (running, was) => {
-  if (was === true && running === false) void loadGit(true)
+  if (was === true && running === false) {
+    void loadGit(true)
+    // The agent may have changed files: the next open of the tree loads them again.
+    if (currentSessionId) fileTreeState.invalidateData(currentSessionId)
+  }
 })
 // The limit follows the composer's current model: switching models re-reads
 // the picker's cached catalog entry the new model reports.

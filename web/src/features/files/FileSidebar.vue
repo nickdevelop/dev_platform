@@ -31,6 +31,23 @@ const props = defineProps<{
 
 const treeState = useFileTreeStateStore()
 const saved = props.sessionId ? treeState.snapshotOf(props.sessionId) : undefined
+const savedData = props.sessionId ? treeState.dataOf(props.sessionId) : undefined
+// Loaded data is reused only for the same project and worktree it was loaded for.
+const restoredData =
+  savedData && savedData.projectId === props.projectId && savedData.worktreeId === (props.worktreeId ?? 0)
+    ? savedData
+    : undefined
+// Stored data is copied on the way in and out, so the store never holds the
+// reactive tree the sidebar mutates. A node stored mid-load is stored as not
+// loading: nothing is loading in the copy.
+const copyOf = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+function settledNodes(nodes: FileTreeNode[]): FileTreeNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    loading: false,
+    children: node.children ? settledNodes(node.children) : undefined,
+  }))
+}
 // A change-tree that was seeded before (restored or already loaded) keeps the
 // user's expansions; only a fresh tree expands every directory once.
 let changeDirsSeeded = saved !== undefined
@@ -44,10 +61,10 @@ const emit = defineEmits<{
 const activeTab = ref<'changes' | 'all'>(saved?.activeTab ?? 'all')
 const loading = ref(false)
 const error = ref('')
-const treeNodes = ref<FileTreeNode[]>([])
-const gitChanges = ref<GitStatusItem[]>([])
-const commits = ref<GitCommitItem[]>([])
-const selectedCommit = ref<string>(saved?.selectedCommit ?? '') // empty means working tree
+const treeNodes = ref<FileTreeNode[]>(restoredData ? copyOf(restoredData.treeNodes) : [])
+const gitChanges = ref<GitStatusItem[]>(restoredData ? copyOf(restoredData.gitChanges) : [])
+const commits = ref<GitCommitItem[]>(restoredData ? copyOf(restoredData.commits) : [])
+const selectedCommit = ref<string>(restoredData?.selectedCommit ?? saved?.selectedCommit ?? '') // empty means working tree
 const searchQuery = ref(saved?.searchQuery ?? '')
 const searchResults = ref<Array<{ path: string; isDir: boolean }>>([])
 const searchLoading = ref(false)
@@ -110,6 +127,19 @@ const historyTreeResult = computed(() => {
   return buildChangeTree(displayChanges.value)
 })
 
+// Keeps the loaded data for the next open of this session's tree.
+function persistData() {
+  if (!props.sessionId) return
+  treeState.saveData(props.sessionId, {
+    projectId: props.projectId,
+    worktreeId: props.worktreeId ?? 0,
+    selectedCommit: selectedCommit.value,
+    treeNodes: copyOf(settledNodes(treeNodes.value)),
+    gitChanges: copyOf(gitChanges.value),
+    commits: copyOf(commits.value),
+  })
+}
+
 async function refresh() {
   if (!props.projectId) return
   loading.value = true
@@ -124,7 +154,10 @@ async function refresh() {
     gitChanges.value = status
     commits.value = recentCommits
     updateExpandedChangeDirs()
-    await loadExpandedChildren(tree)
+    // The children are loaded through the reactive nodes: writing to the raw
+    // response would leave the view showing the loading state.
+    await loadExpandedChildren(treeNodes.value)
+    persistData()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载文件失败'
   } finally {
@@ -140,6 +173,7 @@ async function loadCommitChanges() {
     const status = await getGitStatus(props.projectId, selectedCommit.value, props.worktreeId)
     gitChanges.value = status
     updateExpandedChangeDirs()
+    persistData()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载变更失败'
   } finally {
@@ -202,6 +236,7 @@ async function onLoadChildren(node: FileTreeNode) {
     const children = await getFileTree(props.projectId, node.path, props.worktreeId)
     node.children = children
     node.loaded = true
+    persistData()
   } catch (err) {
     console.error('Failed to load sub-directory files:', err)
   } finally {
@@ -292,9 +327,15 @@ watch(
       selectedCommit.value = ''
       changeDirsSeeded = false
       expandedTreePaths.value = new Set()
+      void refresh()
+      return
     }
     initialized = true
-    void refresh()
+    // Reopening a tree whose data is still in memory shows it at once, with no
+    // request; the refresh button and the session's turn end load it again. A
+    // directory that was open but had not finished loading is fetched now.
+    if (restoredData) void loadExpandedChildren(treeNodes.value)
+    else void refresh()
   },
   { immediate: true },
 )
