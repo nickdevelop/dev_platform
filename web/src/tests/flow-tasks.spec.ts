@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import FlowRoleBadge from '../features/tasks/flow/FlowRoleBadge.vue'
@@ -13,6 +13,10 @@ import { installTestCSRF } from './csrf-fixture'
 import type { Task, FlowRole, FlowMessage, FlowRun } from '../api/tasks'
 
 describe('Collaborative Flow Tasks Unit Tests', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('FlowRoleBadge renders role name, color dot, backend and model', () => {
     const role: FlowRole = {
       id: 1,

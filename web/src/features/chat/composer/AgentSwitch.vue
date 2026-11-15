@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue'
 import type { BackendId } from '../../../api/sessions'
 import type { AgentBackend } from '../../../api/agents'
+import BackendIcon from '../../../shared/components/BackendIcon.vue'
 
 const props = defineProps<{
   modelValue: BackendId | ''
@@ -111,6 +112,7 @@ function optionTitle(backend: AgentBackend): string {
       :data-backend="backend.backend"
       @click="choose(backend)"
     >
+      <BackendIcon :backend="backend.backend" size="sm" />
       {{ backend.label || backend.backend }}
     </button>
     <span v-if="backends.length === 0" class="agent-switch-empty">加载中…</span>
@@ -133,6 +135,10 @@ function optionTitle(backend: AgentBackend): string {
 
 .agent-switch-option {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   flex: 1 1 auto;
   min-width: 5.5rem;
   padding: 0.35rem 0.75rem;

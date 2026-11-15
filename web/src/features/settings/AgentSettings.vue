@@ -19,6 +19,7 @@ import {
 } from '../../api/agents'
 import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 import BuiltinDataPanel from './BuiltinDataPanel.vue'
 import { rememberModels } from '../../shared/modelCache'
 import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
@@ -451,6 +452,7 @@ function cancelStop() {
         :aria-selected="selectedBackend !== 'general' && activeAgent?.backend === agent.backend"
         @click="selectedBackend = agent.backend"
       >
+        <BackendIcon :backend="agent.backend" size="sm" />
         <span>{{ label(agent.backend) }}</span>
         <span
           class="w-1.5 h-1.5 rounded-full"
@@ -547,6 +549,7 @@ function cancelStop() {
       <!-- Backend Card Header -->
       <header class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
         <div class="flex items-center gap-3">
+          <BackendIcon :backend="agent.backend" />
           <strong class="text-base text-slate-900 dark:text-slate-100 font-semibold">{{ label(agent.backend) }}</strong>
           <code class="text-2xs font-mono text-slate-400 dark:text-slate-500">{{ agent.backend }}</code>
         </div>

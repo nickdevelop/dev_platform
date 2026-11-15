@@ -9,6 +9,7 @@ import { usePromptsStore } from '../../stores/prompts'
 import { useModelsStore } from '../../stores/models'
 import { useAgentsStore } from '../../stores/agents'
 import ModelSelect from '../../shared/components/ModelSelect.vue'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 import { listAgentBackendModels, type BackendId, type ModelInfo } from '../../api/agents'
 import { cachedModels, rememberModels } from '../../shared/modelCache'
 import type { AgentRole, CreateRolePayload, UpdateRolePayload } from '../../api/roles'
@@ -326,7 +327,8 @@ function goToPromptsSetting() {
               <span class="text-sm font-semibold text-[var(--color-text)] truncate">
                 {{ role.name }}
               </span>
-              <span class="text-2xs px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+              <span class="text-2xs px-1.5 py-0.5 rounded bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)] inline-flex items-center gap-1">
+                <BackendIcon :backend="role.backend" size="sm" />
                 {{ role.backend }}
               </span>
             </div>
@@ -470,7 +472,7 @@ function goToPromptsSetting() {
                   :key="b.id"
                   type="button"
                   role="radio"
-                  class="backend-option px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
+                  class="backend-option inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
                   :class="[
                     formBackend === b.id
                       ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)] text-[var(--color-primary)] font-semibold'
@@ -479,6 +481,7 @@ function goToPromptsSetting() {
                   :aria-checked="formBackend === b.id"
                   @click="selectBackend(b.id)"
                 >
+                  <BackendIcon :backend="b.id" size="sm" />
                   <span class="backend-name">{{ b.label }}</span>
                 </button>
               </div>

@@ -25,6 +25,7 @@ import {
   type SelectMenuItem,
 } from '../../shared/ui'
 import CronBuilder from '../../shared/components/CronBuilder.vue'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 
 const props = defineProps<{
   initialProjectId?: number
@@ -626,7 +627,8 @@ async function handleCreateTask() {
                       <span class="text-xs font-semibold text-[var(--color-text)]">
                         {{ r.name }}
                       </span>
-                      <span class="text-3xs px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                      <span class="text-3xs px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)] inline-flex items-center gap-1">
+                        <BackendIcon :backend="r.backend" size="sm" />
                         {{ r.backend }}
                       </span>
                       <span class="text-3xs px-1.5 py-0.2 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
@@ -731,7 +733,7 @@ async function handleCreateTask() {
                 :key="b.backend"
                 type="button"
                 role="radio"
-                class="backend-option px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
+                class="backend-option inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--radius,6px)] border text-xs font-medium transition-colors select-none"
                 :class="[
                   selectedBackend === b.backend
                     ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)] text-[var(--color-primary)]'
@@ -740,6 +742,7 @@ async function handleCreateTask() {
                 :aria-checked="selectedBackend === b.backend"
                 @click="selectBackend(b.backend)"
               >
+                <BackendIcon :backend="b.backend" size="sm" />
                 <span class="backend-name">{{ b.label || b.backend }}</span>
               </button>
             </div>

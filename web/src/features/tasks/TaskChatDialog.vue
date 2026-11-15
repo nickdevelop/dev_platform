@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import { SessionChatPanel } from '../chat'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 
 const props = defineProps<{
   title: string
@@ -51,7 +52,8 @@ onBeforeUnmount(() => {
               </svg>
             </span>
             <span class="dialog-title text-sm font-semibold text-[var(--color-text)]">{{ title }}</span>
-            <span v-if="backend" class="dialog-meta-badge font-mono text-2xs text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)]">
+            <span v-if="backend" class="dialog-meta-badge inline-flex items-center gap-1 font-mono text-2xs text-[var(--color-text-muted)] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)]">
+              <BackendIcon :backend="backend" size="sm" />
               {{ backend }} {{ model ? `· ${model}` : '' }}
             </span>
           </div>

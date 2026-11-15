@@ -2,6 +2,7 @@
 // FlowRoleBadge: Compact, neutral role pill with color accent indicator
 import { computed } from 'vue'
 import type { FlowRole } from '../../../api/tasks'
+import BackendIcon from '../../../shared/components/BackendIcon.vue'
 
 const props = defineProps<{
   role?: FlowRole | null
@@ -31,8 +32,9 @@ const roleModel = computed(() => props.role?.model || props.model || '')
     <span class="role-name font-semibold tracking-tight">{{ roleName }}</span>
     <span
       v-if="roleBackend"
-      class="text-3xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
+      class="inline-flex items-center gap-1 text-3xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
     >
+      <BackendIcon :backend="roleBackend" size="sm" />
       {{ roleBackend }}
     </span>
     <span

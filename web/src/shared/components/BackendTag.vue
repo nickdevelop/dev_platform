@@ -7,6 +7,7 @@
 import { computed } from 'vue'
 import type { BackendId } from '../../api/agents'
 import { useAgentsStore } from '../../stores/agents'
+import BackendIcon from './BackendIcon.vue'
 
 const props = defineProps<{ backend: BackendId }>()
 
@@ -39,11 +40,14 @@ const tagStyle = computed<Record<string, string>>((): Record<string, string> =>
     :class="declaredColor ? 'has-color' : tone"
     :style="tagStyle"
     :data-backend-color="declaredColor || undefined"
-  >{{ label }}</span>
+  ><BackendIcon :backend="props.backend" size="sm" /><span class="tag-label">{{ label }}</span></span>
 </template>
 
 <style scoped>
 .tag {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-unit) * 0.5);
   font-size: 0.786rem;
   padding: calc(var(--space-unit) * 0.167) calc(var(--space-unit) * 1.000);
   border-radius: 4px;

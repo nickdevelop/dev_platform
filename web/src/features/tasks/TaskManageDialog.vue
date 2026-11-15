@@ -6,8 +6,9 @@ import type { ScheduleType, Task } from '../../api/tasks'
 import { useAgentsStore } from '../../stores/agents'
 import { useProjectsStore } from '../../stores/projects'
 import { useTasksStore } from '../../stores/tasks'
-import { UiFormDialog, UiInput, UiSelect, UiTextarea } from '../../shared/ui'
+import { UiFormDialog, UiInput, UiSelect, UiSelectMenu, UiTextarea, type SelectMenuItem } from '../../shared/ui'
 import CronBuilder from '../../shared/components/CronBuilder.vue'
+import BackendIcon from '../../shared/components/BackendIcon.vue'
 
 const props = defineProps<{
   task?: Task | null
@@ -43,6 +44,10 @@ const isEditing = computed(() => !!props.task)
 
 const selectableBackends = computed(() =>
   agentsStore.backends.filter((b) => b.enabled !== false),
+)
+
+const backendOptions = computed<SelectMenuItem<BackendId | ''>[]>(() =>
+  selectableBackends.value.map((b) => ({ value: b.backend, label: b.label || b.backend })),
 )
 
 onMounted(async () => {
@@ -224,16 +229,27 @@ async function submit() {
         <label for="dlg-task-backend" class="text-xs font-medium text-[var(--color-text)]">
           Agent 后端 <span class="text-red-500">*</span>
         </label>
-        <UiSelect id="dlg-task-backend" v-model="selectedBackend" block required>
-          <option value="" disabled>选择 Agent…</option>
-          <option
-            v-for="b in selectableBackends"
-            :key="b.backend"
-            :value="b.backend"
-          >
-            {{ b.label || b.backend }}
-          </option>
-        </UiSelect>
+        <UiSelectMenu
+          id="dlg-task-backend"
+          v-model="selectedBackend"
+          :options="backendOptions"
+          placeholder="选择 Agent…"
+          block
+        >
+          <template #trigger="{ selected }">
+            <span v-if="selected" class="backend-choice inline-flex items-center gap-1.5">
+              <BackendIcon :backend="selected.value" size="sm" />
+              {{ selected.label }}
+            </span>
+            <span v-else class="text-[var(--color-text-muted)]">选择 Agent…</span>
+          </template>
+          <template #option="{ option }">
+            <span class="backend-choice inline-flex items-center gap-1.5">
+              <BackendIcon :backend="option.value" size="sm" />
+              {{ option.label }}
+            </span>
+          </template>
+        </UiSelectMenu>
       </div>
     </div>
 

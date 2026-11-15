@@ -97,7 +97,7 @@ describe('BackendTag', () => {
     ]
     const wrapper = mount(BackendTag, { props: { backend: 'deepseek' }, global: { plugins: [pinia] } })
     await flushPromises()
-    expect(wrapper.text()).toBe('DeepSeek')
+    expect(wrapper.find('.tag-label').text()).toBe('DeepSeek')
     expect(wrapper.classes()).toContain('tone-info')
   })
 
@@ -106,7 +106,7 @@ describe('BackendTag', () => {
     agents.backends = backendFixtures()
     const wrapper = mount(BackendTag, { props: { backend: 'claude-code' }, global: { plugins: [pinia] } })
     await flushPromises()
-    expect(wrapper.text()).toBe('claude-code')
+    expect(wrapper.find('.tag-label').text()).toBe('claude-code')
     expect(wrapper.text()).not.toContain('opencode')
     expect(wrapper.classes()).toContain('tone-neutral')
   })

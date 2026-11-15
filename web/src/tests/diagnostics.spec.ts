@@ -2,7 +2,7 @@
 // diagnostics loading: statuses, versions, redacted check messages and the
 // capability matrix must render exactly as the backend reported them, and a
 // failed diagnostics load must not mask the rest of the page.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import BackendDiagnostics from '../shared/components/BackendDiagnostics.vue'
@@ -45,6 +45,10 @@ function report(overrides: Partial<BackendDiagnosticsReport> = {}): BackendDiagn
 }
 
 describe('BackendDiagnostics panel', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('renders status, versions, checks and the capability matrix', () => {
     const wrapper = mount(BackendDiagnostics, {
       props: {

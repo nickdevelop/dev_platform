@@ -6,6 +6,7 @@
 // internal detail of how a backend serves the workbench, and the operator who
 // needs to act on a backend acts on its service, in platform settings.
 import type { BackendDiagnostics } from '../../api/agents'
+import BackendIcon from './BackendIcon.vue'
 
 const props = defineProps<{
   diagnostics: BackendDiagnostics[]
@@ -78,6 +79,7 @@ function checksOf(entry: BackendDiagnostics): BackendDiagnostics['checks'] {
         :data-backend-diagnostics="entry.backend"
       >
         <div class="backend-head">
+          <BackendIcon :backend="entry.backend" size="sm" />
           <span class="backend-name">{{ entry.backend }}</span>
           <span class="badge" :class="`badge-${entry.status}`" :data-diagnostics-status="entry.status">
             {{ statusLabels[entry.status] ?? entry.status }}
