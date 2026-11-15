@@ -27,6 +27,7 @@ import (
 	"devplatform/internal/app/events"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/notes"
 	"devplatform/internal/app/platformtools"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
@@ -380,6 +381,8 @@ func runServer(args []string) error {
 	defer sessionService.Close()
 	promptRepo := prompts.NewRepository(db)
 	promptService := prompts.NewService(promptRepo)
+	notesRepo := notes.NewRepository(db)
+	notesService := notes.NewService(notesRepo)
 	platformTools := platformtools.NewExecutor(projectService, promptService, sessionService)
 
 	rolesRepo := roles.NewRepository(db)
@@ -462,6 +465,7 @@ func runServer(args []string) error {
 		Sessions:      sessionService,
 		Tasks:         taskService,
 		Prompts:       promptService,
+		Notes:         notesService,
 		Roles:         rolesService,
 		Terminal:      terminalService,
 		Chats:         chatService,

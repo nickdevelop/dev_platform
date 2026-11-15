@@ -251,10 +251,10 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/')
 
-    // 项目 / 对话 / 任务 / 终端 / 设置 / 退出 each carry one inline SVG icon.
+    // 项目 / 对话 / 任务 / 终端 / 笔记 / 设置 / 退出 each carry one inline SVG icon.
     // 提示词管理与角色管理收拢在设置中心内。
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(6)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
     // Chat is a first-level peer immediately below projects, not nested in the
     // project tree, because both are primary work areas.
@@ -263,6 +263,7 @@ describe('three-pane app shell', () => {
       '对话',
       '任务',
       '终端',
+      '笔记',
       '设置',
       '退出',
     ])
