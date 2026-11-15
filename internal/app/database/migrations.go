@@ -555,6 +555,14 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 39, name: "create_notes_table", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&Note{}) {
+			if err := tx.Migrator().CreateTable(&Note{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

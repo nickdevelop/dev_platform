@@ -25,6 +25,7 @@ import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
 import TasksView from './features/tasks/TasksView.vue'
+import NotesView from './features/notes/NotesView.vue'
 import PromptsView from './features/prompts/PromptsView.vue'
 import TerminalWorkspace from './features/terminal/TerminalWorkspace.vue'
 import ProxySettings from './features/settings/ProxySettings.vue'
@@ -119,6 +120,19 @@ export function createAppRouter() {
             name: 'terminal',
             component: TerminalWorkspace,
             meta: { terminal: true, fullHeight: true },
+          },
+          {
+            path: 'notes',
+            name: 'notes',
+            component: NotesView,
+            meta: { notes: true, fullHeight: true },
+          },
+          {
+            path: 'notes/:noteId',
+            name: 'note-detail',
+            component: NotesView,
+            meta: { notes: true, fullHeight: true },
+            props: (route) => ({ noteId: Number(route.params.noteId) }),
           },
           {
             path: 'projects/:projectId/sessions/new',

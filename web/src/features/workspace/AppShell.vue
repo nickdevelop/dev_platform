@@ -26,6 +26,7 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
+import NotesSidebar from '../notes/NotesSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
@@ -204,6 +205,8 @@ const tasksMode = computed(() => route.meta.tasks === true)
 const promptsMode = computed(() => route.meta.prompts === true)
 // The terminal center manages server terminals with their own list column and terminal workspace pane.
 const terminalMode = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
+// The notes center manages notes with their own list column and note workspace pane.
+const notesMode = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 // The pure-chat center manages global conversations with their own list column and chat pane.
 const chatMode = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
 // The project/workspace area is the default when no other center is open.
@@ -213,6 +216,7 @@ const projectActive = computed(
     !tasksMode.value &&
     !promptsMode.value &&
     !terminalMode.value &&
+    !notesMode.value &&
     !chatMode.value,
 )
 
@@ -271,6 +275,8 @@ const columnLabel = computed(() =>
         ? '提示词列表'
         : terminalMode.value
         ? '服务器列表'
+        : notesMode.value
+        ? '笔记列表'
         : chatMode.value
           ? '对话列表'
           : '项目导航',
@@ -286,6 +292,8 @@ const columnTitle = computed(() =>
         ? '提示词'
         : terminalMode.value
         ? '服务器'
+        : notesMode.value
+        ? '笔记'
         : chatMode.value
           ? '对话'
           : '项目',
@@ -667,6 +675,7 @@ watch(
       'tasks-mode': tasksMode,
       'prompts-mode': promptsMode,
       'terminal-mode': terminalMode,
+      'notes-mode': notesMode,
       'chat-mode': chatMode,
       'sidebar-collapsed': !isDocked,
     }"
@@ -750,6 +759,7 @@ watch(
       <TasksSidebar v-if="tasksMode" />
       <PromptsSidebar v-else-if="promptsMode" />
       <TerminalSidebar v-else-if="terminalMode" />
+      <NotesSidebar v-else-if="notesMode" />
       <ChatSidebar v-else-if="chatMode" />
       <SettingsNav v-else-if="settingsMode" />
       <ProjectSidebar
