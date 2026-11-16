@@ -962,14 +962,13 @@ describe('sessions store user echo dedupe', () => {
     expect(sessions.sessionsByProject[1][0].updatedAt).toBe(freshTime)
   })
 
-  it('aligns session updatedAt from the latest timestamp in loaded history', async () => {
+  it('leaves session updatedAt untouched when replaying history', async () => {
     const sessions = useSessionsStore()
     sessions.projectId = 1
     const oldSession = session('s1', 1, { updatedAt: '2026-10-09T00:00:00Z' })
     sessions.sessions = [oldSession]
     sessions.sessionsByProject[1] = [oldSession]
 
-    const latestMessageTime = '2026-10-20T16:00:00Z'
     stubRoutes({
       '/history': {
         events: [
@@ -984,7 +983,7 @@ describe('sessions store user echo dedupe', () => {
             instanceId: 'inst-1',
             type: 'message',
             sequence: 2,
-            timestamp: latestMessageTime,
+            timestamp: '2026-10-20T16:00:00Z',
             message: { role: 'assistant', text: 'hello!', final: true },
           }),
         ],
@@ -994,8 +993,11 @@ describe('sessions store user echo dedupe', () => {
 
     await sessions.loadHistory(1, 's1')
 
-    expect(sessions.sessionById('s1')?.updatedAt).toBe(latestMessageTime)
-    expect(sessions.sessionsByProject[1][0].updatedAt).toBe(latestMessageTime)
+    // Opening a session is viewing, not interacting: the replay carries the
+    // agent's transcript times, but the last-interaction clock keeps the value
+    // it had, so clicking through history cannot reorder the list.
+    expect(sessions.sessionById('s1')?.updatedAt).toBe('2026-10-09T00:00:00Z')
+    expect(sessions.sessionsByProject[1][0].updatedAt).toBe('2026-10-09T00:00:00Z')
   })
 })
 

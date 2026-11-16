@@ -540,32 +540,10 @@ export const useSessionsStore = defineStore('sessions', {
         this.historyHasMore[sessionId] = history.hasMore === true
         this.historyOlderError[sessionId] = ''
         this.historyLoaded[sessionId] = true
-
-        let latestTimestamp = ''
-        for (const ev of history.events) {
-          if (ev.timestamp) {
-            if (!latestTimestamp || new Date(ev.timestamp).getTime() > new Date(latestTimestamp).getTime()) {
-              latestTimestamp = ev.timestamp
-            }
-          }
-        }
-        if (latestTimestamp) {
-          const session = this.sessionById(sessionId)
-          if (session) {
-            const currentMs = session.updatedAt ? new Date(session.updatedAt).getTime() : 0
-            const latestMs = new Date(latestTimestamp).getTime()
-            if (!isNaN(latestMs) && latestMs > 0 && (!currentMs || Math.abs(currentMs - latestMs) > 1000)) {
-              this.sessions = this.sessions.map((entry) =>
-                entry.id === sessionId ? { ...entry, updatedAt: latestTimestamp } : entry,
-              )
-              for (const pId in this.sessionsByProject) {
-                this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>
-                  entry.id === sessionId ? { ...entry, updatedAt: latestTimestamp } : entry,
-                )
-              }
-            }
-          }
-        }
+        // The replayed timestamps are the agent's own transcript times and stay
+        // with the bubbles. session.updatedAt is the platform's last-interaction
+        // clock: only real activity (a send, live events) may move it, otherwise
+        // every visit would lift the session to the top of the list.
       } catch (error) {
         if (error instanceof UnauthorizedError) return
         this.historyError[sessionId] = describeApiError(error)

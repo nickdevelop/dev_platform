@@ -153,6 +153,15 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 	}
 	defer file.Close()
 
+	// A step without a usable created_at is stamped with the transcript's own
+	// modification time, never with the time it was read: the workbench sorts
+	// sessions by last interaction, so replaying a turn must not look like a new
+	// one. The same anchor closes a trailing turn.
+	fallbackTime := time.Now().UTC()
+	if info, statErr := file.Stat(); statErr == nil {
+		fallbackTime = info.ModTime().UTC()
+	}
+
 	var events []agents.NormalizedEvent
 	scanner := bufio.NewScanner(file)
 	buf := make([]byte, 0, 64*1024)
@@ -160,6 +169,7 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 
 	var lastToolCallID string
 	var currentModel string
+	var lastStepTime time.Time
 	turnIndex := 0
 	turnActive := false
 
@@ -208,12 +218,16 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 			}
 		}
 
-		ts := time.Now().UTC()
+		ts := lastStepTime
 		if step.CreatedAt != "" {
 			if parsed, err := time.Parse(time.RFC3339, step.CreatedAt); err == nil {
 				ts = parsed
 			}
 		}
+		if ts.IsZero() {
+			ts = fallbackTime
+		}
+		lastStepTime = ts
 
 		switch step.Type {
 		case "USER_INPUT":
@@ -355,7 +369,7 @@ func ParseTranscriptFile(filePath, instanceID, sessionID string) ([]agents.Norma
 			InstanceID: instanceID,
 			SessionID:  sessionID,
 			Backend:    agents.BackendAgy,
-			Timestamp:  time.Now().UTC(),
+			Timestamp:  lastStepTime,
 			Type:       agents.EventTurn,
 			Turn: &agents.TurnPayload{
 				ID:      fmt.Sprintf("turn-%d", turnIndex),

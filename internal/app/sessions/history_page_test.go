@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/database"
 	"devplatform/internal/core/agents"
 )
 
@@ -316,5 +317,36 @@ func TestHistoryHandlerMapsImageErrors(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("svg status = %d, want 415", rec.Code)
+	}
+}
+
+// TestHistoryPageLeavesTheActivityTimestampAlone verifies replaying a session's
+// history is viewing, not interacting. The workbench sorts sessions by
+// updated_at, and an adapter may stamp its transcript at read time at worst
+// (agy used to close a replayed turn with time.Now), so a replay must never
+// move that column: otherwise every visited session jumps to the top.
+func TestHistoryPageLeavesTheActivityTimestampAlone(t *testing.T) {
+	env, session := historyPageSession(t)
+
+	past := time.Now().UTC().Add(-72 * time.Hour).Truncate(time.Second)
+	if err := env.db.Model(&database.AgentSession{}).Where("id = ?", session.ID).
+		Update("updated_at", past).Error; err != nil {
+		t.Fatalf("age session: %v", err)
+	}
+
+	env.fake.mu.Lock()
+	env.fake.historyResult = agents.HistoryResult{Events: historyEvents(time.Now().UTC(), "回放")}
+	env.fake.mu.Unlock()
+
+	if _, err := env.svc.HistoryPage(context.Background(), env.projectID, session.ID, HistoryOptions{Limit: 200}); err != nil {
+		t.Fatalf("HistoryPage: %v", err)
+	}
+
+	var row database.AgentSession
+	if err := env.db.First(&row, "id = ?", session.ID).Error; err != nil {
+		t.Fatalf("load row: %v", err)
+	}
+	if !row.UpdatedAt.Equal(past) {
+		t.Errorf("persisted updated_at = %v after replaying history, want preserved %v: viewing is not activity", row.UpdatedAt, past)
 	}
 }

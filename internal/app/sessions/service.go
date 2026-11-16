@@ -865,18 +865,13 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 		s.lazyHistoryImages(projectID, sessionID, events, adapter)
 	}
 
-	if len(events) > 0 {
-		var lastTime time.Time
-		for i := len(events) - 1; i >= 0; i-- {
-			if !events[i].Timestamp.IsZero() {
-				lastTime = events[i].Timestamp
-				break
-			}
-		}
-		if !lastTime.IsZero() && (row.UpdatedAt.IsZero() || row.UpdatedAt.Before(lastTime) || row.UpdatedAt.Sub(lastTime) > 5*time.Minute) {
-			_ = s.store.TouchUpdatedAt(row.ID, lastTime)
-		}
-	}
+	// Reading history is viewing, not interacting: opening a session must not
+	// bump updated_at — the column the session list sorts by — no matter what
+	// timestamps the backend's transcript carries. Only real activity moves it:
+	// a send, a live event on the instance stream, a turn boundary or an
+	// explicit turn-end callback. Without this rule a replayed transcript whose
+	// last event is stamped at read time (an adapter falling back to time.Now)
+	// would lift every visited session to the top of the list.
 	return History{
 		Events:     events,
 		Truncated:  result.Truncated,

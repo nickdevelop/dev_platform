@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"devplatform/internal/core/agents"
 )
@@ -109,5 +110,51 @@ func TestParseTranscriptFile_GracefulFallbackWhenFullMissing(t *testing.T) {
 	}
 	if events[2].Message.Text != "Partial <truncated> text" {
 		t.Errorf("expected fallback to compact text, got %q", events[2].Message.Text)
+	}
+}
+
+// TestParseTranscriptFile_StampsReplayWithTranscriptTime pins replay timestamps
+// to the transcript's own clock. The workbench sorts sessions by last
+// interaction and a history read ends on the trailing TurnEnded, so stamping
+// that event with time.Now makes every visited session look freshly active.
+func TestParseTranscriptFile_StampsReplayWithTranscriptTime(t *testing.T) {
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "transcript.jsonl")
+	content := `{"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"2026-11-12T07:10:19Z","content":"<USER_REQUEST>hello</USER_REQUEST>"}
+{"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"2026-11-12T07:10:20Z","content":"hi"}
+{"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"2026-11-12T07:10:22Z","content":"done"}
+`
+	if err := os.WriteFile(logPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	first, err := ParseTranscriptFile(logPath, "inst-1", "ses-1")
+	if err != nil {
+		t.Fatalf("parse transcript: %v", err)
+	}
+	if len(first) == 0 {
+		t.Fatal("expected events")
+	}
+
+	last := first[len(first)-1]
+	wantLast := time.Date(2026, 11, 12, 7, 10, 22, 0, time.UTC)
+	if last.Type != agents.EventTurn || last.Turn.Phase != agents.TurnEnded {
+		t.Fatalf("last event = %+v, want the trailing TurnEnded", last)
+	}
+	if !last.Timestamp.Equal(wantLast) {
+		t.Errorf("trailing TurnEnded timestamp = %v, want the transcript's last step time %v", last.Timestamp, wantLast)
+	}
+	for i, event := range first {
+		if event.Timestamp.After(wantLast) {
+			t.Errorf("event %d timestamp = %v, want no event past the transcript's last step %v", i, event.Timestamp, wantLast)
+		}
+	}
+
+	second, err := ParseTranscriptFile(logPath, "inst-1", "ses-1")
+	if err != nil {
+		t.Fatalf("re-parse transcript: %v", err)
+	}
+	if !second[len(second)-1].Timestamp.Equal(last.Timestamp) {
+		t.Errorf("re-read TurnEnded timestamp = %v, want the stable %v: reading is not activity", second[len(second)-1].Timestamp, last.Timestamp)
 	}
 }
