@@ -488,8 +488,8 @@ function cancelStop() {
         <span>{{ label(agent.backend) }}</span>
         <span
           class="w-1.5 h-1.5 rounded-full"
-          :class="agent.available ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
-          :title="agent.available ? '可执行文件已检测到' : '未检测到'"
+          :class="agent.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+          :title="agent.enabled ? '已启用' : '未启用'"
         ></span>
       </button>
     </nav>

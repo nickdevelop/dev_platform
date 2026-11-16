@@ -93,6 +93,31 @@ describe('AgentSettings', () => {
     expect(wrapper.find('[data-agent-path-input="opencode-v2"]').exists()).toBe(true)
   })
 
+  it('marks each tab dot by platform enablement, not by detection', async () => {
+    // pi is enabled but its binary is missing; opencode-v2 is detected but off.
+    // The dot must follow the enablement, so the two states must disagree.
+    stubFetch({
+      'GET /agents': {
+        agents: [
+          { backend: 'pi', enabled: true, path: '', pathSource: 'none', available: false },
+          { backend: 'opencode-v2', enabled: false, path: '/usr/bin/opencode', pathSource: 'auto', available: true, version: '2.0.27' },
+        ],
+      },
+    })
+    const wrapper = await mountView()
+
+    const enabledDot = wrapper.find('[data-test="agent-tab-pi"] span[title="已启用"]')
+    expect(enabledDot.exists()).toBe(true)
+    expect(enabledDot.classes()).toContain('bg-emerald-500')
+
+    const disabledDot = wrapper.find('[data-test="agent-tab-opencode-v2"] span[title="未启用"]')
+    expect(disabledDot.exists()).toBe(true)
+    expect(disabledDot.classes()).toContain('bg-slate-300')
+
+    // Detection stays in the card body, never on the tab.
+    expect(wrapper.find('[data-test="agent-tab-pi"]').text()).not.toContain('检测到')
+  })
+
   it('runs a detection and shows the version', async () => {
     const calls = stubFetch({ 'POST /agents/pi/detect': { backend: 'pi', status: 'ok', version: '1.2.3' } })
     const wrapper = await mountView()
