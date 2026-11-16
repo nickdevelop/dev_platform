@@ -132,8 +132,28 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktre
 		return "", "", err
 	}
 
-	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
-	cleanRel = strings.TrimPrefix(cleanRel, "/")
+	rawClean := filepath.Clean(relPath)
+	var cleanRel string
+
+	// If an absolute path is supplied, check whether it falls inside rootDir.
+	if filepath.IsAbs(rawClean) {
+		rel, err := filepath.Rel(rootDir, rawClean)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			cleanRel = filepath.ToSlash(rel)
+		} else {
+			return "", "", ErrPathEscaped
+		}
+	} else {
+		cleanRel = filepath.ToSlash(rawClean)
+		cleanRel = strings.TrimPrefix(cleanRel, "/")
+
+		// Also check if the path starts with rootDir with leading slash stripped (e.g. "data/projects/dev_platform/...")
+		cleanRoot := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(rootDir)), "/")
+		if cleanRoot != "" && (cleanRel == cleanRoot || strings.HasPrefix(cleanRel, cleanRoot+"/")) {
+			cleanRel = strings.TrimPrefix(cleanRel, cleanRoot)
+			cleanRel = strings.TrimPrefix(cleanRel, "/")
+		}
+	}
 
 	if cleanRel == "" || cleanRel == "." {
 		return "", "", ErrInvalidTarget
@@ -168,7 +188,7 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktre
 		}
 	}
 
-	return rootDir, fullPath, nil
+	return cleanRel, fullPath, nil
 }
 
 // GetFileTree returns the multi-level directory tree of the project workspace.
@@ -320,7 +340,7 @@ func (s *Service) resolveProjectSafeDir(projectID uint, relPath string, worktree
 		}
 	}
 
-	return rootDir, fullPath, nil
+	return cleanRel, fullPath, nil
 }
 
 // GetFileTreeShallow returns only the direct children (files and subdirectories) of the given subPath
@@ -401,7 +421,7 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 
 // ReadFileContent safely reads a file's content and returns its inspection metadata.
 func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) (*FileContentResponse, error) {
-	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)
+	cleanRel, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +449,7 @@ func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath s
 	isBinary := isBinaryContent(header, mimeType, relPath)
 
 	res := &FileContentResponse{
-		Path:     filepath.ToSlash(relPath),
+		Path:     filepath.ToSlash(cleanRel),
 		Size:     size,
 		MimeType: mimeType,
 		IsBinary: isBinary,

@@ -99,8 +99,10 @@ function getFileName(filePath: string): string {
   return parts[parts.length - 1] || filePath
 }
 
+const FILE_TREE_TAB_KEY = '__filetree__'
+
 const openFileTabs = ref<OpenFileTab[]>([])
-const activePreviewTab = ref<string>('')
+const activePreviewTab = ref<string>(FILE_TREE_TAB_KEY)
 
 const currentActivePreviewFile = computed(() =>
   openFileTabs.value.find((f) => f.path === activePreviewTab.value),
@@ -152,7 +154,7 @@ function closeFileTab(path: string, event?: MouseEvent) {
       const nextIdx = Math.min(idx, openFileTabs.value.length - 1)
       activePreviewTab.value = openFileTabs.value[nextIdx].path
     } else {
-      activePreviewTab.value = ''
+      activePreviewTab.value = FILE_TREE_TAB_KEY
     }
   }
 }
@@ -169,14 +171,46 @@ function onOpenFileFromMarkdown(href: string) {
   const [urlWithoutHash] = href.split('#')
   let path = urlWithoutHash.trim()
 
-  // Strip file:// protocol if present
-  path = path.replace(/^file:\/\//i, '')
+  // Decode URI encoding if present (e.g. %20, non-ASCII characters)
+  try {
+    path = decodeURIComponent(path)
+  } catch {
+    // Keep raw path if decoding fails
+  }
+
+  // Strip file:// or file:/// protocol if present
+  path = path.replace(/^file:\/\/\/?/i, '/')
   path = path.replace(/\\/g, '/')
 
+  // Normalize candidate root directories
+  const candidates: string[] = []
+  if (instance.value?.directory) {
+    candidates.push(instance.value.directory.replace(/\\/g, '/'))
+  }
+  if (activeWorktreeId.value) {
+    const wt = worktreesStore.byId(props.projectId, activeWorktreeId.value)
+    if (wt?.path) {
+      candidates.push(wt.path.replace(/\\/g, '/'))
+    }
+  }
+  const proj = projectsStore.byId(props.projectId)
+  if (proj?.path) {
+    candidates.push(proj.path.replace(/\\/g, '/'))
+  }
+
   // Strip project directory or instance workdir prefix if absolute path
-  const projectDir = (instance.value?.directory || projectsStore.byId(props.projectId)?.path || '').replace(/\\/g, '/')
-  if (projectDir && path.startsWith(projectDir)) {
-    path = path.slice(projectDir.length)
+  for (const dir of candidates) {
+    const cleanDir = dir.replace(/\/+$/, '')
+    if (cleanDir && (path === cleanDir || path.startsWith(cleanDir + '/'))) {
+      path = path.slice(cleanDir.length)
+      break
+    }
+    const strippedCandidate = cleanDir.replace(/^\/+/, '')
+    const strippedPath = path.replace(/^\/+/, '')
+    if (strippedCandidate && (strippedPath === strippedCandidate || strippedPath.startsWith(strippedCandidate + '/'))) {
+      path = strippedPath.slice(strippedCandidate.length)
+      break
+    }
   }
 
   // Strip leading slashes and relative prefix
@@ -464,7 +498,7 @@ watch(
   () => [props.projectId, props.sessionId],
   () => {
     openFileTabs.value = []
-    activePreviewTab.value = ''
+    activePreviewTab.value = FILE_TREE_TAB_KEY
   },
 )
 
@@ -642,6 +676,9 @@ let isInitialMount = true
 
 onMounted(() => {
   window.addEventListener('click', onWindowClick)
+  if (!projectsStore.byId(props.projectId)) {
+    void projectsStore.load()
+  }
   void open()
   void nextTick(() => {
     isInitialMount = false
@@ -1244,7 +1281,7 @@ async function removeSession() {
           </form>
         </div>
 
-        <!-- Column 2: Unified Right Workspace Panel (FileTree on the Left, Preview on the Right) -->
+        <!-- Column 2: Unified Right Workspace Panel (FileTree and Previews as Tabs) -->
         <aside
           v-if="!props.hideSideRail && !previewCollapsed"
           id="session-preview-pane"
@@ -1264,35 +1301,83 @@ async function removeSession() {
             <span class="preview-resizer-line"></span>
           </div>
 
-          <div class="workspace-inner-split">
-            <!-- Left Sub-column: File Tree Section in Preview Panel -->
-            <div
-              v-if="isFileTreeVisible"
-              id="session-filetree-drawer"
-              class="workspace-filetree-section filetree-drawer filetree-docked"
-              data-test="filetree-drawer"
-            >
-              <header class="filetree-head">
-                <div class="filetree-title">
-                  <span class="title-text">工作区文件</span>
+          <div class="workspace-tabbed-pane">
+            <header class="preview-head activity-head">
+              <div class="preview-tabs-list" role="tablist">
+                <!-- Permanent Tab: Workspace File Tree -->
+                <div
+                  class="pane-tab preview-file-tab filetree-permanent-tab"
+                  :class="{ 'is-active': activePreviewTab === FILE_TREE_TAB_KEY }"
+                  role="tab"
+                  :aria-selected="activePreviewTab === FILE_TREE_TAB_KEY"
+                  title="工作区文件树"
+                  data-test="tab-filetree"
+                  @click="selectPreviewTab(FILE_TREE_TAB_KEY)"
+                >
+                  <svg class="filetree-tab-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
+                  </svg>
+                  <span class="file-tab-name">工作区文件</span>
                 </div>
-                <div class="filetree-controls">
+
+                <!-- Dynamic Tabs: Opened files -->
+                <div
+                  v-for="fileTab in openFileTabs"
+                  :key="fileTab.path"
+                  class="pane-tab preview-file-tab"
+                  :class="{ 'is-active': activePreviewTab === fileTab.path }"
+                  role="tab"
+                  :aria-selected="activePreviewTab === fileTab.path"
+                  :title="fileTab.path"
+                  data-test="tab-file"
+                  @click="selectPreviewTab(fileTab.path)"
+                  @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
+                >
+                  <span class="file-tab-name">{{ fileTab.name }}</span>
+                  <span
+                    v-if="fileTab.mode === 'diff'"
+                    class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
+                  >
+                    Diff
+                  </span>
                   <button
                     type="button"
-                    class="dock-btn collapse-btn"
-                    data-test="filetree-collapse-btn"
-                    title="收起文件树"
-                    aria-label="收起文件树"
-                    @click="setFileTreeCollapsed(true)"
+                    class="tab-close-icon"
+                    title="关闭标签"
+                    aria-label="关闭标签"
+                    data-test="close-file-tab"
+                    @click="closeFileTab(fileTab.path, $event)"
                   >
-                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="15 18 9 12 15 6" />
-                    </svg>
+                    ×
                   </button>
                 </div>
-              </header>
+              </div>
 
-              <div class="filetree-body">
+              <div class="head-actions">
+                <button
+                  type="button"
+                  class="head-action-icon-btn preview-head-close"
+                  data-test="close-preview-pane-btn"
+                  title="收起工作区面板"
+                  aria-label="收起工作区面板"
+                  @click="setPreviewCollapsed(true)"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            </header>
+
+            <div class="workspace-pane-body">
+              <!-- When active tab is the file tree -->
+              <div
+                v-show="activePreviewTab === FILE_TREE_TAB_KEY"
+                id="session-filetree-drawer"
+                class="filetree-pane-view"
+                data-test="filetree-drawer"
+              >
                 <FileSidebar
                   :project-id="props.projectId"
                   :session-id="props.sessionId"
@@ -1302,103 +1387,22 @@ async function removeSession() {
                   @branch-changed="onFileTreeBranchChanged"
                 />
               </div>
-            </div>
 
-            <!-- Right Sub-column: Code Preview Section (flex: 1) -->
-            <div class="workspace-preview-section">
-              <header class="preview-head activity-head">
-                <div class="preview-tabs-list" role="tablist">
-                  <div
-                    v-if="openFileTabs.length === 0"
-                    class="pane-tab is-active cursor-default select-none opacity-80"
-                  >
-                    <span class="file-tab-name text-xs">文件预览</span>
-                  </div>
-
-                  <!-- Dynamic Tabs: Opened files -->
-                  <div
-                    v-for="fileTab in openFileTabs"
-                    :key="fileTab.path"
-                    class="pane-tab preview-file-tab"
-                    :class="{ 'is-active': activePreviewTab === fileTab.path }"
-                    role="tab"
-                    :aria-selected="activePreviewTab === fileTab.path"
-                    :title="fileTab.path"
-                    data-test="tab-file"
-                    @click="selectPreviewTab(fileTab.path)"
-                    @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
-                  >
-                    <span class="file-tab-name">{{ fileTab.name }}</span>
-                    <span
-                      v-if="fileTab.mode === 'diff'"
-                      class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
-                    >
-                      Diff
-                    </span>
-                    <button
-                      type="button"
-                      class="tab-close-icon"
-                      title="关闭标签"
-                      aria-label="关闭标签"
-                      data-test="close-file-tab"
-                      @click="closeFileTab(fileTab.path, $event)"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-
-                <div class="head-actions">
-                  <!-- Filetree toggle button in preview header (Pure Icon) -->
-                  <button
-                    type="button"
-                    class="head-action-icon-btn filetree-head-toggle"
-                    data-test="toggle-filetree-btn"
-                    :class="{ 'is-active': isFileTreeVisible }"
-                    :title="isFileTreeVisible ? '收起文件树' : '展开文件树'"
-                    :aria-label="isFileTreeVisible ? '收起文件树' : '展开文件树'"
-                    :aria-pressed="isFileTreeVisible ? 'true' : 'false'"
-                    @click="toggleFileTree"
-                  >
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8">
-                      <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-                    </svg>
-                  </button>
-                </div>
-              </header>
-
-              <div class="preview-content">
-                <!-- 文件预览（空状态与文件查看器互斥） -->
-                <div
-                  v-show="openFileTabs.length === 0"
-                  class="preview-empty-state"
-                  data-test="preview-empty-state"
-                >
-                  <div class="empty-icon-wrap p-3 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 mb-2">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <polyline points="14 2 14 8 20 8" />
-                      <line x1="16" y1="13" x2="8" y2="13" />
-                      <line x1="16" y1="17" x2="8" y2="17" />
-                    </svg>
-                  </div>
-                  <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
-                  <p class="empty-desc text-2xs text-slate-400 leading-relaxed max-w-[200px] text-center">
-                    在文件树中选择文件即可在此快速预览文件内容与变更
-                  </p>
-                </div>
-                <div v-show="openFileTabs.length > 0" class="preview-file-viewer">
-                  <FileViewer
-                    :project-id="props.projectId"
-                    :worktree-id="activeWorktreeId"
-                    :active-path="activePreviewTab"
-                    :hide-tabs="true"
-                    :mode="currentActivePreviewFile?.mode || 'view'"
-                    :commit-ref="currentActivePreviewFile?.commitRef"
-                    :commit-message="currentActivePreviewFile?.commitMessage"
-                    @select="openFileInPreview"
-                  />
-                </div>
+              <!-- When active tab is a file viewer -->
+              <div
+                v-show="activePreviewTab !== FILE_TREE_TAB_KEY && currentActivePreviewFile"
+                class="preview-file-viewer"
+              >
+                <FileViewer
+                  :project-id="props.projectId"
+                  :worktree-id="activeWorktreeId"
+                  :active-path="activePreviewTab"
+                  :hide-tabs="true"
+                  :mode="currentActivePreviewFile?.mode || 'view'"
+                  :commit-ref="currentActivePreviewFile?.commitRef"
+                  :commit-message="currentActivePreviewFile?.commitMessage"
+                  @select="openFileInPreview"
+                />
               </div>
             </div>
           </div>
@@ -1612,18 +1616,7 @@ async function removeSession() {
   height: 100%;
 }
 
-.workspace-inner-split {
-  display: flex;
-  flex-direction: row;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-
-.workspace-preview-section {
+.workspace-tabbed-pane {
   display: flex;
   flex-direction: column;
   flex: 1 1 0%;
@@ -1633,29 +1626,35 @@ async function removeSession() {
   position: relative;
 }
 
-.preview-floating-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.28);
-  z-index: 30;
-  cursor: pointer;
-  animation: backdropFadeIn 0.15s ease-out;
-}
-
-.workspace-filetree-section {
-  width: 240px;
-  min-width: 180px;
-  flex: 0 0 240px;
-  border-right: 1px solid var(--color-border);
-  border-left: none;
-  border-top: none;
-  border-bottom: none;
-  border-radius: 0;
-  height: 100%;
-  flex-shrink: 0;
+.workspace-pane-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
   overflow: hidden;
+}
+
+.filetree-pane-view {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.filetree-permanent-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.filetree-tab-icon {
+  flex-shrink: 0;
+  opacity: 0.8;
 }
 
 .head-action-icon-btn {

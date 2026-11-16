@@ -526,10 +526,9 @@ describe('activity pane floating button and in-tab popup', () => {
 
     await toggleBtn.trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-    // The workspace pane shows file preview empty state when no files are open
-    expect(wrapper.find('[data-test="preview-empty-state"]').exists()).toBe(true)
-    // Preview pane itself has no collapse/hide button (managed via session tabs layout toggle)
-    expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
+    // The workspace pane shows the permanent file tree tab and file tree view by default
+    expect(wrapper.find('[data-test="tab-filetree"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(true)
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
@@ -538,7 +537,7 @@ describe('activity pane floating button and in-tab popup', () => {
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
 
-    // Verify preview pane header does not contain collapse button
+    // Verify preview pane header does not contain legacy activity-hide button
     expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -573,12 +572,12 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(conversationArea.text()).not.toContain('thinking...')
     expect(conversationArea.text()).not.toContain('call')
 
-    // The preview pane does not show thinking/tool activity pane, and displays file preview empty state
+    // The preview pane does not show thinking/tool activity pane, and displays file tree tab
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     const pane = wrapper.find('[data-test="activity-pane"]')
     expect(pane.find('.activity-title').exists()).toBe(false)
     expect(pane.find('[data-test="tab-activity"]').exists()).toBe(false)
-    expect(pane.find('[data-test="preview-empty-state"]').exists()).toBe(true)
+    expect(pane.find('[data-test="tab-filetree"]').exists()).toBe(true)
   })
 })
 
@@ -622,7 +621,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     return wrapper
   }
 
-  it('renders the message column and unified workspace pane with preview on left and file tree on right', async () => {
+  it('renders the message column and unified workspace pane with file tree as a permanent tab', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
 
@@ -637,24 +636,18 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     const preview = wrapper.find('[data-test="activity-pane"]')
     expect(preview.exists()).toBe(true)
 
-    // No activity tab; file preview empty state is shown by default
+    // No activity tab; permanent file tree tab is shown by default
     expect(preview.find('[data-test="tab-activity"]').exists()).toBe(false)
-    expect(preview.find('[data-test="preview-empty-state"]').exists()).toBe(true)
+    const filetreeTab = preview.find('[data-test="tab-filetree"]')
+    expect(filetreeTab.exists()).toBe(true)
+    expect(filetreeTab.classes()).toContain('is-active')
+    expect(filetreeTab.text()).toContain('工作区文件')
 
-    // File tree drawer (docked by default, placed on the right inside workspace)
-    const filetree = wrapper.find('[data-test="filetree-drawer"]')
+    // File tree drawer view is visible when file tree tab is active
+    const filetree = preview.find('[data-test="filetree-drawer"]')
     expect(filetree.exists()).toBe(true)
-    expect(filetree.classes()).toContain('filetree-docked')
-    expect(filetree.text()).toContain('工作区文件')
-
-    // DOM order inside workspace: file tree section is on the left, preview section is on the right
-    const workspaceChildren = Array.from(
-      preview.find('.workspace-inner-split').element.children,
-    ).map((child) => (child as HTMLElement).className)
-    const previewSectionIdx = workspaceChildren.findIndex((name) => name.includes('workspace-preview-section'))
-    const filetreeSectionIdx = workspaceChildren.findIndex((name) => name.includes('workspace-filetree-section'))
-    expect(filetreeSectionIdx).toBeGreaterThanOrEqual(0)
-    expect(filetreeSectionIdx).toBeLessThan(previewSectionIdx)
+    expect(filetree.isVisible()).toBe(true)
+    expect(filetree.text()).toContain('所有文件')
   })
 
   it('opens a file as a preview tab when selected in the file tree and auto-expands preview if collapsed', async () => {
@@ -687,7 +680,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(viewer.text()).toContain('content of src/main.go')
   })
 
-  it('switches between file tabs and falls back to empty state when all tabs are closed', async () => {
+  it('switches between file tabs and falls back to file tree tab when all tabs are closed', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
     const sidebar = wrapper.findComponent(FileSidebar)
@@ -718,78 +711,59 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(fileTabs[0].text()).toContain('README.md')
     expect(fileTabs[0].classes()).toContain('is-active')
 
-    // Close README.md tab -> falls back to empty state
+    // Close README.md tab -> falls back to file tree tab
     const closeReadmeBtn = fileTabs[0].find('[data-test="close-file-tab"]')
     await closeReadmeBtn.trigger('click')
     await flushPromises()
 
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
-    expect(preview.find('[data-test="preview-empty-state"]').isVisible()).toBe(true)
+    const filetreeTab = preview.find('[data-test="tab-filetree"]')
+    expect(filetreeTab.classes()).toContain('is-active')
+    expect(preview.find('[data-test="filetree-drawer"]').isVisible()).toBe(true)
   })
 
-  it('when preview pane is expanded, file tree expands and collapses eating preview width, not conversation width', async () => {
+  it('switches between file tree tab and opened file tab seamlessly', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
-    localStorage.setItem('dev-platform-preview-width-v1', '600')
-    localStorage.setItem('dev-platform-chat-filetree-collapsed-v1', 'collapsed')
+    const wrapper = await mountPanel()
+    const sidebar = wrapper.findComponent(FileSidebar)
+
+    // Open file
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    const fileTab = preview.find('[data-test="tab-file"]')
+    const filetreeTab = preview.find('[data-test="tab-filetree"]')
+    expect(fileTab.classes()).toContain('is-active')
+    expect(filetreeTab.classes()).not.toContain('is-active')
+
+    // Click file tree tab to switch back to file tree
+    await filetreeTab.trigger('click')
+    expect(filetreeTab.classes()).toContain('is-active')
+    expect(fileTab.classes()).not.toContain('is-active')
+    expect(preview.find('[data-test="filetree-drawer"]').isVisible()).toBe(true)
+
+    // Click file tab to return to preview
+    await fileTab.trigger('click')
+    expect(fileTab.classes()).toContain('is-active')
+    expect(filetreeTab.classes()).not.toContain('is-active')
+  })
+
+  it('supports closing preview pane via head close button', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
 
     const preview = wrapper.find('[data-test="activity-pane"]')
     expect(preview.exists()).toBe(true)
 
-    // Initially file tree is collapsed
-    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
-    // Preview takes full previewWidth
-    const fullWidth = (wrapper.vm as any).previewWidth
-    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth)
-
-    // Expand file tree
-    const toggleFileTreeBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
-    await toggleFileTreeBtn.trigger('click')
+    // Collapse preview pane via head close button
+    const closeBtn = preview.find('[data-test="close-preview-pane-btn"]')
+    expect(closeBtn.exists()).toBe(true)
+    await closeBtn.trigger('click')
     await flushPromises()
 
-    // File tree is now docked and visible
-    const filetree = wrapper.find('[data-test="filetree-drawer"]')
-    expect(filetree.exists()).toBe(true)
-    expect(filetree.classes()).toContain('filetree-docked')
-
-    // Preview pane shrunk by exactly 240px (eating preview width, preserving total width)
-    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth - 240)
-
-    // Collapse file tree again
-    const collapseBtn = filetree.find('[data-test="filetree-collapse-btn"]')
-    await collapseBtn.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
-    // Preview pane re-claims full width
-    expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth)
-  })
-
-  it('supports file tree collapse and header toggle in preview pane', async () => {
-    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
-    const wrapper = await mountPanel()
-
-    const drawer = wrapper.find('[data-test="filetree-drawer"]')
-    expect(drawer.exists()).toBe(true)
-    expect(drawer.classes()).toContain('filetree-docked')
-
-    // Collapse file tree via collapse button
-    const collapseBtn = drawer.find('[data-test="filetree-collapse-btn"]')
-    await collapseBtn.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
-    expect(localStorage.getItem('dev-platform-chat-filetree-collapsed-v1')).toBe('collapsed')
-
-    // The header toggle can re-open the file tree in preview pane
-    const toggleBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
-    expect(toggleBtn.exists()).toBe(true)
-    expect(toggleBtn.attributes('aria-pressed')).toBe('false')
-    await toggleBtn.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-docked')
-    expect(localStorage.getItem('dev-platform-chat-filetree-collapsed-v1')).toBe('expanded')
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
+    expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
   })
 
   it('supports resizing preview pane width via resizer handle and persists width', async () => {

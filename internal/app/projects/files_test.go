@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -439,6 +440,31 @@ func TestReadFileContent_PathEscape(t *testing.T) {
 		if err == nil {
 			t.Errorf("expected path escape error for %q, got nil", p)
 		}
+	}
+}
+
+func TestReadFileContent_AbsolutePathSupport(t *testing.T) {
+	svc, id, rootDir := setupTestProject(t)
+	ctx := context.Background()
+
+	// 1. Full absolute path inside project
+	absPath := filepath.Join(rootDir, "README.md")
+	resp, err := svc.ReadFileContent(ctx, id, absPath)
+	if err != nil {
+		t.Fatalf("expected ReadFileContent with absPath to succeed, got %v", err)
+	}
+	if resp.Path != "README.md" {
+		t.Errorf("expected normalized Path 'README.md', got %q", resp.Path)
+	}
+
+	// 2. Stripped leading slash absolute path (e.g. "data/projects/dev_platform/README.md")
+	strippedAbs := strings.TrimPrefix(filepath.ToSlash(absPath), "/")
+	resp2, err := svc.ReadFileContent(ctx, id, strippedAbs)
+	if err != nil {
+		t.Fatalf("expected ReadFileContent with strippedAbs to succeed, got %v", err)
+	}
+	if resp2.Path != "README.md" {
+		t.Errorf("expected normalized Path 'README.md', got %q", resp2.Path)
 	}
 }
 

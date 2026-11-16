@@ -1562,4 +1562,32 @@ describe('SessionChatPanel scroll following', () => {
     expect(fileTab.exists()).toBe(true)
     expect(fileTab.text()).toContain('App.vue')
   })
+
+  it('handles absolute markdown file links with url-encoding and hash line fragments', async () => {
+    stubSessionList([session('sess-link-abs')])
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [{ id: 1, name: 'proj1', path: '/data/projects/1' } as any]
+    const sessionsStore = useSessionsStore()
+    sessionsStore.pushEntry('sess-link-abs', {
+      id: 'msg-link-abs',
+      kind: 'message',
+      role: 'assistant',
+      text: '请查看文件：[Main.vue](/data/projects/1/src/%E7%BB%84%E4%BB%B6/Main.vue#L10-L20)',
+      streaming: false,
+    } as ChatEntry)
+
+    const wrapper = mountPanel('sess-link-abs')
+    await flushPromises()
+
+    const link = wrapper.find('.markdown-body a')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as any).previewCollapsed).toBe(false)
+    expect((wrapper.vm as any).activePreviewTab).toBe('src/组件/Main.vue')
+    const fileTab = wrapper.find('[data-test="tab-file"]')
+    expect(fileTab.exists()).toBe(true)
+    expect(fileTab.text()).toContain('Main.vue')
+  })
 })
