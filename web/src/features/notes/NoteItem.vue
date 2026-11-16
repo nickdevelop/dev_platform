@@ -157,6 +157,11 @@ function onDelete(event: MouseEvent) {
 .note-bottom {
   display: flex;
   flex-direction: column;
+  /* The shared row-bottom rule centers its children; in this vertical stack
+     that would center the snippet and meta line horizontally, so undo it. */
+  align-items: stretch;
+  justify-content: flex-start;
+  text-align: left;
   gap: 4px;
 }
 
@@ -173,6 +178,7 @@ function onDelete(event: MouseEvent) {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  width: 100%;
   font-size: var(--text-size-11);
 }
 
