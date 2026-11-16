@@ -922,6 +922,9 @@ export const useSessionsStore = defineStore('sessions', {
         if (images && images.length > 0) body.images = images
         const updated = await sendProjectSessionMessage(projectId, sessionId, body)
         if (updated) {
+          if (updated.turn) {
+            this.sessionTurns[sessionId] = updated.turn
+          }
           this.sessions = this.sessions.map((entry) => (entry.id === sessionId ? updated : entry))
           for (const pId in this.sessionsByProject) {
             this.sessionsByProject[pId] = this.sessionsByProject[pId].map((entry) =>

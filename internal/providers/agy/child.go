@@ -409,6 +409,12 @@ func (c *agyChild) resetIdleTimerLocked() {
 	})
 }
 
+func (c *agyChild) isTurnRunning() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.closed && c.turnRunning
+}
+
 func (c *agyChild) sendTurn(ctx context.Context, text string, model string) error {
 	c.mu.Lock()
 	if c.closed {

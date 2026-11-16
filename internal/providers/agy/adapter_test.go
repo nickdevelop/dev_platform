@@ -194,3 +194,64 @@ func TestAgyPermissionReplier(t *testing.T) {
 		t.Fatalf("expected 0 permissions after resolution, got %d", len(perms))
 	}
 }
+
+func TestAdapterDetectTurn(t *testing.T) {
+	ctx := context.Background()
+	adapter := New(Options{
+		NewID: func() (string, error) { return "inst-detect", nil },
+	})
+
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{
+		Directory: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	ref := agents.SessionRef{
+		InstanceID: inst.ID,
+		Backend:    agents.BackendAgy,
+		SessionID:  "sess-detect-1",
+	}
+
+	// 1. Before child exists -> false
+	running, err := adapter.DetectTurn(ctx, ref)
+	if err != nil {
+		t.Fatalf("DetectTurn without child: %v", err)
+	}
+	if running {
+		t.Errorf("DetectTurn without child = true, want false")
+	}
+
+	// 2. Add an idle child
+	child := newAgyChild(adapter.instances[inst.ID], "sess-detect-1", "gemini-3.8-flash", PermissionModeAuto, time.Minute, nil)
+	adapter.instances[inst.ID].setChild("sess-detect-1", child)
+
+	running, err = adapter.DetectTurn(ctx, ref)
+	if err != nil {
+		t.Fatalf("DetectTurn with idle child: %v", err)
+	}
+	if running {
+		t.Errorf("DetectTurn with idle child = true, want false")
+	}
+
+	// 3. Mark child turn running
+	child.mu.Lock()
+	child.turnRunning = true
+	child.mu.Unlock()
+
+	running, err = adapter.DetectTurn(ctx, ref)
+	if err != nil {
+		t.Fatalf("DetectTurn with running child: %v", err)
+	}
+	if !running {
+		t.Errorf("DetectTurn with running child = false, want true")
+	}
+
+	// 4. Validation errors
+	invalidRef := ref
+	invalidRef.Backend = "unknown"
+	if _, err := adapter.DetectTurn(ctx, invalidRef); err == nil {
+		t.Errorf("expected error for mismatched backend")
+	}
+}

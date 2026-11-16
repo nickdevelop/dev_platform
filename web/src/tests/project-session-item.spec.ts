@@ -121,6 +121,23 @@ describe('ProjectSessionItem', () => {
     expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(true)
   })
 
+  it('shows running indicator when store sessionTurns becomes running', async () => {
+    const sessionsStore = useSessionsStore()
+    const session = mockSession({ id: 'ses-dynamic', turn: 'idle' })
+    const wrapper = mount(ProjectSessionItem, {
+      props: { session },
+    })
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
+
+    sessionsStore.setTurn('ses-dynamic', 'running')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(true)
+
+    sessionsStore.setTurn('ses-dynamic', 'idle')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="running-indicator"]').exists()).toBe(false)
+  })
+
   it('renders Row 2 with model tag, time and delete button', () => {
     const today = new Date()
     today.setHours(15, 45, 30, 0)

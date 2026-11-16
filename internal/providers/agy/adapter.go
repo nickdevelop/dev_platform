@@ -14,9 +14,10 @@ import (
 
 // Proof of contract implementations.
 var (
-	_ agents.AgentAdapter      = (*Adapter)(nil)
-	_ agents.HistoryReader     = (*Adapter)(nil)
-	_ agents.PermissionReplier = (*Adapter)(nil)
+	_ agents.AgentAdapter        = (*Adapter)(nil)
+	_ agents.HistoryReader       = (*Adapter)(nil)
+	_ agents.PermissionReplier   = (*Adapter)(nil)
+	_ agents.SessionTurnDetector = (*Adapter)(nil)
 )
 
 const (
@@ -503,6 +504,28 @@ func (a *Adapter) Interrupt(ctx context.Context, ref agents.SessionRef) error {
 		return nil
 	}
 	return child.interrupt(ctx)
+}
+
+// DetectTurn reports whether the native session is actively running a turn.
+func (a *Adapter) DetectTurn(ctx context.Context, ref agents.SessionRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := ref.Validate(); err != nil {
+		return false, err
+	}
+	if ref.Backend != agents.BackendAgy {
+		return false, fmt.Errorf("agy: session backend %q is not agy", ref.Backend)
+	}
+	inst, err := a.getInstance(ref.InstanceID)
+	if err != nil {
+		return false, err
+	}
+	child := inst.getChild(inst.resolve(ref.SessionID))
+	if child == nil {
+		return false, nil
+	}
+	return child.isTurnRunning(), nil
 }
 
 func (a *Adapter) getInstance(id string) (*instance, error) {

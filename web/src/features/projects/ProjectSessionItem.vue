@@ -28,7 +28,12 @@ const emit = defineEmits<{
 const sessionsStore = useSessionsStore()
 
 const untitledLabel = '未命名会话'
-const isRunning = computed(() => props.session.turn === 'running')
+const isRunning = computed(() => {
+  if (sessionsStore.sessionTurns[props.session.id] !== undefined) {
+    return sessionsStore.sessionTurns[props.session.id] === 'running'
+  }
+  return props.session.turn === 'running'
+})
 
 function formatSessionTime(isoString?: string): string {
   if (!isoString) return ''

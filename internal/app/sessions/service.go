@@ -1031,6 +1031,9 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 		row.NativeSessionID = nativeSessionID
 		return nil
 	}
+	// The tracker subscribes before the message is admitted so the turn's
+	// first lifecycle events are never ahead of the subscription.
+	s.turnTracker.Ensure(inst.ID)
 	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
 	}
@@ -1042,7 +1045,6 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	if err := s.store.Update(row); err != nil {
 		return Session{}, err
 	}
-	s.turnTracker.Ensure(inst.ID)
 	return s.sessionFromModel(row), nil
 }
 
