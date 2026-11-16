@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useNotesStore } from '../stores/notes'
@@ -104,5 +106,29 @@ describe('useNotesStore', () => {
     store.setViewMode('edit')
     expect(store.viewMode).toBe('edit')
     expect(localStorage.getItem('dev-platform-note-view-mode-v1')).toBe('edit')
+  })
+})
+
+describe('notes list rendering', () => {
+  it('gets markdown typography from the shared global stylesheet', () => {
+    const main = readFileSync(resolve(__dirname, '../main.ts'), 'utf8')
+    expect(main).toContain("import './shared/markdown-body.css'")
+
+    const css = readFileSync(resolve(__dirname, '../shared/markdown-body.css'), 'utf8')
+    expect(css).toMatch(/\.markdown-body h1 \{/)
+    expect(css).toMatch(/\.markdown-body ul \{[^}]*list-style-type:\s*disc/)
+    expect(css).toMatch(/\.markdown-body ol \{[^}]*list-style-type:\s*decimal/)
+  })
+
+  it('left-aligns the note card snippet and meta row', () => {
+    const sfc = readFileSync(resolve(__dirname, '../features/notes/NoteItem.vue'), 'utf8')
+    const bottom = sfc.match(/\.note-bottom \{([^}]*)\}/)?.[1] ?? ''
+    // The shared .sidebar-card-row-bottom centers its children, which reads as
+    // centered text inside this vertical stack, so the card must undo it.
+    expect(bottom).toMatch(/align-items:\s*stretch/)
+    expect(bottom).toMatch(/text-align:\s*left/)
+
+    const meta = sfc.match(/\.note-meta \{([^}]*)\}/)?.[1] ?? ''
+    expect(meta).toMatch(/width:\s*100%/)
   })
 })

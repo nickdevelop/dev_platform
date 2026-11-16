@@ -6,6 +6,7 @@ import { applyCachedAppearance } from './theme/apply'
 import { installCSRF } from './api/client'
 import { useAuthStore } from './stores/auth'
 import './style.css'
+import './shared/markdown-body.css'
 import './shared/markdown-code.css'
 
 // Paint the last known appearance before mounting so the first paint does not

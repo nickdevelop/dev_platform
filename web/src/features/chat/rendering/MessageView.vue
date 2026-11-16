@@ -901,28 +901,8 @@ async function copyMessage(entry: ChatEntry) {
   width: 100%;
 }
 
-.markdown-body :deep(p) {
-  margin: 0 0 0.5rem;
-}
-
-.markdown-body :deep(p:last-child) {
-  margin-bottom: 0;
-}
-
-.markdown-body :deep(h1),
-.markdown-body :deep(h2),
-.markdown-body :deep(h3),
-.markdown-body :deep(h4) {
-  margin: 0.5rem 0 0.35rem;
-  line-height: 1.3;
-}
-
-.markdown-body :deep(ul),
-.markdown-body :deep(ol) {
-  margin: 0 0 0.5rem;
-  padding-left: 1.25rem;
-}
-
+/* Generic typography (headings, lists, quotes, links) comes from
+   shared/markdown-body.css; only the bubble's dark code colors stay here. */
 .markdown-body :deep(code) {
   background: var(--color-border);
   border-radius: 4px;
@@ -975,17 +955,6 @@ async function copyMessage(entry: ChatEntry) {
   padding: 0;
   color: inherit;
   font-size: 0.9rem;
-}
-
-.markdown-body :deep(blockquote) {
-  margin: 0 0 0.5rem;
-  padding-left: 0.75rem;
-  border-left: 3px solid var(--color-border-strong);
-  color: var(--color-text-muted);
-}
-
-.markdown-body :deep(a) {
-  color: var(--color-primary);
 }
 
 /* The per-message model tag: small, muted, and set apart from the reply text
