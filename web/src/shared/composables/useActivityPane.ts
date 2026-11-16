@@ -1,7 +1,7 @@
 // The chat pane's controls for the right workspace pane (file preview tabs & file-tree drawer).
 // Persistence is localStorage (best-effort only); the layout is view state, not session data.
 
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const ACTIVITY_STORAGE_KEY = 'dev-platform-activity-pane-v1'
 const PREVIEW_WIDTH_STORAGE_KEY = 'dev-platform-preview-width-v1'
@@ -161,26 +161,6 @@ export function useActivityPane(onExpand?: () => void) {
     return fileTreeFloatingOpen.value
   })
   const isFileTreeVisible = computed(() => isFileTreeDocked.value || isFileTreeFloating.value)
-
-  function onKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      if (isFileTreeFloating.value) {
-        closeFloatingFileTree()
-        return
-      }
-      if (!previewCollapsed.value) {
-        setPreviewCollapsed(true)
-      }
-    }
-  }
-
-  onMounted(() => {
-    window.addEventListener('keydown', onKeydown)
-  })
-
-  onUnmounted(() => {
-    window.removeEventListener('keydown', onKeydown)
-  })
 
   return {
     // Preview pane (with activityCollapsed alias for test compatibility)

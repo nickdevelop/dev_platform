@@ -533,7 +533,7 @@ describe('activity pane floating button and in-tab popup', () => {
     expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
-  it('has no self collapse button in preview pane and persists collapsed choice when collapsed', async () => {
+  it('has no self collapse button in preview pane and ignores Escape, leaving it open', async () => {
     const wrapper = await mountPanel()
     await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
@@ -541,13 +541,11 @@ describe('activity pane floating button and in-tab popup', () => {
     // Verify preview pane header does not contain collapse button
     expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
 
-    // Press Escape to collapse
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await flushPromises()
 
-    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
-    expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('collapsed')
+    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
+    expect(localStorage.getItem('dev-platform-activity-pane-v1')).toBe('expanded')
   })
 
   it('starts expanded when stored choice says so', async () => {
@@ -555,18 +553,6 @@ describe('activity pane floating button and in-tab popup', () => {
     const wrapper = await mountPanel()
     expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="activity-hide"]').exists()).toBe(false)
-  })
-
-  it('closes the open popup when Escape key is pressed', async () => {
-    const wrapper = await mountPanel()
-    await wrapper.find('[data-test="toggle-preview-btn"]').trigger('click')
-    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(true)
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await flushPromises()
-
-    expect(wrapper.find('[data-test="activity-pane"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="toggle-preview-btn"]').attributes('aria-pressed')).toBe('false')
   })
 
   it('keeps conversation area clean without thinking and tool calls, restoring the 链路 tab', async () => {
