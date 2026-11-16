@@ -212,7 +212,7 @@ onUnmounted(() => {
           <!-- 保存状态 -->
           <div class="save-status">
             <span v-if="notesStore.saving" class="status-saving">
-              <UiSpinner size="xs" />
+              <UiSpinner size="sm" />
               <span>保存中...</span>
             </span>
             <span v-else class="status-saved" title="修改后自动保存 (快捷键 Ctrl+S)">
