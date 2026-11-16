@@ -29,6 +29,7 @@ import { handleCodeCopyClick } from '../../../shared/markdown-code-copy'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import { imageSource } from '../../../shared/imageSource'
 import PlantumlBlock from './PlantumlBlock.vue'
+import FoldableUserText from './FoldableUserText.vue'
 import SessionActivityLog from './SessionActivityLog.vue'
 import EditToolBlock from './EditToolBlock.vue'
 import ToolOutput from './ToolOutput.vue'
@@ -325,13 +326,13 @@ async function copyMessage(entry: ChatEntry) {
                     </summary>
                     <pre class="prompt-block-body" data-test="prompt-block-body">{{ promptBlockFor(block.entry)!.body }}</pre>
                   </details>
-                  <span
+                  <FoldableUserText
                     v-if="promptBlockFor(block.entry)!.rest"
-                    class="message-text"
+                    :text="promptBlockFor(block.entry)!.rest"
                     data-test="prompt-block-rest"
-                  >{{ promptBlockFor(block.entry)!.rest }}</span>
+                  />
                 </template>
-                <span v-else-if="block.entry.text" class="message-text">{{ block.entry.text }}</span>
+                <FoldableUserText v-else-if="block.entry.text" :text="block.entry.text" />
               </template>
               <div v-else class="message-text markdown-body" @click="handleCodeCopyClick">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
