@@ -42,6 +42,7 @@ type agyChild struct {
 	normalizer  *EventNormalizer
 	idleTimer   *time.Timer
 	turnRunning bool
+	turnCancel  context.CancelFunc
 	closed      bool
 	done        chan struct{}
 
@@ -323,32 +324,44 @@ func (c *agyChild) handleRequest(ctx context.Context, id any, method string, par
 	select {
 	case decision := <-replyCh:
 		if decision == "reject" {
-			selected := "reject_once"
 			for _, opt := range permReq.Options {
 				if opt.Kind == "reject_once" || opt.Kind == "reject_always" {
-					selected = opt.OptionID
-					break
+					return acp.RequestPermissionResult{
+						Outcome: acp.PermissionOutcome{
+							Outcome:  "selected",
+							OptionID: opt.OptionID,
+						},
+					}, nil
 				}
 			}
 			return acp.RequestPermissionResult{
 				Outcome: acp.PermissionOutcome{
-					Outcome:  "selected",
-					OptionID: selected,
+					Outcome: "cancelled",
 				},
 			}, nil
 		}
 
-		selected := "allow_once"
 		for _, opt := range permReq.Options {
 			if opt.Kind == "allow_once" || opt.Kind == "allow_always" {
-				selected = opt.OptionID
-				break
+				return acp.RequestPermissionResult{
+					Outcome: acp.PermissionOutcome{
+						Outcome:  "selected",
+						OptionID: opt.OptionID,
+					},
+				}, nil
 			}
+		}
+		if len(permReq.Options) > 0 {
+			return acp.RequestPermissionResult{
+				Outcome: acp.PermissionOutcome{
+					Outcome:  "selected",
+					OptionID: permReq.Options[0].OptionID,
+				},
+			}, nil
 		}
 		return acp.RequestPermissionResult{
 			Outcome: acp.PermissionOutcome{
-				Outcome:  "selected",
-				OptionID: selected,
+				Outcome: "cancelled",
 			},
 		}, nil
 	case <-c.done:
@@ -415,7 +428,7 @@ func (c *agyChild) isTurnRunning() bool {
 	return !c.closed && c.turnRunning
 }
 
-func (c *agyChild) sendTurn(ctx context.Context, text string, model string) error {
+func (c *agyChild) sendTurn(text, model string, images []agents.ImageAttachment) error {
 	c.mu.Lock()
 	if c.closed {
 		c.mu.Unlock()
@@ -429,11 +442,30 @@ func (c *agyChild) sendTurn(ctx context.Context, text string, model string) erro
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}
+
+	turnCtx, turnCancel := context.WithCancel(c.inst.ctx)
+	c.turnCancel = turnCancel
 	c.mu.Unlock()
 
 	turnID := fmt.Sprintf("turn-%d", c.now().UnixNano())
 	c.normalizer.StartTurn(turnID)
 
+	// 1. 广播用户消息以确保实时流中不漏掉用户消息
+	c.inst.broadcast(agents.NormalizedEvent{
+		InstanceID: c.inst.id,
+		SessionID:  c.sessionID,
+		Backend:    agents.BackendAgy,
+		Timestamp:  c.now(),
+		Type:       agents.EventMessage,
+		Message: &agents.MessagePayload{
+			Role:   "user",
+			Text:   text,
+			Images: images,
+			Final:  true,
+		},
+	})
+
+	// 2. 广播轮次开始事件
 	c.inst.broadcast(agents.NormalizedEvent{
 		InstanceID: c.inst.id,
 		SessionID:  c.sessionID,
@@ -449,6 +481,10 @@ func (c *agyChild) sendTurn(ctx context.Context, text string, model string) erro
 	go func() {
 		defer func() {
 			c.mu.Lock()
+			if c.turnCancel != nil {
+				c.turnCancel()
+				c.turnCancel = nil
+			}
 			c.turnRunning = false
 			c.resetIdleTimerLocked()
 			c.mu.Unlock()
@@ -457,18 +493,32 @@ func (c *agyChild) sendTurn(ctx context.Context, text string, model string) erro
 		if model != "" && model != c.model {
 			c.model = model
 			c.normalizer.SetModel(model)
-			_ = c.client.Call(ctx, acp.MethodSessionSetModel, acp.SetModelParams{
+			_ = c.client.Call(turnCtx, acp.MethodSessionSetModel, acp.SetModelParams{
 				SessionID: c.sessionID,
 				ModelID:   model,
 			}, nil)
 		}
 
+		promptContents := make([]acp.PromptContent, 0, 1+len(images))
+		if text != "" || len(images) == 0 {
+			promptContents = append(promptContents, acp.PromptContent{
+				Type: "text",
+				Text: text,
+			})
+		}
+		for _, img := range images {
+			promptContents = append(promptContents, acp.PromptContent{
+				Type:     "image",
+				Data:     img.Data,
+				MimeType: img.MediaType,
+				URI:      img.URL,
+			})
+		}
+
 		var result acp.PromptResult
-		err := c.client.Call(ctx, acp.MethodSessionPrompt, acp.PromptParams{
+		err := c.client.Call(turnCtx, acp.MethodSessionPrompt, acp.PromptParams{
 			SessionID: c.sessionID,
-			Prompt: []acp.PromptContent{
-				{Type: "text", Text: text},
-			},
+			Prompt:    promptContents,
 		}, &result)
 
 		outcome := agents.TurnCompleted
@@ -478,6 +528,8 @@ func (c *agyChild) sendTurn(ctx context.Context, text string, model string) erro
 			} else {
 				outcome = agents.TurnFailed
 			}
+		} else if result.StopReason == "cancelled" {
+			outcome = agents.TurnCancelled
 		}
 
 		endEvents := c.normalizer.EndTurn(outcome, result.Usage)
@@ -491,14 +543,27 @@ func (c *agyChild) sendTurn(ctx context.Context, text string, model string) erro
 
 func (c *agyChild) interrupt(ctx context.Context) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.closed || !c.turnRunning {
+		c.mu.Unlock()
 		return nil
 	}
+	sessionID := c.sessionID
+	turnCancel := c.turnCancel
+	client := c.client
+	c.mu.Unlock()
 
-	return c.client.Call(ctx, acp.MethodSessionCancel, acp.CancelParams{
-		SessionID: c.sessionID,
+	// 优先发送 ACP session/cancel
+	cancelCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	err := client.Call(cancelCtx, acp.MethodSessionCancel, acp.CancelParams{
+		SessionID: sessionID,
 	}, nil)
+
+	if err != nil && turnCancel != nil {
+		turnCancel()
+	}
+	return err
 }
 
 func (c *agyChild) abortStartLocked(cmd *exec.Cmd) {
@@ -511,6 +576,10 @@ func (c *agyChild) closeLocked() error {
 		return nil
 	}
 	c.closed = true
+	if c.turnCancel != nil {
+		c.turnCancel()
+		c.turnCancel = nil
+	}
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}

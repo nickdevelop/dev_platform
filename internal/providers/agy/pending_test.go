@@ -186,6 +186,169 @@ for line in sys.stdin:
 	}
 }
 
+func TestSendMessageBroadcastsUserMessageAndContextIsolation(t *testing.T) {
+	const native = "conv-user-msg"
+	executable := writeFakeAgy(t, `python3 -c '
+import sys, json
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    rid = req.get("id")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":1}}), flush=True)
+    elif method == "session/new":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"sessionId":"`+native+`"}}), flush=True)
+    elif method == "session/prompt":
+        # Simulate long running prompt
+        pass
+'`)
+	adapter := newPendingTestAdapter(t, executable, 5*time.Second)
+	ctx := context.Background()
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	subEvents, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: "t"})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	// 模拟外部 HTTP 请求的 context 被 cancel
+	sendCtx, cancelSend := context.WithCancel(context.Background())
+	err = adapter.SendMessage(sendCtx, *ref, agents.SendMessageRequest{
+		Text: "Hello User Input",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	// 立即取消发送 context（模拟 HTTP 202 返回后的情况）
+	cancelSend()
+
+	// 检查事件总线中是否收到了 User 消息和 TurnStarted，并且没有因为 cancelSend 而收到 TurnCancelled
+	var receivedUserMsg bool
+	var receivedTurnStarted bool
+	timeout := time.After(1 * time.Second)
+
+loop:
+	for {
+		select {
+		case ev := <-subEvents:
+			if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "user" {
+				if ev.Message.Text == "Hello User Input" {
+					receivedUserMsg = true
+				}
+			}
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnStarted {
+				receivedTurnStarted = true
+			}
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded {
+				t.Fatalf("turn must not end due to external context cancel, got %+v", ev)
+			}
+			if receivedUserMsg && receivedTurnStarted {
+				break loop
+			}
+		case <-timeout:
+			break loop
+		}
+	}
+
+	if !receivedUserMsg {
+		t.Fatal("expected user message event in event stream")
+	}
+	if !receivedTurnStarted {
+		t.Fatal("expected TurnStarted in event stream")
+	}
+
+	_ = adapter.StopInstance(ctx, inst.ID)
+}
+
+func TestInterruptReturnsTurnCancelled(t *testing.T) {
+	const native = "conv-cancel"
+	executable := writeFakeAgy(t, `python3 -c '
+import sys, json
+prompt_id = None
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    rid = req.get("id")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":1}}), flush=True)
+    elif method == "session/new":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"sessionId":"`+native+`"}}), flush=True)
+    elif method == "session/prompt":
+        prompt_id = rid
+    elif method == "session/cancel":
+        # Reply to cancel request
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{}}), flush=True)
+        # Reply to prompt request with stopReason: cancelled
+        if prompt_id:
+            print(json.dumps({"jsonrpc":"2.0","id":prompt_id,"result":{"stopReason":"cancelled"}}), flush=True)
+'`)
+	adapter := newPendingTestAdapter(t, executable, 5*time.Second)
+	ctx := context.Background()
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	subEvents, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: "t"})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	err = adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{
+		Text: "Run something long",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// 调用 Interrupt
+	if err := adapter.Interrupt(ctx, *ref); err != nil {
+		t.Fatalf("Interrupt: %v", err)
+	}
+
+	// 监听事件，必须收到 Outcome == TurnCancelled 的 TurnEnded 事件
+	var turnCancelled bool
+	timeout := time.After(2 * time.Second)
+
+waitLoop:
+	for {
+		select {
+		case ev := <-subEvents:
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded {
+				if ev.Turn.Outcome == agents.TurnCancelled {
+					turnCancelled = true
+					break waitLoop
+				} else {
+					t.Fatalf("expected TurnCancelled, got Outcome=%q", ev.Turn.Outcome)
+				}
+			}
+		case <-timeout:
+			break waitLoop
+		}
+	}
+
+	if !turnCancelled {
+		t.Fatal("expected TurnEnded with TurnCancelled after interrupt")
+	}
+
+	_ = adapter.StopInstance(ctx, inst.ID)
+}
+
 func liveInstance(t *testing.T, a *Adapter, id string) *instance {
 	t.Helper()
 	inst, err := a.getInstance(id)

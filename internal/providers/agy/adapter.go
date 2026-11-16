@@ -370,7 +370,7 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 		}
 	}
 
-	return child.sendTurn(ctx, message.Text, message.Model)
+	return child.sendTurn(message.Text, message.Model, message.Images)
 }
 
 // openChild starts the child process serving a session.

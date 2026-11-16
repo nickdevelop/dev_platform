@@ -82,10 +82,11 @@ type EventNormalizer struct {
 	model      string
 	now        func() time.Time
 
-	currentTurnID string
-	turnActive    bool
-	activeCalls   map[int]string // stepIndex -> toolName
-	gate          *agents.DeliveryGate
+	currentTurnID   string
+	turnActive      bool
+	activeCalls     map[int]string // stepIndex -> toolName
+	accumulatedText strings.Builder
+	gate            *agents.DeliveryGate
 }
 
 // NewEventNormalizer creates a normalizer for one agy session stream.
@@ -132,6 +133,7 @@ func (n *EventNormalizer) SessionID() string {
 func (n *EventNormalizer) StartTurn(turnID string) {
 	n.currentTurnID = turnID
 	n.turnActive = true
+	n.accumulatedText.Reset()
 }
 
 // CurrentTurnID returns the active turn ID.
@@ -145,12 +147,33 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 	var events []agents.NormalizedEvent
 
 	switch kind {
+	case "user_message_chunk":
+		var chunk acp.UserMessageChunkUpdate
+		if err := json.Unmarshal(updateJSON, &chunk); err != nil {
+			return nil, err
+		}
+		if chunk.Content.Text != "" {
+			events = append(events, agents.NormalizedEvent{
+				InstanceID: n.instanceID,
+				SessionID:  n.sessionID,
+				Backend:    n.backend,
+				Timestamp:  ts,
+				Type:       agents.EventMessage,
+				Message: &agents.MessagePayload{
+					Role:  "user",
+					Text:  chunk.Content.Text,
+					Final: true,
+				},
+			})
+		}
+
 	case "agent_message_chunk":
 		var chunk acp.AgentMessageChunkUpdate
 		if err := json.Unmarshal(updateJSON, &chunk); err != nil {
 			return nil, err
 		}
 		if chunk.Content.Text != "" {
+			n.accumulatedText.WriteString(chunk.Content.Text)
 			events = append(events, agents.NormalizedEvent{
 				InstanceID: n.instanceID,
 				SessionID:  n.sessionID,
@@ -190,6 +213,10 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 		if err := json.Unmarshal(updateJSON, &tc); err != nil {
 			return nil, err
 		}
+		name := tc.Name
+		if name == "" {
+			name = tc.Title
+		}
 		events = append(events, agents.NormalizedEvent{
 			InstanceID: n.instanceID,
 			SessionID:  n.sessionID,
@@ -198,7 +225,7 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 			Type:       agents.EventToolCall,
 			ToolCall: &agents.ToolCallPayload{
 				CallID: tc.ToolCallID,
-				Name:   tc.Title,
+				Name:   name,
 				Input:  tc.RawInput,
 			},
 		})
@@ -208,6 +235,14 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 		if err := json.Unmarshal(updateJSON, &tc); err != nil {
 			return nil, err
 		}
+		// 状态守卫：仅当工具已完成 (completed) 或失败 (failed) 时才产生 ToolResult，避免中间过程产生重复事件
+		if tc.Status != "completed" && tc.Status != "failed" {
+			return nil, nil
+		}
+		output := string(tc.RawOutput)
+		if (output == "" || output == "{}") && len(tc.Content) > 0 {
+			output = string(tc.Content)
+		}
 		events = append(events, agents.NormalizedEvent{
 			InstanceID: n.instanceID,
 			SessionID:  n.sessionID,
@@ -215,8 +250,9 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 			Timestamp:  ts,
 			Type:       agents.EventToolResult,
 			ToolResult: &agents.ToolResultPayload{
-				CallID: tc.ToolCallID,
-				Output: string(tc.RawOutput),
+				CallID:  tc.ToolCallID,
+				Output:  output,
+				IsError: tc.Status == "failed",
 			},
 		})
 	}
@@ -238,7 +274,8 @@ func (n *EventNormalizer) EndTurn(outcome agents.TurnOutcome, usage *acp.UsageSt
 		}
 	}
 
-	// 1. Closing message chunk
+	// 1. Closing message chunk (携带完整的累积文本快照用于客户端收敛自愈)
+	finalText := n.accumulatedText.String()
 	events = append(events, agents.NormalizedEvent{
 		InstanceID: n.instanceID,
 		SessionID:  n.sessionID,
@@ -247,7 +284,7 @@ func (n *EventNormalizer) EndTurn(outcome agents.TurnOutcome, usage *acp.UsageSt
 		Type:       agents.EventMessage,
 		Message: &agents.MessagePayload{
 			Role:  "assistant",
-			Text:  "",
+			Text:  finalText,
 			Final: true,
 			Usage: msgUsage,
 			Model: n.messageModel(),
@@ -269,6 +306,7 @@ func (n *EventNormalizer) EndTurn(outcome agents.TurnOutcome, usage *acp.UsageSt
 	})
 
 	n.turnActive = false
+	n.accumulatedText.Reset()
 	return n.gate.AdmitAll(events)
 }
 

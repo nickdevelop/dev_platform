@@ -121,8 +121,11 @@ type PromptParams struct {
 }
 
 type PromptContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+	URI      string `json:"uri,omitempty"`
 }
 
 type PromptResult struct {
@@ -194,6 +197,11 @@ type SessionUpdateHeader struct {
 }
 
 // Specific update payloads
+type UserMessageChunkUpdate struct {
+	SessionUpdate string        `json:"sessionUpdate"`
+	Content       PromptContent `json:"content"`
+}
+
 type AgentMessageChunkUpdate struct {
 	SessionUpdate string        `json:"sessionUpdate"`
 	Content       PromptContent `json:"content"`
@@ -212,11 +220,14 @@ type SessionInfoUpdate struct {
 type ToolCallUpdatePayload struct {
 	SessionUpdate string          `json:"sessionUpdate"`
 	ToolCallID    string          `json:"toolCallId"`
+	Name          string          `json:"name,omitempty"`
 	Title         string          `json:"title,omitempty"`
 	Kind          string          `json:"kind,omitempty"`
 	Status        string          `json:"status,omitempty"`
+	Locations     json.RawMessage `json:"locations,omitempty"`
 	RawInput      json.RawMessage `json:"rawInput,omitempty"`
 	RawOutput     json.RawMessage `json:"rawOutput,omitempty"`
+	Content       json.RawMessage `json:"content,omitempty"`
 }
 
 type UsageUpdatePayload struct {
