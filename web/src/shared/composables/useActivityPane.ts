@@ -135,32 +135,20 @@ export function useActivityPane(onExpand?: () => void) {
   }
 
   function toggleFileTree() {
-    if (isFileTreeVisible.value) {
-      setFileTreeCollapsed(true)
-      fileTreeFloatingOpen.value = false
-    } else {
-      if (fileTreePinned.value) {
-        setFileTreeCollapsed(false)
-      } else {
-        fileTreeFloatingOpen.value = true
-      }
-    }
+    setFileTreeCollapsed(!fileTreeCollapsed.value)
   }
 
   function openFloatingFileTree() {
-    fileTreeFloatingOpen.value = true
+    setFileTreeCollapsed(false)
   }
 
   function closeFloatingFileTree() {
-    fileTreeFloatingOpen.value = false
+    setFileTreeCollapsed(true)
   }
 
-  const isFileTreeDocked = computed(() => fileTreePinned.value && !fileTreeCollapsed.value)
-  const isFileTreeFloating = computed(() => {
-    if (isFileTreeDocked.value) return false
-    return fileTreeFloatingOpen.value
-  })
-  const isFileTreeVisible = computed(() => isFileTreeDocked.value || isFileTreeFloating.value)
+  const isFileTreeDocked = computed(() => !fileTreeCollapsed.value)
+  const isFileTreeFloating = computed(() => false)
+  const isFileTreeVisible = computed(() => !fileTreeCollapsed.value)
 
   return {
     // Preview pane (with activityCollapsed alias for test compatibility)

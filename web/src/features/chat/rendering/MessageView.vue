@@ -57,7 +57,32 @@ const props = defineProps<{
 const emit = defineEmits<{
   edit: [entry: ChatEntry]
   regenerate: [entry: ChatEntry]
+  'open-file': [filePath: string]
 }>()
+
+function handleMarkdownContentClick(event: MouseEvent) {
+  handleCodeCopyClick(event)
+
+  const target = event.target as HTMLElement | null
+  const link = target?.closest('a')
+  if (!link) return
+
+  const href = link.getAttribute('href')
+  if (!href) return
+
+  if (/^(?:https?:\/\/|mailto:|tel:)/i.test(href)) {
+    if (!link.getAttribute('target')) {
+      link.setAttribute('target', '_blank')
+      link.setAttribute('rel', 'noopener noreferrer')
+    }
+    return
+  }
+
+  // Intercept local or workspace file links to open directly in the file panel
+  event.preventDefault()
+  event.stopPropagation()
+  emit('open-file', href)
+}
 
 // The whole render model — call/result joins, step groups, subagent facts and
 // question payloads are derived by ./logModel; this component only owns the
@@ -334,7 +359,7 @@ async function copyMessage(entry: ChatEntry) {
                 </template>
                 <FoldableUserText v-else-if="block.entry.text" :text="block.entry.text" />
               </template>
-              <div v-else class="message-text markdown-body" @click="handleCodeCopyClick">
+              <div v-else class="message-text markdown-body" @click="handleMarkdownContentClick">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">
                   <div
                     v-if="segment.kind === 'markdown'"

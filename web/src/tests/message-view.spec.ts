@@ -377,16 +377,16 @@ describe('MessageView per-message model', () => {
       streaming: false,
     }
 
-    // When tool_result arrives, it must NOT flash back to "正在思考...",
+    // When tool_result arrives, it must NOT flash back to "正在执行...",
     // but keep showing the last tool action (读取 src/main.ts)
     const actionAfterResult = deriveRunningAction([userMsg, thinking, toolCall, toolResult])
     expect(actionAfterResult.label).toBe('读取')
     expect(actionAfterResult.code).toBe('src/main.ts')
 
-    // If a subsequent thinking arrives after tool execution, it switches to "正在思考..."
+    // If a subsequent thinking arrives after tool execution, it switches to "正在执行..."
     const nextThinking: ChatEntry = { id: 'think-2', kind: 'thinking', role: 'assistant', text: 'analyzing...', streaming: false }
     const actionAfterNextThinking = deriveRunningAction([userMsg, thinking, toolCall, toolResult, nextThinking])
-    expect(actionAfterNextThinking.label).toBe('正在思考...')
+    expect(actionAfterNextThinking.label).toBe('正在执行...')
     expect(actionAfterNextThinking.kind).toBe('thinking')
   })
 })
@@ -666,5 +666,49 @@ describe('MessageView plantuml blocks', () => {
 
     expect(wrapper.find('[data-test="plantuml-source"]').text()).toContain('A->B')
     expect(wrapper.find('[data-test="plantuml-waiting"]').text()).toContain('没画完')
+  })
+
+  it('intercepts local file links in markdown and emits open-file event', async () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [
+          message('assistant', '请查看 [App.vue](file:///data/projects/dev_platform/web/src/App.vue) 与 [README.md](./README.md)'),
+        ],
+        capabilities: capabilities(),
+        display: 'messages',
+      },
+    })
+    await flushPromises()
+
+    const links = wrapper.findAll('.markdown-body a')
+    expect(links.length).toBeGreaterThanOrEqual(2)
+
+    await links[0].trigger('click')
+    expect(wrapper.emitted('open-file')).toBeTruthy()
+    expect(wrapper.emitted('open-file')![0]).toEqual(['file:///data/projects/dev_platform/web/src/App.vue'])
+
+    await links[1].trigger('click')
+    expect(wrapper.emitted('open-file')![1]).toEqual(['./README.md'])
+  })
+
+  it('opens external http links in a new tab without emitting open-file', async () => {
+    const wrapper = mount(MessageView, {
+      props: {
+        messages: [
+          message('assistant', '外部链接：[Google](https://google.com)'),
+        ],
+        capabilities: capabilities(),
+        display: 'messages',
+      },
+    })
+    await flushPromises()
+
+    const link = wrapper.find('.markdown-body a')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toContain('noopener')
+    expect(wrapper.emitted('open-file')).toBeUndefined()
   })
 })

@@ -10,6 +10,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import BackendTag from '../shared/components/BackendTag.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 import { useAgentsStore } from '../stores/agents'
+import { useProjectsStore } from '../stores/projects'
 import { backendFixtures } from './backend-fixtures'
 import { useSessionsStore, type ChatEntry } from '../stores/sessions'
 import { useInteractionsStore } from '../stores/interactions'
@@ -1531,5 +1532,34 @@ describe('SessionChatPanel scroll following', () => {
     const reloadedContinueCount = continues(fetchSpy).filter((u) => u.includes('sess-keepalive')).length
     expect(reloadedContinueCount).toBeGreaterThan(initialContinueCount)
     expect(sessionsStore.historyLoaded['sess-keepalive']).toBe(true)
+  })
+
+  it('opens file in preview panel when markdown link is clicked in conversation', async () => {
+    stubSessionList([session('sess-link')])
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [{ id: 1, name: 'proj1', path: '/data/projects/1' } as any]
+    const sessionsStore = useSessionsStore()
+    sessionsStore.pushEntry('sess-link', {
+      id: 'msg-link',
+      kind: 'message',
+      role: 'assistant',
+      text: '请查看文件：[App.vue](file:///data/projects/1/src/App.vue)',
+      streaming: false,
+    } as ChatEntry)
+
+    const wrapper = mountPanel('sess-link')
+    await flushPromises()
+
+    const link = wrapper.find('.markdown-body a')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    // Preview panel must be expanded and the file tab opened
+    expect((wrapper.vm as any).previewCollapsed).toBe(false)
+    expect((wrapper.vm as any).activePreviewTab).toBe('src/App.vue')
+    const fileTab = wrapper.find('[data-test="tab-file"]')
+    expect(fileTab.exists()).toBe(true)
+    expect(fileTab.text()).toContain('App.vue')
   })
 })

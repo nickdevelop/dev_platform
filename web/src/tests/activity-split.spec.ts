@@ -647,14 +647,14 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(filetree.classes()).toContain('filetree-docked')
     expect(filetree.text()).toContain('工作区文件')
 
-    // DOM order inside workspace: preview section is on the left, file tree section is on the right
+    // DOM order inside workspace: file tree section is on the left, preview section is on the right
     const workspaceChildren = Array.from(
       preview.find('.workspace-inner-split').element.children,
     ).map((child) => (child as HTMLElement).className)
     const previewSectionIdx = workspaceChildren.findIndex((name) => name.includes('workspace-preview-section'))
     const filetreeSectionIdx = workspaceChildren.findIndex((name) => name.includes('workspace-filetree-section'))
-    expect(previewSectionIdx).toBeGreaterThanOrEqual(0)
-    expect(previewSectionIdx).toBeLessThan(filetreeSectionIdx)
+    expect(filetreeSectionIdx).toBeGreaterThanOrEqual(0)
+    expect(filetreeSectionIdx).toBeLessThan(previewSectionIdx)
   })
 
   it('opens a file as a preview tab when selected in the file tree and auto-expands preview if collapsed', async () => {
@@ -765,7 +765,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect((wrapper.vm as any).computedPreviewWidth).toBe(fullWidth)
   })
 
-  it('supports file tree drawer pinning/unpinning, collapse and header toggle', async () => {
+  it('supports file tree collapse and header toggle in preview pane', async () => {
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
 
@@ -773,23 +773,14 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(drawer.exists()).toBe(true)
     expect(drawer.classes()).toContain('filetree-docked')
 
-    // Toggle pin to unpinned (floating mode)
-    const pinBtn = drawer.find('[data-test="filetree-pin-btn"]')
-    await pinBtn.trigger('click')
-    await flushPromises()
-
-    expect(drawer.classes()).toContain('filetree-floating')
-    expect(wrapper.find('[data-test="activity-pane"]').classes()).toContain('has-floating-filetree')
-    expect(wrapper.find('[data-test="filetree-backdrop"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="preview-floating-backdrop"]').exists()).toBe(true)
-    expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('unpinned')
-
-    // Click backdrop to close floating drawer
-    await wrapper.find('[data-test="filetree-backdrop"]').trigger('click')
+    // Collapse file tree via collapse button
+    const collapseBtn = drawer.find('[data-test="filetree-collapse-btn"]')
+    await collapseBtn.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
+    expect(localStorage.getItem('dev-platform-chat-filetree-collapsed-v1')).toBe('collapsed')
 
-    // The header toggle can re-open the file tree drawer
+    // The header toggle can re-open the file tree in preview pane
     const toggleBtn = wrapper.find('[data-test="toggle-filetree-btn"]')
     expect(toggleBtn.exists()).toBe(true)
     expect(toggleBtn.attributes('aria-pressed')).toBe('false')
@@ -797,21 +788,8 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     await flushPromises()
 
     expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-floating')
-
-    // Pin directly in workspace pane to dock
-    await wrapper.find('[data-test="filetree-pin-btn"]').trigger('click')
-    await flushPromises()
     expect(wrapper.find('[data-test="filetree-drawer"]').classes()).toContain('filetree-docked')
-    expect(wrapper.find('[data-test="activity-pane"]').classes()).not.toContain('has-floating-filetree')
-    expect(wrapper.find('[data-test="filetree-backdrop"]').exists()).toBe(false)
-    expect(localStorage.getItem('dev-platform-chat-filetree-pinned-v1')).toBe('pinned')
-
-    // Collapse drawer
-    const collapseBtn = wrapper.find('[data-test="filetree-collapse-btn"]')
-    await collapseBtn.trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-test="filetree-drawer"]').exists()).toBe(false)
+    expect(localStorage.getItem('dev-platform-chat-filetree-collapsed-v1')).toBe('expanded')
   })
 
   it('supports resizing preview pane width via resizer handle and persists width', async () => {

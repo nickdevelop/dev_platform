@@ -82,9 +82,34 @@ const signature = computed(() => {
 })
 const follow = useBottomFollow(scroll, signature)
 
+let isDeactivated = false
+
+function restoreChatScroll() {
+  const apply = () => {
+    if (props.chatId === undefined || !scroll.value) return
+    const savedScroll = viewportStore.getChatScroll(props.chatId)
+    if (savedScroll && !savedScroll.pinned) {
+      scroll.value.scrollTop = savedScroll.scrollTop
+      follow.pinned.value = false
+      follow.showJump.value = true
+    } else {
+      follow.scrollToBottom(false)
+    }
+  }
+
+  apply()
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      apply()
+      window.requestAnimationFrame(apply)
+    })
+  }
+}
+
 function onScroll() {
+  if (isDeactivated) return
   follow.onScroll()
-  if (props.chatId !== undefined && scroll.value) {
+  if (props.chatId !== undefined && scroll.value && scroll.value.clientHeight > 0 && scroll.value.scrollHeight > 0) {
     viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
   }
 }
@@ -147,24 +172,7 @@ async function bootstrap() {
   await chats.openChat(props.chatId)
   modelId.value = chats.active?.modelId ?? null
   await nextTick()
-
-  if (savedScroll && !savedScroll.pinned) {
-    if (scroll.value) {
-      scroll.value.scrollTop = savedScroll.scrollTop
-    }
-    follow.pinned.value = false
-    follow.showJump.value = true
-  } else {
-    follow.scrollToBottom(false)
-  }
-
-  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-    window.requestAnimationFrame(() => {
-      if (savedScroll && !savedScroll.pinned && scroll.value) {
-        scroll.value.scrollTop = savedScroll.scrollTop
-      }
-    })
-  }
+  restoreChatScroll()
 }
 
 let isInitialMount = true
@@ -178,19 +186,25 @@ onMounted(() => {
 
 onActivated(() => {
   if (isInitialMount) return
+  isDeactivated = false
   if (props.chatId !== undefined && (chats.activeId !== props.chatId || !chats.active)) {
     void bootstrap()
+  } else if (props.chatId !== undefined) {
+    void nextTick(() => {
+      restoreChatScroll()
+    })
   }
 })
 
 onDeactivated(() => {
-  if (props.chatId !== undefined && scroll.value) {
+  isDeactivated = true
+  if (props.chatId !== undefined && scroll.value && scroll.value.clientHeight > 0 && scroll.value.scrollHeight > 0) {
     viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
   }
 })
 
 onBeforeUnmount(() => {
-  if (props.chatId !== undefined && scroll.value) {
+  if (props.chatId !== undefined && scroll.value && scroll.value.clientHeight > 0 && scroll.value.scrollHeight > 0) {
     viewportStore.saveChatScroll(props.chatId, scroll.value.scrollTop, follow.pinned.value)
   }
   if (props.chatId === undefined) {

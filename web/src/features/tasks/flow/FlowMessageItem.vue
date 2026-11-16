@@ -32,7 +32,7 @@ const formattedContent = computed(() => {
   let text = props.message.content || ''
   // If streaming and empty
   if (!text && props.message.status === 'streaming') {
-    return '<span class="inline-block animate-pulse text-[var(--color-text-muted)] font-mono text-xs">正在思考中…</span>'
+    return '<span class="inline-block animate-pulse text-[var(--color-text-muted)] font-mono text-xs">正在执行中…</span>'
   }
 
   // Pre-process @role mentions into highlighted spans before markdown rendering,

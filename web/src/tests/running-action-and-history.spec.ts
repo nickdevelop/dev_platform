@@ -18,10 +18,10 @@ function createEntry(overrides: Partial<ChatEntry>): ChatEntry {
 
 describe('deriveRunningAction', () => {
   it('returns default thinking state when no entries or only user message exists', () => {
-    expect(deriveRunningAction([])).toEqual({ label: '正在思考...', kind: 'thinking' })
+    expect(deriveRunningAction([])).toEqual({ label: '正在执行...', kind: 'thinking' })
 
     const userOnly = [createEntry({ kind: 'message', role: 'user', text: '你好' })]
-    expect(deriveRunningAction(userOnly)).toEqual({ label: '正在思考...', kind: 'thinking' })
+    expect(deriveRunningAction(userOnly)).toEqual({ label: '正在执行...', kind: 'thinking' })
   })
 
   it('detects reasoning thinking state', () => {
@@ -29,7 +29,7 @@ describe('deriveRunningAction', () => {
       createEntry({ kind: 'message', role: 'user', text: '请分析代码' }),
       createEntry({ kind: 'thinking', text: '正在深入思考算法逻辑...' }),
     ]
-    expect(deriveRunningAction(entries)).toEqual({ label: '正在思考...', kind: 'thinking' })
+    expect(deriveRunningAction(entries)).toEqual({ label: '正在执行...', kind: 'thinking' })
   })
 
   it('detects bash and shell execution commands', () => {
@@ -147,7 +147,7 @@ describe('deriveRunningAction', () => {
       createEntry({ kind: 'thinking', text: '思考下一步...' }),
     ]
     const nextAction = deriveRunningAction(nextEntries)
-    expect(nextAction).toEqual({ label: '正在思考...', kind: 'thinking' })
+    expect(nextAction).toEqual({ label: '正在执行...', kind: 'thinking' })
   })
 })
 
@@ -167,7 +167,7 @@ describe('MessageView dynamic running indicator rendering', () => {
 
     const runningEntry = wrapper.find('[data-test="running-entry"]')
     expect(runningEntry.exists()).toBe(true)
-    expect(runningEntry.text()).toContain('正在思考...')
+    expect(runningEntry.text()).toContain('正在执行...')
     expect(runningEntry.find('[data-test="running-code"]').exists()).toBe(false)
   })
 

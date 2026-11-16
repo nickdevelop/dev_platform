@@ -18,6 +18,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, toRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAgentsStore } from '../../stores/agents'
+import { useProjectsStore } from '../../stores/projects'
 import { useSessionsStore, type ChatEntry } from '../../stores/sessions'
 import { useWorktreesStore } from '../../stores/worktrees'
 import { useInteractionsStore } from '../../stores/interactions'
@@ -71,6 +72,7 @@ const props = withDefaults(
 )
 
 const agents = useAgentsStore()
+const projectsStore = useProjectsStore()
 const sessions = useSessionsStore()
 const interactions = useInteractionsStore()
 const worktreesStore = useWorktreesStore()
@@ -160,6 +162,28 @@ function onSelectWorkspaceFile(
   options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
 ) {
   openFileInPreview(filePath, options)
+}
+
+function onOpenFileFromMarkdown(href: string) {
+  if (!href) return
+  const [urlWithoutHash] = href.split('#')
+  let path = urlWithoutHash.trim()
+
+  // Strip file:// protocol if present
+  path = path.replace(/^file:\/\//i, '')
+  path = path.replace(/\\/g, '/')
+
+  // Strip project directory or instance workdir prefix if absolute path
+  const projectDir = (instance.value?.directory || projectsStore.byId(props.projectId)?.path || '').replace(/\\/g, '/')
+  if (projectDir && path.startsWith(projectDir)) {
+    path = path.slice(projectDir.length)
+  }
+
+  // Strip leading slashes and relative prefix
+  path = path.replace(/^[/\\]+/, '').replace(/^\.\//, '')
+  if (!path) return
+
+  openFileInPreview(path)
 }
 
 const ready = ref(false)
@@ -535,9 +559,34 @@ async function loadOlderHistory() {
   }
 }
 
+let isDeactivated = false
+
+function restoreScrollPosition() {
+  const apply = () => {
+    if (!props.sessionId || !logScroll.value) return
+    const savedLogState = viewportStore.getSessionScroll(props.sessionId)
+    if (savedLogState && !savedLogState.pinned) {
+      logScroll.value.scrollTop = savedLogState.scrollTop
+      pinnedToBottom.value = false
+      showJumpToLatest.value = true
+    } else {
+      scrollToBottom(false)
+    }
+  }
+
+  apply()
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      apply()
+      window.requestAnimationFrame(apply)
+    })
+  }
+}
+
 function onLogScroll() {
+  if (isDeactivated) return
   logFollow.onScroll()
-  if (props.sessionId && logScroll.value) {
+  if (props.sessionId && logScroll.value && logScroll.value.clientHeight > 0 && logScroll.value.scrollHeight > 0) {
     viewportStore.saveSessionScroll(props.sessionId, logScroll.value.scrollTop, pinnedToBottom.value)
   }
 }
@@ -601,6 +650,7 @@ onMounted(() => {
 
 onActivated(() => {
   if (isInitialMount) return
+  isDeactivated = false
   // If the session data was evicted (e.g. tab closed and reopened while kept alive)
   // or stream is not open, re-open to reload history and re-subscribe.
   if (
@@ -612,25 +662,15 @@ onActivated(() => {
   } else {
     sessions.activeSessionId = props.sessionId
     void nextTick(() => {
-      const savedLogState = viewportStore.getSessionScroll(props.sessionId)
-      if (savedLogState && !savedLogState.pinned) {
-        if (logScroll.value) {
-          logScroll.value.scrollTop = savedLogState.scrollTop
-        }
-        pinnedToBottom.value = false
-        showJumpToLatest.value = true
-      } else {
-        scrollToBottom(false)
-      }
+      restoreScrollPosition()
     })
   }
 })
 
 onDeactivated(() => {
-  if (currentSessionId) {
-    if (logScroll.value) {
-      viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
-    }
+  isDeactivated = true
+  if (currentSessionId && logScroll.value && logScroll.value.clientHeight > 0 && logScroll.value.scrollHeight > 0) {
+    viewportStore.saveSessionScroll(currentSessionId, logScroll.value.scrollTop, pinnedToBottom.value)
   }
   if (currentSessionId && !isRestoringDraft) {
     draftsStore.setSessionDraft(currentSessionId, {
@@ -786,23 +826,7 @@ async function open() {
     // Opening a session lands on its newest entry, or restores previous scroll
     // position if the user previously scrolled away from bottom.
     await nextTick()
-    if (savedLogState && !savedLogState.pinned) {
-      if (logScroll.value) {
-        logScroll.value.scrollTop = savedLogState.scrollTop
-      }
-      pinnedToBottom.value = false
-      showJumpToLatest.value = true
-    } else {
-      scrollToBottom(false)
-    }
-
-    if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => {
-        if (savedLogState && !savedLogState.pinned && logScroll.value) {
-          logScroll.value.scrollTop = savedLogState.scrollTop
-        }
-      })
-    }
+    restoreScrollPosition()
   } finally {
     preparing.value = false
   }
@@ -933,17 +957,8 @@ async function removeSession() {
         :class="{
           'activity-collapsed': previewCollapsed,
           'preview-collapsed': previewCollapsed,
-          'filetree-docked': isFileTreeDocked,
         }"
       >
-        <!-- Floating file tree backdrop -->
-        <div
-          v-if="isFileTreeFloating"
-          class="filetree-backdrop"
-          data-test="filetree-backdrop"
-          @click="closeFloatingFileTree"
-        />
-
         <div class="message-column">
           <header class="chat-header">
             <div class="title-row">
@@ -1040,6 +1055,7 @@ async function removeSession() {
                 :stream-status="streamStatus"
                 :running="isRunning"
                 display="messages"
+                @open-file="onOpenFileFromMarkdown"
               />
 
               <button
@@ -1228,12 +1244,12 @@ async function removeSession() {
           </form>
         </div>
 
-        <!-- Column 2: Unified Right Workspace Panel (Preview on the Left, FileTree on the Right) -->
+        <!-- Column 2: Unified Right Workspace Panel (FileTree on the Left, Preview on the Right) -->
         <aside
           v-if="!props.hideSideRail && !previewCollapsed"
           id="session-preview-pane"
           class="preview-pane activity-pane unified-workspace-pane"
-          :class="{ 'is-resizing': isPreviewResizing, 'has-floating-filetree': isFileTreeFloating }"
+          :class="{ 'is-resizing': isPreviewResizing }"
           :style="{ width: `${previewWidth}px`, flex: `0 0 ${previewWidth}px` }"
           aria-label="文件预览面板"
           data-test="activity-pane"
@@ -1249,16 +1265,47 @@ async function removeSession() {
           </div>
 
           <div class="workspace-inner-split">
-            <!-- Left Sub-column: Code Preview Section (flex: 1) -->
-            <div class="workspace-preview-section">
-              <!-- Backdrop over preview section when file tree is floating, clicking it closes the drawer -->
-              <div
-                v-if="isFileTreeFloating"
-                class="preview-floating-backdrop"
-                data-test="preview-floating-backdrop"
-                @click="closeFloatingFileTree"
-              />
+            <!-- Left Sub-column: File Tree Section in Preview Panel -->
+            <div
+              v-if="isFileTreeVisible"
+              id="session-filetree-drawer"
+              class="workspace-filetree-section filetree-drawer filetree-docked"
+              data-test="filetree-drawer"
+            >
+              <header class="filetree-head">
+                <div class="filetree-title">
+                  <span class="title-text">工作区文件</span>
+                </div>
+                <div class="filetree-controls">
+                  <button
+                    type="button"
+                    class="dock-btn collapse-btn"
+                    data-test="filetree-collapse-btn"
+                    title="收起文件树"
+                    aria-label="收起文件树"
+                    @click="setFileTreeCollapsed(true)"
+                  >
+                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                </div>
+              </header>
 
+              <div class="filetree-body">
+                <FileSidebar
+                  :project-id="props.projectId"
+                  :session-id="props.sessionId"
+                  :worktree-id="activeWorktreeId"
+                  :active-path="activePreviewTab"
+                  @select="onSelectWorkspaceFile"
+                  @branch-changed="onFileTreeBranchChanged"
+                />
+              </div>
+            </div>
+
+            <!-- Right Sub-column: Code Preview Section (flex: 1) -->
+            <div class="workspace-preview-section">
               <header class="preview-head activity-head">
                 <div class="preview-tabs-list" role="tablist">
                   <div
@@ -1302,7 +1349,7 @@ async function removeSession() {
                 </div>
 
                 <div class="head-actions">
-                  <!-- Filetree toggle button in preview header (Pure Icon, positioned next to the filetree) -->
+                  <!-- Filetree toggle button in preview header (Pure Icon) -->
                   <button
                     type="button"
                     class="head-action-icon-btn filetree-head-toggle"
@@ -1337,7 +1384,7 @@ async function removeSession() {
                   </div>
                   <p class="empty-title text-xs font-semibold text-slate-700 dark:text-slate-300">未打开文件预览</p>
                   <p class="empty-desc text-2xs text-slate-400 leading-relaxed max-w-[200px] text-center">
-                    在右侧文件树中选择文件即可在此快速预览文件内容与变更
+                    在文件树中选择文件即可在此快速预览文件内容与变更
                   </p>
                 </div>
                 <div v-show="openFileTabs.length > 0" class="preview-file-viewer">
@@ -1354,66 +1401,6 @@ async function removeSession() {
                 </div>
               </div>
             </div>
-
-            <!-- Right Sub-column: File Tree Drawer (Located on the RIGHT as preferred!) -->
-            <aside
-              v-if="isFileTreeVisible"
-              id="session-filetree-drawer"
-              class="filetree-drawer workspace-filetree-section"
-              :class="{
-                'filetree-docked': isFileTreeDocked,
-                'filetree-floating': isFileTreeFloating,
-              }"
-              :style="isFileTreeDocked ? { width: `${DOCKED_FILETREE_WIDTH}px`, flex: `0 0 ${DOCKED_FILETREE_WIDTH}px` } : undefined"
-              aria-label="项目文件树"
-              data-test="filetree-drawer"
-            >
-              <header class="filetree-head">
-                <div class="filetree-title">
-                  <span class="title-text">工作区文件</span>
-                </div>
-                <div class="filetree-controls">
-                  <button
-                    type="button"
-                    class="dock-btn pin-btn"
-                    data-test="filetree-pin-btn"
-                    :class="{ pinned: isFileTreeDocked }"
-                    :title="isFileTreeDocked ? '取消固定（浮出抽屉）' : '固定文件树'"
-                    :aria-label="isFileTreeDocked ? '取消固定' : '固定文件树'"
-                    :aria-pressed="isFileTreeDocked ? 'true' : 'false'"
-                    @click="toggleFileTreePinned"
-                  >
-                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                      <line x1="12" y1="17" x2="12" y2="22" />
-                      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    class="dock-btn collapse-btn"
-                    data-test="filetree-collapse-btn"
-                    title="向右收起文件树"
-                    aria-label="向右收起文件树"
-                    @click="setFileTreeCollapsed(true)"
-                  >
-                    <svg class="dock-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="9 18 15 12 9 6" />
-                    </svg>
-                  </button>
-                </div>
-              </header>
-
-              <div class="filetree-body">
-                <FileSidebar
-                  :project-id="props.projectId"
-                  :session-id="props.sessionId"
-                  :worktree-id="activeWorktreeId"
-                  :active-path="activePreviewTab"
-                  @select="onSelectWorkspaceFile"
-                  @branch-changed="onFileTreeBranchChanged"
-                />
-              </div>
-            </aside>
           </div>
         </aside>
 
@@ -1656,13 +1643,19 @@ async function removeSession() {
 }
 
 .workspace-filetree-section {
-  border-left: 1px solid var(--color-border);
-  border-right: none;
+  width: 240px;
+  min-width: 180px;
+  flex: 0 0 240px;
+  border-right: 1px solid var(--color-border);
+  border-left: none;
   border-top: none;
   border-bottom: none;
   border-radius: 0;
   height: 100%;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .head-action-icon-btn {

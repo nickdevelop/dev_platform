@@ -642,17 +642,17 @@ export interface RunningActionInfo {
 /**
  * deriveRunningAction derives the human-readable action label and parameters
  * from the most recent activity entry in the message log. This replaces the static
- * "正在运行..." indicator with live feedback such as "正在思考..." or "执行 git status".
+ * "正在运行..." indicator with live feedback such as "正在执行..." or "执行 git status".
  */
 export function deriveRunningAction(messages: ChatEntry[]): RunningActionInfo {
   if (!messages || messages.length === 0) {
-    return { label: '正在思考...', kind: 'thinking' }
+    return { label: '正在执行...', kind: 'thinking' }
   }
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const entry = messages[i]
     if (entry.kind === 'thinking') {
-      return { label: '正在思考...', kind: 'thinking' }
+      return { label: '正在执行...', kind: 'thinking' }
     }
     if (entry.kind === 'tool_call') {
       if (isQuestionCall(entry)) {
@@ -734,6 +734,6 @@ export function deriveRunningAction(messages: ChatEntry[]): RunningActionInfo {
     }
   }
 
-  return { label: '正在思考...', kind: 'thinking' }
+  return { label: '正在执行...', kind: 'thinking' }
 }
 
