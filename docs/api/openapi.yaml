@@ -3496,6 +3496,41 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /agents/{backend}/max-turn-steps:
+    put:
+      summary: Set an agent max turn steps
+      description: >-
+        Sets the maximum tool-call steps per turn for a backend before failing the turn.
+        -1 means unlimited, 0 resets to default, > 0 specifies the steps.
+      operationId: setAgentMaxTurnSteps
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [steps]
+              properties:
+                steps:
+                  type: integer
+      responses:
+        '200':
+          description: The updated backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
   /agents/{backend}/detect:
     post:
       summary: Detect an agent executable
@@ -6598,6 +6633,12 @@ components:
         idleTimeoutMinutes:
           type: integer
           description: Idle reclamation timeout in minutes.
+        maxTurnSteps:
+          type: integer
+          description: Configured max tool steps per turn (-1 is unlimited).
+        defaultMaxTurnSteps:
+          type: integer
+          description: Backend descriptor's default step limit.
       additionalProperties: false
     AgentList:
       type: object

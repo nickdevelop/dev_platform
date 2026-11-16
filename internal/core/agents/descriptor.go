@@ -51,6 +51,10 @@ type BackendDescriptor struct {
 	// DefaultIdleTimeoutMinutes is the default idle duration in minutes before
 	// a shared host process is reclaimed. 0 means no idle timeout is configured by default.
 	DefaultIdleTimeoutMinutes int
+	// DefaultMaxTurnSteps is the default per-turn tool-step limit for backends
+	// driving an in-process agent loop. 0 means the backend does not configure
+	// or bound tool steps through the platform.
+	DefaultMaxTurnSteps int
 	// Embedded reports that the backend does not run an external executable:
 	// it executes inside the platform process. Binary stays empty, PATH
 	// resolution and version checks do not apply, and the settings UI hides

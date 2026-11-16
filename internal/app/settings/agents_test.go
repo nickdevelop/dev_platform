@@ -156,3 +156,40 @@ func TestRecordDetectionStoresVersion(t *testing.T) {
 		t.Errorf("persisted version = %q, want 1.1.0", reloaded[agents.BackendPi].Version)
 	}
 }
+
+func TestAgentMaxTurnStepsRoundTrips(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, testCatalogWithBuiltin(t))
+
+	// Default when unset returns 30 (or descriptor's DefaultMaxTurnSteps)
+	if steps := svc.AgentMaxTurnSteps(agents.BackendBuiltin); steps != 30 {
+		t.Fatalf("expected default 30, got %d", steps)
+	}
+
+	// Update to 45
+	if _, err := svc.SetAgentMaxTurnSteps(agents.BackendBuiltin, 45); err != nil {
+		t.Fatalf("SetAgentMaxTurnSteps(45): %v", err)
+	}
+	if steps := svc.AgentMaxTurnSteps(agents.BackendBuiltin); steps != 45 {
+		t.Fatalf("expected 45, got %d", steps)
+	}
+
+	// Update to -1 (unlimited)
+	if _, err := svc.SetAgentMaxTurnSteps(agents.BackendBuiltin, -1); err != nil {
+		t.Fatalf("SetAgentMaxTurnSteps(-1): %v", err)
+	}
+	if steps := svc.AgentMaxTurnSteps(agents.BackendBuiltin); steps != -1 {
+		t.Fatalf("expected -1, got %d", steps)
+	}
+
+	// Persists across service reload
+	svc2 := NewService(db, testCatalogWithBuiltin(t))
+	if steps := svc2.AgentMaxTurnSteps(agents.BackendBuiltin); steps != -1 {
+		t.Fatalf("reloaded expected -1, got %d", steps)
+	}
+
+	// Reject invalid values
+	if _, err := svc.SetAgentMaxTurnSteps(agents.BackendBuiltin, -2); err == nil {
+		t.Fatal("expected error for -2")
+	}
+}

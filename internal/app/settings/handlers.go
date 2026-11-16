@@ -24,6 +24,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.PUT("/agents/:backend/mode", s.handleSetAgentMode)
 	r.PUT("/agents/:backend/permission-mode", s.handleSetAgentPermissionMode)
 	r.PUT("/agents/:backend/idle-timeout", s.handleSetAgentIdleTimeout)
+	r.PUT("/agents/:backend/max-turn-steps", s.handleSetAgentMaxTurnSteps)
 	r.POST("/agents/:backend/detect", s.handleDetectAgent)
 }
 

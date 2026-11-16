@@ -148,6 +148,9 @@ services (`modelconfig`), and executes a local workspace toolset directly
   and `execute_command`; `auto` approves everything. Read/search/glob tools
   always run without confirmation. "always" decisions remember the invocation
   class for the runtime session.
+- **Max turn steps.** The loop bounds tool-call steps per turn (`AgentSetting.maxTurnSteps` / `DefaultMaxTurnSteps: 30`).
+  Operators can configure it (e.g. 10, 30, 50, 100) or disable bounds entirely (`-1` = unlimited).
+  When bounded and exceeded, the turn fails with `step_limit`.
 - **Session data ownership.** The transcript (user messages, assistant text,
   reasoning, tool calls and results, errors) persists in the platform
   database (`agent_builtin_sessions` / `agent_builtin_messages`, migration 36,

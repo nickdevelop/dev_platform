@@ -33,6 +33,10 @@ type AgentSetting struct {
 	// gates its high-risk calls ("confirm" asks on an approval card, "auto"
 	// approves everything). Empty means the backend default (confirm).
 	PermissionMode string `json:"permissionMode,omitempty"`
+	// MaxTurnSteps configures how many tool-call steps one turn may take before
+	// the loop fails with a step-limit error. -1 means unlimited, > 0 specifies
+	// the steps. 0 uses the catalog descriptor default (or 30 if unset).
+	MaxTurnSteps int `json:"maxTurnSteps,omitempty"`
 }
 
 // defaultAgentSettings returns every catalog backend at its descriptor's
@@ -43,6 +47,7 @@ func (s *Service) defaultAgentSettings() map[agents.BackendID]AgentSetting {
 		defaults[descriptor.ID] = AgentSetting{
 			Enabled:            descriptor.DefaultEnabled,
 			IdleTimeoutMinutes: descriptor.DefaultIdleTimeoutMinutes,
+			MaxTurnSteps:       descriptor.DefaultMaxTurnSteps,
 		}
 	}
 	return defaults
@@ -322,4 +327,55 @@ func (s *Service) ResolvePath(backend agents.BackendID) (string, string) {
 		return path, "auto"
 	}
 	return "", "none"
+}
+
+// SetAgentMaxTurnSteps records the maximum tool-call steps per turn for a backend.
+// -1 means unlimited, 0 resets to default, > 0 specifies the steps.
+func (s *Service) SetAgentMaxTurnSteps(backend agents.BackendID, steps int) (AgentSetting, error) {
+	if steps < -1 {
+		return AgentSetting{}, fmt.Errorf("settings: invalid max turn steps %d", steps)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	settings, err := s.loadAgents()
+	if err != nil {
+		return AgentSetting{}, err
+	}
+	setting, ok := settings[backend]
+	if !ok {
+		return AgentSetting{}, fmt.Errorf("settings: unknown backend %q", backend)
+	}
+	setting.MaxTurnSteps = steps
+	settings[backend] = setting
+	if err := s.saveAgents(settings); err != nil {
+		return AgentSetting{}, err
+	}
+	return setting, nil
+}
+
+// AgentMaxTurnSteps returns the tool-step limit for a backend before failing the turn.
+// -1 means unlimited. Values > 0 specify the limit.
+// If unset (0), defaults to the descriptor's DefaultMaxTurnSteps or 30.
+func (s *Service) AgentMaxTurnSteps(backend agents.BackendID) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		if descriptor, ok := s.catalog.Get(backend); ok && descriptor.DefaultMaxTurnSteps > 0 {
+			return descriptor.DefaultMaxTurnSteps
+		}
+		return 30
+	}
+	steps := settings[backend].MaxTurnSteps
+	if steps < 0 {
+		return -1 // unlimited
+	}
+	if steps == 0 {
+		if descriptor, ok := s.catalog.Get(backend); ok && descriptor.DefaultMaxTurnSteps > 0 {
+			return descriptor.DefaultMaxTurnSteps
+		}
+		return 30
+	}
+	return steps
 }

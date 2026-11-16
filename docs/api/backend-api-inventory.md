@@ -234,7 +234,10 @@ end note
 | 63 | PUT | `/agents/{backend}` | 启用/禁用后端 | 会话+CSRF | 200 |
 | 64 | PUT | `/agents/{backend}/path` | 设置或清除可执行文件路径 | 会话+CSRF | 200 |
 | 65 | PUT | `/agents/{backend}/mode` | 设置传输模式 | 会话+CSRF | 200 |
-| 66 | POST | `/agents/{backend}/detect` | 探测可执行文件 | 会话+CSRF | 200 |
+| 66 | PUT | `/agents/{backend}/permission-mode` | 设置工具权限模式 | 会话+CSRF | 200 |
+| 67 | PUT | `/agents/{backend}/idle-timeout` | 设置空闲断开时长 | 会话+CSRF | 200 |
+| 68 | PUT | `/agents/{backend}/max-turn-steps` | 设置单轮最大工具调用步数 | 会话+CSRF | 200 |
+| 69 | POST | `/agents/{backend}/detect` | 探测可执行文件 | 会话+CSRF | 200 |
 
 ### 4.7 任务（8）
 

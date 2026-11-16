@@ -40,6 +40,47 @@ func testCatalog(t testing.TB) *agents.Catalog {
 	return catalog
 }
 
+func testCatalogWithBuiltin(t testing.TB) *agents.Catalog {
+	t.Helper()
+	catalog, err := agents.NewCatalog(
+		agents.BackendDescriptor{
+			ID:             agents.BackendOpenCodeV2,
+			Label:          "OpenCode",
+			Binary:         "opencode",
+			DefaultEnabled: true,
+			Order:          1,
+		},
+		agents.BackendDescriptor{
+			ID:             agents.BackendPi,
+			Label:          "Pi Agent",
+			Binary:         "pi",
+			DefaultEnabled: true,
+			Order:          2,
+			Modes:          []string{"cli", "rpc"},
+		},
+		agents.BackendDescriptor{
+			ID:                        agents.BackendDeepSeek,
+			Label:                     "DeepSeek",
+			Binary:                    "dsh",
+			DefaultEnabled:            true,
+			Order:                     3,
+			DefaultIdleTimeoutMinutes: 30,
+		},
+		agents.BackendDescriptor{
+			ID:                  agents.BackendBuiltin,
+			Label:               "内置Agent",
+			Embedded:            true,
+			DefaultEnabled:      true,
+			Order:               4,
+			DefaultMaxTurnSteps: 30,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewCatalog: %v", err)
+	}
+	return catalog
+}
+
 // TestUnknownBackendIsNeverResolved proves settings does not fall back to any
 // default executable for a backend the catalog does not describe.
 func TestUnknownBackendIsNeverResolved(t *testing.T) {

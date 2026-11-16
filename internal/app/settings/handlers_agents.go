@@ -33,6 +33,10 @@ type agentDTO struct {
 	// support the control; PermissionModes lists the choices.
 	PermissionMode  string   `json:"permissionMode,omitempty"`
 	PermissionModes []string `json:"permissionModes,omitempty"`
+	// MaxTurnSteps is the configured maximum tool steps per turn (-1 = unlimited).
+	MaxTurnSteps int `json:"maxTurnSteps,omitempty"`
+	// DefaultMaxTurnSteps is the backend descriptor's default step limit.
+	DefaultMaxTurnSteps int `json:"defaultMaxTurnSteps,omitempty"`
 	// Embedded reports an in-process backend: no executable check applies.
 	Embedded bool `json:"embedded"`
 	// SessionDataOwner reports a platform-persisted transcript, so the
@@ -202,6 +206,26 @@ func (s *Service) handleSetAgentIdleTimeout(c *gin.Context) {
 	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
 }
 
+func (s *Service) handleSetAgentMaxTurnSteps(c *gin.Context) {
+	backend, ok := s.backendParam(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Steps int `json:"steps"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	setting, err := s.SetAgentMaxTurnSteps(backend, request.Steps)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_max_turn_steps")
+		return
+	}
+	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
+}
+
 func (s *Service) handleDetectAgent(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
@@ -253,11 +277,13 @@ func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agent
 		Modes:              descriptor.Modes,
 		Version:            setting.Version,
 		CheckedAt:          setting.CheckedAt,
-		IdleTimeoutMinutes: setting.IdleTimeoutMinutes,
-		PermissionMode:     setting.PermissionMode,
-		PermissionModes:    descriptor.PermissionModes,
-		Embedded:           descriptor.Embedded,
-		SessionDataOwner:   descriptor.OwnsSessionData,
+		IdleTimeoutMinutes:  setting.IdleTimeoutMinutes,
+		PermissionMode:      setting.PermissionMode,
+		PermissionModes:     descriptor.PermissionModes,
+		MaxTurnSteps:        setting.MaxTurnSteps,
+		DefaultMaxTurnSteps: descriptor.DefaultMaxTurnSteps,
+		Embedded:            descriptor.Embedded,
+		SessionDataOwner:    descriptor.OwnsSessionData,
 	}
 }
 

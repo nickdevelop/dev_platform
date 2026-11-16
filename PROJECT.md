@@ -430,6 +430,7 @@ web/src/
 - **deepseek 宿主启动预算**：deepseek 的刷新会懒启动共享 `dsh` 宿主，启动超时默认 30s（`dsh` 自身打印 launch URL 实测 4.9~5.3s，因此不可下调到秒级；可用 `DEEPSEEK_STARTUP_TIMEOUT` 覆盖）。参见 `docs/agent-compatibility.md` 的 deepseek transport 小节。
 - **刷新策略**：无 TTL、无后台刷新、无轮询、无定时任务。只有运维员在 Agent 设置页点击“刷新”才会同步。空目录表示平台级/后端默认作用域，不考虑项目目录级模型配置。
 - **边界**：Agent 模型属于各 Agent 后端的模型字典，支持平台级启停与配置覆盖；平台「模型」设置中的 OpenAI 兼容模型服务保持独立，服务于纯 Chat 对话。
+- **Agent 专属控制**：内置 Agent（`builtin`）支持在平台设置中动态配置单轮最大工具调用步数（`PUT /api/agents/{backend}/max-turn-steps`），Descriptor 默认 30 步，支持自定义步数或配置 `-1` 解除次数限制（无限制循环）。支持动态热更新并在下一轮对话中即时生效。
 
 ---
 

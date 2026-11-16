@@ -22,6 +22,7 @@ function backendList() {
       { backend: 'opencode-v2', capabilities: capabilities(true), enabled: true, label: 'OpenCode', order: 1, serviceSupported: true },
       { backend: 'pi', capabilities: capabilities(false), enabled: true, label: 'Pi Agent', order: 2, serviceSupported: false },
       { backend: 'deepseek', capabilities: capabilities(false), enabled: true, label: 'DeepSeek', order: 3, serviceSupported: false },
+      { backend: 'builtin', capabilities: capabilities(true), enabled: true, label: '内置Agent', order: 4, serviceSupported: false },
     ],
   }
 }
@@ -33,6 +34,7 @@ function stubFetch(extra: Record<string, unknown> = {}) {
       { backend: 'pi', enabled: true, path: '/usr/local/bin/pi', pathSource: 'auto', available: true, version: '1.1.0' },
       { backend: 'opencode-v2', enabled: false, path: '', pathSource: 'none', available: false },
       { backend: 'deepseek', enabled: true, path: '/usr/local/bin/dsh', pathSource: 'auto', available: true, version: '0.2.1', idleTimeoutMinutes: 30 },
+      { backend: 'builtin', enabled: true, path: '', pathSource: 'embedded', available: true, maxTurnSteps: 30, defaultMaxTurnSteps: 30 },
     ],
   }
   vi.stubGlobal(
@@ -515,5 +517,46 @@ describe('AgentSettings service block', () => {
     await generalTab.trigger('click')
     await flushPromises()
     expect(generalTab.attributes('aria-selected')).toBe('true')
+  })
+
+  it('switches to builtin tab and configures max turn steps', async () => {
+    const calls = stubFetch({
+      'PUT /agents/builtin/max-turn-steps': {
+        backend: 'builtin',
+        enabled: true,
+        path: '',
+        pathSource: 'embedded',
+        available: true,
+        maxTurnSteps: -1,
+        defaultMaxTurnSteps: 30,
+      },
+    })
+    const wrapper = await mountView()
+
+    // Tab button exists for builtin
+    expect(wrapper.find('[data-test="agent-tab-builtin"]').exists()).toBe(true)
+    await wrapper.find('[data-test="agent-tab-builtin"]').trigger('click')
+    await flushPromises()
+
+    // Builtin max turn steps block exists
+    const stepsBlock = wrapper.find('[data-test="agent-max-turn-steps-builtin"]')
+    expect(stepsBlock.exists()).toBe(true)
+    expect(stepsBlock.text()).toContain('单轮最大工具调用步数')
+    expect(stepsBlock.text()).toContain('当前设定：30 步')
+
+    // Click '不限制' button
+    const buttons = stepsBlock.findAll('button')
+    const unlimitedBtn = buttons.find((b) => b.text().includes('不限制'))
+    expect(unlimitedBtn).toBeDefined()
+    await unlimitedBtn!.trigger('click')
+    await flushPromises()
+
+    // Save
+    await wrapper.find('[data-test="save-max-turn-steps-builtin"]').trigger('click')
+    await flushPromises()
+
+    const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/agents/builtin/max-turn-steps')
+    expect(putCall).toBeDefined()
+    expect(putCall?.body).toMatchObject({ steps: -1 })
   })
 })

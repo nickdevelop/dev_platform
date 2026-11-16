@@ -57,6 +57,8 @@ export interface AgentDto {
   version?: string
   checkedAt?: string
   idleTimeoutMinutes?: number
+  maxTurnSteps?: number
+  defaultMaxTurnSteps?: number
   // permissionMode gates the tool confirmations of backends that support the
   // control; permissionModes lists the choices. Both are absent otherwise.
   permissionMode?: string
@@ -96,6 +98,10 @@ export function setAgentMode(backend: string, mode: string): Promise<AgentDto> {
 
 export function setAgentIdleTimeout(backend: string, minutes: number): Promise<AgentDto> {
   return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/idle-timeout`, { minutes })
+}
+
+export function setAgentMaxTurnSteps(backend: string, steps: number): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/max-turn-steps`, { steps })
 }
 
 export function setAgentPermissionMode(backend: string, mode: string): Promise<AgentDto> {

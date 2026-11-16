@@ -114,6 +114,38 @@ const idleTimeoutInputs = reactive<Record<string, number | null>>({})
 const idleTimeoutSaving = reactive<Record<string, boolean>>({})
 const idleTimeoutSuccess = reactive<Record<string, boolean>>({})
 
+// Max turn steps state per backend
+const maxTurnStepsInputs = reactive<Record<string, number | null>>({})
+const maxTurnStepsSaving = reactive<Record<string, boolean>>({})
+const maxTurnStepsSuccess = reactive<Record<string, boolean>>({})
+
+function supportsMaxTurnSteps(backend: string): boolean {
+  const agent = settings.agents.find((a) => a.backend === backend)
+  return backend === 'builtin' || (agent?.defaultMaxTurnSteps !== undefined && agent.defaultMaxTurnSteps > 0)
+}
+
+function setMaxTurnStepsPreset(backend: string, steps: number) {
+  maxTurnStepsInputs[backend] = steps
+}
+
+async function saveMaxTurnSteps(backend: string) {
+  const agent = settings.agents.find((a) => a.backend === backend)
+  const steps = maxTurnStepsInputs[backend] ?? agent?.maxTurnSteps ?? agent?.defaultMaxTurnSteps ?? 30
+  maxTurnStepsSaving[backend] = true
+  maxTurnStepsSuccess[backend] = false
+  try {
+    const ok = await settings.setAgentMaxTurnSteps(backend, steps)
+    if (ok) {
+      maxTurnStepsSuccess[backend] = true
+      setTimeout(() => {
+        maxTurnStepsSuccess[backend] = false
+      }, 2500)
+    }
+  } finally {
+    maxTurnStepsSaving[backend] = false
+  }
+}
+
 function supportsIdleTimeout(backend: string): boolean {
   return backend === 'deepseek' || settings.agents.find((a) => a.backend === backend)?.idleTimeoutMinutes !== undefined
 }
@@ -633,6 +665,63 @@ function cancelStop() {
           </UiSelect>
         </label>
         <span class="text-slate-400 text-2xs">自下一轮对话开始生效</span>
+      </div>
+
+      <!-- Max Turn Steps Settings (backends that drive in-process loops like builtin) -->
+      <div
+        v-if="supportsMaxTurnSteps(agent.backend)"
+        class="max-turn-steps-block p-4 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+        :data-test="`agent-max-turn-steps-${agent.backend}`"
+      >
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
+          <div>
+            <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">单轮最大工具调用步数</strong>
+            <span class="text-2xs text-slate-400">控制单轮回合中连续调用工具的最大循环步数，防止陷入死循环。支持不限制次数。</span>
+          </div>
+          <span class="tabular-nums text-2xs text-slate-400">
+            当前设定：{{ (agent.maxTurnSteps ?? 0) < 0 ? '不限制' : `${agent.maxTurnSteps && agent.maxTurnSteps > 0 ? agent.maxTurnSteps : (agent.defaultMaxTurnSteps ?? 30)} 步` }}
+          </span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <div class="flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-2">
+              <label :for="`max-turn-steps-input-${agent.backend}`" class="text-slate-600 dark:text-slate-400 font-medium">最大步数:</label>
+              <UiInput
+                :id="`max-turn-steps-input-${agent.backend}`"
+                type="number"
+                min="-1"
+                class="w-24 text-xs font-mono"
+                :data-test="`max-turn-steps-input-${agent.backend}`"
+                :model-value="maxTurnStepsInputs[agent.backend] ?? (agent.maxTurnSteps && agent.maxTurnSteps !== 0 ? agent.maxTurnSteps : (agent.defaultMaxTurnSteps ?? 30))"
+                @update:model-value="(val: string | number) => maxTurnStepsInputs[agent.backend] = Number(val)"
+              />
+              <span class="text-slate-400 text-xs">步（-1 表示不限制）</span>
+            </div>
+
+            <div class="preset-buttons flex items-center gap-1.5">
+              <UiButton size="sm" variant="secondary" @click="setMaxTurnStepsPreset(agent.backend, 10)">10步</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setMaxTurnStepsPreset(agent.backend, agent.defaultMaxTurnSteps ?? 30)">默认 ({{ agent.defaultMaxTurnSteps ?? 30 }}步)</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setMaxTurnStepsPreset(agent.backend, 50)">50步</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setMaxTurnStepsPreset(agent.backend, 100)">100步</UiButton>
+              <UiButton size="sm" variant="secondary" @click="setMaxTurnStepsPreset(agent.backend, -1)">不限制</UiButton>
+            </div>
+
+            <UiButton
+              size="sm"
+              variant="primary"
+              :data-test="`save-max-turn-steps-${agent.backend}`"
+              :disabled="maxTurnStepsSaving[agent.backend]"
+              @click="saveMaxTurnSteps(agent.backend)"
+            >
+              {{ maxTurnStepsSaving[agent.backend] ? '保存中...' : '保存步数' }}
+            </UiButton>
+
+            <span v-if="maxTurnStepsSuccess[agent.backend]" class="text-emerald-600 dark:text-emerald-400 text-2xs flex items-center gap-1">
+              <span class="i-lucide-check w-3 h-3" />已保存
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->

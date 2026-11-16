@@ -246,3 +246,71 @@ func TestAgentHandlerSetIdleTimeout(t *testing.T) {
 		t.Errorf("svc.AgentIdleTimeout = %v, want 15m", duration)
 	}
 }
+
+func TestAgentHandlerSetMaxTurnSteps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := NewService(openTestDB(t), testCatalogWithBuiltin(t))
+	router := gin.New()
+	svc.RegisterRoutes(router.Group("/api"))
+
+	// List initially includes default max turn steps for builtin
+	list := agentReq(t, router, http.MethodGet, "/api/agents", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("get agents status = %d", list.Code)
+	}
+	var payload struct {
+		Agents []struct {
+			Backend             string `json:"backend"`
+			MaxTurnSteps        int    `json:"maxTurnSteps"`
+			DefaultMaxTurnSteps int    `json:"defaultMaxTurnSteps"`
+		} `json:"agents"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	var builtinFound bool
+	for _, a := range payload.Agents {
+		if a.Backend == "builtin" {
+			builtinFound = true
+			if a.DefaultMaxTurnSteps != 30 {
+				t.Errorf("default builtin DefaultMaxTurnSteps = %d, want 30", a.DefaultMaxTurnSteps)
+			}
+		}
+	}
+	if !builtinFound {
+		t.Fatal("builtin backend not found in agents list")
+	}
+
+	// Update max turn steps for builtin to 50
+	res := agentReq(t, router, http.MethodPut, "/api/agents/builtin/max-turn-steps", `{"steps":50}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("put max-turn-steps status = %d, body %s", res.Code, res.Body.String())
+	}
+	var dto struct {
+		MaxTurnSteps int `json:"maxTurnSteps"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode res: %v", err)
+	}
+	if dto.MaxTurnSteps != 50 {
+		t.Errorf("got MaxTurnSteps = %d, want 50", dto.MaxTurnSteps)
+	}
+	if steps := svc.AgentMaxTurnSteps(agents.BackendBuiltin); steps != 50 {
+		t.Errorf("svc.AgentMaxTurnSteps = %d, want 50", steps)
+	}
+
+	// Set to -1 (unlimited)
+	res = agentReq(t, router, http.MethodPut, "/api/agents/builtin/max-turn-steps", `{"steps":-1}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("put max-turn-steps unlimited status = %d", res.Code)
+	}
+	if steps := svc.AgentMaxTurnSteps(agents.BackendBuiltin); steps != -1 {
+		t.Errorf("svc.AgentMaxTurnSteps = %d, want -1", steps)
+	}
+
+	// Reject invalid steps (< -1)
+	bad := agentReq(t, router, http.MethodPut, "/api/agents/builtin/max-turn-steps", `{"steps":-5}`)
+	if bad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad steps, got %d", bad.Code)
+	}
+}

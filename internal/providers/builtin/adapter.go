@@ -39,8 +39,12 @@ type Options struct {
 	// PermissionMode reports the configured permission mode for every turn.
 	// Nil means confirm.
 	PermissionMode func() string
-	// MaxTurnSteps overrides the per-turn tool-step budget.
+	// MaxTurnSteps overrides the per-turn tool-step budget when static.
+	// 0 uses defaultTurnSteps (30); < 0 means unlimited.
 	MaxTurnSteps int
+	// ResolveMaxTurnSteps reports the configured per-turn tool-step budget dynamically
+	// for every turn. 0 means use default, < 0 means unlimited, > 0 specifies the limit.
+	ResolveMaxTurnSteps func() int
 	// HTTPClient overrides the completer's client; a nil value uses one
 	// without an overall timeout (streaming turns can run for minutes).
 	HTTPClient *http.Client
@@ -93,15 +97,16 @@ type sessionKey struct {
 // are lightweight in-process handles (no child process, no PTY); every turn
 // runs in its own goroutine driving the model completion and the tool loop.
 type Adapter struct {
-	store       TranscriptStore
-	resolver    ModelResolver
-	prompt      func(ctx context.Context) (string, error)
-	permMode    func() string
-	maxSteps    int
-	registry    *tools.Registry
-	completions *completer
-	now         func() time.Time
-	newID       func() (string, error)
+	store        TranscriptStore
+	resolver     ModelResolver
+	prompt       func(ctx context.Context) (string, error)
+	permMode     func() string
+	maxSteps     int
+	resolveSteps func() int
+	registry     *tools.Registry
+	completions  *completer
+	now          func() time.Time
+	newID        func() (string, error)
 
 	mu        sync.Mutex
 	instances map[string]*instance
@@ -124,23 +129,24 @@ func New(options Options) *Adapter {
 		panic("builtin: ModelResolver is required")
 	}
 	adapter := &Adapter{
-		store:       options.TranscriptStore,
-		resolver:    options.ModelResolver,
-		prompt:      options.AgentGlobalPrompt,
-		permMode:    options.PermissionMode,
-		maxSteps:    options.MaxTurnSteps,
-		registry:    tools.NewRegistry(),
-		completions: &completer{client: options.HTTPClient},
-		now:         options.Now,
-		newID:       options.NewID,
-		instances:   make(map[string]*instance),
-		sessions:    make(map[sessionKey]*sessionState),
-		pending:     make(map[string]*permissionPending),
+		store:        options.TranscriptStore,
+		resolver:     options.ModelResolver,
+		prompt:       options.AgentGlobalPrompt,
+		permMode:     options.PermissionMode,
+		maxSteps:     options.MaxTurnSteps,
+		resolveSteps: options.ResolveMaxTurnSteps,
+		registry:     tools.NewRegistry(),
+		completions:  &completer{client: options.HTTPClient},
+		now:          options.Now,
+		newID:        options.NewID,
+		instances:    make(map[string]*instance),
+		sessions:     make(map[sessionKey]*sessionState),
+		pending:      make(map[string]*permissionPending),
 	}
 	if adapter.completions.client == nil {
 		adapter.completions.client = &http.Client{}
 	}
-	if adapter.maxSteps <= 0 {
+	if adapter.maxSteps == 0 {
 		adapter.maxSteps = defaultTurnSteps
 	}
 	if adapter.now == nil {
@@ -153,6 +159,18 @@ func New(options Options) *Adapter {
 		adapter.permMode = func() string { return PermissionModeConfirm }
 	}
 	return adapter
+}
+
+// stepLimit returns the active per-turn tool step limit.
+// A return value <= 0 means unlimited.
+func (a *Adapter) stepLimit() int {
+	if a.resolveSteps != nil {
+		steps := a.resolveSteps()
+		if steps != 0 {
+			return steps
+		}
+	}
+	return a.maxSteps
 }
 
 // Capabilities declares the embedded agent's feature set: streaming, tool

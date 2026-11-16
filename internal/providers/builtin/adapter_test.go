@@ -421,3 +421,52 @@ func drainUntilTurnEnd(t *testing.T, stream <-chan agents.NormalizedEvent) []age
 		}
 	}
 }
+
+func TestAdapterStepLimit(t *testing.T) {
+	store := newTranscriptMemory()
+	resolver := modelStub{}
+
+	// Default when unset (0) is 30
+	a1 := New(Options{TranscriptStore: store, ModelResolver: resolver})
+	if limit := a1.stepLimit(); limit != defaultTurnSteps {
+		t.Fatalf("expected default %d, got %d", defaultTurnSteps, limit)
+	}
+
+	// Static override > 0
+	a2 := New(Options{TranscriptStore: store, ModelResolver: resolver, MaxTurnSteps: 15})
+	if limit := a2.stepLimit(); limit != 15 {
+		t.Fatalf("expected 15, got %d", limit)
+	}
+
+	// Static override -1 (unlimited)
+	a3 := New(Options{TranscriptStore: store, ModelResolver: resolver, MaxTurnSteps: -1})
+	if limit := a3.stepLimit(); limit != -1 {
+		t.Fatalf("expected -1, got %d", limit)
+	}
+
+	// Dynamic resolver overrides static value
+	dynamicSteps := 10
+	a4 := New(Options{
+		TranscriptStore: store,
+		ModelResolver:   resolver,
+		MaxTurnSteps:    50,
+		ResolveMaxTurnSteps: func() int {
+			return dynamicSteps
+		},
+	})
+	if limit := a4.stepLimit(); limit != 10 {
+		t.Fatalf("expected 10, got %d", limit)
+	}
+
+	// Dynamic resolver returns -1 (unlimited)
+	dynamicSteps = -1
+	if limit := a4.stepLimit(); limit != -1 {
+		t.Fatalf("expected -1, got %d", limit)
+	}
+
+	// Dynamic resolver returns 0 (fallback to static)
+	dynamicSteps = 0
+	if limit := a4.stepLimit(); limit != 50 {
+		t.Fatalf("expected fallback 50, got %d", limit)
+	}
+}

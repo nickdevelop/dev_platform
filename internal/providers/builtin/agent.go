@@ -122,10 +122,11 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 
 	schemas := buildSchemas(a.registry)
 	mode := a.permMode()
+	limit := a.stepLimit()
 	for steps := 1; ctx.Err() == nil; steps++ {
-		if steps > a.maxSteps {
+		if limit > 0 && steps > limit {
 			a.failTurn(inst, ref, current, "step_limit",
-				fmt.Sprintf("单轮工具调用步数超过上限（%d 步），回合已终止。", a.maxSteps))
+				fmt.Sprintf("单轮工具调用步数超过上限（%d 步），回合已终止。", limit))
 			return
 		}
 
