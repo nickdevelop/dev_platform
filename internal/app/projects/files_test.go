@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -466,6 +467,33 @@ func TestReadFileContent_AbsolutePathSupport(t *testing.T) {
 	if resp2.Path != "README.md" {
 		t.Errorf("expected normalized Path 'README.md', got %q", resp2.Path)
 	}
+
+	// 3. Allowed external file in /tmp
+	tmpFile, err := os.CreateTemp("", "agent_demo_*.py")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, err := tmpFile.WriteString("print('hello external demo')"); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	extResp, err := svc.ReadFileContent(ctx, id, tmpFile.Name())
+	if err != nil {
+		t.Fatalf("expected ReadFileContent for external temp file to succeed, got %v", err)
+	}
+	if extResp.Path != filepath.ToSlash(tmpFile.Name()) {
+		t.Errorf("expected extResp.Path %q, got %q", tmpFile.Name(), extResp.Path)
+	}
+	if extResp.Content != "print('hello external demo')" {
+		t.Errorf("expected external content 'print(\\'hello external demo\\')', got %q", extResp.Content)
+	}
+
+	// 4. Forbidden external files (e.g. /etc/hosts or /etc/passwd) must be rejected
+	if _, err := svc.ReadFileContent(ctx, id, "/etc/passwd"); err == nil {
+		t.Errorf("expected access to /etc/passwd to be rejected, got nil error")
+	}
 }
 
 func TestHandleFileTreeAndContentRoutes(t *testing.T) {
@@ -527,7 +555,7 @@ func TestHandleFileTreeAndContentRoutes(t *testing.T) {
 		t.Fatalf("expected raw body '# Hello', got %q", w.Body.String())
 	}
 
-	// Shallow tree with path query
+	// Shallow tree with path query (level 1)
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/tree?path=src", nil)
 	r.ServeHTTP(w, req)
@@ -542,6 +570,49 @@ func TestHandleFileTreeAndContentRoutes(t *testing.T) {
 	}
 	if len(srcTreeResp.Tree) == 0 || srcTreeResp.Tree[0].Name != "utils" {
 		t.Fatalf("expected direct child 'utils', got %+v", srcTreeResp.Tree)
+	}
+	if srcTreeResp.Tree[0].Path != "src/utils" {
+		t.Fatalf("expected child Path 'src/utils', got %q", srcTreeResp.Tree[0].Path)
+	}
+
+	// Shallow tree with nested path query (level 2)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/tree?path=src/utils", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for level 2 tree, body: %s", w.Code, w.Body.String())
+	}
+	var utilsTreeResp struct {
+		Tree []FileTreeNode `json:"tree"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &utilsTreeResp); err != nil {
+		t.Fatalf("unmarshal utils tree: %v", err)
+	}
+	if len(utilsTreeResp.Tree) == 0 || utilsTreeResp.Tree[0].Path != "src/utils/helper.go" {
+		t.Fatalf("expected nested path 'src/utils/helper.go', got %+v", utilsTreeResp.Tree)
+	}
+
+	// External temporary file route test
+	extTmp, err := os.CreateTemp("", "route_demo_*.txt")
+	if err != nil {
+		t.Fatalf("create route demo temp: %v", err)
+	}
+	defer os.Remove(extTmp.Name())
+	_, _ = extTmp.WriteString("external route content")
+	extTmp.Close()
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/content?path="+url.QueryEscape(extTmp.Name()), nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected external file content route status 200, got %d, body: %s", w.Code, w.Body.String())
+	}
+	var extContentResp FileContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &extContentResp); err != nil {
+		t.Fatalf("unmarshal external content: %v", err)
+	}
+	if extContentResp.Content != "external route content" {
+		t.Fatalf("expected 'external route content', got %q", extContentResp.Content)
 	}
 
 	// Path escape on tree route

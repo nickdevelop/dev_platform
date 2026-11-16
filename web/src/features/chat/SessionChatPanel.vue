@@ -116,7 +116,11 @@ function openFileInPreview(
   filePath: string,
   options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
 ) {
-  const cleanPath = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
+  let cleanPath = filePath.replace(/\\/g, '/')
+  const isAbs = cleanPath.startsWith('/')
+  if (!isAbs) {
+    cleanPath = cleanPath.replace(/^\/+/, '')
+  }
   if (!cleanPath) return
   const reqMode = options?.mode || 'view'
   const reqCommit = options?.commitRef
@@ -199,22 +203,30 @@ function onOpenFileFromMarkdown(href: string) {
   }
 
   // Strip project directory or instance workdir prefix if absolute path
+  let isUnderProject = false
   for (const dir of candidates) {
     const cleanDir = dir.replace(/\/+$/, '')
     if (cleanDir && (path === cleanDir || path.startsWith(cleanDir + '/'))) {
       path = path.slice(cleanDir.length)
+      isUnderProject = true
       break
     }
     const strippedCandidate = cleanDir.replace(/^\/+/, '')
     const strippedPath = path.replace(/^\/+/, '')
     if (strippedCandidate && (strippedPath === strippedCandidate || strippedPath.startsWith(strippedCandidate + '/'))) {
       path = strippedPath.slice(strippedCandidate.length)
+      isUnderProject = true
       break
     }
   }
 
-  // Strip leading slashes and relative prefix
-  path = path.replace(/^[/\\]+/, '').replace(/^\.\//, '')
+  if (isUnderProject) {
+    // Project-relative path: strip leading slashes and relative prefix
+    path = path.replace(/^[/\\]+/, '').replace(/^\.\//, '')
+  } else {
+    // For external absolute paths, preserve leading slash; for relative paths, strip ./
+    path = path.replace(/^\.\//, '')
+  }
   if (!path) return
 
   openFileInPreview(path)

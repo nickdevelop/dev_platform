@@ -120,8 +120,60 @@ func (s *Service) searchWorkspaceFiles(ctx context.Context, rootDir, normQuery s
 // maxFileReadBytes is the upper limit (5MB) for inline text content reads.
 const maxFileReadBytes = 5 * 1024 * 1024
 
-// resolveProjectSafePath ensures the requested path is safe, absolute, inside the project directory,
-// and does not escape the project boundary via traversal or symlinks.
+// isAllowedExternalPath checks whether a path outside the project workspace is permitted
+// for preview and inspection (e.g. agent temporary demo files, plan markdown files in /tmp or agent scratch dirs).
+func isAllowedExternalPath(p string) bool {
+	clean := filepath.Clean(p)
+	if !filepath.IsAbs(clean) {
+		return false
+	}
+
+	// Forbid dangerous system directories and files
+	forbiddenPrefixes := []string{
+		"/etc", "/proc", "/sys", "/dev", "/boot", "/root/.ssh",
+	}
+	for _, f := range forbiddenPrefixes {
+		if clean == f || strings.HasPrefix(clean, f+"/") {
+			return false
+		}
+	}
+
+	// Forbid sensitive credential files and shell histories
+	lower := strings.ToLower(filepath.ToSlash(clean))
+	if strings.Contains(lower, "/.ssh/") ||
+		strings.HasSuffix(lower, "/.bash_history") ||
+		strings.HasSuffix(lower, "/.zsh_history") ||
+		strings.Contains(lower, "/.gnupg/") {
+		return false
+	}
+
+	// Allowed directories:
+	// 1. Temporary directories
+	if strings.HasPrefix(clean, "/tmp/") || strings.HasPrefix(clean, "/var/tmp/") {
+		return true
+	}
+
+	// 2. User home directories (.gemini, agent directories, etc.)
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		cleanHome := filepath.Clean(home)
+		if strings.HasPrefix(clean, cleanHome+"/") {
+			return true
+		}
+	}
+
+	// 3. /root/.gemini or /data directory (common container agent runtime workspaces)
+	if strings.HasPrefix(clean, "/root/.gemini/") || strings.HasPrefix(clean, "/data/") {
+		return true
+	}
+
+	return false
+}
+
+// resolveProjectSafePath ensures the requested path is safe, absolute or project-relative,
+// and does not escape allowed boundaries via traversal or symlinks.
+// It supports files inside the project workspace as well as permitted external files
+// (e.g. /tmp demo files, agent plans/artifacts).
 func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktreeID ...uint) (string, string, error) {
 	if strings.ContainsRune(relPath, 0) {
 		return "", "", ErrInvalidTarget
@@ -141,6 +193,27 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktre
 		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			cleanRel = filepath.ToSlash(rel)
 		} else {
+			// Path is outside project rootDir. Check if it's an allowed external file.
+			if isAllowedExternalPath(rawClean) {
+				fi, statErr := os.Stat(rawClean)
+				if statErr != nil {
+					if os.IsNotExist(statErr) {
+						return "", "", ErrFileNotFound
+					}
+					return "", "", statErr
+				}
+				if fi.IsDir() {
+					return "", "", ErrInvalidTarget
+				}
+				// Verify symlink target does not escape to forbidden areas
+				canonical, cErr := filepath.EvalSymlinks(rawClean)
+				if cErr == nil {
+					if !isAllowedExternalPath(canonical) {
+						return "", "", ErrPathEscaped
+					}
+				}
+				return filepath.ToSlash(rawClean), rawClean, nil
+			}
 			return "", "", ErrPathEscaped
 		}
 	} else {
@@ -172,11 +245,15 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktre
 	}
 
 	// Existence check
-	if _, err := os.Stat(fullPath); err != nil {
+	fi, err := os.Stat(fullPath)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return "", "", ErrFileNotFound
 		}
 		return "", "", err
+	}
+	if fi.IsDir() {
+		return "", "", ErrInvalidTarget
 	}
 
 	// Symlink escape check
@@ -184,7 +261,10 @@ func (s *Service) resolveProjectSafePath(projectID uint, relPath string, worktre
 	if err == nil {
 		canRel, err := filepath.Rel(rootDir, canonical)
 		if err != nil || canRel == ".." || strings.HasPrefix(canRel, ".."+string(filepath.Separator)) {
-			return "", "", ErrPathEscaped
+			// If symlink escapes rootDir, allow only if target is an allowed external path
+			if !isAllowedExternalPath(canonical) {
+				return "", "", ErrPathEscaped
+			}
 		}
 	}
 
@@ -293,54 +373,62 @@ func buildTreeFromPaths(paths []string) []FileTreeNode {
 
 // resolveProjectSafeDir ensures the requested directory path is inside the project workspace
 // and does not escape via traversal (..) or symlinks. An empty relPath represents the project root.
-func (s *Service) resolveProjectSafeDir(projectID uint, relPath string, worktreeID ...uint) (string, string, error) {
+// Returns (rootDir, targetDir, cleanRel, error).
+func (s *Service) resolveProjectSafeDir(projectID uint, relPath string, worktreeID ...uint) (string, string, string, error) {
 	if strings.ContainsRune(relPath, 0) {
-		return "", "", ErrInvalidTarget
+		return "", "", "", ErrInvalidTarget
 	}
 
 	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
 	cleanRel = strings.TrimPrefix(cleanRel, "/")
 
+	// Also check if the path starts with rootDir with leading slash stripped (e.g. "data/projects/dev_platform/...")
+	cleanRoot := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(rootDir)), "/")
+	if cleanRoot != "" && (cleanRel == cleanRoot || strings.HasPrefix(cleanRel, cleanRoot+"/")) {
+		cleanRel = strings.TrimPrefix(cleanRel, cleanRoot)
+		cleanRel = strings.TrimPrefix(cleanRel, "/")
+	}
+
 	if cleanRel == "." || cleanRel == "" {
-		return rootDir, rootDir, nil
+		return rootDir, rootDir, "", nil
 	}
 
 	if cleanRel == ".." || strings.HasPrefix(cleanRel, "../") || strings.Contains(cleanRel, "/../") {
-		return "", "", ErrPathEscaped
+		return "", "", "", ErrPathEscaped
 	}
 
 	fullPath := filepath.Join(rootDir, filepath.FromSlash(cleanRel))
 
 	relCheck, err := filepath.Rel(rootDir, fullPath)
 	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
-		return "", "", ErrPathEscaped
+		return "", "", "", ErrPathEscaped
 	}
 
 	fi, err := os.Stat(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", ErrFileNotFound
+			return "", "", "", ErrFileNotFound
 		}
-		return "", "", err
+		return "", "", "", err
 	}
 	if !fi.IsDir() {
-		return "", "", ErrInvalidTarget
+		return "", "", "", ErrInvalidTarget
 	}
 
 	canonical, err := filepath.EvalSymlinks(fullPath)
 	if err == nil {
 		canRel, err := filepath.Rel(rootDir, canonical)
 		if err != nil || canRel == ".." || strings.HasPrefix(canRel, ".."+string(filepath.Separator)) {
-			return "", "", ErrPathEscaped
+			return "", "", "", ErrPathEscaped
 		}
 	}
 
-	return cleanRel, fullPath, nil
+	return rootDir, fullPath, cleanRel, nil
 }
 
 // GetFileTreeShallow returns only the direct children (files and subdirectories) of the given subPath
@@ -348,7 +436,7 @@ func (s *Service) resolveProjectSafeDir(projectID uint, relPath string, worktree
 // It returns all items without filtering by .gitignore or dotfile prefixes,
 // only skipping the .git version control metadata directory.
 func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPath string, worktreeID ...uint) ([]FileTreeNode, error) {
-	rootDir, targetDir, err := s.resolveProjectSafeDir(projectID, subPath, worktreeID...)
+	_, targetDir, cleanRel, err := s.resolveProjectSafeDir(projectID, subPath, worktreeID...)
 	if err != nil {
 		return nil, err
 	}
@@ -356,11 +444,6 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 	entries, err := os.ReadDir(targetDir)
 	if err != nil {
 		return nil, err
-	}
-
-	relDir, err := filepath.Rel(rootDir, targetDir)
-	if err != nil || relDir == "." {
-		relDir = ""
 	}
 
 	var dirs []FileTreeNode
@@ -377,8 +460,8 @@ func (s *Service) GetFileTreeShallow(ctx context.Context, projectID uint, subPat
 		}
 
 		childRel := name
-		if relDir != "" {
-			childRel = filepath.ToSlash(filepath.Join(relDir, name))
+		if cleanRel != "" {
+			childRel = filepath.ToSlash(filepath.Join(cleanRel, name))
 		}
 
 		isDir := entry.IsDir()

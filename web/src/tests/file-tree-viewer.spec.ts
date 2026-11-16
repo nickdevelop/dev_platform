@@ -245,6 +245,48 @@ describe('FileSidebar.vue', () => {
     expect(getFileTreeSpy).toHaveBeenCalledWith(1, 'src', undefined)
     expect(wrapper.text()).toContain('index.ts')
   })
+
+  it('loads multi-level children on demand when nested directory is expanded', async () => {
+    const getFileTreeSpy = vi.spyOn(filesApi, 'getFileTree').mockImplementation(async (_pid, path) => {
+      if (!path) {
+        return [
+          { name: 'src', path: 'src', isDir: true },
+        ]
+      }
+      if (path === 'src') {
+        return [
+          { name: 'utils', path: 'src/utils', isDir: true },
+        ]
+      }
+      if (path === 'src/utils') {
+        return [
+          { name: 'helper.ts', path: 'src/utils/helper.ts', isDir: false },
+        ]
+      }
+      return []
+    })
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+
+    await vi.waitFor(() => expect(wrapper.text()).toContain('src'))
+
+    // Trigger expand on src (level 1)
+    const srcRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('src'))
+    await srcRow?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('utils')
+
+    // Trigger expand on utils (level 2)
+    const utilsRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('utils'))
+    await utilsRow?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('helper.ts')
+  })
   it('switches between changes and all files tabs', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
       { name: 'app.vue', path: 'app.vue', isDir: false },

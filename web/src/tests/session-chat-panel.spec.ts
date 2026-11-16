@@ -1590,4 +1590,34 @@ describe('SessionChatPanel scroll following', () => {
     expect(fileTab.exists()).toBe(true)
     expect(fileTab.text()).toContain('Main.vue')
   })
+
+  it('handles external absolute file links outside the project workspace like /tmp or agent scratch dirs', async () => {
+    stubSessionList([session('sess-link-external')])
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [{ id: 1, name: 'proj1', path: '/data/projects/1' } as any]
+    const sessionsStore = useSessionsStore()
+    sessionsStore.pushEntry('sess-link-external', {
+      id: 'msg-link-external',
+      kind: 'message',
+      role: 'assistant',
+      text: '已生成临时演示脚本：[demo.py](file:///tmp/agent_runs/demo.py#L1-L50)',
+      streaming: false,
+    } as ChatEntry)
+
+    const wrapper = mountPanel('sess-link-external')
+    await flushPromises()
+
+    const link = wrapper.find('.markdown-body a')
+    expect(link.exists()).toBe(true)
+    await link.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.vm as any).previewCollapsed).toBe(false)
+    // Preserves leading slash for external paths
+    expect((wrapper.vm as any).activePreviewTab).toBe('/tmp/agent_runs/demo.py')
+    const fileTab = wrapper.find('[data-test="tab-file"]')
+    expect(fileTab.exists()).toBe(true)
+    expect(fileTab.text()).toContain('demo.py')
+    expect(fileTab.attributes('title')).toBe('/tmp/agent_runs/demo.py')
+  })
 })
