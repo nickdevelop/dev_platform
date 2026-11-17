@@ -77,13 +77,14 @@
 .markdown-body pre {
   margin: 0.5rem 0;
   padding: 0.75rem;
-  background-color: var(--color-surface-muted, #1a1e27);
+  background-color: var(--color-surface-muted, #f8fafc);
   border-radius: var(--radius, 6px);
-  border: 1px solid var(--color-border, #282e3d);
+  border: 1px solid var(--color-border, #e3e6eb);
   font-family: var(--font-mono, monospace);
   font-size: var(--text-size-12);
   line-height: 1.45;
   overflow-x: auto;
+  color: var(--color-text);
 }
 
 .markdown-body pre code {

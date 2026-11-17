@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { highlightCode, splitHighlightedHtmlIntoLines } from '../../shared/highlight'
 
 const props = withDefaults(
   defineProps<{
@@ -18,6 +19,7 @@ const searchIndex = ref(0)
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const codeContainerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
+const wrapLines = ref(false)
 
 const lines = computed(() => {
   if (!props.content) return []
@@ -25,6 +27,12 @@ const lines = computed(() => {
 })
 
 const totalLines = computed(() => lines.value.length)
+
+const highlightedLines = computed(() => {
+  if (!props.content) return []
+  const highlighted = highlightCode(props.content, props.filePath)
+  return splitHighlightedHtmlIntoLines(highlighted)
+})
 
 // Search matches: line index and match offsets
 interface SearchMatch {
@@ -144,6 +152,20 @@ onUnmounted(() => {
       <button
         type="button"
         class="action-btn"
+        :class="{ 'is-active': wrapLines }"
+        :title="wrapLines ? '关闭自动换行' : '开启自动换行'"
+        data-test="toggle-wrap-btn"
+        @click="wrapLines = !wrapLines"
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+          <polyline points="10 9 13 12 10 15" />
+          <path d="M3 4h10v5H4" />
+        </svg>
+        <span>换行</span>
+      </button>
+      <button
+        type="button"
+        class="action-btn"
         :title="copied ? '已复制' : '复制代码'"
         @click="copyCode"
       >
@@ -168,25 +190,23 @@ onUnmounted(() => {
 
     <!-- Code rows with line numbers -->
     <div ref="codeContainerRef" class="code-scroller">
-      <div class="code-table">
-        <div v-if="props.showLineNumbers" class="line-numbers" aria-hidden="true">
+      <div class="code-table" :class="{ 'is-wrapped': wrapLines }">
+        <div
+          v-for="(lineHtml, idx) in highlightedLines"
+          :key="idx"
+          class="code-row"
+          :data-line="idx + 1"
+        >
           <div
-            v-for="num in totalLines"
-            :key="num"
+            v-if="props.showLineNumbers"
             class="line-number"
-            :data-line-number="num"
+            :data-line-number="idx + 1"
+            aria-hidden="true"
           >
-            {{ num }}
+            {{ idx + 1 }}
           </div>
-        </div>
-        <div class="code-body">
-          <div
-            v-for="(line, idx) in lines"
-            :key="idx"
-            class="code-line"
-            :data-line="idx + 1"
-          >
-            <span class="code-text">{{ line || ' ' }}</span>
+          <div class="code-line">
+            <span class="code-text" v-html="lineHtml || ' '"></span>
           </div>
         </div>
       </div>
@@ -267,6 +287,9 @@ onUnmounted(() => {
 }
 
 .action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--color-border, #e3e6eb);
   background: var(--color-surface, #ffffff);
   padding: 2px 8px;
@@ -284,50 +307,76 @@ onUnmounted(() => {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
+.action-btn.is-active {
+  background: var(--color-primary-soft, #e8effd);
+  color: var(--color-primary, #2563eb);
+  border-color: var(--color-primary, #2563eb);
+  font-weight: 500;
+}
+
 .code-scroller {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding-bottom: 24px;
+  padding: 8px 0 24px;
 }
 
 .code-table {
   display: flex;
+  flex-direction: column;
   min-width: 100%;
   font-size: 0.82rem;
   line-height: 1.55;
+  width: max-content;
 }
 
-.line-numbers {
+.code-table.is-wrapped {
+  width: 100%;
+  min-width: 100%;
+}
+
+.code-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: 22px;
+  line-height: 22px;
+  width: 100%;
+}
+
+.code-row:hover {
+  background: var(--color-surface-muted, #f8fafc);
+}
+
+.line-number {
   flex-shrink: 0;
-  padding: 10px 10px 10px 8px;
+  padding: 0 10px 0 8px;
   text-align: right;
   user-select: none;
   color: var(--color-text-muted);
   background: var(--color-surface-muted, #f8fafc);
   border-right: 1px solid var(--color-border, #e3e6eb);
-  min-width: 38px;
-}
-
-.line-number {
+  min-width: 44px;
   height: 22px;
   line-height: 22px;
 }
 
-.code-body {
+.code-line {
   flex: 1;
-  padding: 10px 12px;
+  min-width: 0;
+  padding: 0 12px;
   white-space: pre;
   tab-size: 2;
   overflow-x: visible;
 }
 
-.code-line {
-  height: 22px;
-  line-height: 22px;
+.code-table.is-wrapped .code-line {
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .code-text {
   font-family: var(--font-mono);
+  display: inline-block;
+  min-width: 100%;
 }
 </style>

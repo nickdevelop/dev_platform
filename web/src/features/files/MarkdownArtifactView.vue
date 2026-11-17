@@ -3,8 +3,14 @@ import { computed, ref } from 'vue'
 import DOMPurify from 'dompurify'
 import { Marked } from 'marked'
 import { getDirectory, isExternalUrl, resolveRelativePath } from './pathUtils'
+import { highlightCode } from '../../shared/highlight'
+import { handleCodeCopyClick } from '../../shared/markdown-code-copy'
+import { splitDiagramBlocks } from '../../shared/markdown-segments'
 import ArtifactToolbar from './ArtifactToolbar.vue'
 import CodeView from './CodeView.vue'
+import PlantumlBlock from '../chat/rendering/PlantumlBlock.vue'
+import MermaidBlock from '../chat/rendering/MermaidBlock.vue'
+import '../../shared/markdown-code.css'
 
 const props = defineProps<{
   projectId: number
@@ -20,8 +26,13 @@ const emit = defineEmits<{
 
 const mode = ref<'preview' | 'source'>('preview')
 
-const renderedHtml = computed(() => {
-  if (!props.content) return ''
+const segments = computed(() => {
+  if (!props.content) return []
+  return splitDiagramBlocks(props.content)
+})
+
+function renderMarkdownSegment(text: string): string {
+  if (!text) return ''
   const baseDir = getDirectory(props.filePath)
 
   const customMarked = new Marked({
@@ -42,14 +53,41 @@ const renderedHtml = computed(() => {
         const altAttr = token.text ? ` alt="${token.text}"` : ''
         return `<img src="${src}"${altAttr}${titleAttr} class="markdown-image" />`
       },
+      code(token) {
+        const codeText = token.text
+        const rawLang = (token.lang || '').trim()
+        const lang = rawLang.split(/\s+/)[0] || ''
+        const highlighted = highlightCode(codeText, lang)
+        const langClass = lang ? `language-${DOMPurify.sanitize(lang)} hljs` : 'hljs'
+        const codeHtml = `<pre><code class="${langClass}">${highlighted}</code></pre>`
+
+        return (
+          '<div class="code-block-wrapper">' +
+          '<button type="button" class="code-copy-btn" title="复制代码" aria-label="复制代码">' +
+          '<svg class="code-copy-icon code-copy-icon-idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
+          '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>' +
+          '</svg>' +
+          '<svg class="code-copy-icon code-copy-icon-copied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+          '<polyline points="20 6 9 17 4 12"></polyline>' +
+          '</svg>' +
+          '</button>' +
+          codeHtml +
+          '</div>'
+        )
+      },
     },
   })
 
-  const rawHtml = customMarked.parse(props.content, { async: false }) as string
+  const rawHtml = customMarked.parse(text, { async: false }) as string
   return DOMPurify.sanitize(rawHtml)
-})
+}
 
-function onPreviewClick(event: MouseEvent) {
+async function onPreviewClick(event: MouseEvent) {
+  if (await handleCodeCopyClick(event)) {
+    return
+  }
+
   const target = event.target as HTMLElement | null
   const link = target?.closest('a')
   if (!link) return
@@ -95,7 +133,27 @@ function onPreviewClick(event: MouseEvent) {
         data-test="markdown-preview"
         @click="onPreviewClick"
       >
-        <article class="markdown-body" v-html="renderedHtml"></article>
+        <article class="markdown-body">
+          <template v-for="(seg, idx) in segments" :key="idx">
+            <div
+              v-if="seg.kind === 'markdown'"
+              class="markdown-seg"
+              v-html="renderMarkdownSegment(seg.text)"
+            ></div>
+            <PlantumlBlock
+              v-else-if="seg.kind === 'plantuml'"
+              :source="seg.text"
+              :ready="seg.closed"
+              :finished="true"
+            />
+            <MermaidBlock
+              v-else-if="seg.kind === 'mermaid'"
+              :source="seg.text"
+              :ready="seg.closed"
+              :finished="true"
+            />
+          </template>
+        </article>
       </div>
     </div>
   </div>

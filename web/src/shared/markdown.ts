@@ -1,20 +1,25 @@
 // Markdown rendering for agent messages. Agent output is untrusted text: it is
 // parsed as GitHub-flavored markdown and then sanitized with DOMPurify, so
 // common formatting renders while any live markup or event handler the backend
-// sends is stripped before it reaches v-html. Code blocks are wrapped with a
-// copy button in the top-right corner.
+// sends is stripped before it reaches v-html. Code blocks are wrapped with an
+// icon-only copy button floating in the top-right corner, and styled with syntax highlighting.
 import DOMPurify from 'dompurify'
-import { marked, Renderer } from 'marked'
-
-const defaultRenderer = new Renderer()
-const origCode = defaultRenderer.code.bind(defaultRenderer)
+import { marked } from 'marked'
+import { highlightCode } from './highlight'
 
 marked.use({
   gfm: true,
   breaks: true,
   renderer: {
     code(token) {
-      const rawCodeHtml = origCode(token)
+      const codeText = token.text
+      const rawLang = (token.lang || '').trim()
+      // Extract first word from info string (e.g. "typescript" from "typescript {1-3}")
+      const lang = rawLang.split(/\s+/)[0] || ''
+      const highlighted = highlightCode(codeText, lang)
+      const langClass = lang ? `language-${DOMPurify.sanitize(lang)} hljs` : 'hljs'
+      const codeHtml = `<pre><code class="${langClass}">${highlighted}</code></pre>`
+
       return (
         '<div class="code-block-wrapper">' +
         '<button type="button" class="code-copy-btn" title="复制代码" aria-label="复制代码">' +
@@ -25,10 +30,8 @@ marked.use({
         '<svg class="code-copy-icon code-copy-icon-copied" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         '<polyline points="20 6 9 17 4 12"></polyline>' +
         '</svg>' +
-        '<span class="code-copy-text">复制</span>' +
-        '<span class="code-copied-text">已复制</span>' +
         '</button>' +
-        rawCodeHtml +
+        codeHtml +
         '</div>'
       )
     },

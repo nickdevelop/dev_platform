@@ -1,52 +1,42 @@
-// Agent replies are rendered as markdown, but a ```plantuml fence is not meant
-// to be read as text: it becomes a diagram component (see components/
-// PlantumlBlock.vue). marked cannot hand us that as a structured piece, so the
-// reply is cut into segments first: markdown runs go through renderMarkdown
-// unchanged, diagram fences become blocks the caller mounts a component for.
+// Agent replies and markdown documents are rendered as markdown, but diagram fences
+// (```plantuml or ```mermaid) become interactive diagram components.
 //
-// The cut happens before marked on purpose, which means a diagram fence nested
-// inside a list item or a blockquote is lifted to the top level. The spec
-// (docs/superpowers/specs/2026-10-12-plantuml-preview-design.md §1) accepts
-// that: a fence inside a list item is rare in chat, and the alternative —
-// mounting components into already-rendered HTML — costs more than it buys.
-//
-// Segments lose nothing except the fence lines themselves: the newline that
-// ended the closing fence stays at the head of the segment that follows, so
-// joining every `text` returns the reply with exactly the diagram fences cut
-// out of it.
+// The reply is cut into segments first: markdown runs go through renderMarkdown,
+// while diagram fences become structured blocks the caller mounts a component for.
 
 export type Segment =
   | { kind: 'markdown'; text: string }
   | { kind: 'plantuml'; text: string; closed: boolean }
+  | { kind: 'mermaid'; text: string; closed: boolean }
 
-// Languages that mean "this is a diagram". Standard tags and common model variants
-// (e.g. uml, plantuml:sequence, puml-activity).
-const DIAGRAM_LANGUAGES = new Set(['plantuml', 'puml', 'uml'])
+const PLANTUML_LANGUAGES = new Set(['plantuml', 'puml', 'uml'])
+const MERMAID_LANGUAGES = new Set(['mermaid', 'mmd'])
 
 // A fence line: up to three leading spaces, three or more fence characters,
 // then an optional info string.
 const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*(.*)$/
 
-// The language tag of a diagram fence line, or null when the line is not one.
-function diagramTag(line: string): boolean {
+function diagramKind(line: string): 'plantuml' | 'mermaid' | null {
   const fence = FENCE.exec(line)
-  if (!fence || !isFenceLine(fence)) return false
+  if (!fence || !isFenceLine(fence)) return null
   const rawLang = fence[2].trim().split(/\s+/)[0]?.toLowerCase() ?? ''
-  if (!rawLang) return false
-  if (DIAGRAM_LANGUAGES.has(rawLang)) return true
-  // Support prefix notations such as plantuml:sequence, puml-activity, uml:class
+  if (!rawLang) return null
+
+  if (PLANTUML_LANGUAGES.has(rawLang)) return 'plantuml'
+  if (MERMAID_LANGUAGES.has(rawLang)) return 'mermaid'
+
+  // Support prefix notations like plantuml:sequence, puml-activity, mermaid:flowchart
   const baseLang = rawLang.split(/[:\-_]/)[0]
-  return DIAGRAM_LANGUAGES.has(baseLang)
+  if (PLANTUML_LANGUAGES.has(baseLang)) return 'plantuml'
+  if (MERMAID_LANGUAGES.has(baseLang)) return 'mermaid'
+
+  return null
 }
 
-// A backtick fence whose info string holds a backtick is not a fence: it is a
-// sentence talking about fences, and marked reads it the same way.
 function isFenceLine(fence: RegExpExecArray): boolean {
   return !(fence[1][0] === '`' && fence[2].includes('`'))
 }
 
-// The closing fence repeats the opening character, is at least as long, and
-// carries no info string.
 function closesFence(line: string, char: string, length: number): boolean {
   const fence = FENCE.exec(line)
   return (
@@ -54,16 +44,12 @@ function closesFence(line: string, char: string, length: number): boolean {
   )
 }
 
-// The bounds of one line starting at `from`: where its content ends and where
-// the next line starts (the end of the source when there is no newline).
 function lineBounds(source: string, from: number): { content: number; next: number } {
   const newline = source.indexOf('\n', from)
   const content = newline === -1 ? source.length : newline
   return { content, next: content + 1 }
 }
 
-// Where the fence opened at `open` ends: the start of its closing fence line,
-// or -1 when it is never closed and therefore runs to the end of the reply.
 function closingFenceStart(source: string, open: number, char: string, length: number): number {
   const firstBodyLine = lineBounds(source, open).next
   for (let scan = firstBodyLine; scan < source.length; ) {
@@ -75,9 +61,6 @@ function closingFenceStart(source: string, open: number, char: string, length: n
 }
 
 export function splitDiagramBlocks(source: string): Segment[] {
-  // marked normalizes line endings (\r\n and a lone \r both become \n); doing the
-  // same here keeps one grammar for the fence scanner, so a reply that arrives
-  // with Windows or classic Mac line endings still gets its diagrams.
   const text = source.includes('\r') ? source.replace(/\r\n?/g, '\n') : source
   if (text === '') return []
 
@@ -101,34 +84,28 @@ export function splitDiagramBlocks(source: string): Segment[] {
     const char = fence[1][0]
     const length = fence[1].length
     const closing = closingFenceStart(text, cursor, char, length)
-    // Everything a fence that is not a diagram holds — including a plantuml
-    // fence quoted as an example inside it — stays markdown, and scanning
-    // resumes after it. An unclosed one takes the rest of the reply with it.
-    if (!diagramTag(line)) {
+    const kind = diagramKind(line)
+
+    if (!kind) {
       cursor = closing === -1 ? text.length : lineBounds(text, closing).next
       continue
     }
 
     const bodyEnd = closing === -1 ? text.length : closing
     const body = text.slice(bounds.next, bodyEnd)
-    // A diagram fence with nothing in it is not a diagram: leave it to markdown
-    // rather than mount a block that has nothing to draw or read.
+
     if (closing !== -1 && body.trim() === '') {
       cursor = lineBounds(text, closing).next
       continue
     }
 
     flushMarkdown(cursor)
-    // A closed fence drops the newline that ended its last body line; an open
-    // one runs to the end of the reply and keeps everything it holds.
     segments.push({
-      kind: 'plantuml',
+      kind,
       text: closing === -1 ? body : body.replace(/\n$/, ''),
       closed: closing !== -1,
     })
-    // Stop in front of the newline that ended the closing fence, so that newline
-    // stays with the segment that follows and nothing but the fence lines is
-    // lost.
+
     cursor = closing === -1 ? text.length : lineBounds(text, closing).content
     markdownStart = cursor
   }

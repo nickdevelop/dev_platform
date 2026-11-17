@@ -119,4 +119,20 @@ describe('splitDiagramBlocks', () => {
     const crlf = source.replace(/\n/g, '\r\n')
     expect(splitDiagramBlocks(crlf).map((segment) => segment.text).join('')).toBe(withoutDiagramFences)
   })
+
+  it('cuts a closed mermaid fence into a mermaid segment', () => {
+    expect(splitDiagramBlocks('说明\n```mermaid\ngraph TD\nA-->B\n```\n结束')).toEqual([
+      { kind: 'markdown', text: '说明\n' },
+      { kind: 'mermaid', text: 'graph TD\nA-->B', closed: true },
+      { kind: 'markdown', text: '\n结束' },
+    ])
+  })
+
+  it('cuts both plantuml and mermaid fences in a single text', () => {
+    expect(splitDiagramBlocks('```mermaid\ngraph TD\n```\n中\n```plantuml\n@startuml\n@enduml\n```')).toEqual([
+      { kind: 'mermaid', text: 'graph TD', closed: true },
+      { kind: 'markdown', text: '\n中\n' },
+      { kind: 'plantuml', text: '@startuml\n@enduml', closed: true },
+    ])
+  })
 })

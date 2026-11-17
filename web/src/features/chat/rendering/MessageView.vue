@@ -29,6 +29,7 @@ import { handleCodeCopyClick } from '../../../shared/markdown-code-copy'
 import { splitDiagramBlocks } from '../../../shared/markdown-segments'
 import { imageSource } from '../../../shared/imageSource'
 import PlantumlBlock from './PlantumlBlock.vue'
+import MermaidBlock from './MermaidBlock.vue'
 import FoldableUserText from './FoldableUserText.vue'
 import SessionActivityLog from './SessionActivityLog.vue'
 import EditToolBlock from './EditToolBlock.vue'
@@ -339,7 +340,13 @@ async function copyMessage(entry: ChatEntry) {
                     v-html="renderMarkdown(segment.text)"
                   ></div>
                   <PlantumlBlock
-                    v-else
+                    v-else-if="segment.kind === 'plantuml'"
+                    :source="segment.text"
+                    :ready="segment.closed"
+                    :finished="settled(block.entry)"
+                  />
+                  <MermaidBlock
+                    v-else-if="segment.kind === 'mermaid'"
                     :source="segment.text"
                     :ready="segment.closed"
                     :finished="settled(block.entry)"
@@ -913,8 +920,9 @@ async function copyMessage(entry: ChatEntry) {
   margin: 0 0 0.5rem;
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
-  background: var(--color-text);
-  color: var(--color-border);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
   overflow-x: auto;
 }
 
@@ -925,21 +933,26 @@ async function copyMessage(entry: ChatEntry) {
 .markdown-body :deep(.code-block-wrapper pre) {
   margin: 0;
   padding: 0.75rem 1rem;
-  padding-top: 1.85rem;
 }
 
 .markdown-body :deep(.code-copy-btn) {
-  top: 0.4rem;
-  right: 0.4rem;
-  color: var(--color-border);
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 
 .markdown-body :deep(.code-copy-btn:hover) {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.35);
-  color: #ffffff;
+  background: var(--color-surface-muted);
+  border-color: var(--color-border-strong, var(--color-primary));
+  color: var(--color-text);
 }
 
 .markdown-body :deep(.code-copy-btn.is-copied) {

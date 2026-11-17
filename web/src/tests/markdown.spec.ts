@@ -50,21 +50,22 @@ describe('renderMarkdown', () => {
     const streamingText = '前文\n```python\nprint("hello")'
     const html = renderMarkdown(streamingText)
 
-    expect(html).toContain('<pre><code class="language-python">')
-    expect(html).toContain('print("hello")')
+    expect(html).toContain('class="language-python')
+    expect(html).toContain('hello')
     expect(html).toContain('class="code-copy-btn"')
   })
 
-  it('wraps code blocks with a wrapper and copy button', () => {
+  it('wraps code blocks with a wrapper, copy button, and syntax highlighting', () => {
     const html = renderMarkdown('```typescript\nconst a = 1 < 2;\nconsole.log(a);\n```')
 
     expect(html).toContain('class="code-block-wrapper"')
     expect(html).toContain('class="code-copy-btn"')
     expect(html).toContain('title="复制代码"')
     expect(html).toContain('aria-label="复制代码"')
-    expect(html).toContain('class="code-copy-text">复制</span>')
-    expect(html).toContain('<pre><code class="language-typescript">')
-    expect(html).toContain('const a = 1 &lt; 2;')
+    expect(html).toContain('code-copy-icon-idle')
+    expect(html).not.toContain('code-copy-text')
+    expect(html).toContain('class="language-typescript hljs"')
+    expect(html).toContain('class="hljs-keyword">const</span>')
   })
 
   it('reuses cached output for repeated inputs', () => {
