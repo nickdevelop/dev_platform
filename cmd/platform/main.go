@@ -346,6 +346,8 @@ func runServer(args []string) error {
 		TranscriptStore: newBuiltinTranscriptStore(agentdata.NewService(db)),
 		// ModelResolver shares the platform's OpenAI-compatible services.
 		ModelResolver: newBuiltinModelResolver(modelConfig),
+		// DataDir holds platform-level AGENTS.md and skills/.
+		DataDir: dataDir,
 		// AgentGlobalPrompt re-reads dataDir/AGENTS.md for every turn.
 		AgentGlobalPrompt: func(ctx context.Context) (string, error) {
 			general, err := settingsService.AgentGeneral()

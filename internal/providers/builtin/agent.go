@@ -18,30 +18,13 @@ type turn struct {
 	cancel context.CancelFunc
 }
 
-// workspaceBrief describes the working environment for the system prompt.
-// The agent is in-process, so there is no host CLI writing one for it.
-func workspaceBrief(directory string) string {
-	return fmt.Sprintf(
-		"当前工作目录：%s\n\n你运行在 dev_platform 平台进程内，通过平台注入的工具读写该工作目录。遵循以下原则：\n"+
-			"- 修改文件前先用 read_file 读取目标文件，避免盲目覆盖；edit_file 的 old_string 必须精确且唯一。\n"+
-			"- 修改代码后按需运行项目自身的测试或构建命令验证。\n"+
-			"- 工具长输出会被截断，重要信息请分步获取。\n"+
-			"- 回复使用简体中文。", directory)
-}
-
-// systemPrompt assembles the turn system prompt: the platform's global agent
-// prompt (dataDir/AGENTS.md) and the workspace brief. The prompt is re-read
-// every turn so operator edits apply at once.
+// systemPrompt assembles the multi-tiered turn system prompt (platform, user,
+// and project AGENTS.md, available skills, and environment brief).
 func (a *Adapter) systemPrompt(ctx context.Context, directory string) string {
-	parts := make([]string, 0, 3)
-	parts = append(parts, "你是 dev_platform 平台的内置智能编码 Agent，直接操作用户的项目工作区。")
-	if a.prompt != nil {
-		if prompt, err := a.prompt(ctx); err == nil && strings.TrimSpace(prompt) != "" {
-			parts = append(parts, strings.TrimSpace(prompt))
-		}
+	if a.prompts != nil {
+		return a.prompts.assemble(ctx, directory)
 	}
-	parts = append(parts, workspaceBrief(directory))
-	return strings.Join(parts, "\n\n---\n\n")
+	return "你是 dev_platform 平台的内置智能编码 Agent，直接操作用户的项目工作区。"
 }
 
 // resolveEndpoint maps the session's model choice onto an endpoint, falling

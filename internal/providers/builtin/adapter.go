@@ -32,6 +32,9 @@ type Options struct {
 	TranscriptStore TranscriptStore
 	// ModelResolver maps model references onto OpenAI-compatible endpoints.
 	ModelResolver ModelResolver
+	// DataDir is the platform data directory where platform AGENTS.md and
+	// skills/ live.
+	DataDir string
 	// AgentGlobalPrompt returns the platform's global agent prompt
 	// (dataDir/AGENTS.md). Nil or empty means no global prompt. The prompt
 	// is re-read for every turn so operator edits apply at once.
@@ -99,6 +102,8 @@ type sessionKey struct {
 type Adapter struct {
 	store        TranscriptStore
 	resolver     ModelResolver
+	dataDir      string
+	prompts      *promptAssembler
 	prompt       func(ctx context.Context) (string, error)
 	permMode     func() string
 	maxSteps     int
@@ -131,6 +136,7 @@ func New(options Options) *Adapter {
 	adapter := &Adapter{
 		store:        options.TranscriptStore,
 		resolver:     options.ModelResolver,
+		dataDir:      options.DataDir,
 		prompt:       options.AgentGlobalPrompt,
 		permMode:     options.PermissionMode,
 		maxSteps:     options.MaxTurnSteps,
@@ -158,6 +164,7 @@ func New(options Options) *Adapter {
 	if adapter.permMode == nil {
 		adapter.permMode = func() string { return PermissionModeConfirm }
 	}
+	adapter.prompts = newPromptAssembler(adapter.dataDir, adapter.prompt, adapter.now)
 	return adapter
 }
 
