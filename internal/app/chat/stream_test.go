@@ -62,21 +62,3 @@ func TestSubscribeSnapshotIncludesPartialAnswer(t *testing.T) {
 		}
 	}
 }
-
-func TestWriteEventFrame(t *testing.T) {
-	var buffer testWriter
-	if err := writeEvent(&buffer, Event{ChatID: 7, Type: EventTurn, Turn: &Turn{Phase: TurnEnded, Outcome: OutcomeCompleted}}); err != nil {
-		t.Fatalf("writeEvent: %v", err)
-	}
-	want := "event: turn\ndata: "
-	if len(buffer.value) < len(want) || buffer.value[:len(want)] != want {
-		t.Fatalf("frame = %q", buffer.value)
-	}
-}
-
-type testWriter struct{ value string }
-
-func (w *testWriter) Write(p []byte) (int, error) {
-	w.value += string(p)
-	return len(p), nil
-}

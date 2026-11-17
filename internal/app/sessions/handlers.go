@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,7 +34,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.POST("/projects/:id/sessions/:sessionId/command", s.handleExecuteCommand)
 	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
-	r.GET("/projects/:id/sessions/:sessionId/events", s.handleEvents)
 }
 
 // errInvalidHistoryPage reports a malformed history paging query.
@@ -473,71 +471,6 @@ func (s *Service) handleDelete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
-}
-
-// handleEvents streams the session's normalized events as Server-Sent Events.
-func (s *Service) handleEvents(c *gin.Context) {
-	id, ok := projectID(c)
-	if !ok {
-		return
-	}
-	sessionID := c.Param("sessionId")
-	if sessionID == "" {
-		respondError(c, http.StatusBadRequest, "invalid_request")
-		return
-	}
-
-	// Validate project scope and instance state before committing to SSE
-	// headers, so failures are still ordinary JSON error responses.
-	session, err := s.Get(id, sessionID)
-	if err != nil {
-		respondServiceError(c, err)
-		return
-	}
-	if session.Status != SessionActive {
-		respondError(c, http.StatusConflict, "instance_not_running")
-		return
-	}
-	// Refuse a stream for a backend that does not declare streaming support,
-	// consistent with the other capability gates.
-	if !session.Capabilities.Streaming {
-		respondError(c, http.StatusConflict, "unsupported_capability")
-		return
-	}
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	// Disable intermediary (for example nginx) response buffering so events
-	// reach the browser as they are produced.
-	c.Header("X-Accel-Buffering", "no")
-	// An SSE response is long-lived and must outlive the server's absolute
-	// WriteTimeout; clear the connection's write deadline (the controller
-	// unwraps gin's ResponseWriter to the net/http response). Ignore an
-	// unsupported result, which only happens for writers with no deadline.
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
-	c.Writer.Flush()
-
-	// A browser-native EventSource reconnect carries the last applied frame
-	// id in the Last-Event-ID header; the workbench's manual re-dial opens a
-	// fresh EventSource, which cannot carry that header, so it passes the
-	// same value as a query parameter. Zero means the client is joining.
-	_ = s.StreamSession(c.Request.Context(), id, sessionID, resumeSequence(c), c.Writer, func() { c.Writer.Flush() })
-}
-
-// resumeSequence extracts the replay position of a resuming SSE client from
-// the Last-Event-ID header first and the lastEventId query otherwise. A
-// missing or malformed value means the client is joining, not resuming.
-func resumeSequence(c *gin.Context) uint64 {
-	raw := c.GetHeader("Last-Event-ID")
-	if raw == "" {
-		raw = c.Query("lastEventId")
-	}
-	v, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return v
 }
 
 // commandsResponse is the JSON body of GET /api/projects/:id/sessions/:sessionId/commands.

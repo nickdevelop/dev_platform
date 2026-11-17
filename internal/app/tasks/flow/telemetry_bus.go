@@ -1,11 +1,8 @@
 package flow
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
@@ -30,7 +27,7 @@ type SessionHistoryReader interface {
 
 // SessionStreamer is an optional interface to stream live normalized events from a session.
 type SessionStreamer interface {
-	StreamSession(ctx context.Context, projectID uint, sessionID string, resumeFrom uint64, w io.Writer, flush func()) error
+	SubscribeSession(ctx context.Context, projectID uint, sessionID string) (<-chan agents.NormalizedEvent, error)
 }
 
 // TurnOutcome represents the final execution outcome of a role session turn.
@@ -214,46 +211,35 @@ func (b *TelemetryBus) pipeLiveStream(
 	roleName string,
 	roleMessageID uint,
 ) {
-	pr, pw := io.Pipe()
-	defer pr.Close()
+	eventsCh, err := streamer.SubscribeSession(ctx, projectID, sessionID)
+	if err != nil {
+		return
+	}
 
-	go func() {
-		defer pw.Close()
-		_ = streamer.StreamSession(ctx, projectID, sessionID, 0, pw, nil)
-	}()
-
-	scanner := bufio.NewScanner(pr)
-	var currentEvent string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "event:") {
-			currentEvent = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if currentEvent == "message" || currentEvent == "chunk" {
-				var ev agents.NormalizedEvent
-				if err := json.Unmarshal([]byte(data), &ev); err == nil {
-					chunkText := ""
-					if ev.Message != nil && ev.Message.Role == "assistant" {
-						chunkText = ev.Message.Text
-					}
-					if chunkText != "" && b.eventBus != nil {
-						b.eventBus.Publish(b.runID, FlowEvent{
-							Type:  EventChunk,
-							RunID: b.runID,
-							Payload: FlowChunkPayload{
-								MessageID:  roleMessageID,
-								SenderName: roleName,
-								SenderType: string(tasks.SenderAgent),
-								Chunk:      chunkText,
-							},
-						})
-					}
-				}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-eventsCh:
+			if !ok {
+				return
 			}
-			currentEvent = ""
+			chunkText := ""
+			if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" {
+				chunkText = ev.Message.Text
+			}
+			if chunkText != "" && b.eventBus != nil {
+				b.eventBus.Publish(b.runID, FlowEvent{
+					Type:  EventChunk,
+					RunID: b.runID,
+					Payload: FlowChunkPayload{
+						MessageID:  roleMessageID,
+						SenderName: roleName,
+						SenderType: string(tasks.SenderAgent),
+						Chunk:      chunkText,
+					},
+				})
+			}
 		}
 	}
 }

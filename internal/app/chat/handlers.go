@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -35,7 +34,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		chats.POST("/:id/stop", s.handleStop)
 		chats.POST("/:id/regenerate", s.handleRegenerate)
 		chats.POST("/:id/messages/:messageId/edit", s.handleEdit)
-		chats.GET("/:id/events", s.handleEvents)
 	}
 }
 
@@ -293,29 +291,6 @@ func (s *Service) handleEdit(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, chat)
-}
-
-// handleEvents streams the conversation as Server-Sent Events. The route is a
-// GET so EventSource can reconnect with the session cookie; CSRF is not
-// involved on a safe method.
-func (s *Service) handleEvents(c *gin.Context) {
-	id, ok := chatID(c)
-	if !ok {
-		return
-	}
-	if _, err := s.Get(id); err != nil {
-		respondServiceError(c, err)
-		return
-	}
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	_ = http.NewResponseController(c.Writer).SetWriteDeadline(time.Time{})
-	c.Writer.Flush()
-
-	_ = s.StreamChat(c.Request.Context(), id, c.Writer, func() { c.Writer.Flush() })
 }
 
 func chatID(c *gin.Context) (uint, bool) {

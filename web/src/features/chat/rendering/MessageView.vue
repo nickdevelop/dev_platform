@@ -173,8 +173,6 @@ function toolEventsVisibleFor(entry: ChatEntry): boolean {
   return toolEventsVisible()
 }
 
-const flatExpandable = log.flatExpandable
-
 function settled(entry: ChatEntry): boolean {
   return log.settled(entry, props.streamStatus)
 }
@@ -197,32 +195,6 @@ function closeImagePreview() {
   showPreviewModal.value = false
   previewImage.value = null
 }
-// The activity pane's flat list: the same visible thinking/tool entries in
-// transcript order, with no step grouping and no collapsing. A tool result
-// whose call is present is already merged into that call's card (see
-// buildLogModel), so it is not listed twice.
-const flatActivityEntries = computed<ChatEntry[]>(() =>
-  visibleEntries.value.filter(
-    (entry) => log.isActivity(entry) && !log.isQuestionCall(entry) && toolEventsVisibleFor(entry),
-  ),
-)
-
-// Per-card folding for the flat activity list. Only three kinds fold — thinking,
-// edit and shell — and they all start expanded, because the user wants to read
-// the reasoning, the diff and the command as they happen. The set records only a
-// toggle away from that default, keyed by entry id, so a newly streamed entry
-// always opens expanded. Every other tool call is a one-line summary with no
-// fold (see log.flatExpandable).
-const flatToggles = reactive(new Set<string>())
-function flatExpanded(entry: ChatEntry): boolean {
-  const toggled = flatToggles.has(entry.id)
-  return log.flatExpandable(entry) ? !toggled : false
-}
-function toggleFlat(entry: ChatEntry) {
-  if (flatToggles.has(entry.id)) flatToggles.delete(entry.id)
-  else flatToggles.add(entry.id)
-}
-
 // The subagent popup keeps the whole entry so the dialog can show the call and
 // its result side by side.
 const subagentModal = ref<ChatEntry | null>(null)
@@ -1159,128 +1131,6 @@ async function copyMessage(entry: ChatEntry) {
   font-size: 0.75rem;
 }
 
-/* The activity pane's flat list: every thinking/tool entry renders as its own
-   expanded card — no grouping, no <details> — so the right column reads
-   top-to-bottom in transcript order. */
-.flat-activity {
-  gap: 0.5rem;
-}
-
-.flat-thinking,
-.flat-tool {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-surface);
-  padding: 0.45rem 0.6rem;
-}
-
-.flat-head {
-  margin: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  min-width: 0;
-}
-
-.flat-head .tool-name,
-.flat-head .thinking-title {
-  flex-shrink: 0;
-}
-
-.flat-head .tool-arg {
-  flex: 1;
-}
-
-/* The flat card's toggle: the whole header is one button, with a chevron
-   showing the fold state. Thinking, edit, shell and question start expanded. */
-.flat-toggle {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  text-align: left;
-  min-width: 0;
-}
-
-.flat-chevron {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  width: 1em;
-}
-
-.flat-toggle .tool-name,
-.flat-toggle .thinking-title {
-  flex-shrink: 0;
-}
-
-.flat-toggle .tool-arg {
-  flex: 1;
-}
-
-.flat-thinking .thinking-text,
-.flat-tool .tool-body {
-  margin-top: 0.4rem;
-}
-
-/* A question tool's body: one block per question, the options listed under it. */
-.question-item {
-  margin: 0 0 0.5rem;
-}
-
-.question-item:last-child {
-  margin-bottom: 0;
-}
-
-.question-header {
-  margin: 0;
-  font-size: var(--text-size-meta);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
-}
-
-.question-text {
-  margin: 0.15rem 0 0.3rem;
-  font-weight: 600;
-  word-break: break-word;
-}
-
-.question-options {
-  margin: 0;
-  padding-left: 1.1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.question-option-label {
-  font-weight: 600;
-}
-
-.question-option-description {
-  margin-left: 0.35rem;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  overflow-wrap: anywhere;
-}
-
-.question-multiple {
-  font-size: var(--text-size-meta);
-  color: var(--color-text-muted);
-}
-
 .step-body {
   display: flex;
   flex-direction: column;
@@ -1563,35 +1413,6 @@ async function copyMessage(entry: ChatEntry) {
   white-space: nowrap;
   color: var(--color-text);
   line-height: 1.4;
-}
-
-/* 思考内容直接输出样式 */
-.flat-thinking-direct {
-  padding: 0.5rem 0.65rem;
-  background: var(--color-surface-muted, #f8fafc);
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-primary, #3b82f6);
-  border-radius: 6px;
-}
-
-.thinking-direct-header {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  margin-bottom: 0.25rem;
-  user-select: none;
-}
-
-.tool-status-error {
-  flex-shrink: 0;
-  font-size: var(--text-size-meta);
-  color: var(--color-danger, #ef4444);
-  background: rgba(239, 68, 68, 0.1);
-  border-radius: 999px;
-  padding: 0.05rem 0.45rem;
 }
 
 /* 主对话界面交互问答卡片样式 */

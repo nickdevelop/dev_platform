@@ -3,6 +3,7 @@ package sessions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -17,7 +18,10 @@ import (
 const (
 	defaultBusGCTTL    = 60 * time.Second
 	defaultBusBufSize  = 512
+	heartbeatInterval  = 15 * time.Second
 )
+
+var errSlowClient = errors.New("sessions: subscriber too slow to keep up")
 
 // SubscriptionSnapshot captures the turn state and pending interactions of a session
 // at the moment it is subscribed to an event bus.

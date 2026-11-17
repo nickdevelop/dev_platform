@@ -2,16 +2,10 @@ package chat
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"strings"
 	"sync"
 	"time"
 )
-
-// heartbeatInterval is the SSE keep-alive cadence.
-const heartbeatInterval = 15 * time.Second
 
 // subscriberBuffer bounds one SSE subscriber. A slow client is dropped rather
 // than letting a stalled connection block the generation or other clients;
@@ -315,60 +309,4 @@ func (m *runManager) remove(chatID uint) {
 // after the conversation is gone.
 func (s *Service) waitForRun(run *runState, ctx context.Context) bool {
 	return s.manager.wait(run, ctx)
-}
-
-// StreamChat writes the chat's SSE stream until the client disconnects, the
-// chat is deleted, or the subscription is dropped as too slow.
-func (s *Service) StreamChat(ctx context.Context, chatID uint, w io.Writer, flush func()) error {
-	event, ch, cancel, err := s.manager.subscribe(chatID, func(run *runView) (Event, error) {
-		return s.snapshot(chatID, run)
-	})
-	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	if err := writeEvent(w, event); err != nil {
-		return err
-	}
-	if flush != nil {
-		flush()
-	}
-
-	ticker := time.NewTicker(heartbeatInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
-				return err
-			}
-			if flush != nil {
-				flush()
-			}
-		case event, ok := <-ch:
-			if !ok {
-				return nil
-			}
-			if err := writeEvent(w, event); err != nil {
-				return err
-			}
-			if flush != nil {
-				flush()
-			}
-		}
-	}
-}
-
-func writeEvent(w io.Writer, event Event) error {
-	payload, err := json.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("chat: encode event: %w", err)
-	}
-	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, payload); err != nil {
-		return err
-	}
-	return nil
 }

@@ -88,7 +88,6 @@ type Service struct {
 	toolExecutor ToolExecutor
 	promptReader PromptReader
 	manager      *runManager
-	eventBus     *EventBusManager
 	eventsMgr    *events.Manager
 
 	baseCtx   context.Context
@@ -139,9 +138,7 @@ func NewServiceWithRepository(repo Repository, models ModelResolver, opts ...Opt
 		baseCtx:   baseCtx,
 		cancel:    cancel,
 	}
-	service.eventBus = NewEventBusManager(service)
 	service.manager.onBroadcast = func(event Event) {
-		service.eventBus.Broadcast(event)
 		if service.eventsMgr != nil {
 			payload, err := json.Marshal(event)
 			if err == nil {

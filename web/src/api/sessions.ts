@@ -315,21 +315,6 @@ export function deleteProjectSession(projectId: number, sessionId: string): Prom
   )
 }
 
-// The authenticated SSE endpoint for a session's normalized event stream.
-// Returned as a same-origin path for EventSource. A resuming dial passes the
-// id of the last frame it applied so the server replays what was missed;
-// EventSource carries that id itself as the Last-Event-ID header when the
-// browser reconnects, but a freshly constructed EventSource cannot, so the
-// workbench's manual re-dial passes it as a query parameter instead.
-export function sessionEventsPath(
-  projectId: number,
-  sessionId: string,
-  lastEventId?: string,
-): string {
-  const base = `/api/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/events`
-  return lastEventId ? `${base}?lastEventId=${encodeURIComponent(lastEventId)}` : base
-}
-
 export type CommandCategory = 'action' | 'prompt'
 
 // PlatformCommand defines a command designed and managed by the platform.

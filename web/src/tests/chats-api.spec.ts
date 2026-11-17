@@ -2,7 +2,6 @@
 // the CSRF header on mutations.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  chatEventsPath,
   createChat,
   createChatGroup,
   deleteChat,
@@ -94,10 +93,6 @@ describe('pure chat API contracts', () => {
       'POST /api/chats/1/messages/9/edit',
     ])
     expect(JSON.parse(String(calls[3].init?.body))).toEqual({ text: 'edited' })
-  })
-
-  it('exposes the same-origin SSE path', () => {
-    expect(chatEventsPath(12)).toBe('/api/chats/12/events')
   })
 
   it('manages chat groups through get() and mutate()', async () => {

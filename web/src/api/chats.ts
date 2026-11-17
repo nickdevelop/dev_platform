@@ -174,13 +174,6 @@ export function editChatMessage(
   )
 }
 
-// chatEventsPath is the authenticated SSE endpoint for one conversation.
-// EventSource can only issue GETs and cannot set headers; the session cookie
-// authenticates the stream, exactly like the agent session event stream.
-export function chatEventsPath(id: number): string {
-  return `/api/chats/${id}/events`
-}
-
 // chatEventBusPath is the multiplexed SSE endpoint for pure chat.
 export function chatEventBusPath(uuid: string): string {
   return `/api/events/bus/${encodeURIComponent(uuid)}`

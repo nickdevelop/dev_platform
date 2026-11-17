@@ -23,7 +23,6 @@ import { useSessionsStore, type ChatEntry } from '../../stores/sessions'
 import { useWorktreesStore } from '../../stores/worktrees'
 import { useInteractionsStore } from '../../stores/interactions'
 import { useActivityPane } from './pane/useActivityPane'
-import ChatSideRail from './pane/ChatSideRail.vue'
 import { useComposerContext } from './composer/useComposerContext'
 import { useSessionInteractions } from './interactions/useSessionInteractions'
 import { useBottomFollow } from '../../shared/scrollFollow'
@@ -35,7 +34,8 @@ import type { GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
 import { ellipsisMiddle, formatTokens } from '../../shared/format'
-import BackendTag from '../../shared/components/BackendTag.vue'
+import SessionHeader from './pane/SessionHeader.vue'
+import WorkspacePreviewPane, { type OpenFileTab } from './pane/WorkspacePreviewPane.vue'
 import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
@@ -57,7 +57,6 @@ import {
 } from './composer/sendShortcut'
 import { useAttachmentUploader } from './composer/useAttachmentUploader'
 import { useComposerKeyboard } from './composer/useComposerKeyboard'
-import { FileSidebar, FileViewer } from '../files'
 import { UiButton, UiDialog } from '../../shared/ui'
 
 const props = withDefaults(
@@ -85,14 +84,6 @@ let currentSessionId = props.sessionId
 let isRestoringDraft = false
 
 const initialSessionDraft = draftsStore.getSessionDraft(props.sessionId)
-
-interface OpenFileTab {
-  path: string
-  name: string
-  mode?: 'view' | 'diff'
-  commitRef?: string
-  commitMessage?: string
-}
 
 function getFileName(filePath: string): string {
   const parts = filePath.replace(/\\/g, '/').split('/')
@@ -445,18 +436,6 @@ const {
   setPreviewWidth,
   activityCollapsed,
   setActivityCollapsed,
-  fileTreePinned,
-  fileTreeCollapsed,
-  fileTreeFloatingOpen,
-  isFileTreeDocked,
-  isFileTreeFloating,
-  isFileTreeVisible,
-  setFileTreePinned,
-  toggleFileTreePinned,
-  setFileTreeCollapsed,
-  toggleFileTree,
-  openFloatingFileTree,
-  closeFloatingFileTree,
 } = pane
 
 const isPreviewResizing = ref(false)
@@ -494,17 +473,6 @@ function onPreviewResizerMouseDown(e: MouseEvent) {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
 }
-
-const DOCKED_FILETREE_WIDTH = 240
-
-// In the unified workspace panel, total width is locked to previewWidth so the conversation
-// area NEVER jumps or reflows when toggling the file tree!
-const computedPreviewWidth = computed(() => {
-  if (isFileTreeVisible.value && isFileTreeDocked.value) {
-    return Math.max(120, previewWidth.value - DOCKED_FILETREE_WIDTH)
-  }
-  return previewWidth.value
-})
 
 watch(
   () => [props.projectId, props.sessionId],
@@ -641,6 +609,13 @@ function onLogScroll() {
 const scrollToBottom = logFollow.scrollToBottom
 const showJumpToLatest = logFollow.showJump
 const pinnedToBottom = logFollow.pinned
+
+function onJumpToLatest() {
+  scrollToBottom(true)
+  if (props.sessionId && logScroll.value) {
+    viewportStore.saveSessionScroll(props.sessionId, logScroll.value.scrollHeight, true)
+  }
+}
 
 const modelSelection = computed(() => activeSession.value?.capabilities.modelSelection === true)
 const isRunning = computed(() => activeSession.value?.turn === 'running')
@@ -1009,46 +984,17 @@ async function removeSession() {
         }"
       >
         <div class="message-column">
-          <header class="chat-header">
-            <div class="title-row">
-              <BackendTag :backend="activeSession.backend" />
-              <h2 class="session-heading">{{ activeSession.title || activeSession.id }}</h2>
-              <button
-                type="button"
-                class="delete-session"
-                data-test="delete-session"
-                title="删除会话"
-                @click="confirmingDelete = true"
-              >
-                删除
-              </button>
-            </div>
-            <div v-if="instance" class="workdir-row" data-test="workdir-row">
-              <span class="workdir-path" data-test="workdir-path" :title="instance.directory">{{
-                shortDirectory
-              }}</span>
-              <button
-                type="button"
-                class="workdir-copy"
-                data-test="workdir-copy"
-                :title="copiedPath ? '已复制' : '复制完整路径'"
-                @click="copyDirectory"
-              >
-                {{ copiedPath ? '已复制' : '复制' }}
-              </button>
-              <span
-                v-if="branchLabel"
-                class="chip branch"
-                data-test="git-branch"
-                :title="branchTitle"
-                >{{ branchLabel }}</span
-              >
-              <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
-            </div>
-            <div v-else-if="isRunning" class="workdir-row">
-              <span class="turn-status" role="status" aria-live="polite">运行中</span>
-            </div>
-          </header>
+          <SessionHeader
+            :session="activeSession"
+            :instance="instance"
+            :short-directory="shortDirectory"
+            :copied-path="copiedPath"
+            :branch-label="branchLabel"
+            :branch-title="branchTitle"
+            :is-running="isRunning"
+            @delete="confirmingDelete = true"
+            @copy-directory="copyDirectory"
+          />
 
           <p v-if="preparing" class="history-note" data-test="preparing" role="status" aria-live="polite">
             正在准备 agent…
@@ -1123,7 +1069,7 @@ async function removeSession() {
               type="button"
               class="jump-latest"
               data-test="jump-latest"
-              @click="scrollToBottom(true)"
+              @click="onJumpToLatest"
             >
               ↓ 滚动到最新消息
             </button>
@@ -1294,147 +1240,26 @@ async function removeSession() {
         </div>
 
         <!-- Column 2: Unified Right Workspace Panel (FileTree and Previews as Tabs) -->
-        <aside
-          v-if="!props.hideSideRail && !previewCollapsed"
-          id="session-preview-pane"
-          class="preview-pane activity-pane unified-workspace-pane"
-          :class="{ 'is-resizing': isPreviewResizing }"
-          :style="{ width: `${previewWidth}px`, flex: `0 0 ${previewWidth}px` }"
-          aria-label="文件预览面板"
-          data-test="activity-pane"
-          data-test-preview="preview-pane"
-        >
-          <div
-            class="preview-resizer"
-            data-test="preview-resizer"
-            title="拖拽调整预览栏宽度"
-            @mousedown="onPreviewResizerMouseDown"
-          >
-            <span class="preview-resizer-line"></span>
-          </div>
-
-          <div class="workspace-tabbed-pane">
-            <header class="preview-head activity-head">
-              <div class="preview-tabs-list" role="tablist">
-                <!-- Permanent Tab: Workspace File Tree -->
-                <div
-                  class="pane-tab preview-file-tab filetree-permanent-tab"
-                  :class="{ 'is-active': activePreviewTab === FILE_TREE_TAB_KEY }"
-                  role="tab"
-                  :aria-selected="activePreviewTab === FILE_TREE_TAB_KEY"
-                  title="工作区文件树"
-                  data-test="tab-filetree"
-                  @click="selectPreviewTab(FILE_TREE_TAB_KEY)"
-                >
-                  <svg class="filetree-tab-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
-                    <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
-                  </svg>
-                  <span class="file-tab-name">工作区文件</span>
-                </div>
-
-                <!-- Dynamic Tabs: Opened files -->
-                <div
-                  v-for="fileTab in openFileTabs"
-                  :key="fileTab.path"
-                  class="pane-tab preview-file-tab"
-                  :class="{ 'is-active': activePreviewTab === fileTab.path }"
-                  role="tab"
-                  :aria-selected="activePreviewTab === fileTab.path"
-                  :title="fileTab.path"
-                  data-test="tab-file"
-                  @click="selectPreviewTab(fileTab.path)"
-                  @mousedown.middle.prevent="closeFileTab(fileTab.path, $event)"
-                >
-                  <span class="file-tab-name">{{ fileTab.name }}</span>
-                  <span
-                    v-if="fileTab.mode === 'diff'"
-                    class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
-                  >
-                    Diff
-                  </span>
-                  <button
-                    type="button"
-                    class="tab-close-icon"
-                    title="关闭标签"
-                    aria-label="关闭标签"
-                    data-test="close-file-tab"
-                    @click="closeFileTab(fileTab.path, $event)"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-
-              <div class="head-actions">
-                <button
-                  type="button"
-                  class="head-action-icon-btn preview-head-close"
-                  data-test="close-preview-pane-btn"
-                  title="收起工作区面板"
-                  aria-label="收起工作区面板"
-                  @click="setPreviewCollapsed(true)"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-            </header>
-
-            <div class="workspace-pane-body">
-              <!-- When active tab is the file tree -->
-              <div
-                v-show="activePreviewTab === FILE_TREE_TAB_KEY"
-                id="session-filetree-drawer"
-                class="filetree-pane-view"
-                data-test="filetree-drawer"
-              >
-                <FileSidebar
-                  :project-id="props.projectId"
-                  :session-id="props.sessionId"
-                  :worktree-id="activeWorktreeId"
-                  :active-path="activePreviewTab"
-                  @select="onSelectWorkspaceFile"
-                  @branch-changed="onFileTreeBranchChanged"
-                />
-              </div>
-
-              <!-- When active tab is a file viewer -->
-              <div
-                v-show="activePreviewTab !== FILE_TREE_TAB_KEY && currentActivePreviewFile"
-                class="preview-file-viewer"
-              >
-                <FileViewer
-                  :project-id="props.projectId"
-                  :worktree-id="activeWorktreeId"
-                  :active-path="activePreviewTab"
-                  :hide-tabs="true"
-                  :mode="currentActivePreviewFile?.mode || 'view'"
-                  :commit-ref="currentActivePreviewFile?.commitRef"
-                  :commit-message="currentActivePreviewFile?.commitMessage"
-                  @select="openFileInPreview"
-                />
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <!-- Collapsed edge toggle button (pure icon, zero layout jitter, accessible in panel) -->
-        <button
-          v-if="!props.hideSideRail && previewCollapsed"
-          type="button"
-          class="workspace-collapsed-edge-btn"
-          data-test="toggle-preview-btn"
-          title="展开预览面板"
-          aria-label="展开预览面板"
-          :aria-pressed="!previewCollapsed ? 'true' : 'false'"
-          @click="setPreviewCollapsed(false)"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
+        <WorkspacePreviewPane
+          :project-id="props.projectId"
+          :session-id="props.sessionId"
+          :worktree-id="activeWorktreeId"
+          :hide-side-rail="props.hideSideRail"
+          :preview-collapsed="previewCollapsed"
+          :preview-width="previewWidth"
+          :is-preview-resizing="isPreviewResizing"
+          :active-preview-tab="activePreviewTab"
+          :open-file-tabs="openFileTabs"
+          :current-active-preview-file="currentActivePreviewFile"
+          :file-tree-tab-key="FILE_TREE_TAB_KEY"
+          @collapse="setPreviewCollapsed"
+          @resizer-mousedown="onPreviewResizerMouseDown"
+          @select-tab="selectPreviewTab"
+          @close-tab="closeFileTab"
+          @select-workspace-file="onSelectWorkspaceFile"
+          @branch-changed="onFileTreeBranchChanged"
+          @open-file-preview="openFileInPreview"
+        />
       </div>
 
       <!-- Delete Session Confirmation Dialog (Unified with UiDialog) -->
@@ -1618,434 +1443,6 @@ async function removeSession() {
   transition: width 0.18s ease-out;
 }
 
-.preview-pane.has-floating-filetree {
-  /* Lift preview pane above the external filetree backdrop (z-index: 35)
-     so the floating file tree drawer is fully interactive and never covered by backdrop */
-  z-index: 40;
-}
-
-.unified-workspace-pane {
-  height: 100%;
-}
-
-.workspace-tabbed-pane {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0%;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-}
-
-.workspace-pane-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-}
-
-.filetree-pane-view {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-}
-
-.filetree-permanent-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.filetree-tab-icon {
-  flex-shrink: 0;
-  opacity: 0.8;
-}
-
-.head-action-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
-}
-
-.head-action-icon-btn:hover {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-.head-action-icon-btn.is-active {
-  color: var(--color-accent);
-  background: var(--color-accent-soft);
-}
-
-.workspace-collapsed-edge-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 48px;
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  border: 1px solid var(--color-border);
-  border-right: none;
-  border-radius: 4px 0 0 4px;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  z-index: 15;
-  transition: width 0.12s ease-out, background-color 0.12s ease-out, color 0.12s ease-out;
-}
-
-.workspace-collapsed-edge-btn:hover {
-  width: 18px;
-  color: var(--color-accent);
-  background: var(--color-surface-muted);
-}
-
-.preview-pane.is-resizing {
-  transition: none !important;
-}
-
-.preview-resizer {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  cursor: col-resize;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease-out;
-}
-
-.preview-resizer:hover,
-.preview-dock-wrapper.is-resizing .preview-resizer,
-.preview-pane.is-resizing .preview-resizer {
-  background: var(--color-primary-soft);
-}
-
-.preview-resizer-line {
-  width: 2px;
-  height: 24px;
-  border-radius: 1px;
-  background: var(--color-border-strong);
-  transition: background-color 0.15s ease-out, height 0.15s ease-out;
-}
-
-.preview-resizer:hover .preview-resizer-line,
-.preview-dock-wrapper.is-resizing .preview-resizer-line,
-.preview-pane.is-resizing .preview-resizer-line {
-  background: var(--color-accent);
-  height: 36px;
-}
-
-/* Below this conversation width even the three docked columns cannot keep a
-   usable message area. The preview becomes an overlay, like the mobile layout,
-   while the rail stays reachable. The split itself is the size container, so
-   collapsing the sidebar or opening a wider window restores the docked view. */
-@container (max-width: 900px) {
-  .preview-dock-wrapper {
-    position: absolute;
-    top: 0;
-    right: var(--chat-rail-offset);
-    bottom: 0;
-    width: min(32rem, 86%) !important;
-    max-width: 86%;
-    z-index: 25;
-    animation: activitySlideIn 0.18s ease-out;
-  }
-
-  .preview-pane {
-    position: absolute;
-    top: 0;
-    /* Keep the rail visible and clickable above the overlay. */
-    right: var(--chat-rail-offset);
-    bottom: 0;
-    width: min(32rem, 86%) !important;
-    max-width: 86%;
-    z-index: 25;
-    border-left: 1px solid var(--color-border-strong);
-    animation: activitySlideIn 0.18s ease-out;
-  }
-
-  /* With both panes docked, the preview overlays the messages only; keep the
-     file tree on screen and stop the preview from covering it. */
-  .conversation-split.filetree-docked:not(.preview-collapsed) .filetree-drawer.filetree-docked {
-    flex-basis: var(--chat-filetree-min);
-  }
-
-  .preview-resizer {
-    display: none;
-  }
-}
-
-@keyframes activitySlideIn {
-  from {
-    transform: translateX(12px);
-    opacity: 0.8;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-muted, #f8fafc);
-  flex-shrink: 0;
-}
-
-.preview-tabs-list {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  overflow-x: auto;
-  flex: 1;
-  min-width: 0;
-  scrollbar-width: thin;
-}
-
-.preview-tabs-list::-webkit-scrollbar {
-  height: 3px;
-}
-
-.pane-tab {
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding: 4px 8px;
-  border-radius: 0;
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.pane-tab:hover {
-  color: var(--color-text);
-  background: transparent;
-}
-
-.pane-tab.is-active {
-  background: transparent;
-  color: var(--color-text);
-  border-bottom-color: var(--color-accent);
-  font-weight: 600;
-}
-
-.preview-file-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  max-width: 160px;
-}
-
-.file-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-close-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-  margin-left: 2px;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out;
-}
-
-.tab-close-icon:hover {
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-}
-
-.preview-content {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-}
-
-.activity-pane-view {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-}
-
-.preview-file-viewer {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-/* Third Column: File Tree Drawer */
-.filetree-backdrop {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.28);
-  z-index: 35;
-  animation: backdropFadeIn 0.15s ease-out;
-}
-
-@keyframes backdropFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.filetree-drawer {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
-  overflow: hidden;
-}
-
-.filetree-drawer.filetree-docked {
-  /* Shrink before the message column becomes unusable when both panes are open. */
-  flex: 0 1 260px;
-  min-width: var(--chat-filetree-min);
-  max-width: 320px;
-  height: 100%;
-  position: relative;
-  z-index: 5;
-}
-
-.filetree-drawer.filetree-floating {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 290px;
-  z-index: 50;
-  border-radius: 4px 0 0 4px;
-  border-left: 1px solid var(--color-border-strong);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.12);
-  animation: drawerSlideIn 0.18s ease-out;
-}
-
-@keyframes drawerSlideIn {
-  from {
-    transform: translateX(100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-
-.filetree-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.65rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-muted, #f8fafc);
-  flex-shrink: 0;
-}
-
-.filetree-title {
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.filetree-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.filetree-controls .dock-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out;
-}
-
-.filetree-controls .dock-btn:hover {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-.filetree-controls .pin-btn.pinned {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft, #e8effd);
-}
-
-.filetree-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
-
 /* Header */
 .activity-title {
   margin: 0;
@@ -2117,84 +1514,6 @@ async function removeSession() {
 .jump-latest:hover {
   border-color: var(--color-accent);
   color: var(--color-accent);
-}
-
-.chat-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
-.title-row .session-heading {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.workdir-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.workdir-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, monospace);
-}
-
-.workdir-copy {
-  flex: none;
-  padding: 0.05rem 0.45rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-
-.workdir-copy:hover {
-  color: var(--color-primary-hover);
-  border-color: var(--color-primary);
-}
-
-.delete-session {
-  padding: 0.15rem 0.55rem;
-  border: 1px solid var(--color-danger-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-danger);
-  font: inherit;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.delete-session:hover {
-  background: var(--color-danger-soft, #fee2e2);
 }
 
 .confirm-backdrop {

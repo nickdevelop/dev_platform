@@ -1015,9 +1015,9 @@ func TestStopFailureKeepsSessionActive(t *testing.T) {
 	}
 }
 
-// TestStreamSessionRequiresStreamingCapability verifies the SSE route refuses a
+// TestSubscribeSessionRequiresStreamingCapability verifies SubscribeSession refuses a
 // backend that does not declare streaming support.
-func TestStreamSessionRequiresStreamingCapability(t *testing.T) {
+func TestSubscribeSessionRequiresStreamingCapability(t *testing.T) {
 	env := newTestEnv(t)
 	env.fake.mu.Lock()
 	env.fake.caps = agents.Capabilities{SessionDiscovery: true, Stop: true}
@@ -1025,16 +1025,16 @@ func TestStreamSessionRequiresStreamingCapability(t *testing.T) {
 
 	session := createNativeSession(t, env, "native-1")
 
-	err := env.svc.StreamSession(context.Background(), env.projectID, session.ID, 0, &recordingWriter{}, nil)
+	_, err := env.svc.SubscribeSession(context.Background(), env.projectID, session.ID)
 	if !errors.Is(err, ErrUnsupportedCapability) {
-		t.Fatalf("StreamSession error = %v, want ErrUnsupportedCapability", err)
+		t.Fatalf("SubscribeSession error = %v, want ErrUnsupportedCapability", err)
 	}
 }
 
-// TestStreamSessionRevalidatesInstanceProject verifies StreamSession enforces
+// TestSubscribeSessionRevalidatesInstanceProject verifies SubscribeSession enforces
 // the instance↔project relationship even when the index row claims the project,
 // so a corrupted mapping cannot stream another project's instance.
-func TestStreamSessionRevalidatesInstanceProject(t *testing.T) {
+func TestSubscribeSessionRevalidatesInstanceProject(t *testing.T) {
 	env := newTestEnv(t)
 	otherProject := env.registerProject(t, "beta")
 	otherInstance, err := env.instances.Start(context.Background(), otherProject, agents.BackendPi)
@@ -1057,9 +1057,9 @@ func TestStreamSessionRevalidatesInstanceProject(t *testing.T) {
 		t.Fatalf("insert cross-project session: %v", err)
 	}
 
-	err = env.svc.StreamSession(context.Background(), env.projectID, row.ID, 0, &recordingWriter{}, nil)
+	_, err = env.svc.SubscribeSession(context.Background(), env.projectID, row.ID)
 	if !errors.Is(err, instances.ErrInstanceNotFound) {
-		t.Fatalf("StreamSession error = %v, want ErrInstanceNotFound", err)
+		t.Fatalf("SubscribeSession error = %v, want ErrInstanceNotFound", err)
 	}
 }
 
@@ -1145,10 +1145,10 @@ func TestBackendsReportsDeclaredCapabilities(t *testing.T) {
 	}
 }
 
-// TestHandlersServeSessionJSONAndSSE verifies the session handlers expose the
-// capability list, create sessions, map service errors to statuses, and set
-// the SSE headers for an active session.
-func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
+// TestHandlersServeSessionJSON verifies the session handlers expose the
+// capability list, create sessions, map service errors to statuses, and handle
+// messages and stopping.
+func TestHandlersServeSessionJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	env := newTestEnv(t)
 	router := gin.New()
@@ -1205,22 +1205,6 @@ func TestHandlersServeSessionJSONAndSSE(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("POST empty message = %d, want 400", rec.Code)
-	}
-
-	// The SSE route sets text/event-stream for an active session.
-	ctx, cancel := context.WithCancel(context.Background())
-	rec = httptest.NewRecorder()
-	sseReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/sessions/%s/events", env.projectID, created.Session.ID), nil).WithContext(ctx)
-	done := make(chan struct{})
-	go func() {
-		router.ServeHTTP(rec, sseReq)
-		close(done)
-	}()
-	waitForSubscriber(t, env)
-	cancel()
-	<-done
-	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
-		t.Errorf("SSE Content-Type = %q, want text/event-stream", got)
 	}
 
 	// Stopping an idle session is a session-level change and succeeds.

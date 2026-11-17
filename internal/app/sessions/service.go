@@ -4,14 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,30 +75,6 @@ var (
 	// decision to refuse rather than start something.
 	ErrServiceNotRunning = agents.ErrServiceNotRunning
 )
-
-// errSlowClient reports an SSE client that could not keep up with the event
-// stream. The stream is terminated rather than allowed to stall the instance.
-var errSlowClient = errors.New("sessions: subscriber too slow to keep up")
-
-// errEventEncode reports a normalized event that could not be encoded for the
-// SSE frame. It is a per-event failure: the event is dropped and the stream
-// continues, so one malformed payload cannot tear down a session's stream.
-var errEventEncode = errors.New("sessions: encode event")
-
-// defaultStreamBuffer bounds how many events one SSE client may fall behind by
-// before it is disconnected.
-const defaultStreamBuffer = 64
-
-// heartbeatInterval is how often an idle SSE stream emits a comment frame. It
-// keeps intermediaries and the browser connection alive when the agent is
-// silent for a long time (no data frame would otherwise be sent).
-const heartbeatInterval = 15 * time.Second
-
-// resyncFrame is the SSE frame a resumed stream writes when the replay
-// buffer cannot cover the client's gap: the client clears its log, reloads
-// history and continues with the live events that follow. It carries no id
-// because it belongs to no position in the sequence.
-const resyncFrame = "event: resync\ndata: {}\n\n"
 
 // turnSnapshotID identifies the synthetic turn frame a stream opens with. It is
 // deliberately not a real turn id: the frame restates tracked state rather than
@@ -215,9 +188,6 @@ type Service struct {
 	// service is down. Nil means no backend needs a service.
 	serviceGate ServiceGate
 
-	// streamBuffer bounds one SSE subscriber's backlog; tests may lower it.
-	streamBuffer int
-
 	// catalog describes the backends' display facts. Nil leaves the labels as
 	// raw ids and reports no service support.
 	catalog *agents.Catalog
@@ -252,7 +222,6 @@ func NewServiceWithStore(st StoreRepository, registry *agents.Registry, instance
 		instances:         instanceService,
 		newID:             randomID,
 		now:               func() time.Time { return time.Now().UTC() },
-		streamBuffer:      defaultStreamBuffer,
 		turnTracker:       turns.NewTracker(instanceService),
 		reconcileInterval: defaultReconcileInterval,
 	}
@@ -1125,264 +1094,59 @@ func (s *Service) Stop(ctx context.Context, projectID uint, sessionID string) (S
 	return s.sessionFromModel(row), nil
 }
 
-// StreamSession writes the session's normalized events to w as Server-Sent
-// Events until the stream ends, the caller's context is done, or the client
-// falls too far behind. It bounds per-client buffering: a client that cannot
-// keep up is disconnected and its subscription released, so a slow or stale
-// subscriber can never stall the instance's shared event stream.
-//
-// resumeFrom is the sequence the client saw last (the SSE Last-Event-ID):
-// when the instance's replay buffer covers the gap, the events the client
-// missed are replayed before the live ones; when it does not, the stream
-// first emits a resync frame so the client can rebuild its log from history.
-// A zero resumeFrom means the client is joining, not resuming.
-func (s *Service) StreamSession(ctx context.Context, projectID uint, sessionID string, resumeFrom uint64, w io.Writer, flush func()) error {
+// SubscribeSession subscribes to live normalized events for a session, filtered to this session.
+// The returned channel closes when ctx is done or the underlying instance stream terminates.
+func (s *Service) SubscribeSession(ctx context.Context, projectID uint, sessionID string) (<-chan agents.NormalizedEvent, error) {
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if row.Status == string(SessionStopped) {
-		return fmt.Errorf("%w: session is stopped", ErrInvalidRequest)
+		return nil, fmt.Errorf("%w: session is stopped", ErrInvalidRequest)
 	}
 	inst, err := s.scopedInstance(projectID, row.InstanceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !instanceRunnable(inst) {
-		return fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
+		return nil, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
 	}
 	if !s.capabilities(inst.Backend).Streaming {
-		return fmt.Errorf("%w: streaming", ErrUnsupportedCapability)
+		return nil, fmt.Errorf("%w: streaming", ErrUnsupportedCapability)
 	}
 
-	subCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	events, err := s.instances.Subscribe(subCtx, row.InstanceID)
+	rawEvents, err := s.instances.Subscribe(ctx, row.InstanceID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Replaying from the buffer after the live subscription is established is
-	// what makes the resume gapless: an event published concurrently with this
-	// stream is either already buffered (and written below) or arrives on the
-	// channel, and the watermark drops the ones that land in both.
-	watermark := uint64(0)
-	if resumeFrom > 0 {
-		replay, covered := s.instances.ReplaySince(row.InstanceID, resumeFrom)
-		if !covered {
-			// The client's position was evicted or predates the current
-			// stream: a partial tail would render as a silently truncated
-			// transcript, so the client rebuilds from history instead, and
-			// live events flow unfiltered from here on.
-			if _, err := io.WriteString(w, resyncFrame); err != nil {
-				cancel()
-				return err
-			}
-			if flush != nil {
-				flush()
-			}
-		} else {
-			watermark = resumeFrom
-			for _, ev := range replay {
-				if !matchesSession(row, ev) {
-					continue
-				}
-				if ev.SessionID != "" {
-					ev.SessionID = row.ID
-				}
-				if err := ev.Validate(); err != nil {
-					// A buffered event cannot be newer than its live
-					// original, but it went through the same gate then, so
-					// a malformed one never belonged on the wire either.
-					continue
-				}
-				if err := writeEvent(w, ev); err != nil {
-					if errors.Is(err, errEventEncode) {
-						continue
-					}
-					cancel()
-					return err
-				}
-				if flush != nil {
-					flush()
-				}
-			}
-		}
-	}
-
-	// The snapshot is written after the replay and before the live queue
-	// drains, so it is the authoritative pending set at the join point: a
-	// request that settled inside the replayed gap is already gone from it.
-	ref := agents.SessionRef{
-		InstanceID: row.InstanceID,
-		Backend:    agents.BackendID(row.Backend),
-		SessionID:  row.NativeSessionID,
-		Title:      row.Title,
-	}
-	if err := s.writeInteractionSnapshot(subCtx, ref, w, flush); err != nil {
-		cancel()
-		return err
-	}
-	s.alignTurnState(subCtx, agents.BackendID(row.Backend), ref)
-
-	// The stream opens with the session's turn state, seeded as the queue's first
-	// item. A turn boundary is published on the instance stream while the agent
-	// runs, so a client that subscribes after the turn ended would never see the
-	// closing frame: the state it last read (the REST DTO at open time) would
-	// keep saying "running" with nothing left to correct it. Restating the
-	// tracked state here gives the joining client the same answer the DTO would
-	// report now, in stream order. It goes through the queue rather than being
-	// written here so a wedged client meets the same policy as any other event.
-	type streamItem struct {
-		event agents.NormalizedEvent
-		// join marks the state frame a stream opens with: it belongs to no
-		// position in the sequence, so it is written without an SSE id.
-		join bool
-	}
-	queue := make(chan streamItem, s.streamBuffer)
-	queue <- streamItem{event: s.turnSnapshotEvent(row), join: true}
-	var slow atomic.Bool
+	out := make(chan agents.NormalizedEvent, 64)
 	go func() {
-		defer close(queue)
+		defer close(out)
 		for {
 			select {
-			case <-subCtx.Done():
+			case <-ctx.Done():
 				return
-			case ev, ok := <-events:
+			case ev, ok := <-rawEvents:
 				if !ok {
 					return
 				}
 				if !matchesSession(row, ev) {
 					continue
 				}
-				if watermark > 0 && ev.Sequence <= watermark {
-					// Already written from the replay buffer.
-					continue
-				}
 				if ev.SessionID != "" {
 					ev.SessionID = row.ID
 				}
-				if err := ev.Validate(); err != nil {
-					// Never forward a malformed normalized event.
-					continue
-				}
 				select {
-				case queue <- streamItem{event: ev}:
-				case <-subCtx.Done():
-					return
-				default:
-					// The client is not draining the queue: disconnect it
-					// and release the instance subscription so the shared
-					// stream is never held up.
-					slow.Store(true)
-					cancel()
+				case out <- ev:
+				case <-ctx.Done():
 					return
 				}
 			}
 		}
 	}()
 
-	heartbeat := time.NewTicker(heartbeatInterval)
-	defer heartbeat.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-heartbeat.C:
-			// A comment frame keeps an idle stream alive without being a
-			// data event; SSE clients ignore it.
-			if _, err := io.WriteString(w, ": keep-alive\n\n"); err != nil {
-				cancel()
-				return err
-			}
-			if flush != nil {
-				flush()
-			}
-		case item, ok := <-queue:
-			if !ok {
-				if slow.Load() {
-					return errSlowClient
-				}
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				s.markDisconnected(row)
-				return nil
-			}
-			var err error
-			if item.join {
-				err = writeFrame(w, item.event)
-			} else {
-				err = writeEvent(w, item.event)
-			}
-			if err != nil {
-				if errors.Is(err, errEventEncode) {
-					// A single unencodable event (for example a backend raw
-					// body that is not valid JSON) is dropped rather than
-					// tearing down the stream.
-					continue
-				}
-				cancel()
-				return err
-			}
-			if flush != nil {
-				flush()
-			}
-		}
-	}
-}
-
-// writeEvent frames one normalized event as an SSE id/event/data block.
-func writeEvent(w io.Writer, ev agents.NormalizedEvent) error {
-	payload, err := json.Marshal(ev)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errEventEncode, err)
-	}
-	if _, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", ev.Sequence, ev.Type, payload); err != nil {
-		return fmt.Errorf("sessions: write event: %w", err)
-	}
-	return nil
-}
-
-// writeFrame writes an event as an SSE event/data block with no id line: the
-// frame belongs to no position in the event sequence. The frames written at a
-// stream's join point use it, so a client never adopts a resume position it did
-// not actually reach.
-func writeFrame(w io.Writer, ev agents.NormalizedEvent) error {
-	payload, err := json.Marshal(ev)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errEventEncode, err)
-	}
-	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Type, payload); err != nil {
-		return fmt.Errorf("sessions: write frame: %w", err)
-	}
-	return nil
-}
-
-// turnSnapshotEvent is the session's turn state at a join point, framed as a
-// turn boundary so the client's existing turn handling consumes it: "started"
-// while the agent is working, "ended" once it is not. The ending's outcome is
-// not knowable here and is not read from this frame, but a valid turn payload
-// names one.
-func (s *Service) turnSnapshotEvent(row database.AgentSession) agents.NormalizedEvent {
-	phase := agents.TurnEnded
-	outcome := agents.TurnCompleted
-	if s.turnTracker.Of(agents.BackendID(row.Backend), row.NativeSessionID) == TurnRunning {
-		phase = agents.TurnStarted
-		outcome = ""
-	}
-	return agents.NormalizedEvent{
-		InstanceID: row.InstanceID,
-		SessionID:  row.ID,
-		Backend:    agents.BackendID(row.Backend),
-		Timestamp:  s.now(),
-		Type:       agents.EventTurn,
-		Turn: &agents.TurnPayload{
-			ID:      turnSnapshotID,
-			Phase:   phase,
-			Outcome: outcome,
-		},
-	}
+	return out, nil
 }
 
 // alignTurnState ensures the tracker aligns with the live agent backend state when opened.
