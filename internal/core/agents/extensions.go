@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 // ErrReplyExpired reports a permission or form reply whose target is already
@@ -132,4 +133,36 @@ func (r HistoryImageRequest) Validate() error {
 // images (pi, deepseek) do not have to implement it.
 type HistoryImageReader interface {
 	ReadHistoryImage(ctx context.Context, request HistoryImageRequest) (ImageAttachment, error)
+}
+
+// UsageBucket reports quota or usage in one tracking window (e.g. weekly or 5h).
+type UsageBucket struct {
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	Description       string  `json:"description,omitempty"`
+	Window            string  `json:"window,omitempty"`
+	RemainingFraction float64 `json:"remainingFraction"`
+	ResetTime         string  `json:"resetTime,omitempty"`
+}
+
+// UsageGroup groups several buckets sharing a quota pool.
+type UsageGroup struct {
+	Name        string        `json:"name"`
+	Description string        `json:"description,omitempty"`
+	Buckets     []UsageBucket `json:"buckets"`
+}
+
+// UsageReport is the normalized quota and usage outcome for an agent backend.
+type UsageReport struct {
+	Backend     BackendID    `json:"backend"`
+	Description string       `json:"description,omitempty"`
+	Groups      []UsageGroup `json:"groups,omitempty"`
+	RawOutput   string       `json:"rawOutput,omitempty"`
+	UpdatedAt   time.Time    `json:"updatedAt"`
+}
+
+// UsageReporter is the optional extension for agent backends that can report
+// quota and usage statistics (e.g. agy's /usage output).
+type UsageReporter interface {
+	GetUsage(ctx context.Context) (*UsageReport, error)
 }

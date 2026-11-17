@@ -154,6 +154,37 @@ export interface AgentModelList {
   updatedAt: string | null
 }
 
+// Mirrors #/components/schemas/AgentUsageBucket.
+export interface UsageBucket {
+  id: string
+  name: string
+  description?: string
+  window?: string
+  remainingFraction: number
+  resetTime?: string
+}
+
+// Mirrors #/components/schemas/AgentUsageGroup.
+export interface UsageGroup {
+  name: string
+  description?: string
+  buckets: UsageBucket[]
+}
+
+// Mirrors #/components/schemas/AgentUsageReport.
+export interface AgentUsageReport {
+  backend: BackendId
+  description?: string
+  groups?: UsageGroup[]
+  rawOutput?: string
+  updatedAt: string
+}
+
+// GET /api/agent-backends/{backend}/usage
+export function getAgentUsage(backend: BackendId): Promise<AgentUsageReport> {
+  return get<AgentUsageReport>(`/agent-backends/${encodeURIComponent(backend)}/usage`)
+}
+
 // GET /api/agent-backends
 export function listAgentBackends(): Promise<AgentBackendList> {
   return get<AgentBackendList>('/agent-backends')

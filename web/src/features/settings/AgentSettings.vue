@@ -21,6 +21,7 @@ import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 import BackendIcon from '../../shared/components/BackendIcon.vue'
 import BuiltinDataPanel from './BuiltinDataPanel.vue'
+import AgentUsagePanel from './AgentUsagePanel.vue'
 import { rememberModels } from '../../shared/modelCache'
 import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
 
@@ -796,6 +797,9 @@ function cancelStop() {
 
       <!-- Session data management (platform-persisted transcripts) -->
       <BuiltinDataPanel v-if="agent.sessionDataOwner" :backend="agent.backend" />
+
+      <!-- Agent usage and quota statistics -->
+      <AgentUsagePanel v-if="agent.supportsUsage" :backend="agent.backend" />
 
       <!-- Agent available models catalog -->
       <div

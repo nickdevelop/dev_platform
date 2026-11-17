@@ -21,6 +21,7 @@ import (
 	"devplatform/internal/app/agentdata"
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
+	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/database"
@@ -374,6 +375,7 @@ func runServer(args []string) error {
 	// service is built from the project service, so the link is set here.
 	projectService.SetInstanceStopper(instanceService)
 	agentModels := agentmodels.NewService(db, registry)
+	agentUsage := agentusage.NewService(registry)
 	// Machine-level agent services are controlled here, not by the instance
 	// service. The session layer refuses new instances while a service is down.
 	agentServices := agentservices.NewService(registry)
@@ -466,6 +468,7 @@ func runServer(args []string) error {
 		Instances:     instanceService,
 		AgentServices: agentServices,
 		AgentModels:   agentModels,
+		AgentUsage:    agentUsage,
 		Sessions:      sessionService,
 		Tasks:         taskService,
 		Prompts:       promptService,

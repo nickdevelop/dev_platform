@@ -19,6 +19,7 @@ var Descriptor = agents.BackendDescriptor{
 	Color:            "#4285F4",
 	Tone:             "info",
 	PermissionModes:  []string{PermissionModeConfirm, PermissionModeAuto},
+	SupportsUsage:    true,
 }
 
 // Permission modes for agy.

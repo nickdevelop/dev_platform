@@ -9,6 +9,7 @@ import (
 	"devplatform/internal/app/agentdata"
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
+	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
@@ -79,6 +80,10 @@ type Dependencies struct {
 	// backends. When set together with Auth, the model routes are served under
 	// /api/agent-backends/{backend}/models behind RequireSession.
 	AgentModels *agentmodels.Service
+	// AgentUsage queries quota and usage information from agent backends.
+	// When set together with Auth, the usage routes are served under
+	// /api/agent-backends/{backend}/usage behind RequireSession.
+	AgentUsage *agentusage.Service
 	// Sessions manages the platform session index, native-session discovery
 	// and the normalized SSE stream. When set together with Auth, the session
 	// routes are served under /api/projects/{id}/sessions behind
@@ -171,6 +176,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.AgentModels != nil {
 			deps.AgentModels.RegisterRoutes(protected)
+		}
+		if deps.AgentUsage != nil {
+			deps.AgentUsage.RegisterRoutes(protected)
 		}
 		if deps.Sessions != nil {
 			// Session create/send turns may carry the same attached images as

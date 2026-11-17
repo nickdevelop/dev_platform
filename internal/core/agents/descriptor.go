@@ -64,6 +64,9 @@ type BackendDescriptor struct {
 	// transcripts in the platform database, so the settings UI exposes a
 	// session data management panel for it (list and delete).
 	OwnsSessionData bool
+	// SupportsUsage reports whether the backend supports querying quota and
+	// usage statistics (e.g. via an implementation of UsageReporter).
+	SupportsUsage bool
 	// PermissionModes lists the tool permission modes a backend supports
 	// when the operator can choose how tool calls are approved (for example
 	// builtin's "confirm" and "auto"). Empty means the backend has no

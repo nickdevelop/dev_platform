@@ -66,6 +66,8 @@ export interface AgentDto {
   // sessionDataOwner marks a backend whose transcript the platform persists,
   // so the settings center offers its session data management.
   sessionDataOwner?: boolean
+  // supportsUsage marks a backend that supports querying quota and usage statistics.
+  supportsUsage?: boolean
 }
 
 export interface AgentList {

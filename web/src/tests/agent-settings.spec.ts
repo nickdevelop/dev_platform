@@ -584,4 +584,67 @@ describe('AgentSettings service block', () => {
     expect(putCall).toBeDefined()
     expect(putCall?.body).toMatchObject({ steps: -1 })
   })
+
+  it('renders usage panel and refreshes usage when supportsUsage is true', async () => {
+    const usageReport = {
+      backend: 'pi',
+      description: 'Quota is consumed proportionally.',
+      groups: [
+        {
+          name: 'Gemini Models',
+          description: 'Gemini 3.8 Flash',
+          buckets: [
+            {
+              id: 'gemini-weekly',
+              name: 'Weekly Limit Remaining',
+              remainingFraction: 0.81,
+              resetTime: '2026-11-21T01:13:16Z',
+            },
+          ],
+        },
+      ],
+      rawOutput: 'Gemini Models 81%',
+      updatedAt: '2026-11-17T02:35:12Z',
+    }
+
+    const calls = stubFetch({
+      'GET /agent-backends/pi/usage': usageReport,
+    })
+
+    // Pi agent has supportsUsage: true
+    const agentsResp = {
+      agents: [
+        { backend: 'pi', enabled: true, path: '/usr/local/bin/pi', pathSource: 'auto', available: true, version: '1.1.0', supportsUsage: true },
+      ],
+    }
+    // Override GET /agents
+    const origFetch = global.fetch
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input).replace('/api', '')
+      const method = init?.method ?? 'GET'
+      if (`${method} ${path}` === 'GET /agents') {
+        return { status: 200, json: async () => agentsResp } as Response
+      }
+      return origFetch(input, init)
+    }))
+
+    const wrapper = await mountView()
+    await wrapper.find('[data-test="agent-tab-pi"]').trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.find('[data-test="agent-usage-panel-pi"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('使用量与配额查询')
+    expect(panel.text()).toContain('Gemini Models')
+    expect(panel.text()).toContain('剩余 81%')
+
+    // Click refresh button
+    const refreshBtn = panel.find('[data-test="refresh-usage-btn"]')
+    expect(refreshBtn.exists()).toBe(true)
+    await refreshBtn.trigger('click')
+    await flushPromises()
+
+    const usageCalls = calls.filter((c) => c.method === 'GET' && c.path === '/agent-backends/pi/usage')
+    expect(usageCalls.length).toBeGreaterThanOrEqual(1)
+  })
 })

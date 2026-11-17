@@ -42,6 +42,8 @@ type agentDTO struct {
 	// SessionDataOwner reports a platform-persisted transcript, so the
 	// settings UI shows the session data management panel.
 	SessionDataOwner bool `json:"sessionDataOwner"`
+	// SupportsUsage reports whether the backend supports querying usage and quota statistics.
+	SupportsUsage bool `json:"supportsUsage"`
 }
 
 type agentListResponse struct {
@@ -284,6 +286,7 @@ func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agent
 		DefaultMaxTurnSteps: descriptor.DefaultMaxTurnSteps,
 		Embedded:            descriptor.Embedded,
 		SessionDataOwner:    descriptor.OwnsSessionData,
+		SupportsUsage:       descriptor.SupportsUsage,
 	}
 }
 

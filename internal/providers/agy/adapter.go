@@ -56,6 +56,8 @@ type Options struct {
 	NewID func() (string, error)
 	// ListModelsOverride overrides `agy models` execution for testing.
 	ListModelsOverride func(ctx context.Context, directory string) ([]agents.ModelInfo, error)
+	// GetUsageOverride overrides `agy -p /usage` execution for testing.
+	GetUsageOverride func(ctx context.Context) (*agents.UsageReport, error)
 }
 
 // Adapter implements agents.AgentAdapter for Google Antigravity CLI via ACP.
@@ -71,8 +73,10 @@ type Adapter struct {
 	now                func() time.Time
 	newID              func() (string, error)
 	listModelsOverride func(ctx context.Context, directory string) ([]agents.ModelInfo, error)
+	getUsageOverride   func(ctx context.Context) (*agents.UsageReport, error)
 
 	mu        sync.Mutex
+	usageMu   sync.Mutex
 	instances map[string]*instance
 	sessions  map[sessionKey]*sessionState
 }
@@ -100,6 +104,7 @@ func New(options Options) *Adapter {
 		startTimeout:       options.StartTimeout,
 		now:                options.Now,
 		listModelsOverride: options.ListModelsOverride,
+		getUsageOverride:   options.GetUsageOverride,
 		instances:          make(map[string]*instance),
 		sessions:           make(map[sessionKey]*sessionState),
 	}

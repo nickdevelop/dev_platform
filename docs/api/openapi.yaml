@@ -1587,6 +1587,33 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /agent-backends/{backend}/usage:
+    get:
+      summary: Query usage and quota statistics for an agent backend
+      description: >-
+        Returns quota, rate limits and usage statistics for the agent backend.
+      operationId: getAgentBackendUsage
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+      responses:
+        '200':
+          description: The usage and quota report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentUsageReport'
+        '400':
+          description: Unknown backend or unsupported capability.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /agent-backends:
     get:
       summary: List agent backends and their capabilities
@@ -6404,6 +6431,61 @@ components:
             When the snapshot was last written by a successful refresh. Null
             means the backend has never been refreshed. An empty models array
             with a non-null timestamp means the backend reported no models.
+      additionalProperties: false
+    AgentUsageBucket:
+      type: object
+      required:
+        - id
+        - name
+        - remainingFraction
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        window:
+          type: string
+        remainingFraction:
+          type: number
+        resetTime:
+          type: string
+      additionalProperties: false
+    AgentUsageGroup:
+      type: object
+      required:
+        - name
+        - buckets
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentUsageBucket'
+      additionalProperties: false
+    AgentUsageReport:
+      type: object
+      required:
+        - backend
+        - updatedAt
+      properties:
+        backend:
+          type: string
+        description:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentUsageGroup'
+        rawOutput:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
       additionalProperties: false
     CreateAgentSessionRequest:
       type: object

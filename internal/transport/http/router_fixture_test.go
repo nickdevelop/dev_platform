@@ -14,6 +14,7 @@ import (
 
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
+	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
@@ -75,6 +76,7 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Instances:     instSvc,
 		AgentServices: agentservices.NewService(nil),
 		AgentModels:   agentmodels.NewService(db, registry),
+		AgentUsage:    agentusage.NewService(registry),
 		Sessions:      sessionSvc,
 		Tasks:         tasksSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
