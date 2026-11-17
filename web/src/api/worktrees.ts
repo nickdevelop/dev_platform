@@ -20,8 +20,9 @@ interface WorktreeListResponse {
 }
 
 export interface CreateWorktreeBody {
-  branch: string
+  branch?: string
   baseBranch?: string
+  commit?: string
   path?: string
 }
 

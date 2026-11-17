@@ -25,6 +25,10 @@ var (
 	// ErrWorktreeDirty reports that a worktree still has uncommitted or
 	// untracked changes, so removing it would discard work.
 	ErrWorktreeDirty = errors.New("projects: worktree has uncommitted changes")
+	// ErrInvalidCommitRef reports that a commit reference is malformed or invalid.
+	ErrInvalidCommitRef = errors.New("projects: invalid commit reference")
+	// ErrCommitNotFound reports that the requested commit was not found in the repository.
+	ErrCommitNotFound = errors.New("projects: commit not found")
 )
 
 // Worktree is the JSON-stable representation of one platform-managed git
@@ -44,9 +48,13 @@ type Worktree struct {
 // CreateWorktreeInput is the validated request for creating one worktree.
 type CreateWorktreeInput struct {
 	// Branch is the new branch checked out in the worktree.
+	// When empty and Commit is provided, defaults to wt-<short-commit>.
 	Branch string `json:"branch"`
 	// BaseBranch is the branch the new branch starts from. Empty means HEAD.
 	BaseBranch string `json:"baseBranch,omitempty"`
+	// Commit is an explicit commit ID or ref to create the worktree from.
+	// Takes precedence over BaseBranch when provided.
+	Commit string `json:"commit,omitempty"`
 	// Path optionally overrides the default sibling directory. Empty means
 	// <project parent>/<repo>-worktrees/<branch slug>.
 	Path string `json:"path,omitempty"`
@@ -86,18 +94,92 @@ func (s *Service) CreateWorktree(ctx context.Context, projectID uint, input Crea
 		return Worktree{}, err
 	}
 
-	branch := strings.TrimSpace(input.Branch)
-	if !validateBranchName(branch) {
-		return Worktree{}, ErrInvalidBranchName
+	var startPoint string
+	var recordBase string
+
+	commitInput := strings.TrimSpace(input.Commit)
+	baseBranchInput := strings.TrimSpace(input.BaseBranch)
+
+	if commitInput != "" {
+		if !isValidCommitRef(commitInput) {
+			return Worktree{}, ErrInvalidCommitRef
+		}
+		fullHash, err := gitOutput(ctx, row.Path, "rev-parse", "--verify", commitInput+"^{commit}")
+		if err != nil || fullHash == "" {
+			return Worktree{}, fmt.Errorf("%w: %q", ErrCommitNotFound, commitInput)
+		}
+		shortHash, err := gitOutput(ctx, row.Path, "rev-parse", "--short", fullHash)
+		if err != nil || shortHash == "" {
+			shortHash = fullHash
+			if len(shortHash) > 7 {
+				shortHash = shortHash[:7]
+			}
+		}
+		startPoint = fullHash
+		recordBase = shortHash
+	} else if baseBranchInput != "" {
+		if isValidCommitRef(baseBranchInput) {
+			if fullHash, err := gitOutput(ctx, row.Path, "rev-parse", "--verify", baseBranchInput+"^{commit}"); err == nil && fullHash != "" {
+				isBranch := false
+				if localBranches, err := s.ListBranches(ctx, projectID); err == nil && localBranches != nil {
+					for _, b := range localBranches.Branches {
+						if b == baseBranchInput {
+							isBranch = true
+							break
+						}
+					}
+				}
+				if !isBranch {
+					shortHash, err := gitOutput(ctx, row.Path, "rev-parse", "--short", fullHash)
+					if err != nil || shortHash == "" {
+						shortHash = fullHash
+						if len(shortHash) > 7 {
+							shortHash = shortHash[:7]
+						}
+					}
+					startPoint = fullHash
+					recordBase = shortHash
+				}
+			}
+		}
+		if startPoint == "" {
+			if baseBranchInput != "HEAD" && !validateBranchName(baseBranchInput) {
+				return Worktree{}, ErrInvalidBranchName
+			}
+			startPoint = baseBranchInput
+			recordBase = baseBranchInput
+		}
+	} else {
+		currentHead, err := gitOutput(ctx, row.Path, "rev-parse", "--abbrev-ref", "HEAD")
+		if err != nil || currentHead == "" || currentHead == "HEAD" {
+			currentHead = "HEAD"
+		}
+		startPoint = currentHead
+		recordBase = currentHead
 	}
 
-	baseBranch := strings.TrimSpace(input.BaseBranch)
-	if baseBranch == "" {
-		baseBranch, err = gitOutput(ctx, row.Path, "rev-parse", "--abbrev-ref", "HEAD")
-		if err != nil || baseBranch == "" || baseBranch == "HEAD" {
-			baseBranch = "HEAD"
+	branch := strings.TrimSpace(input.Branch)
+	if branch == "" {
+		if recordBase != "" && recordBase != "HEAD" {
+			candidate := "wt-" + recordBase
+			existingList, _ := s.repo.ListWorktrees(projectID)
+			usedBranches := make(map[string]bool)
+			for _, wt := range existingList {
+				usedBranches[wt.Branch] = true
+			}
+			branch = candidate
+			if usedBranches[branch] {
+				for i := 1; i <= 100; i++ {
+					alt := fmt.Sprintf("%s-%d", candidate, i)
+					if !usedBranches[alt] {
+						branch = alt
+						break
+					}
+				}
+			}
 		}
-	} else if baseBranch != "HEAD" && !validateBranchName(baseBranch) {
+	}
+	if !validateBranchName(branch) {
 		return Worktree{}, ErrInvalidBranchName
 	}
 
@@ -115,7 +197,7 @@ func (s *Service) CreateWorktree(ctx context.Context, projectID uint, input Crea
 		return Worktree{}, fmt.Errorf("projects: inspect worktree target %q: %w", target, err)
 	}
 
-	if _, err := gitRun(ctx, row.Path, "worktree", "add", "-b", branch, target, baseBranch); err != nil {
+	if _, err := gitRun(ctx, row.Path, "worktree", "add", "-b", branch, target, startPoint); err != nil {
 		// git may have created the target before failing; it did not exist
 		// before this call, so removing it cannot discard user data.
 		_ = os.RemoveAll(target)
@@ -126,7 +208,7 @@ func (s *Service) CreateWorktree(ctx context.Context, projectID uint, input Crea
 		ProjectID:  projectID,
 		Path:       target,
 		Branch:     branch,
-		BaseBranch: baseBranch,
+		BaseBranch: recordBase,
 	})
 	if err != nil {
 		// The record is the platform's source of truth; compensate so a

@@ -7,7 +7,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { describeApiError, UnauthorizedError } from '../../api/client'
 import { updateProjectName, type Project } from '../../api/projects'
 import { getProjectGitInfo, type GitInfo } from '../../api/git'
-import { getGitBranches } from '../../api/files'
+import { getGitBranches, getGitCommits, type GitCommitItem } from '../../api/files'
 import { useProjectsStore } from '../../stores/projects'
 import { useWorktreesStore } from '../../stores/worktrees'
 import { UiAlert, UiButton, UiDialog, UiInput, UiSelectMenu, type SelectMenuItem } from '../../shared/ui'
@@ -31,9 +31,13 @@ const gitLoading = ref(false)
 const gitError = ref('')
 const branches = ref<string[]>([])
 const currentBranch = ref('')
+const commits = ref<GitCommitItem[]>([])
 
+const baseType = ref<'branch' | 'commit'>('branch')
 const branchInput = ref('')
 const baseBranch = ref('')
+const commitInput = ref('')
+const selectedRecentCommit = ref('')
 const pathInput = ref('')
 const creating = ref(false)
 const createError = ref('')
@@ -79,18 +83,21 @@ async function loadGitDetails(force = false) {
     gitInfo.value = null
     branches.value = []
     currentBranch.value = ''
+    commits.value = []
     return
   }
   gitLoading.value = true
   gitError.value = ''
   try {
-    const [info, result] = await Promise.all([
+    const [info, result, commitList] = await Promise.all([
       getProjectGitInfo(props.projectId).catch(() => null),
       getGitBranches(props.projectId).catch(() => ({ branches: [], current: '' })),
+      getGitCommits(props.projectId, 20).catch(() => []),
     ])
     gitInfo.value = info
     branches.value = result.branches ?? []
     currentBranch.value = result.current || info?.branch || ''
+    commits.value = commitList
     if (!baseBranch.value || !branches.value.includes(baseBranch.value)) {
       baseBranch.value = currentBranch.value
     }
@@ -102,6 +109,23 @@ async function loadGitDetails(force = false) {
   }
   await worktrees.load(props.projectId, force)
 }
+
+function onSelectRecentCommit(hash: string) {
+  if (!hash) return
+  commitInput.value = hash
+  const short = hash.slice(0, 7)
+  if (!branchInput.value.trim() || branchInput.value.startsWith('wt-')) {
+    branchInput.value = `wt-${short}`
+  }
+}
+
+const canCreate = computed(() => {
+  if (creating.value) return false
+  if (baseType.value === 'commit') {
+    return Boolean(commitInput.value.trim() || selectedRecentCommit.value)
+  }
+  return Boolean(branchInput.value.trim())
+})
 
 onMounted(() => {
   if (!projects.byId(props.projectId)) void projects.load()
@@ -143,20 +167,39 @@ async function saveName() {
 
 async function createWorktree() {
   if (!project.value?.isGit || creating.value) return
-  const branch = branchInput.value.trim()
-  if (!branch) {
-    createError.value = '请填写分支名称'
-    return
-  }
-  creating.value = true
   createError.value = ''
+
+  let branch = branchInput.value.trim()
+  const isCommitMode = baseType.value === 'commit'
+  const commit = commitInput.value.trim()
+
+  if (isCommitMode) {
+    if (!commit) {
+      createError.value = '请填写 Commit ID 或选择最近提交'
+      return
+    }
+    if (!branch) {
+      branch = `wt-${commit.slice(0, 7)}`
+    }
+  } else {
+    if (!branch) {
+      createError.value = '请填写分支名称'
+      return
+    }
+  }
+
+  creating.value = true
   try {
     await worktrees.create(props.projectId, {
       branch,
-      ...(baseBranch.value ? { baseBranch: baseBranch.value } : {}),
+      ...(isCommitMode
+        ? { commit }
+        : (baseBranch.value ? { baseBranch: baseBranch.value } : {})),
       ...(pathInput.value.trim() ? { path: pathInput.value.trim() } : {}),
     })
     branchInput.value = ''
+    commitInput.value = ''
+    selectedRecentCommit.value = ''
     pathInput.value = ''
     await loadGitDetails(true)
   } catch (error) {
@@ -279,19 +322,47 @@ function formatDate(value?: string): string {
 
         <div class="section-panel">
           <form class="worktree-create" data-test="worktree-create-form" @submit.prevent="createWorktree">
+            <div class="base-type-selector">
+              <span class="field-label">基准类型</span>
+              <div class="segmented-control" role="radiogroup" aria-label="基准类型">
+                <button
+                  type="button"
+                  class="segment-btn"
+                  :class="{ active: baseType === 'branch' }"
+                  data-test="base-type-branch"
+                  @click="baseType = 'branch'"
+                >
+                  基于分支
+                </button>
+                <button
+                  type="button"
+                  class="segment-btn"
+                  :class="{ active: baseType === 'commit' }"
+                  data-test="base-type-commit"
+                  @click="baseType = 'commit'"
+                >
+                  基于提交 (Commit ID)
+                </button>
+              </div>
+            </div>
+
             <div class="field-grid">
               <div class="field-stack">
-                <label for="worktree-branch" class="field-label">分支名称</label>
+                <label for="worktree-branch" class="field-label">
+                  分支名称
+                  <span v-if="baseType === 'commit'" class="label-optional">（可选，留空自动生成）</span>
+                </label>
                 <UiInput
                   id="worktree-branch"
                   v-model="branchInput"
-                  placeholder="例如：feature/login"
+                  :placeholder="baseType === 'commit' ? '例如：wt-7a3f8c1（留空自动生成）' : '例如：feature/login'"
                   autocomplete="off"
                   spellcheck="false"
                   block
                 />
               </div>
-              <div class="field-stack">
+
+              <div v-if="baseType === 'branch'" class="field-stack">
                 <label for="worktree-base" class="field-label">基于分支</label>
                 <UiSelectMenu
                   id="worktree-base"
@@ -301,6 +372,39 @@ function formatDate(value?: string): string {
                   :disabled="gitLoading"
                   block
                 />
+              </div>
+
+              <div v-else class="field-stack">
+                <label for="worktree-commit" class="field-label">Commit ID / 提交哈希</label>
+                <div class="commit-input-group">
+                  <UiInput
+                    id="worktree-commit"
+                    v-model="commitInput"
+                    placeholder="输入 7~40 位 Commit Hash"
+                    autocomplete="off"
+                    spellcheck="false"
+                    class="commit-hash-input"
+                    data-test="worktree-commit-input"
+                    block
+                  />
+                  <select
+                    v-if="commits.length > 0"
+                    v-model="selectedRecentCommit"
+                    class="recent-commit-select"
+                    data-test="worktree-recent-commits"
+                    title="从最近提交选择"
+                    @change="onSelectRecentCommit(selectedRecentCommit)"
+                  >
+                    <option value="">从最近提交选择…</option>
+                    <option
+                      v-for="c in commits"
+                      :key="c.hash"
+                      :value="c.hash"
+                    >
+                      [{{ c.shortHash }}] {{ c.message }}
+                    </option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -322,7 +426,7 @@ function formatDate(value?: string): string {
                 type="submit"
                 variant="primary"
                 :loading="creating"
-                :disabled="!branchInput.trim() || creating"
+                :disabled="!canCreate"
                 data-test="worktree-create-btn"
               >
                 创建工作树
@@ -618,6 +722,63 @@ function formatDate(value?: string): string {
   gap: 14px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.base-type-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label-optional {
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
+  font-weight: normal;
+}
+
+.segmented-control {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--color-surface-muted, #f1f5f9);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius, 4px);
+  width: fit-content;
+}
+
+.segment-btn {
+  padding: 4px 12px;
+  font-size: var(--text-size-12);
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segment-btn.active {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.commit-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recent-commit-select {
+  font-size: var(--text-size-12);
+  font-family: var(--font-mono);
+  padding: 5px 8px;
+  border-radius: var(--radius, 3px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  outline: none;
+  width: 100%;
 }
 
 .create-actions {

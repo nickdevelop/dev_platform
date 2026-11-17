@@ -5,6 +5,8 @@
 import { get, mutate } from './client'
 import type { FileContentResponse, FileTreeNode, GitCommitItem, GitFileDiffResponse, GitStatusItem } from '../features/files/types'
 
+export type { GitCommitItem, GitFileDiffResponse, GitStatusItem } from '../features/files/types'
+
 interface FileTreeResponse {
   tree: FileTreeNode[]
 }

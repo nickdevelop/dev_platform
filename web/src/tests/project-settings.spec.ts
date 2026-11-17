@@ -137,6 +137,31 @@ describe('ProjectSettingsView', () => {
     expect(rows[0].text()).toContain('/data/projects/alpha-worktrees/feature-login')
   })
 
+  it('creates a worktree based on commit id and renders it', async () => {
+    const calls = stubApi()
+    const wrapper = mountView()
+    await flushPromises()
+
+    // Switch to commit mode
+    await wrapper.find('[data-test="base-type-commit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="worktree-commit-input"]').exists()).toBe(true)
+
+    // Fill in commit hash
+    await wrapper.find('#worktree-commit').setValue('7a3f8c123456')
+    await wrapper.find('[data-test="worktree-create-form"]').trigger('submit')
+    await flushPromises()
+
+    const create = calls.find((call) => call.url.endsWith('/api/projects/1/worktrees') && call.method === 'POST')
+    expect(create?.body).toMatchObject({
+      branch: 'wt-7a3f8c1',
+      commit: '7a3f8c123456',
+    })
+    const rows = wrapper.findAll('[data-test="worktree-row"]')
+    expect(rows).toHaveLength(1)
+  })
+
   it('removes a worktree after confirmation', async () => {
     worktrees = [worktree()]
     const calls = stubApi()

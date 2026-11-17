@@ -99,6 +99,10 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "empty_commit_message")
 	case errors.Is(err, ErrInvalidBranchName):
 		respondError(c, http.StatusBadRequest, "invalid_branch_name")
+	case errors.Is(err, ErrInvalidCommitRef):
+		respondError(c, http.StatusBadRequest, "invalid_commit_ref")
+	case errors.Is(err, ErrCommitNotFound):
+		respondError(c, http.StatusNotFound, "commit_not_found")
 	case errors.Is(err, ErrGitOperationFailed):
 		respondError(c, http.StatusBadRequest, "git_operation_failed")
 	case errors.Is(err, ErrRollbackFailed):

@@ -303,3 +303,81 @@ func TestWorktreeScopeRejectsAnotherProjectsWorktree(t *testing.T) {
 		t.Fatalf("cross-project scope error = %v, want ErrWorktreeNotFound", err)
 	}
 }
+
+func TestCreateWorktreeWithCommitID(t *testing.T) {
+	svc, _, _, _ := newTestService(t)
+	repo := initGitRepo(t)
+
+	// Make a second commit so we have two distinct commits
+	file2 := filepath.Join(repo, "second.txt")
+	if err := os.WriteFile(file2, []byte("second"), 0o644); err != nil {
+		t.Fatalf("write second.txt: %v", err)
+	}
+	runGit(t, repo, "add", "second.txt")
+	runGit(t, repo, "commit", "-m", "second commit")
+
+	firstCommit := runGit(t, repo, "rev-parse", "HEAD~1")
+	firstShort := runGit(t, repo, "rev-parse", "--short", "HEAD~1")
+
+	project, err := svc.Register(repo)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// 1. Create worktree specifying Commit and explicit branch
+	wt1, err := svc.CreateWorktree(context.Background(), project.ID, CreateWorktreeInput{
+		Branch: "feature/from-commit-1",
+		Commit: firstCommit,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktree with explicit branch and commit: %v", err)
+	}
+	if wt1.Branch != "feature/from-commit-1" {
+		t.Errorf("Branch = %q, want feature/from-commit-1", wt1.Branch)
+	}
+	if wt1.BaseBranch != firstShort {
+		t.Errorf("BaseBranch = %q, want %q", wt1.BaseBranch, firstShort)
+	}
+	// In wt1, second.txt should NOT exist because it was created from firstCommit
+	if _, err := os.Stat(filepath.Join(wt1.Path, "second.txt")); !os.IsNotExist(err) {
+		t.Errorf("second.txt unexpectedly exists in worktree created from first commit")
+	}
+
+	// 2. Create worktree specifying Commit with empty branch (should auto-derive wt-<shortHash>)
+	wt2, err := svc.CreateWorktree(context.Background(), project.ID, CreateWorktreeInput{
+		Commit: firstCommit,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktree with auto-derived branch: %v", err)
+	}
+	wantDerived := "wt-" + firstShort
+	if wt2.Branch != wantDerived {
+		t.Errorf("Auto-derived Branch = %q, want %q", wt2.Branch, wantDerived)
+	}
+
+	// 3. Reject invalid commit ref
+	if _, err := svc.CreateWorktree(context.Background(), project.ID, CreateWorktreeInput{
+		Commit: "../illegal-ref",
+	}); !errors.Is(err, ErrInvalidCommitRef) {
+		t.Errorf("expected ErrInvalidCommitRef, got %v", err)
+	}
+
+	// 4. Reject non-existent commit
+	if _, err := svc.CreateWorktree(context.Background(), project.ID, CreateWorktreeInput{
+		Commit: "0000000000000000000000000000000000000000",
+	}); !errors.Is(err, ErrCommitNotFound) {
+		t.Errorf("expected ErrCommitNotFound, got %v", err)
+	}
+
+	// 5. Compatible: passing commit ID in BaseBranch should also work
+	wt3, err := svc.CreateWorktree(context.Background(), project.ID, CreateWorktreeInput{
+		Branch:     "feature/from-base-branch-commit",
+		BaseBranch: firstCommit,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorktree with commit in BaseBranch: %v", err)
+	}
+	if wt3.BaseBranch != firstShort {
+		t.Errorf("wt3 BaseBranch = %q, want %q", wt3.BaseBranch, firstShort)
+	}
+}

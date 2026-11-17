@@ -125,10 +125,18 @@ describe('worktree API contracts', () => {
     })
     expect(headersOf(calls[0])['X-CSRF-Token']).toBe(testCSRFToken)
 
+    await createProjectWorktree(7, { branch: 'wt-7a3f8c1', commit: '7a3f8c1' })
+    expect(calls[1].url).toBe('/api/projects/7/worktrees')
+    expect(calls[1].init?.method).toBe('POST')
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({
+      branch: 'wt-7a3f8c1',
+      commit: '7a3f8c1',
+    })
+
     await removeProjectWorktree(7, 3)
-    expect(calls[1].url).toBe('/api/projects/7/worktrees/3')
-    expect(calls[1].init?.method).toBe('DELETE')
-    expect(headersOf(calls[1])['X-CSRF-Token']).toBe(testCSRFToken)
+    expect(calls[2].url).toBe('/api/projects/7/worktrees/3')
+    expect(calls[2].init?.method).toBe('DELETE')
+    expect(headersOf(calls[2])['X-CSRF-Token']).toBe(testCSRFToken)
   })
 })
 

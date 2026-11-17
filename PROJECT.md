@@ -661,10 +661,10 @@ web/src/
                  ▼
  1. 项目设置 (internal/app/projects/worktree.go)
     - GET  /api/projects/:id/worktrees
-    - POST /api/projects/:id/worktrees  { branch, baseBranch?, path? }
+    - POST /api/projects/:id/worktrees  { branch?, baseBranch?, commit?, path? }
     - DELETE /api/projects/:id/worktrees/:worktreeId
     - 默认目录：<项目父目录>/<仓库名>-worktrees/<branch-slug>
-    - 创建：git worktree add -b <branch> <path> <base>
+    - 创建：git worktree add -b <branch> <path> <base/commit>（支持基于分支或通过 Commit ID 创建，基于 Commit ID 时若留空分支名自动派生 wt-<shortHash>）
     - 移除：先校验脏工作区 → StopProjectWorktreeInstances → git worktree remove
     - 分支保留，工作树记录删除
                  │
