@@ -117,15 +117,9 @@ func TestNormalizeACPUpdate_UserMessageChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(events) != 1 {
-		t.Fatalf("expected 1 event, got %d", len(events))
-	}
-	ev := events[0]
-	if ev.Type != agents.EventMessage || ev.Message == nil {
-		t.Fatalf("expected EventMessage, got %+v", ev)
-	}
-	if ev.Message.Role != "user" || ev.Message.Text != "用户输入文本" || !ev.Message.Final {
-		t.Errorf("unexpected message payload: %+v", ev.Message)
+	// user_message_chunk 作为 ACP 入流回显必须被静默消费，不能二次生成 EventMessage，确保单次发送仅一条用户消息
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events (silent consume), got %d: %+v", len(events), events)
 	}
 }
 

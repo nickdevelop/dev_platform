@@ -349,6 +349,80 @@ waitLoop:
 	_ = adapter.StopInstance(ctx, inst.ID)
 }
 
+func TestSendMessageNoDuplicateUserMessageOnACPChunk(t *testing.T) {
+	const native = "conv-dedup-user"
+	executable := writeFakeAgy(t, `python3 -c '
+import sys, json
+for line in sys.stdin:
+    req = json.loads(line)
+    method = req.get("method")
+    rid = req.get("id")
+    if method == "initialize":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"protocolVersion":1}}), flush=True)
+    elif method == "session/new":
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"sessionId":"`+native+`"}}), flush=True)
+    elif method == "session/prompt":
+        # 模拟真实 agy 进程：收到 prompt 后，先推送 user_message_chunk，再推送 agent_message_chunk，最后回复 prompt
+        user_update = {"sessionId":"`+native+`","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Hello World"}}}
+        print(json.dumps({"jsonrpc":"2.0","method":"session/update","params":user_update}), flush=True)
+        agent_update = {"sessionId":"`+native+`","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hi!"}}}
+        print(json.dumps({"jsonrpc":"2.0","method":"session/update","params":agent_update}), flush=True)
+        print(json.dumps({"jsonrpc":"2.0","id":rid,"result":{"stopReason":"completed"}}), flush=True)
+'`)
+	adapter := newPendingTestAdapter(t, executable, 5*time.Second)
+	ctx := context.Background()
+	inst, err := adapter.StartInstance(ctx, agents.StartInstanceRequest{Directory: t.TempDir()})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+
+	subEvents, err := adapter.Subscribe(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: "t"})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+
+	err = adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{
+		Text: "Hello World",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	var userMsgCount int
+	var receivedTurnEnded bool
+	timeout := time.After(2 * time.Second)
+
+loop:
+	for {
+		select {
+		case ev := <-subEvents:
+			if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "user" {
+				userMsgCount++
+			}
+			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded {
+				receivedTurnEnded = true
+				break loop
+			}
+		case <-timeout:
+			break loop
+		}
+	}
+
+	if !receivedTurnEnded {
+		t.Fatal("expected TurnEnded in event stream")
+	}
+	if userMsgCount != 1 {
+		t.Fatalf("expected exactly 1 user message event, got %d", userMsgCount)
+	}
+
+	_ = adapter.StopInstance(ctx, inst.ID)
+}
+
 func liveInstance(t *testing.T, a *Adapter, id string) *instance {
 	t.Helper()
 	inst, err := a.getInstance(id)

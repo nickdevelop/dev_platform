@@ -148,24 +148,10 @@ func (n *EventNormalizer) NormalizeACPUpdate(kind string, updateJSON json.RawMes
 
 	switch kind {
 	case "user_message_chunk":
-		var chunk acp.UserMessageChunkUpdate
-		if err := json.Unmarshal(updateJSON, &chunk); err != nil {
-			return nil, err
-		}
-		if chunk.Content.Text != "" {
-			events = append(events, agents.NormalizedEvent{
-				InstanceID: n.instanceID,
-				SessionID:  n.sessionID,
-				Backend:    n.backend,
-				Timestamp:  ts,
-				Type:       agents.EventMessage,
-				Message: &agents.MessagePayload{
-					Role:  "user",
-					Text:  chunk.Content.Text,
-					Final: true,
-				},
-			})
-		}
+		// user_message_chunk 是底层 ACP 进程对客户端 prompt 消息的入流回显。
+		// 平台在 sendTurn 启动时已主动向总线广播了带有完整文本与图片附件的 EventMessage(role: "user")，
+		// 此处作为底层入流通知静默消费，不再重复发射，避免前端出现两条重复的用户消息。
+		return nil, nil
 
 	case "agent_message_chunk":
 		var chunk acp.AgentMessageChunkUpdate
