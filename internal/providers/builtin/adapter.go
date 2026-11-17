@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -48,6 +49,9 @@ type Options struct {
 	// ResolveMaxTurnSteps reports the configured per-turn tool-step budget dynamically
 	// for every turn. 0 means use default, < 0 means unlimited, > 0 specifies the limit.
 	ResolveMaxTurnSteps func() int
+	// DebugMode reports whether comprehensive debug interaction logging is enabled.
+	// Nil means false.
+	DebugMode func() bool
 	// HTTPClient overrides the completer's client; a nil value uses one
 	// without an overall timeout (streaming turns can run for minutes).
 	HTTPClient *http.Client
@@ -110,6 +114,7 @@ type Adapter struct {
 	resolveSteps func() int
 	registry     *tools.Registry
 	completions  *completer
+	logger       *debugLogger
 	now          func() time.Time
 	newID        func() (string, error)
 
@@ -143,6 +148,7 @@ func New(options Options) *Adapter {
 		resolveSteps: options.ResolveMaxTurnSteps,
 		registry:     tools.NewRegistry(),
 		completions:  &completer{client: options.HTTPClient},
+		logger:       newDebugLogger(options.DataDir, options.DebugMode),
 		now:          options.Now,
 		newID:        options.NewID,
 		instances:    make(map[string]*instance),
@@ -195,6 +201,7 @@ func (a *Adapter) Capabilities() agents.Capabilities {
 		ToolConfirmation: true,
 		Interrupt:        true,
 		SessionHistory:   true,
+		DebugExport:      true,
 	}
 }
 
@@ -647,3 +654,20 @@ func (a *Adapter) sessionApproved(instanceID, sessionID, key string) bool {
 	}
 	return state.approvals[key]
 }
+
+// OpenDebugLog opens the session's debug interaction log for streaming read.
+func (a *Adapter) OpenDebugLog(ctx context.Context, ref agents.SessionRef) (io.ReadCloser, int64, error) {
+	if a.logger == nil {
+		return nil, 0, agents.ErrDebugLogNotFound
+	}
+	return a.logger.Open(ref.SessionID)
+}
+
+// PurgeDebugLog removes the session's debug interaction log if present.
+func (a *Adapter) PurgeDebugLog(ctx context.Context, ref agents.SessionRef) error {
+	if a.logger == nil {
+		return nil
+	}
+	return a.logger.Purge(ref.SessionID)
+}
+

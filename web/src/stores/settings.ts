@@ -16,6 +16,7 @@ import {
   setAgentEnabled,
   setAgentIdleTimeout,
   setAgentMaxTurnSteps,
+  setAgentDebugMode,
   setAgentMode,
   setAgentPath,
   setAgentPermissionMode,
@@ -202,6 +203,18 @@ export const useSettingsStore = defineStore('settings', {
     async setAgentMaxTurnSteps(backend: string, steps: number): Promise<boolean> {
       try {
         await setAgentMaxTurnSteps(backend, steps)
+        await this.loadAgents()
+        return true
+      } catch (error) {
+        if (error instanceof UnauthorizedError) return false
+        this.agentsError = describeApiError(error)
+        return false
+      }
+    },
+
+    async setAgentDebugMode(backend: string, enabled: boolean): Promise<boolean> {
+      try {
+        await setAgentDebugMode(backend, enabled)
         await this.loadAgents()
         return true
       } catch (error) {

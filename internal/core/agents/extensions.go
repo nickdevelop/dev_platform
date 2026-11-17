@@ -166,3 +166,17 @@ type UsageReport struct {
 type UsageReporter interface {
 	GetUsage(ctx context.Context) (*UsageReport, error)
 }
+
+// ErrDebugLogNotFound reports that no debug log exists for the session.
+var ErrDebugLogNotFound = errors.New("agents: debug log not found")
+
+// DebugLogExporter is the optional extension for agent backends that can persist
+// and export execution debug logs (such as the embedded agent).
+type DebugLogExporter interface {
+	// OpenDebugLog opens the session's debug interaction log for streaming read.
+	// It returns os.ErrNotExist or ErrDebugLogNotFound when no log exists.
+	OpenDebugLog(ctx context.Context, ref SessionRef) (io.ReadCloser, int64, error)
+	// PurgeDebugLog removes the session's debug interaction log if present.
+	PurgeDebugLog(ctx context.Context, ref SessionRef) error
+}
+

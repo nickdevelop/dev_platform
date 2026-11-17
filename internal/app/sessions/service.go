@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"sync"
@@ -466,6 +467,16 @@ func (s *Service) Delete(projectID uint, sessionID string) error {
 	}
 	if err := s.store.Delete(row.ID); err != nil {
 		return err
+	}
+	if adapter, err := s.adapter(agents.BackendID(row.Backend)); err == nil {
+		if exporter, ok := adapter.(agents.DebugLogExporter); ok {
+			_ = exporter.PurgeDebugLog(context.Background(), agents.SessionRef{
+				InstanceID: row.InstanceID,
+				Backend:    agents.BackendID(row.Backend),
+				SessionID:  row.NativeSessionID,
+				Title:      row.Title,
+			})
+		}
 	}
 	// The turn tracker is keyed by native session; drop the entry so a later
 	// re-index of the same native session starts from a clean state.
@@ -1540,3 +1551,27 @@ func (s *Service) CompactSession(ctx context.Context, projectID uint, sessionID 
 
 	return compactor.CompactSession(ctx, ref, instructions)
 }
+
+// OpenDebugLog opens the session's debug interaction log for reading.
+func (s *Service) OpenDebugLog(ctx context.Context, projectID uint, sessionID string) (io.ReadCloser, int64, error) {
+	row, err := s.loadScoped(projectID, sessionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	adapter, err := s.adapter(agents.BackendID(row.Backend))
+	if err != nil {
+		return nil, 0, err
+	}
+	exporter, ok := adapter.(agents.DebugLogExporter)
+	if !ok {
+		return nil, 0, fmt.Errorf("%w: debug export", ErrUnsupportedCapability)
+	}
+	ref := agents.SessionRef{
+		InstanceID: row.InstanceID,
+		Backend:    agents.BackendID(row.Backend),
+		SessionID:  row.NativeSessionID,
+		Title:      row.Title,
+	}
+	return exporter.OpenDebugLog(ctx, ref)
+}
+

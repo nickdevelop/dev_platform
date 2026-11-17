@@ -21,6 +21,7 @@ export interface Capabilities {
   toolConfirmation: boolean
   sessionHistory: boolean
   rawEvents: boolean
+  debugExport?: boolean
 }
 
 // A backend id as the platform catalog names it. The set is not enumerated in

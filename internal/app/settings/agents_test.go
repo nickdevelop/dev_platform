@@ -193,3 +193,36 @@ func TestAgentMaxTurnStepsRoundTrips(t *testing.T) {
 		t.Fatal("expected error for -2")
 	}
 }
+
+func TestAgentDebugMode(t *testing.T) {
+	db := openTestDB(t)
+	svc := NewService(db, testCatalogWithBuiltin(t))
+
+	// Default should be false
+	if svc.AgentDebugMode(agents.BackendBuiltin) {
+		t.Fatal("expected default debugMode to be false")
+	}
+
+	// Enable debug mode
+	if _, err := svc.SetAgentDebugMode(agents.BackendBuiltin, true); err != nil {
+		t.Fatalf("SetAgentDebugMode(true): %v", err)
+	}
+	if !svc.AgentDebugMode(agents.BackendBuiltin) {
+		t.Fatal("expected debugMode to be true")
+	}
+
+	// Persists across service reload
+	svc2 := NewService(db, testCatalogWithBuiltin(t))
+	if !svc2.AgentDebugMode(agents.BackendBuiltin) {
+		t.Fatal("reloaded expected debugMode to be true")
+	}
+
+	// Disable debug mode
+	if _, err := svc.SetAgentDebugMode(agents.BackendBuiltin, false); err != nil {
+		t.Fatalf("SetAgentDebugMode(false): %v", err)
+	}
+	if svc.AgentDebugMode(agents.BackendBuiltin) {
+		t.Fatal("expected debugMode to be false")
+	}
+}
+

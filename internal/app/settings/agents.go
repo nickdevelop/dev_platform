@@ -37,6 +37,9 @@ type AgentSetting struct {
 	// the loop fails with a step-limit error. -1 means unlimited, > 0 specifies
 	// the steps. 0 uses the catalog descriptor default (or 30 if unset).
 	MaxTurnSteps int `json:"maxTurnSteps,omitempty"`
+	// DebugMode toggles comprehensive debug interaction logging (such as
+	// raw LLM and tool traces落盘).
+	DebugMode bool `json:"debugMode,omitempty"`
 }
 
 // defaultAgentSettings returns every catalog backend at its descriptor's
@@ -379,3 +382,36 @@ func (s *Service) AgentMaxTurnSteps(backend agents.BackendID) int {
 	}
 	return steps
 }
+
+// SetAgentDebugMode toggles comprehensive debug logging for an agent backend.
+func (s *Service) SetAgentDebugMode(backend agents.BackendID, enabled bool) (AgentSetting, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	settings, err := s.loadAgents()
+	if err != nil {
+		return AgentSetting{}, err
+	}
+	setting, ok := settings[backend]
+	if !ok {
+		return AgentSetting{}, fmt.Errorf("settings: unknown backend %q", backend)
+	}
+	setting.DebugMode = enabled
+	settings[backend] = setting
+	if err := s.saveAgents(settings); err != nil {
+		return AgentSetting{}, err
+	}
+	return setting, nil
+}
+
+// AgentDebugMode reports whether comprehensive debug logging is enabled for a backend.
+func (s *Service) AgentDebugMode(backend agents.BackendID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	settings, err := s.loadAgents()
+	if err != nil {
+		return false
+	}
+	return settings[backend].DebugMode
+}
+

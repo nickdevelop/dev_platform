@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 )
 
 // Platform aggregates every OS capability. The composition root creates it
@@ -190,3 +191,8 @@ func (s stubPlatform) Shutdown() Shutdown       { return nil }
 func (s stubPlatform) Terminal() Terminal       { return nil }
 func (s stubPlatform) Environment() Environment { return nil }
 func (s stubPlatform) PTY() PTY                 { return nil }
+
+// OSArch reports runtime.GOOS and runtime.GOARCH (e.g. "linux/amd64").
+func OSArch() string {
+	return runtime.GOOS + "/" + runtime.GOARCH
+}

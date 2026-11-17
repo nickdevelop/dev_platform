@@ -120,6 +120,9 @@ type Capabilities struct {
 	// proxied to the workbench (RawEventOpener). It drives backend-specific
 	// views only; the platform never interprets the bytes.
 	RawEvents bool `json:"rawEvents"`
+	// DebugExport reports whether the backend supports persisting and
+	// exporting comprehensive debug interaction logs (DebugLogExporter).
+	DebugExport bool `json:"debugExport"`
 }
 
 // ModelInfo is one model an agent can run, as the backend reports it. ID is

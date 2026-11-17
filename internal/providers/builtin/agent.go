@@ -93,6 +93,13 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 	}
 	_ = a.store.SetModel(ctx, ref.SessionID, endpoint.ModelID)
 
+	a.logger.Log(ref.SessionID, current.id, 0, "turn_start", map[string]any{
+		"userMessage": message.Text,
+		"imagesCount": len(message.Images),
+		"model":       endpoint.ModelID,
+		"baseUrl":     endpoint.BaseURL,
+	})
+
 	// Rebuild the conversation context from the pre-turn snapshot (so a
 	// session survives restarts) and add the fresh user message exactly once.
 	history := renderHistoryMessages(records, endpoint)
@@ -108,10 +115,20 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 	limit := a.stepLimit()
 	for steps := 1; ctx.Err() == nil; steps++ {
 		if limit > 0 && steps > limit {
+			a.logger.Log(ref.SessionID, current.id, steps, "step_limit_exceeded", map[string]any{
+				"limit": limit,
+			})
 			a.failTurn(inst, ref, current, "step_limit",
 				fmt.Sprintf("单轮工具调用步数超过上限（%d 步），回合已终止。", limit))
 			return
 		}
+
+		stepStartTime := time.Now()
+		a.logger.Log(ref.SessionID, current.id, steps, "llm_request", map[string]any{
+			"model":    endpoint.ModelID,
+			"messages": messages,
+			"tools":    schemas,
+		})
 
 		// Deltas are published as they arrive. Buffering them until the
 		// completion ends put the step's text behind the tool calls it
@@ -121,7 +138,12 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 				inst.publish(event)
 			}
 		})
+		llmDurationMs := time.Since(stepStartTime).Milliseconds()
 		if streamErr != nil {
+			a.logger.Log(ref.SessionID, current.id, steps, "llm_error", map[string]any{
+				"error":      streamErr.Error(),
+				"durationMs": llmDurationMs,
+			})
 			if ctx.Err() != nil {
 				a.cancelTurn(inst, ref, current, resultTextOf(result))
 				return
@@ -129,6 +151,14 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 			a.failTurn(inst, ref, current, "model_error", streamErr.Error())
 			return
 		}
+
+		a.logger.Log(ref.SessionID, current.id, steps, "llm_response", map[string]any{
+			"text":         result.Text,
+			"reasoning":    result.Reasoning,
+			"toolCalls":    result.ToolCalls,
+			"finishReason": result.Finish,
+			"durationMs":   llmDurationMs,
+		})
 
 		// Reasoning closes with a full-snapshot final per completion call.
 		if result.Reasoning != "" {
@@ -169,6 +199,10 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 // published as a full-snapshot close (the workbench replaces its accumulated
 // stream prefix with it), persisted, and the turn boundary published.
 func (a *Adapter) finalizeTurn(inst *instance, ref agents.SessionRef, state *sessionState, current *turn, endpoint ModelEndpoint, result *assistantResult) {
+	a.logger.Log(ref.SessionID, current.id, 0, "turn_end", map[string]any{
+		"outcome": agents.TurnCompleted,
+		"text":    result.Text,
+	})
 	a.recordSession(ref, state, func(seq int) ([]TranscriptRecord, error) {
 		return buildAssistantRecords(seq, result, a.now()), nil
 	})
@@ -193,6 +227,11 @@ func (a *Adapter) finalizeTurn(inst *instance, ref agents.SessionRef, state *ses
 
 // failTurn publishes the failure, records the error and closes the turn.
 func (a *Adapter) failTurn(inst *instance, ref agents.SessionRef, current *turn, code, text string) {
+	a.logger.Log(ref.SessionID, current.id, 0, "turn_end", map[string]any{
+		"outcome": agents.TurnFailed,
+		"code":    code,
+		"error":   text,
+	})
 	inst.publish(agents.NormalizedEvent{
 		Type:      agents.EventError,
 		SessionID: ref.SessionID,
@@ -211,6 +250,10 @@ func (a *Adapter) failTurn(inst *instance, ref agents.SessionRef, current *turn,
 // is lost to the stream but the user message and any tool records are kept,
 // so a later turn still knows what happened so far.
 func (a *Adapter) cancelTurn(inst *instance, ref agents.SessionRef, current *turn, streamedText string) {
+	a.logger.Log(ref.SessionID, current.id, 0, "turn_end", map[string]any{
+		"outcome":      agents.TurnCancelled,
+		"streamedText": streamedText,
+	})
 	inst.publish(agents.NormalizedEvent{
 		Type:      agents.EventTurn,
 		SessionID: ref.SessionID,
@@ -268,14 +311,31 @@ func (a *Adapter) executeToolCall(
 
 	approved, cancelled := true, false
 	if requiresApproval(toolName) && mode == PermissionModeConfirm {
+		approvalStart := time.Now()
 		approved, cancelled = a.gateToolCall(ctx, inst, ref, state, toolName, inputJSON)
+		a.logger.Log(ref.SessionID, current.id, 0, "tool_approval", map[string]any{
+			"callId":         callID,
+			"toolName":       toolName,
+			"approved":       approved,
+			"cancelled":      cancelled,
+			"waitDurationMs": time.Since(approvalStart).Milliseconds(),
+		})
 	}
 	output, isErr := "", false
+	toolStart := time.Now()
 	switch {
 	case cancelled:
 		// The call was announced before the interrupt landed. Answer it anyway,
 		// so the card settles instead of showing "running" forever.
 		a.publishToolResult(inst, ref, state, callID, "工具调用已中断，未产生结果。", true)
+		a.logger.Log(ref.SessionID, current.id, 0, "tool_execution", map[string]any{
+			"callId":     callID,
+			"toolName":   toolName,
+			"input":      inputJSON,
+			"output":     "工具调用已中断，未产生结果。",
+			"isError":    true,
+			"durationMs": time.Since(toolStart).Milliseconds(),
+		})
 		return toolLoopExitCancelled
 	case !approved:
 		output = "用户拒绝本次执行。如果需要继续，请先解释方案并重新请求授权。"
@@ -284,6 +344,14 @@ func (a *Adapter) executeToolCall(
 		executed, execErr := a.registry.Execute(ctx, inst.directory, toolName, inputJSON)
 		if execErr != nil && ctx.Err() != nil {
 			a.publishToolResult(inst, ref, state, callID, "工具调用已中断，未产生结果。", true)
+			a.logger.Log(ref.SessionID, current.id, 0, "tool_execution", map[string]any{
+				"callId":     callID,
+				"toolName":   toolName,
+				"input":      inputJSON,
+				"output":     "工具调用已中断，未产生结果。",
+				"isError":    true,
+				"durationMs": time.Since(toolStart).Milliseconds(),
+			})
 			return toolLoopExitCancelled
 		}
 		if execErr != nil {
@@ -296,6 +364,14 @@ func (a *Adapter) executeToolCall(
 	// Publish the raw tool output; the stored transcript keeps the same
 	// model-facing output so later turns rebuild an honest context.
 	a.publishToolResult(inst, ref, state, callID, output, isErr)
+	a.logger.Log(ref.SessionID, current.id, 0, "tool_execution", map[string]any{
+		"callId":     callID,
+		"toolName":   toolName,
+		"input":      inputJSON,
+		"output":     output,
+		"isError":    isErr,
+		"durationMs": time.Since(toolStart).Milliseconds(),
+	})
 
 	*messages = append(*messages, chatMessage{
 		Role:       "tool",

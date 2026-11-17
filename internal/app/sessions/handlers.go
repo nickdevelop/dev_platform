@@ -3,7 +3,10 @@ package sessions
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -34,6 +37,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.POST("/projects/:id/sessions/:sessionId/command", s.handleExecuteCommand)
 	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
+	r.GET("/projects/:id/sessions/:sessionId/debug-export", s.handleExportDebugLog)
 }
 
 // errInvalidHistoryPage reports a malformed history paging query.
@@ -76,6 +80,8 @@ func respondServiceError(c *gin.Context, err error) {
 		respondError(c, http.StatusBadRequest, "invalid_history_cursor")
 	case errors.Is(err, agents.ErrHistoryImageNotFound):
 		respondError(c, http.StatusNotFound, "image_not_found")
+	case errors.Is(err, agents.ErrDebugLogNotFound), errors.Is(err, os.ErrNotExist):
+		respondError(c, http.StatusNotFound, "debug_log_not_found")
 	case errors.Is(err, ErrUnsupportedCapability):
 		respondError(c, http.StatusConflict, "unsupported_capability")
 	case errors.Is(err, ErrPermissionExpired):
@@ -565,6 +571,34 @@ func (s *Service) handleCompactSession(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *Service) handleExportDebugLog(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	reader, size, err := s.OpenDebugLog(c.Request.Context(), id, sessionID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	defer reader.Close()
+
+	filename := fmt.Sprintf("session-%s-debug.jsonl", sessionID)
+	c.Header("Content-Type", "application/x-ndjson; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	if size > 0 {
+		c.Header("Content-Length", strconv.FormatInt(size, 10))
+	}
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, reader)
 }
 
 // projectID parses the :id path parameter, writing a 400 on malformed input.

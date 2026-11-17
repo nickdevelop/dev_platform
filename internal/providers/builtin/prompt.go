@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
+	"devplatform/internal/core/platform"
 	"devplatform/internal/providers/builtin/skills"
 )
 
@@ -137,7 +137,7 @@ func (pa *promptAssembler) loadSkills(projectDir string) []skills.Skill {
 func (pa *promptAssembler) workspaceBrief(projectDir string) string {
 	now := pa.nowFn()
 	timeStr := now.Format("2006-01-02 15:04:05 (Monday, MST)")
-	osArch := fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH)
+	osArch := platform.OSArch()
 
 	return fmt.Sprintf(
 		"当前工作目录：%s\n"+

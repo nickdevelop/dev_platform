@@ -437,6 +437,7 @@ web/src/
 - **刷新策略**：无 TTL、无后台刷新、无轮询、无定时任务。只有运维员在 Agent 设置页点击“刷新”才会同步。空目录表示平台级/后端默认作用域，不考虑项目目录级模型配置。
 - **边界**：Agent 模型属于各 Agent 后端的模型字典，支持平台级启停与配置覆盖；平台「模型」设置中的 OpenAI 兼容模型服务保持独立，服务于纯 Chat 对话。
 - **Agent 专属控制**：内置 Agent（`builtin`）支持在平台设置中动态配置单轮最大工具调用步数（`PUT /api/agents/{backend}/max-turn-steps`），Descriptor 默认 30 步，支持自定义步数或配置 `-1` 解除次数限制（无限制循环）。支持动态热更新并在下一轮对话中即时生效。
+  - **交互调试观测与落盘导出**：内置 Agent 支持在设置中动态开启/关闭调试模式（`PUT /api/agents/{backend}/debug-mode`）。开启后，内置 Agent 将每一轮对话中与大模型（包含完整 System Prompt、历史上下文 Messages、Tools Schemas 声明、思考链 Reasoning、模型终态回复及耗时）以及与各类工具（包含入参 JSON、权限判定结果、执行原始 Stdout/Stderr 输出、错误状态及执行耗时）的交互详情以原子追加写（JSONL 格式）落盘至 `<dataDir>/debug_logs/session-<sessionId>.jsonl`。前端会话头部提供「导出调试」入口，通过单独的 HTTP 文件下载接口（`GET /api/projects/{id}/sessions/{sessionId}/debug-export`）安全流式下载，不与现有的会话 SSE 复用，不干扰主对话流性能与信噪比；契约层定义 `agents.DebugLogExporter` 可选扩展接口，通用层零后端字面量，非内置 Agent 会话调用统一返回 409 `unsupported_capability`；删除会话时自动级联清理关联的磁盘调试文件。
 
 ---
 

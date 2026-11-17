@@ -59,6 +59,8 @@ export interface AgentDto {
   idleTimeoutMinutes?: number
   maxTurnSteps?: number
   defaultMaxTurnSteps?: number
+  // debugMode reports whether comprehensive debug interaction logging is enabled.
+  debugMode?: boolean
   // permissionMode gates the tool confirmations of backends that support the
   // control; permissionModes lists the choices. Both are absent otherwise.
   permissionMode?: string
@@ -142,6 +144,10 @@ export function clearAgentDataSessions(): Promise<{ deleted: number }> {
 
 export function detectAgent(backend: string): Promise<AgentDetection> {
   return mutate<AgentDetection>('POST', `/agents/${encodeURIComponent(backend)}/detect`)
+}
+
+export function setAgentDebugMode(backend: string, enabled: boolean): Promise<AgentDto> {
+  return mutate<AgentDto>('PUT', `/agents/${encodeURIComponent(backend)}/debug-mode`, { enabled })
 }
 
 // Global Agent settings: shared across all agent backends (system prompt / AGENTS.md).

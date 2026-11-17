@@ -314,3 +314,38 @@ func TestAgentHandlerSetMaxTurnSteps(t *testing.T) {
 		t.Errorf("expected 400 for bad steps, got %d", bad.Code)
 	}
 }
+
+func TestHandleSetAgentDebugMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := NewService(openTestDB(t), testCatalogWithBuiltin(t))
+	router := gin.New()
+	svc.RegisterRoutes(router.Group("/api"))
+
+	res := agentReq(t, router, http.MethodPut, "/api/agents/builtin/debug-mode", `{"enabled":true}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("put debug-mode status = %d, body %s", res.Code, res.Body.String())
+	}
+	var dto agentDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode res: %v", err)
+	}
+	if !dto.DebugMode {
+		t.Errorf("got DebugMode = false, want true")
+	}
+	if !svc.AgentDebugMode(agents.BackendBuiltin) {
+		t.Errorf("svc.AgentDebugMode = false, want true")
+	}
+
+	// Disable debug mode
+	res = agentReq(t, router, http.MethodPut, "/api/agents/builtin/debug-mode", `{"enabled":false}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("put debug-mode status = %d", res.Code)
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &dto); err != nil {
+		t.Fatalf("decode res: %v", err)
+	}
+	if dto.DebugMode {
+		t.Errorf("got DebugMode = true, want false")
+	}
+}
+

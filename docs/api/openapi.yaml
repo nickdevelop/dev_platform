@@ -2835,6 +2835,50 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/sessions/{sessionId}/debug-export:
+    get:
+      summary: Export the session debug interaction log
+      description: >-
+        Streams the raw JSONL debug log file containing comprehensive LLM and tool
+        interaction traces for the session. Gated on the debugExport capability.
+      operationId: exportSessionDebugLog
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: sessionId
+          in: path
+          required: true
+          description: Platform identifier of the session.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The debug log file stream.
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Session or debug log not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Backend does not support debug log export.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /projects/{id}/sessions/{sessionId}/permission:
     get:
       summary: List pending permission requests for the session (capability-gated)
@@ -3545,6 +3589,41 @@ paths:
               properties:
                 steps:
                   type: integer
+      responses:
+        '200':
+          description: The updated backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /agents/{backend}/debug-mode:
+    put:
+      summary: Set an agent debug mode
+      description: >-
+        Toggles comprehensive debug interaction logging (such as raw LLM and tool traces)
+        for a backend.
+      operationId: setAgentDebugMode
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/AgentBackend'
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
       responses:
         '200':
           description: The updated backend.
@@ -6721,6 +6800,9 @@ components:
         defaultMaxTurnSteps:
           type: integer
           description: Backend descriptor's default step limit.
+        debugMode:
+          type: boolean
+          description: Whether comprehensive debug interaction logging is enabled.
       additionalProperties: false
     AgentList:
       type: object

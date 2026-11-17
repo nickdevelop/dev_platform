@@ -365,6 +365,10 @@ func runServer(args []string) error {
 		ResolveMaxTurnSteps: func() int {
 			return settingsService.AgentMaxTurnSteps(agents.BackendBuiltin)
 		},
+		// DebugMode is consulted per turn so operator changes apply at once.
+		DebugMode: func() bool {
+			return settingsService.AgentDebugMode(agents.BackendBuiltin)
+		},
 	})
 	if err := registry.Register(agents.BackendBuiltin, builtinAdapter); err != nil {
 		return fmt.Errorf("register builtin adapter: %w", err)

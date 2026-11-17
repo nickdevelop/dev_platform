@@ -44,6 +44,8 @@ type agentDTO struct {
 	SessionDataOwner bool `json:"sessionDataOwner"`
 	// SupportsUsage reports whether the backend supports querying usage and quota statistics.
 	SupportsUsage bool `json:"supportsUsage"`
+	// DebugMode reports whether comprehensive debug interaction logging is enabled.
+	DebugMode bool `json:"debugMode"`
 }
 
 type agentListResponse struct {
@@ -228,6 +230,26 @@ func (s *Service) handleSetAgentMaxTurnSteps(c *gin.Context) {
 	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
 }
 
+func (s *Service) handleSetAgentDebugMode(c *gin.Context) {
+	backend, ok := s.backendParam(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	setting, err := s.SetAgentDebugMode(backend, request.Enabled)
+	if err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	c.JSON(http.StatusOK, s.agentDTO(backend, setting))
+}
+
 func (s *Service) handleDetectAgent(c *gin.Context) {
 	backend, ok := s.backendParam(c)
 	if !ok {
@@ -284,6 +306,7 @@ func (s *Service) agentDTO(backend agents.BackendID, setting AgentSetting) agent
 		PermissionModes:     descriptor.PermissionModes,
 		MaxTurnSteps:        setting.MaxTurnSteps,
 		DefaultMaxTurnSteps: descriptor.DefaultMaxTurnSteps,
+		DebugMode:           setting.DebugMode,
 		Embedded:            descriptor.Embedded,
 		SessionDataOwner:    descriptor.OwnsSessionData,
 		SupportsUsage:       descriptor.SupportsUsage,

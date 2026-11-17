@@ -887,6 +887,9 @@ func TestUnsupportedCapabilitiesAreRejected(t *testing.T) {
 	if _, err := env.svc.Stop(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrUnsupportedCapability) {
 		t.Errorf("Stop error = %v, want ErrUnsupportedCapability", err)
 	}
+	if _, _, err := env.svc.OpenDebugLog(context.Background(), env.projectID, session.ID); !errors.Is(err, ErrUnsupportedCapability) {
+		t.Errorf("OpenDebugLog error = %v, want ErrUnsupportedCapability", err)
+	}
 
 	// Sending without a model is still allowed when the backend streams.
 	if _, err := env.svc.Send(context.Background(), env.projectID, session.ID, "hi", ""); err != nil {

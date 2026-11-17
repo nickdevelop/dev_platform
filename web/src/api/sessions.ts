@@ -380,3 +380,8 @@ export function compactSession(
     { instructions: instructions || '' },
   )
 }
+
+// GET /api/projects/{id}/sessions/{sessionId}/debug-export
+export function sessionDebugExportUrl(projectId: number, sessionId: string): string {
+  return `/api/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/debug-export`
+}

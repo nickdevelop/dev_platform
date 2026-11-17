@@ -151,6 +151,21 @@ function supportsIdleTimeout(backend: string): boolean {
   return backend === 'deepseek' || settings.agents.find((a) => a.backend === backend)?.idleTimeoutMinutes !== undefined
 }
 
+const debugModeSaving = reactive<Record<string, boolean>>({})
+
+function supportsDebugMode(backend: string): boolean {
+  return backend === 'builtin'
+}
+
+async function toggleDebugMode(backend: string, enabled: boolean) {
+  debugModeSaving[backend] = true
+  try {
+    await settings.setAgentDebugMode(backend, enabled)
+  } finally {
+    debugModeSaving[backend] = false
+  }
+}
+
 function setIdleTimeoutPreset(backend: string, minutes: number) {
   idleTimeoutInputs[backend] = minutes
 }
@@ -722,6 +737,38 @@ function cancelStop() {
               <span class="i-lucide-check w-3 h-3" />已保存
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- Debug Mode Settings (specifically for builtin agent) -->
+      <div
+        v-if="supportsDebugMode(agent.backend)"
+        class="debug-mode-block p-4 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/80 space-y-3"
+        :data-test="`agent-debug-mode-${agent.backend}`"
+      >
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-700/60">
+          <div>
+            <strong class="text-xs font-semibold text-slate-800 dark:text-slate-200 block">交互调试记录落盘</strong>
+            <span class="text-2xs text-slate-400">开启后将内置 Agent 的所有 LLM 请求/响应及工具执行详情落盘保存至 dataDir，可随时在会话头部导出调试日志文件。</span>
+          </div>
+          <span class="tabular-nums text-2xs text-slate-400">
+            当前状态：{{ agent.debugMode ? '已开启' : '已关闭' }}
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              class="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              :checked="agent.debugMode ?? false"
+              :disabled="debugModeSaving[agent.backend]"
+              :data-test="`debug-mode-checkbox-${agent.backend}`"
+              @change="(e) => toggleDebugMode(agent.backend, (e.target as HTMLInputElement).checked)"
+            />
+            <span class="text-slate-700 dark:text-slate-300 font-medium">开启调试日志落盘</span>
+          </label>
+          <span v-if="debugModeSaving[agent.backend]" class="text-slate-400 text-2xs">保存中...</span>
         </div>
       </div>
 
