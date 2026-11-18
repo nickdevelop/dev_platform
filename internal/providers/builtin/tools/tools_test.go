@@ -148,3 +148,108 @@ func TestGitToolsNonRepo(t *testing.T) {
 		t.Errorf("git_status unexpected response: %s", statusRes)
 	}
 }
+
+func TestResolveReadPath(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Relative path within workspace
+	target, err := ResolveReadPath(tempDir, "sub/file.txt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := filepath.Clean(filepath.Join(tempDir, "sub/file.txt"))
+	if target != expected {
+		t.Errorf("got %q, want %q", target, expected)
+	}
+
+	// 2. Relative path escaping workspace allows read resolution without error
+	targetEscaped, err := ResolveReadPath(tempDir, "../escaped.txt")
+	if err != nil {
+		t.Fatalf("unexpected error for reading parent path: %v", err)
+	}
+	expectedEscaped := filepath.Clean(filepath.Join(tempDir, "../escaped.txt"))
+	if targetEscaped != expectedEscaped {
+		t.Errorf("got %q, want %q", targetEscaped, expectedEscaped)
+	}
+
+	// 3. Absolute path outside workspace allowed
+	externalDir := t.TempDir()
+	extPath := filepath.Join(externalDir, "SKILL.md")
+	targetExt, err := ResolveReadPath(tempDir, extPath)
+	if err != nil {
+		t.Fatalf("unexpected error for absolute external path: %v", err)
+	}
+	if targetExt != filepath.Clean(extPath) {
+		t.Errorf("got %q, want %q", targetExt, extPath)
+	}
+
+	// 4. Home directory expansion (~)
+	homeDir, homeErr := os.UserHomeDir()
+	if homeErr == nil && homeDir != "" {
+		targetTilde, err := ResolveReadPath(tempDir, "~/.agents/skills/plantuml/SKILL.md")
+		if err != nil {
+			t.Fatalf("unexpected error expanding ~: %v", err)
+		}
+		expectedTilde := filepath.Clean(filepath.Join(homeDir, ".agents/skills/plantuml/SKILL.md"))
+		if targetTilde != expectedTilde {
+			t.Errorf("got %q, want %q", targetTilde, expectedTilde)
+		}
+	}
+
+	// 5. Empty path error
+	if _, err := ResolveReadPath(tempDir, ""); err == nil {
+		t.Errorf("expected error on empty path")
+	}
+}
+
+func TestReadAndListOutsideWorkspaceAllowed(t *testing.T) {
+	workDir := t.TempDir()
+	externalDir := t.TempDir()
+	registry := NewRegistry()
+	ctx := context.Background()
+
+	// Create an external skill file (e.g. simulating ~/.agents/skills/plantuml/SKILL.md)
+	externalSkillDir := filepath.Join(externalDir, "plantuml")
+	if err := os.MkdirAll(externalSkillDir, 0o755); err != nil {
+		t.Fatalf("mkdir externalSkillDir: %v", err)
+	}
+	skillContent := "# PlantUML Skill Instructions\nUse standard formatting."
+	skillFilePath := filepath.Join(externalSkillDir, "SKILL.md")
+	if err := os.WriteFile(skillFilePath, []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write skill file: %v", err)
+	}
+
+	// 1. read_file on external skill file MUST SUCCEED
+	readArgs := `{"path": "` + filepath.ToSlash(skillFilePath) + `"}`
+	readRes, err := registry.Execute(ctx, workDir, ToolReadFile, readArgs)
+	if err != nil {
+		t.Fatalf("expected read_file to succeed for external skill, got: %v", err)
+	}
+	if !strings.Contains(readRes, "PlantUML Skill Instructions") {
+		t.Errorf("read_file output did not match expected skill content: %s", readRes)
+	}
+
+	// 2. list_directory on external skill directory MUST SUCCEED
+	listArgs := `{"path": "` + filepath.ToSlash(externalSkillDir) + `"}`
+	listRes, err := registry.Execute(ctx, workDir, ToolListDirectory, listArgs)
+	if err != nil {
+		t.Fatalf("expected list_directory to succeed for external skill dir, got: %v", err)
+	}
+	if !strings.Contains(listRes, "SKILL.md") {
+		t.Errorf("list_directory output did not contain SKILL.md: %s", listRes)
+	}
+
+	// 3. write_file on external path MUST STILL BE BLOCKED by workspace boundary
+	writeArgs := `{"path": "` + filepath.ToSlash(filepath.Join(externalSkillDir, "forbidden.txt")) + `", "content": "leak"}`
+	_, err = registry.Execute(ctx, workDir, ToolWriteFile, writeArgs)
+	if err == nil || !strings.Contains(err.Error(), "escapes workspace boundary") {
+		t.Errorf("expected write_file outside workspace to be rejected with ErrPathEscapesWorkspace, got: %v", err)
+	}
+
+	// 4. edit_file on external path MUST STILL BE BLOCKED by workspace boundary
+	editArgs := `{"path": "` + filepath.ToSlash(skillFilePath) + `", "old_string": "PlantUML", "new_string": "Hacked"}`
+	_, err = registry.Execute(ctx, workDir, ToolEditFile, editArgs)
+	if err == nil || !strings.Contains(err.Error(), "escapes workspace boundary") {
+		t.Errorf("expected edit_file outside workspace to be rejected with ErrPathEscapesWorkspace, got: %v", err)
+	}
+}

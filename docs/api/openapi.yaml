@@ -1787,6 +1787,55 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /projects/{id}/commands:
+    get:
+      summary: List platform commands and skills for a project or worktree
+      description: >-
+        Returns platform commands and available skills for a project or worktree
+        without requiring an active session (e.g. for new session composer autocomplete).
+      operationId: listProjectCommands
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the owning project.
+          schema:
+            type: integer
+            format: int64
+        - name: worktreeId
+          in: query
+          required: false
+          description: Platform identifier of the git worktree (0 for the main checkout).
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Supported commands and skills.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commands]
+                properties:
+                  commands:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentCommand'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No such project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/sessions:
     get:
       summary: List a project's indexed sessions

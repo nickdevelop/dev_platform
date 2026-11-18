@@ -31,7 +31,7 @@ func handleReadFile(ctx context.Context, workDir string, argsJSON string) (strin
 		return "", errors.New("read_file: path is required")
 	}
 
-	targetPath, err := SafeResolvePath(workDir, args.Path)
+	targetPath, err := ResolveReadPath(workDir, args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -248,7 +248,7 @@ func handleListDirectory(ctx context.Context, workDir string, argsJSON string) (
 		args.Path = "."
 	}
 
-	targetPath, err := SafeResolvePath(workDir, args.Path)
+	targetPath, err := ResolveReadPath(workDir, args.Path)
 	if err != nil {
 		return "", err
 	}

@@ -109,6 +109,38 @@ func SafeResolvePath(workDir, relOrAbsPath string) (string, error) {
 	return targetPath, nil
 }
 
+// ResolveReadPath resolves a relative or absolute path for read-only tools (e.g. read_file, list_directory).
+// Unlike SafeResolvePath which enforces workspace sandboxing for write/edit operations, ResolveReadPath
+// allows reading files across the host filesystem (e.g., user-level ~/.agents/skills or platform data skills)
+// and expands user home directory references (~).
+func ResolveReadPath(workDir, relOrAbsPath string) (string, error) {
+	cleanPath := strings.TrimSpace(relOrAbsPath)
+	if cleanPath == "" {
+		return "", errors.New("empty path")
+	}
+
+	// Expand ~ or ~/... to user's home directory if applicable
+	if cleanPath == "~" || strings.HasPrefix(cleanPath, "~/") || strings.HasPrefix(cleanPath, "~\\") {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			cleanPath = filepath.Join(home, cleanPath[1:])
+		}
+	}
+
+	if filepath.IsAbs(cleanPath) {
+		return filepath.Clean(cleanPath), nil
+	}
+
+	if workDir == "" {
+		return "", errors.New("empty workspace directory")
+	}
+	cleanWorkDir, err := filepath.Abs(filepath.Clean(workDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root: %w", err)
+	}
+
+	return filepath.Clean(filepath.Join(cleanWorkDir, cleanPath)), nil
+}
+
 // FormatError formats a tool error into a clear, structured JSON error response.
 func FormatError(err error) string {
 	resp, _ := json.Marshal(map[string]string{
