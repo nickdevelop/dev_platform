@@ -186,7 +186,7 @@ for line in sys.stdin:
 	}
 }
 
-func TestSendMessageBroadcastsUserMessageAndContextIsolation(t *testing.T) {
+func TestSendMessageTurnStartedAndContextIsolation(t *testing.T) {
 	const native = "conv-user-msg"
 	executable := writeFakeAgy(t, `python3 -c '
 import sys, json
@@ -230,7 +230,8 @@ for line in sys.stdin:
 	// 立即取消发送 context（模拟 HTTP 202 返回后的情况）
 	cancelSend()
 
-	// 检查事件总线中是否收到了 User 消息和 TurnStarted，并且没有因为 cancelSend 而收到 TurnCancelled
+	// 检查事件总线中收到了 TurnStarted，且没有冗余广播 User 消息（前端已乐观呈现，避免追问时重复），
+	// 并且没有因为 cancelSend 而收到 TurnCancelled
 	var receivedUserMsg bool
 	var receivedTurnStarted bool
 	timeout := time.After(1 * time.Second)
@@ -240,9 +241,7 @@ loop:
 		select {
 		case ev := <-subEvents:
 			if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "user" {
-				if ev.Message.Text == "Hello User Input" {
-					receivedUserMsg = true
-				}
+				receivedUserMsg = true
 			}
 			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnStarted {
 				receivedTurnStarted = true
@@ -250,7 +249,15 @@ loop:
 			if ev.Type == agents.EventTurn && ev.Turn != nil && ev.Turn.Phase == agents.TurnEnded {
 				t.Fatalf("turn must not end due to external context cancel, got %+v", ev)
 			}
-			if receivedUserMsg && receivedTurnStarted {
+			if receivedTurnStarted {
+				// Wait a brief moment to ensure no unexpected user message arrives
+				select {
+				case extra := <-subEvents:
+					if extra.Type == agents.EventMessage && extra.Message != nil && extra.Message.Role == "user" {
+						receivedUserMsg = true
+					}
+				case <-time.After(100 * time.Millisecond):
+				}
 				break loop
 			}
 		case <-timeout:
@@ -258,8 +265,8 @@ loop:
 		}
 	}
 
-	if !receivedUserMsg {
-		t.Fatal("expected user message event in event stream")
+	if receivedUserMsg {
+		t.Fatal("unexpected user message event in event stream; user messages are rendered optimistically by client")
 	}
 	if !receivedTurnStarted {
 		t.Fatal("expected TurnStarted in event stream")
@@ -416,8 +423,8 @@ loop:
 	if !receivedTurnEnded {
 		t.Fatal("expected TurnEnded in event stream")
 	}
-	if userMsgCount != 1 {
-		t.Fatalf("expected exactly 1 user message event, got %d", userMsgCount)
+	if userMsgCount != 0 {
+		t.Fatalf("expected 0 user message events in stream (optimistically appended by client), got %d", userMsgCount)
 	}
 
 	_ = adapter.StopInstance(ctx, inst.ID)

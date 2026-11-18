@@ -450,22 +450,7 @@ func (c *agyChild) sendTurn(text, model string, images []agents.ImageAttachment)
 	turnID := fmt.Sprintf("turn-%d", c.now().UnixNano())
 	c.normalizer.StartTurn(turnID)
 
-	// 1. 广播用户消息以确保实时流中不漏掉用户消息
-	c.inst.broadcast(agents.NormalizedEvent{
-		InstanceID: c.inst.id,
-		SessionID:  c.sessionID,
-		Backend:    agents.BackendAgy,
-		Timestamp:  c.now(),
-		Type:       agents.EventMessage,
-		Message: &agents.MessagePayload{
-			Role:   "user",
-			Text:   text,
-			Images: images,
-			Final:  true,
-		},
-	})
-
-	// 2. 广播轮次开始事件
+	// 广播轮次开始事件
 	c.inst.broadcast(agents.NormalizedEvent{
 		InstanceID: c.inst.id,
 		SessionID:  c.sessionID,
