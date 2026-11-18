@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"devplatform/internal/app/sessions/store"
 	"devplatform/internal/app/sessions/turns"
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/skills"
 	"devplatform/internal/core/textutil"
 )
 
@@ -174,12 +177,19 @@ type StoreRepository interface {
 	DeleteBackendNatives(backend string, nativeIDs []string) error
 }
 
+// ProjectDirectoryResolver resolves the root directory of a project or worktree.
+type ProjectDirectoryResolver interface {
+	ResolveDirectory(projectID uint) (string, error)
+	ResolveWorktreeDirectory(projectID uint, worktreeID uint) (string, error)
+}
+
 // Service manages the platform's session index and the operations built on the
 // adapter registry.
 type Service struct {
 	store     StoreRepository
 	registry  *agents.Registry
 	instances InstanceService
+	projects  ProjectDirectoryResolver
 	newID     func() (string, error)
 	now       func() time.Time
 	// platformEnabled reports whether a backend may be used platform-wide. Nil
@@ -202,6 +212,8 @@ type Service struct {
 	eventsMgr *events.Manager
 
 	reconcileInterval time.Duration
+	dataDir           string
+	userHomeFn        func() (string, error)
 	stopReconcile     chan struct{}
 	reconcileDone     chan struct{}
 	closeOnce         sync.Once
@@ -309,6 +321,28 @@ func WithPlatformEnabled(fn func(agents.BackendID) bool) Option {
 func WithReconcileInterval(interval time.Duration) Option {
 	return func(s *Service) {
 		s.reconcileInterval = interval
+	}
+}
+
+// WithDataDir supplies the platform data directory for discovering platform-level skills.
+func WithDataDir(dir string) Option {
+	return func(s *Service) {
+		s.dataDir = dir
+	}
+}
+
+// WithUserHomeFn overrides the user home directory resolver (for tests).
+func WithUserHomeFn(fn func() (string, error)) Option {
+	return func(s *Service) {
+		s.userHomeFn = fn
+	}
+}
+
+// WithProjectDirectoryResolver wires the project directory resolver for discovering
+// project-level skills before or outside an active instance.
+func WithProjectDirectoryResolver(resolver ProjectDirectoryResolver) Option {
+	return func(s *Service) {
+		s.projects = resolver
 	}
 }
 
@@ -609,7 +643,8 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 		return nil
 	}
 	if message != "" || len(imgs) > 0 {
-		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: message, Images: imgs, OnNativeSessionBound: onBound}); err != nil {
+		sendPrompt := s.resolveMessagePrompt(row.ProjectID, row.WorktreeID, row.InstanceID, message)
+		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: sendPrompt, Images: imgs, OnNativeSessionBound: onBound}); err != nil {
 			// The session stays; the workbench pre-fills the composer and
 			// reports the failure so the user can send again.
 			outcome.MessageError = "agent_operation_failed"
@@ -1014,7 +1049,10 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 	// The tracker subscribes before the message is admitted so the turn's
 	// first lifecycle events are never ahead of the subscription.
 	s.turnTracker.Ensure(inst.ID)
-	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: text, Model: model, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
+
+	promptText := s.resolveMessagePrompt(row.ProjectID, row.WorktreeID, row.InstanceID, text)
+
+	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: promptText, Model: model, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
 	}
 	if model != "" {
@@ -1477,6 +1515,98 @@ var PlatformCommands = []agents.PlatformCommand{
 	},
 }
 
+// discoveryPathsForProject constructs search paths for a project/worktree without an active instance.
+func (s *Service) discoveryPathsForProject(projectID uint, worktreeID uint) skills.DiscoveryPaths {
+	paths := skills.DiscoveryPaths{}
+	if s.projects != nil && projectID > 0 {
+		var dir string
+		var err error
+		if worktreeID == 0 {
+			dir, err = s.projects.ResolveDirectory(projectID)
+		} else {
+			dir, err = s.projects.ResolveWorktreeDirectory(projectID, worktreeID)
+		}
+		if err == nil && dir != "" {
+			paths.ProjectSkillsDir = filepath.Join(dir, ".skills")
+		}
+	}
+	userHomeFn := s.userHomeFn
+	if userHomeFn == nil {
+		userHomeFn = os.UserHomeDir
+	}
+	if home, err := userHomeFn(); err == nil && home != "" {
+		paths.UserSkillsDir = filepath.Join(home, ".agents", "skills")
+	}
+	if s.dataDir != "" {
+		paths.DataSkillsDir = filepath.Join(s.dataDir, "skills")
+	}
+	return paths
+}
+
+// discoveryPathsForInstance constructs search paths prioritizing the instance's directory,
+// falling back to project/worktree resolution if the instance directory is unavailable.
+func (s *Service) discoveryPathsForInstance(instanceID string, projectID uint, worktreeID uint) skills.DiscoveryPaths {
+	paths := s.discoveryPathsForProject(projectID, worktreeID)
+	if instanceID != "" && s.instances != nil {
+		if inst, err := s.instances.Get(instanceID); err == nil && inst.Directory != "" {
+			paths.ProjectSkillsDir = filepath.Join(inst.Directory, ".skills")
+		}
+	}
+	return paths
+}
+
+// resolveMessagePrompt expands a slash command invoking an available skill into
+// a structured skill invocation prompt before dispatching to an agent backend.
+func (s *Service) resolveMessagePrompt(projectID uint, worktreeID uint, instanceID string, text string) string {
+	if !strings.HasPrefix(strings.TrimSpace(text), "/") {
+		return text
+	}
+	trimmed := strings.TrimSpace(text)
+	parts := strings.SplitN(trimmed[1:], " ", 2)
+	cmdName := strings.ToLower(strings.TrimSpace(parts[0]))
+	var args string
+	if len(parts) > 1 {
+		args = strings.TrimSpace(parts[1])
+	}
+	paths := s.discoveryPathsForInstance(instanceID, projectID, worktreeID)
+	matchedSkill, err := skills.ResolveSkill(paths, cmdName)
+	if err != nil || matchedSkill == nil {
+		return text
+	}
+	instructions, _ := skills.ReadSkillInstructions(matchedSkill.FilePath)
+	return skills.BuildSkillInvocationPrompt(matchedSkill, instructions, args)
+}
+
+// ListProjectCommands returns platform commands and skills available for a project/worktree
+// without requiring an active session (e.g. for new session composer autocomplete).
+func (s *Service) ListProjectCommands(ctx context.Context, projectID uint, worktreeID uint) ([]agents.PlatformCommand, error) {
+	cmds := make([]agents.PlatformCommand, 0, len(PlatformCommands)+8)
+	cmds = append(cmds, PlatformCommands...)
+
+	seen := make(map[string]bool, len(cmds))
+	for _, cmd := range cmds {
+		seen[strings.ToLower(cmd.Name)] = true
+	}
+
+	paths := s.discoveryPathsForProject(projectID, worktreeID)
+	loadedSkills := skills.LoadSkills(paths)
+	for _, sk := range loadedSkills {
+		lowerName := strings.ToLower(sk.Name)
+		if seen[lowerName] {
+			continue
+		}
+		seen[lowerName] = true
+		cmds = append(cmds, agents.PlatformCommand{
+			Name:         sk.Name,
+			Description:  sk.Description,
+			Category:     agents.CommandCategoryPrompt,
+			ArgumentHint: "[任务说明]",
+		})
+	}
+
+	return cmds, nil
+}
+
 // ListCommands returns the platform-designed commands available for the session.
 // Commands are owned and defined by the platform; they are not synchronized from downstream agents.
 func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID string) ([]agents.PlatformCommand, error) {
@@ -1488,8 +1618,30 @@ func (s *Service) ListCommands(ctx context.Context, projectID uint, sessionID st
 		return nil, ErrSessionNotFound
 	}
 
-	cmds := make([]agents.PlatformCommand, len(PlatformCommands))
-	copy(cmds, PlatformCommands)
+	cmds := make([]agents.PlatformCommand, 0, len(PlatformCommands)+8)
+	cmds = append(cmds, PlatformCommands...)
+
+	seen := make(map[string]bool, len(cmds))
+	for _, cmd := range cmds {
+		seen[strings.ToLower(cmd.Name)] = true
+	}
+
+	paths := s.discoveryPathsForInstance(row.InstanceID, row.ProjectID, row.WorktreeID)
+	loadedSkills := skills.LoadSkills(paths)
+	for _, sk := range loadedSkills {
+		lowerName := strings.ToLower(sk.Name)
+		if seen[lowerName] {
+			continue
+		}
+		seen[lowerName] = true
+		cmds = append(cmds, agents.PlatformCommand{
+			Name:         sk.Name,
+			Description:  sk.Description,
+			Category:     agents.CommandCategoryPrompt,
+			ArgumentHint: "[任务说明]",
+		})
+	}
+
 	return cmds, nil
 }
 

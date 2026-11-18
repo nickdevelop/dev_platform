@@ -112,6 +112,50 @@ func extractFrontmatter(data []byte) (frontmatter, error) {
 	return fm, nil
 }
 
+// ReadSkillInstructions reads the markdown body of a skill file, stripping the YAML frontmatter.
+func ReadSkillInstructions(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read skill file %q: %w", path, err)
+	}
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
+	trimmed := bytes.TrimLeft(raw, " \r\n\t")
+	if !bytes.HasPrefix(trimmed, []byte("---")) {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	afterOpening := trimmed[3:]
+	if len(afterOpening) == 0 || (afterOpening[0] != '\n' && afterOpening[0] != '\r') {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	idx := bytes.Index(afterOpening, []byte("\n---"))
+	if idx < 0 {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	body := afterOpening[idx+len("\n---"):]
+	return strings.TrimSpace(string(body)), nil
+}
+
+// BuildSkillInvocationPrompt formats a user turn that explicitly invokes a skill via slash command.
+func BuildSkillInvocationPrompt(skill *Skill, instructions string, userArgs string) string {
+	taskText := strings.TrimSpace(userArgs)
+	if taskText == "" {
+		taskText = "请激活并根据该技能的指导原则开展工作。"
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<invoked_skill name=%q location=%q>\n", skill.Name, skill.FilePath))
+	if strings.TrimSpace(instructions) != "" {
+		sb.WriteString("<instructions>\n")
+		sb.WriteString(strings.TrimSpace(instructions))
+		sb.WriteString("\n</instructions>\n")
+	}
+	sb.WriteString("<task>\n")
+	sb.WriteString(taskText)
+	sb.WriteString("\n</task>\n")
+	sb.WriteString("</invoked_skill>")
+	return sb.String()
+}
+
 // sanitizeName normalizes candidate skill names to lowercase alphanumeric with hyphens.
 func sanitizeName(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))

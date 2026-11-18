@@ -404,7 +404,7 @@ func newTestEnv(t *testing.T, platformEnabled ...func(agents.BackendID) bool) *t
 	}
 
 	return &testEnv{
-		svc:        NewService(db, registry, instanceService, WithPlatformEnabled(enabled)),
+		svc:        NewService(db, registry, instanceService, WithPlatformEnabled(enabled), WithProjectDirectoryResolver(projectService)),
 		db:         db,
 		instances:  instanceService,
 		registry:   registry,
@@ -2049,4 +2049,213 @@ func TestListSessionsPaginationAndFiltering(t *testing.T) {
 	_ = s1
 	_ = s2
 	_ = s3
+}
+
+func TestListCommandsWithSkills(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.svc.Close()
+
+	// 1. Create a project-level skill in alpha/.skills/plantuml/SKILL.md
+	skillDir := filepath.Join(env.projectDir, ".skills", "plantuml")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skillDir: %v", err)
+	}
+	skillContent := `---
+name: plantuml
+description: 绘制 PlantUML 图表技能
+---
+# PlantUML 指南
+这里是指令...`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	// 2. Create a session
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-cmds"}
+	sess, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "test session", "", "")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// 3. Query commands
+	cmds, err := env.svc.ListCommands(context.Background(), env.projectID, sess.Session.ID)
+	if err != nil {
+		t.Fatalf("ListCommands: %v", err)
+	}
+
+	var foundCompact, foundPlantuml bool
+	for _, cmd := range cmds {
+		if cmd.Name == "compact" {
+			foundCompact = true
+			if cmd.Category != agents.CommandCategoryAction {
+				t.Errorf("compact category = %q, want action", cmd.Category)
+			}
+		}
+		if cmd.Name == "plantuml" {
+			foundPlantuml = true
+			if cmd.Category != agents.CommandCategoryPrompt {
+				t.Errorf("plantuml category = %q, want prompt", cmd.Category)
+			}
+			if cmd.Description != "绘制 PlantUML 图表技能" {
+				t.Errorf("plantuml description = %q", cmd.Description)
+			}
+		}
+	}
+	if !foundCompact {
+		t.Errorf("compact command not found in ListCommands response")
+	}
+	if !foundPlantuml {
+		t.Errorf("plantuml skill not found in ListCommands response")
+	}
+}
+
+func TestListProjectCommandsWithSkills(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.svc.Close()
+
+	// 1. Create a project-level skill in alpha/.skills/plantuml/SKILL.md
+	skillDir := filepath.Join(env.projectDir, ".skills", "plantuml")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skillDir: %v", err)
+	}
+	skillContent := `---
+name: plantuml
+description: 绘制 PlantUML 图表技能
+---
+# PlantUML 指南
+这里是指令...`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	// 2. Query project commands directly (no session required!)
+	cmds, err := env.svc.ListProjectCommands(context.Background(), env.projectID, 0)
+	if err != nil {
+		t.Fatalf("ListProjectCommands: %v", err)
+	}
+
+	var foundPlantuml bool
+	for _, cmd := range cmds {
+		if cmd.Name == "plantuml" {
+			foundPlantuml = true
+			if cmd.Category != agents.CommandCategoryPrompt {
+				t.Errorf("plantuml category = %q, want prompt", cmd.Category)
+			}
+			if cmd.Description != "绘制 PlantUML 图表技能" {
+				t.Errorf("plantuml description = %q", cmd.Description)
+			}
+		}
+	}
+	if !foundPlantuml {
+		t.Errorf("plantuml skill not found in ListProjectCommands response")
+	}
+
+	// 3. HTTP handler test for GET /api/projects/:id/commands
+	router := gin.New()
+	env.svc.RegisterRoutes(router)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/projects/%d/commands", env.projectID), nil)
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /projects/:id/commands status = %d, want 200", rec.Code)
+	}
+	var resp commandsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal commandsResponse: %v", err)
+	}
+	foundInHTTP := false
+	for _, cmd := range resp.Commands {
+		if cmd.Name == "plantuml" {
+			foundInHTTP = true
+			break
+		}
+	}
+	if !foundInHTTP {
+		t.Errorf("expected plantuml skill in HTTP GET /projects/:id/commands response")
+	}
+}
+
+func TestSendMessageInvokesSkillPrompt(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.svc.Close()
+
+	skillDir := filepath.Join(env.projectDir, ".skills", "plantuml")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skillDir: %v", err)
+	}
+	skillContent := `---
+name: plantuml
+description: 绘制 PlantUML 图表技能
+---
+# PlantUML 指南
+画图时请使用标准语法`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-skill-prompt"}
+	sess, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "", "")
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	// 1. Send slash command invocation with args
+	updated, err := env.svc.Send(context.Background(), env.projectID, sess.Session.ID, "/plantuml 画一个架构图", "")
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if updated.Title != "/plantuml 画一个架构图" {
+		t.Errorf("session title = %q, want user's slash input", updated.Title)
+	}
+
+	env.fake.mu.Lock()
+	if len(env.fake.sends) != 1 {
+		t.Fatalf("expected 1 send, got %d", len(env.fake.sends))
+	}
+	sentPrompt := env.fake.sends[0].Text
+	env.fake.mu.Unlock()
+
+	if !strings.Contains(sentPrompt, `<invoked_skill name="plantuml"`) {
+		t.Errorf("sentPrompt missing <invoked_skill tag:\n%s", sentPrompt)
+	}
+	if !strings.Contains(sentPrompt, "画图时请使用标准语法") {
+		t.Errorf("sentPrompt missing skill instructions:\n%s", sentPrompt)
+	}
+	if !strings.Contains(sentPrompt, "<task>\n画一个架构图\n</task>") {
+		t.Errorf("sentPrompt missing user task args:\n%s", sentPrompt)
+	}
+
+	// 2. Normal message should NOT be wrapped with skill prompt
+	_, err = env.svc.Send(context.Background(), env.projectID, sess.Session.ID, "普通消息内容", "")
+	if err != nil {
+		t.Fatalf("Send normal: %v", err)
+	}
+	env.fake.mu.Lock()
+	if len(env.fake.sends) != 2 {
+		t.Fatalf("expected 2 sends, got %d", len(env.fake.sends))
+	}
+	secondPrompt := env.fake.sends[1].Text
+	env.fake.mu.Unlock()
+
+	if secondPrompt != "普通消息内容" {
+		t.Errorf("secondPrompt = %q, want '普通消息内容'", secondPrompt)
+	}
+
+	// 3. Create session with initial slash message
+	env.fake.createRef = &agents.SessionRef{InstanceID: env.instanceID, Backend: agents.BackendPi, SessionID: "native-init-slash", Title: "初始架构图"}
+	initOutcome, err := env.svc.Create(context.Background(), env.projectID, agents.BackendPi, "", "/plantuml 初始架构图", "")
+	if err != nil {
+		t.Fatalf("Create with initial slash message: %v", err)
+	}
+	_ = initOutcome
+	env.fake.mu.Lock()
+	if len(env.fake.sends) != 3 {
+		t.Fatalf("expected 3 sends, got %d", len(env.fake.sends))
+	}
+	thirdPrompt := env.fake.sends[2].Text
+	env.fake.mu.Unlock()
+
+	if !strings.Contains(thirdPrompt, `<invoked_skill name="plantuml"`) || !strings.Contains(thirdPrompt, "初始架构图") {
+		t.Errorf("thirdPrompt unexpected:\n%s", thirdPrompt)
+	}
 }

@@ -79,7 +79,7 @@ export async function dispatchSlashCommand(
   // 3. Unknown or unsupported commands fallback notice
   return {
     handled: true,
-    notice: `未知命令 /${name}。当前平台支持的命令：/compact`,
+    notice: `未知命令 /${name}。可键入 / 查看当前支持的命令与技能。`,
     clearInput: true,
   }
 }

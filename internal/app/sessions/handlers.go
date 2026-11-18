@@ -34,6 +34,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.DELETE("/projects/:id/sessions/:sessionId", s.handleDelete)
 	r.GET("/projects/:id/sessions/:sessionId/history", s.handleHistory)
 	r.GET("/projects/:id/sessions/:sessionId/history/images/:imageId", s.handleHistoryImage)
+	r.GET("/projects/:id/commands", s.handleProjectCommands)
 	r.GET("/projects/:id/sessions/:sessionId/commands", s.handleCommands)
 	r.POST("/projects/:id/sessions/:sessionId/command", s.handleExecuteCommand)
 	r.POST("/projects/:id/sessions/:sessionId/compact", s.handleCompactSession)
@@ -482,6 +483,26 @@ func (s *Service) handleDelete(c *gin.Context) {
 // commandsResponse is the JSON body of GET /api/projects/:id/sessions/:sessionId/commands.
 type commandsResponse struct {
 	Commands []agents.AgentCommand `json:"commands"`
+}
+
+// handleProjectCommands lists the slash commands and skills supported for a project or worktree.
+func (s *Service) handleProjectCommands(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	var worktreeID uint
+	if raw := strings.TrimSpace(c.Query("worktreeId")); raw != "" {
+		if val, err := strconv.ParseUint(raw, 10, 32); err == nil {
+			worktreeID = uint(val)
+		}
+	}
+	commands, err := s.ListProjectCommands(c.Request.Context(), id, worktreeID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, commandsResponse{Commands: commands})
 }
 
 // handleCommands lists the slash commands and skills supported by the session's backend.

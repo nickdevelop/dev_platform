@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,27 @@ func LoadSkills(paths DiscoveryPaths) []Skill {
 	scanTier(paths.DataSkillsDir)
 
 	return result
+}
+
+// FindSkillByName finds a skill by case-insensitive name from a loaded skill slice.
+func FindSkillByName(skills []Skill, name string) *Skill {
+	clean := strings.ToLower(strings.TrimSpace(name))
+	for i := range skills {
+		if strings.ToLower(skills[i].Name) == clean {
+			return &skills[i]
+		}
+	}
+	return nil
+}
+
+// ResolveSkill loads available skills from the paths and finds one matching name.
+func ResolveSkill(paths DiscoveryPaths, name string) (*Skill, error) {
+	skills := LoadSkills(paths)
+	s := FindSkillByName(skills, name)
+	if s == nil {
+		return nil, fmt.Errorf("skill %q not found", name)
+	}
+	return s, nil
 }
 
 // ScanSkillsDir scans a single directory for skills according to Agent Skills conventions:

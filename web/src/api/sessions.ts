@@ -343,6 +343,15 @@ export function listSessionCommands(
   )
 }
 
+// GET /api/projects/{id}/commands
+export function listProjectCommands(
+  projectId: number,
+  worktreeId?: number,
+): Promise<SessionCommandsResponse> {
+  const query = worktreeId ? `?worktreeId=${worktreeId}` : ''
+  return get<SessionCommandsResponse>(`/projects/${projectId}/commands${query}`)
+}
+
 export interface CommandExecutionResult {
   handled: boolean
   output?: string

@@ -352,6 +352,7 @@ const dropdown = useComposerDropdown({
       () => selectedProjectId.value ?? 0,
       () => '',
       () => selectedBackend.value || '',
+      () => selectedWorktreeId.value,
     ),
     new WorkspaceFileSource(
       () => selectedProjectId.value ?? 0,
@@ -545,6 +546,15 @@ async function createSession() {
   creating.value = true
   toolNotice.value = ''
   const rawText = messageText.value.trim()
+  if (rawText.startsWith('/')) {
+    const spaceIdx = rawText.indexOf(' ')
+    const cmdName = (spaceIdx === -1 ? rawText.slice(1) : rawText.slice(1, spaceIdx)).toLowerCase()
+    if (cmdName === 'compact') {
+      toolNotice.value = '会话尚未创建，无法执行上下文压缩命令'
+      creating.value = false
+      return
+    }
+  }
   const textToSend =
     rawText !== ''
       ? await resolveSessionMentions(targetProjectId, rawText, (targetId, options) =>

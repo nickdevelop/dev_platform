@@ -109,47 +109,89 @@ func TestLoadSkillsTiersAndPrecedence(t *testing.T) {
 		t.Fatalf("expected 4 unique skills, got %d", len(skills))
 	}
 
-	skillMap := make(map[string]Skill)
+	byName := make(map[string]Skill)
 	for _, s := range skills {
-		skillMap[s.Name] = s
+		byName[s.Name] = s
 	}
 
-	// shared-tool should be from project!
-	if s, ok := skillMap["shared-tool"]; !ok {
-		t.Errorf("missing shared-tool")
-	} else if s.Description != "shared tool from project" {
-		t.Errorf("expected shared-tool from project, got %q", s.Description)
+	if byName["shared-tool"].Description != "shared tool from project" {
+		t.Errorf("expected project-level skill to override others, got %q", byName["shared-tool"].Description)
+	}
+	if byName["user-only"].Description != "only in user" {
+		t.Errorf("expected user-only skill")
+	}
+	if byName["platform-only"].Description != "only in platform" {
+		t.Errorf("expected platform-only skill")
+	}
+	if byName["project-only"].Description != "only in project" {
+		t.Errorf("expected project-only skill")
 	}
 
-	// project-only, user-only, platform-only should all exist
-	if _, ok := skillMap["project-only"]; !ok {
-		t.Errorf("missing project-only")
+	// Test ResolveSkill & FindSkillByName
+	resolved, err := ResolveSkill(paths, "shared-tool")
+	if err != nil {
+		t.Fatalf("ResolveSkill shared-tool: %v", err)
 	}
-	if _, ok := skillMap["user-only"]; !ok {
-		t.Errorf("missing user-only")
-	}
-	if _, ok := skillMap["platform-only"]; !ok {
-		t.Errorf("missing platform-only")
+	if resolved.Description != "shared tool from project" {
+		t.Errorf("expected resolved skill description from project, got %q", resolved.Description)
 	}
 
-	// Test XML formatting
-	xml := FormatSkillsForPrompt(skills)
-	if !strings.Contains(xml, "<available_skills>") {
-		t.Errorf("expected <available_skills> in xml, got:\n%s", xml)
-	}
-	if !strings.Contains(xml, "<name>shared-tool</name>") {
-		t.Errorf("expected shared-tool in xml")
+	if _, err := ResolveSkill(paths, "nonexistent"); err == nil {
+		t.Errorf("expected error for nonexistent skill")
 	}
 }
 
-func writeSkill(t *testing.T, parentDir, name, desc string) {
-	t.Helper()
-	dir := filepath.Join(parentDir, name)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+func TestReadInstructionsAndBuildInvocation(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillPath := filepath.Join(tmpDir, "SKILL.md")
+	content := `---
+name: test-skill
+description: A test skill
+---
+# Main Instructions
+Line 1
+Line 2`
+	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
-	content := "---\nname: " + name + "\ndescription: " + desc + "\n---\n# Body"
-	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0644); err != nil {
+
+	instructions, err := ReadSkillInstructions(skillPath)
+	if err != nil {
+		t.Fatalf("ReadSkillInstructions failed: %v", err)
+	}
+	if !strings.Contains(instructions, "# Main Instructions") || !strings.Contains(instructions, "Line 2") {
+		t.Errorf("instructions missing expected content: %q", instructions)
+	}
+	if strings.Contains(instructions, "name: test-skill") {
+		t.Errorf("instructions should have stripped YAML frontmatter: %q", instructions)
+	}
+
+	skill := &Skill{
+		Name:     "test-skill",
+		FilePath: skillPath,
+	}
+
+	promptWithArgs := BuildSkillInvocationPrompt(skill, instructions, "do something cool")
+	if !strings.Contains(promptWithArgs, `<invoked_skill name="test-skill"`) ||
+		!strings.Contains(promptWithArgs, "<instructions>\n# Main Instructions") ||
+		!strings.Contains(promptWithArgs, "<task>\ndo something cool\n</task>") {
+		t.Errorf("BuildSkillInvocationPrompt output unexpected:\n%s", promptWithArgs)
+	}
+
+	promptEmptyArgs := BuildSkillInvocationPrompt(skill, instructions, "")
+	if !strings.Contains(promptEmptyArgs, "请激活并根据该技能的指导原则开展工作。") {
+		t.Errorf("expected default task prompt, got:\n%s", promptEmptyArgs)
+	}
+}
+
+func writeSkill(t *testing.T, dir, name, description string) {
+	t.Helper()
+	skillDir := filepath.Join(dir, name)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: " + name + "\ndescription: " + description + "\n---\nbody"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 }

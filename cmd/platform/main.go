@@ -389,6 +389,8 @@ func runServer(args []string) error {
 		sessions.WithServiceGate(agentServices),
 		sessions.WithPlatformEnabled(settingsService.Enabled),
 		sessions.WithCatalog(catalog),
+		sessions.WithDataDir(dataDir),
+		sessions.WithProjectDirectoryResolver(projectService),
 	)
 	defer sessionService.Close()
 	promptRepo := prompts.NewRepository(db)

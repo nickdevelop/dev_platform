@@ -55,7 +55,7 @@ describe('ProviderSlashSource', () => {
       badge: '功能',
       replacement: '/compact ',
     })
-    expect(items[1].badge).toBe('提示词')
+    expect(items[1].badge).toBe('技能')
 
     // Second load with filter should hit cache
     const filtered = await source.load(
@@ -84,5 +84,37 @@ describe('ProviderSlashSource', () => {
       ac.signal,
     )
     expect(items).toEqual([])
+  })
+
+  it('loads project commands when sessionId is empty (new session)', async () => {
+    const newSessionSource = new ProviderSlashSource(
+      () => 42,
+      () => '',
+      () => 'opencode-v2',
+      () => 1,
+    )
+
+    const mockProjectCommands: sessionsApi.PlatformCommand[] = [
+      { name: 'compact', description: '压缩上下文', category: 'action' },
+      { name: 'plantuml', description: '绘图技能', category: 'prompt' },
+    ]
+
+    const projectApiSpy = vi.spyOn(sessionsApi, 'listProjectCommands').mockResolvedValue({
+      commands: mockProjectCommands,
+    })
+
+    const items = await newSessionSource.load(
+      { trigger: '/', query: '', start: 0, end: 1, atLineStart: true },
+      new AbortController().signal,
+    )
+
+    expect(projectApiSpy).toHaveBeenCalledWith(42, 1)
+    expect(items.length).toBe(2)
+    expect(items[1].label).toBe('/plantuml')
+    expect(items[1].badge).toBe('技能')
+
+    // findCommand should also work in new session
+    const found = newSessionSource.findCommand('plantuml')
+    expect(found?.name).toBe('plantuml')
   })
 })

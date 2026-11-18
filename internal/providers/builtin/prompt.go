@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"devplatform/internal/core/platform"
-	"devplatform/internal/providers/builtin/skills"
+	"devplatform/internal/core/skills"
 )
 
 // maxContextFileSize caps reading single AGENTS.md files to prevent huge prompt injection.

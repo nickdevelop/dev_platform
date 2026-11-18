@@ -1,5 +1,5 @@
 import type { PlatformCommand } from '../../../../../api/sessions'
-import { listSessionCommands } from '../../../../../api/sessions'
+import { listProjectCommands, listSessionCommands } from '../../../../../api/sessions'
 import type { DropdownItem, DropdownSource, TriggerMatch } from '../types'
 
 // Default platform-designed commands available offline or before session commands load.
@@ -30,6 +30,7 @@ export class ProviderSlashSource implements DropdownSource {
     private readonly getProjectId: () => number,
     private readonly getSessionId: () => string,
     private readonly getBackend?: () => string | undefined,
+    private readonly getWorktreeId?: () => number | undefined,
   ) {}
 
   match(text: string, cursor: number): TriggerMatch | null {
@@ -55,6 +56,7 @@ export class ProviderSlashSource implements DropdownSource {
   async load(match: TriggerMatch, signal: AbortSignal): Promise<readonly DropdownItem[]> {
     const projectId = this.getProjectId()
     const sessionId = this.getSessionId()
+    const worktreeId = this.getWorktreeId?.()
 
     let commands: PlatformCommand[] | undefined
 
@@ -65,6 +67,20 @@ export class ProviderSlashSource implements DropdownSource {
       if (!commands) {
         try {
           const resp = await listSessionCommands(projectId, sessionId)
+          if (signal.aborted) return []
+          commands = resp.commands || []
+          this.cache.set(cacheKey, commands)
+        } catch {
+          commands = DEFAULT_PLATFORM_COMMANDS
+        }
+      }
+    } else if (projectId) {
+      const cacheKey = `project:${projectId}:${worktreeId ?? 0}`
+      commands = this.cache.get(cacheKey)
+
+      if (!commands) {
+        try {
+          const resp = await listProjectCommands(projectId, worktreeId)
           if (signal.aborted) return []
           commands = resp.commands || []
           this.cache.set(cacheKey, commands)
@@ -88,7 +104,7 @@ export class ProviderSlashSource implements DropdownSource {
         )
       })
       .map((cmd): DropdownItem => {
-        const badge = cmd.category === 'prompt' ? '提示词' : '功能'
+        const badge = cmd.category === 'prompt' ? '技能' : '功能'
         const detail = cmd.argumentHint
           ? `${cmd.description} · ${cmd.argumentHint}`
           : cmd.description
@@ -112,9 +128,17 @@ export class ProviderSlashSource implements DropdownSource {
     const cleanName = name.toLowerCase()
     const projectId = this.getProjectId()
     const sessionId = this.getSessionId()
+    const worktreeId = this.getWorktreeId?.()
 
-    const cacheKey = `${projectId}:${sessionId}`
-    const list = this.cache.get(cacheKey) || DEFAULT_PLATFORM_COMMANDS
+    let list: PlatformCommand[] | undefined
+    if (projectId && sessionId) {
+      list = this.cache.get(`${projectId}:${sessionId}`)
+    } else if (projectId) {
+      list = this.cache.get(`project:${projectId}:${worktreeId ?? 0}`)
+    }
+    if (!list) {
+      list = DEFAULT_PLATFORM_COMMANDS
+    }
 
     return list.find((c) => c.name.toLowerCase() === cleanName)
   }
