@@ -563,6 +563,36 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 40, name: "create_groups_and_group_tasks", run: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&Group{}) {
+			if err := tx.Migrator().CreateTable(&Group{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&GroupMember{}) {
+			if err := tx.Migrator().CreateTable(&GroupMember{}); err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasTable(&GroupTask{}) {
+			if err := tx.Migrator().CreateTable(&GroupTask{}); err != nil {
+				return err
+			}
+		}
+		if tx.Migrator().HasTable(&FlowRun{}) {
+			if !tx.Migrator().HasColumn(&FlowRun{}, "group_id") {
+				if err := tx.Migrator().AddColumn(&FlowRun{}, "group_id"); err != nil {
+					return err
+				}
+			}
+			if !tx.Migrator().HasColumn(&FlowRun{}, "worktree_id") {
+				if err := tx.Migrator().AddColumn(&FlowRun{}, "worktree_id"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

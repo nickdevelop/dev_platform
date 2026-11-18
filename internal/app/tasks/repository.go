@@ -479,7 +479,9 @@ func flowRunToDB(r FlowRun) database.FlowRun {
 	return database.FlowRun{
 		ID:                r.ID,
 		TaskID:            r.TaskID,
+		GroupID:           r.GroupID,
 		ProjectID:         r.ProjectID,
+		WorktreeID:        r.WorktreeID,
 		Status:            string(r.Status),
 		CurrentStep:       r.CurrentStep,
 		MaxSteps:          r.MaxSteps,
@@ -497,7 +499,9 @@ func flowRunFromDB(row database.FlowRun) FlowRun {
 	return FlowRun{
 		ID:                row.ID,
 		TaskID:            row.TaskID,
+		GroupID:           row.GroupID,
 		ProjectID:         row.ProjectID,
+		WorktreeID:        row.WorktreeID,
 		Status:            FlowRunStatus(row.Status),
 		CurrentStep:       row.CurrentStep,
 		MaxSteps:          row.MaxSteps,

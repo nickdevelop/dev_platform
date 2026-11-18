@@ -28,11 +28,13 @@ const route = useRoute()
 const openTabs = useOpenTabsStore()
 const draftsStore = useDraftsStore()
 
+// The groups routes declare `meta.groups` or start with /groups.
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The terminal routes declare `meta.terminal` or start with /terminal.
 // The notes routes declare `meta.notes` or start with /notes.
 // The pure-chat routes declare `meta.chat` or start with /chat.
 // The settings routes declare `meta.settings`.
+const groupsActive = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const terminalActive = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
 const notesActive = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
@@ -41,6 +43,7 @@ const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(
   () =>
     !settingsActive.value &&
+    !groupsActive.value &&
     !tasksActive.value &&
     !terminalActive.value &&
     !notesActive.value &&
@@ -109,6 +112,13 @@ function onProjectClick(event: MouseEvent) {
   }
 }
 
+function onGroupsClick(event: MouseEvent) {
+  emit('expandSidebar')
+  if (groupsActive.value) {
+    event.preventDefault()
+  }
+}
+
 function onTasksClick(event: MouseEvent) {
   emit('expandSidebar')
   if (tasksActive.value) {
@@ -172,6 +182,22 @@ function onSettingsClick() {
           />
         </svg>
         <span>对话</span>
+      </RouterLink>
+      <RouterLink
+        class="category"
+        :class="{ active: groupsActive }"
+        title="团队群组"
+        :aria-current="groupsActive ? 'page' : undefined"
+        :to="{ name: 'groups' }"
+        @click="onGroupsClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="9" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>群组</span>
       </RouterLink>
       <RouterLink
         class="category"
@@ -250,6 +276,8 @@ function onSettingsClick() {
 
 <style scoped>
 .category-rail {
+  position: relative;
+  z-index: 60;
   background: var(--rail-bg);
   display: flex;
   flex-direction: column;

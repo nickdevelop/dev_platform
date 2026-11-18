@@ -25,14 +25,14 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v39，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`、`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` / `chats` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记、v38 Git 工作树体系 `project_worktrees`，以及 **v39 笔记持久化体系**：新增 `notes` 表，支持标题、正文、关联项目 ID 与时间戳，为全平台提供独立与项目维度的 Markdown 笔记管理） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v40，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`、`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` / `chats` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记、v38 Git 工作树体系 `project_worktrees`、v39 笔记持久化体系 `notes` 表，以及 **v40 团队群组与群组任务体系**：新增 `groups`、`group_members`、`group_tasks` 表，并在 `flow_runs` 增加 `group_id` 与 `worktree_id` 支撑工作树隔离的多 Agent 团队协同任务） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、ConPTY/PTY 分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
 | **前端状态与路由** | Pinia 4.0, Vue Router 5.4 | 领域驱动的 Store 分层，支持草稿跨会话暂存 |
 | **前端展现渲染** | xterm.js 5.3, Marked 18.1, DOMPurify 3.4, `@plantuml/core` | 终端仿真、安全 Markdown 流式渲染、PlantUML 在线绘图 |
 | **桌面客户端外壳** | Electron v34, TypeScript, Node.js 原生 HTTP/WebSocket 透明代理, `electron-builder` | 原生跨平台桌面封装（Linux/Windows/macOS，禁用/移除默认原生菜单栏）、Sidecar 本地子进程纳管、双模网络同构代理与凭据加密安全存储 |
-| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (808 单测全量通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、协同流程群聊单测、桌面代理与连接单测、全流程端到端自动化 |
+| **测试与质量门禁** | Go Testing + AST 静态扫描守卫; Vitest 5.0 (937+ 单测全量通过); Node.js 原生 Test Runner; Playwright E2E | 源码级架构分层守卫、CSRF 防绕过拦截矩阵、平台 UI 库组件单测、协同流程群聊单测、桌面代理与连接单测、全流程端到端自动化 |
 
 ---
 
@@ -43,10 +43,10 @@
 ```
 ① 组合根     cmd/platform/（Go 服务入口）+ desktop/src/main/（Electron 桌面主进程）+ web/src/{main.ts, App.vue, router.ts}（Vue 挂载）
 ④ 契约层     internal/core/agents（标准协议/事件/注册表）、internal/core/platform（OS 抽象）
-③ 领域服务   internal/app/{sessions, instances, agentmodels, agentusage, projects, chat, platformtools, tasks, terminal, settings, auth, ...}
+③ 领域服务   internal/app/{groups, sessions, instances, agentmodels, agentusage, projects, chat, platformtools, tasks, terminal, settings, auth, ...}
 ⑤ 异构适配   internal/providers/{opencode, pi, deepseek, builtin, agy}（实现 core 契约，向组合根导出 Descriptor）
 传输编排     internal/transport/http（路由编排、AccessLog 与 gzip 压缩中间件、静态资源 SPA 托管）+ desktop/src/main/proxy.ts（桌面透明反代）
-② 前端展示   web/src/features/{chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
+② 前端展示   web/src/features/{groups, chat, workspace, projects, settings, terminal, tasks, ...}、web/src/shared/
 ```
 
 ### 依赖方向与防腐规则（守卫强制执行）：
@@ -73,7 +73,8 @@
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、项目 Git 状态（`IsGit` 标记与 `GitInfo`）、Git 提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。**Git Worktree 生命周期**：`ListWorktrees` / `CreateWorktree` / `RemoveWorktree`，默认创建到仓库同级 `<repo>-worktrees/<branch-slug>`，分支名严格校验，移除前停止该工作树全部实例并拒绝脏工作区，分支保留；所有文件/Git/预览接口支持可选 `worktreeId` 作用域（0 为主工作区）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket、工作树服务与显示配置）、`worktree.go`（工作树创建/移除/目录解析）、`files.go`（工作区文件树与内容读取，支持工作树作用域）、`handlers.go`（项目、工作树与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成、差异比对与工作树作用域） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程；移除工作树通过 `InstanceStopper` 停止该工作树实例。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；下行生成增量与消息事件统一接入全局事件网关（`events.Manager`，channel: `chat`），彻底退役 `GET /chats/:id/events`、`StreamChat` 及废弃的内部私有事件总线（已删除 `event_bus.go`）。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线统一由 `events.Manager` 调度。 |
 | **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）、提示词管理（`prompts.Service`）以及会话索引查询（`sessions.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`、`platform_list_sessions`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，使 Chat 中的轻量级 Agent 能够自主查询与管理平台项目、会话与提示词，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects`、`prompts` 与 `sessions` 领域服务，不直接接触数据库与底层进程。 |
-| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；配备独立的流程数据采集总线（`TelemetryBus`），通过 `sessions.Service.SubscribeSession` 强类型通道直连下游 Agent 会话实时事件流，实现低开销采集转发与轮次终结 Promise 自动汇聚；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
+| **`groups/`** | **团队群组与群组任务领域服务**。将团队协同任务从普通模板任务中剥离为独立业务体系：负责团队群组定义（`Group`，含中控调度大脑模型 `OrchestratorModel`、中控大脑系统提示词与群组规范 `OrchestratorPrompt`）、群组专家成员纳管（`GroupMember`，直接多选复用全局角色库 `agent_roles`）、群组专属任务（`GroupTask`，关联工作区项目 `ProjectID` 与独立 Git 工作树 `WorktreeID`、调度策略及总目标 Prompt）；实现 `flow.GroupProvider` 契约，在中控调度时将群组专属中控 Prompt 注入 AI 大脑系统上下文，并在派发专家角色时直连 `CreateInWorktree` 实现 Git Worktree 级别的多 Agent 文件与执行环境物理隔离；提供完整的群组 CRUD、成员批量配置、群组任务管理与协同执行触发（`TriggerGroupTask`）、人机问答回帖（`PostUserMessage`）及中断（`CancelRun`）；协同事件统一接入全局事件网关（`events.Manager`，channel: `tasks`）。 | `model.go`（群组与群组任务领域模型/DTO）、`service.go`（业务逻辑与协同生命周期）、`repository.go`（持久化存储与成员联合查询）、`group_provider.go`（flow.GroupProvider 契约适配）、`handlers.go`（REST 路由编排） | 纯通用同构层；依赖 `roles`、`projects`、`tasks/flow` 与 `events`，不直接耦合底层特定 Agent 后端。 |
+| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；全面支持群组协同提供者（`GroupProvider`），在派发专家 Agent 时直连会话启动器 `CreateInWorktree`，实现工作树隔离的团队任务闭环；配备独立的流程数据采集总线（`TelemetryBus`），通过 `sessions.Service.SubscribeSession` 强类型通道直连下游 Agent 会话实时事件流，实现低开销采集转发与轮次终结 Promise 自动汇聚；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎与工作树派发）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
@@ -88,7 +89,7 @@
 | **`agentdata/`** | 内置 Agent 转写数据域服务。承载"声明拥有自身会话数据"（Descriptor `OwnsSessionData`）的后端在平台数据库中的会话转写：adapter 侧经组合根注入的 `TranscriptStore` 契约读写，设置中心侧提供会话数据管理（分页列表 / 单条删除 / 批量清空，路由 `GET/DELETE /api/settings/agent-data/sessions...`）。删除时联动清理会话工作台索引行（组合根绑定 `sessions.Service.DeleteIndexByNative`），运行中的轮次拒绝删除（409 `session_busy`）；本包不出现任何后端 ID 字面量，服务的目标后端由组合根绑定。 | `store.go`（GORM 转写表读写与生命周期管理）、`handlers.go`（管理 REST API） | 只依赖 `database` 与 `core/agents`；purger 与 activity gate 为组合根注入的函数钩子，保持包的完全后端中立。 |
 | **`notes/`** | 平台笔记与技术随笔管理。支持 Markdown 格式笔记的独立持久化存储、全局与指定项目所属维度筛选、模糊关键词检索、防抖自动保存与快捷键保存；提供标准的 RESTful 路由编排（`GET/POST/PUT/DELETE /api/notes`），挂载于会话鉴权与 CSRF 保护之下。 | `model.go`（模型与 DTO）、`service.go`（业务规则与校验）、`repository.go`（持久化读写与过滤）、`handlers.go`（REST 路由编排） | 仅依赖数据库与标准库，不依赖具体 Agent 后端；作为平台一等中立知识记录实体。 |
 | **`roles/`** | 全局专家角色管理。将多 Agent 协同流程中的角色抽取为平台一等实体，统一人设名称、职责描述、执行引擎（Backend）、分配模型（Model）与标识色彩；统一关联并动态同步提示词库中的角色类提示词，供多 Agent 协同流程与对话助手按需选用与复用。 | `model.go`（角色模型与 DTO）、`service.go`（角色 CRUD 与提示词动态同步）、`repository.go`（持久化存储与平滑兼容转换）、`handlers.go`（REST API 路由） | 依赖 `core/agents` 契约与 `prompts.Service` 接口，与具体后端实现解耦。 |
-| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v39 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`；v37 为 `agent_models` 增加 `name_customized` 并回填旧自动名称；v38 新增 `project_worktrees` 工作树表，并为 `agent_instances` / `agent_sessions` 增加 `worktree_id`；v39 新增 `notes` 表实现平台知识笔记持久化）。迁移历史模型与当前活动模型（`models.go`）严格解耦：历史已 drop 的废弃表结构体（`legacyWorkspaceRoot`, `legacyAgentBackendConfig`, `legacyResource`, `legacyProjectResource`, `legacySessionPrompt`, `legacyManagedResourceFile`）作为私有影子类型内聚在 `migrations.go` 局部迁移闭包中，彻底移除 `models.go` 中已废弃的僵尸模型定义。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑与私有迁移模型） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
+| **`database/`** | 平台数据持久化基础设施。GORM 数据库连接池初始化、版本化自动迁移（当前 v40 迁移链，v35 含 `prompts` 表增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` 增加 `prompt_id` 实现对话助手对提示词管理的统一引用机制、`agent_models` / `agent_model_catalogs` 增加 `enabled` 字段、服务代理映射表 `service_proxies`，以及多 Agent 协同流体系核心表 `flow_roles`、`flow_runs`、`flow_messages` 与 `tasks.orchestrator_model`；v36 新增内置 Agent 平台持久化转写表 `agent_builtin_sessions` / `agent_builtin_messages`；v37 为 `agent_models` 增加 `name_customized` 并回填旧自动名称；v38 新增 `project_worktrees` 工作树表，并为 `agent_instances` / `agent_sessions` 增加 `worktree_id`；v39 新增 `notes` 表实现平台知识笔记持久化；v40 新增 `groups`、`group_members`、`group_tasks` 表，并在 `flow_runs` 中引入 `group_id` 与 `worktree_id`）。迁移历史模型与当前活动模型（`models.go`）严格解耦：历史已 drop 的废弃表结构体（`legacyWorkspaceRoot`, `legacyAgentBackendConfig`, `legacyResource`, `legacyProjectResource`, `legacySessionPrompt`, `legacyManagedResourceFile`）作为私有影子类型内聚在 `migrations.go` 局部迁移闭包中，彻底移除 `models.go` 中已废弃的僵尸模型定义。设置纯 Go 嵌入式 SQLite 驱动安全连接池上限（MaxOpenConns=1），结合 WAL 模式与 5 秒 busy_timeout 消除并发写锁争用。 | `database.go`（SQLite 连接与连接池配置）、`migrations.go`（版本演化迁移逻辑与私有迁移模型） | 单一 SQLite 数据库；纯 Go 驱动无需系统 SQLite 动态库。 |
 | **`runtime/`** | 单实例互斥控制。通过工作目录文件锁（lockfile）防止多个服务端进程并发冲突打开同一个 SQLite 数据库。 | `single_instance.go`（跨平台文件排他锁实现） | 组合根启动时最先获取，退出时最后释放。 |
 | **`paths/`** | 跨平台路径解析与安全性校验。规范化路径表示，防范 `../` 目录穿越攻击，检验项目工作区授权边界。 | `paths.go`（安全路径判定与绝对路径规范化） | 被 `projects`、`instances` 等模块作为安全基座调用。 |
 
@@ -145,7 +146,8 @@ web/src/
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位（复用 shared/composables/useDraggablePosition）与最近对话下拉
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 任务 → 终端 → 笔记 → 设置）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订；引入 groupsMode 调度中间栏群组列表 GroupsSidebar）、分类导航条（CategoryRail.vue，一级菜单顺序：项目 → 对话 → 群组 → 任务 → 终端 → 笔记 → 设置）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
+  │     ├── groups/    ── 团队群组工作台（GroupsView.vue 团队主视图、GroupsSidebar.vue 遵循 sidebar.css 标准规范的三段式侧栏、GroupEditPanel.vue 主工作台全屏面板支持团队创建与编辑无遮挡无浮层体验、GroupDetailView.vue 团队详情/中控大脑设定预览/专家成员看板/项目与工作树隔离任务列表、GroupTaskCreateModal.vue 群组任务创建弹窗、GroupFlowChatDialog.vue 协同群聊工作台视窗）
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目管理】/Zone B 检索与过滤/Zone C 树容器）、项目设置 Tab 页面（ProjectSettingsView.vue，项目改名、路径只读、Git 状态、工作树创建/列表/移除与非 Git 说明）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐、打开项目设置、解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；Git 项目名称前显示 Git 标识；项目行提供新建会话与项目设置入口；展开项目时加载工作树标签）、会话卡片项（ProjectSessionItem.vue，展示工作树分支标签）、统一项目弹窗（ProjectManageDialog.vue，仅 register/create 两种模式）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、调试面板设置（DebugSettings.vue，localStorage 本浏览器开关控制全局调试入口显隐，不落库）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接 → 调试面板，无缝对齐 AppShell 单头部规范）
@@ -368,26 +370,28 @@ web/src/
 
 ---
 
-### 5. 多 Agent 协同流程与 IM 群聊调度流（Collaborative Flow Task & Multi-Agent IM Turn Flow）
+### 5. 团队群组与多 Agent 协同流程工作树隔离调度流（Team Groups & Flow Worktree Execution Flow）
 
-面向复杂复合研发场景，平台提供以平台内置 AI 大脑作为中枢调度核心、多个专业 Agent 角色分工闭环执行的协同工作流系统：
+面向复杂多 Agent 团队研发场景，平台将原协同流程任务从普通任务中剥离为独立的一级实体「团队群组（Groups）」，实现“定义团队成员库与中控大脑 → 为团队创建关联项目与独立 Git Worktree 的群组任务 → 中控大脑带专属 Prompt 自主规划派发 → 专家 Agent 在物理隔离工作树中修改代码与自测”的全闭环：
 
 ```
-[ 用户在任务中心创建/触发多 Agent 协同流程任务 ]
+[ 用户在群组中心配置团队成员库与中控大脑设定，并创建群组任务（指定项目与 Git Worktree）]
                       │
                       ▼
-1. Web 前端 (features/tasks/flow/FlowChatView.vue)
-   - 展现为团队协同 IM 群聊对话流
+1. Web 前端 (features/groups/GroupDetailView.vue / GroupFlowChatDialog.vue)
+   - 展现为团队协同 IM 群聊对话流与专家工作台
    - 经由统一事件网关（channel="tasks", targetId=runId）多路复用订阅流式事件，不再独占独立长连接
                       │
                       ▼
-2. 协同流程中枢引擎 (internal/app/tasks/flow/engine.go)
-   - 提取协同总目标，初始化 FlowRun 与首条用户目标消息
+2. 群组领域服务与中枢引擎 (internal/app/groups/ & internal/app/tasks/flow/engine.go)
+   - 提取协同总目标、团队中控模型与专属中控设定（OrchestratorPrompt）
+   - 初始化 FlowRun（携带 group_id 与 worktree_id）与首条用户目标消息
    - 启动基于 Function Calling 工具驱动的 ReAct 自主调度状态机
                       │
                       ▼
-3. 内置大脑规划与工具决策 (Orchestrator Step / FlowTools)
-   - 动态装配可用角色清单（角色名、职责、后端、模型、系统提示词及历史会话 ID）
+3. 内置中控大脑规划与工具决策 (Orchestrator Step / FlowTools)
+   - 动态装配群组专家成员清单（角色名、职责、执行后端、模型、系统提示词及历史会话 ID）
+   - 将群组定义的 OrchestratorPrompt 作为【群组中控大脑角色设定与专属规范】注入系统上下文
    - 调用中控模型流式生成分析与规划，经 EventBus 广播打字机动画
    - 自主决策并发起标准 Function Calls 工具调用：
        • flow_dispatch_role: 指派角色执行（支持新建会话或传入 session_id 复用会话多轮连续对话）
@@ -397,10 +401,10 @@ web/src/
                       │
                       ├─────────────────────────────────────────┐
                       ▼                                         ▼
-         【A. 纯推理型角色 (llm)】                   【B. 工作区 Coding Agent 角色】
-         - 依赖 chat.Completer                      - 依赖 sessions.SessionLauncher
-         - 携带角色设定与当前任务指令              - 启动或复用项目工作区 Agent 会话
-         - 流式补全输出分析或设计方案              - 真实修改文件、运行自测
+         【A. 纯推理型专家 (llm)】                 【B. 工作区 Coding Agent 角色】
+         - 依赖 chat.Completer                     - 依赖 sessions.CreateInWorktree(projectID, worktreeID)
+         - 携带角色设定与当前任务指令             - 在专属 Git 工作树目录中启动/复用 Agent 实例
+         - 流式补全输出分析或设计方案             - 物理隔离代码变动，不污染主开发分支
                       │                                         │
                       └────────────────────┬────────────────────┘
                                            │

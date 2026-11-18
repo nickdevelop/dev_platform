@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -135,9 +134,8 @@ func SystemTempDirs() []string {
 	}
 
 	addDir(os.TempDir())
-	if runtime.GOOS != "windows" {
-		addDir("/tmp")
-		addDir("/var/tmp")
+	for _, dir := range defaultExtraSystemTempDirs {
+		addDir(dir)
 	}
 
 	return dirs

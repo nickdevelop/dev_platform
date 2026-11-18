@@ -13,6 +13,7 @@ import (
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
+	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/notes"
@@ -91,6 +92,8 @@ type Dependencies struct {
 	Sessions *sessions.Service
 	// Tasks manages tasks, flows, orchestration, and scheduling.
 	Tasks *tasks.Service
+	// Groups manages team groups, member roles, and group tasks.
+	Groups *groups.Service
 	// Prompts manages reusable prompt templates.
 	Prompts *prompts.Service
 	// Notes manages user notes.
@@ -190,6 +193,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Tasks != nil {
 			deps.Tasks.RegisterRoutes(protected)
+		}
+		if deps.Groups != nil {
+			deps.Groups.RegisterRoutes(protected)
 		}
 		if deps.Prompts != nil {
 			deps.Prompts.RegisterRoutes(protected)

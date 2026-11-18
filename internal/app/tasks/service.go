@@ -16,6 +16,7 @@ import (
 // SessionLauncher abstracts session creation and messaging to avoid tight coupling.
 type SessionLauncher interface {
 	Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
+	CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
 	Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error)
 	Get(projectID uint, sessionID string) (sessions.Session, error)
 	Delete(projectID uint, sessionID string) error

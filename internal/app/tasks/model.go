@@ -113,7 +113,9 @@ const (
 type FlowRun struct {
 	ID                uint          `json:"id"`
 	TaskID            uint          `json:"taskId"`
+	GroupID           uint          `json:"groupId,omitempty"`
 	ProjectID         uint          `json:"projectId"`
+	WorktreeID        uint          `json:"worktreeId,omitempty"`
 	Status            FlowRunStatus `json:"status"`
 	CurrentStep       int           `json:"currentStep"`
 	MaxSteps          int           `json:"maxSteps"`

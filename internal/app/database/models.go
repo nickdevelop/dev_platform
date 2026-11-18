@@ -437,7 +437,9 @@ func (FlowRole) TableName() string { return "flow_roles" }
 type FlowRun struct {
 	ID                uint   `gorm:"primaryKey;column:id"`
 	TaskID            uint   `gorm:"column:task_id;not null;index"`
+	GroupID           uint   `gorm:"column:group_id;not null;default:0;index"`
 	ProjectID         uint   `gorm:"column:project_id;not null;index"`
+	WorktreeID        uint   `gorm:"column:worktree_id;not null;default:0"`
 	Status            string `gorm:"column:status;not null;default:'running'"` // "running" | "waiting_user" | "completed" | "failed" | "cancelled"
 	CurrentStep       int    `gorm:"column:current_step;not null;default:0"`
 	MaxSteps          int    `gorm:"column:max_steps;not null;default:15"`
@@ -487,4 +489,61 @@ type Note struct {
 
 // TableName pins the table name for Note.
 func (Note) TableName() string { return "notes" }
+
+// Group defines a collaborative team of agents with an orchestrator brain and member roles.
+// Table: groups.
+type Group struct {
+	ID                 uint      `gorm:"primaryKey;column:id"`
+	Name               string    `gorm:"column:name;not null"`
+	Description        string    `gorm:"column:description"`
+	OrchestratorModel  string    `gorm:"column:orchestrator_model;not null"`
+	OrchestratorPrompt string    `gorm:"column:orchestrator_prompt;type:text"`
+	Icon               string    `gorm:"column:icon;size:32"`
+	Color              string    `gorm:"column:color;size:32"`
+	CreatedAt          time.Time `gorm:"column:created_at"`
+	UpdatedAt          time.Time `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name for Group.
+func (Group) TableName() string { return "groups" }
+
+// GroupMember links a role from the global role library (agent_roles) to a group.
+// Table: group_members.
+type GroupMember struct {
+	ID        uint      `gorm:"primaryKey;column:id"`
+	GroupID   uint      `gorm:"column:group_id;not null;index"`
+	RoleID    uint      `gorm:"column:role_id;not null;index"`
+	SortOrder int       `gorm:"column:sort_order;not null;default:0"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+// TableName pins the table name for GroupMember.
+func (GroupMember) TableName() string { return "group_members" }
+
+// GroupTask represents a task assigned to a group to be solved by its orchestrator brain and member agents.
+// ProjectID and WorktreeID specify the target workspace and git worktree (0 = main worktree).
+// Table: group_tasks.
+type GroupTask struct {
+	ID              uint       `gorm:"primaryKey;column:id"`
+	GroupID         uint       `gorm:"column:group_id;not null;index"`
+	Title           string     `gorm:"column:title;not null"`
+	Description     string     `gorm:"column:description"`
+	ProjectID       uint       `gorm:"column:project_id;not null;index"`
+	WorktreeID      uint       `gorm:"column:worktree_id;not null;default:0"`
+	Prompt          string     `gorm:"column:prompt;type:text;not null"`
+	ScheduleType    string     `gorm:"column:schedule_type;not null;default:'manual'"` // "manual" | "once" | "cron"
+	ScheduledAt     *time.Time `gorm:"column:scheduled_at"`
+	CronExpr        string     `gorm:"column:cron_expr"`
+	ScheduleEnabled bool       `gorm:"column:schedule_enabled;not null;default:false"`
+	LastRunAt       *time.Time `gorm:"column:last_run_at"`
+	NextRunAt       *time.Time `gorm:"column:next_run_at"`
+	LastRunStatus   string     `gorm:"column:last_run_status;not null;default:'idle'"`
+	Status          string     `gorm:"column:status;not null;default:'active'"` // "active" | "disabled"
+	CreatedAt       time.Time  `gorm:"column:created_at"`
+	UpdatedAt       time.Time  `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name for GroupTask.
+func (GroupTask) TableName() string { return "group_tasks" }
+
 

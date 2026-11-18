@@ -124,9 +124,9 @@ function handleOpenSession() {
         v-else
         class="w-7 h-7 rounded flex items-center justify-center text-xs font-bold text-white border border-white/20"
         :style="{ backgroundColor: role?.color || '#3b82f6' }"
-        :title="role?.name || message.senderName"
+        :title="role?.name || message.senderName || 'Agent'"
       >
-        {{ (role?.name || message.senderName).slice(0, 1) }}
+        {{ (role?.name || message.senderName || 'A').slice(0, 1) }}
       </div>
     </div>
 

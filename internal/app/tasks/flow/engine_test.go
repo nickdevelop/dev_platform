@@ -169,14 +169,19 @@ type fakeSessionLauncher struct {
 }
 
 func (f *fakeSessionLauncher) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
+	return f.CreateInWorktree(ctx, projectID, 0, backend, title, message, model, images...)
+}
+
+func (f *fakeSessionLauncher) CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
 	sessID := fmt.Sprintf("native_sess_%d", len(f.created)+1)
 	f.created = append(f.created, sessID)
 	return sessions.CreateOutcome{
 		Session: sessions.Session{
-			ID:        sessID,
-			ProjectID: projectID,
-			Backend:   backend,
-			Status:    sessions.SessionActive,
+			ID:         sessID,
+			ProjectID:  projectID,
+			WorktreeID: worktreeID,
+			Backend:    backend,
+			Status:     sessions.SessionActive,
 		},
 	}, nil
 }
@@ -337,12 +342,17 @@ type fakeDelayedSessionLauncher struct {
 }
 
 func (f *fakeDelayedSessionLauncher) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
+	return f.CreateInWorktree(ctx, projectID, 0, backend, title, message, model, images...)
+}
+
+func (f *fakeDelayedSessionLauncher) CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
 	return sessions.CreateOutcome{
 		Session: sessions.Session{
-			ID:        "delayed_sess_1",
-			ProjectID: projectID,
-			Backend:   backend,
-			Status:    sessions.SessionActive,
+			ID:         "delayed_sess_1",
+			ProjectID:  projectID,
+			WorktreeID: worktreeID,
+			Backend:    backend,
+			Status:     sessions.SessionActive,
 		},
 	}, nil
 }

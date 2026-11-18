@@ -37,6 +37,16 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+function goToGroups() {
+  if (router) {
+    router.push({ name: 'groups' })
+  }
+}
+function goToSettingsModels() {
+  if (router) {
+    router.push({ name: 'settings-models' })
+  }
+}
 const agentsStore = useAgentsStore()
 const projectsStore = useProjectsStore()
 const promptsStore = usePromptsStore()
@@ -412,7 +422,12 @@ async function handleCreateTask() {
       <form class="create-form space-y-6" @submit.prevent="handleCreateTask">
         <!-- 1. Task Type Selection -->
         <div class="form-section space-y-2">
-          <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">任务类型</label>
+          <div class="flex items-center justify-between">
+            <label class="form-section-title text-xs font-semibold text-[var(--color-text-muted)]">任务类型</label>
+            <span class="text-2xs text-blue-600 dark:text-blue-400 font-medium cursor-pointer hover:underline" @click="goToGroups">
+              已全新推出「群组任务」，点击前往群组中心 &rarr;
+            </span>
+          </div>
           <div class="task-type-selector grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div
               class="type-card flex items-start gap-3 p-3.5 rounded-[var(--radius,6px)] border cursor-pointer select-none transition-colors"
@@ -454,8 +469,8 @@ async function handleCreateTask() {
               </div>
               <div class="type-info flex-1">
                 <div class="flex items-center gap-2">
-                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">多 Agent 协同流程任务</span>
-                  <span class="type-pill flow font-semibold">团队协同</span>
+                  <span class="type-title text-xs font-semibold text-[var(--color-text)]">流程任务</span>
+                  <span class="type-pill flow font-semibold">协同流程</span>
                 </div>
                 <p class="type-desc text-xs text-[var(--color-text-muted)] mt-1 leading-relaxed">平台中控自主调度与派发多 Agent 角色，以 IM 群聊形式闭环协同达成研发目标。</p>
               </div>
@@ -556,7 +571,7 @@ async function handleCreateTask() {
                 type="button"
                 variant="secondary"
                 class="text-xs px-2.5 py-1 shrink-0"
-                @click="router.push({ name: 'settings-models' })"
+                @click="goToSettingsModels"
               >
                 前往配置
               </UiButton>

@@ -26,6 +26,7 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
+import GroupsSidebar from '../groups/GroupsSidebar.vue'
 import NotesSidebar from '../notes/NotesSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
@@ -201,6 +202,8 @@ const taskRoute = computed(() => route.name === 'task-detail')
 const settingsMode = computed(() => route.meta.settings === true)
 // The tasks center manages tasks with their own list column and detail pane.
 const tasksMode = computed(() => route.meta.tasks === true)
+// The groups center manages team groups with their own list column and detail pane.
+const groupsMode = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
 // The prompts center manages prompt templates with their own list column and detail pane.
 const promptsMode = computed(() => route.meta.prompts === true)
 // The terminal center manages server terminals with their own list column and terminal workspace pane.
@@ -213,6 +216,7 @@ const chatMode = computed(() => route.meta.chat === true || route.path.startsWit
 const projectActive = computed(
   () =>
     !settingsMode.value &&
+    !groupsMode.value &&
     !tasksMode.value &&
     !promptsMode.value &&
     !terminalMode.value &&
@@ -269,8 +273,10 @@ const fullHeightPane = computed(() => route.meta.fullHeight === true)
 const columnLabel = computed(() =>
   settingsMode.value
     ? '功能导航'
-    : tasksMode.value
-      ? '任务列表'
+    : groupsMode.value
+      ? '团队群组列表'
+      : tasksMode.value
+        ? '任务列表'
       : promptsMode.value
         ? '提示词列表'
         : terminalMode.value
@@ -286,8 +292,10 @@ const columnLabel = computed(() =>
 const columnTitle = computed(() =>
   settingsMode.value
     ? '设置'
-    : tasksMode.value
-      ? '任务'
+    : groupsMode.value
+      ? '群组'
+      : tasksMode.value
+        ? '任务'
       : promptsMode.value
         ? '提示词'
         : terminalMode.value
@@ -756,7 +764,8 @@ watch(
 
       <!-- The middle column carries whichever list the open menu owns: the
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
-      <TasksSidebar v-if="tasksMode" />
+      <GroupsSidebar v-if="groupsMode" />
+      <TasksSidebar v-else-if="tasksMode" />
       <PromptsSidebar v-else-if="promptsMode" />
       <TerminalSidebar v-else-if="terminalMode" />
       <NotesSidebar v-else-if="notesMode" />

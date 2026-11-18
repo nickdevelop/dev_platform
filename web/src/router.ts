@@ -24,6 +24,7 @@ import SettingsRolesView from './features/settings/SettingsRolesView.vue'
 import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import AgentSettings from './features/settings/AgentSettings.vue'
+import GroupsView from './features/groups/GroupsView.vue'
 import TasksView from './features/tasks/TasksView.vue'
 import NotesView from './features/notes/NotesView.vue'
 import PromptsView from './features/prompts/PromptsView.vue'
@@ -88,6 +89,25 @@ export function createAppRouter() {
               { path: 'connections', name: 'settings-connections', component: ConnectionSettings },
               { path: 'debug', name: 'settings-debug', component: DebugSettings },
             ],
+          },
+          {
+            path: 'groups',
+            name: 'groups',
+            component: GroupsView,
+            meta: { groups: true, fullHeight: true },
+          },
+          {
+            path: 'groups/new',
+            name: 'group-new',
+            component: GroupsView,
+            meta: { groups: true, fullHeight: true },
+          },
+          {
+            path: 'groups/:groupId',
+            name: 'group-detail',
+            component: GroupsView,
+            meta: { groups: true, fullHeight: true },
+            props: (route) => ({ groupId: Number(route.params.groupId) }),
           },
           {
             path: 'tasks',

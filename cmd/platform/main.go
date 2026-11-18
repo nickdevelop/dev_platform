@@ -26,6 +26,7 @@ import (
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/events"
+	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/notes"
@@ -416,6 +417,12 @@ func runServer(args []string) error {
 	flowEngine := flow.NewEngine(taskRepo, sessionService, modelConfig, chat.NewOpenAICompleter(), flow.NewEventBus())
 	taskService.SetFlowController(flowEngine)
 
+	groupRepo := groups.NewRepository(db)
+	groupService := groups.NewService(groupRepo)
+	groupProvider := groups.NewProvider(groupRepo)
+	flowEngine.SetGroupProvider(groupProvider)
+	groupService.SetFlowController(flowEngine)
+
 	// Reconcile orphaned instances and tasks left in running states from a prior process.
 	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if n, err := instanceService.ReconcileOrphans(reconcileCtx); err == nil && n > 0 {
@@ -445,6 +452,7 @@ func runServer(args []string) error {
 	sessionService.SetEventsManager(eventsMgr)
 	chatService.SetEventsManager(eventsMgr)
 	taskService.SetEventsManager(eventsMgr)
+	groupService.SetEventsManager(eventsMgr)
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -479,6 +487,7 @@ func runServer(args []string) error {
 		AgentUsage:    agentUsage,
 		Sessions:      sessionService,
 		Tasks:         taskService,
+		Groups:        groupService,
 		Prompts:       promptService,
 		Notes:         notesService,
 		Roles:         rolesService,

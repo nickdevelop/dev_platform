@@ -41,6 +41,7 @@ type Completer interface {
 // SessionLauncher abstracts dispatching coding agent sessions in real project workspaces.
 type SessionLauncher interface {
 	Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
+	CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error)
 	Send(ctx context.Context, projectID uint, sessionID, text, model string, images ...[]agents.ImageAttachment) (sessions.Session, error)
 	Get(projectID uint, sessionID string) (sessions.Session, error)
 }
@@ -59,13 +60,39 @@ type TaskRepository interface {
 	ListFlowMessages(runID uint) ([]tasks.FlowMessage, error)
 }
 
+// GroupInfo carries group context for running group tasks.
+type GroupInfo struct {
+	ID                 uint
+	Name               string
+	OrchestratorModel  string
+	OrchestratorPrompt string
+}
+
+// GroupTaskInfo carries group task context.
+type GroupTaskInfo struct {
+	ID          uint
+	GroupID     uint
+	Title       string
+	Description string
+	ProjectID   uint
+	WorktreeID  uint
+	Prompt      string
+}
+
+// GroupProvider abstracts loading group and group task metadata for collaborative execution.
+type GroupProvider interface {
+	GetGroupTask(taskID uint) (GroupTaskInfo, GroupInfo, []tasks.FlowRole, error)
+	UpdateTaskLastRun(taskID uint, status string, runAt time.Time) error
+}
+
 // Engine coordinates multi-agent collaborative workflows driven by the orchestrator brain.
 type Engine struct {
-	repo      TaskRepository
-	launcher  tasks.SessionLauncher
-	resolver  ModelResolver
-	completer Completer
-	eventBus  *EventBus
+	repo          TaskRepository
+	launcher      tasks.SessionLauncher
+	resolver      ModelResolver
+	completer     Completer
+	eventBus      *EventBus
+	groupProvider GroupProvider
 
 	mu       sync.Mutex
 	cancels  map[uint]context.CancelFunc
@@ -92,6 +119,11 @@ func NewEngine(
 		cancels:   make(map[uint]context.CancelFunc),
 		runLocks:  make(map[uint]*sync.Mutex),
 	}
+}
+
+// SetGroupProvider attaches a provider for group and group task execution.
+func (e *Engine) SetGroupProvider(p GroupProvider) {
+	e.groupProvider = p
 }
 
 // EventBus exposes the event bus for SSE handlers.
@@ -201,6 +233,76 @@ func (e *Engine) StartRun(ctx context.Context, task tasks.Task, triggerType stri
 	task.LastRunAt = &now
 	task.LastRunStatus = tasks.RunExecuting
 	_ = e.repo.Update(task)
+
+	// Persist initial user goal message in chat
+	userMsg := tasks.FlowMessage{
+		RunID:      createdRun.ID,
+		SenderType: tasks.SenderUser,
+		SenderName: "用户",
+		Content:    prompt,
+		Status:     tasks.FlowMsgComplete,
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	savedUserMsg, err := e.repo.CreateFlowMessage(userMsg)
+	if err == nil {
+		e.eventBus.Publish(createdRun.ID, FlowEvent{
+			Type:    EventMessage,
+			RunID:   createdRun.ID,
+			Payload: savedUserMsg,
+		})
+	}
+
+	// Start asynchronous execution loop
+	e.triggerLoop(createdRun.ID)
+
+	return createdRun, nil
+}
+
+// StartGroupRun creates a FlowRun for a group task and triggers the coordinator loop.
+func (e *Engine) StartGroupRun(ctx context.Context, groupID uint, taskID uint, triggerType string, initialPrompt string) (tasks.FlowRun, error) {
+	if e.groupProvider == nil {
+		return tasks.FlowRun{}, errors.New("flow: group provider not configured")
+	}
+
+	taskInfo, groupInfo, roles, err := e.groupProvider.GetGroupTask(taskID)
+	if err != nil {
+		return tasks.FlowRun{}, fmt.Errorf("flow: get group task: %w", err)
+	}
+	if len(roles) == 0 {
+		return tasks.FlowRun{}, tasks.ErrNoRolesConfigured
+	}
+
+	prompt := strings.TrimSpace(initialPrompt)
+	if prompt == "" {
+		prompt = strings.TrimSpace(taskInfo.Prompt)
+	}
+	if prompt == "" {
+		prompt = fmt.Sprintf("执行群组任务：%s\n%s", taskInfo.Title, taskInfo.Description)
+	}
+
+	now := time.Now().UTC()
+	run := tasks.FlowRun{
+		TaskID:            taskInfo.ID,
+		GroupID:           groupInfo.ID,
+		ProjectID:         taskInfo.ProjectID,
+		WorktreeID:        taskInfo.WorktreeID,
+		Status:            tasks.FlowRunRunning,
+		CurrentStep:       0,
+		MaxSteps:          20,
+		OrchestratorModel: groupInfo.OrchestratorModel,
+		TriggerType:       triggerType,
+		Prompt:            prompt,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	createdRun, err := e.repo.CreateFlowRun(run)
+	if err != nil {
+		return tasks.FlowRun{}, fmt.Errorf("flow: create group run: %w", err)
+	}
+
+	_ = e.groupProvider.UpdateTaskLastRun(taskInfo.ID, "running", now)
 
 	// Persist initial user goal message in chat
 	userMsg := tasks.FlowMessage{
@@ -373,20 +475,43 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			return
 		}
 
-		task, err := e.repo.Get(run.TaskID)
-		if err != nil {
-			log.Printf("flow: get task failed: %v", err)
-			return
-		}
+		var task tasks.Task
+		var roles []tasks.FlowRole
+		var extraSysPrompt string
 
-		roles, err := e.repo.ListRoles(task.ID)
-		if err != nil || len(roles) == 0 {
-			log.Printf("flow: no roles found for task %d", task.ID)
-			return
+		if run.GroupID > 0 && e.groupProvider != nil {
+			taskInfo, groupInfo, groupRoles, err := e.groupProvider.GetGroupTask(run.TaskID)
+			if err != nil {
+				log.Printf("flow: get group task failed: %v", err)
+				return
+			}
+			roles = groupRoles
+			extraSysPrompt = groupInfo.OrchestratorPrompt
+			task = tasks.Task{
+				ID:                taskInfo.ID,
+				Title:             taskInfo.Title,
+				Description:       taskInfo.Description,
+				TaskType:          tasks.TaskTypeFlow,
+				ProjectID:         taskInfo.ProjectID,
+				OrchestratorModel: groupInfo.OrchestratorModel,
+				PromptTemplate:    taskInfo.Prompt,
+			}
+		} else {
+			var err error
+			task, err = e.repo.Get(run.TaskID)
+			if err != nil {
+				log.Printf("flow: get task failed: %v", err)
+				return
+			}
+			roles, err = e.repo.ListRoles(task.ID)
+			if err != nil || len(roles) == 0 {
+				log.Printf("flow: no roles found for task %d", task.ID)
+				return
+			}
 		}
 
 		// 1. Orchestrator Step: Think & Call Tools
-		stepOutcome, err := e.runOrchestratorStep(ctx, run, task, roles)
+		stepOutcome, err := e.runOrchestratorStep(ctx, run, task, roles, extraSysPrompt)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return
@@ -397,6 +522,10 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			run.Error = err.Error()
 			run.FinishedAt = &now
 			_ = e.repo.UpdateFlowRun(run)
+
+			if run.GroupID > 0 && e.groupProvider != nil {
+				_ = e.groupProvider.UpdateTaskLastRun(run.TaskID, "failed", now)
+			}
 
 			e.eventBus.Publish(run.ID, FlowEvent{
 				Type:  EventStatus,
@@ -416,6 +545,10 @@ func (e *Engine) executeLoop(ctx context.Context, runID uint) {
 			run.Status = tasks.FlowRunCompleted
 			run.FinishedAt = &now
 			_ = e.repo.UpdateFlowRun(run)
+
+			if run.GroupID > 0 && e.groupProvider != nil {
+				_ = e.groupProvider.UpdateTaskLastRun(run.TaskID, "success", now)
+			}
 
 			task.LastRunStatus = tasks.RunSuccess
 			_ = e.repo.Update(task)
@@ -503,6 +636,7 @@ func (e *Engine) runOrchestratorStep(
 	run tasks.FlowRun,
 	task tasks.Task,
 	roles []tasks.FlowRole,
+	extraSysPrompt string,
 ) (orchestratorStepOutcome, error) {
 	resolvedModel, err := e.resolver.ResolveModelByNameOrID(run.OrchestratorModel)
 	if err != nil {
@@ -550,6 +684,10 @@ func (e *Engine) runOrchestratorStep(
 3. 如果需要用户人工决策、澄清疑问或进行敏感确认，请调用 flow_ask_user 工具。
 4. 当所有子任务执行完成、代码或目标已达成、并经你检验合格后，请调用 flow_complete_task 提交最终成果总结。
 5. 保持严谨、专业、高效。`, strings.Join(roleDescriptions, "\n"))
+
+	if strings.TrimSpace(extraSysPrompt) != "" {
+		sysPrompt = fmt.Sprintf("【群组中控大脑角色设定与专属规范】\n%s\n\n%s", strings.TrimSpace(extraSysPrompt), sysPrompt)
+	}
 
 	completionMessages := []chat.CompletionMessage{
 		{
@@ -842,7 +980,7 @@ func (e *Engine) executeRoleStep(
 		savedMsg.Content = fmt.Sprintf("正在复用已有 Agent 会话 (`%s`) 进行交互...", sessID)
 		_ = e.repo.UpdateFlowMessage(savedMsg)
 
-		_, err := e.launcher.Send(ctx, task.ProjectID, sessID, instruction, role.Model)
+		_, err := e.launcher.Send(ctx, run.ProjectID, sessID, instruction, role.Model)
 		if err != nil {
 			savedMsg.Status = tasks.FlowMsgFailed
 			savedMsg.Content = fmt.Sprintf("向会话 `%s` 发送指令失败: %v", sessID, err)
@@ -850,11 +988,11 @@ func (e *Engine) executeRoleStep(
 			return err
 		}
 	} else {
-		// Launch new native session
+		// Launch new native session within the target project worktree
 		sessionTitle := fmt.Sprintf("[%s协同] %s 步骤 %d", task.Title, role.Name, run.CurrentStep+1)
 		combinedPrompt := fmt.Sprintf("%s\n\n【角色指派任务】:\n%s", role.SystemPrompt, instruction)
 
-		outcome, err := e.launcher.Create(ctx, task.ProjectID, role.Backend, sessionTitle, combinedPrompt, role.Model)
+		outcome, err := e.launcher.CreateInWorktree(ctx, run.ProjectID, run.WorktreeID, role.Backend, sessionTitle, combinedPrompt, role.Model)
 		if err != nil {
 			savedMsg.Status = tasks.FlowMsgFailed
 			savedMsg.Content = fmt.Sprintf("启动 Agent 会话失败: %v", err)

@@ -26,13 +26,18 @@ type fakeSessionLauncher struct {
 }
 
 func (f *fakeSessionLauncher) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
+	return f.CreateInWorktree(ctx, projectID, 0, backend, title, message, model, images...)
+}
+
+func (f *fakeSessionLauncher) CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (sessions.CreateOutcome, error) {
 	s := sessions.Session{
-		ID:        fmt.Sprintf("sess_%d", len(f.createdSessions)+1),
-		ProjectID: projectID,
-		Backend:   backend,
-		Title:     title,
-		Status:    sessions.SessionActive,
-		Turn:      sessions.TurnRunning,
+		ID:         fmt.Sprintf("sess_%d", len(f.createdSessions)+1),
+		ProjectID:  projectID,
+		WorktreeID: worktreeID,
+		Backend:    backend,
+		Title:      title,
+		Status:     sessions.SessionActive,
+		Turn:       sessions.TurnRunning,
 	}
 	f.createdSessions = append(f.createdSessions, s)
 	f.sentMessages = append(f.sentMessages, message)
