@@ -354,10 +354,11 @@ onBeforeUnmount(() => {
   content: '';
   position: absolute;
   top: 0;
-  left: 6px;
-  right: 6px;
+  left: 0;
+  right: 0;
   height: 2px;
-  border-radius: 9999px;
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
   background: var(--color-accent, #3b82f6);
 }
 

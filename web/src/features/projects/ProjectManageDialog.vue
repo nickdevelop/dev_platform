@@ -124,7 +124,7 @@ async function submit() {
         <div class="flex flex-col gap-1.5">
           <label for="dialog-path" class="text-xs font-semibold text-platform-text">目录的绝对路径</label>
           <UiInput id="dialog-path" v-model="pathInput" autocomplete="off" spellcheck="false" block />
-          <p class="hint text-xs text-platform-text-muted">目录必须位于已授权的工作区内；平台只记录路径，不会修改目录内容。</p>
+          <p class="hint text-xs text-platform-text-muted">目录必须位于已授权的工作区内；平台只记录路径，不会修改目录内容</p>
         </div>
       </template>
 
@@ -141,7 +141,7 @@ async function submit() {
             spellcheck="false"
             block
           />
-          <p class="hint text-xs text-platform-text-muted">在平台工作区和侧边栏中显示的项目友好名称。</p>
+          <p class="hint text-xs text-platform-text-muted">在平台工作区和侧边栏中显示的项目友好名称</p>
         </div>
 
         <div class="flex flex-col gap-1.5">

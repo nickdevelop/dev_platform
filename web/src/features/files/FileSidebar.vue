@@ -512,11 +512,14 @@ function onDragStart(event: DragEvent, path: string) {
       <button
         v-if="searchQuery"
         type="button"
-        class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-xs cursor-pointer"
+        class="absolute right-3.5 top-1/2 -translate-y-1/2 text-platform-text-muted hover:text-platform-text text-xs cursor-pointer inline-flex items-center justify-center w-4 h-4 rounded"
         title="清空搜索"
         @click="searchQuery = ''"
       >
-        ✕
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="3" x2="13" y2="13" />
+          <line x1="13" y1="3" x2="3" y2="13" />
+        </svg>
       </button>
     </div>
 

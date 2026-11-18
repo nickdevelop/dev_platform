@@ -348,12 +348,12 @@ function onSettingsClick() {
 .category.active::before {
   content: '';
   position: absolute;
-  left: -5px;
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
   height: 18px;
-  border-radius: 9999px;
+  border-radius: 0 2px 2px 0;
   background: var(--color-accent, #3b82f6);
 }
 

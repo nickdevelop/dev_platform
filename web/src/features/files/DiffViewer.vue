@@ -212,15 +212,23 @@ async function copyPatch() {
       </div>
 
       <!-- Binary file notice -->
-      <div v-else-if="diffData?.isBinary" class="p-8 text-center text-slate-500 dark:text-slate-400">
-        <div class="text-2xl mb-2">📄</div>
-        <p class="font-medium text-sm text-slate-700 dark:text-slate-300">二进制文件变更</p>
-        <p class="text-xs mt-1 text-slate-500">无法在文本编辑器中展示二进制文件的差异。</p>
+      <div v-else-if="diffData?.isBinary" class="p-8 text-center text-platform-text-muted">
+        <div class="inline-flex items-center justify-center w-10 h-10 rounded-md border border-platform-border bg-platform-surface-muted text-platform-text-muted mb-3 mx-auto">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+        </div>
+        <p class="font-medium text-sm text-platform-text">二进制文件变更</p>
+        <p class="text-xs mt-1 text-platform-text-muted">无法在文本编辑器中展示二进制文件的差异</p>
       </div>
 
       <!-- No change notice -->
-      <div v-else-if="!diffData || parsedLines.length === 0" class="p-8 text-center text-slate-500 dark:text-slate-400">
-        <p class="text-sm">该文件在此版本中没有文本变更。</p>
+      <div v-else-if="!diffData || parsedLines.length === 0" class="p-8 text-center text-platform-text-muted">
+        <p class="text-sm">该文件在此版本中没有文本变更</p>
       </div>
 
       <!-- Diff lines table -->

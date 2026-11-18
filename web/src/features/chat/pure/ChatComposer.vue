@@ -279,7 +279,7 @@ function closePreview() {
     </UiAlert>
 
     <div
-      class="chat-composer-box relative rounded-lg border border-platform-border bg-platform-surface shadow-sm p-2.5 flex flex-col gap-2 transition-all duration-150 focus-within:border-platform-primary focus-within:ring-2 focus-within:ring-platform-primary/20"
+      class="chat-composer-box relative rounded-lg border border-platform-border bg-platform-surface shadow-sm p-2.5 flex flex-col gap-2 transition-[border-color,box-shadow] duration-150 focus-within:border-platform-primary focus-within:ring-2 focus-within:ring-platform-primary/20"
       @dragover.prevent
       @drop.prevent="onDrop"
     >
@@ -315,7 +315,7 @@ function closePreview() {
         <div class="chat-composer-tools flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            class="chat-attach-btn w-7 h-7 flex items-center justify-center rounded-md border border-platform-border hover:border-platform-border-strong hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            class="chat-attach-btn w-7 h-7 flex items-center justify-center rounded-md border border-platform-border hover:border-platform-border-strong hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
             :disabled="!props.supportsImage || props.images.length >= MAX_IMAGES"
             :title="props.supportsImage ? '添加图片' : '当前模型不支持图片'"
             aria-label="添加图片"

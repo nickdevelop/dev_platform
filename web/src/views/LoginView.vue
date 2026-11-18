@@ -50,18 +50,18 @@ async function submit() {
 
 <template>
   <div class="login-wrapper min-h-screen w-full flex flex-col items-center justify-center p-4 bg-platform-bg text-platform-text selection:bg-platform-primary-soft selection:text-platform-primary">
-    <main class="login w-full max-w-sm rounded-xl border border-platform-border bg-platform-surface shadow-lg overflow-hidden transition-all duration-200">
+    <main class="login w-full max-w-sm rounded-xl border border-platform-border bg-platform-surface shadow-sm overflow-hidden">
       <!-- Card Header with Brand / Logo -->
       <div class="px-6 pt-7 pb-5 text-center border-b border-platform-border/60 bg-platform-surface-muted/40">
-        <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-platform-primary/10 text-platform-primary border border-platform-primary/20 mb-3.5 shadow-sm">
-          <svg viewBox="0 0 24 24" class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div class="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-platform-primary/10 text-platform-primary border border-platform-primary/20 mb-3">
+          <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="4 17 10 11 4 5" />
             <line x1="12" y1="19" x2="20" y2="19" />
           </svg>
         </div>
-        <h1 class="text-lg font-semibold tracking-tight text-platform-text">AI 开发项目管理平台</h1>
+        <h1 class="text-base font-semibold text-platform-text">AI 开发项目管理平台</h1>
         <p v-if="auth.needsSetup" class="text-xs text-platform-text-muted mt-1 leading-relaxed">
-          检测到首次在本机启动，请设置初始访问密码。
+          检测到首次在本机启动，请设置初始访问密码
         </p>
         <p v-else class="text-xs text-platform-text-muted mt-1 leading-relaxed">
           工程工作台与智能体协同环境
@@ -111,7 +111,7 @@ async function submit() {
             block
             :disabled="submitting || password === '' || (auth.needsSetup && confirmPassword === '')"
             :loading="submitting"
-            class="mt-1 font-medium shadow-sm active:scale-[0.99] transition-transform"
+            class="mt-1 font-medium"
           >
             {{ auth.needsSetup ? '设置密码并登录' : '登录' }}
           </UiButton>
@@ -123,11 +123,11 @@ async function submit() {
       </div>
 
       <!-- Card Subtle Footer -->
-      <div class="px-6 py-3 border-t border-platform-border/60 bg-platform-surface-muted/30 flex items-center justify-between text-3xs text-platform-text-muted font-mono">
-        <span>DEV_PLATFORM // HARNESS</span>
+      <div class="px-6 py-2.5 border-t border-platform-border/60 bg-platform-surface-muted/30 flex items-center justify-between text-3xs text-platform-text-muted">
+        <span>服务状态</span>
         <span class="inline-flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-platform-success"></span>
-          LOCAL ACTIVE
+          <span class="w-1.5 h-1.5 rounded-full bg-platform-success" aria-hidden="true"></span>
+          本地服务就绪
         </span>
       </div>
     </main>
