@@ -239,17 +239,100 @@ func TestReadAndListOutsideWorkspaceAllowed(t *testing.T) {
 		t.Errorf("list_directory output did not contain SKILL.md: %s", listRes)
 	}
 
-	// 3. write_file on external path MUST STILL BE BLOCKED by workspace boundary
-	writeArgs := `{"path": "` + filepath.ToSlash(filepath.Join(externalSkillDir, "forbidden.txt")) + `", "content": "leak"}`
+	// 3. write_file on non-temp external path MUST STILL BE BLOCKED by write boundary
+	home, _ := os.UserHomeDir()
+	nonTempExternal := filepath.Join(home, ".devplatform_non_temp_test", "forbidden.txt")
+	writeArgs := `{"path": "` + filepath.ToSlash(nonTempExternal) + `", "content": "leak"}`
 	_, err = registry.Execute(ctx, workDir, ToolWriteFile, writeArgs)
-	if err == nil || !strings.Contains(err.Error(), "escapes workspace boundary") {
-		t.Errorf("expected write_file outside workspace to be rejected with ErrPathEscapesWorkspace, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("expected write_file outside workspace and temp to be rejected, got: %v", err)
 	}
 
-	// 4. edit_file on external path MUST STILL BE BLOCKED by workspace boundary
-	editArgs := `{"path": "` + filepath.ToSlash(skillFilePath) + `", "old_string": "PlantUML", "new_string": "Hacked"}`
+	// 4. edit_file on non-temp external path MUST STILL BE BLOCKED by write boundary
+	editArgs := `{"path": "` + filepath.ToSlash(nonTempExternal) + `", "old_string": "a", "new_string": "b"}`
 	_, err = registry.Execute(ctx, workDir, ToolEditFile, editArgs)
-	if err == nil || !strings.Contains(err.Error(), "escapes workspace boundary") {
-		t.Errorf("expected edit_file outside workspace to be rejected with ErrPathEscapesWorkspace, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("expected edit_file outside workspace and temp to be rejected, got: %v", err)
+	}
+}
+
+func TestWriteAndEditInTempDirectoryAllowed(t *testing.T) {
+	workDir := t.TempDir()
+	registry := NewRegistry()
+	ctx := context.Background()
+
+	// 1. Target file in os.TempDir() with nested subdirectory
+	tempSubDir := filepath.Join(os.TempDir(), "devplat_test_write_whitelist", "nested")
+	defer os.RemoveAll(filepath.Join(os.TempDir(), "devplat_test_write_whitelist"))
+
+	tempFile := filepath.Join(tempSubDir, "output.json")
+	writeArgs := `{"path": "` + filepath.ToSlash(tempFile) + `", "content": "{\"status\": \"initial\"}\n"}`
+	writeRes, err := registry.Execute(ctx, workDir, ToolWriteFile, writeArgs)
+	if err != nil {
+		t.Fatalf("expected write_file in temp dir to succeed, got: %v", err)
+	}
+	if !strings.Contains(writeRes, "Successfully wrote") {
+		t.Errorf("write_file response unexpected: %s", writeRes)
+	}
+
+	// 2. edit_file on the temp file
+	editArgs := `{"path": "` + filepath.ToSlash(tempFile) + `", "old_string": "initial", "new_string": "updated"}`
+	editRes, err := registry.Execute(ctx, workDir, ToolEditFile, editArgs)
+	if err != nil {
+		t.Fatalf("expected edit_file in temp dir to succeed, got: %v", err)
+	}
+	if !strings.Contains(editRes, "Successfully replaced") {
+		t.Errorf("edit_file response unexpected: %s", editRes)
+	}
+
+	// 3. Verify content
+	readRes, err := registry.Execute(ctx, workDir, ToolReadFile, `{"path": "`+filepath.ToSlash(tempFile)+`"}`)
+	if err != nil {
+		t.Fatalf("read_file failed: %v", err)
+	}
+	if !strings.Contains(readRes, "updated") {
+		t.Errorf("expected updated content in temp file: %s", readRes)
+	}
+}
+
+func TestSafeResolveWritePath(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// 1. Valid workspace relative path
+	p1, err := SafeResolveWritePath(tempDir, "file.txt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p1 != filepath.Clean(filepath.Join(tempDir, "file.txt")) {
+		t.Errorf("got %q, want %q", p1, filepath.Clean(filepath.Join(tempDir, "file.txt")))
+	}
+
+	// 2. Valid temp directory path
+	p2, err := SafeResolveWritePath(tempDir, filepath.Join(os.TempDir(), "some_temp_file.txt"))
+	if err != nil {
+		t.Fatalf("unexpected error for temp dir: %v", err)
+	}
+	if p2 != filepath.Clean(filepath.Join(os.TempDir(), "some_temp_file.txt")) {
+		t.Errorf("got %q, want %q", p2, filepath.Clean(filepath.Join(os.TempDir(), "some_temp_file.txt")))
+	}
+
+	// 3. Traversal outside workspace to a non-temp path
+	home, _ := os.UserHomeDir()
+	nonTempAbs := filepath.Join(home, ".some_random_secret")
+	_, err = SafeResolveWritePath(tempDir, nonTempAbs)
+	if err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("expected error for non-temp write, got: %v", err)
+	}
+
+	// 4. Traversal escaping temp directory
+	escapedTemp := filepath.Join(os.TempDir(), "..", "..", "etc", "passwd")
+	_, err = SafeResolveWritePath(tempDir, escapedTemp)
+	if err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Errorf("expected error for escaped temp path, got: %v", err)
+	}
+
+	// 5. Empty workspace directory error
+	if _, err := SafeResolveWritePath("", "file.txt"); err == nil {
+		t.Errorf("expected error on empty workspace directory")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -103,6 +104,133 @@ func SafeResolvePath(workDir, relOrAbsPath string) (string, error) {
 		if evalErr != nil || evalRel == ".." || strings.HasPrefix(evalRel, ".."+string(filepath.Separator)) {
 			// Real target is outside workspace
 			return "", fmt.Errorf("%w: symlink target %q is outside workspace", ErrPathEscapesWorkspace, evalPath)
+		}
+	}
+
+	return targetPath, nil
+}
+
+// SystemTempDirs returns the canonicalized system temporary directories permitted for writing.
+func SystemTempDirs() []string {
+	var dirs []string
+	seen := make(map[string]bool)
+
+	addDir := func(d string) {
+		if strings.TrimSpace(d) == "" {
+			return
+		}
+		clean, err := filepath.Abs(filepath.Clean(d))
+		if err != nil {
+			return
+		}
+		if !seen[clean] {
+			seen[clean] = true
+			dirs = append(dirs, clean)
+		}
+		// Also include symlink-resolved target (e.g. /tmp -> /private/tmp on macOS)
+		if eval, err := filepath.EvalSymlinks(clean); err == nil && !seen[eval] {
+			seen[eval] = true
+			dirs = append(dirs, eval)
+		}
+	}
+
+	addDir(os.TempDir())
+	if runtime.GOOS != "windows" {
+		addDir("/tmp")
+		addDir("/var/tmp")
+	}
+
+	return dirs
+}
+
+// isPathInside reports whether target is equal to or a subpath of root.
+func isPathInside(root, target string) bool {
+	rel, err := filepath.Rel(root, target)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// SafeResolveWritePath verifies that the requested path is within the workspace directory
+// or an allowed temporary directory (e.g., os.TempDir(), /tmp), preventing symlink escapes.
+func SafeResolveWritePath(workDir, relOrAbsPath string, extraAllowedDirs ...string) (string, error) {
+	if workDir == "" {
+		return "", errors.New("empty workspace directory")
+	}
+
+	cleanWorkDir, err := filepath.Abs(filepath.Clean(workDir))
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root: %w", err)
+	}
+
+	var targetPath string
+	if filepath.IsAbs(relOrAbsPath) {
+		targetPath = filepath.Clean(relOrAbsPath)
+	} else {
+		targetPath = filepath.Join(cleanWorkDir, relOrAbsPath)
+	}
+	targetPath = filepath.Clean(targetPath)
+
+	// Collect all allowed roots: workspace + system temp dirs + extra allowed dirs
+	allowedRoots := []string{cleanWorkDir}
+	for _, td := range SystemTempDirs() {
+		allowedRoots = append(allowedRoots, td)
+	}
+	for _, ed := range extraAllowedDirs {
+		if strings.TrimSpace(ed) == "" {
+			continue
+		}
+		if cleanEd, err := filepath.Abs(filepath.Clean(ed)); err == nil {
+			allowedRoots = append(allowedRoots, cleanEd)
+			if evalEd, err := filepath.EvalSymlinks(cleanEd); err == nil {
+				allowedRoots = append(allowedRoots, evalEd)
+			}
+		}
+	}
+
+	// 1. Check lexical containment
+	matched := false
+	for _, root := range allowedRoots {
+		if isPathInside(root, targetPath) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return "", fmt.Errorf("%w: %q is outside of allowed write boundaries", ErrPathEscapesWorkspace, targetPath)
+	}
+
+	// 2. Symlink escape check: probe existing path or ancestor
+	probePath := targetPath
+	for probePath != "" && probePath != "." && probePath != string(filepath.Separator) {
+		if _, err := os.Lstat(probePath); err == nil {
+			break
+		}
+		parent := filepath.Dir(probePath)
+		if parent == probePath {
+			break
+		}
+		probePath = parent
+	}
+
+	if evalPath, err := filepath.EvalSymlinks(probePath); err == nil {
+		relSub, relErr := filepath.Rel(probePath, targetPath)
+		realTarget := targetPath
+		if relErr == nil {
+			realTarget = filepath.Join(evalPath, relSub)
+		} else {
+			realTarget = evalPath
+		}
+		realMatched := false
+		for _, root := range allowedRoots {
+			if isPathInside(root, realTarget) {
+				realMatched = true
+				break
+			}
+		}
+		if !realMatched {
+			return "", fmt.Errorf("%w: symlink target %q escapes allowed write boundaries", ErrPathEscapesWorkspace, realTarget)
 		}
 	}
 

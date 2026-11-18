@@ -127,7 +127,7 @@ func handleWriteFile(ctx context.Context, workDir string, argsJSON string) (stri
 		return "", errors.New("write_file: path is required")
 	}
 
-	targetPath, err := SafeResolvePath(workDir, args.Path)
+	targetPath, err := SafeResolveWritePath(workDir, args.Path)
 	if err != nil {
 		return "", err
 	}
@@ -171,7 +171,7 @@ func handleEditFile(ctx context.Context, workDir string, argsJSON string) (strin
 		return "", errors.New("edit_file: old_string and new_string must differ")
 	}
 
-	targetPath, err := SafeResolvePath(workDir, args.Path)
+	targetPath, err := SafeResolveWritePath(workDir, args.Path)
 	if err != nil {
 		return "", err
 	}
