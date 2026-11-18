@@ -390,10 +390,10 @@ function reconnect() {
 <template>
   <div class="chat-workspace-layout flex h-full w-full min-h-0 min-w-0 overflow-hidden" data-test="chat-workspace">
     <section class="pure-chat flex-1 flex flex-col h-full min-h-0 min-w-0 relative box-border" aria-label="Chat 对话" data-test="pure-chat">
-    <header v-if="activeID !== null && active" class="pure-chat-header flex items-center justify-between gap-3 pb-2 border-b border-slate-200 dark:border-slate-800 shrink-0">
+    <header v-if="activeID !== null && active" class="pure-chat-header flex items-center justify-between gap-3 pb-2.5 border-b border-platform-border shrink-0">
       <div class="pure-chat-title-row flex items-baseline gap-2.5 min-w-0">
-        <h2 class="pure-chat-title m-0 text-base font-semibold truncate text-slate-800 dark:text-slate-100">{{ active?.title || '未命名对话' }}</h2>
-        <span v-if="active?.modelName" class="pure-chat-model-name text-xs text-slate-400 font-mono shrink-0">{{ active.modelName }}</span>
+        <h2 class="pure-chat-title m-0 text-base font-semibold truncate text-platform-text">{{ active?.title || '未命名对话' }}</h2>
+        <span v-if="active?.modelName" class="pure-chat-model-name text-xs text-platform-text-muted font-mono shrink-0">{{ active.modelName }}</span>
       </div>
       <div class="pure-chat-header-actions flex items-center gap-1.5 shrink-0">
         <UiButton size="sm" variant="secondary" class="header-action" data-test="chat-rename-btn" @click="openRename">
@@ -407,7 +407,7 @@ function reconnect() {
 
     <UiAlert v-if="chats.loadError" variant="error" class="pure-chat-error" data-test="chat-load-error">
       {{ chats.loadError }}
-      <RouterLink :to="{ name: 'chat' }" class="text-blue-600 underline ml-2">返回对话列表</RouterLink>
+      <RouterLink :to="{ name: 'chat' }" class="text-platform-primary underline ml-2">返回对话列表</RouterLink>
     </UiAlert>
 
     <template v-else>
@@ -417,7 +417,7 @@ function reconnect() {
         ref="scroll"
         @scroll.passive="onScroll"
       >
-        <div v-if="activeID === null" class="chat-welcome max-w-lg mx-auto mt-[12vh] text-center text-slate-500">
+        <div v-if="activeID === null" class="chat-welcome max-w-lg mx-auto mt-[12vh] text-center text-platform-text-muted">
           <UiEmpty
             :title="chats.selectedGroup ? `与「${chats.selectedGroup.name}」开始新对话` : '开始新的对话'"
             :description="chats.selectedGroup ? '输入消息即可开始交流，助手的系统提示词将自动注入到模型上下文中。' : '请从左侧选择一个助手发起对话。'"
@@ -438,7 +438,7 @@ function reconnect() {
           </UiEmpty>
         </div>
 
-        <p v-else-if="!active" class="history-note text-xs text-slate-400 p-3 text-center" role="status">正在加载对话…</p>
+        <p v-else-if="!active" class="history-note text-xs text-platform-text-muted p-3 text-center" role="status">正在加载对话…</p>
 
         <MessageView
           v-else
@@ -453,7 +453,7 @@ function reconnect() {
           @regenerate="regenerate"
         />
 
-        <p v-if="truncated" class="history-note text-xs text-slate-400 p-2 text-center" data-test="chat-truncated">
+        <p v-if="truncated" class="history-note text-xs text-platform-text-muted p-2 text-center" data-test="chat-truncated">
           仅显示最近的消息记录。
         </p>
 
@@ -521,10 +521,10 @@ function reconnect() {
           {{ renameError }}
         </UiAlert>
         <div class="space-y-1.5">
-          <label for="chat-title" class="text-xs font-semibold text-slate-700 dark:text-slate-300">标题</label>
+          <label for="chat-title" class="text-xs font-semibold text-platform-text">标题</label>
           <UiInput id="chat-title" v-model="renameTitle" maxlength="120" autofocus data-test="chat-title-input" block />
         </div>
-        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-platform-border">
           <UiButton type="button" variant="secondary" class="secondary" @click="renameOpen = false">取消</UiButton>
           <UiButton type="submit" variant="primary" class="primary">保存</UiButton>
         </div>
@@ -533,8 +533,8 @@ function reconnect() {
 
     <UiDialog v-if="deleteOpen" title="删除对话" width-class="w-full max-w-md" @close="deleteOpen = false">
       <div class="chat-dialog-form space-y-4">
-        <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">删除后，该对话及其全部消息将从平台中移除，且无法恢复。</p>
-        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <p class="text-xs text-platform-text-muted leading-relaxed">删除后，该对话及其全部消息将从平台中移除，且无法恢复。</p>
+        <div class="chat-dialog-actions flex items-center justify-end gap-2 pt-2 border-t border-platform-border">
           <UiButton type="button" variant="secondary" class="secondary" @click="deleteOpen = false">取消</UiButton>
           <UiButton
             type="button"

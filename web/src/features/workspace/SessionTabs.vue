@@ -236,7 +236,10 @@ onBeforeUnmount(() => {
         data-test="close-tab"
         @click.stop="emit('close', tab)"
       >
-        ×
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="3" x2="13" y2="13" />
+          <line x1="13" y1="3" x2="3" y2="13" />
+        </svg>
       </button>
     </div>
 
@@ -310,30 +313,52 @@ onBeforeUnmount(() => {
 .session-tabs {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  gap: 2px;
   overflow-x: auto;
-  padding: 0 0.25rem;
+  padding: 0 0.5rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
+  min-height: 35px;
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 0.15rem;
-  max-width: 12rem;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 0.35rem 0.25rem 0.3rem 0.5rem;
+  gap: 0.25rem;
+  max-width: 13rem;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  margin-top: 2px;
+  padding: 0.25rem 0.35rem 0.25rem 0.6rem;
   background: transparent;
   white-space: nowrap;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  position: relative;
+}
+
+.tab:not(.active):hover {
+  background: var(--color-surface-muted);
 }
 
 .tab.active {
   background: var(--color-bg);
-  border-bottom-color: var(--color-accent);
+  border-color: var(--color-border);
+  border-bottom: 1px solid var(--color-bg);
+  margin-bottom: -1px;
+}
+
+.tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--color-accent, #3b82f6);
 }
 
 .tab-select {
@@ -345,7 +370,7 @@ onBeforeUnmount(() => {
   background: transparent;
   cursor: pointer;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.825rem;
   color: var(--color-text-muted);
   padding: 0.15rem 0.2rem;
 }
@@ -392,21 +417,23 @@ onBeforeUnmount(() => {
 }
 
 .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font: inherit;
-  font-size: 0.95rem;
-  line-height: 1;
-  padding: 0.15rem 0.35rem;
-  border-radius: 2px;
+  border-radius: 4px;
   color: var(--color-text-muted);
-  transition: color 0.12s ease-out, background-color 0.12s ease-out;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  margin-left: 2px;
 }
 
 .tab-close:hover {
   background: var(--color-surface-muted);
-  color: var(--color-text);
+  color: var(--color-danger, #ef4444);
 }
 
 .tab-menu-backdrop {
@@ -418,27 +445,28 @@ onBeforeUnmount(() => {
 .tab-menu {
   position: fixed;
   z-index: 41;
-  min-width: 10rem;
+  min-width: 10.5rem;
   display: flex;
   flex-direction: column;
-  padding: 0.25rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 3px;
+  padding: 0.35rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   background: var(--color-surface);
+  box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.15), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 .tab-menu button {
   border: none;
   background: transparent;
   text-align: left;
-  padding: 0.35rem 0.6rem;
-  border-radius: 2px;
+  padding: 0.4rem 0.65rem;
+  border-radius: 5px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   color: var(--color-text);
   white-space: nowrap;
-  transition: background-color 0.12s ease-out;
+  transition: background-color 0.12s ease;
 }
 
 .tab-menu button:hover:not(:disabled) {
@@ -448,6 +476,7 @@ onBeforeUnmount(() => {
 .tab-menu button:disabled {
   color: var(--color-text-muted);
   cursor: default;
+  opacity: 0.5;
 }
 
 .tab-add-btn {
@@ -456,20 +485,21 @@ onBeforeUnmount(() => {
   justify-content: center;
   height: 24px;
   width: 24px;
-  margin-left: 6px;
+  margin-left: 4px;
   align-self: center;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 5px;
   color: var(--color-text-muted);
-  font-size: 1.1rem;
+  font-size: 1.15rem;
+  font-weight: 300;
   line-height: 1;
   cursor: pointer;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .tab-add-btn:hover {
-  background: var(--color-surface);
+  background: var(--color-surface-muted);
   border-color: var(--color-border);
   color: var(--color-text);
 }

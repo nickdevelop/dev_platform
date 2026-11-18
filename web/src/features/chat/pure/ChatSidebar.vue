@@ -313,13 +313,13 @@ async function confirmDeleteGroup() {
       @close="dialog = null"
     >
       <div class="space-y-2">
-        <p class="text-sm font-medium text-slate-800 dark:text-slate-100">
+        <p class="text-sm font-medium text-platform-text">
           确定要删除助手「{{ dialog.group.name }}」吗？
         </p>
-        <p class="text-xs text-slate-500 leading-relaxed">
+        <p class="text-xs text-platform-text-muted leading-relaxed">
           {{ chatsForGroup(dialog.group.id) > 0 ? `该助手下的 ${chatsForGroup(dialog.group.id)} 个对话将一并删除，且无法恢复。` : '删除后，该助手将从平台中移除。' }}
         </p>
-        <p v-if="deleteError" class="text-xs text-red-500" role="alert">{{ deleteError }}</p>
+        <p v-if="deleteError" class="text-xs text-platform-danger" role="alert">{{ deleteError }}</p>
       </div>
       <template #footer>
         <UiButton type="button" variant="secondary" @click="dialog = null">取消</UiButton>

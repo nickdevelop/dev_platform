@@ -891,26 +891,25 @@ watch(
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
+  width: 18px;
   height: 36px;
   padding: 0;
   border: 1px solid var(--color-border);
   border-radius: 9999px;
   background: var(--color-surface);
   color: var(--color-text-muted);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: width 0.2s ease, background-color 0.2s ease, border-color 0.2s ease,
-    color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   outline: none;
 }
 
 .rail-edge-toggle:hover {
-  width: 20px;
   background: var(--color-surface);
   border-color: var(--color-border-strong);
   color: var(--color-primary);
-  box-shadow: 0 6px 10px -1px rgba(0, 0, 0, 0.12), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .rail-edge-icon {

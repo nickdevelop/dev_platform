@@ -397,16 +397,16 @@ async function confirmDeleteSession() {
             @delete="promptDeleteSession(project.id, $event)"
           />
         </li>
-        <li v-if="loadFailed[project.id]" class="empty text-xs text-red-500 py-1">
-          会话加载失败。<button type="button" class="load-more text-blue-600 underline ml-1" @click="retryProject(project.id)">重试</button>
+        <li v-if="loadFailed[project.id]" class="empty text-xs text-platform-danger py-1">
+          会话加载失败。<button type="button" class="load-more text-platform-primary underline ml-1" @click="retryProject(project.id)">重试</button>
         </li>
-        <li v-else-if="sessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">该项目还没有会话。</li>
-        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty text-xs text-slate-400 py-1">没有匹配的会话</li>
+        <li v-else-if="sessionsFor(project.id).length === 0" class="empty text-xs text-platform-text-muted py-1">该项目还没有会话。</li>
+        <li v-else-if="visibleSessionsFor(project.id).length === 0" class="empty text-xs text-platform-text-muted py-1">没有匹配的会话</li>
         <li v-if="hasMoreSessions(project.id) || canCollapseSessions(project.id)" class="pt-1 flex items-center gap-1.5">
           <button
             v-if="hasMoreSessions(project.id)"
             type="button"
-            class="load-more flex-1 py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors"
+            class="load-more flex-1 py-1 text-xs text-center text-platform-text-muted hover:text-platform-primary rounded border border-dashed border-platform-border hover:border-platform-primary/50 transition-colors"
             @click="showMoreSessions(project.id)"
           >
             更多
@@ -414,7 +414,7 @@ async function confirmDeleteSession() {
           <button
             v-if="canCollapseSessions(project.id)"
             type="button"
-            class="collapse-sessions flex-1 py-1 text-xs text-center text-slate-500 hover:text-blue-600 rounded border border-dashed border-slate-200 dark:border-slate-800 hover:border-blue-400 transition-colors"
+            class="collapse-sessions flex-1 py-1 text-xs text-center text-platform-text-muted hover:text-platform-primary rounded border border-dashed border-platform-border hover:border-platform-primary/50 transition-colors"
             @click="collapseSessions(project.id)"
           >
             收起
@@ -422,8 +422,8 @@ async function confirmDeleteSession() {
         </li>
       </ul>
     </li>
-    <li v-if="projectsStore.projects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">还没有项目。</li>
-    <li v-else-if="visibleProjects.length === 0" class="empty text-xs text-slate-400 p-3 text-center">没有匹配的项目。</li>
+    <li v-if="projectsStore.projects.length === 0" class="empty text-xs text-platform-text-muted p-3 text-center">还没有项目。</li>
+    <li v-else-if="visibleProjects.length === 0" class="empty text-xs text-platform-text-muted p-3 text-center">没有匹配的项目。</li>
   </ul>
 
   <!-- Delete Session Confirmation Dialog (Unified with UiDialog) -->

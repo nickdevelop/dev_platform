@@ -326,13 +326,13 @@ function formatChatTime(isoString?: string): string {
       @close="dialog = null"
     >
       <div class="space-y-2">
-        <p class="text-sm font-medium text-slate-800 dark:text-slate-100">
+        <p class="text-sm font-medium text-platform-text">
           确定要删除对话「{{ dialog.chat.title || '未命名对话' }}」吗？
         </p>
-        <p class="text-xs text-slate-500 leading-relaxed">
+        <p class="text-xs text-platform-text-muted leading-relaxed">
           删除后，该对话及其全部消息将从平台中移除，且无法恢复。
         </p>
-        <p v-if="deleteError" class="text-xs text-red-500" role="alert">{{ deleteError }}</p>
+        <p v-if="deleteError" class="text-xs text-platform-danger" role="alert">{{ deleteError }}</p>
       </div>
       <template #footer>
         <UiButton type="button" variant="secondary" @click="dialog = null">取消</UiButton>

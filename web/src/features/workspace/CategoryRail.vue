@@ -316,27 +316,50 @@ function onSettingsClick() {
 .category,
 .footer-btn {
   width: 44px;
-  padding: calc(var(--space-unit) * 0.8) 0;
+  padding: calc(var(--space-unit) * 1.2) 0 calc(var(--space-unit) * 1.0);
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 6px;
   background: transparent;
   color: var(--rail-text);
-  font-size: 0.857rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
   cursor: pointer;
   text-align: center;
   text-decoration: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.4);
+  gap: calc(var(--space-unit) * 0.75);
   position: relative;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .category:hover,
 .footer-btn:hover {
-  background: var(--rail-active);
+  background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.category.active {
+  background: var(--rail-active);
+  color: #ffffff;
+}
+
+.category.active::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--color-accent, #3b82f6);
+}
+
+.footer-btn.logout:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
 }
 
 .footer-btn.collapse {
@@ -359,12 +382,11 @@ function onSettingsClick() {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transition: transform 0.15s ease;
 }
 
-.category.active {
-  background: var(--rail-active);
-  color: #ffffff;
-  border-left: 2px solid var(--color-accent);
+.category:hover .rail-icon {
+  transform: scale(1.05);
 }
 
 .category.reserved,

@@ -40,7 +40,7 @@
   font-size: var(--text-size-12);
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
+  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out, transform 0.12s ease-out;
   white-space: nowrap;
 }
 
@@ -54,6 +54,7 @@
 .sidebar-action-btn:active,
 .sidebar-actions .action-btn:active {
   background: var(--color-surface-muted);
+  transform: scale(0.98);
 }
 
 /* Zone B: Compact search bar with inset 1.5px magnifier icon */

@@ -63,12 +63,12 @@ function onKeydown(event: KeyboardEvent) {
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75"
+    class="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-sm"
     @keydown="onKeydown"
   >
     <div
       ref="panel"
-      class="relative bg-platform-surface text-platform-text rounded-[var(--radius,4px)] border border-platform-border-strong max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
+      class="dialog-panel relative bg-platform-surface text-platform-text rounded-xl border border-platform-border shadow-2xl max-h-[calc(100vh-3rem)] flex flex-col outline-none overflow-hidden"
       :class="widthClass"
       role="dialog"
       aria-modal="true"
@@ -77,20 +77,20 @@ function onKeydown(event: KeyboardEvent) {
     >
       <div
         v-if="title || showClose"
-        class="flex items-center justify-between px-5 py-3.5 border-b border-platform-border shrink-0"
+        class="flex items-center justify-between px-5 py-3.5 border-b border-platform-border shrink-0 bg-platform-surface-muted/40"
       >
-        <h3 class="font-medium text-base text-platform-text truncate">
+        <h3 class="font-semibold text-base text-platform-text truncate">
           <slot name="title">{{ title }}</slot>
         </h3>
         <button
           v-if="showClose"
           type="button"
-          class="text-platform-text-muted hover:text-platform-text p-1 rounded transition-colors inline-flex items-center justify-center"
+          class="text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted p-1.5 rounded-md transition-colors inline-flex items-center justify-center"
           title="关闭"
           aria-label="关闭对话框"
           @click="emit('close')"
         >
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <line x1="3" y1="3" x2="13" y2="13" />
             <line x1="13" y1="3" x2="3" y2="13" />
           </svg>
@@ -103,10 +103,40 @@ function onKeydown(event: KeyboardEvent) {
 
       <div
         v-if="$slots.footer"
-        class="flex items-center justify-end gap-2.5 px-5 py-3 bg-platform-surface-muted border-t border-platform-border shrink-0"
+        class="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-platform-surface-muted/60 border-t border-platform-border shrink-0"
       >
         <slot name="footer" />
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.dialog-backdrop {
+  animation: dialog-fade-in 0.15s ease-out;
+}
+
+.dialog-panel {
+  animation: dialog-pop-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+</style>

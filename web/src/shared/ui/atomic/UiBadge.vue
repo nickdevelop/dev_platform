@@ -23,36 +23,36 @@ const emit = defineEmits<{
 const variantClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+      return 'bg-platform-primary-soft text-platform-primary border-platform-primary/25'
     case 'success':
-      return 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+      return 'bg-[var(--color-success-soft,#ecfdf5)] text-[var(--color-success,#15803d)] border-[var(--color-success-border,#86efac)]'
     case 'warning':
-      return 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+      return 'bg-[var(--color-warning-soft,#fffbeb)] text-[var(--color-warning,#92400e)] border-[var(--color-warning-border,#fcd34d)]'
     case 'danger':
-      return 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+      return 'bg-[var(--color-danger-soft,#fee2e2)] text-[var(--color-danger,#b91c1c)] border-[var(--color-danger-border,#fca5a5)]'
     case 'info':
-      return 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800'
+      return 'bg-[var(--color-info-soft,#eff6ff)] text-[var(--color-info,#0369a1)] border-[var(--color-info-border,#93c5fd)]'
     case 'default':
     default:
-      return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+      return 'bg-platform-surface-muted text-platform-text-muted border-platform-border'
   }
 })
 
 const dotColorClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'bg-blue-500'
+      return 'bg-[var(--color-primary,#2563eb)]'
     case 'success':
-      return 'bg-emerald-500'
+      return 'bg-[var(--color-success,#15803d)]'
     case 'warning':
-      return 'bg-amber-500'
+      return 'bg-[var(--color-warning,#92400e)]'
     case 'danger':
-      return 'bg-red-500'
+      return 'bg-[var(--color-danger,#b91c1c)]'
     case 'info':
-      return 'bg-sky-500'
+      return 'bg-[var(--color-info,#0369a1)]'
     case 'default':
     default:
-      return 'bg-slate-400'
+      return 'bg-platform-text-muted'
   }
 })
 </script>

@@ -279,7 +279,7 @@ function closePreview() {
     </UiAlert>
 
     <div
-      class="chat-composer-box relative rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm p-2.5 flex flex-col gap-2 transition-colors focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+      class="chat-composer-box relative rounded-lg border border-platform-border bg-platform-surface shadow-sm p-2.5 flex flex-col gap-2 transition-all duration-150 focus-within:border-platform-primary focus-within:ring-2 focus-within:ring-platform-primary/20"
       @dragover.prevent
       @drop.prevent="onDrop"
     >
@@ -291,14 +291,14 @@ function closePreview() {
         @mousedown="onResizerMouseDown"
         @dblclick="resetComposerHeight"
       >
-        <span class="resizer-handle w-9 h-1 rounded-full bg-slate-300 dark:bg-slate-700 group-hover:bg-blue-500 transition-colors"></span>
+        <span class="resizer-handle w-9 h-1 rounded-full bg-platform-border-strong group-hover:bg-platform-primary transition-colors"></span>
       </div>
 
       <label class="sr-only" :for="resolvedInputId">发送消息</label>
       <textarea
         :id="resolvedInputId"
         ref="textarea"
-        class="chat-composer-text w-full bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm outline-none resize-none leading-relaxed"
+        class="chat-composer-text w-full bg-transparent text-platform-text placeholder-platform-text-muted text-sm outline-none resize-none leading-relaxed"
         :rows="props.compact ? 2 : 2"
         :style="textareaHeight ? { height: `${textareaHeight}px`, maxHeight: 'none' } : undefined"
         :value="props.text"
@@ -311,18 +311,21 @@ function closePreview() {
 
       <ComposerImageTray :images="props.images" @remove="removeImage" @preview="openPreview" />
 
-      <div class="chat-composer-bar flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="chat-composer-bar flex items-center justify-between gap-2 pt-2 border-t border-platform-border/60">
         <div class="chat-composer-tools flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            class="chat-attach-btn w-7 h-7 flex items-center justify-center rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed text-base font-medium transition-colors"
+            class="chat-attach-btn w-7 h-7 flex items-center justify-center rounded-md border border-platform-border hover:border-platform-border-strong hover:bg-platform-surface-muted text-platform-text-muted hover:text-platform-text disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             :disabled="!props.supportsImage || props.images.length >= MAX_IMAGES"
             :title="props.supportsImage ? '添加图片' : '当前模型不支持图片'"
             aria-label="添加图片"
             data-test="chat-attach-btn"
             @click="triggerFileInput"
           >
-            +
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="8" y1="3" x2="8" y2="13" />
+              <line x1="3" y1="8" x2="13" y2="8" />
+            </svg>
           </button>
           <input
             ref="fileInput"

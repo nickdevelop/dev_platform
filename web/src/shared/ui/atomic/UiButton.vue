@@ -68,7 +68,7 @@ function handleClick(e: MouseEvent) {
   <button
     :type="type"
     :disabled="disabled || loading"
-    class="inline-flex items-center justify-center font-medium border rounded-[var(--radius,6px)] transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none"
+    class="inline-flex items-center justify-center font-medium border rounded-[var(--radius,6px)] transition-all duration-150 outline-none select-none active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:active:scale-100"
     :class="[
       variantClasses,
       sizeClasses,

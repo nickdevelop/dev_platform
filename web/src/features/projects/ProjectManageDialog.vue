@@ -122,16 +122,16 @@ async function submit() {
     <form class="dialog-form space-y-4" @submit.prevent="submit">
       <template v-if="kind === 'register'">
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-path" class="text-xs font-semibold text-slate-700 dark:text-slate-300">目录的绝对路径</label>
+          <label for="dialog-path" class="text-xs font-semibold text-platform-text">目录的绝对路径</label>
           <UiInput id="dialog-path" v-model="pathInput" autocomplete="off" spellcheck="false" block />
-          <p class="hint text-xs text-slate-400">目录必须位于已授权的工作区内；平台只记录路径，不会修改目录内容。</p>
+          <p class="hint text-xs text-platform-text-muted">目录必须位于已授权的工作区内；平台只记录路径，不会修改目录内容。</p>
         </div>
       </template>
 
       <template v-else-if="kind === 'create'">
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-project-name" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            项目名称 <span class="text-red-500">*</span>
+          <label for="dialog-project-name" class="text-xs font-semibold text-platform-text">
+            项目名称 <span class="text-platform-danger">*</span>
           </label>
           <UiInput
             id="dialog-project-name"
@@ -141,12 +141,12 @@ async function submit() {
             spellcheck="false"
             block
           />
-          <p class="hint text-xs text-slate-400">在平台工作区和侧边栏中显示的项目友好名称。</p>
+          <p class="hint text-xs text-platform-text-muted">在平台工作区和侧边栏中显示的项目友好名称。</p>
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label for="dialog-path" class="text-xs font-semibold text-slate-700 dark:text-slate-300">
-            项目路径 <span class="text-red-500">*</span>
+          <label for="dialog-path" class="text-xs font-semibold text-platform-text">
+            项目路径 <span class="text-platform-danger">*</span>
           </label>
           <div class="flex items-center gap-2">
             <UiInput
@@ -168,24 +168,24 @@ async function submit() {
               浏览…
             </UiButton>
           </div>
-          <p class="hint text-xs text-slate-400">
+          <p class="hint text-xs text-platform-text-muted">
             {{ createNewDir ? '将在该父目录下创建项目子目录' : '将直接把此目录登记为项目根目录' }}
           </p>
         </div>
 
-        <div class="pt-1 border-t border-slate-100 dark:border-slate-800">
-          <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+        <div class="pt-1 border-t border-platform-border">
+          <label class="flex items-center gap-2 text-xs text-platform-text cursor-pointer select-none">
             <input
               v-model="createNewDir"
               type="checkbox"
-              class="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500"
+              class="rounded border-platform-border-strong text-platform-primary focus:ring-platform-primary/30"
             />
             <span class="font-medium">在指定目录下新建项目目录</span>
           </label>
         </div>
 
         <div v-if="createNewDir" class="flex flex-col gap-1.5 pl-6">
-          <label for="dialog-subdir" class="text-xs font-medium text-slate-600 dark:text-slate-400">新建目录名</label>
+          <label for="dialog-subdir" class="text-xs font-medium text-platform-text-muted">新建目录名</label>
           <UiInput
             id="dialog-subdir"
             :model-value="subDirName"
@@ -195,8 +195,8 @@ async function submit() {
             block
             @update:model-value="onSubDirInput"
           />
-          <p class="hint text-xs text-slate-400">
-            完整路径将为：<code class="font-mono text-slate-600 dark:text-slate-300">{{ pathInput ? `${pathInput.replace(/\/+$/, '')}/${subDirName || '...'}` : `.../${subDirName || ''}` }}</code>
+          <p class="hint text-xs text-platform-text-muted">
+            完整路径将为：<code class="font-mono px-1.5 py-0.5 rounded border border-platform-border bg-platform-surface-muted text-platform-text">{{ pathInput ? `${pathInput.replace(/\/+$/, '')}/${subDirName || '...'}` : `.../${subDirName || ''}` }}</code>
           </p>
         </div>
       </template>
@@ -205,7 +205,7 @@ async function submit() {
         {{ dialogError }}
       </UiAlert>
 
-      <div class="dialog-actions flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+      <div class="dialog-actions flex items-center justify-end gap-2.5 pt-3 border-t border-platform-border">
         <UiButton
           type="button"
           variant="secondary"

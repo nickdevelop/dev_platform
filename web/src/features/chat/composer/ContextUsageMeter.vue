@@ -65,10 +65,10 @@ const tooltipText = computed(() => {
     class="context-meter inline-flex items-center justify-center w-[28px] h-[28px] rounded-[6px] border transition-colors select-none text-xs leading-none cursor-default"
     :class="[
       isDanger
-        ? 'danger bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'
+        ? 'danger bg-[var(--color-danger-soft,#fee2e2)] border-[var(--color-danger-border,#fca5a5)] text-[var(--color-danger,#b91c1c)]'
         : isWarning
-        ? 'warning bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400'
-        : 'bg-slate-100 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400',
+        ? 'warning bg-[var(--color-warning-soft,#fffbeb)] border-[var(--color-warning-border,#fcd34d)] text-[var(--color-warning,#92400e)]'
+        : 'bg-platform-surface-muted border-platform-border text-platform-text-muted',
     ]"
     role="progressbar"
     :aria-valuenow="percentage"
@@ -80,7 +80,7 @@ const tooltipText = computed(() => {
     <div class="meter-gauge shrink-0" aria-hidden="true">
       <svg :width="size" :height="size" :viewBox="`0 0 ${size} ${size}`">
         <path
-          class="meter-bg stroke-slate-200 dark:stroke-slate-700"
+          class="meter-bg stroke-[var(--color-border)]"
           :d="pathData"
           fill="none"
           :stroke-width="strokeWidth"
@@ -90,10 +90,10 @@ const tooltipText = computed(() => {
           class="meter-fill transition-all duration-300 ease-out"
           :class="[
             isDanger
-              ? 'stroke-red-500'
+              ? 'stroke-[var(--color-danger)]'
               : isWarning
-              ? 'stroke-amber-500'
-              : 'stroke-blue-600 dark:stroke-blue-400',
+              ? 'stroke-[var(--color-warning)]'
+              : 'stroke-[var(--color-primary)]',
           ]"
           :d="pathData"
           fill="none"
