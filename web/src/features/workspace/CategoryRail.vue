@@ -296,7 +296,7 @@ function onSettingsClick() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--space-unit) * 1.0);
+  gap: calc(var(--space-unit) * 0.75);
   width: 100%;
 }
 
@@ -315,21 +315,22 @@ function onSettingsClick() {
 
 .category,
 .footer-btn {
-  width: 44px;
-  padding: calc(var(--space-unit) * 1.2) 0 calc(var(--space-unit) * 1.0);
+  width: 40px;
+  padding: 6px 0 5px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--rail-text);
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
   font-weight: 500;
+  line-height: 1.1;
   cursor: pointer;
   text-align: center;
   text-decoration: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--space-unit) * 0.75);
+  gap: 2px;
   position: relative;
   transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
 }

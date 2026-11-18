@@ -847,7 +847,7 @@ watch(
      middle column and the tabbed pane. minmax(0,1fr) caps the single row so
      each column scrolls inside itself, and 1fr on the last column keeps it from
      growing past the viewport (no horizontal scrollbar). */
-  grid-template-columns: 56px 272px minmax(0, 1fr);
+  grid-template-columns: 48px 272px minmax(0, 1fr);
   /* The single row must be pinned to the viewport: an implicit auto row sizes
      to its content, so a long session tree stretched the whole shell (and with it
      the conversation's 100%-height panel) past the fold, pushing the composer
@@ -865,14 +865,14 @@ watch(
 /* Collapsing the middle column from the rail leaves only the rail and the
    content pane, so the conversation can use the full width. */
 .app-shell.sidebar-collapsed {
-  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
 }
 
 /* Sidebar backdrop for floating/drawer mode */
 .sidebar-backdrop {
   position: fixed;
   top: 0;
-  left: 56px;
+  left: 48px;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.2);
@@ -880,14 +880,14 @@ watch(
   animation: backdrop-fade-in 0.15s ease-out;
 }
 
-/* 第一栏右侧边缘的折叠/展开把手：极简全圆角胶囊条，骑跨在第一栏（56px）的右边界上。
+/* 第一栏右侧边缘的折叠/展开把手：极简全圆角胶囊条，骑跨在第一栏（48px）的右边界上。
    展开与收起共用同一锚点，切换时把手不横移，只把箭头旋转 180° 换向；hover 时略微加宽。 */
 .rail-edge-toggle {
   position: fixed;
-  left: 56px;
+  left: 48px;
   top: 50%;
   transform: translateY(-50%) translateX(-50%);
-  z-index: 45;
+  z-index: 70;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -951,7 +951,7 @@ watch(
   position: fixed;
   top: 0;
   bottom: 0;
-  left: 56px;
+  left: 48px;
   width: 272px;
   z-index: 40;
   box-shadow: 4px 0 20px rgba(0, 0, 0, 0.18);
@@ -1176,15 +1176,15 @@ watch(
 
 @media (max-width: 768px) {
   .app-shell {
-    grid-template-columns: 56px minmax(0, 1fr) !important;
+    grid-template-columns: 48px minmax(0, 1fr) !important;
   }
 
   .sidebar {
     position: fixed !important;
     top: 0;
     bottom: 0;
-    left: 56px;
-    width: min(280px, calc(100vw - 56px)) !important;
+    left: 48px;
+    width: min(280px, calc(100vw - 48px)) !important;
     z-index: 40;
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
   }

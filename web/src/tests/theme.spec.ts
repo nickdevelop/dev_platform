@@ -17,8 +17,8 @@ afterEach(() => {
 })
 
 describe('theme presets', () => {
-  it('offers three light-based themes', () => {
-    expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool'])
+  it('offers preset themes including blue palettes', () => {
+    expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool', 'ocean', 'midnight', 'emerald'])
   })
 
   it('offers three font size tiers of 12 / 14 / 16 px', () => {

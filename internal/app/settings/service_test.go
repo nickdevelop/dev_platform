@@ -64,6 +64,13 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 	if got != input {
 		t.Errorf("reloaded Appearance = %+v, want %+v", got, input)
 	}
+
+	for _, theme := range []string{"ocean", "midnight", "emerald"} {
+		input.Theme = theme
+		if _, err := svc.SetAppearance(input); err != nil {
+			t.Fatalf("SetAppearance(%s): %v", theme, err)
+		}
+	}
 }
 
 func TestAppearanceNormalizesLegacyFontSizes(t *testing.T) {
