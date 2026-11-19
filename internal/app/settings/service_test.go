@@ -65,7 +65,7 @@ func TestSetAppearanceRoundTrips(t *testing.T) {
 		t.Errorf("reloaded Appearance = %+v, want %+v", got, input)
 	}
 
-	for _, theme := range []string{"ocean", "midnight", "emerald"} {
+	for _, theme := range []string{"ocean", "midnight", "emerald", "sky", "bamboo", "turquoise", "firework", "ink", "iris"} {
 		input.Theme = theme
 		if _, err := svc.SetAppearance(input); err != nil {
 			t.Fatalf("SetAppearance(%s): %v", theme, err)
