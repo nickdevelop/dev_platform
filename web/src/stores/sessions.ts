@@ -361,7 +361,19 @@ export const useSessionsStore = defineStore('sessions', {
         // stream; the optimistic user entry the history replay shows must not
         // double it, so the echo dedupe holds the text like a composer send.
         if (created && body.message !== undefined && result.messageError === undefined) {
-          this.echoPending[created.id] = body.message.trim()
+          const trimmed = body.message.trim()
+          this.appendMessage(
+            created.id,
+            'user',
+            trimmed,
+            true,
+            0,
+            undefined,
+            undefined,
+            body.images,
+            new Date().toISOString(),
+          )
+          this.echoPending[created.id] = trimmed
         }
         // A refused first message keeps the session but reports the failure to
         // the chat panel, which pre-fills the composer so the user can send

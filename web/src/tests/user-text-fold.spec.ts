@@ -57,7 +57,7 @@ describe('FoldableUserText', () => {
     expect(toggle.text()).toBe('展开')
   })
 
-  it('renders CodeComment XML as structured card with snippet summary', async () => {
+  it('renders CodeComment XML as structured card aligned with composer cards', async () => {
     renderedHeight(50)
     const xml = [
       '<CodeComment path="src/main.ts" line="10-15">',
@@ -75,21 +75,23 @@ describe('FoldableUserText', () => {
     const wrapper = mount(FoldableUserText, { props: { text: xml } })
     await wrapper.vm.$nextTick()
 
+    const tray = wrapper.find('[data-test="user-code-comments-tray"]')
+    expect(tray.exists()).toBe(true)
+
     const card = wrapper.find('[data-test="user-code-comment-card"]')
     expect(card.exists()).toBe(true)
-    expect(wrapper.find('.comment-card-path').text()).toBe('src/main.ts')
+    expect(wrapper.find('.comment-card-path').text()).toBe('main.ts')
+    expect(wrapper.find('.comment-card-path').attributes('title')).toBe('src/main.ts')
     expect(wrapper.find('.comment-card-line').text()).toBe('L10-15')
     expect(wrapper.find('[data-test="comment-card-desc"]').text()).toBe('检查挂载点逻辑')
+    expect(wrapper.find('[data-test="comment-card-desc"]').attributes('title')).toBe('检查挂载点逻辑')
     expect(wrapper.find('[data-test="user-text-body"]').text()).toBe('用户提问正文')
 
-    // Code snippet summary button should be present since it is 5 lines > 3 lines
-    const snippetToggle = wrapper.find('[data-test="snippet-toggle-btn"]')
-    expect(snippetToggle.exists()).toBe(true)
-    expect(snippetToggle.text()).toContain('展开完整代码 (共 5 行)')
-
-    // Clicking toggle expands full snippet
-    await snippetToggle.trigger('click')
-    expect(snippetToggle.text()).toBe('收起代码')
+    // Code snippet should have hover tooltip and truncated summary, with no expand button
+    const snippetEl = wrapper.find('[data-test="comment-card-snippet"]')
+    expect(snippetEl.exists()).toBe(true)
+    expect(snippetEl.attributes('title')).toBe('line 1\nline 2\nline 3\nline 4\nline 5')
+    expect(wrapper.find('[data-test="snippet-toggle-btn"]').exists()).toBe(false)
 
     // Clicking header emits open-file event
     await wrapper.find('[data-test="comment-card-header"]').trigger('click')

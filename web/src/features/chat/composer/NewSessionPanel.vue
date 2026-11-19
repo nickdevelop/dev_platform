@@ -599,7 +599,8 @@ const hasContent = computed(
   () =>
     messageText.value.trim() !== '' ||
     attachedImages.value.length > 0 ||
-    selectedPrompt.value !== null,
+    selectedPrompt.value !== null ||
+    commentCards.value.length > 0,
 )
 
 // A first message that needs a model (the backend supports choosing one) waits

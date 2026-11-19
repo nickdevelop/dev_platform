@@ -860,4 +860,34 @@ describe('NewSessionPanel', () => {
     expect(payload.message).toContain('<Snippet>\nconst x = 1\nconst y = 2\n</Snippet>')
     expect(payload.message).toContain('请检查命名')
   })
+
+  it('recognizes comment cards as content even when text area is empty', async () => {
+    const { wrapper, sessions } = setup()
+    const createSpy = vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-new-2' } as never)
+    await flushPromises()
+
+    // Add comment card without typing message
+    const previewPane = wrapper.findComponent({ name: 'WorkspacePreviewPane' })
+    await previewPane.vm.$emit('add-comment', {
+      id: 'c-2',
+      filePath: 'src/utils.ts',
+      fileName: 'utils.ts',
+      startLine: 5,
+      endLine: 5,
+      codeSnippet: 'export const PI = 3.14',
+      comment: '精度问题',
+      createdAt: 200,
+    })
+    await flushPromises()
+
+    // Submitting creates session with the comment card XML
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const payload = createSpy.mock.calls[0][1]
+    expect(payload.message).toContain('<CodeComment path="src/utils.ts" line="5">')
+    expect(payload.message).toContain('<Description>\n精度问题\n</Description>')
+    expect(payload.message).toContain('<Snippet>\nexport const PI = 3.14\n</Snippet>')
+  })
 })
