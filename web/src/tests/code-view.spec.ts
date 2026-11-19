@@ -218,4 +218,43 @@ describe('CodeView', () => {
     // Inline editor should now be closed
     expect(wrapper.find('[data-test="inline-comment-row"]').exists()).toBe(false)
   })
+
+  it('extracts selected code snippet without including line numbers across multi-line selection', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: 'const a = 1\nconst b = 2\nconst c = 3',
+        filePath: 'src/calc.ts',
+      },
+      attachTo: document.body,
+    })
+    await wrapper.vm.$nextTick()
+
+    const line1El = wrapper.find('[data-line="1"] .code-text').element
+    const line2El = wrapper.find('[data-line="2"] .code-text').element
+
+    // Create a range from line 1 to line 2 (which crosses line 2's line-number)
+    const range = document.createRange()
+    range.setStart(line1El.firstChild!, 0)
+    range.setEnd(line2El.lastChild!, line2El.lastChild!.textContent?.length ?? 0)
+
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    // Trigger selection handler
+    const scroller = wrapper.find('[data-test="code-scroller"]')
+    await scroller.trigger('mouseup')
+
+    // Wait for the setTimeout(..., 10) in handleCodeSelection
+    await new Promise((r) => setTimeout(r, 30))
+    await wrapper.vm.$nextTick()
+
+    const vm = wrapper.vm as any
+    expect(vm.selectedStartLine).toBe(1)
+    expect(vm.selectedEndLine).toBe(2)
+    // The snippet MUST be purely the code lines, without any line number
+    expect(vm.selectedSnippet).toBe('const a = 1\nconst b = 2')
+
+    wrapper.unmount()
+  })
 })

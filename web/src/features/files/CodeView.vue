@@ -299,6 +299,54 @@ function findLineNumber(node: Node | null): number | null {
   return null
 }
 
+function extractCodeSnippetFromRange(
+  range: Range,
+  container: HTMLElement,
+  startLine: number,
+  endLine: number,
+  originalLines: string[],
+): string {
+  const parts: string[] = []
+  for (let l = startLine; l <= endLine; l++) {
+    const rowEl = container.querySelector<HTMLElement>(`[data-line="${l}"]`)
+    if (!rowEl) continue
+    const codeLineEl = rowEl.querySelector<HTMLElement>('.code-line')
+    if (!codeLineEl) continue
+
+    if (typeof range.intersectsNode === 'function' && !range.intersectsNode(codeLineEl)) {
+      continue
+    }
+
+    try {
+      const lineRange = document.createRange()
+      lineRange.selectNodeContents(codeLineEl)
+
+      // Calculate intersection between user range and this code line's range
+      const isStartAfter = range.compareBoundaryPoints(Range.START_TO_START, lineRange) > 0
+      const startNode = isStartAfter ? range.startContainer : lineRange.startContainer
+      const startOffset = isStartAfter ? range.startOffset : lineRange.startOffset
+
+      const isEndBefore = range.compareBoundaryPoints(Range.END_TO_END, lineRange) < 0
+      const endNode = isEndBefore ? range.endContainer : lineRange.endContainer
+      const endOffset = isEndBefore ? range.endOffset : lineRange.endOffset
+
+      const subRange = document.createRange()
+      subRange.setStart(startNode, startOffset)
+      subRange.setEnd(endNode, endOffset)
+      let partText = subRange.toString()
+
+      if (originalLines[l - 1] === '' && partText === ' ') {
+        partText = ''
+      }
+      parts.push(partText)
+    } catch {
+      parts.push(originalLines[l - 1] ?? '')
+    }
+  }
+
+  return parts.length > 0 ? parts.join('\n') : ''
+}
+
 function handleCodeSelection() {
   setTimeout(() => {
     const selection = window.getSelection()
@@ -331,7 +379,15 @@ function handleCodeSelection() {
 
     selectedStartLine.value = Math.min(anchorLine, focusLine)
     selectedEndLine.value = Math.max(anchorLine, focusLine)
-    selectedSnippet.value = text
+
+    const extracted = extractCodeSnippetFromRange(
+      range,
+      codeContainerRef.value,
+      selectedStartLine.value,
+      selectedEndLine.value,
+      lines.value,
+    )
+    selectedSnippet.value = extracted || text
     activeSelectionEndLine.value = selectedEndLine.value
   }, 10)
 }
@@ -720,12 +776,21 @@ onUnmounted(() => {
   padding: 0 10px 0 8px;
   text-align: right;
   user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
   color: var(--color-text-muted);
   background: var(--color-surface-muted, #f8fafc);
   border-right: 1px solid var(--color-border, #e3e6eb);
   min-width: 44px;
   height: 22px;
   line-height: 22px;
+}
+
+.line-num-text {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
 }
 
 .line-number.has-comment-add-btn {
