@@ -16,6 +16,7 @@ const props = defineProps<{
   sessionId?: string
   worktreeId?: number
   directory?: string
+  branch?: string
   hideSideRail?: boolean
   previewCollapsed: boolean
   previewWidth: number
@@ -144,6 +145,7 @@ const emit = defineEmits<{
             :session-id="sessionId"
             :worktree-id="worktreeId"
             :directory="props.directory"
+            :branch="props.branch"
             :active-path="activePreviewTab"
             @select="(path, options) => emit('select-workspace-file', path, options)"
             @branch-changed="emit('branch-changed', $event)"

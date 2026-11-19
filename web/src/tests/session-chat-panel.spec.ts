@@ -1075,12 +1075,12 @@ describe('SessionChatPanel conversation layout', () => {
       await flushPromises()
     }
 
-    // Moved to workspace files tab
+    // Moved to workspace files tab (full path displayed, copy button removed)
     expect(wrapper.find('[data-test="workdir-path"]').text()).toBe('/workspace/alpha')
-    expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(false)
   })
 
-  it('removes git branch from session header and displays it in workspace files tab', async () => {
+  it('removes git branch from session header and displays it as a read-only label in workspace files tab', async () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/git-info')) {
@@ -1112,9 +1112,11 @@ describe('SessionChatPanel conversation layout', () => {
       await flushPromises()
     }
 
-    // BranchSelector in workspace files tab displays current branch
-    expect(wrapper.find('[data-test="git-branch"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="git-branch"]').text()).toContain('feature-x')
+    // Read-only branch label in workspace files tab displays current branch
+    const branchLabel = wrapper.find('[data-test="git-branch"]')
+    expect(branchLabel.exists()).toBe(true)
+    expect(branchLabel.element.tagName).toBe('SPAN')
+    expect(branchLabel.text()).toContain('feature-x')
   })
 
   it('shows exact context usage with a limit, estimated without one', async () => {

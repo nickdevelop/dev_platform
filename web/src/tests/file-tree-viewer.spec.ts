@@ -403,7 +403,7 @@ describe('FileSidebar.vue', () => {
     expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
   })
 
-  it('renders workspace directory chip and branch selector to the right of all files tab', async () => {
+  it('renders workspace directory full path (without copy button) and read-only branch label', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
     vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
     vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
@@ -412,17 +412,22 @@ describe('FileSidebar.vue', () => {
       props: {
         projectId: 1,
         directory: '/data/projects/my-app',
+        branch: 'feature-preview',
       },
     })
     await flushPromises()
 
-    const workdirChip = wrapper.find('[data-test="workdir-chip"]')
-    expect(workdirChip.exists()).toBe(true)
-    expect(workdirChip.find('[data-test="workdir-path"]').text()).toBe('/data/projects/my-app')
-    expect(workdirChip.find('[data-test="workdir-copy"]').exists()).toBe(true)
+    const workdirPath = wrapper.find('[data-test="workdir-path"]')
+    expect(workdirPath.exists()).toBe(true)
+    expect(workdirPath.text()).toBe('/data/projects/my-app')
+    // No copy button
+    expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(false)
 
-    // BranchSelector is rendered
-    expect(wrapper.find('[data-test="git-branch"]').exists()).toBe(true)
+    // Branch label is read-only span
+    const branchLabel = wrapper.find('[data-test="git-branch"]')
+    expect(branchLabel.exists()).toBe(true)
+    expect(branchLabel.element.tagName).toBe('SPAN')
+    expect(branchLabel.text()).toContain('feature-preview')
   })
 
   it('manages discard dialog flow: open, cancel, and confirm', async () => {

@@ -1314,6 +1314,7 @@ async function removeSession() {
           :session-id="props.sessionId"
           :worktree-id="activeWorktreeId"
           :directory="instance?.directory"
+          :branch="gitInfo?.branch"
           :hide-side-rail="props.hideSideRail"
           :preview-collapsed="previewCollapsed"
           :preview-width="previewWidth"

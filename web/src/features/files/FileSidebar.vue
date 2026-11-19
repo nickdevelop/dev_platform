@@ -13,11 +13,10 @@ import {
   uploadFiles,
 } from '../../api/files'
 import { searchProjectFiles } from '../../api/projects'
+import { getProjectGitInfo } from '../../api/git'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import { useProjectsStore } from '../../stores/projects'
-import { ellipsisMiddle } from '../../shared/format'
 import { UiButton, UiDialog } from '../../shared/ui'
-import BranchSelector from './BranchSelector.vue'
 import ChangeTree from './ChangeTree.vue'
 import { buildChangeTree } from './changeTreeUtil'
 import FileTree from './FileTree.vue'
@@ -34,6 +33,8 @@ const props = defineProps<{
   worktreeId?: number
   // Real working directory for path display and copy.
   directory?: string
+  // Current git branch for display
+  branch?: string
 }>()
 
 const treeState = useFileTreeStateStore()
@@ -86,21 +87,8 @@ const expandedTreePaths = ref<Set<string>>(new Set(saved?.expandedTreePaths ?? [
 const projectsStore = useProjectsStore()
 const currentProject = computed(() => (projectsStore.projects ?? []).find((p) => p.id === props.projectId))
 const workspaceDir = computed(() => props.directory || currentProject.value?.path || '')
-const shortWorkspaceDir = computed(() => ellipsisMiddle(workspaceDir.value))
-const copiedPath = ref(false)
-
-async function copyDirectory() {
-  if (!workspaceDir.value) return
-  try {
-    await navigator.clipboard.writeText(workspaceDir.value)
-    copiedPath.value = true
-    setTimeout(() => {
-      copiedPath.value = false
-    }, 1500)
-  } catch {
-    // ignore
-  }
-}
+const localBranch = ref('')
+const effectiveBranch = computed(() => props.branch || localBranch.value)
 
 const discardModalOpen = ref(false)
 const discardConfirmPath = ref('')
@@ -171,14 +159,18 @@ async function refresh() {
   loading.value = true
   error.value = ''
   try {
-    const [tree, status, recentCommits] = await Promise.all([
+    const [tree, status, recentCommits, gitInfo] = await Promise.all([
       getFileTree(props.projectId, undefined, props.worktreeId),
       getGitStatus(props.projectId, selectedCommit.value, props.worktreeId).catch(() => []),
       getGitCommits(props.projectId, 20, props.worktreeId).catch(() => []),
+      getProjectGitInfo(props.projectId, props.worktreeId).catch(() => null),
     ])
     treeNodes.value = tree
     gitChanges.value = status
     commits.value = recentCommits
+    if (gitInfo?.branch) {
+      localBranch.value = gitInfo.branch
+    }
     updateExpandedChangeDirs()
     // The children are loaded through the reactive nodes: writing to the raw
     // response would leave the view showing the loading state.
@@ -553,39 +545,39 @@ async function confirmDelete() {
           所有文件
         </button>
 
-        <!-- 项目路径：在所有文件选项右侧显示 -->
-        <div
+        <!-- 项目路径：在所有文件选项右侧显示，显示全，位置不够显示...，移除复制按钮 -->
+        <span
           v-if="workspaceDir"
-          class="workdir-chip inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-mono text-platform-text-muted bg-platform-surface border border-platform-border min-w-0 max-w-[140px] truncate"
+          class="workdir-path text-3xs font-mono text-platform-text-muted truncate min-w-0"
           :title="workspaceDir"
-          data-test="workdir-chip"
+          data-test="workdir-path"
         >
-          <span class="truncate" data-test="workdir-path">{{ shortWorkspaceDir }}</span>
-          <button
-            type="button"
-            class="workdir-copy-btn p-0.5 rounded hover:text-platform-primary transition-colors cursor-pointer shrink-0"
-            :title="copiedPath ? '已复制' : '复制完整路径'"
-            data-test="workdir-copy"
-            @click.stop="copyDirectory"
-          >
-            <svg v-if="copiedPath" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 8 6 11 13 4" />
-            </svg>
-            <svg v-else viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6">
-              <rect x="5" y="5" width="8" height="8" rx="1.5" />
-              <path d="M3 11V3a1 1 0 0 1 1-1h8" />
-            </svg>
-          </button>
-        </div>
+          {{ workspaceDir }}
+        </span>
 
-        <!-- 当前分支：在所有文件选项右侧显示 -->
-        <BranchSelector
-          v-if="!isHistoryCommit"
-          :project-id="props.projectId"
-          :worktree-id="props.worktreeId"
-          @branch-changed="refresh(); emit('branch-changed', $event)"
-          @error="error = $event"
-        />
+        <!-- 当前分支：在所有文件选项右侧显示，纯只读 label 标识当前分支，不允许选择切换 -->
+        <span
+          v-if="effectiveBranch && !isHistoryCommit"
+          class="branch-chip inline-flex items-center gap-1 h-[22px] px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 bg-platform-surface border border-platform-border shrink-0 max-w-[140px] truncate select-none"
+          :title="`当前分支: ${effectiveBranch}`"
+          data-test="git-branch"
+        >
+          <svg
+            class="shrink-0 text-slate-500"
+            viewBox="0 0 16 16"
+            width="11"
+            height="11"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <circle cx="4" cy="4" r="2" />
+            <circle cx="4" cy="12" r="2" />
+            <circle cx="12" cy="7" r="2" />
+            <path d="M4 6v4M4 8c2 0 4-1 4-1s2 0 4 0" />
+          </svg>
+          <span class="truncate">{{ effectiveBranch }}</span>
+        </span>
       </div>
 
       <div class="flex items-center gap-1 shrink-0">
