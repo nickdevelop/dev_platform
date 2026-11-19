@@ -430,6 +430,45 @@ describe('FileSidebar.vue', () => {
     expect(branchLabel.text()).toContain('feature-preview')
   })
 
+  it('keeps branch label visible when selecting a historical commit in changes tab', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([
+      {
+        hash: 'c1234567890abcdef',
+        shortHash: 'c123456',
+        message: 'feat: add widgets',
+        author: 'Dev',
+        date: '2026-03-30T10:00:00Z',
+        timestamp: 1774864800,
+      },
+    ])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: {
+        projectId: 1,
+        branch: 'main',
+      },
+    })
+    await flushPromises()
+
+    // Switch to Changes tab
+    const tabs = wrapper.findAll('.sidebar-tab')
+    await tabs[0].trigger('click')
+    await flushPromises()
+
+    // Select historical commit
+    const select = wrapper.find('.commit-select')
+    expect(select.exists()).toBe(true)
+    await select.setValue('c1234567890abcdef')
+    await flushPromises()
+
+    // Branch label must NOT disappear
+    const branchLabel = wrapper.find('[data-test="git-branch"]')
+    expect(branchLabel.exists()).toBe(true)
+    expect(branchLabel.text()).toContain('main')
+  })
+
   it('manages discard dialog flow: open, cancel, and confirm', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
     vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])

@@ -557,7 +557,7 @@ async function confirmDelete() {
 
         <!-- 当前分支：在所有文件选项右侧显示，纯只读 label 标识当前分支，不允许选择切换 -->
         <span
-          v-if="effectiveBranch && !isHistoryCommit"
+          v-if="effectiveBranch"
           class="branch-chip inline-flex items-center gap-1 h-[22px] px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 bg-platform-surface border border-platform-border shrink-0 max-w-[140px] truncate select-none"
           :title="`当前分支: ${effectiveBranch}`"
           data-test="git-branch"
