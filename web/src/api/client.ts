@@ -46,6 +46,14 @@ export function setOnUnauthorized(handler: UnauthorizedHandler | null) {
 
 export type MutatingMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
+export interface UploadProgress {
+  loaded: number
+  total: number
+  percent: number
+}
+
+export type UploadProgressCallback = (progress: UploadProgress) => void
+
 const mutatingMethods: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 function isMutating(method: string): boolean {
@@ -103,6 +111,61 @@ interface ExchangeResult {
   payload: unknown
 }
 
+function exchangeXHR(
+  method: string,
+  path: string,
+  body: unknown,
+  csrfToken: string,
+  onUploadProgress: UploadProgressCallback,
+): Promise<ExchangeResult> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open(method, `/api${path}`, true)
+
+    const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
+    if (body !== undefined && !isFormData) {
+      xhr.setRequestHeader('Content-Type', 'application/json')
+    }
+    if (csrfToken !== '') {
+      xhr.setRequestHeader('X-CSRF-Token', csrfToken)
+    }
+
+    if (xhr.upload) {
+      xhr.upload.onprogress = (event: ProgressEvent) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percent = Math.min(100, Math.round((event.loaded / event.total) * 100))
+          onUploadProgress({
+            loaded: event.loaded,
+            total: event.total,
+            percent,
+          })
+        }
+      }
+    }
+
+    xhr.onload = () => {
+      if (xhr.status === 204) {
+        resolve({ status: 204, payload: undefined })
+        return
+      }
+      let payload: unknown = null
+      try {
+        payload = JSON.parse(xhr.responseText)
+      } catch {
+        // A non-JSON body carries no error code; report it as unknown.
+      }
+      resolve({ status: xhr.status, payload })
+    }
+
+    xhr.onerror = () => {
+      resolve({ status: xhr.status || 0, payload: null })
+    }
+
+    const payloadData = isFormData ? (body as FormData) : body !== undefined ? JSON.stringify(body) : null
+    xhr.send(payloadData)
+  })
+}
+
 // exchange performs one request and reads the body exactly once, so a retried
 // request never has to reuse a consumed response.
 async function exchange(
@@ -110,7 +173,12 @@ async function exchange(
   path: string,
   body: unknown,
   csrfToken: string,
+  onUploadProgress?: UploadProgressCallback,
 ): Promise<ExchangeResult> {
+  if (onUploadProgress && typeof XMLHttpRequest !== 'undefined') {
+    return exchangeXHR(method, path, body, csrfToken, onUploadProgress)
+  }
+
   const headers: Record<string, string> = {}
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
   if (body !== undefined && !isFormData) {
@@ -162,6 +230,7 @@ interface SendOptions {
   // managed marks the request as sent through get()/mutate(): the transport
   // owns the CSRF token (bootstrap + one recovery attempt).
   managed?: boolean
+  onUploadProgress?: UploadProgressCallback
 }
 
 function unwrap<T>(result: ExchangeResult, options: SendOptions): T {
@@ -196,14 +265,14 @@ async function send<T>(method: string, path: string, options: SendOptions = {}):
     token = await ensureCSRFToken()
   }
 
-  let result = await exchange(method, path, options.body, token)
+  let result = await exchange(method, path, options.body, token, options.onUploadProgress)
 
   // A stale token is a legitimate client state (cookie TTL, server restart, a
   // second tab). Recover silently once and only for a CSRF rejection: no other
   // 403 is ever retried.
   if (mutating && options.managed && result.status === 403 && isCSRFRejection(result.payload)) {
     token = await refreshCSRFToken()
-    result = await exchange(method, path, options.body, token)
+    result = await exchange(method, path, options.body, token, options.onUploadProgress)
   }
 
   return unwrap<T>(result, options)
@@ -219,6 +288,7 @@ export interface MutateOptions {
   // Set for endpoints whose 401 means "wrong password" rather than "session
   // expired" (login).
   ignoreUnauthorized?: boolean
+  onUploadProgress?: UploadProgressCallback
 }
 
 // mutate sends a state-changing request and attaches the CSRF token. The method
@@ -233,6 +303,7 @@ export function mutate<T>(
     body,
     ignoreUnauthorized: options.ignoreUnauthorized,
     managed: true,
+    onUploadProgress: options.onUploadProgress,
   })
 }
 
@@ -267,6 +338,9 @@ const errorMessages: Record<string, string> = {
   not_a_directory: '该路径不是目录。',
   path_conflict: '目标路径已存在。',
   project_not_found: '项目不存在。',
+  invalid_upload_payload: '上传文件损坏或请求格式不正确。',
+  missing_upload_file: '未找到待上传的文件。',
+  open_file_failed: '打开上传文件失败。',
   // The opencode service is a third-party process the platform never starts on
   // its own, so every message about it points at the one place an operator can
   // act. These two strings are the product's wording, not a paraphrase.

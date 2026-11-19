@@ -213,12 +213,59 @@ describe('mutate', () => {
 
     await expect(mutate('DELETE', '/models/1')).resolves.toBeUndefined()
   })
+
+  it('tracks progress via XMLHttpRequest when onUploadProgress is passed', async () => {
+    installToken('token-upload')
+    const progressList: { loaded: number; total: number; percent: number }[] = []
+
+    class MockXHR {
+      upload = { onprogress: null as any }
+      headers: Record<string, string> = {}
+      status = 200
+      responseText = JSON.stringify({ ok: true, uploaded: ['file.txt'] })
+      onload: (() => void) | null = null
+      open = vi.fn()
+      setRequestHeader = vi.fn((k: string, v: string) => {
+        this.headers[k] = v
+      })
+      send = vi.fn(() => {
+        if (this.upload.onprogress) {
+          this.upload.onprogress({ lengthComputable: true, loaded: 50, total: 100 } as ProgressEvent)
+          this.upload.onprogress({ lengthComputable: true, loaded: 100, total: 100 } as ProgressEvent)
+        }
+        this.onload?.()
+      })
+    }
+
+    vi.stubGlobal('XMLHttpRequest', MockXHR)
+    const result = await mutate<{ ok: boolean; uploaded: string[] }>(
+      'POST',
+      '/projects/1/files/upload',
+      new FormData(),
+      {
+        onUploadProgress: (p) => progressList.push(p),
+      },
+    )
+
+    expect(result).toEqual({ ok: true, uploaded: ['file.txt'] })
+    expect(progressList).toEqual([
+      { loaded: 50, total: 100, percent: 50 },
+      { loaded: 100, total: 100, percent: 100 },
+    ])
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('describeApiError', () => {
   it('maps the CSRF rejection to an actionable message', () => {
     expect(describeApiError(new ApiError(403, 'invalid_csrf_token'))).toBe(
       '请求校验失败，请刷新页面后重试。',
+    )
+  })
+
+  it('maps invalid_upload_payload to friendly message', () => {
+    expect(describeApiError(new ApiError(400, 'invalid_upload_payload'))).toBe(
+      '上传文件损坏或请求格式不正确。',
     )
   })
 })

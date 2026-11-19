@@ -38,6 +38,11 @@ const maxRequestBodyBytes = 1 << 20
 // framing without weakening the limit of every other API route.
 const maxImageRequestBodyBytes = 32 << 20
 
+// maxFileUploadRequestBodyBytes bounds multipart project file uploads (1 GiB).
+// Workspace uploads may carry archives, compiled binaries or large datasets,
+// while staying bounded to prevent host disk exhaustion.
+const maxFileUploadRequestBodyBytes = 1024 << 20
+
 // limitRequestBody caps the request body a handler may read from. Reads past
 // the cap fail, so gin's binder reports the malformed request instead of the
 // server buffering an unbounded payload.
@@ -159,7 +164,8 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		authenticated := api.Group("", auth.RequireSession(deps.Auth))
 		protected := authenticated.Group("", limitRequestBody(maxRequestBodyBytes))
 		if deps.Projects != nil {
-			deps.Projects.RegisterRoutes(protected)
+			uploadGroup := authenticated.Group("", limitRequestBody(maxFileUploadRequestBodyBytes))
+			deps.Projects.RegisterRoutes(protected, uploadGroup)
 			deps.Projects.RegisterPreviewRoutes(api)
 		}
 		if deps.Settings != nil {

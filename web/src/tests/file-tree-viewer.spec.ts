@@ -531,6 +531,63 @@ describe('FileSidebar.vue', () => {
     expect(discardSpy).toHaveBeenCalledWith(1, 'file-to-discard.txt', undefined)
     expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
   })
+
+  it('displays upload progress card and updates on progress events', async () => {
+    vi.spyOn(filesApi, 'uploadFiles').mockImplementation(async (_projId, _files, _path, _wt, onProgress) => {
+      if (onProgress) {
+        onProgress({ loaded: 500000, total: 1000000, percent: 50 })
+      }
+      return { ok: true, uploaded: ['test.zip'] }
+    })
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+
+    const file = new File(['x'.repeat(100)], 'test.zip')
+    const fileInput = wrapper.find<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [file],
+      writable: true,
+    })
+
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    const progressCard = wrapper.find('[data-test="upload-progress-card"]')
+    expect(progressCard.exists()).toBe(true)
+    expect(progressCard.text()).toContain('test.zip')
+  })
+
+  it('shows upload error in the card without destroying the file tree', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
+      { name: 'existing-file.txt', path: 'existing-file.txt', isDir: false },
+    ])
+    vi.spyOn(filesApi, 'uploadFiles').mockRejectedValue(new Error('API 400: invalid_upload_payload'))
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1 },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('existing-file.txt')
+
+    const file = new File(['x'], 'fail.bin')
+    const fileInput = wrapper.find<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [file],
+      writable: true,
+    })
+
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    // File tree still intact (not replaced by state-error)
+    expect(wrapper.text()).toContain('existing-file.txt')
+    // Upload error card is visible
+    const progressCard = wrapper.find('[data-test="upload-progress-card"]')
+    expect(progressCard.exists()).toBe(true)
+    expect(wrapper.find('[data-test="upload-error-msg"]').exists()).toBe(true)
+  })
 })
 
 describe('CodeView.vue', () => {

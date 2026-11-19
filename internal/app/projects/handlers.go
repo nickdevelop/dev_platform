@@ -14,8 +14,10 @@ import (
 
 // RegisterRoutes registers the project management routes under r. The caller
 // must protect r with session authentication (auth.RequireSession); CSRF
-// enforcement is installed globally by the platform router.
-func (s *Service) RegisterRoutes(r gin.IRouter) {
+// enforcement is installed globally by the platform router. If an uploadRouter
+// is supplied, the multipart file upload route is registered on it (allowing a
+// higher request-body limit); otherwise it is registered on r.
+func (s *Service) RegisterRoutes(r gin.IRouter, uploadRouter ...gin.IRouter) {
 	r.GET("/projects", s.handleList)
 	r.GET("/projects/display-config", s.handleGetDisplayConfig)
 	r.PUT("/projects/display-config", s.handleSetDisplayConfig)
@@ -36,7 +38,13 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/files/content", s.handleFileContent)
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
 	r.GET("/projects/:id/files/download", s.handleFileDownload)
-	r.POST("/projects/:id/files/upload", s.handleFileUpload)
+
+	uploadR := r
+	if len(uploadRouter) > 0 && uploadRouter[0] != nil {
+		uploadR = uploadRouter[0]
+	}
+	uploadR.POST("/projects/:id/files/upload", s.handleFileUpload)
+
 	r.DELETE("/projects/:id/files", s.handleFileDelete)
 	r.POST("/projects/:id/files/preview-ticket", s.handleCreatePreviewTicket)
 	r.GET("/projects/:id/git/status", s.handleGitStatus)

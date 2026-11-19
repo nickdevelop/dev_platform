@@ -12,11 +12,12 @@ import {
   unstageGitFiles,
   uploadFiles,
 } from '../../api/files'
+import { describeApiError } from '../../api/client'
 import { searchProjectFiles } from '../../api/projects'
 import { getProjectGitInfo } from '../../api/git'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import { useProjectsStore } from '../../stores/projects'
-import { UiButton, UiDialog } from '../../shared/ui'
+import { UiButton, UiDialog, UiProgress } from '../../shared/ui'
 import ChangeTree from './ChangeTree.vue'
 import { buildChangeTree } from './changeTreeUtil'
 import FileTree from './FileTree.vue'
@@ -427,6 +428,19 @@ function onDragStart(event: DragEvent, path: string) {
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const uploadTargetDir = ref('')
 const uploading = ref(false)
+const uploadPercent = ref(0)
+const uploadLoaded = ref(0)
+const uploadTotal = ref(0)
+const uploadError = ref('')
+const uploadFilesList = ref<{ name: string; size: number }[]>([])
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${sizes[i]}`
+}
 
 function triggerUpload(dir = '') {
   uploadTargetDir.value = dir
@@ -442,14 +456,36 @@ async function onFilesSelected(event: Event) {
   if (!files || files.length === 0 || !props.projectId) return
 
   uploading.value = true
-  error.value = ''
+  uploadError.value = ''
+  uploadPercent.value = 0
+  uploadLoaded.value = 0
+  uploadTotal.value = 0
+  uploadFilesList.value = Array.from(files).map((f) => ({ name: f.name, size: f.size }))
+
   try {
-    await uploadFiles(props.projectId, files, uploadTargetDir.value, props.worktreeId)
+    await uploadFiles(
+      props.projectId,
+      files,
+      uploadTargetDir.value,
+      props.worktreeId,
+      (progress) => {
+        uploadPercent.value = progress.percent
+        uploadLoaded.value = progress.loaded
+        uploadTotal.value = progress.total
+      },
+    )
+    uploadPercent.value = 100
     await refresh()
+    setTimeout(() => {
+      if (!uploadError.value) {
+        uploading.value = false
+        uploadFilesList.value = []
+      }
+    }, 600)
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '上传文件失败'
-  } finally {
+    uploadError.value = describeApiError(err, err instanceof Error ? err.message : '上传文件失败')
     uploading.value = false
+  } finally {
     uploadTargetDir.value = ''
     target.value = ''
   }
@@ -680,6 +716,93 @@ async function confirmDelete() {
           <line x1="13" y1="3" x2="3" y2="13" />
         </svg>
       </button>
+    </div>
+
+    <!-- Upload Progress / Error Card with scrollable list and progress bar -->
+    <div
+      v-if="uploading || uploadError"
+      class="upload-progress-card m-2 p-2.5 rounded-lg border border-platform-border bg-platform-surface-muted/60 shadow-xs flex flex-col gap-2 shrink-0 transition-all"
+      data-test="upload-progress-card"
+    >
+      <div class="flex items-center justify-between gap-1 text-xs font-medium">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <svg
+            v-if="uploading"
+            class="w-3.5 h-3.5 text-platform-primary animate-spin shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
+            <path d="M8 2a6 6 0 1 0 6 6" stroke-linecap="round" />
+          </svg>
+          <svg
+            v-else-if="uploadError"
+            class="w-3.5 h-3.5 text-platform-danger shrink-0"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
+            <circle cx="8" cy="8" r="7" />
+            <line x1="8" y1="4" x2="8" y2="9" />
+            <circle cx="8" cy="12" r="0.5" fill="currentColor" />
+          </svg>
+          <span class="truncate text-platform-text">
+            {{ uploading ? (uploadPercent === 100 ? '正在保存文件…' : '正在上传文件…') : '上传失败' }}
+          </span>
+        </div>
+
+        <button
+          v-if="!uploading"
+          type="button"
+          class="text-platform-text-muted hover:text-platform-text p-0.5 rounded cursor-pointer"
+          title="关闭"
+          aria-label="关闭提示"
+          @click="uploadError = ''; uploadFilesList = []"
+        >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- File list with scrollbar ("滚动体") -->
+      <div
+        v-if="uploadFilesList.length > 0"
+        class="upload-file-list max-h-24 overflow-y-auto flex flex-col gap-1 pr-1 font-mono text-3xs text-platform-text-muted"
+        data-test="upload-file-list"
+      >
+        <div
+          v-for="(f, idx) in uploadFilesList"
+          :key="idx"
+          class="flex items-center justify-between gap-2 py-0.5"
+        >
+          <span class="truncate" :title="f.name">{{ f.name }}</span>
+          <span class="shrink-0 text-slate-400">{{ formatBytes(f.size) }}</span>
+        </div>
+      </div>
+
+      <!-- Progress bar ("进度条") -->
+      <div v-if="uploading" class="flex flex-col gap-1" data-test="upload-progress-bar">
+        <UiProgress
+          :value="uploadPercent"
+          :max="100"
+          size="sm"
+          variant="primary"
+          :show-text="false"
+        />
+        <div class="flex items-center justify-between text-3xs font-mono text-platform-text-muted">
+          <span>{{ uploadTotal > 0 ? `${formatBytes(uploadLoaded)} / ${formatBytes(uploadTotal)}` : '' }}</span>
+          <span class="font-semibold text-platform-text">{{ uploadPercent }}%</span>
+        </div>
+      </div>
+
+      <!-- Error message -->
+      <div v-if="uploadError" class="text-xs text-platform-danger leading-relaxed break-all" data-test="upload-error-msg">
+        {{ uploadError }}
+      </div>
     </div>
 
     <!-- Content body -->

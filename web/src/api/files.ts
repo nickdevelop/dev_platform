@@ -2,7 +2,7 @@
 // Every call accepts an optional worktreeId: absent or 0 addresses the
 // project's main checkout, a non-zero value addresses one git worktree.
 
-import { get, mutate } from './client'
+import { get, mutate, type UploadProgressCallback } from './client'
 import type { FileContentResponse, FileTreeNode, GitCommitItem, GitFileDiffResponse, GitStatusItem } from '../features/files/types'
 
 export type { GitCommitItem, GitFileDiffResponse, GitStatusItem } from '../features/files/types'
@@ -60,6 +60,7 @@ export async function uploadFiles(
   files: File[] | FileList,
   path?: string,
   worktreeId?: number,
+  onProgress?: UploadProgressCallback,
 ): Promise<{ ok: boolean; uploaded: string[] }> {
   const params = withWorktree(new URLSearchParams(), worktreeId)
   if (path) params.set('path', path)
@@ -75,6 +76,7 @@ export async function uploadFiles(
     'POST',
     `/projects/${projectId}/files/upload${qs}`,
     formData,
+    { onUploadProgress: onProgress },
   )
 }
 
