@@ -31,7 +31,7 @@ const focusedLineNumber = ref<number | null>(null)
 
 const codeContainerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
-const wrapLines = ref(false)
+const wrapLines = ref(true)
 
 const lines = computed(() => {
   if (!props.content) return []

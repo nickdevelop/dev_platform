@@ -44,7 +44,7 @@ describe('CodeView', () => {
     expect(wrapper.html()).toContain('class="hljs-number"')
   })
 
-  it('toggles word wrapping when clicking the wrap button', async () => {
+  it('toggles word wrapping when clicking the wrap button (default: wrap enabled)', async () => {
     const wrapper = mount(CodeView, {
       props: {
         content: sampleCode,
@@ -55,18 +55,19 @@ describe('CodeView', () => {
     const table = wrapper.find('.code-table')
     const wrapBtn = wrapper.find('[data-test="toggle-wrap-btn"]')
 
-    expect(table.classes()).not.toContain('is-wrapped')
-    expect(wrapBtn.classes()).not.toContain('is-active')
-
-    // Click to enable wrap
-    await wrapBtn.trigger('click')
+    // Default: wrapped
     expect(table.classes()).toContain('is-wrapped')
     expect(wrapBtn.classes()).toContain('is-active')
 
-    // Click again to disable wrap
+    // Click to disable wrap
     await wrapBtn.trigger('click')
     expect(table.classes()).not.toContain('is-wrapped')
     expect(wrapBtn.classes()).not.toContain('is-active')
+
+    // Click again to re-enable wrap
+    await wrapBtn.trigger('click')
+    expect(table.classes()).toContain('is-wrapped')
+    expect(wrapBtn.classes()).toContain('is-active')
   })
 
   it('does not have copy and search buttons in top right actions', () => {

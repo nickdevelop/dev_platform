@@ -2,21 +2,13 @@
 import { computed } from 'vue'
 import BackendTag from '../../../shared/components/BackendTag.vue'
 import type { AgentSession } from '../../../api/sessions'
-import type { AgentInstance } from '../../../api/agents'
 import { sessionDebugExportUrl } from '../../../api/sessions'
 
 const props = defineProps<{
   session: AgentSession
-  instance?: AgentInstance | null
-  shortDirectory?: string
-  copiedPath?: boolean
-  branchLabel?: string
-  branchTitle?: string
-  isRunning?: boolean
 }>()
 
 const emit = defineEmits<{
-  'copy-directory': []
   delete: []
 }>()
 
@@ -54,30 +46,6 @@ const debugExportUrl = computed(() => {
         删除
       </button>
     </div>
-    <div v-if="instance" class="workdir-row" data-test="workdir-row">
-      <span class="workdir-path" data-test="workdir-path" :title="instance.directory">{{
-        shortDirectory
-      }}</span>
-      <button
-        type="button"
-        class="workdir-copy"
-        data-test="workdir-copy"
-        :title="copiedPath ? '已复制' : '复制完整路径'"
-        @click="emit('copy-directory')"
-      >
-        {{ copiedPath ? '已复制' : '复制' }}
-      </button>
-      <span
-        v-if="branchLabel"
-        class="chip branch"
-        data-test="git-branch"
-        :title="branchTitle"
-      >{{ branchLabel }}</span>
-      <span v-if="isRunning" class="turn-status" role="status" aria-live="polite">运行中</span>
-    </div>
-    <div v-else-if="isRunning" class="workdir-row">
-      <span class="turn-status" role="status" aria-live="polite">运行中</span>
-    </div>
   </header>
 </template>
 
@@ -85,7 +53,6 @@ const debugExportUrl = computed(() => {
 .chat-header {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
@@ -106,42 +73,6 @@ const debugExportUrl = computed(() => {
   white-space: nowrap;
   font-size: 1.05rem;
   font-weight: 600;
-}
-
-.workdir-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.workdir-path {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, monospace);
-}
-
-.workdir-copy {
-  flex: none;
-  padding: 0.05rem 0.45rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-
-.workdir-copy:hover {
-  color: var(--color-primary-hover);
-  border-color: var(--color-primary);
 }
 
 .delete-session {
@@ -178,26 +109,5 @@ const debugExportUrl = computed(() => {
 .export-debug-btn:hover {
   color: var(--color-primary-hover);
   border-color: var(--color-primary);
-}
-
-.turn-status {
-  margin-left: auto;
-  font-size: var(--text-size-meta);
-  font-weight: 600;
-  color: var(--color-warning);
-}
-
-.chip.branch {
-  flex: none;
-  font-size: var(--text-size-meta);
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.05rem 0.5rem;
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

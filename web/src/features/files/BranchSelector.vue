@@ -120,6 +120,7 @@ onUnmounted(() => {
       type="button"
       class="inline-flex items-center gap-1 h-[22px] px-1.5 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700 max-w-[140px]"
       :title="`当前分支: ${activeBranch || props.currentBranch || '...'}`"
+      data-test="git-branch"
       @click.stop="openDropdown"
     >
       <svg

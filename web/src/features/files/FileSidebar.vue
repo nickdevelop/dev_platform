@@ -14,6 +14,8 @@ import {
 } from '../../api/files'
 import { searchProjectFiles } from '../../api/projects'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
+import { useProjectsStore } from '../../stores/projects'
+import { ellipsisMiddle } from '../../shared/format'
 import { UiButton, UiDialog } from '../../shared/ui'
 import BranchSelector from './BranchSelector.vue'
 import ChangeTree from './ChangeTree.vue'
@@ -30,6 +32,8 @@ const props = defineProps<{
   activePath?: string
   // Non-zero scopes every file and git call to one git worktree.
   worktreeId?: number
+  // Real working directory for path display and copy.
+  directory?: string
 }>()
 
 const treeState = useFileTreeStateStore()
@@ -79,6 +83,25 @@ const expandedChangeDirs = ref<Set<string>>(new Set(saved?.expandedChangeDirs ??
 const expandedTreePaths = ref<Set<string>>(new Set(saved?.expandedTreePaths ?? []))
 
 // Discard confirmation dialog state
+const projectsStore = useProjectsStore()
+const currentProject = computed(() => (projectsStore.projects ?? []).find((p) => p.id === props.projectId))
+const workspaceDir = computed(() => props.directory || currentProject.value?.path || '')
+const shortWorkspaceDir = computed(() => ellipsisMiddle(workspaceDir.value))
+const copiedPath = ref(false)
+
+async function copyDirectory() {
+  if (!workspaceDir.value) return
+  try {
+    await navigator.clipboard.writeText(workspaceDir.value)
+    copiedPath.value = true
+    setTimeout(() => {
+      copiedPath.value = false
+    }, 1500)
+  } catch {
+    // ignore
+  }
+}
+
 const discardModalOpen = ref(false)
 const discardConfirmPath = ref('')
 const discarding = ref(false)
@@ -496,12 +519,12 @@ async function confirmDelete() {
       @change="onFilesSelected"
     />
 
-    <!-- Top header: Tabs + Branch Selector + Upload + Refresh -->
-    <div class="sidebar-header flex items-center justify-between p-2 border-b border-platform-border bg-platform-surface-muted shrink-0 gap-1.5">
-      <div class="sidebar-tabs flex items-center gap-1">
+    <!-- Top header: Tabs + Path & Branch + Upload + Refresh -->
+    <div class="sidebar-header flex items-center justify-between p-2 border-b border-platform-border bg-platform-surface-muted shrink-0 gap-1.5 min-w-0">
+      <div class="sidebar-tabs flex items-center gap-1.5 min-w-0 flex-1">
         <button
           type="button"
-          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer"
+          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
           :class="[
             activeTab === 'changes'
               ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
@@ -519,7 +542,7 @@ async function confirmDelete() {
         </button>
         <button
           type="button"
-          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer"
+          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
           :class="[
             activeTab === 'all'
               ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
@@ -529,17 +552,43 @@ async function confirmDelete() {
         >
           所有文件
         </button>
-      </div>
 
-      <div class="flex items-center gap-1">
-        <!-- Branch selector in changes tab -->
+        <!-- 项目路径：在所有文件选项右侧显示 -->
+        <div
+          v-if="workspaceDir"
+          class="workdir-chip inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-mono text-platform-text-muted bg-platform-surface border border-platform-border min-w-0 max-w-[140px] truncate"
+          :title="workspaceDir"
+          data-test="workdir-chip"
+        >
+          <span class="truncate" data-test="workdir-path">{{ shortWorkspaceDir }}</span>
+          <button
+            type="button"
+            class="workdir-copy-btn p-0.5 rounded hover:text-platform-primary transition-colors cursor-pointer shrink-0"
+            :title="copiedPath ? '已复制' : '复制完整路径'"
+            data-test="workdir-copy"
+            @click.stop="copyDirectory"
+          >
+            <svg v-if="copiedPath" viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 8 6 11 13 4" />
+            </svg>
+            <svg v-else viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6">
+              <rect x="5" y="5" width="8" height="8" rx="1.5" />
+              <path d="M3 11V3a1 1 0 0 1 1-1h8" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- 当前分支：在所有文件选项右侧显示 -->
         <BranchSelector
-          v-if="activeTab === 'changes' && !isHistoryCommit"
+          v-if="!isHistoryCommit"
           :project-id="props.projectId"
           :worktree-id="props.worktreeId"
           @branch-changed="refresh(); emit('branch-changed', $event)"
           @error="error = $event"
         />
+      </div>
+
+      <div class="flex items-center gap-1 shrink-0">
 
         <!-- Upload file button in all tab or general -->
         <button

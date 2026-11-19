@@ -1049,33 +1049,45 @@ describe('SessionChatPanel conversation layout', () => {
     expect(wrapper.find('form.send').exists()).toBe(true)
   })
 
-  it('marks only a running session with a status chip', async () => {
-    stubSessionList([session('sess-1', { status: 'disconnected', turn: 'idle' })])
+  it('removes turn status chip from session header even when running', async () => {
+    stubSessionList([session('sess-1', { status: 'active', turn: 'running' })])
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    expect(wrapper.find('.turn-status').exists()).toBe(false)
+    expect(wrapper.find('.chat-header .turn-status').exists()).toBe(false)
   })
 
-  it('shows the workdir on its own row with a copy button', async () => {
+  it('removes workdir row from session header and displays it in workspace files tab', async () => {
     stubSessionList([session('sess-1')])
     useAgentsStore().instances = [instance('running')]
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    const row = wrapper.find('[data-test="workdir-row"]')
-    expect(row.exists()).toBe(true)
+    // Session header only keeps title and delete button
+    expect(wrapper.find('.chat-header [data-test="workdir-row"]').exists()).toBe(false)
+    expect(wrapper.find('.title-row .session-heading').text()).toBe('Title sess-1')
+    expect(wrapper.find('.title-row [data-test="delete-session"]').exists()).toBe(true)
+
+    // Expand preview pane if collapsed
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    if (toggleBtn.exists()) {
+      await toggleBtn.trigger('click')
+      await flushPromises()
+    }
+
+    // Moved to workspace files tab
     expect(wrapper.find('[data-test="workdir-path"]').text()).toBe('/workspace/alpha')
     expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(true)
-    // The title row keeps tag-then-title on the first line.
-    expect(wrapper.find('.title-row .session-heading').text()).toBe('Title sess-1')
   })
 
-  it('shows the git branch with a dirty marker, and hides it outside git', async () => {
+  it('removes git branch from session header and displays it in workspace files tab', async () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.includes('/git-info')) {
         return { status: 200, json: async () => ({ isGit: true, branch: 'feature-x', dirty: true }) } as Response
+      }
+      if (url.includes('/branches')) {
+        return { status: 200, json: async () => ({ branches: ['main', 'feature-x'], current: 'feature-x' }) } as Response
       }
       if (new URL(url, 'http://localhost').pathname.endsWith('/history')) {
         return { status: 200, json: async () => ({ events: [], truncated: false }) } as Response
@@ -1090,7 +1102,19 @@ describe('SessionChatPanel conversation layout', () => {
     const wrapper = mountPanel('sess-1')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="git-branch"]').text()).toBe('⎇ feature-x*')
+    // Session header does not have git branch chip
+    expect(wrapper.find('.chat-header .chip.branch').exists()).toBe(false)
+
+    // Expand preview pane if collapsed
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    if (toggleBtn.exists()) {
+      await toggleBtn.trigger('click')
+      await flushPromises()
+    }
+
+    // BranchSelector in workspace files tab displays current branch
+    expect(wrapper.find('[data-test="git-branch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="git-branch"]').text()).toContain('feature-x')
   })
 
   it('shows exact context usage with a limit, estimated without one', async () => {
@@ -1658,5 +1682,32 @@ describe('SessionChatPanel scroll following', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="composer-comment-cards"]').exists()).toBe(false)
+  })
+
+  it('opens changed file in diff mode when selecting from workspace changes', async () => {
+    stubSessionList([session('sess-diff-mode')])
+    const wrapper = mountPanel('sess-diff-mode')
+    await flushPromises()
+
+    const previewPane = wrapper.findComponent({ name: 'WorkspacePreviewPane' })
+    expect(previewPane.exists()).toBe(true)
+
+    // Simulate select-workspace-file with mode: 'diff'
+    await previewPane.vm.$emit('select-workspace-file', 'src/components/Header.vue', {
+      mode: 'diff',
+      commitRef: 'abc1234',
+      commitMessage: 'fix header',
+    })
+    await flushPromises()
+
+    // File tab should be opened and marked as diff
+    const fileTab = wrapper.find('[data-test="tab-file"]')
+    expect(fileTab.exists()).toBe(true)
+    expect(fileTab.text()).toContain('Header.vue')
+    expect(fileTab.find('.tab-diff-badge').exists()).toBe(true)
+    expect(fileTab.find('.tab-diff-badge').text()).toBe('Diff')
+
+    // Active preview file should have mode 'diff'
+    expect((wrapper.vm as any).currentActivePreviewFile?.mode).toBe('diff')
   })
 })

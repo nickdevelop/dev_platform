@@ -15,6 +15,7 @@ const props = defineProps<{
   projectId: number
   sessionId?: string
   worktreeId?: number
+  directory?: string
   hideSideRail?: boolean
   previewCollapsed: boolean
   previewWidth: number
@@ -30,7 +31,10 @@ const emit = defineEmits<{
   'resizer-mousedown': [event: MouseEvent]
   'select-tab': [tabKey: string]
   'close-tab': [path: string, event: MouseEvent]
-  'select-workspace-file': [filePath: string]
+  'select-workspace-file': [
+    filePath: string,
+    options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }
+  ]
   'branch-changed': [branch: string]
   'open-file-preview': [filePath: string]
   'add-comment': [card: CodeCommentCard]
@@ -139,8 +143,9 @@ const emit = defineEmits<{
             :project-id="projectId"
             :session-id="sessionId"
             :worktree-id="worktreeId"
+            :directory="props.directory"
             :active-path="activePreviewTab"
-            @select="emit('select-workspace-file', $event)"
+            @select="(path, options) => emit('select-workspace-file', path, options)"
             @branch-changed="emit('branch-changed', $event)"
           />
         </div>

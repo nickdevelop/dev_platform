@@ -1057,14 +1057,7 @@ async function removeSession() {
         <div class="message-column">
           <SessionHeader
             :session="activeSession"
-            :instance="instance"
-            :short-directory="shortDirectory"
-            :copied-path="copiedPath"
-            :branch-label="branchLabel"
-            :branch-title="branchTitle"
-            :is-running="isRunning"
             @delete="confirmingDelete = true"
-            @copy-directory="copyDirectory"
           />
 
           <p v-if="preparing" class="history-note" data-test="preparing" role="status" aria-live="polite">
@@ -1320,6 +1313,7 @@ async function removeSession() {
           :project-id="props.projectId"
           :session-id="props.sessionId"
           :worktree-id="activeWorktreeId"
+          :directory="instance?.directory"
           :hide-side-rail="props.hideSideRail"
           :preview-collapsed="previewCollapsed"
           :preview-width="previewWidth"

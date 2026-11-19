@@ -403,6 +403,28 @@ describe('FileSidebar.vue', () => {
     expect(wrapper.find('[data-test="discard-confirm-dialog"]').exists()).toBe(false)
   })
 
+  it('renders workspace directory chip and branch selector to the right of all files tab', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: {
+        projectId: 1,
+        directory: '/data/projects/my-app',
+      },
+    })
+    await flushPromises()
+
+    const workdirChip = wrapper.find('[data-test="workdir-chip"]')
+    expect(workdirChip.exists()).toBe(true)
+    expect(workdirChip.find('[data-test="workdir-path"]').text()).toBe('/data/projects/my-app')
+    expect(workdirChip.find('[data-test="workdir-copy"]').exists()).toBe(true)
+
+    // BranchSelector is rendered
+    expect(wrapper.find('[data-test="git-branch"]').exists()).toBe(true)
+  })
+
   it('manages discard dialog flow: open, cancel, and confirm', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
     vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
