@@ -106,7 +106,7 @@ function selectPreviewTab(tabKey: string) {
 
 function openFileInPreview(
   filePath: string,
-  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
+  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string; initialLine?: number },
 ) {
   let cleanPath = filePath.replace(/\\/g, '/')
   const isAbs = cleanPath.startsWith('/')
@@ -117,6 +117,7 @@ function openFileInPreview(
   const reqMode = options?.mode || 'view'
   const reqCommit = options?.commitRef
   const reqMsg = options?.commitMessage
+  const reqLine = options?.initialLine
 
   const existing = openFileTabs.value.find((f) => f.path === cleanPath)
   if (!existing) {
@@ -126,11 +127,13 @@ function openFileInPreview(
       mode: reqMode,
       commitRef: reqCommit,
       commitMessage: reqMsg,
+      initialLine: reqLine,
     })
   } else {
     existing.mode = reqMode
     existing.commitRef = reqCommit
     existing.commitMessage = reqMsg
+    existing.initialLine = reqLine
   }
   activePreviewTab.value = cleanPath
   // If preview pane is collapsed, expand it so the file is previewed immediately
@@ -669,13 +672,6 @@ function onSessionKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault()
     quickFileSearchOpen.value = !quickFileSearchOpen.value
-    return
-  }
-
-  // Alt+2: Toggle preview/activity pane
-  if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
-    e.preventDefault()
-    setPreviewCollapsed(!previewCollapsed.value)
     return
   }
 }
@@ -1341,7 +1337,7 @@ async function removeSession() {
       :project-id="props.projectId"
       :worktree-id="worktreeId"
       @close="quickFileSearchOpen = false"
-      @select="(path) => { quickFileSearchOpen = false; openFileInPreview(path) }"
+      @select="(path, line) => { quickFileSearchOpen = false; openFileInPreview(path, { initialLine: line }) }"
     />
   </section>
 </template>

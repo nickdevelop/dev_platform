@@ -78,3 +78,27 @@ export function searchProjectFiles(
   const qs = params.toString() ? `?${params.toString()}` : ''
   return get<ProjectFilesResponse>(`/projects/${projectId}/files${qs}`)
 }
+
+export interface FileContentMatch {
+  path: string
+  line: number
+  content: string
+}
+
+export interface ProjectContentSearchResponse {
+  matches: FileContentMatch[]
+}
+
+export function searchProjectContent(
+  projectId: number,
+  query: string,
+  limit = 50,
+  worktreeId?: number,
+): Promise<ProjectContentSearchResponse> {
+  const params = new URLSearchParams()
+  if (query) params.set('q', query)
+  if (limit) params.set('limit', String(limit))
+  if (worktreeId) params.set('worktreeId', String(worktreeId))
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return get<ProjectContentSearchResponse>(`/projects/${projectId}/files/search-content${qs}`)
+}

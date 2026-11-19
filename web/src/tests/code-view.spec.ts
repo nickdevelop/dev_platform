@@ -113,4 +113,44 @@ describe('CodeView', () => {
     expect(matchesAfter[0].classes()).not.toContain('is-current')
     expect(matchesAfter[1].classes()).toContain('is-current')
   })
+
+  it('opens goto-line toolbar with Ctrl+G and jumps to specified line', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: sampleCode,
+        filePath: 'src/main.ts',
+      },
+    })
+
+    // Trigger Ctrl+G
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g', ctrlKey: true }))
+    await wrapper.vm.$nextTick()
+
+    const gotoBar = wrapper.find('[data-test="goto-line-bar"]')
+    expect(gotoBar.exists()).toBe(true)
+
+    const input = gotoBar.find<HTMLInputElement>('[data-test="goto-line-input"]')
+    await input.setValue('3')
+    await wrapper.find('[data-test="goto-line-submit-btn"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const rows = wrapper.findAll('.code-row')
+    expect(rows[2].classes()).toContain('is-focused-line')
+  })
+
+  it('focuses initialLine when passed as prop', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: sampleCode,
+        filePath: 'src/main.ts',
+        initialLine: 2,
+      },
+    })
+
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const rows = wrapper.findAll('.code-row')
+    expect(rows[1].classes()).toContain('is-focused-line')
+  })
 })

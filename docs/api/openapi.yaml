@@ -775,6 +775,53 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/search-content:
+    get:
+      summary: Search text content in project workspace files
+      description: Searches text occurrences matching query pattern q inside project files.
+      operationId: searchProjectFileContent
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
+        - name: q
+          in: query
+          required: true
+          description: Query string or pattern to match inside files.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of matches to return (1-100, default 50).
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of content matches.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FileContentMatch'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/files/tree:
     get:
       summary: Get workspace file tree
@@ -7143,6 +7190,20 @@ components:
         latencyMs:
           type: integer
           format: int64
+      additionalProperties: false
+    FileContentMatch:
+      type: object
+      required: [path, line, content]
+      properties:
+        path:
+          type: string
+          description: Relative file path.
+        line:
+          type: integer
+          description: Line number (1-based).
+        content:
+          type: string
+          description: Snippet of matched line.
       additionalProperties: false
     FileItem:
       type: object

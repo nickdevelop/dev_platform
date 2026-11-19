@@ -31,6 +31,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.POST("/projects/:id/worktrees", s.handleCreateWorktree)
 	r.DELETE("/projects/:id/worktrees/:worktreeId", s.handleRemoveWorktree)
 	r.GET("/projects/:id/files", s.handleSearchFiles)
+	r.GET("/projects/:id/files/search-content", s.handleSearchFileContent)
 	r.GET("/projects/:id/files/tree", s.handleFileTree)
 	r.GET("/projects/:id/files/content", s.handleFileContent)
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
@@ -367,6 +368,37 @@ func (s *Service) handleRemoveWorktree(c *gin.Context) {
 // filesResponse is the JSON body of GET /api/projects/:id/files.
 type filesResponse struct {
 	Files []FileItem `json:"files"`
+}
+
+// searchContentResponse is the JSON body of GET /api/projects/:id/files/search-content.
+type searchContentResponse struct {
+	Matches []FileContentMatch `json:"matches"`
+}
+
+// handleSearchFileContent searches occurrences of query pattern in project workspace files.
+func (s *Service) handleSearchFileContent(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	query := c.Query("q")
+	limit := 50
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	matches, err := s.SearchFileContent(c.Request.Context(), id, query, limit, worktreeID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, searchContentResponse{Matches: matches})
 }
 
 // handleSearchFiles searches files and directories inside the project workspace.

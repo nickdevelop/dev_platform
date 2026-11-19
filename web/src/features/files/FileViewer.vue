@@ -18,6 +18,7 @@ const props = withDefaults(
     commitRef?: string
     commitMessage?: string
     worktreeId?: number
+    initialLine?: number
   }>(),
   {
     hideTabs: false,
@@ -298,6 +299,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           v-else
           :content="fileData.content || ''"
           :file-path="activeTabPath"
+          :initial-line="props.initialLine"
         />
       </template>
     </div>

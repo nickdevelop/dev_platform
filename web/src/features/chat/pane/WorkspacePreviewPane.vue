@@ -7,6 +7,7 @@ export interface OpenFileTab {
   mode?: 'view' | 'diff'
   commitRef?: string
   commitMessage?: string
+  initialLine?: number
 }
 
 const props = defineProps<{
@@ -155,6 +156,7 @@ const emit = defineEmits<{
             :mode="currentActivePreviewFile?.mode || 'view'"
             :commit-ref="currentActivePreviewFile?.commitRef"
             :commit-message="currentActivePreviewFile?.commitMessage"
+            :initial-line="currentActivePreviewFile?.initialLine"
             @select="emit('open-file-preview', $event)"
           />
         </div>

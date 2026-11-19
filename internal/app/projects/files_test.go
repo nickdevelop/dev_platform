@@ -227,9 +227,9 @@ func TestSearchFiles_GitProject(t *testing.T) {
 		t.Fatalf("expected git files not found: %v", paths)
 	}
 
-	// .gitignore items (debug.log, node_modules/dep.js) must be present; only .git must be filtered
-	if !paths["debug.log"] || !paths["node_modules/dep.js"] {
-		t.Fatalf("expected gitignore files not found: %v", paths)
+	// .gitignore items (debug.log, node_modules/dep.js) must be filtered out in git repos
+	if paths["debug.log"] || paths["node_modules/dep.js"] {
+		t.Fatalf("ignored files leaked into results: %v", paths)
 	}
 	if paths[".git"] || paths[".git/config"] {
 		t.Fatalf(".git metadata directory leaked into results: %v", paths)
@@ -258,6 +258,72 @@ func TestHandleSearchFiles(t *testing.T) {
 
 	if len(resp.Files) == 0 || resp.Files[0].Path != "src/main.go" {
 		t.Fatalf("expected src/main.go, got: %+v", resp.Files)
+	}
+}
+
+func TestSearchFileContent_GitAndNonGit(t *testing.T) {
+	svc, id, _ := setupTestProject(t)
+	ctx := context.Background()
+
+	// Non-git project content search
+	matches, err := svc.SearchFileContent(ctx, id, "Hello", 50)
+	if err != nil {
+		t.Fatalf("SearchFileContent: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatalf("expected matches for 'Hello', got none")
+	}
+	if matches[0].Path != "README.md" || matches[0].Line != 1 {
+		t.Fatalf("expected README.md:1, got: %+v", matches[0])
+	}
+
+	// Git project content search
+	if gitAvailable() {
+		dir := t.TempDir()
+		cmd := exec.Command("git", "init", "-q")
+		cmd.Dir = dir
+		if err := cmd.Run(); err == nil {
+			_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.txt\n"), 0o644)
+			_ = os.WriteFile(filepath.Join(dir, "code.go"), []byte("package main\nfunc TargetFunc() {}\n"), 0o644)
+			_ = os.WriteFile(filepath.Join(dir, "ignored.txt"), []byte("TargetFunc in ignored file\n"), 0o644)
+
+			repo := &memoryRepo{projects: make(map[uint]Project)}
+			p, _ := repo.Create("git-content-proj", dir)
+			gitSvc := NewServiceWithRepository(repo)
+
+			gitMatches, gitErr := gitSvc.SearchFileContent(ctx, p.ID, "TargetFunc", 50)
+			if gitErr != nil {
+				t.Fatalf("git SearchFileContent: %v", gitErr)
+			}
+			if len(gitMatches) != 1 || gitMatches[0].Path != "code.go" || gitMatches[0].Line != 2 {
+				t.Fatalf("expected code.go:2, got %+v", gitMatches)
+			}
+		}
+	}
+}
+
+func TestHandleSearchFileContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, id, _ := setupTestProject(t)
+
+	r := gin.New()
+	svc.RegisterRoutes(r)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/search-content?q=Hello", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp searchContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if len(resp.Matches) == 0 || resp.Matches[0].Path != "README.md" {
+		t.Fatalf("expected README.md match, got: %+v", resp.Matches)
 	}
 }
 

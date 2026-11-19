@@ -1,14 +1,18 @@
 package projects
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -39,9 +43,16 @@ type FileContentResponse struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
+// FileContentMatch represents a single occurrence of query in project files.
+type FileContentMatch struct {
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Content string `json:"content"`
+}
+
 // SearchFiles scans the project's directory and returns relative paths matching query.
-// It searches all workspace files without filtering by .gitignore or dotfile prefixes,
-// only skipping the .git version control metadata directory.
+// For Git repositories, it filters files by .gitignore rules (via git ls-files).
+// For non-Git workspaces, it performs standard traversal without dotfile filtering (only skipping .git).
 func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string, limit int, worktreeID ...uint) ([]FileItem, error) {
 	if limit <= 0 {
 		limit = 50
@@ -56,6 +67,13 @@ func (s *Service) SearchFiles(ctx context.Context, projectID uint, query string,
 
 	normQuery := strings.ToLower(strings.TrimSpace(query))
 
+	if s.isGitDir(ctx, rootDir) {
+		items, gitErr := s.searchGitFiles(ctx, rootDir, normQuery, limit)
+		if gitErr == nil {
+			return items, nil
+		}
+	}
+
 	return s.searchWorkspaceFiles(ctx, rootDir, normQuery, limit)
 }
 
@@ -65,6 +83,210 @@ func (s *Service) isGitDir(ctx context.Context, directory string) bool {
 		return err == nil && strings.TrimSpace(out) == "true"
 	}
 	return false
+}
+
+// searchGitFiles lists files and folders respecting .gitignore rules via git ls-files.
+func (s *Service) searchGitFiles(ctx context.Context, rootDir, normQuery string, limit int) ([]FileItem, error) {
+	out, err := gitOutputLimit(ctx, rootDir, 16<<20, "ls-files", "-co", "--exclude-standard")
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(out, "\n")
+	var items []FileItem
+	seenDirs := make(map[string]struct{})
+	var dirItems []FileItem
+	var fileItems []FileItem
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		slashRel := filepath.ToSlash(trimmed)
+		name := filepath.Base(slashRel)
+
+		// Collect and match parent directories
+		dir := filepath.ToSlash(filepath.Dir(slashRel))
+		for dir != "." && dir != "/" && dir != "" {
+			if _, exists := seenDirs[dir]; !exists {
+				seenDirs[dir] = struct{}{}
+				dirName := filepath.Base(dir)
+				if normQuery == "" || strings.Contains(strings.ToLower(dir), normQuery) || strings.Contains(strings.ToLower(dirName), normQuery) {
+					dirItems = append(dirItems, FileItem{Path: dir, IsDir: true})
+				}
+			}
+			parent := filepath.ToSlash(filepath.Dir(dir))
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+
+		if normQuery == "" || strings.Contains(strings.ToLower(slashRel), normQuery) || strings.Contains(strings.ToLower(name), normQuery) {
+			fileItems = append(fileItems, FileItem{Path: slashRel, IsDir: false})
+		}
+	}
+
+	sort.Slice(dirItems, func(i, j int) bool { return dirItems[i].Path < dirItems[j].Path })
+	sort.Slice(fileItems, func(i, j int) bool { return fileItems[i].Path < fileItems[j].Path })
+
+	// Merge folders then files up to limit
+	for _, d := range dirItems {
+		if len(items) >= limit {
+			break
+		}
+		items = append(items, d)
+	}
+	for _, f := range fileItems {
+		if len(items) >= limit {
+			break
+		}
+		items = append(items, f)
+	}
+
+	return items, nil
+}
+
+// SearchFileContent searches text content inside project workspace files.
+func (s *Service) SearchFileContent(ctx context.Context, projectID uint, query string, limit int, worktreeID ...uint) ([]FileContentMatch, error) {
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		return []FileContentMatch{}, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 100 {
+		limit = 100
+	}
+
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.isGitDir(ctx, rootDir) {
+		return s.searchGitFileContent(ctx, rootDir, trimmedQuery, limit)
+	}
+	return s.searchWorkspaceFileContent(ctx, rootDir, trimmedQuery, limit)
+}
+
+func (s *Service) searchGitFileContent(ctx context.Context, rootDir, query string, limit int) ([]FileContentMatch, error) {
+	out, err := gitOutputLimit(ctx, rootDir, 8<<20, "grep", "-n", "-I", "-i", "--untracked", "-e", query)
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			// git grep exit code 1 means no matches found
+			return []FileContentMatch{}, nil
+		}
+		// If git grep fails for other reasons, fallback to standard workspace scan
+		return s.searchWorkspaceFileContent(ctx, rootDir, query, limit)
+	}
+
+	var matches []FileContentMatch
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		lineNum, parseErr := strconv.Atoi(parts[1])
+		if parseErr != nil {
+			continue
+		}
+		snippet := strings.TrimRight(parts[2], "\r\n")
+		if len(snippet) > 300 {
+			snippet = snippet[:300] + "..."
+		}
+		matches = append(matches, FileContentMatch{
+			Path:    filepath.ToSlash(parts[0]),
+			Line:    lineNum,
+			Content: snippet,
+		})
+		if len(matches) >= limit {
+			break
+		}
+	}
+	return matches, nil
+}
+
+func (s *Service) searchWorkspaceFileContent(ctx context.Context, rootDir, query string, limit int) ([]FileContentMatch, error) {
+	var matches []FileContentMatch
+	normQuery := strings.ToLower(query)
+
+	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil || ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if path == rootDir {
+			return nil
+		}
+
+		// Only skip .git metadata directory
+		if d.Name() == ".git" {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(rootDir, path)
+		if relErr != nil {
+			return nil
+		}
+		slashRel := filepath.ToSlash(rel)
+
+		f, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+
+		header := make([]byte, 512)
+		n, _ := io.ReadFull(f, header)
+		header = header[:n]
+		mimeType := http.DetectContentType(header)
+		if isBinaryContent(header, mimeType, d.Name()) {
+			return nil
+		}
+
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return nil
+		}
+
+		scanner := bufio.NewScanner(f)
+		lineNum := 0
+		for scanner.Scan() {
+			lineNum++
+			lineText := scanner.Text()
+			if strings.Contains(strings.ToLower(lineText), normQuery) {
+				snippet := strings.TrimRight(lineText, "\r\n")
+				if len(snippet) > 300 {
+					snippet = snippet[:300] + "..."
+				}
+				matches = append(matches, FileContentMatch{
+					Path:    slashRel,
+					Line:    lineNum,
+					Content: snippet,
+				})
+				if len(matches) >= limit {
+					return fs.SkipAll
+				}
+			}
+		}
+		return nil
+	})
+
+	if err != nil && err != fs.SkipAll {
+		return nil, err
+	}
+	return matches, nil
 }
 
 // searchWorkspaceFiles scans with standard fs traversal, only skipping .git metadata directory.

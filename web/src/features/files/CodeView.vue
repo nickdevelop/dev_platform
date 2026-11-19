@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { highlightCode, splitHighlightedHtmlIntoLines } from '../../shared/highlight'
 
 const props = withDefaults(
@@ -7,6 +7,7 @@ const props = withDefaults(
     content: string
     filePath?: string
     showLineNumbers?: boolean
+    initialLine?: number
   }>(),
   {
     showLineNumbers: true,
@@ -17,6 +18,12 @@ const searchVisible = ref(false)
 const searchQuery = ref('')
 const searchIndex = ref(0)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+
+const gotoLineVisible = ref(false)
+const gotoLineInput = ref('')
+const gotoLineInputRef = ref<HTMLInputElement | null>(null)
+const focusedLineNumber = ref<number | null>(null)
+
 const codeContainerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
 const wrapLines = ref(false)
@@ -151,6 +158,7 @@ const renderedLines = computed(() => {
 function toggleSearch() {
   searchVisible.value = !searchVisible.value
   if (searchVisible.value) {
+    gotoLineVisible.value = false
     void nextTick(() => {
       searchInputRef.value?.focus()
       searchInputRef.value?.select()
@@ -160,6 +168,49 @@ function toggleSearch() {
     searchIndex.value = 0
   }
 }
+
+function toggleGotoLine() {
+  gotoLineVisible.value = !gotoLineVisible.value
+  if (gotoLineVisible.value) {
+    searchVisible.value = false
+    gotoLineInput.value = focusedLineNumber.value ? String(focusedLineNumber.value) : ''
+    void nextTick(() => {
+      gotoLineInputRef.value?.focus()
+      gotoLineInputRef.value?.select()
+    })
+  }
+}
+
+function scrollToLine(targetLine: number) {
+  if (targetLine < 1 || targetLine > totalLines.value) return
+  focusedLineNumber.value = targetLine
+  void nextTick(() => {
+    const lineEl = codeContainerRef.value?.querySelector(`[data-line="${targetLine}"]`)
+    if (typeof lineEl?.scrollIntoView === 'function') {
+      lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  })
+}
+
+function handleGotoLineSubmit() {
+  const parsed = parseInt(String(gotoLineInput.value || '').trim(), 10)
+  if (!isNaN(parsed) && parsed >= 1 && parsed <= totalLines.value) {
+    scrollToLine(parsed)
+    gotoLineVisible.value = false
+  }
+}
+
+watch(
+  () => props.initialLine,
+  (newLine) => {
+    if (newLine && newLine > 0) {
+      void nextTick(() => {
+        scrollToLine(newLine)
+      })
+    }
+  },
+  { immediate: true },
+)
 
 function nextMatch() {
   if (matches.value.length === 0) return
@@ -186,9 +237,17 @@ function onKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
     e.preventDefault()
     toggleSearch()
-  } else if (e.key === 'Escape' && searchVisible.value) {
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
     e.preventDefault()
-    toggleSearch()
+    toggleGotoLine()
+  } else if (e.key === 'Escape') {
+    if (gotoLineVisible.value) {
+      e.preventDefault()
+      gotoLineVisible.value = false
+    } else if (searchVisible.value) {
+      e.preventDefault()
+      toggleSearch()
+    }
   }
 }
 
@@ -233,6 +292,40 @@ onUnmounted(() => {
       <button type="button" class="search-close" title="关闭 (Esc)" @click="toggleSearch">×</button>
     </div>
 
+    <!-- Floating goto line toolbar (Ctrl+G) -->
+    <div v-if="gotoLineVisible" class="search-bar goto-line-bar" data-test="goto-line-bar">
+      <span class="goto-line-label">跳转到行:</span>
+      <input
+        ref="gotoLineInputRef"
+        v-model="gotoLineInput"
+        type="number"
+        min="1"
+        :max="totalLines"
+        class="search-bar-input goto-line-input"
+        :placeholder="`1 - ${totalLines}`"
+        data-test="goto-line-input"
+        @keydown.enter.prevent="handleGotoLineSubmit"
+        @keydown.esc.prevent="gotoLineVisible = false"
+      />
+      <button
+        type="button"
+        class="search-btn"
+        title="跳转 (Enter)"
+        data-test="goto-line-submit-btn"
+        @click="handleGotoLineSubmit"
+      >
+        跳转
+      </button>
+      <button
+        type="button"
+        class="search-close"
+        title="关闭 (Esc)"
+        @click="gotoLineVisible = false"
+      >
+        ×
+      </button>
+    </div>
+
     <!-- Quick action buttons -->
     <div class="code-actions">
       <button
@@ -258,6 +351,7 @@ onUnmounted(() => {
           v-for="(lineHtml, idx) in renderedLines"
           :key="idx"
           class="code-row"
+          :class="{ 'is-focused-line': focusedLineNumber === idx + 1 }"
           :data-line="idx + 1"
         >
           <div
@@ -453,6 +547,32 @@ onUnmounted(() => {
   background-color: #f59e0b;
   color: #000000;
   box-shadow: 0 0 0 1px #d97706;
+  font-weight: 600;
+}
+
+.goto-line-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.goto-line-label {
+  font-size: var(--text-size-12, 12px);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.goto-line-input {
+  width: 90px;
+}
+
+.code-row.is-focused-line {
+  background-color: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
+}
+
+.code-row.is-focused-line .line-number {
+  background-color: var(--color-primary-soft, rgba(59, 130, 246, 0.2));
+  color: var(--color-primary);
   font-weight: 600;
 }
 </style>
