@@ -18,7 +18,20 @@ afterEach(() => {
 
 describe('theme presets', () => {
   it('offers preset themes including blue palettes', () => {
-    expect(themes.map((t) => t.key)).toEqual(['light', 'warm', 'cool', 'ocean', 'midnight', 'emerald'])
+    expect(themes.map((t) => t.key)).toEqual([
+      'light',
+      'warm',
+      'cool',
+      'ocean',
+      'midnight',
+      'emerald',
+      'sky',
+      'bamboo',
+      'turquoise',
+      'firework',
+      'ink',
+      'iris',
+    ])
   })
 
   it('offers three font size tiers of 12 / 14 / 16 px', () => {

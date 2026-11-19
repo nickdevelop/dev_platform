@@ -72,7 +72,7 @@ describe('AppearanceSettings', () => {
     stubFetch()
     const { wrapper } = await mountSettings()
 
-    expect(wrapper.findAll('[data-theme-option]')).toHaveLength(6)
+    expect(wrapper.findAll('[data-theme-option]')).toHaveLength(12)
     expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-density-option]')).toHaveLength(0)
     expect(wrapper.findAll('legend').map((legend) => legend.text())).toEqual([

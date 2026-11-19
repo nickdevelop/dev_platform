@@ -71,12 +71,12 @@ async function toggleQuickAssistant(event: Event) {
         <p class="text-xs text-platform-text-muted mt-0.5">选择符合您视觉习惯的配色体系，支持明亮浅色与低眩光暖冷色系</p>
       </div>
 
-      <div class="theme-grid grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div class="theme-grid flex flex-wrap gap-3">
         <button
           v-for="theme in themes"
           :key="theme.key"
           type="button"
-          class="theme-card relative flex flex-col p-3 rounded-lg border text-left cursor-pointer transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
+          class="theme-card relative flex flex-col w-[150px] shrink-0 p-2.5 rounded-lg border text-left cursor-pointer transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
           :class="[
             appearance.theme === theme.key
               ? 'border-platform-primary bg-platform-primary-soft text-platform-text'
@@ -87,15 +87,15 @@ async function toggleQuickAssistant(event: Event) {
         >
           <!-- Live swatch preview -->
           <div
-            class="swatch-preview w-full h-14 rounded-md border flex flex-col justify-between p-2 mb-2.5 overflow-hidden"
+            class="swatch-preview w-full h-12 rounded-md border flex flex-col justify-between p-2 mb-2 overflow-hidden"
             :style="{
-              background: theme.colors.bg,
+              background: theme.previewGradient || theme.colors.bg,
               borderColor: theme.colors.borderStrong,
             }"
           >
             <div class="flex items-center justify-between">
               <span
-                class="text-xs font-semibold px-1 rounded"
+                class="text-xs font-semibold px-1 rounded shadow-xs"
                 :style="{ color: theme.colors.text, background: theme.colors.surface }"
               >
                 Aa
@@ -106,17 +106,27 @@ async function toggleQuickAssistant(event: Event) {
               ></span>
             </div>
             <div
-              class="w-full h-2 rounded-sm opacity-80"
+              class="w-full h-1.5 rounded-sm opacity-80"
               :style="{ background: theme.colors.border }"
             ></div>
           </div>
 
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-medium">{{ theme.label }}</span>
+          <div class="flex items-center gap-2">
+            <!-- Radio indicator matching user design -->
             <span
-              v-if="appearance.theme === theme.key"
-              class="w-2 h-2 rounded-full bg-platform-primary"
-            ></span>
+              class="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors"
+              :class="[
+                appearance.theme === theme.key
+                  ? 'border-platform-primary bg-white'
+                  : 'border-platform-border-strong/70 bg-transparent',
+              ]"
+            >
+              <span
+                v-if="appearance.theme === theme.key"
+                class="w-1.5 h-1.5 rounded-full bg-platform-primary"
+              ></span>
+            </span>
+            <span class="text-xs font-medium truncate">{{ theme.label }}</span>
           </div>
         </button>
       </div>
