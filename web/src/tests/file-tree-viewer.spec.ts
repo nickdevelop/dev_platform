@@ -157,6 +157,29 @@ describe('FileTree.vue', () => {
       expect(wrapper.text()).toContain('加载中…')
     })
   })
+
+  it('emits download, delete and uploadTo on action clicks', async () => {
+    const wrapper = mount(FileTree, {
+      props: {
+        nodes: sampleNodes,
+      },
+    })
+
+    const downloadBtn = wrapper.find('button[title="下载文件"]')
+    expect(downloadBtn.exists()).toBe(true)
+    await downloadBtn.trigger('click')
+    expect(wrapper.emitted('download')?.[0]).toEqual(['README.md'])
+
+    const uploadToBtn = wrapper.find('button[title="上传文件到此目录"]')
+    expect(uploadToBtn.exists()).toBe(true)
+    await uploadToBtn.trigger('click')
+    expect(wrapper.emitted('uploadTo')?.[0]).toEqual(['src'])
+
+    const deleteBtn = wrapper.find('button[title="删除文件"]')
+    expect(deleteBtn.exists()).toBe(true)
+    await deleteBtn.trigger('click')
+    expect(wrapper.emitted('delete')?.[0]).toEqual(['README.md', false])
+  })
 })
 
 describe('FileSidebar.vue', () => {
@@ -462,9 +485,9 @@ describe('CodeView.vue', () => {
       props: { content },
     })
 
-    // Open search bar
-    const searchBtn = wrapper.findAll('.action-btn').find((b) => b.text().includes('查找'))
-    await searchBtn?.trigger('click')
+    // Open search bar with Ctrl+F
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }))
+    await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.search-bar').exists()).toBe(true)
 

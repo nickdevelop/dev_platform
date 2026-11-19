@@ -64,6 +64,90 @@ const matches = computed<SearchMatch[]>(() => {
   return res
 })
 
+const lineMatchesMap = computed(() => {
+  const map = new Map<number, Array<{ match: SearchMatch; globalIndex: number }>>()
+  if (!searchQuery.value) return map
+  matches.value.forEach((m, gIdx) => {
+    let arr = map.get(m.lineIndex)
+    if (!arr) {
+      arr = []
+      map.set(m.lineIndex, arr)
+    }
+    arr.push({ match: m, globalIndex: gIdx })
+  })
+  return map
+})
+
+function renderLineWithHighlight(lineHtml: string, lineIdx: number): string {
+  const lineMatches = lineMatchesMap.value.get(lineIdx)
+  if (!lineMatches || lineMatches.length === 0) {
+    return lineHtml || ' '
+  }
+
+  const tokens = lineHtml.split(/(<[^>]+>)/)
+  let currCol = 0
+  let result = ''
+
+  for (const token of tokens) {
+    if (!token) continue
+    if (token.startsWith('<') && token.endsWith('>')) {
+      result += token
+      continue
+    }
+
+    const tokenLen = token.length
+    const tokenStart = currCol
+    const tokenEnd = currCol + tokenLen
+
+    const intersecting = lineMatches.filter(
+      (lm) => lm.match.startCol < tokenEnd && lm.match.endCol > tokenStart,
+    )
+
+    if (intersecting.length === 0) {
+      result += token
+    } else {
+      let subIdx = 0
+      while (subIdx < tokenLen) {
+        const absCol = tokenStart + subIdx
+        const activeMatch = intersecting.find(
+          (lm) => absCol >= lm.match.startCol && absCol < lm.match.endCol,
+        )
+
+        if (activeMatch) {
+          const matchEndInToken = Math.min(tokenLen, activeMatch.match.endCol - tokenStart)
+          const matchedText = token.slice(subIdx, matchEndInToken)
+          const isCurrent = activeMatch.globalIndex === searchIndex.value
+          const currentClass = isCurrent ? ' is-current' : ''
+          result += `<mark class="search-match${currentClass}">${matchedText}</mark>`
+          subIdx = matchEndInToken
+        } else {
+          let nextMatchStartInToken = tokenLen
+          for (const lm of intersecting) {
+            if (lm.match.startCol > absCol) {
+              const relStart = lm.match.startCol - tokenStart
+              if (relStart < nextMatchStartInToken) {
+                nextMatchStartInToken = relStart
+              }
+            }
+          }
+          result += token.slice(subIdx, nextMatchStartInToken)
+          subIdx = nextMatchStartInToken
+        }
+      }
+    }
+
+    currCol += tokenLen
+  }
+
+  return result || ' '
+}
+
+const renderedLines = computed(() => {
+  if (highlightedLines.value.length === 0) return []
+  if (!searchQuery.value) return highlightedLines.value
+  return highlightedLines.value.map((lineHtml, idx) => renderLineWithHighlight(lineHtml, idx))
+})
+
 function toggleSearch() {
   searchVisible.value = !searchVisible.value
   if (searchVisible.value) {
@@ -93,7 +177,9 @@ function scrollToCurrentMatch() {
   const current = matches.value[searchIndex.value]
   if (!current || !codeContainerRef.value) return
   const lineEl = codeContainerRef.value.querySelector(`[data-line="${current.lineIndex + 1}"]`)
-  lineEl?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  if (typeof lineEl?.scrollIntoView === 'function') {
+    lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
 }
 
 function onKeydown(e: KeyboardEvent) {
@@ -163,36 +249,13 @@ onUnmounted(() => {
         </svg>
         <span>换行</span>
       </button>
-      <button
-        type="button"
-        class="action-btn"
-        :title="copied ? '已复制' : '复制代码'"
-        @click="copyCode"
-      >
-        <svg v-if="copied" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 8 6 11 13 4" />
-        </svg>
-        <span>{{ copied ? '已复制' : '复制' }}</span>
-      </button>
-      <button
-        type="button"
-        class="action-btn"
-        title="搜索 (Ctrl+F)"
-        @click="toggleSearch"
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-          <circle cx="7" cy="7" r="4.5" />
-          <line x1="10.5" y1="10.5" x2="14" y2="14" />
-        </svg>
-        <span>查找</span>
-      </button>
     </div>
 
     <!-- Code rows with line numbers -->
     <div ref="codeContainerRef" class="code-scroller">
       <div class="code-table" :class="{ 'is-wrapped': wrapLines }">
         <div
-          v-for="(lineHtml, idx) in highlightedLines"
+          v-for="(lineHtml, idx) in renderedLines"
           :key="idx"
           class="code-row"
           :data-line="idx + 1"
@@ -378,5 +441,18 @@ onUnmounted(() => {
   font-family: var(--font-mono);
   display: inline-block;
   min-width: 100%;
+}
+
+:deep(.search-match) {
+  background-color: rgba(234, 179, 8, 0.4);
+  color: inherit;
+  border-radius: 2px;
+}
+
+:deep(.search-match.is-current) {
+  background-color: #f59e0b;
+  color: #000000;
+  box-shadow: 0 0 0 1px #d97706;
+  font-weight: 600;
 }
 </style>

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -770,5 +771,89 @@ func TestPreviewTicketAndFileHandler(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("preview with fake ticket status = %d, want 403", w.Code)
+	}
+}
+
+func TestFileUploadDownloadDelete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc, _, root, _ := newTestService(t)
+
+	dir := filepath.Join(root, "ops-test")
+	mustMkdir(t, dir)
+	p, err := svc.Register(dir)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	id := p.ID
+
+	r := gin.New()
+	svc.RegisterRoutes(r)
+
+	// 1. Upload a file to project root
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "uploaded.txt")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	_, _ = part.Write([]byte("hello uploaded content"))
+	_ = writer.Close()
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/upload", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// Verify file content was written on disk
+	content, err := os.ReadFile(filepath.Join(dir, "uploaded.txt"))
+	if err != nil {
+		t.Fatalf("read uploaded file: %v", err)
+	}
+	if string(content) != "hello uploaded content" {
+		t.Fatalf("expected 'hello uploaded content', got %q", string(content))
+	}
+
+	// 2. Download the uploaded file
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/download?path=uploaded.txt", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("download status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if disp := w.Header().Get("Content-Disposition"); !strings.Contains(disp, "attachment") || !strings.Contains(disp, "uploaded.txt") {
+		t.Fatalf("expected Content-Disposition with attachment and uploaded.txt, got %q", disp)
+	}
+	if w.Body.String() != "hello uploaded content" {
+		t.Fatalf("download content mismatch: %q", w.Body.String())
+	}
+
+	// 3. Delete the uploaded file
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files?path=uploaded.txt", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uploaded.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected uploaded.txt to be removed, stat err = %v", err)
+	}
+
+	// 4. Try to delete root (must be rejected)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files?path=.", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("delete root status = %d, want 400", w.Code)
+	}
+
+	// 5. Try path escape delete (must be rejected)
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodDelete, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files?path=../../outside", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("delete path escape status = %d, want 400", w.Code)
 	}
 }

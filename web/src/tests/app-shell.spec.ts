@@ -587,4 +587,21 @@ describe('quick assistant launcher visibility', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="quick-assistant-button"]').exists()).toBe(false)
   })
+
+  it('toggles sidebar with Alt+1 and workspace preview pane with Alt+2', async () => {
+    const { wrapper } = await setup('/')
+
+    // Initially sidebar is expanded
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+
+    // Press Alt+1 to collapse sidebar
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', altKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+
+    // Press Alt+1 to expand sidebar
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', altKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+  })
 })

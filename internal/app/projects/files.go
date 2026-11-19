@@ -603,6 +603,86 @@ func (s *Service) ReadFileRaw(ctx context.Context, projectID uint, relPath strin
 	return f, mimeType, info.Size(), nil
 }
 
+// UploadFile writes a file to the project's target directory.
+// dirRelPath can be empty or "." to address the project root.
+func (s *Service) UploadFile(ctx context.Context, projectID uint, dirRelPath string, filename string, r io.Reader, worktreeID ...uint) (string, error) {
+	cleanName := filepath.Base(filepath.Clean(filename))
+	if cleanName == "" || cleanName == "." || cleanName == "/" || strings.ContainsRune(cleanName, 0) {
+		return "", ErrInvalidTarget
+	}
+
+	rootDir, targetDir, _, err := s.resolveProjectSafeDir(projectID, dirRelPath, worktreeID...)
+	if err != nil {
+		return "", err
+	}
+
+	targetFile := filepath.Join(targetDir, filepath.FromSlash(cleanName))
+
+	// Verify the destination does not escape project root
+	relCheck, err := filepath.Rel(rootDir, targetFile)
+	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
+		return "", ErrPathEscaped
+	}
+
+	dst, err := os.OpenFile(targetFile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, r); err != nil {
+		return "", err
+	}
+
+	return filepath.ToSlash(relCheck), nil
+}
+
+// DeletePath removes a file or directory inside the project workspace.
+// Project root cannot be deleted.
+func (s *Service) DeletePath(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) error {
+	if strings.ContainsRune(relPath, 0) {
+		return ErrInvalidTarget
+	}
+
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
+	if err != nil {
+		return err
+	}
+
+	cleanRel := filepath.ToSlash(filepath.Clean(relPath))
+	cleanRel = strings.TrimPrefix(cleanRel, "/")
+
+	cleanRoot := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(rootDir)), "/")
+	if cleanRoot != "" && (cleanRel == cleanRoot || strings.HasPrefix(cleanRel, cleanRoot+"/")) {
+		cleanRel = strings.TrimPrefix(cleanRel, cleanRoot)
+		cleanRel = strings.TrimPrefix(cleanRel, "/")
+	}
+
+	if cleanRel == "" || cleanRel == "." {
+		return ErrInvalidTarget
+	}
+
+	if cleanRel == ".." || strings.HasPrefix(cleanRel, "../") || strings.Contains(cleanRel, "/../") {
+		return ErrPathEscaped
+	}
+
+	fullPath := filepath.Join(rootDir, filepath.FromSlash(cleanRel))
+
+	relCheck, err := filepath.Rel(rootDir, fullPath)
+	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
+		return ErrPathEscaped
+	}
+
+	if _, err := os.Lstat(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			return ErrFileNotFound
+		}
+		return err
+	}
+
+	return os.RemoveAll(fullPath)
+}
+
 // trimTrailingIncompleteUTF8 strips at most 3 trailing bytes from b if they
 // represent an incomplete leading sequence of a multi-byte UTF-8 rune.
 // This prevents false negatives when a fixed-size header buffer truncates a character.

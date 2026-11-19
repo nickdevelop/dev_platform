@@ -2,12 +2,15 @@
 import { computed, ref, watch } from 'vue'
 import {
   commitGitChanges,
+  deleteFile,
   discardGitFile,
+  getFileDownloadUrl,
   getFileTree,
   getGitCommits,
   getGitStatus,
   stageGitFiles,
   unstageGitFiles,
+  uploadFiles,
 } from '../../api/files'
 import { searchProjectFiles } from '../../api/projects'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
@@ -400,27 +403,116 @@ function onSelectAllFile(path: string) {
 function onDragStart(event: DragEvent, path: string) {
   emit('dragstart', event, path)
 }
+
+// Upload file handling
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const uploadTargetDir = ref('')
+const uploading = ref(false)
+
+function triggerUpload(dir = '') {
+  uploadTargetDir.value = dir
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+    fileInputRef.value.click()
+  }
+}
+
+async function onFilesSelected(event: Event) {
+  const target = event.target as HTMLInputElement
+  const files = target.files
+  if (!files || files.length === 0 || !props.projectId) return
+
+  uploading.value = true
+  error.value = ''
+  try {
+    await uploadFiles(props.projectId, files, uploadTargetDir.value, props.worktreeId)
+    await refresh()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '上传文件失败'
+  } finally {
+    uploading.value = false
+    uploadTargetDir.value = ''
+    target.value = ''
+  }
+}
+
+// Download file handling
+function onDownloadFile(path: string) {
+  if (!props.projectId || !path) return
+  const url = getFileDownloadUrl(props.projectId, path, props.worktreeId)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = path.split('/').pop() || 'download'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+// Delete file/folder handling
+const deleteModalOpen = ref(false)
+const deleteConfirmPath = ref('')
+const deleteConfirmIsDir = ref(false)
+const deleting = ref(false)
+
+function onDeleteFile(path: string, isDir: boolean) {
+  deleteConfirmPath.value = path
+  deleteConfirmIsDir.value = isDir
+  deleteModalOpen.value = true
+}
+
+function closeDeleteModal() {
+  if (deleting.value) return
+  deleteModalOpen.value = false
+  deleteConfirmPath.value = ''
+  deleteConfirmIsDir.value = false
+}
+
+async function confirmDelete() {
+  if (!props.projectId || !deleteConfirmPath.value) return
+  deleting.value = true
+  error.value = ''
+  try {
+    await deleteFile(props.projectId, deleteConfirmPath.value, props.worktreeId)
+    deleteModalOpen.value = false
+    deleteConfirmPath.value = ''
+    deleteConfirmIsDir.value = false
+    await refresh()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '删除失败'
+  } finally {
+    deleting.value = false
+  }
+}
 </script>
 
 <template>
-  <div class="file-sidebar flex flex-col h-full bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 overflow-hidden select-none" data-test="file-sidebar">
-    <!-- Top header: Tabs + Branch Selector + Refresh -->
-    <div class="sidebar-header flex items-center justify-between p-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 shrink-0 gap-1.5">
+  <div class="file-sidebar flex flex-col h-full bg-platform-surface border-r border-platform-border overflow-hidden select-none" data-test="file-sidebar">
+    <!-- Hidden file input for uploads -->
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      class="hidden"
+      @change="onFilesSelected"
+    />
+
+    <!-- Top header: Tabs + Branch Selector + Upload + Refresh -->
+    <div class="sidebar-header flex items-center justify-between p-2 border-b border-platform-border bg-platform-surface-muted shrink-0 gap-1.5">
       <div class="sidebar-tabs flex items-center gap-1">
         <button
           type="button"
           class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer"
           :class="[
             activeTab === 'changes'
-              ? 'is-active text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 font-semibold'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50',
+              ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
+              : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
           ]"
           @click="activeTab = 'changes'"
         >
           变更
           <span
             v-if="changesCount > 0"
-            class="badge-count px-1.5 py-0.2 rounded-full text-3xs bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-mono font-semibold"
+            class="badge-count px-1.5 py-0.2 rounded-full text-3xs bg-platform-primary-soft text-platform-primary font-mono font-semibold"
           >
             {{ changesCount }}
           </span>
@@ -430,8 +522,8 @@ function onDragStart(event: DragEvent, path: string) {
           class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer"
           :class="[
             activeTab === 'all'
-              ? 'is-active text-blue-600 dark:text-blue-400 bg-white dark:bg-slate-800 font-semibold'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/50',
+              ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
+              : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
           ]"
           @click="activeTab = 'all'"
         >
@@ -449,9 +541,31 @@ function onDragStart(event: DragEvent, path: string) {
           @error="error = $event"
         />
 
+        <!-- Upload file button in all tab or general -->
+        <button
+          v-if="activeTab === 'all'"
+          type="button"
+          class="upload-btn inline-flex items-center justify-center w-6 h-6 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted transition-colors cursor-pointer"
+          title="上传文件到工作区"
+          aria-label="上传文件到工作区"
+          :disabled="uploading"
+          @click="triggerUpload('')"
+        >
+          <svg
+            class="w-3.5 h-3.5"
+            :class="{ 'animate-spin': uploading }"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+          >
+            <path d="M8 11V2M4 5l4-3 4 3M2 13h12" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+
         <button
           type="button"
-          class="refresh-btn inline-flex items-center justify-center w-6 h-6 rounded text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          class="refresh-btn inline-flex items-center justify-center w-6 h-6 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted transition-colors cursor-pointer"
           title="刷新文件树"
           aria-label="刷新文件树"
           :disabled="loading"
@@ -472,11 +586,11 @@ function onDragStart(event: DragEvent, path: string) {
     </div>
 
     <!-- Changes Tab: Commit Selector -->
-    <div v-if="activeTab === 'changes'" class="commit-selector-box px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 shrink-0">
+    <div v-if="activeTab === 'changes'" class="commit-selector-box px-2 py-1.5 border-b border-platform-border bg-platform-surface-muted shrink-0">
       <div class="flex items-center gap-1.5 w-full">
         <select
           v-model="selectedCommit"
-          class="commit-select flex-1 text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 outline-none truncate font-mono"
+          class="commit-select flex-1 text-xs px-2 py-1 rounded border border-platform-border bg-platform-surface text-platform-text outline-none truncate font-mono"
           title="选择查看提交变更"
         >
           <option value="">当前工作区变更 (未提交)</option>
@@ -492,7 +606,7 @@ function onDragStart(event: DragEvent, path: string) {
         </select>
         <button
           type="button"
-          class="collapse-toggle-btn text-2xs px-1.5 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded shrink-0 font-mono transition-colors"
+          class="collapse-toggle-btn text-2xs px-1.5 py-1 text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted rounded shrink-0 font-mono transition-colors"
           :title="expandedChangeDirs.size > 0 ? '全部折叠' : '全部展开'"
           @click="toggleAllChangeDirs"
         >
@@ -502,11 +616,11 @@ function onDragStart(event: DragEvent, path: string) {
     </div>
 
     <!-- Search filter input -->
-    <div class="search-box relative px-2 py-1.5 border-b border-slate-200 dark:border-slate-800 shrink-0">
+    <div class="search-box relative px-2 py-1.5 border-b border-platform-border shrink-0">
       <input
         v-model="searchQuery"
         type="text"
-        class="w-full text-xs px-2 py-1 pr-6 rounded border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 font-mono"
+        class="w-full text-xs px-2 py-1 pr-6 rounded border border-platform-border bg-platform-surface text-platform-text placeholder:text-platform-text-muted focus:outline-none focus:border-platform-primary font-mono"
         placeholder="搜索文件…"
       />
       <button
@@ -525,17 +639,17 @@ function onDragStart(event: DragEvent, path: string) {
 
     <!-- Content body -->
     <div class="sidebar-body flex-1 min-h-0 overflow-y-auto p-1.5">
-      <div v-if="loading && treeNodes.length === 0 && gitChanges.length === 0" class="state-message text-center py-6 text-xs text-slate-400">
+      <div v-if="loading && treeNodes.length === 0 && gitChanges.length === 0" class="state-message text-center py-6 text-xs text-platform-text-muted">
         正在读取文件…
       </div>
-      <div v-else-if="error" class="state-error text-center py-4 px-2 text-xs text-red-600 dark:text-red-400 flex flex-col gap-2 items-center">
+      <div v-else-if="error" class="state-error text-center py-4 px-2 text-xs text-platform-danger flex flex-col gap-2 items-center">
         <span>{{ error }}</span>
-        <button type="button" class="px-2 py-0.5 rounded border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 text-xs cursor-pointer" @click="refresh">重试</button>
+        <button type="button" class="px-2 py-0.5 rounded border border-platform-danger bg-platform-danger-soft text-platform-danger text-xs cursor-pointer" @click="refresh">重试</button>
       </div>
 
       <!-- Changes view (Tree layout) -->
       <div v-else-if="activeTab === 'changes'" class="changes-list flex flex-col gap-2">
-        <div v-if="displayChanges.length === 0" class="state-message text-center py-6 text-xs text-slate-400">
+        <div v-if="displayChanges.length === 0" class="state-message text-center py-6 text-xs text-platform-text-muted">
           {{ searchQuery ? '未找到匹配的变更文件' : selectedCommit ? '该提交无文件变更' : '工作区当前无变更' }}
         </div>
 
@@ -558,12 +672,12 @@ function onDragStart(event: DragEvent, path: string) {
           <!-- Section 1: Staged Changes -->
           <div v-if="stagedItems.length > 0" class="staged-group flex flex-col">
             <div
-              class="group-header flex items-center justify-between h-6 px-1.5 rounded bg-slate-100/70 dark:bg-slate-900/50 text-xs font-mono font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+              class="group-header flex items-center justify-between h-6 px-1.5 rounded bg-platform-surface-muted text-xs font-mono font-medium text-platform-text cursor-pointer"
               @click="isStagedGroupExpanded = !isStagedGroupExpanded"
             >
               <div class="flex items-center gap-1.5">
                 <svg
-                  class="w-3 h-3 text-slate-400 transition-transform duration-150"
+                  class="w-3 h-3 text-platform-text-muted transition-transform duration-150"
                   :class="{ 'rotate-90': isStagedGroupExpanded }"
                   viewBox="0 0 16 16"
                   fill="currentColor"
@@ -571,11 +685,11 @@ function onDragStart(event: DragEvent, path: string) {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>已暂存的更改</span>
-                <span class="text-3xs text-slate-400 font-mono">({{ stagedItems.length }})</span>
+                <span class="text-3xs text-platform-text-muted font-mono">({{ stagedItems.length }})</span>
               </div>
               <button
                 type="button"
-                class="unstage-all-btn p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                class="unstage-all-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors"
                 title="取消暂存所有更改"
                 @click.stop="onUnstageAll"
               >
@@ -603,12 +717,12 @@ function onDragStart(event: DragEvent, path: string) {
           <!-- Section 2: Unstaged Changes -->
           <div v-if="unstagedItems.length > 0" class="unstaged-group flex flex-col">
             <div
-              class="group-header flex items-center justify-between h-6 px-1.5 rounded bg-slate-100/70 dark:bg-slate-900/50 text-xs font-mono font-medium text-slate-700 dark:text-slate-300 cursor-pointer"
+              class="group-header flex items-center justify-between h-6 px-1.5 rounded bg-platform-surface-muted text-xs font-mono font-medium text-platform-text cursor-pointer"
               @click="isUnstagedGroupExpanded = !isUnstagedGroupExpanded"
             >
               <div class="flex items-center gap-1.5">
                 <svg
-                  class="w-3 h-3 text-slate-400 transition-transform duration-150"
+                  class="w-3 h-3 text-platform-text-muted transition-transform duration-150"
                   :class="{ 'rotate-90': isUnstagedGroupExpanded }"
                   viewBox="0 0 16 16"
                   fill="currentColor"
@@ -616,11 +730,11 @@ function onDragStart(event: DragEvent, path: string) {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>更改</span>
-                <span class="text-3xs text-slate-400 font-mono">({{ unstagedItems.length }})</span>
+                <span class="text-3xs text-platform-text-muted font-mono">({{ unstagedItems.length }})</span>
               </div>
               <button
                 type="button"
-                class="stage-all-btn p-0.5 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                class="stage-all-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors"
                 title="暂存所有更改"
                 @click.stop="onStageAll"
               >
@@ -653,24 +767,24 @@ function onDragStart(event: DragEvent, path: string) {
       <div v-else class="tree-container">
         <!-- Search query mode: show flat search results across workspace -->
         <div v-if="searchQuery">
-          <div v-if="searchLoading" class="state-message text-center py-6 text-xs text-slate-400">
+          <div v-if="searchLoading" class="state-message text-center py-6 text-xs text-platform-text-muted">
             正在搜索工作区文件…
           </div>
-          <div v-else-if="searchResults.length === 0" class="state-message text-center py-6 text-xs text-slate-400">
+          <div v-else-if="searchResults.length === 0" class="state-message text-center py-6 text-xs text-platform-text-muted">
             未找到匹配的文件
           </div>
           <ul v-else class="changes-ul list-none m-0 p-0 flex flex-col gap-0.5">
             <li
               v-for="item in searchResults"
               :key="item.path"
-              class="change-item flex items-center justify-between px-2 py-1 rounded text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer transition-colors"
-              :class="{ 'bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-medium': props.activePath === item.path }"
+              class="change-item flex items-center justify-between px-2 py-1 rounded text-xs text-platform-text hover:bg-platform-surface-muted cursor-pointer transition-colors"
+              :class="{ 'bg-platform-primary-soft text-platform-primary font-medium': props.activePath === item.path }"
               :draggable="!item.isDir"
               @click="item.isDir ? undefined : onSelectAllFile(item.path)"
               @dragstart="item.isDir ? undefined : onDragStart($event, item.path)"
             >
               <div class="flex items-center gap-1.5 truncate">
-                <span class="search-file-icon text-slate-400 shrink-0" aria-hidden="true">
+                <span class="search-file-icon text-platform-text-muted shrink-0" aria-hidden="true">
                   <svg v-if="item.isDir" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path d="M2 3h4l2 2h6v8H2V3z" />
                   </svg>
@@ -686,7 +800,7 @@ function onDragStart(event: DragEvent, path: string) {
         </div>
 
         <!-- Normal tree mode: lazy loaded directory tree -->
-        <div v-else-if="treeNodes.length === 0" class="state-message text-center py-6 text-xs text-slate-400">
+        <div v-else-if="treeNodes.length === 0" class="state-message text-center py-6 text-xs text-platform-text-muted">
           工作区为空
         </div>
         <FileTree
@@ -699,6 +813,9 @@ function onDragStart(event: DragEvent, path: string) {
           @dragstart="onDragStart"
           @load-children="onLoadChildren"
           @toggle="toggleTreePath"
+          @download="onDownloadFile"
+          @delete="onDeleteFile"
+          @upload-to="triggerUpload"
         />
       </div>
     </div>
@@ -723,12 +840,12 @@ function onDragStart(event: DragEvent, path: string) {
       data-test="discard-confirm-dialog"
       @close="closeDiscardModal"
     >
-      <div class="text-xs text-slate-600 dark:text-slate-300 flex flex-col gap-2">
+      <div class="text-xs text-platform-text flex flex-col gap-2">
         <p>确定要放弃对以下文件的所有更改吗？</p>
-        <div class="p-2 rounded bg-slate-100 dark:bg-slate-900 font-mono text-2xs text-red-600 dark:text-red-400 break-all border border-slate-200 dark:border-slate-800">
+        <div class="p-2 rounded bg-platform-surface-muted font-mono text-2xs text-platform-danger break-all border border-platform-border">
           {{ discardConfirmPath }}
         </div>
-        <p class="text-2xs text-slate-400">注意：未暂存或未提交的修改将永久丢失，此操作无法撤销。</p>
+        <p class="text-2xs text-platform-text-muted">注意：未暂存或未提交的修改将永久丢失，此操作无法撤销。</p>
       </div>
 
       <template #footer>
@@ -752,6 +869,47 @@ function onDragStart(event: DragEvent, path: string) {
           @click="confirmDiscard"
         >
           {{ discarding ? '放弃中…' : '确认放弃' }}
+        </UiButton>
+      </template>
+    </UiDialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <UiDialog
+      v-if="deleteModalOpen"
+      :title="deleteConfirmIsDir ? '删除目录' : '删除文件'"
+      width-class="w-full max-w-md"
+      data-test="delete-confirm-dialog"
+      @close="closeDeleteModal"
+    >
+      <div class="text-xs text-platform-text flex flex-col gap-2">
+        <p>确定要永久删除以下{{ deleteConfirmIsDir ? '目录及其所有内容' : '文件' }}吗？</p>
+        <div class="p-2 rounded bg-platform-surface-muted font-mono text-2xs text-platform-danger break-all border border-platform-border">
+          {{ deleteConfirmPath }}
+        </div>
+        <p class="text-2xs text-platform-text-muted">此操作将直接从磁盘中删除，无法撤销，请谨慎操作。</p>
+      </div>
+
+      <template #footer>
+        <UiButton
+          type="button"
+          variant="secondary"
+          size="sm"
+          :disabled="deleting"
+          data-test="cancel-delete-btn"
+          @click="closeDeleteModal"
+        >
+          取消
+        </UiButton>
+        <UiButton
+          type="button"
+          variant="danger"
+          size="sm"
+          :disabled="deleting"
+          :loading="deleting"
+          data-test="confirm-delete-btn"
+          @click="confirmDelete"
+        >
+          {{ deleting ? '删除中…' : '确认删除' }}
         </UiButton>
       </template>
     </UiDialog>

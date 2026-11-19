@@ -68,8 +68,8 @@ function getFileKind(name: string, isDir: boolean): FileKind {
         class="change-tree-row group flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
         :class="[
           props.activePath === node.path
-            ? 'is-active bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 font-medium'
-            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70',
+            ? 'is-active bg-platform-primary-soft text-platform-primary font-medium'
+            : 'text-platform-text hover:bg-platform-surface-muted',
           node.isDir ? 'is-dir' : '',
         ]"
         :style="{ paddingLeft: `${props.level * 14 + 8}px` }"
@@ -79,7 +79,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
       >
         <span
           v-if="node.isDir"
-          class="expand-arrow inline-flex items-center justify-center w-3 text-slate-400 transition-transform duration-150"
+          class="expand-arrow inline-flex items-center justify-center w-3 text-platform-text-muted transition-transform duration-150"
           :class="{ 'is-open rotate-90': isExpanded(node.path) }"
           @click.stop="emit('toggle', node.path)"
         >
@@ -89,7 +89,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
         </span>
         <span v-else class="expand-arrow-spacer w-3 inline-block"></span>
 
-        <span class="file-icon shrink-0 inline-flex items-center text-slate-400 dark:text-slate-500" aria-hidden="true">
+        <span class="file-icon shrink-0 inline-flex items-center text-platform-text-muted" aria-hidden="true">
           <template v-if="getFileKind(node.name, node.isDir) === 'folder'">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M2 3h4l2 2h6v8H2V3z" />
@@ -141,7 +141,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
           <button
             v-if="props.isStaged"
             type="button"
-            class="action-btn p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            class="action-btn p-1 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors"
             title="取消暂存"
             @click.stop="emit('unstage', node.path)"
           >
@@ -152,7 +152,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
           <template v-else>
             <button
               type="button"
-              class="action-btn p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              class="action-btn p-1 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors"
               title="暂存更改"
               @click.stop="emit('stage', node.path)"
             >
@@ -163,7 +163,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
             </button>
             <button
               type="button"
-              class="action-btn p-1 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+              class="action-btn p-1 rounded text-platform-text-muted hover:text-platform-danger hover:bg-platform-surface transition-colors"
               title="放弃更改"
               @click.stop="emit('discard', node.path)"
             >
@@ -178,7 +178,7 @@ function getFileKind(name: string, isDir: boolean): FileKind {
         <!-- Folder change count badge -->
         <span
           v-if="node.isDir && node.changeCount"
-          class="count-badge shrink-0 px-1.5 py-0.2 rounded-full text-3xs bg-slate-200/70 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-mono"
+          class="count-badge shrink-0 px-1.5 py-0.2 rounded-full text-3xs bg-platform-surface-muted text-platform-text-muted font-mono"
           :title="`${node.changeCount} 个文件变更`"
         >
           {{ node.changeCount }}

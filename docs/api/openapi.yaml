@@ -735,6 +735,46 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalError'
+    delete:
+      summary: Delete a file or directory
+      description: Safely removes a file or directory inside the project workspace. Project root cannot be deleted.
+      operationId: deleteProjectFile
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
+        - $ref: '#/components/parameters/CSRFToken'
+        - name: path
+          in: query
+          required: true
+          description: Relative path of the file or directory to delete.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Path deleted successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: File or project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /projects/{id}/files/tree:
     get:
       summary: Get workspace file tree
@@ -833,6 +873,98 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: File or project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/download:
+    get:
+      summary: Download a file
+      description: Streams the raw bytes of a workspace file with attachment Content-Disposition for browser download.
+      operationId: downloadProjectFile
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
+        - name: path
+          in: query
+          required: true
+          description: Relative path of the file to download.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Binary file stream with Content-Disposition header.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: File or project not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /projects/{id}/files/upload:
+    post:
+      summary: Upload files to project workspace
+      description: Uploads one or more files to the specified directory in the project workspace.
+      operationId: uploadProjectFiles
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/WorktreeScope'
+        - $ref: '#/components/parameters/CSRFToken'
+        - name: path
+          in: query
+          required: false
+          description: Target directory path inside workspace. Omit for root.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload.
+      responses:
+        '200':
+          description: Files uploaded successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  uploaded:
+                    type: array
+                    items:
+                      type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Target path or project not found.
           content:
             application/json:
               schema:

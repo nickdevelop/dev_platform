@@ -50,6 +50,43 @@ export function getFileRawUrl(projectId: number, path: string, worktreeId?: numb
   return `/api/projects/${projectId}/files/raw?${params.toString()}`
 }
 
+export function getFileDownloadUrl(projectId: number, path: string, worktreeId?: number): string {
+  const params = withWorktree(new URLSearchParams({ path }), worktreeId)
+  return `/api/projects/${projectId}/files/download?${params.toString()}`
+}
+
+export async function uploadFiles(
+  projectId: number,
+  files: File[] | FileList,
+  path?: string,
+  worktreeId?: number,
+): Promise<{ ok: boolean; uploaded: string[] }> {
+  const params = withWorktree(new URLSearchParams(), worktreeId)
+  if (path) params.set('path', path)
+  const qs = params.toString() ? `?${params.toString()}` : ''
+
+  const formData = new FormData()
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    formData.append('file', file, file.name)
+  }
+
+  return mutate<{ ok: boolean; uploaded: string[] }>(
+    'POST',
+    `/projects/${projectId}/files/upload${qs}`,
+    formData,
+  )
+}
+
+export function deleteFile(
+  projectId: number,
+  path: string,
+  worktreeId?: number,
+): Promise<{ ok: boolean }> {
+  const params = withWorktree(new URLSearchParams({ path }), worktreeId)
+  return mutate<{ ok: boolean }>('DELETE', `/projects/${projectId}/files?${params.toString()}`)
+}
+
 export async function createPreviewTicket(projectId: number, worktreeId?: number): Promise<string> {
   const params = withWorktree(new URLSearchParams(), worktreeId)
   const query = params.toString() ? `?${params.toString()}` : ''

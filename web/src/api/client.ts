@@ -112,7 +112,8 @@ async function exchange(
   csrfToken: string,
 ): Promise<ExchangeResult> {
   const headers: Record<string, string> = {}
-  if (body !== undefined) {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
+  if (body !== undefined && !isFormData) {
     headers['Content-Type'] = 'application/json'
   }
   if (csrfToken !== '') {
@@ -122,7 +123,7 @@ async function exchange(
   const response = await fetch(`/api${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isFormData ? (body as FormData) : body !== undefined ? JSON.stringify(body) : undefined,
   })
 
   if (response.status === 204) {

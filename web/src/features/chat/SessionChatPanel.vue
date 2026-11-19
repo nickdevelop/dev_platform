@@ -36,6 +36,7 @@ import { computeContextUsage } from '../../shared/contextUsage'
 import { ellipsisMiddle, formatTokens } from '../../shared/format'
 import SessionHeader from './pane/SessionHeader.vue'
 import WorkspacePreviewPane, { type OpenFileTab } from './pane/WorkspacePreviewPane.vue'
+import QuickFileSearchDialog from './pane/QuickFileSearchDialog.vue'
 import MessageView from './rendering/MessageView.vue'
 import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
@@ -659,10 +660,31 @@ const composerDisabled = computed(() => {
 // interaction layer's concern (see ./interactions/useSessionInteractions.ts);
 // the panel renders whatever that layer reports.
 
+const quickFileSearchOpen = ref(false)
+
+function onSessionKeydown(e: KeyboardEvent) {
+  if (isDeactivated) return
+
+  // Ctrl+P / Cmd+P: Quick open file search
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+    e.preventDefault()
+    quickFileSearchOpen.value = !quickFileSearchOpen.value
+    return
+  }
+
+  // Alt+2: Toggle preview/activity pane
+  if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
+    e.preventDefault()
+    setPreviewCollapsed(!previewCollapsed.value)
+    return
+  }
+}
+
 let isInitialMount = true
 
 onMounted(() => {
   window.addEventListener('click', onWindowClick)
+  window.addEventListener('keydown', onSessionKeydown)
   if (!projectsStore.byId(props.projectId)) {
     void projectsStore.load()
   }
@@ -748,6 +770,7 @@ const {
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
+  window.removeEventListener('keydown', onSessionKeydown)
   // Tabs keep other sessions alive: unmounting this panel must not close other
   // sessions' streams. The session's own subscriptions stay open so returning
   // via a tab is instant; they are released when the tab closes or the session
@@ -1311,6 +1334,14 @@ async function removeSession() {
       :image="previewModalImage"
       :visible="previewModalImage !== null"
       @close="previewModalImage = null"
+    />
+
+    <QuickFileSearchDialog
+      :open="quickFileSearchOpen"
+      :project-id="props.projectId"
+      :worktree-id="worktreeId"
+      @close="quickFileSearchOpen = false"
+      @select="(path) => { quickFileSearchOpen = false; openFileInPreview(path) }"
     />
   </section>
 </template>

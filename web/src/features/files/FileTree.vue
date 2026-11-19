@@ -25,6 +25,9 @@ const emit = defineEmits<{
   dragstart: [event: DragEvent, path: string]
   loadChildren: [node: FileTreeNode]
   toggle: [path: string]
+  download: [path: string]
+  delete: [path: string, isDir: boolean]
+  uploadTo: [dirPath: string]
 }>()
 
 const localExpanded = ref<Set<string>>(new Set())
@@ -117,11 +120,11 @@ defineExpose({
   <ul class="file-tree-list list-none m-0 p-0 select-none">
     <li v-for="node in props.nodes" :key="node.path" class="file-tree-item">
       <div
-        class="file-tree-row flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
+        class="file-tree-row group flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
         :class="[
           props.activePath === node.path
-            ? 'is-active bg-blue-50/70 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
-            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70',
+            ? 'is-active bg-platform-primary-soft text-platform-primary font-medium'
+            : 'text-platform-text hover:bg-platform-surface-muted',
           node.isDir ? 'is-dir' : '',
           props.gitChangesMap.get(node.path) ? 'has-change' : '',
         ]"
@@ -132,7 +135,7 @@ defineExpose({
       >
         <span
           v-if="node.isDir"
-          class="expand-arrow inline-flex items-center justify-center w-3 text-slate-400 transition-transform duration-150"
+          class="expand-arrow inline-flex items-center justify-center w-3 text-platform-text-muted transition-transform duration-150"
           :class="{ 'is-open rotate-90': isExpanded(node.path) }"
         >
           <svg viewBox="0 0 16 16" width="9" height="9" fill="currentColor">
@@ -141,7 +144,7 @@ defineExpose({
         </span>
         <span v-else class="expand-arrow-spacer w-3 inline-block"></span>
 
-        <span class="file-icon shrink-0 inline-flex items-center text-slate-400 dark:text-slate-500" aria-hidden="true">
+        <span class="file-icon shrink-0 inline-flex items-center text-platform-text-muted" aria-hidden="true">
           <template v-if="getFileKind(node.name, node.isDir) === 'folder'">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5">
               <path d="M2 3h4l2 2h6v8H2V3z" />
@@ -189,6 +192,50 @@ defineExpose({
         </span>
         <span class="file-name truncate flex-1 min-w-0" :title="node.path">{{ node.name }}</span>
 
+        <!-- Hover Actions: upload (folder), download (file), delete (both) -->
+        <div class="file-node-actions opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+          <!-- Upload to folder button -->
+          <button
+            v-if="node.isDir"
+            type="button"
+            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors cursor-pointer"
+            title="上传文件到此目录"
+            aria-label="上传文件到此目录"
+            @click.stop="emit('uploadTo', node.path)"
+          >
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M8 11V2M4 5l4-3 4 3M2 13h12" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+
+          <!-- Download file button -->
+          <button
+            v-else
+            type="button"
+            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors cursor-pointer"
+            title="下载文件"
+            aria-label="下载文件"
+            @click.stop="emit('download', node.path)"
+          >
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M8 2v9M4 8l4 3 4-3M2 13h12" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+
+          <!-- Delete file/folder button -->
+          <button
+            type="button"
+            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-danger hover:bg-platform-surface transition-colors cursor-pointer"
+            :title="node.isDir ? '删除目录' : '删除文件'"
+            :aria-label="node.isDir ? '删除目录' : '删除文件'"
+            @click.stop="emit('delete', node.path, node.isDir)"
+          >
+            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M3 4h10M6 4V2.5h4V4M5 4v9h6V4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+
         <span
           v-if="!node.isDir && props.gitChangesMap.get(node.path)"
           class="git-badge shrink-0 px-1 py-0.2 text-3xs font-mono rounded font-semibold border"
@@ -200,7 +247,7 @@ defineExpose({
               ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800'
               : props.gitChangesMap.get(node.path) === 'deleted'
               ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700',
+              : 'bg-platform-surface-muted text-platform-text-muted border-platform-border',
           ]"
           :title="getChangeBadge(props.gitChangesMap.get(node.path))?.label"
         >
@@ -210,7 +257,7 @@ defineExpose({
 
       <div
         v-if="node.isDir && isExpanded(node.path) && node.loading"
-        class="tree-state-row flex items-center gap-1.5 h-6 text-xs text-slate-400"
+        class="tree-state-row flex items-center gap-1.5 h-6 text-xs text-platform-text-muted"
         :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
         data-test="tree-node-loading"
       >
@@ -220,7 +267,7 @@ defineExpose({
 
       <div
         v-else-if="node.isDir && isExpanded(node.path) && node.loaded && (!node.children || node.children.length === 0)"
-        class="tree-state-row flex items-center h-6 text-xs text-slate-400 italic"
+        class="tree-state-row flex items-center h-6 text-xs text-platform-text-muted italic"
         :style="{ paddingLeft: `${(props.level + 1) * 14 + 8}px` }"
         data-test="tree-node-empty"
       >
@@ -238,6 +285,9 @@ defineExpose({
         @dragstart="(e, p) => emit('dragstart', e, p)"
         @load-children="(n) => emit('loadChildren', n)"
         @toggle="toggleExpand"
+        @download="(p) => emit('download', p)"
+        @delete="(p, d) => emit('delete', p, d)"
+        @upload-to="(p) => emit('uploadTo', p)"
       />
     </li>
   </ul>

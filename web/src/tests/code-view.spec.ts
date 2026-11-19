@@ -61,4 +61,56 @@ describe('CodeView', () => {
     expect(table.classes()).not.toContain('is-wrapped')
     expect(wrapBtn.classes()).not.toContain('is-active')
   })
+
+  it('does not have copy and search buttons in top right actions', () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: sampleCode,
+        filePath: 'src/main.ts',
+      },
+    })
+
+    const actions = wrapper.find('.code-actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.text()).toContain('换行')
+    expect(actions.text()).not.toContain('复制')
+    expect(actions.text()).not.toContain('查找')
+  })
+
+  it('highlights search matches and highlights current match on search', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: sampleCode,
+        filePath: 'src/main.ts',
+      },
+    })
+
+    // Trigger Ctrl+F
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }))
+    await wrapper.vm.$nextTick()
+
+    const searchBar = wrapper.find('[data-test="code-search-bar"]')
+    expect(searchBar.exists()).toBe(true)
+
+    // Type query "count"
+    const input = searchBar.find('input')
+    await input.setValue('count')
+    await wrapper.vm.$nextTick()
+
+    // Matches should be highlighted with <mark class="search-match">
+    const matches = wrapper.findAll('mark.search-match')
+    expect(matches.length).toBe(2)
+    // The first match is current
+    expect(matches[0].classes()).toContain('is-current')
+    expect(matches[1].classes()).not.toContain('is-current')
+
+    // Navigate to next match
+    const nextBtn = searchBar.findAll('button').find((b) => b.text() === '↓')
+    await nextBtn?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const matchesAfter = wrapper.findAll('mark.search-match')
+    expect(matchesAfter[0].classes()).not.toContain('is-current')
+    expect(matchesAfter[1].classes()).toContain('is-current')
+  })
 })

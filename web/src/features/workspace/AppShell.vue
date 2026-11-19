@@ -8,8 +8,9 @@
 // tabs, so several pages stay open at once while only the body below scrolls. A
 // project id that is not in the loaded list shows a not-found notice instead of
 // any panel, so a stale or foreign URL never renders another project's content.
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { useActivityPane } from '../../shared/composables/useActivityPane'
 import { useAgentsStore } from '../../stores/agents'
 import { useAuthStore } from '../../stores/auth'
 import { useProjectsStore } from '../../stores/projects'
@@ -307,7 +308,26 @@ const columnTitle = computed(() =>
           : '项目',
 )
 
+const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
+
+function onAppShellKeydown(e: KeyboardEvent) {
+  // Alt+1: Toggle left sidebar
+  if (e.altKey && (e.key === '1' || e.code === 'Digit1')) {
+    e.preventDefault()
+    toggleSidebar()
+    return
+  }
+
+  // Alt+2: Toggle right workspace/preview pane
+  if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
+    e.preventDefault()
+    setPreviewCollapsed(!previewCollapsed.value)
+    return
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', onAppShellKeydown)
   // The backend catalog facts (labels, order, service support) are read by
   // every session tag and session row, so they load with the shell, once.
   void agents.loadBackends()
@@ -331,6 +351,10 @@ onMounted(async () => {
       void sessions.refreshSessions(pId)
     }
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onAppShellKeydown)
 })
 
 // The tab bar mirrors the current route in the project workspace or chat area.

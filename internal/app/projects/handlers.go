@@ -3,6 +3,7 @@ package projects
 import (
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -33,6 +34,9 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	r.GET("/projects/:id/files/tree", s.handleFileTree)
 	r.GET("/projects/:id/files/content", s.handleFileContent)
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
+	r.GET("/projects/:id/files/download", s.handleFileDownload)
+	r.POST("/projects/:id/files/upload", s.handleFileUpload)
+	r.DELETE("/projects/:id/files", s.handleFileDelete)
 	r.POST("/projects/:id/files/preview-ticket", s.handleCreatePreviewTicket)
 	r.GET("/projects/:id/git/status", s.handleGitStatus)
 	r.GET("/projects/:id/git/commits", s.handleGitCommits)
@@ -506,6 +510,121 @@ func (s *Service) handleFileRaw(c *gin.Context) {
 	}
 	defer reader.Close()
 	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
+}
+
+// handleFileDownload streams the file content with attachment disposition for browser downloading.
+func (s *Service) handleFileDownload(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	filePath := c.Query("path")
+	if filePath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	reader, mimeType, size, err := s.ReadFileRaw(c.Request.Context(), id, filePath, worktreeID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	defer reader.Close()
+
+	filename := filepath.Base(filepath.Clean(filePath))
+	c.Header("Content-Disposition", "attachment; filename="+strconv.Quote(filename))
+	c.DataFromReader(http.StatusOK, size, mimeType, reader, nil)
+}
+
+// handleFileUpload receives multipart file uploads and writes them into the project.
+func (s *Service) handleFileUpload(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	targetDir := c.Query("path")
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		// Fallback to single FormFile
+		fh, fErr := c.FormFile("file")
+		if fErr != nil {
+			respondError(c, http.StatusBadRequest, "invalid_upload_payload")
+			return
+		}
+		f, openErr := fh.Open()
+		if openErr != nil {
+			respondError(c, http.StatusInternalServerError, "open_file_failed")
+			return
+		}
+		defer f.Close()
+
+		savedPath, saveErr := s.UploadFile(c.Request.Context(), id, targetDir, fh.Filename, f, worktreeID)
+		if saveErr != nil {
+			respondServiceError(c, saveErr)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "uploaded": []string{savedPath}})
+		return
+	}
+
+	files := form.File["file"]
+	if len(files) == 0 {
+		files = form.File["files"]
+	}
+	if len(files) == 0 {
+		respondError(c, http.StatusBadRequest, "missing_upload_file")
+		return
+	}
+
+	var uploadedPaths []string
+	for _, fh := range files {
+		f, openErr := fh.Open()
+		if openErr != nil {
+			respondError(c, http.StatusInternalServerError, "open_file_failed")
+			return
+		}
+		savedPath, saveErr := s.UploadFile(c.Request.Context(), id, targetDir, fh.Filename, f, worktreeID)
+		_ = f.Close()
+		if saveErr != nil {
+			respondServiceError(c, saveErr)
+			return
+		}
+		uploadedPaths = append(uploadedPaths, savedPath)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true, "uploaded": uploadedPaths})
+}
+
+// handleFileDelete removes a file or directory inside the project.
+func (s *Service) handleFileDelete(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	filePath := c.Query("path")
+	if filePath == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+
+	if err := s.DeletePath(c.Request.Context(), id, filePath, worktreeID); err != nil {
+		respondServiceError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // handleCreatePreviewTicket issues a short-lived random ticket for previewing files in sandboxed iframes.
