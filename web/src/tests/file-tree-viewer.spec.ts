@@ -670,6 +670,22 @@ describe('FileViewer.vue', () => {
     expect(wrapper.text()).toContain('预览')
     expect(wrapper.findComponent(CodeView).exists()).toBe(true)
     expect(wrapper.text()).toContain('Hello World')
+
+    // Test add-comment event forwarding from HtmlArtifactView to FileViewer
+    const htmlView = wrapper.findComponent(HtmlArtifactView)
+    const card = {
+      id: 'html-card-1',
+      filePath: 'index.html',
+      fileName: 'index.html',
+      startLine: 1,
+      endLine: 1,
+      codeSnippet: '<html><body>Hello World</body></html>',
+      comment: '更新主页标题',
+      createdAt: Date.now(),
+    }
+    await htmlView.vm.$emit('add-comment', card)
+    expect(wrapper.emitted('add-comment')).toBeTruthy()
+    expect(wrapper.emitted('add-comment')![0][0]).toEqual(card)
   })
 })
 

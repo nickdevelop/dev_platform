@@ -485,9 +485,8 @@ onUnmounted(() => {
               class="line-number"
               :class="{ 'has-comment-add-btn': activeSelectionEndLine === idx + 1 }"
               :data-line-number="idx + 1"
-              aria-hidden="true"
             >
-              <span class="line-num-text">{{ idx + 1 }}</span>
+              <span class="line-num-text" aria-hidden="true">{{ idx + 1 }}</span>
               <button
                 v-if="activeSelectionEndLine === idx + 1 && !inlineEditorVisible"
                 type="button"
@@ -513,6 +512,8 @@ onUnmounted(() => {
             v-if="inlineEditorVisible && activeSelectionEndLine === idx + 1"
             class="inline-comment-row"
             data-test="inline-comment-row"
+            @mouseup.stop
+            @click.stop
           >
             <div class="inline-comment-gutter" aria-hidden="true"></div>
             <div class="inline-comment-box" data-test="inline-comment-box">
@@ -728,7 +729,7 @@ onUnmounted(() => {
 }
 
 .line-number.has-comment-add-btn {
-  background: var(--color-surface-selected, #e2e8f0);
+  background: var(--color-surface-muted);
 }
 
 .line-add-comment-btn {
@@ -808,8 +809,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0.3125rem 0.5rem;
-  background: var(--color-surface-subtle, #f8fafc);
-  border-bottom: 1px solid var(--color-border-subtle, #f1f5f9);
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .header-left {
@@ -840,7 +841,7 @@ onUnmounted(() => {
   font-size: 0.65625rem;
   padding: 0.0625rem 0.25rem;
   border-radius: 3px;
-  background: var(--color-surface-selected, #e2e8f0);
+  background: var(--color-surface-muted);
   color: var(--color-text, #334155);
   flex-shrink: 0;
 }
@@ -921,7 +922,7 @@ onUnmounted(() => {
 }
 
 .cancel-btn:hover {
-  background: var(--color-surface-hover, #f1f5f9);
+  background: var(--color-surface-muted);
   color: var(--color-text, #0f172a);
 }
 

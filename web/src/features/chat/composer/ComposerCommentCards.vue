@@ -82,8 +82,8 @@ function snippetPreview(snippet: string): string {
   align-items: stretch;
   gap: 0.5rem;
   padding: 0.375rem 0.625rem;
-  background: var(--color-surface-subtle, #f8fafc);
-  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
   box-sizing: border-box;
@@ -153,7 +153,7 @@ function snippetPreview(snippet: string): string {
   padding: 0.0625rem 0.25rem;
   border-radius: 3px;
   border: none;
-  background: var(--color-surface-selected, #f1f5f9);
+  background: var(--color-surface-muted);
   color: inherit;
   min-width: 0;
   flex: 1;
@@ -162,7 +162,7 @@ function snippetPreview(snippet: string): string {
 }
 
 .card-anchor:hover {
-  background: var(--color-primary-subtle, #eff6ff);
+  background: var(--color-primary-soft);
   color: var(--color-primary, #2563eb);
 }
 
@@ -210,7 +210,7 @@ function snippetPreview(snippet: string): string {
   font-family: var(--font-mono, monospace);
   font-size: 0.625rem;
   color: var(--color-text-muted, #64748b);
-  background: var(--color-code-inline-bg, rgba(0, 0, 0, 0.04));
+  background: var(--color-surface-muted);
   padding: 0.125rem 0.25rem;
   border-radius: 3px;
   overflow: hidden;

@@ -154,12 +154,12 @@ onBeforeUnmount(() => {
   width: fit-content;
   padding: 0.125rem 0.375rem;
   border-radius: 4px;
-  background: var(--color-surface-selected, #f1f5f9);
+  background: var(--color-surface-muted);
   transition: background 0.15s ease;
 }
 
 .comment-card-header:hover {
-  background: var(--color-primary-subtle, #e0e7ff);
+  background: var(--color-primary-soft);
   color: var(--color-primary, #3b82f6);
 }
 
@@ -188,8 +188,8 @@ onBeforeUnmount(() => {
 }
 
 .comment-card-snippet {
-  background: var(--color-code-bg, #0d1117);
-  color: var(--color-code-text, #e6edf3);
+  background: var(--color-surface-muted);
+  color: var(--color-text);
   padding: 0.375rem 0.5rem;
   border-radius: 4px;
   font-family: ui-monospace, monospace;

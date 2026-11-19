@@ -10,6 +10,7 @@ import ArtifactToolbar from './ArtifactToolbar.vue'
 import CodeView from './CodeView.vue'
 import PlantumlBlock from '../chat/rendering/PlantumlBlock.vue'
 import MermaidBlock from '../chat/rendering/MermaidBlock.vue'
+import type { CodeCommentCard } from './types'
 import '../../shared/markdown-code.css'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'open-file': [path: string]
+  'add-comment': [card: CodeCommentCard]
 }>()
 
 const mode = ref<'preview' | 'source'>('preview')
@@ -125,6 +127,7 @@ async function onPreviewClick(event: MouseEvent) {
         v-if="mode === 'source'"
         :content="props.content"
         :file-path="props.filePath"
+        @add-comment="emit('add-comment', $event)"
       />
 
       <div

@@ -252,6 +252,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :file-size="fileData.size"
           :lines="fileData.lines"
           @open-file="openTab"
+          @add-comment="emit('add-comment', $event)"
         />
 
         <!-- PlantUML view: the drawing by default, the source one toggle away -->
@@ -261,6 +262,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-size="fileData.size"
           :lines="fileData.lines"
+          @add-comment="emit('add-comment', $event)"
         />
 
         <!-- HTML view -->
@@ -272,6 +274,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-size="fileData.size"
           :lines="fileData.lines"
+          @add-comment="emit('add-comment', $event)"
         />
 
         <!-- Image view -->

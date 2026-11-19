@@ -61,5 +61,21 @@ describe('MarkdownArtifactView', () => {
     await sourceBtn?.trigger('click')
 
     expect(wrapper.find('[data-test="code-view"]').exists()).toBe(true)
+
+    // Forward add-comment event from CodeView
+    const codeView = wrapper.findComponent({ name: 'CodeView' })
+    const sampleCard = {
+      id: 'c-test-1',
+      filePath: 'readme.md',
+      fileName: 'readme.md',
+      startLine: 1,
+      endLine: 1,
+      codeSnippet: '# 纯文本',
+      comment: '更新标题',
+      createdAt: Date.now(),
+    }
+    await codeView.vm.$emit('add-comment', sampleCard)
+    expect(wrapper.emitted('add-comment')).toBeTruthy()
+    expect(wrapper.emitted('add-comment')![0][0]).toEqual(sampleCard)
   })
 })

@@ -11,12 +11,17 @@ import { useSettingsStore } from '../../stores/settings'
 import { isDarkTheme } from '../../theme/presets'
 import ArtifactToolbar from './ArtifactToolbar.vue'
 import CodeView from './CodeView.vue'
+import type { CodeCommentCard } from './types'
 
 const props = defineProps<{
   filePath: string
   content: string
   fileSize?: number
   lines?: number
+}>()
+
+const emit = defineEmits<{
+  'add-comment': [card: CodeCommentCard]
 }>()
 
 const settings = useSettingsStore()
@@ -115,6 +120,7 @@ watch(
         v-if="mode === 'source'"
         :content="props.content"
         :file-path="props.filePath"
+        @add-comment="emit('add-comment', $event)"
       />
     </div>
 

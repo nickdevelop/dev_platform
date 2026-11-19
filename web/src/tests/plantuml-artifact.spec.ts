@@ -102,5 +102,21 @@ describe('PlantumlArtifactView', () => {
 
     expect(wrapper.findComponent(PlantumlArtifactView).exists()).toBe(true)
     expect(wrapper.find('[data-test="plantuml-artifact-canvas"] svg').exists()).toBe(true)
+
+    // Forward add-comment event from PlantumlArtifactView through FileViewer
+    const plantumlView = wrapper.findComponent(PlantumlArtifactView)
+    const card = {
+      id: 'puml-card-1',
+      filePath: 'docs/flow.puml',
+      fileName: 'flow.puml',
+      startLine: 2,
+      endLine: 2,
+      codeSnippet: 'A->B',
+      comment: '修改流转路径',
+      createdAt: Date.now(),
+    }
+    await plantumlView.vm.$emit('add-comment', card)
+    expect(wrapper.emitted('add-comment')).toBeTruthy()
+    expect(wrapper.emitted('add-comment')![0][0]).toEqual(card)
   })
 })

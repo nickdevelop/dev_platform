@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { createPreviewTicket, getPreviewFileUrl } from '../../api/files'
 import CodeView from './CodeView.vue'
 import HtmlPreviewModal from './HtmlPreviewModal.vue'
+import type { CodeCommentCard } from './types'
 
 const props = defineProps<{
   projectId: number
@@ -11,6 +12,10 @@ const props = defineProps<{
   fileSize?: number
   lines?: number
   worktreeId?: number
+}>()
+
+const emit = defineEmits<{
+  'add-comment': [card: CodeCommentCard]
 }>()
 
 const isModalVisible = ref(false)
@@ -91,6 +96,7 @@ async function openInBrowserModal() {
       <CodeView
         :content="props.content"
         :file-path="props.filePath"
+        @add-comment="emit('add-comment', $event)"
       />
     </div>
 

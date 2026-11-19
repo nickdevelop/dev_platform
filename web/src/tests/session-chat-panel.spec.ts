@@ -1620,4 +1620,43 @@ describe('SessionChatPanel scroll following', () => {
     expect(fileTab.text()).toContain('demo.py')
     expect(fileTab.attributes('title')).toBe('/tmp/agent_runs/demo.py')
   })
+
+  it('receives add-comment from WorkspacePreviewPane and renders ComposerCommentCards in composer', async () => {
+    stubSessionList([session('sess-comment-card')])
+    const wrapper = mountPanel('sess-comment-card')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="composer-comment-cards"]').exists()).toBe(false)
+
+    const previewPane = wrapper.findComponent({ name: 'WorkspacePreviewPane' })
+    expect(previewPane.exists()).toBe(true)
+
+    const card = {
+      id: 'comment-card-1',
+      filePath: 'src/App.vue',
+      fileName: 'App.vue',
+      startLine: 18,
+      endLine: 25,
+      codeSnippet: '<template>\n  <div>Hello</div>\n</template>',
+      comment: '重构此模板结构',
+      createdAt: Date.now(),
+    }
+    await previewPane.vm.$emit('add-comment', card)
+    await flushPromises()
+
+    // Comment card should now be rendered in the composer
+    const commentCardsContainer = wrapper.find('[data-test="composer-comment-cards"]')
+    expect(commentCardsContainer.exists()).toBe(true)
+    expect(commentCardsContainer.text()).toContain('App.vue')
+    expect(commentCardsContainer.text()).toContain('L18-25')
+    expect(commentCardsContainer.text()).toContain('重构此模板结构')
+
+    // Click remove button
+    const removeBtn = wrapper.find('[data-test="btn-remove-card"]')
+    expect(removeBtn.exists()).toBe(true)
+    await removeBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="composer-comment-cards"]').exists()).toBe(false)
+  })
 })

@@ -22,6 +22,13 @@ describe('CodeView', () => {
     expect(lineNumbers[1].text()).toBe('2')
     expect(lineNumbers[2].text()).toBe('3')
     expect(lineNumbers[3].text()).toBe('4')
+
+    // Accessibility check: line-number container must NOT have aria-hidden="true",
+    // while the text span itself should have aria-hidden="true"
+    expect(lineNumbers[0].attributes('aria-hidden')).toBeUndefined()
+    const numTexts = wrapper.findAll('.line-num-text')
+    expect(numTexts.length).toBe(4)
+    expect(numTexts[0].attributes('aria-hidden')).toBe('true')
   })
 
   it('applies syntax highlighting according to file extension', () => {
@@ -173,8 +180,11 @@ describe('CodeView', () => {
 
     // Check that line 8 has the add comment button
     const row8 = wrapper.find('[data-line="8"]')
+    const lineNum8 = row8.find('.line-number')
+    expect(lineNum8.attributes('aria-hidden')).toBeUndefined()
     const addBtn = row8.find('[data-test="line-add-comment-btn"]')
     expect(addBtn.exists()).toBe(true)
+    expect(addBtn.attributes('aria-label')).toBe('添加选区备注')
 
     // Lines 3 to 8 should have is-in-selection class
     expect(wrapper.find('[data-line="3"]').classes()).toContain('is-in-selection')
