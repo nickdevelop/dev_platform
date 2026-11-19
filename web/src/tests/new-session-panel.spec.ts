@@ -799,4 +799,65 @@ describe('NewSessionPanel', () => {
       'Task for Project 2',
     )
   })
+
+  it('renders workspace preview pane and resets open tabs on project or worktree change', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+
+    // Workspace preview pane component is rendered and has the edge toggle button
+    expect(wrapper.findComponent({ name: 'WorkspacePreviewPane' }).exists()).toBe(true)
+    const toggleBtn = wrapper.find('[data-test="toggle-preview-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
+
+    // Expand preview pane
+    await toggleBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test-preview="preview-pane"]').exists()).toBe(true)
+
+    // Switch project
+    const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
+    await select.setValue('2')
+    await flushPromises()
+
+    // Workspace preview pane still exists for project 2
+    expect(wrapper.findComponent({ name: 'WorkspacePreviewPane' }).exists()).toBe(true)
+  })
+
+  it('renders comment cards and builds CodeComment XML into created session message', async () => {
+    const { wrapper, sessions } = setup()
+    const createSpy = vi.spyOn(sessions, 'createSession').mockResolvedValue({ id: 'sess-new-1' } as never)
+    await flushPromises()
+
+    // Simulate adding a code comment card via WorkspacePreviewPane event
+    const previewPane = wrapper.findComponent({ name: 'WorkspacePreviewPane' })
+    expect(previewPane.exists()).toBe(true)
+
+    await previewPane.vm.$emit('add-comment', {
+      id: 'c-1',
+      filePath: 'src/main.ts',
+      fileName: 'main.ts',
+      startLine: 10,
+      endLine: 20,
+      codeSnippet: 'const x = 1\nconst y = 2',
+      comment: '此处的常量命名规范',
+      createdAt: 100,
+    })
+    await flushPromises()
+
+    // Card should be rendered in composer
+    expect(wrapper.find('[data-test="composer-comment-cards"]').exists()).toBe(true)
+    expect(wrapper.find('.comment-text').text()).toBe('此处的常量命名规范')
+
+    // Submit form
+    await wrapper.find<HTMLTextAreaElement>('#first-message').setValue('请检查命名')
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+    const payload = createSpy.mock.calls[0][1]
+    expect(payload.message).toContain('<CodeComment path="src/main.ts" line="10-20">')
+    expect(payload.message).toContain('<Description>\n此处的常量命名规范\n</Description>')
+    expect(payload.message).toContain('<Snippet>\nconst x = 1\nconst y = 2\n</Snippet>')
+    expect(payload.message).toContain('请检查命名')
+  })
 })

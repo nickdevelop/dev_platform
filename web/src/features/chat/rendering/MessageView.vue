@@ -61,6 +61,11 @@ const emit = defineEmits<{
   'open-file': [filePath: string]
 }>()
 
+function handleFoldableOpenFile(filePath: string, line?: number) {
+  const target = line ? `${filePath}#L${line}` : filePath
+  emit('open-file', target)
+}
+
 function handleMarkdownContentClick(event: MouseEvent) {
   handleCodeCopyClick(event)
 
@@ -328,9 +333,14 @@ async function copyMessage(entry: ChatEntry) {
                     v-if="promptBlockFor(block.entry)!.rest"
                     :text="promptBlockFor(block.entry)!.rest"
                     data-test="prompt-block-rest"
+                    @open-file="handleFoldableOpenFile"
                   />
                 </template>
-                <FoldableUserText v-else-if="block.entry.text" :text="block.entry.text" />
+                <FoldableUserText
+                  v-else-if="block.entry.text"
+                  :text="block.entry.text"
+                  @open-file="handleFoldableOpenFile"
+                />
               </template>
               <div v-else class="message-text markdown-body" @click="handleMarkdownContentClick">
                 <template v-for="(segment, index) in splitDiagramBlocks(block.entry.text)" :key="`${block.entry.id}:${index}`">

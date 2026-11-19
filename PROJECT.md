@@ -268,6 +268,8 @@ web/src/
     - 右侧工作区文件面板一体化与快捷操作：文件树直接作为常驻 Tab 在右侧文件面板中展示，与打开的文件预览 Tab 并列切换，移除单独抽屉、浮动层与遮罩；顶层 Tab 栏右侧提供面板总开关；文件树基于 resolveProjectSafeDir 规范级联目录相对路径，完整支持任意层级的深层子目录懒加载展开；会话 Markdown 中的文件超链接点击时直接在文件面板中打开并自动展开面板，全链路支持项目内绝对路径识别、外部安全目录（/tmp、/var/tmp、Agent 数据目录）白名单安全放行、URL 编码解码与 Hash 行号剥离。
     - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态（具备组件卸载虚假滚动事件过滤，防止记录 scrollTop=0）；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则通过 double-rAF 等待异步排版就绪后平滑跟随最新内容，彻底根治 Tab 切换时对话界面默认滚动回顶部的问题。
     - 动态运行指示器与任务流状态：动态运行胶囊与任务流状态统一采用「正在执行...」与「正在执行中…」文案。
+    - 源码选区划词批注与结构化 XML 封装（`features/files/CodeView.vue`、`features/chat/composer/ComposerCommentCards.vue`）：源码预览查看器（`CodeView.vue`）支持划选多行文本在末尾行号上展示 `+` 按钮，点击展开平滑嵌入且宽度上限为 300px 的行内批注面板输入说明或提问（避免弹窗移出视口）；提取文件路径、起止行号、代码片段与批注内容并注入会话输入框内顶部卡片托盘（`ComposerCommentCards.vue`），卡片固定 150px 宽并按「文件、代码摘要、描述」紧凑呈现（其中代码摘要展示两行），多张卡片并排展示并在溢出时启用横向平滑滚动条，支持快速移除及点击卡片反查定位代码行；消息提交时采用标准 XML 标签封装（`<CodeComment path="..." line="...">` 包含 `<Description>` 与 `<Snippet>`），与自然用户正文合并；对话流渲染层（`FoldableUserText.vue` / `MessageView.vue`）自动解析 `<CodeComment>` 并呈现为卡片，代码片段默认展示 2 行摘要信息（支持展开完整代码），点击头部可联动工作区面板平滑滚动至对应行号。
+    - 新建会话联动工作区面板（`features/chat/composer/NewSessionPanel.vue`）：采用与 `SessionChatPanel` 同构的双栏自适应布局，集成右侧统一工作区面板（`WorkspacePreviewPane`）；重新选择关联项目或工作树时，自动清空已打开的文件预览标签、重置激活项为文件树，并驱动底层文件树自动重新拉取；支持在新建会话阶段直接划选代码生成批注卡片，首条消息创建会话时一并打包传递给 Agent。
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 

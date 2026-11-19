@@ -42,6 +42,9 @@ import CapabilityControls from './CapabilityControls.vue'
 import ModelSelect from './composer/ModelSelect.vue'
 import ContextUsageMeter from './composer/ContextUsageMeter.vue'
 import ComposerImageTray from './composer/ComposerImageTray.vue'
+import ComposerCommentCards from './composer/ComposerCommentCards.vue'
+import { buildCodeCommentsMessage } from '../../shared/utils/codeCommentBlock'
+import type { CodeCommentCard } from '../files/types'
 import ImagePreviewModal from './rendering/ImagePreviewModal.vue'
 import QuestionQueue from './interactions/QuestionQueue.vue'
 import ComposerDropdown from './composer/dropdown/ComposerDropdown.vue'
@@ -167,8 +170,19 @@ function onSelectWorkspaceFile(
 
 function onOpenFileFromMarkdown(href: string) {
   if (!href) return
-  const [urlWithoutHash] = href.split('#')
+  const [urlWithoutHash, hash] = href.split('#')
   let path = urlWithoutHash.trim()
+
+  let initialLine: number | undefined = undefined
+  if (hash) {
+    const match = hash.match(/^L?(\d+)/i)
+    if (match) {
+      const parsed = parseInt(match[1], 10)
+      if (!isNaN(parsed) && parsed > 0) {
+        initialLine = parsed
+      }
+    }
+  }
 
   // Decode URI encoding if present (e.g. %20, non-ASCII characters)
   try {
@@ -224,7 +238,7 @@ function onOpenFileFromMarkdown(href: string) {
   }
   if (!path) return
 
-  openFileInPreview(path)
+  openFileInPreview(path, { initialLine })
 }
 
 const ready = ref(false)
@@ -379,6 +393,32 @@ watch(
   },
   { deep: true },
 )
+
+const commentCards = ref<CodeCommentCard[]>(
+  initialSessionDraft.commentCards ? [...initialSessionDraft.commentCards] : [],
+)
+
+watch(
+  commentCards,
+  (val) => {
+    if (isRestoringDraft) return
+    if (!currentSessionId) return
+    draftsStore.setSessionDraft(currentSessionId, { commentCards: val })
+  },
+  { deep: true },
+)
+
+function onAddCodeComment(card: CodeCommentCard) {
+  commentCards.value.push(card)
+}
+
+function onRemoveCodeComment(id: string) {
+  commentCards.value = commentCards.value.filter((c) => c.id !== id)
+}
+
+function onLocateCodeComment(card: CodeCommentCard) {
+  openFileInPreview(card.filePath, { initialLine: card.startLine })
+}
 
 const currentModelSupportsImages = computed<boolean>(() => {
   const session = activeSession.value
@@ -656,7 +696,11 @@ const composerLabel = computed(() => (isRunning.value && canInterrupt.value ? '�
 const composerDisabled = computed(() => {
   if (!activeSession.value || !interactEnabled.value) return true
   if (isRunning.value) return !canInterrupt.value || busy.value
-  return sending.value || messageText.value.trim() === '' || !modelOk.value
+  const hasContent =
+    messageText.value.trim() !== '' ||
+    attachedImages.value.length > 0 ||
+    commentCards.value.length > 0
+  return sending.value || !hasContent || !modelOk.value
 })
 
 // The tool call awaiting confirmation and the pending question forms are the
@@ -718,6 +762,7 @@ onDeactivated(() => {
     draftsStore.setSessionDraft(currentSessionId, {
       messageText: messageText.value,
       attachedImages: attachedImages.value,
+      commentCards: commentCards.value,
     })
   }
 })
@@ -731,6 +776,7 @@ watch(
       draftsStore.setSessionDraft(prevId, {
         messageText: messageText.value,
         attachedImages: attachedImages.value,
+        commentCards: commentCards.value,
       })
     }
     currentSessionId = newSessionId
@@ -739,6 +785,7 @@ watch(
       const draft = draftsStore.getSessionDraft(newSessionId)
       messageText.value = draft.messageText || ''
       attachedImages.value = Array.isArray(draft.attachedImages) ? [...draft.attachedImages] : []
+      commentCards.value = Array.isArray(draft.commentCards) ? [...draft.commentCards] : []
       void nextTick(() => {
         isRestoringDraft = false
       })
@@ -780,6 +827,7 @@ onBeforeUnmount(() => {
     draftsStore.setSessionDraft(currentSessionId, {
       messageText: messageText.value,
       attachedImages: attachedImages.value,
+      commentCards: commentCards.value,
     })
   }
 })
@@ -883,18 +931,22 @@ function retryOpen() {
 
 async function send() {
   const session = activeSession.value
-  if (!session || composerDisabled.value || (messageText.value.trim() === '' && attachedImages.value.length === 0)) return
+  const hasImages = attachedImages.value.length > 0
+  const hasCards = commentCards.value.length > 0
+  if (!session || composerDisabled.value || (messageText.value.trim() === '' && !hasImages && !hasCards)) return
   sending.value = true
   sendError.value = ''
   const model = modelSelection.value && selectedModel.value !== '' ? selectedModel.value : undefined
-  const textToSend = await resolveSessionMentions(props.projectId, messageText.value, (targetId, options) =>
+  const resolvedText = await resolveSessionMentions(props.projectId, messageText.value, (targetId, options) =>
     getSessionHistory(props.projectId, targetId, options),
   )
+  const textToSend = buildCodeCommentsMessage(commentCards.value, resolvedText)
   const updated = await sessions.sendMessage(props.projectId, session.id, textToSend, model, attachedImages.value)
   // The text is kept on failure so the user can retry without retyping it.
   if (updated) {
     messageText.value = ''
     attachedImages.value = []
+    commentCards.value = []
     draftsStore.clearSessionDraft(session.id)
     // Sending means "look here": the view returns to the turn just made even
     // when it had been parked mid-history.
@@ -1134,6 +1186,11 @@ async function removeSession() {
                 :loading="dropdown.loading.value"
                 @select="dropdown.selectItem"
               />
+              <ComposerCommentCards
+                :cards="commentCards"
+                @remove="onRemoveCodeComment"
+                @locate="onLocateCodeComment"
+              />
               <label class="composer-label" for="message-text">发送消息</label>
               <textarea
                 id="message-text"
@@ -1278,6 +1335,7 @@ async function removeSession() {
           @select-workspace-file="onSelectWorkspaceFile"
           @branch-changed="onFileTreeBranchChanged"
           @open-file-preview="openFileInPreview"
+          @add-comment="onAddCodeComment"
         />
       </div>
 
@@ -1335,7 +1393,7 @@ async function removeSession() {
     <QuickFileSearchDialog
       :open="quickFileSearchOpen"
       :project-id="props.projectId"
-      :worktree-id="worktreeId"
+      :worktree-id="activeWorktreeId"
       @close="quickFileSearchOpen = false"
       @select="(path, line) => { quickFileSearchOpen = false; openFileInPreview(path, { initialLine: line }) }"
     />

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { BackendId, ImageAttachment } from '../api/sessions'
 import type { ScheduleType, TaskType } from '../api/tasks'
+import type { CodeCommentCard } from '../features/files/types'
 
 export interface NewSessionDraft {
   projectId: number | null
@@ -11,11 +12,13 @@ export interface NewSessionDraft {
   attachedImages: ImageAttachment[]
   // Selected git worktree; 0 means the project's main working directory.
   worktreeId: number
+  commentCards?: CodeCommentCard[]
 }
 
 export interface SessionDraft {
   messageText: string
   attachedImages: ImageAttachment[]
+  commentCards?: CodeCommentCard[]
 }
 
 export interface TaskCreateDraft {
@@ -78,6 +81,7 @@ const defaultNewSessionDraft = (projectId: number | null = null): NewSessionDraf
   messageText: '',
   attachedImages: [],
   worktreeId: 0,
+  commentCards: [],
 })
 
 // normalizeNewSessionDraft fills fields added after a draft was persisted.
@@ -87,6 +91,7 @@ function normalizeNewSessionDraft(draft: NewSessionDraft): NewSessionDraft {
     ...draft,
     worktreeId: typeof draft.worktreeId === 'number' ? draft.worktreeId : 0,
     attachedImages: Array.isArray(draft.attachedImages) ? draft.attachedImages : [],
+    commentCards: Array.isArray(draft.commentCards) ? draft.commentCards : [],
   }
 }
 
@@ -235,12 +240,18 @@ export const useDraftsStore = defineStore('drafts', {
 
     // --- Existing Session Draft Actions (Per-Session) ---
     getSessionDraft(sessionId: string): SessionDraft {
-      return (
-        this.sessionDrafts[sessionId] ?? {
+      const stored = this.sessionDrafts[sessionId]
+      if (!stored) {
+        return {
           messageText: '',
           attachedImages: [],
+          commentCards: [],
         }
-      )
+      }
+      return {
+        ...stored,
+        commentCards: Array.isArray(stored.commentCards) ? stored.commentCards : [],
+      }
     },
 
     setSessionDraft(sessionId: string, patch: Partial<SessionDraft>) {
@@ -251,7 +262,9 @@ export const useDraftsStore = defineStore('drafts', {
       }
 
       // If draft is completely empty, clean it up to save space
-      if (!updated.messageText && (!updated.attachedImages || updated.attachedImages.length === 0)) {
+      const hasImages = Array.isArray(updated.attachedImages) && updated.attachedImages.length > 0
+      const hasCards = Array.isArray(updated.commentCards) && updated.commentCards.length > 0
+      if (!updated.messageText && !hasImages && !hasCards) {
         const next = { ...this.sessionDrafts }
         delete next[sessionId]
         this.sessionDrafts = next

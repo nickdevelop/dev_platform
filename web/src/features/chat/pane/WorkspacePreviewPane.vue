@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { FileSidebar, FileViewer } from '../../files'
+import type { CodeCommentCard } from '../../files/types'
 
 export interface OpenFileTab {
   path: string
@@ -12,7 +13,7 @@ export interface OpenFileTab {
 
 const props = defineProps<{
   projectId: number
-  sessionId: string
+  sessionId?: string
   worktreeId?: number
   hideSideRail?: boolean
   previewCollapsed: boolean
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   'select-workspace-file': [filePath: string]
   'branch-changed': [branch: string]
   'open-file-preview': [filePath: string]
+  'add-comment': [card: CodeCommentCard]
 }>()
 </script>
 
@@ -158,6 +160,7 @@ const emit = defineEmits<{
             :commit-message="currentActivePreviewFile?.commitMessage"
             :initial-line="currentActivePreviewFile?.initialLine"
             @select="emit('open-file-preview', $event)"
+            @add-comment="emit('add-comment', $event)"
           />
         </div>
       </div>

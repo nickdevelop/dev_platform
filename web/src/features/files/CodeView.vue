@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { highlightCode, splitHighlightedHtmlIntoLines } from '../../shared/highlight'
+import type { CodeCommentCard } from './types'
 
 const props = withDefaults(
   defineProps<{
@@ -13,6 +14,10 @@ const props = withDefaults(
     showLineNumbers: true,
   },
 )
+
+const emit = defineEmits<{
+  'add-comment': [card: CodeCommentCard]
+}>()
 
 const searchVisible = ref(false)
 const searchQuery = ref('')
@@ -263,6 +268,120 @@ async function copyCode() {
   }
 }
 
+const fileName = computed(() => {
+  if (!props.filePath) return 'untitled'
+  const parts = props.filePath.split('/')
+  return parts[parts.length - 1] || props.filePath
+})
+
+const activeSelectionEndLine = ref<number | null>(null)
+const selectedStartLine = ref(1)
+const selectedEndLine = ref(1)
+const selectedSnippet = ref('')
+const inlineEditorVisible = ref(false)
+const inlineCommentText = ref('')
+const inlineCommentInputRef = ref<HTMLTextAreaElement | null>(null)
+
+function isLineInSelection(lineNum: number): boolean {
+  if (activeSelectionEndLine.value === null) return false
+  return lineNum >= selectedStartLine.value && lineNum <= selectedEndLine.value
+}
+
+function findLineNumber(node: Node | null): number | null {
+  let curr = node instanceof HTMLElement ? node : node?.parentElement
+  while (curr && curr !== codeContainerRef.value) {
+    if (curr.dataset && curr.dataset.line) {
+      const parsed = parseInt(curr.dataset.line, 10)
+      if (!isNaN(parsed)) return parsed
+    }
+    curr = curr.parentElement
+  }
+  return null
+}
+
+function handleCodeSelection() {
+  setTimeout(() => {
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      if (!inlineEditorVisible.value) {
+        activeSelectionEndLine.value = null
+      }
+      return
+    }
+
+    const text = selection.toString()
+    if (!text.trim()) {
+      if (!inlineEditorVisible.value) {
+        activeSelectionEndLine.value = null
+      }
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    if (!codeContainerRef.value || !codeContainerRef.value.contains(range.commonAncestorContainer)) {
+      return
+    }
+
+    const anchorLine = findLineNumber(selection.anchorNode)
+    const focusLine = findLineNumber(selection.focusNode)
+
+    if (anchorLine === null || focusLine === null) {
+      return
+    }
+
+    selectedStartLine.value = Math.min(anchorLine, focusLine)
+    selectedEndLine.value = Math.max(anchorLine, focusLine)
+    selectedSnippet.value = text
+    activeSelectionEndLine.value = selectedEndLine.value
+  }, 10)
+}
+
+function openInlineCommentEditor() {
+  inlineEditorVisible.value = true
+  inlineCommentText.value = ''
+  void nextTick(() => {
+    if (typeof inlineCommentInputRef.value?.focus === 'function') {
+      inlineCommentInputRef.value.focus()
+    }
+  })
+}
+
+function closeInlineCommentEditor() {
+  inlineEditorVisible.value = false
+  inlineCommentText.value = ''
+  activeSelectionEndLine.value = null
+  window.getSelection()?.removeAllRanges()
+}
+
+function submitInlineComment() {
+  const comment = inlineCommentText.value.trim()
+  if (!comment) return
+
+  const card: CodeCommentCard = {
+    id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    filePath: props.filePath || 'untitled',
+    fileName: fileName.value,
+    startLine: selectedStartLine.value,
+    endLine: selectedEndLine.value,
+    codeSnippet: selectedSnippet.value,
+    comment,
+    createdAt: Date.now(),
+  }
+
+  emit('add-comment', card)
+  closeInlineCommentEditor()
+}
+
+function onInlineEditorKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    submitInlineComment()
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    closeInlineCommentEditor()
+  }
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
 })
@@ -345,27 +464,113 @@ onUnmounted(() => {
     </div>
 
     <!-- Code rows with line numbers -->
-    <div ref="codeContainerRef" class="code-scroller">
+    <div
+      ref="codeContainerRef"
+      class="code-scroller"
+      data-test="code-scroller"
+      @mouseup="handleCodeSelection"
+    >
       <div class="code-table" :class="{ 'is-wrapped': wrapLines }">
-        <div
-          v-for="(lineHtml, idx) in renderedLines"
-          :key="idx"
-          class="code-row"
-          :class="{ 'is-focused-line': focusedLineNumber === idx + 1 }"
-          :data-line="idx + 1"
-        >
+        <template v-for="(lineHtml, idx) in renderedLines" :key="idx">
           <div
-            v-if="props.showLineNumbers"
-            class="line-number"
-            :data-line-number="idx + 1"
-            aria-hidden="true"
+            class="code-row"
+            :class="{
+              'is-focused-line': focusedLineNumber === idx + 1,
+              'is-in-selection': isLineInSelection(idx + 1),
+            }"
+            :data-line="idx + 1"
           >
-            {{ idx + 1 }}
+            <div
+              v-if="props.showLineNumbers"
+              class="line-number"
+              :class="{ 'has-comment-add-btn': activeSelectionEndLine === idx + 1 }"
+              :data-line-number="idx + 1"
+              aria-hidden="true"
+            >
+              <span class="line-num-text">{{ idx + 1 }}</span>
+              <button
+                v-if="activeSelectionEndLine === idx + 1 && !inlineEditorVisible"
+                type="button"
+                class="line-add-comment-btn"
+                :title="`在第 ${idx + 1} 行添加选区备注`"
+                aria-label="添加选区备注"
+                data-test="line-add-comment-btn"
+                @click.stop="openInlineCommentEditor"
+              >
+                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <line x1="8" y1="3" x2="8" y2="13" />
+                  <line x1="3" y1="8" x2="13" y2="8" />
+                </svg>
+              </button>
+            </div>
+            <div class="code-line">
+              <span class="code-text" v-html="lineHtml || ' '"></span>
+            </div>
           </div>
-          <div class="code-line">
-            <span class="code-text" v-html="lineHtml || ' '"></span>
+
+          <!-- Inline Comment Editor attached right beneath the selection end row -->
+          <div
+            v-if="inlineEditorVisible && activeSelectionEndLine === idx + 1"
+            class="inline-comment-row"
+            data-test="inline-comment-row"
+          >
+            <div class="inline-comment-gutter" aria-hidden="true"></div>
+            <div class="inline-comment-box" data-test="inline-comment-box">
+              <div class="inline-comment-header">
+                <div class="header-left">
+                  <svg class="file-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M3 2h7l4 4v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" />
+                    <polyline points="10 2 10 6 14 6" />
+                  </svg>
+                  <span class="file-name">{{ fileName }}</span>
+                  <span class="line-badge">L{{ selectedStartLine }}{{ selectedStartLine !== selectedEndLine ? `-${selectedEndLine}` : '' }}</span>
+                </div>
+                <button
+                  type="button"
+                  class="inline-close-btn"
+                  title="关闭 (Esc)"
+                  aria-label="关闭"
+                  @click="closeInlineCommentEditor"
+                >
+                  ×
+                </button>
+              </div>
+              <div class="inline-comment-body">
+                <textarea
+                  ref="inlineCommentInputRef"
+                  v-model="inlineCommentText"
+                  class="inline-comment-textarea"
+                  data-test="inline-comment-textarea"
+                  rows="2"
+                  :placeholder="`添加备注… (Enter 确认)`"
+                  @keydown="onInlineEditorKeydown"
+                ></textarea>
+                <div class="inline-comment-actions">
+                  <span class="shortcut-tip">Enter 确认 · Esc 取消</span>
+                  <div class="inline-btn-group">
+                    <button
+                      type="button"
+                      class="inline-btn cancel-btn"
+                      data-test="inline-cancel-btn"
+                      @click="closeInlineCommentEditor"
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-btn submit-btn"
+                      data-test="inline-submit-btn"
+                      :disabled="!inlineCommentText.trim()"
+                      @click="submitInlineComment"
+                    >
+                      添加卡片
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
   </div>
@@ -504,7 +709,12 @@ onUnmounted(() => {
   background: var(--color-surface-muted, #f8fafc);
 }
 
+.code-row.is-in-selection {
+  background: rgba(37, 99, 235, 0.09);
+}
+
 .line-number {
+  position: relative;
   flex-shrink: 0;
   padding: 0 10px 0 8px;
   text-align: right;
@@ -515,6 +725,218 @@ onUnmounted(() => {
   min-width: 44px;
   height: 22px;
   line-height: 22px;
+}
+
+.line-number.has-comment-add-btn {
+  background: var(--color-surface-selected, #e2e8f0);
+}
+
+.line-add-comment-btn {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.35);
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease;
+  z-index: 4;
+  padding: 0;
+}
+
+.line-add-comment-btn:hover {
+  transform: translateY(-50%) scale(1.15);
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.inline-comment-row {
+  display: flex;
+  position: sticky;
+  left: 0;
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 8px;
+  z-index: 5;
+  box-sizing: border-box;
+}
+
+.inline-comment-gutter {
+  width: 44px;
+  min-width: 44px;
+  flex-shrink: 0;
+  background: var(--color-surface-muted, #f8fafc);
+  border-right: 1px solid var(--color-border, #e3e6eb);
+  box-sizing: border-box;
+}
+
+.inline-comment-box {
+  width: 300px;
+  max-width: 300px;
+  margin: 0 8px;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-left: 3px solid var(--color-primary, #2563eb);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-sizing: border-box;
+  font-family: var(--font-family);
+  animation: inline-slide-down 0.15s ease-out;
+}
+
+@keyframes inline-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.inline-comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3125rem 0.5rem;
+  background: var(--color-surface-subtle, #f8fafc);
+  border-bottom: 1px solid var(--color-border-subtle, #f1f5f9);
+}
+
+.header-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted, #64748b);
+}
+
+.file-name {
+  font-size: 0.71875rem;
+  font-weight: 600;
+  color: var(--color-text, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+.line-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  padding: 0.0625rem 0.25rem;
+  border-radius: 3px;
+  background: var(--color-surface-selected, #e2e8f0);
+  color: var(--color-text, #334155);
+  flex-shrink: 0;
+}
+
+.inline-close-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  font-size: 1.125rem;
+  line-height: 1;
+  color: var(--color-text-muted, #94a3b8);
+  border-radius: 3px;
+}
+
+.inline-close-btn:hover {
+  color: var(--color-text, #0f172a);
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.inline-comment-body {
+  padding: 0.5rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.inline-comment-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 4px;
+  resize: vertical;
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text, #0f172a);
+  outline: none;
+  font-family: inherit;
+}
+
+.inline-comment-textarea:focus {
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.inline-comment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inline-hint {
+  font-size: 0.6875rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.inline-btn-group {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.inline-btn {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.cancel-btn {
+  background: transparent;
+  color: var(--color-text-muted, #64748b);
+  border-color: var(--color-border, #cbd5e1);
+}
+
+.cancel-btn:hover {
+  background: var(--color-surface-hover, #f1f5f9);
+  color: var(--color-text, #0f172a);
+}
+
+.submit-btn {
+  background: var(--color-primary, #2563eb);
+  color: #ffffff;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: var(--color-primary-hover, #1d4ed8);
+}
+
+.submit-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .code-line {

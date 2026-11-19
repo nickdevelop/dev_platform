@@ -67,3 +67,15 @@ export interface ChangeTreeNode {
   children?: ChangeTreeNode[]
   changeCount?: number
 }
+
+export interface CodeCommentCard {
+  id: string
+  filePath: string
+  fileName: string
+  startLine: number
+  endLine: number
+  codeSnippet: string
+  comment: string
+  createdAt: number
+}
+

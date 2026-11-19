@@ -29,6 +29,11 @@ import { WorkspaceFileSource } from './dropdown/sources/WorkspaceFileSource'
 import { SessionMentionSource } from './dropdown/sources/SessionMentionSource'
 import { resolveSessionMentions } from './sessionMentionResolver'
 import ComposerImageTray from './ComposerImageTray.vue'
+import ComposerCommentCards from './ComposerCommentCards.vue'
+import WorkspacePreviewPane, { type OpenFileTab } from '../pane/WorkspacePreviewPane.vue'
+import { useActivityPane } from '../pane/useActivityPane'
+import { buildCodeCommentsMessage } from '../../../shared/utils/codeCommentBlock'
+import type { CodeCommentCard } from '../../files/types'
 import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
 import { useAttachmentUploader } from './useAttachmentUploader'
 import { useComposerKeyboard } from './useComposerKeyboard'
@@ -107,6 +112,158 @@ const selectedProject = computed(() =>
 )
 
 const projectIsGit = computed(() => selectedProject.value?.isGit === true)
+
+// Code Comment Cards in composer
+const commentCards = ref<CodeCommentCard[]>(
+  initialDraft.commentCards ? [...initialDraft.commentCards] : [],
+)
+
+watch(
+  commentCards,
+  (cards) => {
+    if (isRestoringDraft) return
+    draftsStore.setNewSessionDraft({ commentCards: cards }, selectedProjectId.value)
+  },
+  { deep: true },
+)
+
+function onAddCodeComment(card: CodeCommentCard) {
+  commentCards.value.push(card)
+}
+
+function onRemoveCodeComment(id: string) {
+  commentCards.value = commentCards.value.filter((c) => c.id !== id)
+}
+
+function onLocateCodeComment(card: CodeCommentCard) {
+  openFileInPreview(card.filePath, { initialLine: card.startLine })
+}
+
+// Workspace Preview Pane (FileTree & Previews) for New Session
+function getFileName(filePath: string): string {
+  const parts = filePath.replace(/\\/g, '/').split('/')
+  return parts[parts.length - 1] || filePath
+}
+
+const FILE_TREE_TAB_KEY = '__filetree__'
+const openFileTabs = ref<OpenFileTab[]>([])
+const activePreviewTab = ref<string>(FILE_TREE_TAB_KEY)
+
+const currentActivePreviewFile = computed(() =>
+  openFileTabs.value.find((f) => f.path === activePreviewTab.value),
+)
+
+function selectPreviewTab(tabKey: string) {
+  activePreviewTab.value = tabKey
+}
+
+function openFileInPreview(
+  filePath: string,
+  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string; initialLine?: number },
+) {
+  let cleanPath = filePath.replace(/\\/g, '/')
+  const isAbs = cleanPath.startsWith('/')
+  if (!isAbs) {
+    cleanPath = cleanPath.replace(/^\/+/, '')
+  }
+  if (!cleanPath) return
+  const reqMode = options?.mode || 'view'
+  const reqCommit = options?.commitRef
+  const reqMsg = options?.commitMessage
+  const reqLine = options?.initialLine
+
+  const existing = openFileTabs.value.find((f) => f.path === cleanPath)
+  if (existing) {
+    existing.mode = reqMode
+    existing.commitRef = reqCommit
+    existing.commitMessage = reqMsg
+    existing.initialLine = reqLine
+  } else {
+    openFileTabs.value.push({
+      path: cleanPath,
+      name: getFileName(cleanPath),
+      mode: reqMode,
+      commitRef: reqCommit,
+      commitMessage: reqMsg,
+      initialLine: reqLine,
+    })
+  }
+  activePreviewTab.value = cleanPath
+  setPreviewCollapsed(false)
+}
+
+function closeFileTab(path: string, event?: MouseEvent) {
+  if (event) event.stopPropagation()
+  const idx = openFileTabs.value.findIndex((f) => f.path === path)
+  if (idx === -1) return
+  openFileTabs.value.splice(idx, 1)
+  if (activePreviewTab.value === path) {
+    if (openFileTabs.value.length > 0) {
+      const nextIdx = Math.max(0, idx - 1)
+      activePreviewTab.value = openFileTabs.value[nextIdx].path
+    } else {
+      activePreviewTab.value = FILE_TREE_TAB_KEY
+    }
+  }
+}
+
+function onSelectWorkspaceFile(
+  filePath: string,
+  options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string },
+) {
+  openFileInPreview(filePath, options)
+}
+
+const {
+  previewCollapsed,
+  setPreviewCollapsed,
+  previewWidth,
+  setPreviewWidth,
+} = useActivityPane()
+
+const isPreviewResizing = ref(false)
+let previewStartX = 0
+let previewStartWidth = 0
+
+function onPreviewResizerMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  isPreviewResizing.value = true
+  previewStartX = e.clientX
+  previewStartWidth = previewWidth.value
+
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMouseMove = (ev: MouseEvent) => {
+    if (!isPreviewResizing.value) return
+    const delta = previewStartX - ev.clientX
+    const maxWidth = Math.max(400, Math.min(window.innerWidth * 0.7, window.innerWidth - 360))
+    const newWidth = Math.round(Math.max(320, Math.min(maxWidth, previewStartWidth + delta)))
+    previewWidth.value = newWidth
+  }
+
+  const onMouseUp = () => {
+    if (!isPreviewResizing.value) return
+    isPreviewResizing.value = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    setPreviewWidth(previewWidth.value)
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+watch(
+  [selectedProjectId, selectedWorktreeId],
+  () => {
+    openFileTabs.value = []
+    activePreviewTab.value = FILE_TREE_TAB_KEY
+  },
+)
 
 const projectWorktrees = computed(() =>
   selectedProjectId.value === null ? [] : worktreesStore.forProject(Number(selectedProjectId.value)),
@@ -270,6 +427,7 @@ watch(selectedProjectId, (newId, oldId) => {
         messageText: messageText.value,
         attachedImages: attachedImages.value,
         worktreeId: selectedWorktreeId.value,
+        commentCards: commentCards.value,
       },
       oldId,
     )
@@ -279,6 +437,7 @@ watch(selectedProjectId, (newId, oldId) => {
     isRestoringDraft = true
     const targetDraft = draftsStore.getNewSessionDraft(newId)
     messageText.value = targetDraft.messageText || ''
+    commentCards.value = Array.isArray(targetDraft.commentCards) ? [...targetDraft.commentCards] : []
     // Drafts carry the backend explicitly; the project entity itself is
     // backend-agnostic, so fall straight to the first selectable backend.
     const preferredBackend = targetDraft.backend || firstSelectableBackend()
@@ -529,6 +688,7 @@ function resetComposer() {
   isRestoringDraft = true
   messageText.value = ''
   attachedImages.value = []
+  commentCards.value = []
   selectedPromptId.value = ''
   void nextTick(() => {
     isRestoringDraft = false
@@ -561,9 +721,10 @@ async function createSession() {
           getSessionHistory(targetProjectId, targetId, options),
         )
       : ''
+  const textWithCards = buildCodeCommentsMessage(commentCards.value, textToSend)
   const finalMessage = selectedPrompt.value
-    ? buildPromptMessage(selectedPrompt.value, textToSend)
-    : textToSend
+    ? buildPromptMessage(selectedPrompt.value, textWithCards)
+    : textWithCards
   // The model is part of the session's identity, not only of its first turn, so
   // it rides the create request even when no message is sent: the session is
   // created on the model the user saw, and the conversation opens on it.
@@ -596,7 +757,9 @@ async function createSession() {
 </script>
 
 <template>
-  <section class="new-session" aria-label="新建会话">
+  <div class="new-session-layout" data-test="new-session-layout">
+    <div class="new-session-main">
+      <section class="new-session" aria-label="新建会话">
     <div class="new-session-inner">
       <h1>新建会话</h1>
       <p class="subtitle">选择 Agent 后端，描述你要做的事</p>
@@ -704,6 +867,11 @@ async function createSession() {
             :selected-index="dropdown.selectedIndex.value"
             :loading="dropdown.loading.value"
             @select="dropdown.selectItem"
+          />
+          <ComposerCommentCards
+            :cards="commentCards"
+            @remove="onRemoveCodeComment"
+            @locate="onLocateCodeComment"
           />
           <label class="composer-label" for="first-message">会话描述</label>
           <textarea
@@ -839,14 +1007,57 @@ async function createSession() {
       :visible="true"
       @close="previewModalImage = null"
     />
-  </section>
+      </section>
+    </div>
+
+    <!-- Column 2: Unified Right Workspace Panel (FileTree and Previews as Tabs) -->
+    <WorkspacePreviewPane
+      v-if="selectedProjectId !== null"
+      :project-id="Number(selectedProjectId)"
+      :worktree-id="selectedWorktreeId"
+      :preview-collapsed="previewCollapsed"
+      :preview-width="previewWidth"
+      :is-preview-resizing="isPreviewResizing"
+      :active-preview-tab="activePreviewTab"
+      :open-file-tabs="openFileTabs"
+      :current-active-preview-file="currentActivePreviewFile"
+      :file-tree-tab-key="FILE_TREE_TAB_KEY"
+      @collapse="setPreviewCollapsed"
+      @resizer-mousedown="onPreviewResizerMouseDown"
+      @select-tab="selectPreviewTab"
+      @close-tab="closeFileTab"
+      @select-workspace-file="onSelectWorkspaceFile"
+      @open-file-preview="openFileInPreview"
+      @add-comment="onAddCodeComment"
+    />
+  </div>
 </template>
 
 <style scoped>
+.new-session-layout {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.new-session-main {
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .new-session {
   display: flex;
   justify-content: center;
   padding: 3rem 1rem;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 .new-session-inner {

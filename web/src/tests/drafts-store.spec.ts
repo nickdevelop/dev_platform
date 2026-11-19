@@ -19,6 +19,7 @@ describe('useDraftsStore', () => {
         messageText: '',
         attachedImages: [],
         worktreeId: 0,
+        commentCards: [],
       })
     })
 
@@ -68,6 +69,7 @@ describe('useDraftsStore', () => {
       expect(draft).toEqual({
         messageText: '',
         attachedImages: [],
+        commentCards: [],
       })
     })
 
@@ -92,6 +94,32 @@ describe('useDraftsStore', () => {
       setActivePinia(createPinia())
       const freshStore = useDraftsStore()
       expect(freshStore.getSessionDraft('ses-persist').messageText).toBe('Will survive reload')
+    })
+
+    it('persists commentCards in session drafts', () => {
+      const store = useDraftsStore()
+      store.setSessionDraft('ses-card', {
+        messageText: '',
+        commentCards: [
+          {
+            id: 'card-1',
+            filePath: 'foo.ts',
+            fileName: 'foo.ts',
+            startLine: 1,
+            endLine: 2,
+            codeSnippet: 'code',
+            comment: 'comment',
+            createdAt: 100,
+          },
+        ],
+      })
+
+      expect(store.getSessionDraft('ses-card').commentCards).toHaveLength(1)
+
+      setActivePinia(createPinia())
+      const freshStore = useDraftsStore()
+      expect(freshStore.getSessionDraft('ses-card').commentCards).toHaveLength(1)
+      expect(freshStore.getSessionDraft('ses-card').commentCards![0].filePath).toBe('foo.ts')
     })
   })
 

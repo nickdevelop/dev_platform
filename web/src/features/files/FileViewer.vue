@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getFileContent, getFileRawUrl } from '../../api/files'
-import type { FileContentResponse, FileTab } from './types'
+import type { CodeCommentCard, FileContentResponse, FileTab } from './types'
 import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
 import PlantumlArtifactView from './PlantumlArtifactView.vue'
@@ -29,6 +29,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   select: [path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }]
   close: [path: string]
+  'add-comment': [card: CodeCommentCard]
 }>()
 
 const tabs = ref<FileTab[]>([])
@@ -300,6 +301,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-path="activeTabPath"
           :initial-line="props.initialLine"
+          @add-comment="emit('add-comment', $event)"
         />
       </template>
     </div>

@@ -153,4 +153,59 @@ describe('CodeView', () => {
     const rows = wrapper.findAll('.code-row')
     expect(rows[1].classes()).toContain('is-focused-line')
   })
+
+  it('shows + button on selection end line and opens inline comment editor on click', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8',
+        filePath: 'src/main.ts',
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    // Mock active selection from line 3 to 8
+    const vm = wrapper.vm as any
+    vm.selectedStartLine = 3
+    vm.selectedEndLine = 8
+    vm.selectedSnippet = 'line 3\nline 4\nline 5\nline 6\nline 7\nline 8'
+    vm.activeSelectionEndLine = 8
+    await wrapper.vm.$nextTick()
+
+    // Check that line 8 has the add comment button
+    const row8 = wrapper.find('[data-line="8"]')
+    const addBtn = row8.find('[data-test="line-add-comment-btn"]')
+    expect(addBtn.exists()).toBe(true)
+
+    // Lines 3 to 8 should have is-in-selection class
+    expect(wrapper.find('[data-line="3"]').classes()).toContain('is-in-selection')
+    expect(wrapper.find('[data-line="8"]').classes()).toContain('is-in-selection')
+    expect(wrapper.find('[data-line="2"]').classes()).not.toContain('is-in-selection')
+
+    // Click the + button to open inline comment editor
+    await addBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const inlineRow = wrapper.find('[data-test="inline-comment-row"]')
+    expect(inlineRow.exists()).toBe(true)
+
+    // Type comment and submit
+    const textarea = inlineRow.find<HTMLTextAreaElement>('[data-test="inline-comment-textarea"]')
+    await textarea.setValue('检查循环性能')
+    await inlineRow.find('[data-test="inline-submit-btn"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // add-comment event emitted
+    const emitted = wrapper.emitted('add-comment')
+    expect(emitted).toBeTruthy()
+    expect(emitted![0][0]).toMatchObject({
+      filePath: 'src/main.ts',
+      fileName: 'main.ts',
+      startLine: 3,
+      endLine: 8,
+      comment: '检查循环性能',
+    })
+
+    // Inline editor should now be closed
+    expect(wrapper.find('[data-test="inline-comment-row"]').exists()).toBe(false)
+  })
 })
