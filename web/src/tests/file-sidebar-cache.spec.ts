@@ -94,4 +94,59 @@ describe('file sidebar data memory', () => {
 
     expect(getFileTree).toHaveBeenCalledWith(1, undefined, undefined)
   })
+
+  it('renders GitCommitBar for working tree and switches to GitCommitDetailBar for history commit', async () => {
+    vi.mocked(getGitCommits).mockResolvedValue([
+      {
+        hash: 'c123456789012345678901234567890123456789',
+        shortHash: 'c123456',
+        message: 'fix: resolve race condition in worker pool',
+        author: 'Alice',
+        date: '2026-11-19 12:00:00',
+        timestamp: 1795060800,
+      },
+    ])
+
+    const treeState = useFileTreeStateStore()
+    treeState.save('s-commit-test', {
+      activeTab: 'changes',
+      searchQuery: '',
+      selectedCommit: '',
+      expandedTreePaths: [],
+      expandedChangeDirs: [],
+      isStagedGroupExpanded: true,
+      isUnstagedGroupExpanded: true,
+    })
+
+    const wrapper = mountSidebar('s-commit-test')
+    await flushPromises()
+
+    // In working tree mode (uncommitted changes), GitCommitBar is displayed
+    expect(wrapper.findComponent({ name: 'GitCommitBar' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'GitCommitDetailBar' }).exists()).toBe(false)
+
+    // Select history commit via the commit selector
+    const commitSelect = wrapper.find('select.commit-select')
+    expect(commitSelect.exists()).toBe(true)
+    await commitSelect.setValue('c123456789012345678901234567890123456789')
+    await flushPromises()
+
+    // Now GitCommitBar is replaced with GitCommitDetailBar showing history commit message
+    expect(wrapper.findComponent({ name: 'GitCommitBar' }).exists()).toBe(false)
+    const detailBar = wrapper.findComponent({ name: 'GitCommitDetailBar' })
+    expect(detailBar.exists()).toBe(true)
+    expect(detailBar.text()).toContain('fix: resolve race condition in worker pool')
+    expect(detailBar.text()).toContain('Alice')
+    expect(detailBar.text()).toContain('c123456')
+
+    // Click reset button in detail bar
+    const resetBtn = detailBar.find('[data-test="btn-reset-to-working"]')
+    expect(resetBtn.exists()).toBe(true)
+    await resetBtn.trigger('click')
+    await flushPromises()
+
+    // Back to working tree mode with GitCommitBar
+    expect(wrapper.findComponent({ name: 'GitCommitBar' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'GitCommitDetailBar' }).exists()).toBe(false)
+  })
 })

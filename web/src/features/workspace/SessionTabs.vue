@@ -315,11 +315,17 @@ onBeforeUnmount(() => {
   align-items: stretch;
   gap: 2px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 0 0.5rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   flex-shrink: 0;
   min-height: 35px;
+  scrollbar-width: thin;
+}
+
+.session-tabs::-webkit-scrollbar {
+  height: 3px;
 }
 
 .tab {

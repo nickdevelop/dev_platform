@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import GitCommitBar from '../features/files/GitCommitBar.vue'
+import GitCommitDetailBar from '../features/files/GitCommitDetailBar.vue'
 import BranchSelector from '../features/files/BranchSelector.vue'
 import ChangeTree from '../features/files/ChangeTree.vue'
 import * as filesApi from '../api/files'
@@ -163,5 +164,55 @@ describe('ChangeTree.vue with Actions', () => {
 
     await actionButtons[0].trigger('click')
     expect(wrapper.emitted('unstage')?.[0]).toEqual(['app.vue'])
+  })
+})
+
+describe('GitCommitDetailBar.vue', () => {
+  const dummyCommit = {
+    hash: '1234567890abcdef1234567890abcdef12345678',
+    shortHash: '1234567',
+    message: 'feat(core): implement agent loop\n\n- Add support for tool execution\n- Handle abort signal',
+    author: 'Developer <dev@example.com>',
+    date: '2026-11-19 18:30:00',
+    timestamp: 1795084200,
+  }
+
+  it('renders commit details when commit prop is provided', () => {
+    const wrapper = mount(GitCommitDetailBar, {
+      props: {
+        commit: dummyCommit,
+      },
+    })
+
+    expect(wrapper.find('[data-test="git-commit-detail-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="copy-commit-hash-btn"]').text()).toContain('1234567')
+    expect(wrapper.find('[data-test="commit-message-box"]').text()).toContain('feat(core): implement agent loop')
+    expect(wrapper.text()).toContain('Developer <dev@example.com>')
+    expect(wrapper.text()).toContain('2026-11-19 18:30:00')
+  })
+
+  it('emits reset when reset button is clicked', async () => {
+    const wrapper = mount(GitCommitDetailBar, {
+      props: {
+        commit: dummyCommit,
+      },
+    })
+
+    const resetBtn = wrapper.find('[data-test="btn-reset-to-working"]')
+    expect(resetBtn.exists()).toBe(true)
+    await resetBtn.trigger('click')
+
+    expect(wrapper.emitted('reset')).toBeTruthy()
+  })
+
+  it('shows empty fallback when commit prop is not provided', () => {
+    const wrapper = mount(GitCommitDetailBar, {
+      props: {
+        commit: undefined,
+      },
+    })
+
+    expect(wrapper.find('[data-test="commit-detail-empty"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('未选择或未找到提交信息')
   })
 })

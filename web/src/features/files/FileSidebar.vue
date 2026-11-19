@@ -21,6 +21,7 @@ import ChangeTree from './ChangeTree.vue'
 import { buildChangeTree } from './changeTreeUtil'
 import FileTree from './FileTree.vue'
 import GitCommitBar from './GitCommitBar.vue'
+import GitCommitDetailBar from './GitCommitDetailBar.vue'
 import type { FileTreeNode, GitCommitItem, GitFileChangeStatus, GitStatusItem } from './types'
 
 const props = defineProps<{
@@ -104,10 +105,13 @@ const gitChangesMap = computed(() => {
   return map
 })
 
+const selectedCommitItem = computed<GitCommitItem | undefined>(() => {
+  if (!selectedCommit.value) return undefined
+  return commits.value.find((item) => item.hash === selectedCommit.value)
+})
+
 const currentCommitMessage = computed(() => {
-  if (!selectedCommit.value) return ''
-  const c = commits.value.find((item) => item.hash === selectedCommit.value)
-  return c?.message || ''
+  return selectedCommitItem.value?.message || ''
 })
 
 const changesCount = computed(() => gitChanges.value.length)
@@ -871,6 +875,12 @@ async function confirmDelete() {
       @committed="refresh"
       @stage-all-and-commit="onStageAllAndCommit"
       @error="error = $event"
+    />
+    <!-- Bottom Git Commit Detail Bar (visible in changes tab for history commit) -->
+    <GitCommitDetailBar
+      v-else-if="activeTab === 'changes' && isHistoryCommit"
+      :commit="selectedCommitItem"
+      @reset="selectedCommit = ''"
     />
 
     <!-- Discard Confirmation Dialog -->
