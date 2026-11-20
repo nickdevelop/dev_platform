@@ -314,22 +314,28 @@ web/src/
 ### 3. Web 终端交互与 PTY 全双工字符流（Terminal Flow）
 
 ```
-[ 用户在左侧导航进入“终端”，选择本地终端或 SSH ]
+[ 用户在左侧导航进入“终端”，或在工作区文件路径旁点击终端按钮唤出 800*500 悬浮终端窗口 ]
                          │
                          ▼
-1. Web 前端 (features/terminal/XtermView.vue)
+1. Web 前端 (features/terminal/XtermView.vue & ProjectTerminalModal.vue)
    - 初始化 xterm.js 实例并挂载 FitAddon
-   - 发起 WebSocket 连接: ws://host/api/terminal/ws/{serverId}?cols=80&rows=24
+   - 滚动条自适应规则：覆盖注入 overflow-y: auto !important，未超出行数时不显滚动条，消除初始与 clear 后的突兀常驻，超出时展示精致细滚动条
+   - 字体统一规范：全站终端字体与文件预览代码（CodeView 0.82rem，14px 基准下精准换算为 11.5px）完全对齐一致
+   - 键盘输入透传守护：绝不拦截 Escape 键关闭窗口，确保 Vim / Nano / 命令取消等快捷键原生直达 PTY
+   - 浮动多终端并发与点击置顶：移除阻断性全屏黑色遮罩，窗口以 800*500 浮动展现，支持不同会话并发打开多个独立 Terminal；新窗口自动阶梯错开排布，各浮窗支持独立拖拽，点击任意窗口触发 bringToFront 自动提升 zIndex 置顶显示
+   - 全局快捷栏集成：快捷工具栏（QuickAssistantLauncher）作为全局常驻容器，多终端最小化时分别缩小为对应的方形终端快捷按钮（>_），排在快捷助手按钮之后；若快捷助手未开启，终端按钮作为首项显示；点击立即还原并置顶；仅点击窗口关闭按钮（×）才真正退出终端并释放进程
+   - 发起 WebSocket 连接: ws://host/api/terminal/ws/{serverId}?cols=80&rows=24&cwd={encodeURIComponent(path)}
                          │
                          ▼ (GET 请求带 Origin 与 Session Cookie)
 2. 传输与同源防护 (internal/app/terminal/handlers.go)
    - 执行 checkSameOrigin 严格比对 Origin 与 Host 是否一致 (杜绝 CSWSH)
    - 校验 SessionCookie 鉴权
+   - 解析并验证可选的初始工作目录 (cwd)，由 filepath.Clean 与目录有效性检查守护
    - 协议升级为 WebSocket 连接 (Upgrader)
                          │
                          ▼
 3. 终端领域服务 (internal/app/terminal/service.go)
-   - 本地模式：调用 core/platform 分配伪终端 (PTY)，派生交互式 bash/sh 进程
+   - 本地模式：调用 core/platform 分配伪终端 (PTY)，若指定合法 cwd 则绑定 cmd.Dir，派生交互式 bash/sh 进程
    - 远程模式：解密 secretStore 凭据，建立 SSH Client Session
                          │
                          ▼

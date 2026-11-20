@@ -32,6 +32,7 @@ import NotesSidebar from '../notes/NotesSidebar.vue'
 import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
+import { ProjectTerminalModal } from '../terminal'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
@@ -856,7 +857,8 @@ watch(
       @submitted="onSubmitted"
     />
 
-    <QuickAssistantLauncher v-if="settings.quickAssistant.enabled" />
+    <QuickAssistantLauncher />
+    <ProjectTerminalModal />
     <template v-if="debug.enabled">
       <DebugLauncher />
       <DebugPanel v-if="debug.open" />

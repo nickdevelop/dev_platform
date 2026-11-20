@@ -82,8 +82,12 @@ export async function testServerConnection(
   return mutate<{ ok: boolean; message?: string }>('POST', '/terminal/servers/test', payload)
 }
 
-export function buildTerminalWSUrl(serverId: number, cols = 80, rows = 24): string {
+export function buildTerminalWSUrl(serverId: number, cols = 80, rows = 24, cwd?: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${protocol}//${host}/api/terminal/ws/${serverId}?cols=${cols}&rows=${rows}`
+  let url = `${protocol}//${host}/api/terminal/ws/${serverId}?cols=${cols}&rows=${rows}`
+  if (cwd && cwd.trim()) {
+    url += `&cwd=${encodeURIComponent(cwd.trim())}`
+  }
+  return url
 }

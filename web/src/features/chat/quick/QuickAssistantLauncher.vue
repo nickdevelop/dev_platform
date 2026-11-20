@@ -9,10 +9,21 @@ import { useDraggablePosition, useDraggablePanel } from '../../../shared/composa
 import QuickAssistantPanel from './QuickAssistantPanel.vue'
 import { useChatsStore } from '../../../stores/chats'
 import { useQuickAssistantStore } from '../../../stores/quickAssistant'
+import { useSettingsStore } from '../../../stores/settings'
+import { useProjectTerminalStore } from '../../../stores/projectTerminal'
 import type { ChatGroup } from '../../../api/chats'
 
 const chats = useChatsStore()
 const quick = useQuickAssistantStore()
+const settings = useSettingsStore()
+const projectTerminal = useProjectTerminalStore()
+
+const isToolbarVisible = computed(() => {
+  return Boolean(
+    settings.quickAssistant.enabled ||
+    projectTerminal.minimizedInstances.length > 0,
+  )
+})
 
 const open = ref(false)
 const toolbarRef = ref<HTMLElement | null>(null)
@@ -83,7 +94,7 @@ watch(open, (value, previous) => {
 </script>
 
 <template>
-  <div class="quick-assistant-launcher">
+  <div v-if="isToolbarVisible" class="quick-assistant-launcher">
     <!-- 横向漂浮工具栏（方形按钮组，默认半透明，悬浮完全显示） -->
     <div
       ref="toolbarRef"
@@ -102,48 +113,75 @@ watch(open, (value, previous) => {
       @pointerup="onPointerUp"
       @pointercancel="onPointerCancel"
     >
-      <!-- 多助手时的各个方形按钮 -->
-      <template v-if="floatingAssistants.length > 1">
+      <!-- 快捷助手按钮组：仅当设置开启时显示 -->
+      <template v-if="settings.quickAssistant.enabled">
+        <!-- 多助手时的各个方形按钮 -->
+        <template v-if="floatingAssistants.length > 1">
+          <button
+            v-for="(assistant, index) in floatingAssistants"
+            :key="assistant.id"
+            type="button"
+            class="quick-assistant-button square-btn"
+            :class="{ active: quick.currentAssistant?.id === assistant.id && open }"
+            :aria-label="`助手 · ${assistant.name}`"
+            :title="`助手 · ${assistant.name}（点击打开/关闭对话）`"
+            :data-test="index === 0 ? 'quick-assistant-button' : undefined"
+            @click="selectAssistant(assistant)"
+          >
+            <span class="assistant-icon-text">{{ getAssistantIcon(assistant) }}</span>
+          </button>
+        </template>
+
+        <!-- 单助手或默认快捷助手按钮 -->
         <button
-          v-for="(assistant, index) in floatingAssistants"
-          :key="assistant.id"
+          v-else
           type="button"
           class="quick-assistant-button square-btn"
-          :class="{ active: quick.currentAssistant?.id === assistant.id && open }"
-          :aria-label="`助手 · ${assistant.name}`"
-          :title="`助手 · ${assistant.name}（点击打开/关闭对话）`"
-          :data-test="index === 0 ? 'quick-assistant-button' : undefined"
-          @click="selectAssistant(assistant)"
+          :class="{ active: open }"
+          :aria-label="activeAssistant ? `助手 · ${activeAssistant.name}` : '快捷助手'"
+          :title="activeAssistant ? `助手 · ${activeAssistant.name}（点击打开/关闭对话）` : '快捷助手'"
+          aria-controls="quick-assistant-popover"
+          :aria-expanded="open ? 'true' : 'false'"
+          data-test="quick-assistant-button"
+          @click="toggle"
         >
-          <span class="assistant-icon-text">{{ getAssistantIcon(assistant) }}</span>
+          <span v-if="activeAssistant" class="assistant-icon-text">
+            {{ getAssistantIcon(activeAssistant) }}
+          </span>
+          <svg v-else class="quick-assistant-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
         </button>
       </template>
 
-      <!-- 单助手或默认快捷助手按钮 -->
+      <!-- 终端最小化按钮列表：当终端已最小化时显示（若快捷助手开启则排在其后，未开启则为首项） -->
       <button
-        v-else
+        v-for="term in projectTerminal.minimizedInstances"
+        :key="term.id"
         type="button"
-        class="quick-assistant-button square-btn"
-        :class="{ active: open }"
-        :aria-label="activeAssistant ? `助手 · ${activeAssistant.name}` : '快捷助手'"
-        :title="activeAssistant ? `助手 · ${activeAssistant.name}（点击打开/关闭对话）` : '快捷助手'"
-        aria-controls="quick-assistant-popover"
-        :aria-expanded="open ? 'true' : 'false'"
-        data-test="quick-assistant-button"
-        @click="toggle"
+        class="quick-assistant-button square-btn terminal-btn"
+        :title="`项目终端 · ${term.projectName || '终端'}（点击还原）`"
+        :aria-label="`项目终端 · ${term.projectName || '终端'}`"
+        data-test="dock-terminal-button"
+        @click.stop="projectTerminal.restore(term.id)"
       >
-        <span v-if="activeAssistant" class="assistant-icon-text">
-          {{ getAssistantIcon(activeAssistant) }}
-        </span>
-        <svg v-else class="quick-assistant-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
+        <svg
+          class="quick-assistant-icon"
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+        >
+          <path d="M3 4.5l3.5 3.5L3 11.5M8.5 11.5h4" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
     </div>

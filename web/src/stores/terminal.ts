@@ -18,6 +18,7 @@ export interface TerminalTab {
   title: string
   status: 'connecting' | 'connected' | 'disconnected' | 'error'
   errorMessage?: string
+  cwd?: string
 }
 
 let tabCounter = 1
@@ -79,13 +80,13 @@ export const useTerminalStore = defineStore('terminal', {
       this.activeServerId = id
     },
 
-    openTerminal(serverId: number): string {
+    openTerminal(serverId: number, options?: { cwd?: string; title?: string }): string {
       const server = this.servers.find((s) => s.id === serverId)
       const serverName = server?.name ?? (serverId === 0 ? '本机 (Localhost)' : `服务器 ${serverId}`)
 
       // Count existing tabs for this server to produce a friendly suffix
       const existingCount = this.tabs.filter((t) => t.serverId === serverId).length
-      const tabTitle = `${serverName} #${existingCount + 1}`
+      const tabTitle = options?.title ?? `${serverName} #${existingCount + 1}`
 
       const tabId = `term-${Date.now()}-${tabCounter++}`
       const newTab: TerminalTab = {
@@ -94,6 +95,7 @@ export const useTerminalStore = defineStore('terminal', {
         serverName,
         title: tabTitle,
         status: 'connecting',
+        cwd: options?.cwd,
       }
 
       this.tabs.push(newTab)

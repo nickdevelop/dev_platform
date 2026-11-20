@@ -146,8 +146,9 @@ func generateSessionID() string {
 	return hex.EncodeToString(b)
 }
 
-// CreateLocalSession launches a local shell in a pty.
-func (m *SessionManager) CreateLocalSession(rows, cols uint16) (Session, error) {
+// CreateLocalSession launches a local shell in a pty. If cwd is non-empty and
+// points to an existing directory, the shell is started with cwd as its working directory.
+func (m *SessionManager) CreateLocalSession(rows, cols uint16, cwd string) (Session, error) {
 	if !m.platform.PTY().Supported() {
 		return nil, platform.ErrUnsupported
 	}
@@ -163,6 +164,11 @@ func (m *SessionManager) CreateLocalSession(rows, cols uint16) (Session, error) 
 
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	if cwd != "" {
+		if fi, err := os.Stat(cwd); err == nil && fi.IsDir() {
+			cmd.Dir = cwd
+		}
+	}
 
 	ptySession, err := m.platform.PTY().Start(cmd, rows, cols)
 	if err != nil {

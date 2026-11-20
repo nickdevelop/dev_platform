@@ -3,11 +3,14 @@ package terminal
 import (
 	"context"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/secrets"
+	"devplatform/internal/core/platform"
 	"devplatform/internal/core/platform/fake"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -229,5 +232,46 @@ func TestCheckSameOrigin(t *testing.T) {
 				t.Errorf("checkSameOrigin(origin=%q, host=%q) = %v; want %v", tc.origin, tc.host, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestLocalSessionCwd(t *testing.T) {
+	tempDir := t.TempDir()
+	validDir := filepath.Join(tempDir, "workspace")
+	if err := os.Mkdir(validDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	var capturedCmd *exec.Cmd
+	p := fake.New(fake.WithPTYSupported(true))
+	p.PTY().(*fake.PTY).StartFunc = func(cmd *exec.Cmd, rows, cols uint16) (platform.PTYSession, error) {
+		capturedCmd = cmd
+		return nil, nil
+	}
+
+	db := setupTestDB(t)
+	repo := NewRepository(db)
+	secretStore, _ := secrets.NewStore(filepath.Join(tempDir, "data"))
+	service := NewService(repo, secretStore, p)
+	ctx := context.Background()
+
+	// 1. Connect with valid directory
+	_, err := service.Connect(ctx, 0, 24, 80, validDir)
+	if err != nil {
+		t.Fatalf("connect valid dir: %v", err)
+	}
+	if capturedCmd == nil || capturedCmd.Dir != validDir {
+		t.Errorf("expected cmd.Dir to be %q, got %q", validDir, capturedCmd.Dir)
+	}
+
+	// 2. Connect with non-existent directory
+	capturedCmd = nil
+	nonExistentDir := filepath.Join(tempDir, "not-exist")
+	_, err = service.Connect(ctx, 0, 24, 80, nonExistentDir)
+	if err != nil {
+		t.Fatalf("connect non-existent dir: %v", err)
+	}
+	if capturedCmd == nil || capturedCmd.Dir != "" {
+		t.Errorf("expected cmd.Dir to be empty for non-existent dir, got %q", capturedCmd.Dir)
 	}
 }

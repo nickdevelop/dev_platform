@@ -213,7 +213,8 @@ func (s *Service) handleWebSocket(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	session, err := s.Connect(c.Request.Context(), uint(serverID), rows, cols)
+	cwd := strings.TrimSpace(c.Query("cwd"))
+	session, err := s.Connect(c.Request.Context(), uint(serverID), rows, cols, cwd)
 	if err != nil {
 		if errors.Is(err, platform.ErrUnsupported) {
 			_ = conn.WriteMessage(websocket.TextMessage, []byte("\r\n\x1b[31m[错误] 宿主平台不支持本地终端（仅限 Linux）\x1b[0m\r\n"))

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useFileTreeStateStore } from '../stores/fileTreeState'
+import { useProjectTerminalStore } from '../stores/projectTerminal'
 import { getDirectory, isExternalUrl, resolveRelativePath } from '../features/files/pathUtils'
 import FileTree from '../features/files/FileTree.vue'
 import FileSidebar from '../features/files/FileSidebar.vue'
@@ -422,6 +423,14 @@ describe('FileSidebar.vue', () => {
     expect(workdirPath.text()).toBe('/data/projects/my-app')
     // No copy button
     expect(wrapper.find('[data-test="workdir-copy"]').exists()).toBe(false)
+
+    // Open terminal button exists and opens project terminal with workspace dir
+    const termBtn = wrapper.find('[data-test="open-terminal-btn"]')
+    expect(termBtn.exists()).toBe(true)
+    const termStore = useProjectTerminalStore()
+    await termBtn.trigger('click')
+    expect(termStore.isOpen).toBe(true)
+    expect(termStore.cwd).toBe('/data/projects/my-app')
 
     // Branch label is read-only span
     const branchLabel = wrapper.find('[data-test="git-branch"]')

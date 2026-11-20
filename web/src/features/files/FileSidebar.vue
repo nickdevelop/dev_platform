@@ -17,6 +17,7 @@ import { searchProjectFiles } from '../../api/projects'
 import { getProjectGitInfo } from '../../api/git'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import { useProjectsStore } from '../../stores/projects'
+import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import { UiButton, UiDialog, UiProgress } from '../../shared/ui'
 import ChangeTree from './ChangeTree.vue'
 import { buildChangeTree } from './changeTreeUtil'
@@ -87,10 +88,17 @@ const expandedTreePaths = ref<Set<string>>(new Set(saved?.expandedTreePaths ?? [
 
 // Discard confirmation dialog state
 const projectsStore = useProjectsStore()
+const projectTerminal = useProjectTerminalStore()
 const currentProject = computed(() => (projectsStore.projects ?? []).find((p) => p.id === props.projectId))
 const workspaceDir = computed(() => props.directory || currentProject.value?.path || '')
 const localBranch = ref('')
 const effectiveBranch = computed(() => props.branch || localBranch.value)
+
+function openTerminalAtWorkspace() {
+  const dir = workspaceDir.value
+  if (!dir) return
+  projectTerminal.openTerminal(dir, currentProject.value?.name)
+}
 
 const discardModalOpen = ref(false)
 const discardConfirmPath = ref('')
@@ -594,6 +602,28 @@ async function confirmDelete() {
         >
           {{ workspaceDir }}
         </span>
+
+        <!-- 打开服务器终端按钮：自动定位到该目录并以弹窗打开 -->
+        <button
+          v-if="workspaceDir"
+          type="button"
+          class="open-terminal-btn inline-flex items-center justify-center w-5 h-5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted transition-colors cursor-pointer shrink-0"
+          title="打开服务器终端并定位到该目录"
+          aria-label="打开服务器终端并定位到该目录"
+          data-test="open-terminal-btn"
+          @click.stop="openTerminalAtWorkspace"
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+          >
+            <path d="M3 4.5l3.5 3.5L3 11.5M8.5 11.5h4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
 
         <!-- 当前分支：在所有文件选项右侧显示，纯只读 label 标识当前分支，不允许选择切换 -->
         <span

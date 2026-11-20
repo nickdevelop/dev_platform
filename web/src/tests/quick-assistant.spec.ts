@@ -7,6 +7,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import QuickAssistantLauncher from '../features/chat/quick/QuickAssistantLauncher.vue'
 import { useModelsStore } from '../stores/models'
 import { useQuickAssistantStore } from '../stores/quickAssistant'
+import { useSettingsStore } from '../stores/settings'
 import { installTestCSRF } from './csrf-fixture'
 import type { Chat, ChatMessage, ChatSnapshot } from '../api/chats'
 import { closeChatBus, resetChatBusId } from '../features/chat/pure/ChatEventBusClient'
@@ -156,6 +157,7 @@ function stubFetch(options: { existing?: boolean; chats?: Chat[] } = {}) {
 async function mountLauncher() {
   const pinia = createPinia()
   setActivePinia(pinia)
+  useSettingsStore().quickAssistant.enabled = true
   setupModels()
   const wrapper = mount(QuickAssistantLauncher, { global: { plugins: [pinia] } })
   await flushPromises()

@@ -75,6 +75,7 @@ function onQuickConnectLocal() {
         <XtermView
           :tab-id="tab.id"
           :server-id="tab.serverId"
+          :cwd="tab.cwd"
           :active="tab.id === activeTabId"
           :visible="props.visible"
         />

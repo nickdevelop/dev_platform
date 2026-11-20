@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
@@ -14,6 +14,7 @@ const props = withDefaults(
     serverId: number
     active: boolean
     visible?: boolean
+    cwd?: string
   }>(),
   {
     visible: true,
@@ -23,6 +24,12 @@ const props = withDefaults(
 const terminalStore = useTerminalStore()
 const settings = useSettingsStore()
 const containerRef = ref<HTMLDivElement | null>(null)
+
+// Unify terminal font size with file preview code (CodeView: 0.82rem; 14px * 0.82 = 11.48px ≈ 11.5px).
+const terminalFontSize = computed(() => {
+  const base = settings.appearance.fontSize ?? 14
+  return Math.round(base * 0.82 * 10) / 10
+})
 
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -86,7 +93,7 @@ function connect() {
 
   const cols = term?.cols ?? 80
   const rows = term?.rows ?? 24
-  const wsUrl = buildTerminalWSUrl(props.serverId, cols, rows)
+  const wsUrl = buildTerminalWSUrl(props.serverId, cols, rows, props.cwd)
 
   try {
     ws = new WebSocket(wsUrl)
@@ -178,7 +185,7 @@ async function mountTerminal(): Promise<void> {
 
   term = new Terminal({
     cursorBlink: true,
-    fontSize: settings.appearance.fontSize,
+    fontSize: terminalFontSize.value,
     fontFamily: FONT_STACK,
     theme: {
       background: '#121316',
@@ -286,7 +293,7 @@ watch(
 // cell grid, so the appearance tier has to be pushed into the Terminal options
 // and followed by a refit. Without the refit the PTY keeps the old cols/rows.
 watch(
-  () => settings.appearance.fontSize,
+  () => terminalFontSize.value,
   (size) => {
     if (!term) return
     term.options.fontSize = size
@@ -363,6 +370,7 @@ onBeforeUnmount(() => {
    transparent track reads as a floating overlay instead of the wide, opaque
    native scrollbar that parked on top of the shell output. */
 .xterm-container :deep(.xterm-viewport) {
+  overflow-y: auto !important;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }

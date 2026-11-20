@@ -227,12 +227,12 @@ func (s *Service) TestConnection(ctx context.Context, req TestConnectionRequest)
 }
 
 // Connect creates and returns an interactive terminal session for serverID.
-func (s *Service) Connect(ctx context.Context, serverID uint, rows, cols uint16) (Session, error) {
+func (s *Service) Connect(ctx context.Context, serverID uint, rows, cols uint16, cwd string) (Session, error) {
 	if serverID == 0 {
 		if !s.platform.PTY().Supported() {
 			return nil, platform.ErrUnsupported
 		}
-		return s.sessionManager.CreateLocalSession(rows, cols)
+		return s.sessionManager.CreateLocalSession(rows, cols, cwd)
 	}
 
 	srv, err := s.repo.Get(ctx, serverID)
