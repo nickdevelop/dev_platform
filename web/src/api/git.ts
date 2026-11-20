@@ -8,6 +8,8 @@ export interface GitInfo {
   branch?: string
   dirty?: boolean
   root?: string
+  ahead?: number
+  behind?: number
 }
 
 // GET /api/projects/{id}/git-info

@@ -317,6 +317,7 @@ function onAppShellKeydown(e: KeyboardEvent) {
   // Alt+1: Toggle left sidebar
   if (e.altKey && (e.key === '1' || e.code === 'Digit1')) {
     e.preventDefault()
+    e.stopPropagation()
     toggleSidebar()
     return
   }
@@ -324,20 +325,22 @@ function onAppShellKeydown(e: KeyboardEvent) {
   // Alt+2: Toggle right workspace/preview pane
   if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
     e.preventDefault()
+    e.stopPropagation()
     setPreviewCollapsed(!previewCollapsed.value)
     return
   }
 
-  // Alt+T: Toggle terminal modal (open / restore / minimize)
-  if (e.altKey && (e.key === 't' || e.key === 'T' || e.code === 'KeyT')) {
+  // Alt+`: Toggle terminal modal (open / restore / minimize)
+  if (e.altKey && (e.key === '`' || e.code === 'Backquote' || e.key === '~')) {
     e.preventDefault()
-    projectTerminal.toggleAltT()
+    e.stopPropagation()
+    projectTerminal.toggleShortcut()
     return
   }
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', onAppShellKeydown)
+  window.addEventListener('keydown', onAppShellKeydown, true)
   // The backend catalog facts (labels, order, service support) are read by
   // every session tag and session row, so they load with the shell, once.
   void agents.loadBackends()
@@ -364,7 +367,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onAppShellKeydown)
+  window.removeEventListener('keydown', onAppShellKeydown, true)
 })
 
 // The tab bar mirrors the current route in the project workspace or chat area.

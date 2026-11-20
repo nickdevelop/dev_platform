@@ -605,24 +605,24 @@ describe('quick assistant launcher visibility', () => {
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
   })
 
-  it('toggles terminal modal with Alt+T', async () => {
+  it('toggles terminal modal with Alt+`', async () => {
     const { wrapper } = await setup('/')
     const termStore = useProjectTerminalStore()
     expect(termStore.isOpen).toBe(false)
 
-    // Press Alt+T to open terminal
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    // Press Alt+` to open terminal
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '`', code: 'Backquote', altKey: true }))
     await wrapper.vm.$nextTick()
     expect(termStore.isOpen).toBe(true)
     expect(termStore.isMinimized).toBe(false)
 
-    // Press Alt+T again to minimize
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    // Press Alt+` again to minimize
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '`', code: 'Backquote', altKey: true }))
     await wrapper.vm.$nextTick()
     expect(termStore.isMinimized).toBe(true)
 
-    // Press Alt+T again to restore
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    // Press Alt+` again to restore
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '`', code: 'Backquote', altKey: true }))
     await wrapper.vm.$nextTick()
     expect(termStore.isMinimized).toBe(false)
   })

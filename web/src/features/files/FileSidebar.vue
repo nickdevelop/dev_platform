@@ -92,7 +92,24 @@ const projectTerminal = useProjectTerminalStore()
 const currentProject = computed(() => (projectsStore.projects ?? []).find((p) => p.id === props.projectId))
 const workspaceDir = computed(() => props.directory || currentProject.value?.path || '')
 const localBranch = ref('')
+const localAhead = ref(0)
+const localBehind = ref(0)
 const effectiveBranch = computed(() => props.branch || localBranch.value)
+
+const branchTooltip = computed(() => {
+  const branchName = effectiveBranch.value
+  const parts: string[] = []
+  if (localAhead.value > 0) {
+    parts.push(`${localAhead.value} 个提交未推送`)
+  }
+  if (localBehind.value > 0) {
+    parts.push(`${localBehind.value} 个提交未拉取`)
+  }
+  if (parts.length > 0) {
+    return `当前分支: ${branchName} (${parts.join(', ')})`
+  }
+  return `当前分支: ${branchName}`
+})
 
 function openTerminalAtWorkspace() {
   const dir = workspaceDir.value
@@ -184,6 +201,8 @@ async function refresh() {
     if (gitInfo?.branch) {
       localBranch.value = gitInfo.branch
     }
+    localAhead.value = gitInfo?.ahead || 0
+    localBehind.value = gitInfo?.behind || 0
     updateExpandedChangeDirs()
     // The children are loaded through the reactive nodes: writing to the raw
     // response would leave the view showing the loading state.
@@ -628,8 +647,8 @@ async function confirmDelete() {
         <!-- 当前分支：在所有文件选项右侧显示，纯只读 label 标识当前分支，不允许选择切换 -->
         <span
           v-if="effectiveBranch"
-          class="branch-chip inline-flex items-center gap-1 h-[22px] px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 bg-platform-surface border border-platform-border shrink-0 max-w-[140px] truncate select-none"
-          :title="`当前分支: ${effectiveBranch}`"
+          class="branch-chip inline-flex items-center gap-1 h-[22px] px-2 rounded text-xs font-mono font-medium text-slate-700 dark:text-slate-300 bg-platform-surface border border-platform-border shrink-0 max-w-[200px] select-none"
+          :title="branchTooltip"
           data-test="git-branch"
         >
           <svg
@@ -647,6 +666,26 @@ async function confirmDelete() {
             <path d="M4 6v4M4 8c2 0 4-1 4-1s2 0 4 0" />
           </svg>
           <span class="truncate">{{ effectiveBranch }}</span>
+          <span
+            v-if="localAhead > 0 || localBehind > 0"
+            class="branch-sync inline-flex items-center gap-1 shrink-0 text-[11px] font-semibold"
+            data-test="git-sync-status"
+          >
+            <span
+              v-if="localAhead > 0"
+              class="text-sky-600 dark:text-sky-400"
+              title="有本地提交未推送"
+            >
+              ↑{{ localAhead }}
+            </span>
+            <span
+              v-if="localBehind > 0"
+              class="text-amber-600 dark:text-amber-400"
+              title="有远程提交未拉取"
+            >
+              ↓{{ localBehind }}
+            </span>
+          </span>
         </span>
       </div>
 

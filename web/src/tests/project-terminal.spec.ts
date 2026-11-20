@@ -265,22 +265,22 @@ describe('Project Terminal Feature', () => {
     wrapper.unmount()
   })
 
-  it('supports Alt+T to toggle terminal modal visibility (minimize and restore)', async () => {
+  it('supports Alt+` (toggleShortcut) to toggle terminal modal visibility (minimize and restore)', async () => {
     const store = useProjectTerminalStore()
     expect(store.windows.length).toBe(0)
 
-    // Press Alt+T when empty -> opens default local terminal
-    store.toggleAltT()
+    // Press Alt+` when empty -> opens default local terminal
+    store.toggleShortcut()
     expect(store.windows.length).toBe(1)
     expect(store.isOpen).toBe(true)
     expect(store.isMinimized).toBe(false)
 
-    // Press Alt+T when open -> minimizes
-    store.toggleAltT()
+    // Press Alt+` when open -> minimizes
+    store.toggleShortcut()
     expect(store.isMinimized).toBe(true)
 
-    // Press Alt+T when minimized -> restores
-    store.toggleAltT()
+    // Press Alt+` when minimized -> restores
+    store.toggleShortcut()
     expect(store.isMinimized).toBe(false)
   })
 

@@ -267,6 +267,10 @@ export const useProjectTerminalStore = defineStore('projectTerminal', {
       }
     },
 
+    toggleShortcut(): void {
+      this.toggleAltT()
+    },
+
     toggleAltT(): void {
       if (this.windows.length === 0 || this.tabs.length === 0) {
         this.openLocalTab()

@@ -145,6 +145,82 @@ func TestGitInfoRoute(t *testing.T) {
 	}
 }
 
+// TestGitInfoAheadBehind verifies probeGitDir extracts ahead and behind metrics.
+func TestGitInfoAheadBehind(t *testing.T) {
+	if !gitAvailable() {
+		t.Skip("git CLI unavailable")
+	}
+	db := openTestDB(t)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+
+	remoteDir := filepath.Join(root, "remote.git")
+	localDir := filepath.Join(root, "local")
+
+	gitCmd := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %v: %s", args, dir, err, out)
+		}
+	}
+
+	// 1. Initialize bare remote repo
+	if err := os.Mkdir(remoteDir, 0o755); err != nil {
+		t.Fatalf("Mkdir remote: %v", err)
+	}
+	gitCmd(remoteDir, "init", "--bare", "-b", "main")
+
+	// 2. Clone to localDir
+	gitCmd(root, "clone", remoteDir, localDir)
+	gitCmd(localDir, "config", "user.email", "test@example.com")
+	gitCmd(localDir, "config", "user.name", "test")
+
+	// 3. Make initial commit in local and push
+	initFile := filepath.Join(localDir, "README.md")
+	_ = os.WriteFile(initFile, []byte("# Hello\n"), 0o644)
+	gitCmd(localDir, "add", "README.md")
+	gitCmd(localDir, "commit", "-m", "initial commit")
+	gitCmd(localDir, "push", "-u", "origin", "main")
+
+	// 4. Make a second local commit (ahead: 1)
+	_ = os.WriteFile(initFile, []byte("# Hello World\n"), 0o644)
+	gitCmd(localDir, "commit", "-am", "second local commit")
+
+	svc := NewService(db)
+	project, err := svc.Register(localDir)
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	svc.RegisterRoutes(router)
+
+	path := "/projects/" + strconv.FormatUint(uint64(project.ID), 10) + "/git-info"
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	var body GitInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode %s: %v", rec.Body.String(), err)
+	}
+	if !body.IsGit || body.Branch != "main" {
+		t.Fatalf("git info = %+v, want git on main", body)
+	}
+	if body.Ahead != 1 {
+		t.Fatalf("Ahead = %d, want 1", body.Ahead)
+	}
+	if body.Behind != 0 {
+		t.Fatalf("Behind = %d, want 0", body.Behind)
+	}
+}
+
 func TestGitCommitsAndDiff(t *testing.T) {
 	if !gitAvailable() {
 		t.Skip("git CLI unavailable")

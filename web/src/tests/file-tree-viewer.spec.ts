@@ -478,6 +478,36 @@ describe('FileSidebar.vue', () => {
     expect(branchLabel.text()).toContain('main')
   })
 
+  it('renders branch sync status (ahead / behind) after branch label', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    const gitApi = await import('../api/git')
+    vi.spyOn(gitApi, 'getProjectGitInfo').mockResolvedValue({
+      isGit: true,
+      branch: 'feature-sync',
+      ahead: 2,
+      behind: 1,
+    })
+
+    const wrapper = mount(FileSidebar, {
+      props: {
+        projectId: 1,
+      },
+    })
+    await flushPromises()
+
+    const branchLabel = wrapper.find('[data-test="git-branch"]')
+    expect(branchLabel.exists()).toBe(true)
+    expect(branchLabel.text()).toContain('feature-sync')
+
+    const syncStatus = wrapper.find('[data-test="git-sync-status"]')
+    expect(syncStatus.exists()).toBe(true)
+    expect(syncStatus.text()).toContain('↑2')
+    expect(syncStatus.text()).toContain('↓1')
+    expect(branchLabel.attributes('title')).toBe('当前分支: feature-sync (2 个提交未推送, 1 个提交未拉取)')
+  })
+
   it('manages discard dialog flow: open, cancel, and confirm', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([])
     vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])

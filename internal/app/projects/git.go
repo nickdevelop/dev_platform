@@ -21,7 +21,10 @@ type GitCommitItem struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
-var safeCommitRefRegex = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$|^HEAD(~[0-9]+)?(\^[0-9]*)?$`)
+var (
+	safeCommitRefRegex = regexp.MustCompile(`^[0-9a-fA-F]{4,64}$|^HEAD(~[0-9]+)?(\^[0-9]*)?$`)
+	branchAbRegex      = regexp.MustCompile(`^# branch\.ab \+(\d+) -(\d+)$`)
+)
 
 // isValidCommitRef checks whether a git ref is safe and well-formed.
 func isValidCommitRef(ref string) bool {
@@ -42,6 +45,8 @@ type GitInfo struct {
 	Branch string `json:"branch,omitempty"`
 	Dirty  bool   `json:"dirty,omitempty"`
 	Root   string `json:"root,omitempty"`
+	Ahead  int    `json:"ahead,omitempty"`
+	Behind int    `json:"behind,omitempty"`
 }
 
 // GitInfo returns the git state of a project's directory. The directory always
@@ -150,11 +155,22 @@ func probeGitDir(ctx context.Context, directory string) GitInfo {
 	}
 	info.Branch = branch
 
-	// Porcelain v1 with --untracked-files=no keeps the probe cheap on huge
-	// checkouts: any listed entry already means dirty. Output is capped so a
-	// pathological work tree cannot inflate API memory.
-	if out, err := gitOutputLimit(ctx, directory, 4096, "status", "--porcelain", "--untracked-files=no"); err == nil && strings.TrimSpace(out) != "" {
-		info.Dirty = true
+	// Porcelain v2 with --branch and --untracked-files=no reports upstream
+	// sync state (ahead/behind commits) and uncommitted changes in one cheap
+	// probe. Output is capped so a pathological work tree cannot inflate API memory.
+	if out, err := gitOutputLimit(ctx, directory, 8192, "status", "--porcelain=v2", "--branch", "--untracked-files=no"); err == nil && strings.TrimSpace(out) != "" {
+		scanner := bufio.NewScanner(strings.NewReader(out))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "# branch.ab ") {
+				if m := branchAbRegex.FindStringSubmatch(line); len(m) == 3 {
+					info.Ahead, _ = strconv.Atoi(m[1])
+					info.Behind, _ = strconv.Atoi(m[2])
+				}
+			} else if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
+				info.Dirty = true
+			}
+		}
 	}
 	return info
 }

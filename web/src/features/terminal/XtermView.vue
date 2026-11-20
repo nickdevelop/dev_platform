@@ -248,6 +248,25 @@ async function mountTerminal(): Promise<void> {
 
   term.open(containerRef.value)
 
+  if (typeof term.attachCustomKeyEventHandler === 'function') {
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      // Allow global platform shortcuts to bubble and execute in AppShell without being swallowed or sent to PTY
+      if (
+        e.altKey &&
+        (e.key === '`' ||
+          e.code === 'Backquote' ||
+          e.key === '~' ||
+          e.key === '1' ||
+          e.code === 'Digit1' ||
+          e.key === '2' ||
+          e.code === 'Digit2')
+      ) {
+        return false
+      }
+      return true
+    })
+  }
+
   if (typeof term.onSelectionChange === 'function') {
     term.onSelectionChange(() => {
       handleSelectionCopy()
