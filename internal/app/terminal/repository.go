@@ -15,6 +15,8 @@ type Repository interface {
 	Create(ctx context.Context, server *database.TerminalServer) error
 	Update(ctx context.Context, server *database.TerminalServer) error
 	Delete(ctx context.Context, id uint) error
+	GetSetting(ctx context.Context, key string) (string, bool, error)
+	SetSetting(ctx context.Context, key, val string) error
 }
 
 type gormRepository struct {
@@ -55,4 +57,21 @@ func (r *gormRepository) Update(ctx context.Context, server *database.TerminalSe
 
 func (r *gormRepository) Delete(ctx context.Context, id uint) error {
 	return r.db.WithContext(ctx).Delete(&database.TerminalServer{}, id).Error
+}
+
+func (r *gormRepository) GetSetting(ctx context.Context, key string) (string, bool, error) {
+	var row database.Setting
+	result := r.db.WithContext(ctx).Where("key = ?", key).Limit(1).Find(&row)
+	if result.Error != nil {
+		return "", false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return "", false, nil
+	}
+	return row.Value, true, nil
+}
+
+func (r *gormRepository) SetSetting(ctx context.Context, key, val string) error {
+	row := database.Setting{Key: key, Value: val}
+	return r.db.WithContext(ctx).Save(&row).Error
 }

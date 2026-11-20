@@ -4,13 +4,20 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/secrets"
 	"devplatform/internal/core/platform"
 )
+
+const localShellConfigKey = "terminal.local_shell"
 
 var (
 	// ErrLocalImmutable reports an attempt to edit or delete the built-in local server.
@@ -43,7 +50,7 @@ func (s *Service) Status() StatusDTO {
 	osName := s.platform.Name()
 	msg := ""
 	if !supported {
-		msg = fmt.Sprintf("终端功能仅在 Linux 服务器环境中支持（当前宿主为 %s）", osName)
+		msg = fmt.Sprintf("当前系统环境不支持本地终端（宿主为 %s）", osName)
 	}
 	return StatusDTO{
 		Supported: supported,
@@ -232,7 +239,8 @@ func (s *Service) Connect(ctx context.Context, serverID uint, rows, cols uint16,
 		if !s.platform.PTY().Supported() {
 			return nil, platform.ErrUnsupported
 		}
-		return s.sessionManager.CreateLocalSession(rows, cols, cwd)
+		shellDTO, _ := s.GetEffectiveLocalShell(ctx)
+		return s.sessionManager.CreateLocalSession(rows, cols, cwd, shellDTO.Path, shellDTO.Args)
 	}
 
 	srv, err := s.repo.Get(ctx, serverID)
@@ -249,6 +257,125 @@ func (s *Service) Connect(ctx context.Context, serverID uint, rows, cols uint16,
 	}
 
 	return s.sessionManager.CreateSSHSession(srv, secret, rows, cols)
+}
+
+// ScanShells returns all available interactive shells detected on the host.
+func (s *Service) ScanShells() []platform.ShellInfo {
+	return s.platform.PTY().ScanShells()
+}
+
+// GetEffectiveLocalShell returns the active shell path and args for local sessions.
+// If the user has saved a valid configuration, it is used; otherwise it falls back to DefaultShell.
+func (s *Service) GetEffectiveLocalShell(ctx context.Context) (LocalShellDTO, error) {
+	defPath, defArgs := s.platform.PTY().DefaultShell()
+	shells := s.platform.PTY().ScanShells()
+
+	val, found, err := s.repo.GetSetting(ctx, localShellConfigKey)
+	if err != nil {
+		return LocalShellDTO{}, fmt.Errorf("load local shell setting: %w", err)
+	}
+
+	if found && strings.TrimSpace(val) != "" {
+		var cfg LocalShellConfig
+		if err := json.Unmarshal([]byte(val), &cfg); err == nil && strings.TrimSpace(cfg.Path) != "" {
+			name := filepath.Base(cfg.Path)
+			isRec := false
+			for _, sh := range shells {
+				if strings.EqualFold(sh.Path, cfg.Path) {
+					name = sh.Name
+					isRec = sh.IsRecommended
+					break
+				}
+			}
+			return LocalShellDTO{
+				Path:          cfg.Path,
+				Args:          cfg.Args,
+				Name:          name,
+				IsCustom:      true,
+				IsRecommended: isRec,
+			}, nil
+		}
+	}
+
+	// Fallback to platform default
+	name := filepath.Base(defPath)
+	isRec := true
+	for _, sh := range shells {
+		if strings.EqualFold(sh.Path, defPath) {
+			name = sh.Name
+			isRec = sh.IsRecommended
+			break
+		}
+	}
+	return LocalShellDTO{
+		Path:          defPath,
+		Args:          defArgs,
+		Name:          name,
+		IsCustom:      false,
+		IsRecommended: isRec,
+	}, nil
+}
+
+// UpdateLocalShell saves user-configured shell path and arguments.
+func (s *Service) UpdateLocalShell(ctx context.Context, req UpdateLocalShellRequest) (*LocalShellDTO, error) {
+	cleanPath := strings.TrimSpace(req.Path)
+	if err := s.ValidateShellPath(cleanPath); err != nil {
+		return nil, err
+	}
+
+	cfg := LocalShellConfig{
+		Path: cleanPath,
+		Args: req.Args,
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal local shell config: %w", err)
+	}
+
+	if err := s.repo.SetSetting(ctx, localShellConfigKey, string(raw)); err != nil {
+		return nil, fmt.Errorf("save local shell config: %w", err)
+	}
+
+	dto, err := s.GetEffectiveLocalShell(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &dto, nil
+}
+
+// ResetLocalShell clears custom shell configuration and reverts to system default.
+func (s *Service) ResetLocalShell(ctx context.Context) (*LocalShellDTO, error) {
+	if err := s.repo.SetSetting(ctx, localShellConfigKey, ""); err != nil {
+		return nil, fmt.Errorf("reset local shell config: %w", err)
+	}
+	dto, err := s.GetEffectiveLocalShell(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &dto, nil
+}
+
+// ValidateShellPath checks if a given path exists and is executable.
+func (s *Service) ValidateShellPath(path string) error {
+	clean := strings.TrimSpace(path)
+	if clean == "" {
+		return errors.New("shell 路径不能为空")
+	}
+	// Check if path exists directly
+	fi, err := os.Stat(clean)
+	if err == nil {
+		if fi.IsDir() {
+			return errors.New("指定路径为目录，不是可执行文件")
+		}
+		return nil
+	}
+	// Also attempt LookPath in case it's a binary name on PATH
+	if lp, err := exec.LookPath(clean); err == nil {
+		if fi, err := os.Stat(lp); err == nil && !fi.IsDir() {
+			return nil
+		}
+	}
+	return fmt.Errorf("未找到可执行文件：%s", clean)
 }
 
 // CloseSession closes an active session.

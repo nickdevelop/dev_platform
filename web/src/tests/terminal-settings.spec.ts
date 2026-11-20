@@ -42,6 +42,58 @@ describe('TerminalSettingsView Component', () => {
             json: async () => ({ ok: true, message: '连接成功' }),
           } as Response
         }
+        if (url.includes('/terminal/local/shells/scan')) {
+          return {
+            status: 200,
+            json: async () => [
+              {
+                id: 'git-bash',
+                name: 'Git Bash',
+                path: 'C:\\Program Files\\Git\\bin\\bash.exe',
+                args: ['--login', '-i'],
+                isRecommended: true,
+              },
+              {
+                id: 'powershell',
+                name: 'Windows PowerShell',
+                path: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+                args: ['-NoLogo'],
+                isRecommended: false,
+              },
+            ],
+          } as Response
+        }
+        if (url.includes('/terminal/local/shell/validate')) {
+          return {
+            status: 200,
+            json: async () => ({ ok: true, message: 'Shell 路径有效且可执行' }),
+          } as Response
+        }
+        if (url.includes('/terminal/local/shell') && method === 'PUT') {
+          const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+          return {
+            status: 200,
+            json: async () => ({
+              path: body.path || 'C:\\Program Files\\Git\\bin\\bash.exe',
+              args: body.args || ['--login', '-i'],
+              name: 'Git Bash',
+              is_custom: true,
+              is_recommended: true,
+            }),
+          } as Response
+        }
+        if (url.includes('/terminal/local/shell')) {
+          return {
+            status: 200,
+            json: async () => ({
+              path: '/bin/bash',
+              args: [],
+              name: 'bash',
+              is_custom: false,
+              is_recommended: true,
+            }),
+          } as Response
+        }
         if (url.includes('/terminal/servers') && method === 'DELETE') {
           return {
             status: 200,
@@ -156,5 +208,40 @@ describe('TerminalSettingsView Component', () => {
     await flushPromises()
 
     expect(terminalStore.servers.some((s) => s.id === 1)).toBe(false)
+  })
+
+  it('scans local shells and allows selecting and saving Git Bash', async () => {
+    const { wrapper, terminalStore } = await mountView(true)
+
+    // Check initial shell summary
+    expect(wrapper.text()).toContain('当前生效 Shell：')
+    expect(wrapper.text()).toContain('bash')
+
+    // Click scan shells button
+    const scanBtn = wrapper.find('[data-test="scan-shells-btn"]')
+    expect(scanBtn.exists()).toBe(true)
+    await scanBtn.trigger('click')
+    await flushPromises()
+
+    // Discovered shells rendered
+    expect(wrapper.text()).toContain('Git Bash')
+    expect(wrapper.text()).toContain('Windows PowerShell')
+    expect(terminalStore.discoveredShells.length).toBe(2)
+
+    // Validate path
+    const validateBtn = wrapper.find('[data-test="validate-shell-btn"]')
+    const pathInput = wrapper.find<HTMLInputElement>('[data-test="shell-path-input"]')
+    await pathInput.setValue('C:\\Program Files\\Git\\bin\\bash.exe')
+    await validateBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Shell 路径有效且可执行')
+
+    // Save shell config
+    const saveBtn = wrapper.find('[data-test="save-shell-btn"]')
+    await saveBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('本地终端 Shell 设置已保存并即时生效')
+    expect(terminalStore.localShell?.is_custom).toBe(true)
   })
 })

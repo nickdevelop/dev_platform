@@ -59,6 +59,65 @@ func (unixPTY) Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error) {
 	return unix.PTY{}.Start(cmd, rows, cols)
 }
 
+func (unixPTY) ScanShells() []ShellInfo {
+	candidates := []struct {
+		id   string
+		name string
+		path string
+	}{
+		{"bash", "Bash", "/bin/bash"},
+		{"zsh", "Zsh", "/bin/zsh"},
+		{"sh", "Sh", "/bin/sh"},
+		{"fish", "Fish", "/usr/bin/fish"},
+	}
+	var res []ShellInfo
+	foundRecommended := false
+	for _, c := range candidates {
+		if fi, err := os.Stat(c.path); err == nil && !fi.IsDir() && (fi.Mode()&0111 != 0) {
+			isRec := false
+			if !foundRecommended && (c.id == "bash" || c.id == "zsh") {
+				isRec = true
+				foundRecommended = true
+			}
+			res = append(res, ShellInfo{
+				ID:            c.id,
+				Name:          c.name,
+				Path:          c.path,
+				IsRecommended: isRec,
+			})
+		}
+	}
+	if len(res) == 0 {
+		res = append(res, ShellInfo{
+			ID:            "sh",
+			Name:          "Sh",
+			Path:          "/bin/sh",
+			IsRecommended: true,
+		})
+	} else if !foundRecommended {
+		res[0].IsRecommended = true
+	}
+	return res
+}
+
+func (p unixPTY) DefaultShell() (string, []string) {
+	if s := os.Getenv("SHELL"); s != "" {
+		if fi, err := os.Stat(s); err == nil && !fi.IsDir() {
+			return s, nil
+		}
+	}
+	shells := p.ScanShells()
+	for _, sh := range shells {
+		if sh.IsRecommended {
+			return sh.Path, sh.Args
+		}
+	}
+	if len(shells) > 0 {
+		return shells[0].Path, shells[0].Args
+	}
+	return "/bin/sh", nil
+}
+
 // unixInstance adapts the unix implementation to the Instance port.
 type unixInstance struct{}
 

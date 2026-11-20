@@ -52,10 +52,46 @@ func (p windowsPlatform) PTY() PTY { return windowsPTY{} }
 // windowsPTY adapts the Windows implementation to the PTY port.
 type windowsPTY struct{}
 
-func (windowsPTY) Supported() bool { return false }
+func (windowsPTY) Supported() bool { return windows.PTY{}.Supported() }
 
 func (windowsPTY) Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error) {
-	return nil, ErrUnsupported
+	return windows.PTY{}.Start(cmd, rows, cols)
+}
+
+func (windowsPTY) ScanShells() []ShellInfo {
+	detected := windows.ScanShells()
+	var res []ShellInfo
+	for _, d := range detected {
+		res = append(res, ShellInfo{
+			ID:            d.ID,
+			Name:          d.Name,
+			Path:          d.Path,
+			Args:          d.Args,
+			IsRecommended: d.IsRecommended,
+		})
+	}
+	if len(res) == 0 {
+		res = append(res, ShellInfo{
+			ID:            "cmd",
+			Name:          "Command Prompt",
+			Path:          "cmd.exe",
+			IsRecommended: true,
+		})
+	}
+	return res
+}
+
+func (p windowsPTY) DefaultShell() (string, []string) {
+	shells := p.ScanShells()
+	for _, sh := range shells {
+		if sh.IsRecommended {
+			return sh.Path, sh.Args
+		}
+	}
+	if len(shells) > 0 {
+		return shells[0].Path, shells[0].Args
+	}
+	return "cmd.exe", nil
 }
 
 // windowsInstance adapts the windows implementation to the Instance port.

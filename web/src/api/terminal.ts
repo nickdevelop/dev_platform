@@ -47,6 +47,27 @@ export interface TestConnectionPayload {
   server_id?: number
 }
 
+export interface DiscoveredShell {
+  id: string
+  name: string
+  path: string
+  args: string[]
+  isRecommended: boolean
+}
+
+export interface LocalShellDTO {
+  path: string
+  args: string[]
+  name: string
+  is_custom: boolean
+  is_recommended: boolean
+}
+
+export interface UpdateLocalShellPayload {
+  path: string
+  args?: string[]
+}
+
 export async function getTerminalStatus(): Promise<TerminalStatus> {
   return get<TerminalStatus>('/terminal/status')
 }
@@ -80,6 +101,30 @@ export async function testServerConnection(
   payload: TestConnectionPayload,
 ): Promise<{ ok: boolean; message?: string }> {
   return mutate<{ ok: boolean; message?: string }>('POST', '/terminal/servers/test', payload)
+}
+
+export async function scanLocalShells(): Promise<DiscoveredShell[]> {
+  return get<DiscoveredShell[]>('/terminal/local/shells/scan')
+}
+
+export async function getLocalShell(): Promise<LocalShellDTO> {
+  return get<LocalShellDTO>('/terminal/local/shell')
+}
+
+export async function updateLocalShell(
+  payload: UpdateLocalShellPayload,
+): Promise<LocalShellDTO> {
+  return mutate<LocalShellDTO>('PUT', '/terminal/local/shell', payload)
+}
+
+export async function resetLocalShell(): Promise<LocalShellDTO> {
+  return mutate<LocalShellDTO>('POST', '/terminal/local/shell/reset')
+}
+
+export async function validateLocalShell(
+  path: string,
+): Promise<{ ok: boolean; message?: string }> {
+  return mutate<{ ok: boolean; message?: string }>('POST', '/terminal/local/shell/validate', { path })
 }
 
 export function buildTerminalWSUrl(serverId: number, cols = 80, rows = 24, cwd?: string): string {

@@ -4,11 +4,19 @@ import {
   type TerminalStatus,
   type CreateServerPayload,
   type UpdateServerPayload,
+  type DiscoveredShell,
+  type LocalShellDTO,
+  type UpdateLocalShellPayload,
   getTerminalStatus,
   listTerminalServers,
   createTerminalServer,
   updateTerminalServer,
   deleteTerminalServer,
+  scanLocalShells,
+  getLocalShell,
+  updateLocalShell,
+  resetLocalShell,
+  validateLocalShell,
 } from '../api/terminal'
 
 export interface TerminalTab {
@@ -30,6 +38,9 @@ export const useTerminalStore = defineStore('terminal', {
     activeServerId: null as number | null,
     tabs: [] as TerminalTab[],
     activeTabId: null as string | null,
+    localShell: null as LocalShellDTO | null,
+    discoveredShells: [] as DiscoveredShell[],
+    scanningShells: false,
     loading: false,
     error: null as string | null,
   }),
@@ -163,6 +174,45 @@ export const useTerminalStore = defineStore('terminal', {
       if (this.activeServerId === id) {
         this.activeServerId = this.servers.length > 0 ? this.servers[0].id : null
       }
+    },
+
+    async loadLocalShell() {
+      try {
+        this.localShell = await getLocalShell()
+      } catch (err: unknown) {
+        // Non-fatal if local shell fails to load
+        console.warn('Failed to load local shell:', err)
+      }
+    },
+
+    async scanShells(): Promise<DiscoveredShell[]> {
+      this.scanningShells = true
+      try {
+        const shells = await scanLocalShells()
+        this.discoveredShells = shells
+        return shells
+      } catch (err: unknown) {
+        this.error = err instanceof Error ? err.message : '扫描本地 Shell 失败'
+        return []
+      } finally {
+        this.scanningShells = false
+      }
+    },
+
+    async saveLocalShell(payload: UpdateLocalShellPayload): Promise<LocalShellDTO> {
+      const updated = await updateLocalShell(payload)
+      this.localShell = updated
+      return updated
+    },
+
+    async resetLocalShell(): Promise<LocalShellDTO> {
+      const reset = await resetLocalShell()
+      this.localShell = reset
+      return reset
+    },
+
+    async validateLocalShell(path: string): Promise<{ ok: boolean; message?: string }> {
+      return validateLocalShell(path)
     },
   },
 })

@@ -290,6 +290,9 @@ func (e *Environment) Check() error                     { return e.CheckErr }
 type PTY struct {
 	SupportedValue bool
 	StartFunc      func(cmd *exec.Cmd, rows, cols uint16) (platform.PTYSession, error)
+	ShellsValue    []platform.ShellInfo
+	DefaultShellPath string
+	DefaultShellArgs []string
 }
 
 func (pt *PTY) Supported() bool { return pt.SupportedValue }
@@ -302,4 +305,20 @@ func (pt *PTY) Start(cmd *exec.Cmd, rows, cols uint16) (platform.PTYSession, err
 		return nil, platform.ErrUnsupported
 	}
 	return nil, nil
+}
+
+func (pt *PTY) ScanShells() []platform.ShellInfo {
+	if pt.ShellsValue != nil {
+		return pt.ShellsValue
+	}
+	return []platform.ShellInfo{
+		{ID: "bash", Name: "Bash", Path: "/bin/bash", IsRecommended: true},
+	}
+}
+
+func (pt *PTY) DefaultShell() (string, []string) {
+	if pt.DefaultShellPath != "" {
+		return pt.DefaultShellPath, pt.DefaultShellArgs
+	}
+	return "/bin/bash", nil
 }

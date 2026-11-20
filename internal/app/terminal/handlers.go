@@ -53,6 +53,11 @@ func (s *Service) RegisterRoutes(rg *gin.RouterGroup) {
 	terminal := rg.Group("/terminal")
 	{
 		terminal.GET("/status", s.handleStatus)
+		terminal.GET("/local/shells/scan", s.handleScanShells)
+		terminal.GET("/local/shell", s.handleGetLocalShell)
+		terminal.PUT("/local/shell", s.handleUpdateLocalShell)
+		terminal.POST("/local/shell/reset", s.handleResetLocalShell)
+		terminal.POST("/local/shell/validate", s.handleValidateLocalShell)
 		terminal.GET("/servers", s.handleListServers)
 		terminal.GET("/servers/:id", s.handleGetServer)
 		terminal.POST("/servers", s.handleCreateServer)
@@ -65,6 +70,56 @@ func (s *Service) RegisterRoutes(rg *gin.RouterGroup) {
 
 func (s *Service) handleStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, s.Status())
+}
+
+func (s *Service) handleScanShells(c *gin.Context) {
+	shells := s.ScanShells()
+	c.JSON(http.StatusOK, shells)
+}
+
+func (s *Service) handleGetLocalShell(c *gin.Context) {
+	dto, err := s.GetEffectiveLocalShell(c.Request.Context())
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	c.JSON(http.StatusOK, dto)
+}
+
+func (s *Service) handleUpdateLocalShell(c *gin.Context) {
+	var req UpdateLocalShellRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		abortWithError(c, http.StatusBadRequest, "invalid_body")
+		return
+	}
+	dto, err := s.UpdateLocalShell(c.Request.Context(), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, dto)
+}
+
+func (s *Service) handleResetLocalShell(c *gin.Context) {
+	dto, err := s.ResetLocalShell(c.Request.Context())
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "internal_error")
+		return
+	}
+	c.JSON(http.StatusOK, dto)
+}
+
+func (s *Service) handleValidateLocalShell(c *gin.Context) {
+	var req ValidateShellRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		abortWithError(c, http.StatusBadRequest, "invalid_body")
+		return
+	}
+	if err := s.ValidateShellPath(req.Path); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"ok": false, "error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "Shell 路径有效且可执行"})
 }
 
 func (s *Service) handleListServers(c *gin.Context) {

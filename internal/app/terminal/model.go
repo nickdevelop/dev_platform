@@ -55,6 +55,32 @@ type StatusDTO struct {
 	Message   string `json:"message,omitempty"`
 }
 
+// LocalShellConfig represents user-configured local shell preferences.
+type LocalShellConfig struct {
+	Path string   `json:"path"`
+	Args []string `json:"args,omitempty"`
+}
+
+// LocalShellDTO is the response model for the effective local shell.
+type LocalShellDTO struct {
+	Path          string   `json:"path"`
+	Args          []string `json:"args"`
+	Name          string   `json:"name"`
+	IsCustom      bool     `json:"is_custom"`
+	IsRecommended bool     `json:"is_recommended"`
+}
+
+// UpdateLocalShellRequest is the payload to configure the local shell.
+type UpdateLocalShellRequest struct {
+	Path string   `json:"path" binding:"required"`
+	Args []string `json:"args"`
+}
+
+// ValidateShellRequest is the payload to test an executable path.
+type ValidateShellRequest struct {
+	Path string `json:"path" binding:"required"`
+}
+
 // WSClientMessage represents an incoming control message from the WebSocket client.
 type WSClientMessage struct {
 	Type string `json:"type"` // "input" | "resize"

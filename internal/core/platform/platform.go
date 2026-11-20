@@ -134,12 +134,25 @@ type Terminal interface {
 	ReadSecret(prompt string) (string, error)
 }
 
+// ShellInfo describes an available interactive shell discovered on the system.
+type ShellInfo struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Path          string   `json:"path"`
+	Args          []string `json:"args"`
+	IsRecommended bool     `json:"isRecommended"`
+}
+
 // PTY abstracts pseudoterminal operations for interactive terminal sessions.
 type PTY interface {
 	// Supported reports whether pseudoterminal allocation is supported on this platform.
 	Supported() bool
 	// Start starts the command attached to a newly created pseudoterminal.
 	Start(cmd *exec.Cmd, rows, cols uint16) (PTYSession, error)
+	// ScanShells returns available interactive shells found on the host system.
+	ScanShells() []ShellInfo
+	// DefaultShell returns the recommended default shell path and startup arguments.
+	DefaultShell() (string, []string)
 }
 
 // PTYSession abstracts an active pseudoterminal session.

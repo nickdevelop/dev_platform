@@ -22,7 +22,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&database.TerminalServer{}); err != nil {
+	if err := db.AutoMigrate(&database.TerminalServer{}, &database.Setting{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -273,5 +273,68 @@ func TestLocalSessionCwd(t *testing.T) {
 	}
 	if capturedCmd == nil || capturedCmd.Dir != "" {
 		t.Errorf("expected cmd.Dir to be empty for non-existent dir, got %q", capturedCmd.Dir)
+	}
+}
+
+func TestLocalShellConfigAndScan(t *testing.T) {
+	tempDir := t.TempDir()
+	db := setupTestDB(t)
+	repo := NewRepository(db)
+	secretStore, _ := secrets.NewStore(filepath.Join(tempDir, "data"))
+
+	fakeShellPath := filepath.Join(tempDir, "fake-bash")
+	if err := os.WriteFile(fakeShellPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("write fake shell: %v", err)
+	}
+
+	p := fake.New(fake.WithPTYSupported(true))
+	p.PTY().(*fake.PTY).ShellsValue = []platform.ShellInfo{
+		{ID: "git-bash", Name: "Git Bash", Path: fakeShellPath, Args: []string{"--login", "-i"}, IsRecommended: true},
+	}
+	p.PTY().(*fake.PTY).DefaultShellPath = fakeShellPath
+	p.PTY().(*fake.PTY).DefaultShellArgs = []string{"--login", "-i"}
+
+	service := NewService(repo, secretStore, p)
+	ctx := context.Background()
+
+	// 1. Scan shells
+	shells := service.ScanShells()
+	if len(shells) != 1 || shells[0].ID != "git-bash" {
+		t.Fatalf("unexpected scanned shells: %+v", shells)
+	}
+
+	// 2. Initial effective shell should be default
+	initialDTO, err := service.GetEffectiveLocalShell(ctx)
+	if err != nil {
+		t.Fatalf("get effective shell: %v", err)
+	}
+	if initialDTO.Path != fakeShellPath || initialDTO.IsCustom {
+		t.Errorf("expected default shell not custom, got %+v", initialDTO)
+	}
+
+	// 3. Update to custom shell
+	updated, err := service.UpdateLocalShell(ctx, UpdateLocalShellRequest{
+		Path: fakeShellPath,
+		Args: []string{"-custom"},
+	})
+	if err != nil {
+		t.Fatalf("update local shell: %v", err)
+	}
+	if !updated.IsCustom || len(updated.Args) != 1 || updated.Args[0] != "-custom" {
+		t.Errorf("unexpected updated shell: %+v", updated)
+	}
+
+	// 4. Validate non-existent path
+	if err := service.ValidateShellPath(filepath.Join(tempDir, "not-exist-shell")); err == nil {
+		t.Errorf("expected error for non-existent shell path")
+	}
+
+	// 5. Reset local shell
+	resetDTO, err := service.ResetLocalShell(ctx)
+	if err != nil {
+		t.Fatalf("reset local shell: %v", err)
+	}
+	if resetDTO.IsCustom {
+		t.Errorf("expected is_custom false after reset, got %+v", resetDTO)
 	}
 }

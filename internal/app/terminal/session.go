@@ -148,21 +148,19 @@ func generateSessionID() string {
 
 // CreateLocalSession launches a local shell in a pty. If cwd is non-empty and
 // points to an existing directory, the shell is started with cwd as its working directory.
-func (m *SessionManager) CreateLocalSession(rows, cols uint16, cwd string) (Session, error) {
+// If shellPath is empty, the platform default shell is selected.
+func (m *SessionManager) CreateLocalSession(rows, cols uint16, cwd string, shellPath string, shellArgs []string) (Session, error) {
 	if !m.platform.PTY().Supported() {
 		return nil, platform.ErrUnsupported
 	}
 
-	shell := os.Getenv("SHELL")
+	shell := shellPath
+	args := shellArgs
 	if shell == "" {
-		if _, err := os.Stat("/bin/bash"); err == nil {
-			shell = "/bin/bash"
-		} else {
-			shell = "/bin/sh"
-		}
+		shell, args = m.platform.PTY().DefaultShell()
 	}
 
-	cmd := exec.Command(shell)
+	cmd := exec.Command(shell, args...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	if cwd != "" {
 		if fi, err := os.Stat(cwd); err == nil && fi.IsDir() {
