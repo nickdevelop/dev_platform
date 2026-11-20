@@ -1443,6 +1443,52 @@ describe('sessions store create with first message', () => {
       error: 'agent_operation_failed',
     })
   })
+
+  it('deduplicates optimistic first message when history replay already contains it', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({
+      '/sessions': { session: session('s1', 1) },
+      '/sessions/s1/history': {
+        events: [
+          historyEvent({
+            instanceId: 'inst-1',
+            type: 'message',
+            sequence: 1,
+            replayed: true,
+            message: { role: 'user', text: 'hello pi', final: true },
+          }),
+        ],
+        truncated: false,
+      },
+    })
+
+    await sessions.createSession(1, { backend: 'pi', message: 'hello pi' })
+    expect(sessions.messagesFor('s1').filter((entry) => entry.role === 'user')).toHaveLength(1)
+    expect(sessions.echoPending['s1']).toBe('hello pi')
+
+    await sessions.loadHistory(1, 's1')
+    expect(sessions.messagesFor('s1').filter((entry) => entry.role === 'user')).toHaveLength(1)
+    expect(sessions.echoPending['s1']).toBeUndefined()
+  })
+
+  it('keeps optimistic first message when history replay does not yet contain it', async () => {
+    const sessions = useSessionsStore()
+    stubRoutes({
+      '/sessions': { session: session('s1', 1) },
+      '/sessions/s1/history': {
+        events: [],
+        truncated: false,
+      },
+    })
+
+    await sessions.createSession(1, { backend: 'pi', message: 'hello pi' })
+    expect(sessions.messagesFor('s1').filter((entry) => entry.role === 'user')).toHaveLength(1)
+    expect(sessions.echoPending['s1']).toBe('hello pi')
+
+    await sessions.loadHistory(1, 's1')
+    expect(sessions.messagesFor('s1').filter((entry) => entry.role === 'user')).toHaveLength(1)
+    expect(sessions.echoPending['s1']).toBe('hello pi')
+  })
 })
 
 // A turn that finished before the stream opened leaves entries streaming:

@@ -538,7 +538,20 @@ export const useSessionsStore = defineStore('sessions', {
         // Replayed messages are complete and never echo-deduplicated: two
         // identical user turns in a transcript are two real turns.
         const entries = historyEntriesFromEvents(sessionId, history.events)
-        this.messages[sessionId] = [...existing, ...entries]
+        const pendingEcho = this.echoPending[sessionId]
+        let baseMessages = existing
+        if (
+          pendingEcho !== undefined &&
+          entries.some((e) => e.kind === 'message' && e.role === 'user' && e.text === pendingEcho)
+        ) {
+          // History already contains the authoritative first user message that was
+          // optimistically appended; drop the pending optimistic entry and clear echoPending.
+          baseMessages = existing.filter(
+            (e) => !(e.kind === 'message' && e.role === 'user' && e.text === pendingEcho),
+          )
+          delete this.echoPending[sessionId]
+        }
+        this.messages[sessionId] = [...baseMessages, ...entries]
         // The live stream may re-deliver the message the replay ended with;
         // historyTailGuard spends one live message on that. The guard stays even
         // though history is no longer marked off by a separator: history and the
