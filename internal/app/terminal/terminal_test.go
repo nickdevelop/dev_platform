@@ -338,3 +338,54 @@ func TestLocalShellConfigAndScan(t *testing.T) {
 		t.Errorf("expected is_custom false after reset, got %+v", resetDTO)
 	}
 }
+
+func TestTerminalConfig(t *testing.T) {
+	srv, _ := setupTestService(t, true)
+	ctx := context.Background()
+
+	// 1. Initial config should be empty font family (platform default)
+	cfg, err := srv.GetTerminalConfig(ctx)
+	if err != nil {
+		t.Fatalf("get terminal config: %v", err)
+	}
+	if cfg.FontFamily != "" {
+		t.Errorf("expected empty font family initially, got %q", cfg.FontFamily)
+	}
+
+	// 2. Update font family
+	updated, err := srv.UpdateTerminalConfig(ctx, UpdateTerminalConfigRequest{
+		FontFamily: "JetBrains Mono",
+	})
+	if err != nil {
+		t.Fatalf("update terminal config: %v", err)
+	}
+	if updated.FontFamily != "JetBrains Mono" {
+		t.Errorf("expected JetBrains Mono, got %q", updated.FontFamily)
+	}
+
+	// 3. Get should reflect saved font family
+	cfg, err = srv.GetTerminalConfig(ctx)
+	if err != nil {
+		t.Fatalf("get terminal config after update: %v", err)
+	}
+	if cfg.FontFamily != "JetBrains Mono" {
+		t.Errorf("expected JetBrains Mono, got %q", cfg.FontFamily)
+	}
+
+	// 4. Reset config should clear font family
+	resetCfg, err := srv.ResetTerminalConfig(ctx)
+	if err != nil {
+		t.Fatalf("reset terminal config: %v", err)
+	}
+	if resetCfg.FontFamily != "" {
+		t.Errorf("expected empty font family after reset, got %q", resetCfg.FontFamily)
+	}
+
+	cfg, err = srv.GetTerminalConfig(ctx)
+	if err != nil {
+		t.Fatalf("get terminal config after reset: %v", err)
+	}
+	if cfg.FontFamily != "" {
+		t.Errorf("expected empty font family after reset, got %q", cfg.FontFamily)
+	}
+}

@@ -17,7 +17,10 @@ import (
 	"devplatform/internal/core/platform"
 )
 
-const localShellConfigKey = "terminal.local_shell"
+const (
+	localShellConfigKey = "terminal.local_shell"
+	terminalConfigKey   = "terminal.config"
+)
 
 var (
 	// ErrLocalImmutable reports an attempt to edit or delete the built-in local server.
@@ -353,6 +356,45 @@ func (s *Service) ResetLocalShell(ctx context.Context) (*LocalShellDTO, error) {
 		return nil, err
 	}
 	return &dto, nil
+}
+
+// GetTerminalConfig returns the stored terminal preferences or defaults.
+func (s *Service) GetTerminalConfig(ctx context.Context) (TerminalConfigDTO, error) {
+	val, found, err := s.repo.GetSetting(ctx, terminalConfigKey)
+	if err != nil {
+		return TerminalConfigDTO{}, fmt.Errorf("load terminal config: %w", err)
+	}
+	if !found || strings.TrimSpace(val) == "" {
+		return TerminalConfigDTO{FontFamily: ""}, nil
+	}
+	var cfg TerminalConfigDTO
+	if err := json.Unmarshal([]byte(val), &cfg); err != nil {
+		return TerminalConfigDTO{FontFamily: ""}, nil
+	}
+	return cfg, nil
+}
+
+// UpdateTerminalConfig updates user preferences for the terminal.
+func (s *Service) UpdateTerminalConfig(ctx context.Context, req UpdateTerminalConfigRequest) (*TerminalConfigDTO, error) {
+	cfg := TerminalConfigDTO{
+		FontFamily: strings.TrimSpace(req.FontFamily),
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal terminal config: %w", err)
+	}
+	if err := s.repo.SetSetting(ctx, terminalConfigKey, string(raw)); err != nil {
+		return nil, fmt.Errorf("save terminal config: %w", err)
+	}
+	return &cfg, nil
+}
+
+// ResetTerminalConfig resets terminal preferences to platform defaults.
+func (s *Service) ResetTerminalConfig(ctx context.Context) (*TerminalConfigDTO, error) {
+	if err := s.repo.SetSetting(ctx, terminalConfigKey, ""); err != nil {
+		return nil, fmt.Errorf("reset terminal config: %w", err)
+	}
+	return &TerminalConfigDTO{FontFamily: ""}, nil
 }
 
 // ValidateShellPath checks if a given path exists and is executable.

@@ -17,7 +17,30 @@ import {
   updateLocalShell,
   resetLocalShell,
   validateLocalShell,
+  getTerminalConfig,
+  updateTerminalConfig,
+  resetTerminalConfig,
 } from '../api/terminal'
+
+export const TERMINAL_FONT_CACHE_KEY = 'platform.terminal.font_family'
+
+function getCachedFontFamily(): string {
+  try {
+    return localStorage.getItem(TERMINAL_FONT_CACHE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function setCachedFontFamily(font: string): void {
+  try {
+    if (font) {
+      localStorage.setItem(TERMINAL_FONT_CACHE_KEY, font)
+    } else {
+      localStorage.removeItem(TERMINAL_FONT_CACHE_KEY)
+    }
+  } catch {}
+}
 
 export interface TerminalTab {
   id: string
@@ -41,6 +64,10 @@ export const useTerminalStore = defineStore('terminal', {
     localShell: null as LocalShellDTO | null,
     discoveredShells: [] as DiscoveredShell[],
     scanningShells: false,
+    fontFamily: getCachedFontFamily(),
+    fontLoading: false,
+    fontSaving: false,
+    fontError: null as string | null,
     loading: false,
     error: null as string | null,
   }),
@@ -54,6 +81,13 @@ export const useTerminalStore = defineStore('terminal', {
     activeServer: (state): TerminalServer | null => {
       if (state.activeServerId === null) return null
       return state.servers.find((s) => s.id === state.activeServerId) ?? null
+    },
+    effectiveFontFamily: (state): string => {
+      const custom = state.fontFamily?.trim()
+      if (custom) {
+        return `"${custom.replace(/"/g, '\\"')}", var(--font-mono)`
+      }
+      return 'var(--font-mono)'
     },
   },
 
@@ -213,6 +247,55 @@ export const useTerminalStore = defineStore('terminal', {
 
     async validateLocalShell(path: string): Promise<{ ok: boolean; message?: string }> {
       return validateLocalShell(path)
+    },
+
+    async loadTerminalConfig() {
+      this.fontLoading = true
+      this.fontError = null
+      try {
+        const cfg = await getTerminalConfig()
+        this.fontFamily = cfg.font_family || ''
+        setCachedFontFamily(this.fontFamily)
+      } catch (err: unknown) {
+        // Non-fatal, fallback to cached / default
+        console.warn('Failed to load terminal config:', err)
+      } finally {
+        this.fontLoading = false
+      }
+    },
+
+    async saveTerminalFontFamily(font: string): Promise<string> {
+      this.fontSaving = true
+      this.fontError = null
+      try {
+        const clean = font.trim()
+        const cfg = await updateTerminalConfig({ font_family: clean })
+        this.fontFamily = cfg.font_family || ''
+        setCachedFontFamily(this.fontFamily)
+        return this.fontFamily
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '保存终端字体设置失败'
+        this.fontError = msg
+        throw err
+      } finally {
+        this.fontSaving = false
+      }
+    },
+
+    async resetTerminalFontFamily(): Promise<void> {
+      this.fontSaving = true
+      this.fontError = null
+      try {
+        await resetTerminalConfig()
+        this.fontFamily = ''
+        setCachedFontFamily('')
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '重置终端字体设置失败'
+        this.fontError = msg
+        throw err
+      } finally {
+        this.fontSaving = false
+      }
     },
   },
 })

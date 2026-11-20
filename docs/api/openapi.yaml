@@ -5036,6 +5036,222 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /terminal/local/shells/scan:
+    get:
+      summary: Scan local shells
+      description: Returns list of discovered local interactive shells on the host.
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of detected shells.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    path:
+                      type: string
+                    args:
+                      type: array
+                      items:
+                        type: string
+                    isRecommended:
+                      type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /terminal/local/shell:
+    get:
+      summary: Get effective local shell
+      description: Returns the configured or platform default shell.
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Effective local shell details.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                  args:
+                    type: array
+                    items:
+                      type: string
+                  name:
+                    type: string
+                  is_custom:
+                    type: boolean
+                  is_recommended:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      summary: Update local shell configuration
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+                args:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Local shell configuration updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/local/shell/reset:
+    post:
+      summary: Reset local shell configuration
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Local shell configuration reset.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/local/shell/validate:
+    post:
+      summary: Validate local shell executable path
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - path
+              properties:
+                path:
+                  type: string
+      responses:
+        '200':
+          description: Validation result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/config:
+    get:
+      summary: Get terminal configuration
+      description: Returns user preferences for terminal including custom font family.
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Terminal configuration.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  font_family:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      summary: Update terminal configuration
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                font_family:
+                  type: string
+      responses:
+        '200':
+          description: Terminal configuration updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /terminal/config/reset:
+    post:
+      summary: Reset terminal configuration
+      tags:
+        - Terminal
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Terminal configuration reset to default.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
   /terminal/servers:
     get:
       summary: List terminal servers

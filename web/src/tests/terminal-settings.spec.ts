@@ -100,6 +100,25 @@ describe('TerminalSettingsView Component', () => {
             json: async () => ({ ok: true }),
           } as Response
         }
+        if (url.includes('/terminal/config/reset') && method === 'POST') {
+          return {
+            status: 200,
+            json: async () => ({ font_family: '' }),
+          } as Response
+        }
+        if (url.includes('/terminal/config') && method === 'PUT') {
+          const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+          return {
+            status: 200,
+            json: async () => ({ font_family: body.font_family || '' }),
+          } as Response
+        }
+        if (url.includes('/terminal/config')) {
+          return {
+            status: 200,
+            json: async () => ({ font_family: '' }),
+          } as Response
+        }
         if (url.includes('/terminal/servers')) {
           return {
             status: 200,
@@ -243,5 +262,40 @@ describe('TerminalSettingsView Component', () => {
 
     expect(wrapper.text()).toContain('本地终端 Shell 设置已保存并即时生效')
     expect(terminalStore.localShell?.is_custom).toBe(true)
+  })
+
+  it('renders terminal font settings and allows choosing preset, saving custom font, and resetting', async () => {
+    const { wrapper, terminalStore } = await mountView(true)
+
+    expect(wrapper.text()).toContain('终端字体设置')
+    expect(wrapper.text()).toContain('平台统一字体')
+
+    const fontInput = wrapper.find<HTMLInputElement>('[data-test="terminal-font-input"]')
+    expect(fontInput.exists()).toBe(true)
+    expect(fontInput.element.value).toBe('')
+
+    // Click JetBrains Mono preset
+    const jbPreset = wrapper.find('[data-test="font-preset-JetBrains Mono"]')
+    expect(jbPreset.exists()).toBe(true)
+    await jbPreset.trigger('click')
+    expect(fontInput.element.value).toBe('JetBrains Mono')
+
+    // Save font
+    const saveFontBtn = wrapper.find('[data-test="save-font-btn"]')
+    await saveFontBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已成功保存自定义终端字体: JetBrains Mono')
+    expect(terminalStore.fontFamily).toBe('JetBrains Mono')
+    expect(terminalStore.effectiveFontFamily).toBe('"JetBrains Mono", var(--font-mono)')
+
+    // Reset font
+    const resetFontBtn = wrapper.find('[data-test="reset-font-btn"]')
+    await resetFontBtn.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已恢复平台统一内置字体')
+    expect(terminalStore.fontFamily).toBe('')
+    expect(terminalStore.effectiveFontFamily).toBe('var(--font-mono)')
   })
 })

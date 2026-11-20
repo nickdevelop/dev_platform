@@ -126,4 +126,38 @@ describe('terminal store', () => {
     await store.deleteServer(2)
     expect(store.servers.find((s) => s.id === 2)).toBeUndefined()
   })
+
+  it('manages terminal font family and effective fallback stack', async () => {
+    const calls = stubFetch({
+      'GET /terminal/config': { font_family: 'JetBrains Mono' },
+      'PUT /terminal/config': { font_family: 'Fira Code' },
+      'POST /terminal/config/reset': { font_family: '' },
+    })
+    const store = initStore()
+
+    // 1. Initial fallback stack
+    store.fontFamily = ''
+    expect(store.effectiveFontFamily).toBe('var(--font-mono)')
+
+    // 2. Custom font family fallback stack
+    store.fontFamily = 'JetBrains Mono'
+    expect(store.effectiveFontFamily).toBe('"JetBrains Mono", var(--font-mono)')
+
+    // 3. Load config from server
+    await store.loadTerminalConfig()
+    expect(store.fontFamily).toBe('JetBrains Mono')
+    expect(calls.some((c) => c.method === 'GET' && c.path === '/terminal/config')).toBe(true)
+
+    // 4. Save font family
+    await store.saveTerminalFontFamily('Fira Code')
+    expect(store.fontFamily).toBe('Fira Code')
+    expect(store.effectiveFontFamily).toBe('"Fira Code", var(--font-mono)')
+    expect(calls.some((c) => c.method === 'PUT' && c.path === '/terminal/config')).toBe(true)
+
+    // 5. Reset font family
+    await store.resetTerminalFontFamily()
+    expect(store.fontFamily).toBe('')
+    expect(store.effectiveFontFamily).toBe('var(--font-mono)')
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/terminal/config/reset')).toBe(true)
+  })
 })

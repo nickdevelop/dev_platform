@@ -51,20 +51,25 @@ const connectionError = ref<string | null>(null)
 // faces BEFORE open keeps measure and render on one set of metrics; a late
 // loadingdone event resyncs the renderer the same way for anything still
 // racing after open.
-const FONT_STACK = 'var(--font-mono)'
+const terminalFontFamily = computed(() => terminalStore.effectiveFontFamily)
 
 let disposed = false
 
 async function waitForTerminalFonts(): Promise<void> {
   try {
     if (!document.fonts?.load) return
+    const custom = terminalStore.fontFamily?.trim()
+    const fontPromises: Promise<unknown>[] = [
+      document.fonts.load('13px "Google Sans Code"'),
+      document.fonts.load('13px "Noto Sans SC"', '汉字'),
+      document.fonts.ready,
+    ]
+    if (custom) {
+      fontPromises.push(document.fonts.load(`13px "${custom}"`))
+    }
     // Race with a short timeout to prevent hanging in JSDOM or slow environments
     await Promise.race([
-      Promise.all([
-        document.fonts.load('13px "Google Sans Code"'),
-        document.fonts.load('13px "Noto Sans SC"', '汉字'),
-        document.fonts.ready,
-      ]),
+      Promise.all(fontPromises),
       new Promise((resolve) => setTimeout(resolve, 60)),
     ])
   } catch {
@@ -197,7 +202,7 @@ async function mountTerminal(): Promise<void> {
   term = new Terminal({
     cursorBlink: true,
     fontSize: terminalFontSize.value,
-    fontFamily: FONT_STACK,
+    fontFamily: terminalFontFamily.value,
     theme: {
       background: '#121316',
       foreground: '#e4e4e7',
@@ -326,6 +331,15 @@ watch(
     if (!term) return
     term.options.fontSize = size
     void nextTick(handleFit)
+  },
+)
+
+watch(
+  () => terminalFontFamily.value,
+  (font) => {
+    if (!term) return
+    term.options.fontFamily = font
+    resyncRendererMetrics()
   },
 )
 

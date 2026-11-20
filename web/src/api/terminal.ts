@@ -68,6 +68,14 @@ export interface UpdateLocalShellPayload {
   args?: string[]
 }
 
+export interface TerminalConfig {
+  font_family: string
+}
+
+export interface UpdateTerminalConfigPayload {
+  font_family: string
+}
+
 export async function getTerminalStatus(): Promise<TerminalStatus> {
   return get<TerminalStatus>('/terminal/status')
 }
@@ -125,6 +133,20 @@ export async function validateLocalShell(
   path: string,
 ): Promise<{ ok: boolean; message?: string }> {
   return mutate<{ ok: boolean; message?: string }>('POST', '/terminal/local/shell/validate', { path })
+}
+
+export async function getTerminalConfig(): Promise<TerminalConfig> {
+  return get<TerminalConfig>('/terminal/config')
+}
+
+export async function updateTerminalConfig(
+  payload: UpdateTerminalConfigPayload,
+): Promise<TerminalConfig> {
+  return mutate<TerminalConfig>('PUT', '/terminal/config', payload)
+}
+
+export async function resetTerminalConfig(): Promise<TerminalConfig> {
+  return mutate<TerminalConfig>('POST', '/terminal/config/reset')
 }
 
 export function buildTerminalWSUrl(serverId: number, cols = 80, rows = 24, cwd?: string): string {

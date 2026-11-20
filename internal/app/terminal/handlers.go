@@ -58,6 +58,9 @@ func (s *Service) RegisterRoutes(rg *gin.RouterGroup) {
 		terminal.PUT("/local/shell", s.handleUpdateLocalShell)
 		terminal.POST("/local/shell/reset", s.handleResetLocalShell)
 		terminal.POST("/local/shell/validate", s.handleValidateLocalShell)
+		terminal.GET("/config", s.handleGetConfig)
+		terminal.PUT("/config", s.handleUpdateConfig)
+		terminal.POST("/config/reset", s.handleResetConfig)
 		terminal.GET("/servers", s.handleListServers)
 		terminal.GET("/servers/:id", s.handleGetServer)
 		terminal.POST("/servers", s.handleCreateServer)
@@ -120,6 +123,38 @@ func (s *Service) handleValidateLocalShell(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "Shell 路径有效且可执行"})
+}
+
+func (s *Service) handleGetConfig(c *gin.Context) {
+	cfg, err := s.GetTerminalConfig(c.Request.Context())
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "load_failed")
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+func (s *Service) handleUpdateConfig(c *gin.Context) {
+	var req UpdateTerminalConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		abortWithError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+	cfg, err := s.UpdateTerminalConfig(c.Request.Context(), req)
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "save_failed")
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+func (s *Service) handleResetConfig(c *gin.Context) {
+	cfg, err := s.ResetTerminalConfig(c.Request.Context())
+	if err != nil {
+		abortWithError(c, http.StatusInternalServerError, "reset_failed")
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
 }
 
 func (s *Service) handleListServers(c *gin.Context) {

@@ -81,6 +81,16 @@ type ValidateShellRequest struct {
 	Path string `json:"path" binding:"required"`
 }
 
+// TerminalConfigDTO represents user preferences for the terminal.
+type TerminalConfigDTO struct {
+	FontFamily string `json:"font_family"`
+}
+
+// UpdateTerminalConfigRequest represents the payload to update terminal preferences.
+type UpdateTerminalConfigRequest struct {
+	FontFamily string `json:"font_family"`
+}
+
 // WSClientMessage represents an incoming control message from the WebSocket client.
 type WSClientMessage struct {
 	Type string `json:"type"` // "input" | "resize"

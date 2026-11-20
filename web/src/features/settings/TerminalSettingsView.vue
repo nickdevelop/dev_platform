@@ -42,6 +42,49 @@ const shellSuccessMsg = ref('')
 const shellValidationMsg = ref<{ ok: boolean; message: string } | null>(null)
 const isValidatingShell = ref(false)
 
+// Terminal font configuration state
+const customFontFamily = ref(terminalStore.fontFamily || '')
+const fontSuccessMsg = ref('')
+
+const FONT_PRESETS = [
+  { label: '平台统一字体 (内置)', value: '' },
+  { label: 'JetBrains Mono', value: 'JetBrains Mono' },
+  { label: 'Fira Code', value: 'Fira Code' },
+  { label: 'Cascadia Code', value: 'Cascadia Code' },
+  { label: 'Consolas', value: 'Consolas' },
+  { label: 'Monaco', value: 'Monaco' },
+  { label: 'Hack', value: 'Hack' },
+  { label: 'Source Code Pro', value: 'Source Code Pro' },
+]
+
+function selectFontPreset(font: string) {
+  customFontFamily.value = font
+  fontSuccessMsg.value = ''
+}
+
+async function onSaveFont() {
+  fontSuccessMsg.value = ''
+  try {
+    await terminalStore.saveTerminalFontFamily(customFontFamily.value)
+    fontSuccessMsg.value = customFontFamily.value.trim()
+      ? `已成功保存自定义终端字体: ${customFontFamily.value.trim()}`
+      : '已重置为平台统一内置字体'
+  } catch (err: unknown) {
+    errorMessage.value = err instanceof Error ? err.message : '保存终端字体失败'
+  }
+}
+
+async function onResetFont() {
+  fontSuccessMsg.value = ''
+  try {
+    await terminalStore.resetTerminalFontFamily()
+    customFontFamily.value = ''
+    fontSuccessMsg.value = '已恢复平台统一内置字体'
+  } catch (err: unknown) {
+    errorMessage.value = err instanceof Error ? err.message : '重置终端字体失败'
+  }
+}
+
 async function fetchData() {
   loading.value = true
   errorMessage.value = ''
@@ -50,7 +93,9 @@ async function fetchData() {
       terminalStore.loadStatus(),
       terminalStore.loadServers(),
       terminalStore.loadLocalShell(),
+      terminalStore.loadTerminalConfig(),
     ])
+    customFontFamily.value = terminalStore.fontFamily || ''
     if (terminalStore.localShell) {
       customShellPath.value = terminalStore.localShell.path || ''
       customShellArgs.value = (terminalStore.localShell.args || []).join(' ')
@@ -269,6 +314,98 @@ async function onDialogSaved() {
     >
       {{ errorMessage || terminalStore.error }}
     </UiAlert>
+
+    <!-- Section 0: Terminal Font Settings -->
+    <section class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-4" aria-label="终端字体设置">
+      <div class="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <div>
+          <div class="flex items-center gap-2.5">
+            <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100">终端字体设置</h2>
+            <UiBadge :variant="terminalStore.fontFamily ? 'info' : 'default'" size="sm">
+              {{ terminalStore.fontFamily ? '自定义字体' : '平台统一字体' }}
+            </UiBadge>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            配置终端等宽字体。默认采用平台统一字体（Google Sans Code + Noto Sans SC），也支持选择或手动指定本机已安装的个性化等宽字体。
+          </p>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Presets chips -->
+        <div class="space-y-1.5">
+          <label class="block text-2xs font-medium text-slate-600 dark:text-slate-400">常用等宽字体推荐预设</label>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="preset in FONT_PRESETS"
+              :key="preset.label"
+              type="button"
+              class="px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer select-none"
+              :class="customFontFamily === preset.value
+                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-medium'
+                : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'"
+              :data-test="`font-preset-${preset.value || 'default'}`"
+              @click="selectFontPreset(preset.value)"
+            >
+              {{ preset.label }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom font input -->
+        <div class="space-y-1">
+          <label class="block text-2xs font-medium text-slate-600 dark:text-slate-400">字体族名称（Font Family）</label>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="customFontFamily"
+              type="text"
+              placeholder="留空即使用平台统一字体，或输入如：JetBrains Mono、Fira Code 等"
+              class="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+              data-test="terminal-font-input"
+            />
+            <UiButton
+              variant="primary"
+              size="sm"
+              :disabled="terminalStore.fontSaving"
+              data-test="save-font-btn"
+              @click="onSaveFont"
+            >
+              <UiSpinner v-if="terminalStore.fontSaving" size="sm" class="mr-1 inline" />
+              保存字体
+            </UiButton>
+            <UiButton
+              variant="ghost"
+              size="sm"
+              :disabled="terminalStore.fontSaving || (!terminalStore.fontFamily && !customFontFamily)"
+              data-test="reset-font-btn"
+              @click="onResetFont"
+            >
+              恢复默认
+            </UiButton>
+          </div>
+        </div>
+
+        <!-- Live Preview -->
+        <div class="space-y-1 pt-1">
+          <span class="block text-2xs font-medium text-slate-500 dark:text-slate-400">字体效果实时预览</span>
+          <div
+            class="p-3 rounded bg-[#121316] text-[#e4e4e7] border border-slate-800 text-xs overflow-x-auto select-none"
+            :style="{ fontFamily: customFontFamily.trim() ? `&quot;${customFontFamily.trim()}&quot;, var(--font-mono)` : 'var(--font-mono)' }"
+            data-test="terminal-font-preview"
+          >
+            <div>$ echo "Hello Antigravity 平台终端" &amp;&amp; git status</div>
+            <div class="text-emerald-400">✓ 字符集测试: 0123456789 ABCDEF abcdef != &lt;= &gt;= -&gt; =&gt; // 中文字符正常显示</div>
+          </div>
+        </div>
+
+        <div v-if="fontSuccessMsg" class="text-xs text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-1">
+          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 8.5l3.5 3.5L13 5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>{{ fontSuccessMsg }}</span>
+        </div>
+      </div>
+    </section>
 
     <!-- Section 1: Local Server Environment -->
     <section class="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-4" aria-label="本地宿主环境">
