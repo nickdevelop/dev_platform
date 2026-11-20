@@ -97,7 +97,7 @@ const effectiveBranch = computed(() => props.branch || localBranch.value)
 function openTerminalAtWorkspace() {
   const dir = workspaceDir.value
   if (!dir) return
-  projectTerminal.openTerminal(dir, currentProject.value?.name)
+  projectTerminal.openLocalTab(dir, currentProject.value?.name)
 }
 
 const discardModalOpen = ref(false)

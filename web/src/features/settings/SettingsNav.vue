@@ -51,6 +51,12 @@ const links = [
     icon: 'connection',
   },
   {
+    name: 'settings-terminal',
+    label: '终端服务器',
+    desc: '本地与远程 SSH 服务器终端维护',
+    icon: 'terminal',
+  },
+  {
     name: 'settings-debug',
     label: '调试面板',
     desc: 'SSE 总线消息实时调试',
@@ -116,6 +122,11 @@ const links = [
               <svg v-else-if="link.icon === 'connection'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                 <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <!-- Terminal / Server -->
+              <svg v-else-if="link.icon === 'terminal'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 17 10 11 4 5" />
+                <line x1="12" y1="19" x2="20" y2="19" />
               </svg>
               <!-- Debug / Terminal monitor -->
               <svg v-else-if="link.icon === 'debug'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

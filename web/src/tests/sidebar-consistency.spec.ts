@@ -115,10 +115,10 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     // Zone C: Navigation list with standard cards
     expect(wrapper.find('.settings-links').exists()).toBe(true)
     const links = wrapper.findAll('.settings-link')
-    expect(links.length).toBe(8)
+    expect(links.length).toBe(9)
     expect(links[0].classes()).toContain('sidebar-card')
     // Menu order is part of the product contract: appearance, models, prompts,
-    // roles, agents, proxies, connections, debug.
+    // roles, agents, proxies, connections, terminal, debug.
     expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
       '外观',
       '模型',
@@ -127,6 +127,7 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
       'Agent',
       '服务代理',
       '服务连接',
+      '终端服务器',
       '调试面板',
     ])
   })

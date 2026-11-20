@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProjectTerminalModal from '../features/terminal/ProjectTerminalModal.vue'
 import QuickAssistantLauncher from '../features/chat/quick/QuickAssistantLauncher.vue'
 import { useProjectTerminalStore } from '../stores/projectTerminal'
+import { useTerminalStore } from '../stores/terminal'
 import { useSettingsStore } from '../stores/settings'
 
 vi.mock('xterm', () => {
@@ -33,6 +34,20 @@ vi.mock('@xterm/addon-fit', () => {
   }
 })
 
+vi.mock('../api/terminal', () => {
+  return {
+    buildTerminalWSUrl: vi.fn(() => 'ws://localhost/api/terminal/ws/0'),
+    getTerminalStatus: vi.fn(async () => ({ supported: true, os: 'linux' })),
+    listTerminalServers: vi.fn(async () => [
+      { id: 1, name: '测试服务器', host: '192.168.1.100', port: 22, username: 'root', auth_type: 'password', is_local: false, has_secret: true },
+    ]),
+    createTerminalServer: vi.fn(),
+    updateTerminalServer: vi.fn(),
+    deleteTerminalServer: vi.fn(),
+    testServerConnection: vi.fn(async () => ({ ok: true })),
+  }
+})
+
 describe('Project Terminal Feature', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -59,7 +74,7 @@ describe('Project Terminal Feature', () => {
     vi.restoreAllMocks()
   })
 
-  it('opens floating window with default 800x500 dimensions, no full-screen backdrop, and displays title & cwd', async () => {
+  it('opens floating window with default 800x500 dimensions and displays tab title', async () => {
     const store = useProjectTerminalStore()
     store.openTerminal('/workspace/demo', 'DemoApp')
 
@@ -76,8 +91,7 @@ describe('Project Terminal Feature', () => {
     const windowEl = modal as HTMLElement
     expect(windowEl.style.width).toBe('800px')
     expect(windowEl.style.height).toBe('500px')
-    expect(windowEl.textContent).toContain('终端 - DemoApp')
-    expect(windowEl.textContent).toContain('/workspace/demo')
+    expect(windowEl.textContent).toContain('DemoApp')
 
     // No maximize button
     expect(modal?.querySelector('[data-test="terminal-maximize-btn"]')).toBeNull()
@@ -200,41 +214,111 @@ describe('Project Terminal Feature', () => {
     closeBtn.click()
 
     expect(store.isOpen).toBe(false)
-    expect(store.cwd).toBe('')
+    expect(store.tabs.length).toBe(0)
 
     modalWrapper.unmount()
   })
 
-  it('supports opening multiple terminals across sessions with bring-to-front on click', async () => {
+  it('defaults to multiple tabs in single main window, and supports tab detachment & attachment', async () => {
     const store = useProjectTerminalStore()
-    const idA = store.openTerminal('/workspace/app-a', 'App A')
-    const idB = store.openTerminal('/workspace/app-b', 'App B')
+    const tabAId = store.openTerminal('/workspace/app-a', 'App A')
+    const tabBId = store.openTerminal('/workspace/app-b', 'App B')
 
-    expect(store.instances.length).toBe(2)
+    // Default multi-tab: 1 window with 2 tabs
+    expect(store.windows.length).toBe(1)
+    expect(store.tabs.length).toBe(2)
 
     const wrapper = mount(ProjectTerminalModal, {
       attachTo: document.body,
     })
 
+    // Only 1 modal window rendered with 2 tab items
     const windows = document.querySelectorAll('[data-test="project-terminal-modal"]')
-    expect(windows.length).toBe(2)
+    expect(windows.length).toBe(1)
 
-    // Window B was opened second, so its zIndex should be higher than A
-    const instA = store.instances.find((i) => i.id === idA)!
-    const instB = store.instances.find((i) => i.id === idB)!
-    expect(instB.zIndex).toBeGreaterThan(instA.zIndex)
+    const tabItems = document.querySelectorAll('[data-test="modal-tab-item"]')
+    expect(tabItems.length).toBe(2)
 
-    // Click Window A -> its zIndex should become higher than B (bring to front)
-    const winAEl = document.querySelector(`[data-terminal-id="${idA}"]`) as HTMLElement
-    winAEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    expect(instA.zIndex).toBeGreaterThan(instB.zIndex)
+    // Detach Tab B into a standalone window
+    const detachBtns = document.querySelectorAll('[data-test="detach-tab-btn"]')
+    expect(detachBtns.length).toBe(2)
+    ;(detachBtns[1] as HTMLElement).click()
+    await wrapper.vm.$nextTick()
 
-    // Close Window A -> only Window B remains
-    const closeBtnA = winAEl.querySelector('[data-test="terminal-close-btn"]') as HTMLElement
-    closeBtnA.click()
+    // Now there are 2 windows (Main window with Tab A, and Detached window with Tab B)
+    expect(store.windows.length).toBe(2)
+    const windowsAfterDetach = document.querySelectorAll('[data-test="project-terminal-modal"]')
+    expect(windowsAfterDetach.length).toBe(2)
 
-    expect(store.instances.length).toBe(1)
-    expect(store.instances[0].id).toBe(idB)
+    // The detached window has an attach button
+    const attachBtn = document.querySelector('[data-test="terminal-attach-btn"]') as HTMLElement
+    expect(attachBtn).not.toBeNull()
+
+    // Click attach button -> Tab B merges back into Main window
+    attachBtn.click()
+    await wrapper.vm.$nextTick()
+
+    expect(store.windows.length).toBe(1)
+    expect(store.tabs.filter((t) => t.windowId === 'main').length).toBe(2)
+    expect(document.querySelectorAll('[data-test="project-terminal-modal"]').length).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('supports Alt+T to toggle terminal modal visibility (minimize and restore)', async () => {
+    const store = useProjectTerminalStore()
+    expect(store.windows.length).toBe(0)
+
+    // Press Alt+T when empty -> opens default local terminal
+    store.toggleAltT()
+    expect(store.windows.length).toBe(1)
+    expect(store.isOpen).toBe(true)
+    expect(store.isMinimized).toBe(false)
+
+    // Press Alt+T when open -> minimizes
+    store.toggleAltT()
+    expect(store.isMinimized).toBe(true)
+
+    // Press Alt+T when minimized -> restores
+    store.toggleAltT()
+    expect(store.isMinimized).toBe(false)
+  })
+
+  it('provides + button to open dropdown and create new local or remote server tabs', async () => {
+    const store = useProjectTerminalStore()
+    const termStore = useTerminalStore()
+    termStore.servers = [
+      { id: 0, name: '本机', host: 'localhost', port: 0, username: '', auth_type: 'local', is_local: true, has_secret: false },
+      { id: 10, name: '远程测试节点', host: '10.0.0.1', port: 22, username: 'admin', auth_type: 'password', is_local: false, has_secret: true },
+    ]
+
+    store.openTerminal('/workspace/demo', 'DemoApp')
+
+    const wrapper = mount(ProjectTerminalModal, {
+      attachTo: document.body,
+    })
+
+    const newTabBtn = document.querySelector('[data-test="new-terminal-tab-btn"]') as HTMLElement
+    expect(newTabBtn).not.toBeNull()
+
+    // Click '+' button -> dropdown appears
+    newTabBtn.click()
+    await wrapper.vm.$nextTick()
+
+    const dropdown = document.querySelector('[data-test="new-tab-dropdown"]')
+    expect(dropdown).not.toBeNull()
+
+    // Click remote server option
+    const serverItem = document.querySelector('[data-test="menu-item-server"]') as HTMLElement
+    expect(serverItem).not.toBeNull()
+    expect(serverItem.textContent).toContain('远程测试节点')
+    serverItem.click()
+    await wrapper.vm.$nextTick()
+
+    // Now main window has 2 tabs, with second tab connected to server 10
+    expect(store.tabs.length).toBe(2)
+    expect(store.tabs[1].serverId).toBe(10)
+    expect(store.tabs[1].serverName).toBe('远程测试节点')
 
     wrapper.unmount()
   })

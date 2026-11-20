@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { buildTerminalWSUrl } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
+import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import { useSettingsStore } from '../../stores/settings'
 import { copyToClipboard } from '../../shared/clipboard'
 
@@ -22,6 +23,7 @@ const props = withDefaults(
 )
 
 const terminalStore = useTerminalStore()
+const projectTerminalStore = useProjectTerminalStore()
 const settings = useSettingsStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 
@@ -55,12 +57,16 @@ let disposed = false
 
 async function waitForTerminalFonts(): Promise<void> {
   try {
-    // Literal families: the stacks from --font-mono in style.css. Google Sans
-    // Code sizes the ASCII cells; Noto Sans SC paints glyphs that fall through
-    // it (CJK), so both must be resolved before the first measurement.
-    await document.fonts.load('13px "Google Sans Code"')
-    await document.fonts.load('13px "Noto Sans SC"', '汉字')
-    await document.fonts.ready
+    if (!document.fonts?.load) return
+    // Race with a short timeout to prevent hanging in JSDOM or slow environments
+    await Promise.race([
+      Promise.all([
+        document.fonts.load('13px "Google Sans Code"'),
+        document.fonts.load('13px "Noto Sans SC"', '汉字'),
+        document.fonts.ready,
+      ]),
+      new Promise((resolve) => setTimeout(resolve, 60)),
+    ])
   } catch {
     // No font API (unusual browsers/jsdom): render on the fallback as before.
   }
@@ -89,6 +95,7 @@ function connect() {
 
   cleanupWS()
   terminalStore.updateTabStatus(props.tabId, 'connecting')
+  projectTerminalStore.updateTabStatus(props.tabId, 'connecting')
   connectionError.value = null
 
   const cols = term?.cols ?? 80
@@ -102,6 +109,7 @@ function connect() {
     const msg = err instanceof Error ? err.message : 'WebSocket 创建失败'
     connectionError.value = msg
     terminalStore.updateTabStatus(props.tabId, 'error', msg)
+    projectTerminalStore.updateTabStatus(props.tabId, 'error', msg)
     term?.writeln(`\r\n\x1b[31m[连接异常] ${msg}\x1b[0m`)
     return
   }
@@ -109,6 +117,7 @@ function connect() {
   ws.onopen = () => {
     isConnected.value = true
     terminalStore.updateTabStatus(props.tabId, 'connected')
+    projectTerminalStore.updateTabStatus(props.tabId, 'connected')
     sendResize()
     if (props.active) {
       term?.focus()
@@ -127,12 +136,14 @@ function connect() {
     const msg = '连接发生错误'
     connectionError.value = msg
     terminalStore.updateTabStatus(props.tabId, 'error', msg)
+    projectTerminalStore.updateTabStatus(props.tabId, 'error', msg)
   }
 
   ws.onclose = (event) => {
     isConnected.value = false
     const reason = event.reason || (event.wasClean ? '已正常退出' : '连接中断')
     terminalStore.updateTabStatus(props.tabId, 'disconnected', reason)
+    projectTerminalStore.updateTabStatus(props.tabId, 'disconnected', reason)
     term?.writeln(`\r\n\x1b[33m[终端已断开: ${reason}]\x1b[0m`)
   }
 }
@@ -215,6 +226,21 @@ async function mountTerminal(): Promise<void> {
 
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
+
+  // Guard for headless / test environments without matchMedia
+  if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+    window.matchMedia = () => ({
+      matches: false,
+      media: '',
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList)
+  }
+
   term.open(containerRef.value)
 
   if (typeof term.onSelectionChange === 'function') {
@@ -230,12 +256,14 @@ async function mountTerminal(): Promise<void> {
   })
 
   // Watch size changes
-  resizeObserver = new ResizeObserver(() => {
-    if (props.active && props.visible !== false) {
-      handleFit()
-    }
-  })
-  resizeObserver.observe(containerRef.value)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      if (props.active && props.visible !== false) {
+        handleFit()
+      }
+    })
+    resizeObserver.observe(containerRef.value)
+  }
 
   // Webfont faces can still resolve after open (page-local faces, user agent
   // font changes): resync renderer metrics so clipped-glyph regressions from a

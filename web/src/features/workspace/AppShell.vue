@@ -33,6 +33,7 @@ import PromptsSidebar from '../prompts/PromptsSidebar.vue'
 import TerminalSidebar from '../terminal/TerminalSidebar.vue'
 import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
 import { ProjectTerminalModal } from '../terminal'
+import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import SettingsNav from '../settings/SettingsNav.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
@@ -55,6 +56,7 @@ const tasksStore = useTasksStore()
 const drafts = useDraftsStore()
 const chats = useChatsStore()
 const debug = useDebugPanelStore()
+const projectTerminal = useProjectTerminalStore()
 
 // Protect tabs whose session is mid-turn from automatic capacity trimming:
 // trimming would call sessions.unsubscribe below and tear down a live SSE
@@ -323,6 +325,13 @@ function onAppShellKeydown(e: KeyboardEvent) {
   if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
     e.preventDefault()
     setPreviewCollapsed(!previewCollapsed.value)
+    return
+  }
+
+  // Alt+T: Toggle terminal modal (open / restore / minimize)
+  if (e.altKey && (e.key === 't' || e.key === 'T' || e.code === 'KeyT')) {
+    e.preventDefault()
+    projectTerminal.toggleAltT()
     return
   }
 }

@@ -30,13 +30,11 @@ const draftsStore = useDraftsStore()
 
 // The groups routes declare `meta.groups` or start with /groups.
 // The tasks routes declare `meta.tasks` or start with /tasks.
-// The terminal routes declare `meta.terminal` or start with /terminal.
 // The notes routes declare `meta.notes` or start with /notes.
 // The pure-chat routes declare `meta.chat` or start with /chat.
 // The settings routes declare `meta.settings`.
 const groupsActive = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
-const terminalActive = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
 const notesActive = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 const chatActive = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
 const settingsActive = computed(() => route.meta.settings === true)
@@ -45,7 +43,6 @@ const projectActive = computed(
     !settingsActive.value &&
     !groupsActive.value &&
     !tasksActive.value &&
-    !terminalActive.value &&
     !notesActive.value &&
     !chatActive.value,
 )
@@ -122,13 +119,6 @@ function onGroupsClick(event: MouseEvent) {
 function onTasksClick(event: MouseEvent) {
   emit('expandSidebar')
   if (tasksActive.value) {
-    event.preventDefault()
-  }
-}
-
-function onTerminalClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (terminalActive.value) {
     event.preventDefault()
   }
 }
@@ -212,20 +202,6 @@ function onSettingsClick() {
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>任务</span>
-      </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: terminalActive }"
-        title="终端控制台"
-        :aria-current="terminalActive ? 'page' : undefined"
-        :to="{ name: 'terminal' }"
-        @click="onTerminalClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <polyline points="4 17 10 11 4 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <line x1="12" y1="19" x2="20" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <span>终端</span>
       </RouterLink>
       <RouterLink
         class="category"

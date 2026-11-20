@@ -18,6 +18,7 @@ import { useAuthStore } from '../stores/auth'
 import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
+import { useProjectTerminalStore } from '../stores/projectTerminal'
 import type { Capabilities } from '../api/sessions'
 
 function capabilities(): Capabilities {
@@ -57,7 +58,7 @@ async function setup(
   await router.isReady()
 
   const wrapper = mount(App, {
-    global: { plugins: [pinia, router], stubs: { ProjectTree: true, ...stubs } },
+    global: { plugins: [pinia, router], stubs: { ProjectTree: true, ProjectTerminalModal: true, ...stubs } },
   })
   await flushPromises()
   return { wrapper, router, pinia }
@@ -251,10 +252,10 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/')
 
-    // 项目 / 对话 / 群组 / 任务 / 终端 / 笔记 / 设置 / 退出 each carry one inline SVG icon.
-    // 提示词管理与角色管理收拢在设置中心内。
+    // 项目 / 对话 / 群组 / 任务 / 笔记 / 设置 / 退出 each carry one inline SVG icon.
+    // 提示词管理与角色管理收拢在设置中心内。终端移至平台设置。
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(8)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
     // Chat is a first-level peer immediately below projects, not nested in the
     // project tree, because both are primary work areas.
@@ -263,7 +264,6 @@ describe('three-pane app shell', () => {
       '对话',
       '群组',
       '任务',
-      '终端',
       '笔记',
       '设置',
       '退出',
@@ -425,7 +425,7 @@ describe('three-pane app shell', () => {
 
     await router.push('/terminal')
     await flushPromises()
-    expect(title()).toBe('服务器')
+    expect(title()).toBe('设置')
 
     await router.push('/settings/appearance')
     await flushPromises()
@@ -603,5 +603,27 @@ describe('quick assistant launcher visibility', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: '1', altKey: true }))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+  })
+
+  it('toggles terminal modal with Alt+T', async () => {
+    const { wrapper } = await setup('/')
+    const termStore = useProjectTerminalStore()
+    expect(termStore.isOpen).toBe(false)
+
+    // Press Alt+T to open terminal
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(termStore.isOpen).toBe(true)
+    expect(termStore.isMinimized).toBe(false)
+
+    // Press Alt+T again to minimize
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(termStore.isMinimized).toBe(true)
+
+    // Press Alt+T again to restore
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', altKey: true }))
+    await wrapper.vm.$nextTick()
+    expect(termStore.isMinimized).toBe(false)
   })
 })
