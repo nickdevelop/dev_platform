@@ -220,7 +220,7 @@ async function handleSave() {
     @close="emit('update:open', false)"
   >
     <div class="space-y-4 text-xs text-[var(--color-text)]">
-      <UiAlert v-if="errorMessage" variant="danger">
+      <UiAlert v-if="errorMessage" variant="error">
         {{ errorMessage }}
       </UiAlert>
 
@@ -300,7 +300,7 @@ async function handleSave() {
         <UiTextarea
           v-model="prompt"
           placeholder="详细阐述需要该团队协作完成的任务目标、具体交付物、测试验收标准等..."
-          rows="5"
+          :rows="5"
           class="w-full font-mono text-2xs"
         />
       </div>

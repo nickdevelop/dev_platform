@@ -94,6 +94,37 @@ func (r *Repository) Update(p Prompt) (Prompt, error) {
 	return fromDB(row), nil
 }
 
+func (r *Repository) IsInUse(id uint) (bool, error) {
+	if r.db.Migrator().HasTable(&database.AgentRole{}) {
+		var count int64
+		if err := r.db.Model(&database.AgentRole{}).Where("prompt_id = ?", id).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	if r.db.Migrator().HasTable(&database.ChatGroup{}) {
+		var count int64
+		if err := r.db.Model(&database.ChatGroup{}).Where("prompt_id = ?", id).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	if r.db.Migrator().HasTable(&database.Chat{}) {
+		var count int64
+		if err := r.db.Model(&database.Chat{}).Where("prompt_id = ?", id).Count(&count).Error; err != nil {
+			return false, err
+		}
+		if count > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (r *Repository) Delete(id uint) error {
 	res := r.db.Delete(&database.Prompt{}, "id = ?", id)
 	if res.Error != nil {

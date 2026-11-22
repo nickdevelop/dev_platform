@@ -17,7 +17,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&database.Prompt{}); err != nil {
+	if err := db.AutoMigrate(&database.Prompt{}, &database.AgentRole{}, &database.ChatGroup{}, &database.Chat{}); err != nil {
 		t.Fatalf("migrate prompt: %v", err)
 	}
 	return db
@@ -130,6 +130,15 @@ func TestPromptServiceCRUD(t *testing.T) {
 	if err != ErrDuplicatePromptName {
 		t.Fatalf("expected ErrDuplicatePromptName on update, got %v", err)
 	}
+
+	// Delete when prompt is in use
+	if err := db.Create(&database.AgentRole{Name: "Role1", PromptID: p1.ID}).Error; err != nil {
+		t.Fatalf("create role with prompt: %v", err)
+	}
+	if err := svc.Delete(p1.ID); err != ErrPromptInUse {
+		t.Fatalf("expected ErrPromptInUse, got %v", err)
+	}
+	db.Where("prompt_id = ?", p1.ID).Delete(&database.AgentRole{})
 
 	// Delete
 	if err := svc.Delete(p1.ID); err != nil {

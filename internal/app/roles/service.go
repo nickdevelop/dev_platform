@@ -150,5 +150,12 @@ func (s *Service) Update(id uint, req UpdateRoleRequest) (Role, error) {
 }
 
 func (s *Service) Delete(id uint) error {
+	inUse, err := s.repo.IsInUse(id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrRoleInUse
+	}
 	return s.repo.Delete(id)
 }

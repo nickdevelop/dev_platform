@@ -52,6 +52,7 @@ const memberFlowRoles = computed<FlowRole[]>(() => {
     icon: m.icon,
     color: m.color,
     createdAt: m.createdAt,
+    updatedAt: m.createdAt,
   }))
 })
 
@@ -307,7 +308,7 @@ onBeforeUnmount(() => {
           class="chat-stream-body flex-1 min-h-0 overflow-y-auto p-4 md:p-6 space-y-4 bg-[var(--color-bg)]"
         >
           <!-- Alert if any -->
-          <UiAlert v-if="flowError" variant="danger" class="py-2 text-xs">
+          <UiAlert v-if="flowError" variant="error" class="py-2 text-xs">
             {{ flowError }}
           </UiAlert>
 

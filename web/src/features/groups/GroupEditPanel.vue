@@ -5,7 +5,7 @@
 // Adopts the "Add / Remove" pattern for team members instead of checkbox toggles.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import type { GroupDetail, CreateGroupPayload, UpdateGroupPayload } from '../../api/groups'
+import type { GroupDetail, Group, CreateGroupPayload, UpdateGroupPayload } from '../../api/groups'
 import type { AgentRole } from '../../api/roles'
 import { useRolesStore } from '../../stores/roles'
 import { useModelsStore } from '../../stores/models'
@@ -21,7 +21,7 @@ import {
 import BackendTag from '../../shared/components/BackendTag.vue'
 
 const props = defineProps<{
-  group?: GroupDetail | null
+  group?: GroupDetail | Group | null
 }>()
 
 const emit = defineEmits<{
@@ -96,7 +96,7 @@ function initForm() {
     description.value = props.group.description || ''
     orchestratorModel.value = props.group.orchestratorModel
     orchestratorPrompt.value = props.group.orchestratorPrompt || ''
-    selectedRoleIds.value = (props.group.members || []).map((m) => m.roleId)
+    selectedRoleIds.value = ('members' in props.group && props.group.members ? props.group.members : []).map((m) => m.roleId)
   } else {
     name.value = ''
     description.value = ''
@@ -228,7 +228,7 @@ function handleCancel() {
       </header>
 
       <!-- Alert -->
-      <UiAlert v-if="errorMessage" variant="danger">
+      <UiAlert v-if="errorMessage" variant="error">
         {{ errorMessage }}
       </UiAlert>
 

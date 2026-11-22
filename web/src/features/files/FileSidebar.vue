@@ -668,7 +668,7 @@ async function confirmDelete() {
           <span class="truncate">{{ effectiveBranch }}</span>
           <span
             v-if="localAhead > 0 || localBehind > 0"
-            class="branch-sync inline-flex items-center gap-1 shrink-0 text-[11px] font-semibold"
+            class="branch-sync inline-flex items-center gap-1 shrink-0 text-2xs font-semibold"
             data-test="git-sync-status"
           >
             <span

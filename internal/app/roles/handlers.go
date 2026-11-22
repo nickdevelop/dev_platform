@@ -129,6 +129,10 @@ func (s *Service) handleDelete(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "role_not_found")
 			return
 		}
+		if errors.Is(err, ErrRoleInUse) {
+			respondError(c, http.StatusConflict, "role_in_use")
+			return
+		}
 		respondError(c, http.StatusInternalServerError, "server_error")
 		return
 	}

@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/app/database"
 )
 
 func setupTestEngine(svc *Service) *gin.Engine {
@@ -119,7 +121,19 @@ func TestPromptHandlers(t *testing.T) {
 		}
 	}
 
-	// 6. DELETE /api/prompts/:id
+	// 6. DELETE /api/prompts/:id (Conflict 409 when in use)
+	{
+		_ = db.Create(&database.AgentRole{Name: "Using Role", PromptID: created.ID})
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("DELETE", "/api/prompts/1", nil)
+		engine.ServeHTTP(w, req)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("expected 409 Conflict for in-use prompt, got %d", w.Code)
+		}
+		_ = db.Where("prompt_id = ?", created.ID).Delete(&database.AgentRole{})
+	}
+
+	// 7. DELETE /api/prompts/:id
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("DELETE", "/api/prompts/1", nil)
@@ -129,7 +143,7 @@ func TestPromptHandlers(t *testing.T) {
 		}
 	}
 
-	// 7. GET after delete (404)
+	// 8. GET after delete (404)
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/api/prompts/1", nil)

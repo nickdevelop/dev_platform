@@ -148,9 +148,21 @@ func (r *Repository) UpdateGroup(g Group) error {
 	return nil
 }
 
-// DeleteGroup deletes a group and cascades its members and tasks.
+// DeleteGroup deletes a group and cascades its members, tasks, and flow runs.
 func (r *Repository) DeleteGroup(id uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		var runIDs []uint
+		if err := tx.Model(&database.FlowRun{}).Where("group_id = ?", id).Pluck("id", &runIDs).Error; err != nil {
+			return err
+		}
+		if len(runIDs) > 0 {
+			if err := tx.Where("run_id IN ?", runIDs).Delete(&database.FlowMessage{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", runIDs).Delete(&database.FlowRun{}).Error; err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("group_id = ?", id).Delete(&database.GroupMember{}).Error; err != nil {
 			return err
 		}
@@ -327,22 +339,36 @@ func (r *Repository) UpdateGroupTask(task GroupTask) error {
 	return nil
 }
 
-// DeleteGroupTask deletes a task.
+// DeleteGroupTask deletes a task and cascades its runs and messages.
 func (r *Repository) DeleteGroupTask(id uint) error {
-	res := r.db.Delete(&database.GroupTask{}, id)
-	if res.Error != nil {
-		return fmt.Errorf("groups: delete task: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return ErrGroupTaskNotFound
-	}
-	return nil
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var runIDs []uint
+		if err := tx.Model(&database.FlowRun{}).Where("task_id = ? AND group_id > 0", id).Pluck("id", &runIDs).Error; err != nil {
+			return err
+		}
+		if len(runIDs) > 0 {
+			if err := tx.Where("run_id IN ?", runIDs).Delete(&database.FlowMessage{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", runIDs).Delete(&database.FlowRun{}).Error; err != nil {
+				return err
+			}
+		}
+		res := tx.Delete(&database.GroupTask{}, id)
+		if res.Error != nil {
+			return fmt.Errorf("groups: delete task: %w", res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return ErrGroupTaskNotFound
+		}
+		return nil
+	})
 }
 
 // ListFlowRuns returns execution runs for a given group task ID.
 func (r *Repository) ListFlowRuns(taskID uint) ([]tasks.FlowRun, error) {
 	var rows []database.FlowRun
-	err := r.db.Where("task_id = ?", taskID).Order("created_at DESC, id DESC").Find(&rows).Error
+	err := r.db.Where("task_id = ? AND group_id > 0", taskID).Order("created_at DESC, id DESC").Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("groups: list flow runs: %w", err)
 	}
@@ -351,7 +377,9 @@ func (r *Repository) ListFlowRuns(taskID uint) ([]tasks.FlowRun, error) {
 		result[i] = tasks.FlowRun{
 			ID:                r.ID,
 			TaskID:            r.TaskID,
+			GroupID:           r.GroupID,
 			ProjectID:         r.ProjectID,
+			WorktreeID:        r.WorktreeID,
 			Status:            tasks.FlowRunStatus(r.Status),
 			CurrentStep:       r.CurrentStep,
 			MaxSteps:          r.MaxSteps,

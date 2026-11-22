@@ -143,15 +143,32 @@ func (r *Repository) Update(t Task) error {
 
 // Delete removes a task by ID and its runs.
 func (r *Repository) Delete(id uint) error {
-	_ = r.db.Delete(&database.TaskRun{}, "task_id = ?", id).Error
-	res := r.db.Delete(&database.Task{}, "id = ?", id)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return ErrTaskNotFound
-	}
-	return nil
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var runIDs []uint
+		if err := tx.Model(&database.FlowRun{}).Where("task_id = ? AND (group_id = 0 OR group_id IS NULL)", id).Pluck("id", &runIDs).Error; err != nil {
+			return err
+		}
+		if len(runIDs) > 0 {
+			if err := tx.Where("run_id IN ?", runIDs).Delete(&database.FlowMessage{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", runIDs).Delete(&database.FlowRun{}).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Where("task_id = ?", id).Delete(&database.FlowRole{}).Error; err != nil {
+			return err
+		}
+		_ = tx.Delete(&database.TaskRun{}, "task_id = ?", id).Error
+		res := tx.Delete(&database.Task{}, "id = ?", id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrTaskNotFound
+		}
+		return nil
+	})
 }
 
 // List queries tasks with optional filtering.
@@ -550,7 +567,7 @@ func (r *Repository) UpdateFlowRun(run FlowRun) error {
 // ListFlowRuns returns all flow runs for a task.
 func (r *Repository) ListFlowRuns(taskID uint) ([]FlowRun, error) {
 	var rows []database.FlowRun
-	err := r.db.Where("task_id = ?", taskID).Order("id desc").Find(&rows).Error
+	err := r.db.Where("task_id = ? AND (group_id = 0 OR group_id IS NULL)", taskID).Order("id desc").Find(&rows).Error
 	if err != nil {
 		return nil, err
 	}

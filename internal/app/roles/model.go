@@ -9,6 +9,7 @@ import (
 
 var (
 	ErrRoleNotFound     = errors.New("roles: role not found")
+	ErrRoleInUse        = errors.New("roles: role is in use by one or more groups")
 	ErrInvalidRoleName  = errors.New("roles: role name cannot be empty")
 	ErrInvalidRoleModel = errors.New("roles: role model cannot be empty")
 )

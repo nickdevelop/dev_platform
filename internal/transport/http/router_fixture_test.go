@@ -6,22 +6,28 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"devplatform/internal/app/agentdata"
 	"devplatform/internal/app/agentmodels"
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
+	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/notes"
 	"devplatform/internal/app/projects"
+	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
+	"devplatform/internal/app/roles"
 	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/settings"
 	"devplatform/internal/app/tasks"
@@ -68,7 +74,18 @@ func newFullDependencies(t *testing.T) Dependencies {
 	chatSvc.SetEventsManager(eventsMgr)
 	tasksSvc.SetEventsManager(eventsMgr)
 
-	return Dependencies{
+	promptRepo := prompts.NewRepository(db)
+	promptSvc := prompts.NewService(promptRepo)
+	notesRepo := notes.NewRepository(db)
+	notesSvc := notes.NewService(notesRepo)
+	rolesRepo := roles.NewRepository(db)
+	rolesSvc := roles.NewService(rolesRepo, promptSvc)
+	groupRepo := groups.NewRepository(db)
+	groupSvc := groups.NewService(groupRepo)
+	groupSvc.SetEventsManager(eventsMgr)
+	agentDataSvc := agentdata.NewService(db)
+
+	deps := Dependencies{
 		Auth:          authSvc,
 		Projects:      projSvc,
 		Settings:      settingsSvc,
@@ -79,11 +96,29 @@ func newFullDependencies(t *testing.T) Dependencies {
 		AgentUsage:    agentusage.NewService(registry),
 		Sessions:      sessionSvc,
 		Tasks:         tasksSvc,
+		Groups:        groupSvc,
+		Prompts:       promptSvc,
+		Notes:         notesSvc,
+		Roles:         rolesSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
 		Chats:         chatSvc,
 		Events:        eventsSvc,
 		Proxy:         proxy.NewService(proxy.NewRepository(db)),
+		AgentData:     agentDataSvc,
 	}
+
+	val := reflect.ValueOf(deps)
+	typ := val.Type()
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Type.Kind() == reflect.Ptr {
+			if val.Field(i).IsNil() {
+				t.Fatalf("Dependencies.%s is nil; all services must be wired in newFullDependencies", field.Name)
+			}
+		}
+	}
+
+	return deps
 }
 
 // newFullRouter builds the router with every service mounted.

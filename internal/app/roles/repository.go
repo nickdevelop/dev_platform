@@ -108,6 +108,17 @@ func (r *Repository) Update(role Role) error {
 	return nil
 }
 
+func (r *Repository) IsInUse(id uint) (bool, error) {
+	if r.db.Migrator().HasTable(&database.GroupMember{}) {
+		var count int64
+		if err := r.db.Model(&database.GroupMember{}).Where("role_id = ?", id).Count(&count).Error; err != nil {
+			return false, err
+		}
+		return count > 0, nil
+	}
+	return false, nil
+}
+
 func (r *Repository) Delete(id uint) error {
 	res := r.db.Delete(&database.AgentRole{}, "id = ?", id)
 	if res.Error != nil {

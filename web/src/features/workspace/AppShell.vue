@@ -29,9 +29,6 @@ import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
 import GroupsSidebar from '../groups/GroupsSidebar.vue'
 import NotesSidebar from '../notes/NotesSidebar.vue'
-import PromptsSidebar from '../prompts/PromptsSidebar.vue'
-import TerminalSidebar from '../terminal/TerminalSidebar.vue'
-import TerminalWorkspace from '../terminal/TerminalWorkspace.vue'
 import { ProjectTerminalModal } from '../terminal'
 import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import SettingsNav from '../settings/SettingsNav.vue'
@@ -208,10 +205,6 @@ const settingsMode = computed(() => route.meta.settings === true)
 const tasksMode = computed(() => route.meta.tasks === true)
 // The groups center manages team groups with their own list column and detail pane.
 const groupsMode = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
-// The prompts center manages prompt templates with their own list column and detail pane.
-const promptsMode = computed(() => route.meta.prompts === true)
-// The terminal center manages server terminals with their own list column and terminal workspace pane.
-const terminalMode = computed(() => route.meta.terminal === true || route.path.startsWith('/terminal'))
 // The notes center manages notes with their own list column and note workspace pane.
 const notesMode = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 // The pure-chat center manages global conversations with their own list column and chat pane.
@@ -222,8 +215,6 @@ const projectActive = computed(
     !settingsMode.value &&
     !groupsMode.value &&
     !tasksMode.value &&
-    !promptsMode.value &&
-    !terminalMode.value &&
     !notesMode.value &&
     !chatMode.value,
 )
@@ -281,10 +272,6 @@ const columnLabel = computed(() =>
       ? '团队群组列表'
       : tasksMode.value
         ? '任务列表'
-      : promptsMode.value
-        ? '提示词列表'
-        : terminalMode.value
-        ? '服务器列表'
         : notesMode.value
         ? '笔记列表'
         : chatMode.value
@@ -300,10 +287,6 @@ const columnTitle = computed(() =>
       ? '群组'
       : tasksMode.value
         ? '任务'
-      : promptsMode.value
-        ? '提示词'
-        : terminalMode.value
-        ? '服务器'
         : notesMode.value
         ? '笔记'
         : chatMode.value
@@ -718,8 +701,6 @@ watch(
     :class="{
       'settings-mode': settingsMode,
       'tasks-mode': tasksMode,
-      'prompts-mode': promptsMode,
-      'terminal-mode': terminalMode,
       'notes-mode': notesMode,
       'chat-mode': chatMode,
       'sidebar-collapsed': !isDocked,
@@ -803,8 +784,6 @@ watch(
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
       <GroupsSidebar v-if="groupsMode" />
       <TasksSidebar v-else-if="tasksMode" />
-      <PromptsSidebar v-else-if="promptsMode" />
-      <TerminalSidebar v-else-if="terminalMode" />
       <NotesSidebar v-else-if="notesMode" />
       <ChatSidebar v-else-if="chatMode" />
       <SettingsNav v-else-if="settingsMode" />
@@ -842,7 +821,7 @@ watch(
           <p>项目不存在或已移除。</p>
           <RouterLink :to="{ name: 'home' }">返回</RouterLink>
         </div>
-        <RouterView v-else-if="!terminalMode" v-slot="{ Component }">
+        <RouterView v-else v-slot="{ Component }">
           <KeepAlive :max="10">
             <component
               :is="Component"
@@ -853,12 +832,6 @@ watch(
             />
           </KeepAlive>
         </RouterView>
-        <!-- Terminal workspace kept alive so open tabs and pty/ssh processes never disconnect -->
-        <TerminalWorkspace
-          v-show="terminalMode"
-          :visible="terminalMode"
-          style="width: 100%; height: 100%;"
-        />
       </div>
     </section>
 

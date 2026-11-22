@@ -6077,6 +6077,564 @@ paths:
         '404':
           description: Proxy not found.
 
+  /groups:
+    get:
+      summary: List groups
+      description: Returns groups matching optional filters.
+      operationId: listGroups
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of groups.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create group
+      operationId: createGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Group created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /groups/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get group
+      operationId: getGroup
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Group details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Group not found.
+    put:
+      summary: Update group
+      operationId: updateGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Group updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Group not found.
+    delete:
+      summary: Delete group
+      operationId: deleteGroup
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Group deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Group not found.
+
+  /groups/{id}/members:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    put:
+      summary: Set group members
+      operationId: setGroupMembers
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Group members updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /groups/{id}/tasks:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: List group tasks
+      operationId: listGroupTasks
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of tasks.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create group task
+      operationId: createGroupTask
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Task created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /groups/{id}/tasks/{taskId}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get group task
+      operationId: getGroupTask
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Group task details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Task not found.
+    put:
+      summary: Update group task
+      operationId: updateGroupTask
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Group task updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Task not found.
+    delete:
+      summary: Delete group task
+      operationId: deleteGroupTask
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Group task deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Task not found.
+
+  /groups/{id}/tasks/{taskId}/trigger:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Trigger group task
+      operationId: triggerGroupTask
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Task run triggered.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /groups/{id}/tasks/{taskId}/runs:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: List group task runs
+      operationId: listGroupTaskRuns
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of task runs.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /groups/runs/{runId}/messages:
+    parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: List run messages
+      operationId: listRunMessages
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Messages for flow run.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Post user message to run
+      operationId: postRunMessage
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Message posted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /groups/runs/{runId}/cancel:
+    parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Cancel flow run
+      operationId: cancelFlowRun
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Run cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /notes:
+    get:
+      summary: List notes
+      operationId: listNotes
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of notes.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create note
+      operationId: createNote
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Note created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /notes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get note
+      operationId: getNote
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Note details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Note not found.
+    put:
+      summary: Update note
+      operationId: updateNote
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Note updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Note not found.
+    delete:
+      summary: Delete note
+      operationId: deleteNote
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Note deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Note not found.
+
+  /prompts:
+    get:
+      summary: List prompts
+      operationId: listPrompts
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of prompts.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create prompt
+      operationId: createPrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Prompt created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '409':
+          description: Duplicate prompt name.
+
+  /prompts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get prompt
+      operationId: getPrompt
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Prompt details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Prompt not found.
+    put:
+      summary: Update prompt
+      operationId: updatePrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Prompt updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Prompt not found.
+    delete:
+      summary: Delete prompt
+      operationId: deletePrompt
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Prompt deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Prompt not found.
+        '409':
+          description: Prompt in use.
+
+  /roles:
+    get:
+      summary: List roles
+      operationId: listRoles
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: List of roles.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create role
+      operationId: createRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Role created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+
+  /roles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get role
+      operationId: getRole
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Role not found.
+    put:
+      summary: Update role
+      operationId: updateRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Role updated.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Role not found.
+    delete:
+      summary: Delete role
+      operationId: deleteRole
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Role deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          description: Role not found.
+        '409':
+          description: Role in use.
+
 components:
   securitySchemes:
     cookieAuth:

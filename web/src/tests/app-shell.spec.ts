@@ -411,8 +411,6 @@ describe('three-pane app shell', () => {
     // sidebars start at the same height with the same typography.
     const { wrapper, router } = await setup('/', {
       TasksSidebar: { template: '<div class="tasks-nav-stub"></div>' },
-      PromptsSidebar: { template: '<div class="prompts-nav-stub"></div>' },
-      TerminalSidebar: { template: '<div class="terminal-nav-stub"></div>' },
       SettingsNav: { template: '<div class="settings-nav-stub"></div>' },
     })
 

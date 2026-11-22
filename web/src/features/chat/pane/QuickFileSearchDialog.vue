@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { searchProjectFiles, searchProjectContent, type FileContentMatch } from '../../../api/projects'
-import type { FileItem } from '../../files/types'
+import { searchProjectFiles, searchProjectContent, type FileContentMatch, type FileItem } from '../../../api/projects'
 
 const props = defineProps<{
   open: boolean

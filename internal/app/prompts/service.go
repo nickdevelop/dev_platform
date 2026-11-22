@@ -72,5 +72,12 @@ func (s *Service) Update(id uint, req UpdatePromptRequest) (Prompt, error) {
 }
 
 func (s *Service) Delete(id uint) error {
+	inUse, err := s.repo.IsInUse(id)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrPromptInUse
+	}
 	return s.repo.Delete(id)
 }

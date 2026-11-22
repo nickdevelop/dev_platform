@@ -30,7 +30,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&database.AgentRole{}); err != nil {
+	if err := db.AutoMigrate(&database.AgentRole{}, &database.GroupMember{}); err != nil {
 		t.Fatalf("migrate agent_roles: %v", err)
 	}
 	return db
@@ -90,6 +90,15 @@ func TestRoleServiceCRUDAndPromptSync(t *testing.T) {
 	if err != nil || refreshed.SystemPrompt != "Updated: You are a principal architect." {
 		t.Fatalf("expected refreshed prompt content, got: %s", refreshed.SystemPrompt)
 	}
+
+	// Delete when role is in use by a group member
+	if err := db.Create(&database.GroupMember{GroupID: 1, RoleID: role.ID}).Error; err != nil {
+		t.Fatalf("create group member: %v", err)
+	}
+	if err := svc.Delete(role.ID); err != ErrRoleInUse {
+		t.Fatalf("expected ErrRoleInUse, got %v", err)
+	}
+	db.Where("role_id = ?", role.ID).Delete(&database.GroupMember{})
 
 	// Delete
 	if err := svc.Delete(role.ID); err != nil {

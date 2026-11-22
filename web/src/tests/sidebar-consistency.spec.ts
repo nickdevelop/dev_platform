@@ -4,8 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import ProjectSidebar from '../features/projects/ProjectSidebar.vue'
 import ChatSidebar from '../features/chat/pure/ChatSidebar.vue'
 import TasksSidebar from '../features/tasks/TasksSidebar.vue'
-import PromptsSidebar from '../features/prompts/PromptsSidebar.vue'
-import TerminalSidebar from '../features/terminal/TerminalSidebar.vue'
+import GroupsSidebar from '../features/groups/GroupsSidebar.vue'
+import NotesSidebar from '../features/notes/NotesSidebar.vue'
 import SettingsNav from '../features/settings/SettingsNav.vue'
 
 describe('Column 2 (Sidebar) Design Consistency across menus', () => {
@@ -68,34 +68,28 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     expect(wrapper.find('.task-list').exists()).toBe(true)
   })
 
-  it('PromptsSidebar conforms to Data Terminal 3-zone standard', () => {
-    const wrapper = mount(PromptsSidebar)
+  it('GroupsSidebar conforms to Data Terminal 3-zone standard', () => {
+    const wrapper = mount(GroupsSidebar)
 
     // Zone A: Action
     expect(wrapper.find('.sidebar-actions').exists()).toBe(true)
-    expect(wrapper.find('[data-test="new-prompt-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="btn-new-group"]').exists()).toBe(true)
 
     // Zone B: Search with inset icon
     expect(wrapper.find('.sidebar-search-bar').exists()).toBe(true)
     expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
-
-    // Zone C: Prompts list
-    expect(wrapper.find('.prompts-list').exists()).toBe(true)
   })
 
-  it('TerminalSidebar conforms to Data Terminal 3-zone standard', () => {
-    const wrapper = mount(TerminalSidebar)
+  it('NotesSidebar conforms to Data Terminal 3-zone standard', () => {
+    const wrapper = mount(NotesSidebar)
 
     // Zone A: Action
     expect(wrapper.find('.sidebar-actions').exists()).toBe(true)
-    expect(wrapper.find('[data-test="create-server-btn"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="new-note-btn"]').exists()).toBe(true)
 
     // Zone B: Search with inset icon
     expect(wrapper.find('.sidebar-search-bar').exists()).toBe(true)
     expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
-
-    // Zone C: Server list
-    expect(wrapper.find('.server-list-container').exists()).toBe(true)
   })
 
   it('SettingsNav conforms to Data Terminal single-header standard', () => {

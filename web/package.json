@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vue-tsc -p tsconfig.typecheck.json && vite build",
     "preview": "vite preview",
     "test": "vitest",
     "typecheck": "vue-tsc -p tsconfig.typecheck.json",

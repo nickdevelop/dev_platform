@@ -134,6 +134,10 @@ func (s *Service) handleDelete(c *gin.Context) {
 			respondError(c, http.StatusNotFound, "prompt_not_found")
 			return
 		}
+		if errors.Is(err, ErrPromptInUse) {
+			respondError(c, http.StatusConflict, "prompt_in_use")
+			return
+		}
 		respondError(c, http.StatusInternalServerError, "server_error")
 		return
 	}

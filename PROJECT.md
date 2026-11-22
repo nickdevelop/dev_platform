@@ -146,12 +146,12 @@ web/src/
   │     │     ├── state/         ── 会话日志推导状态模型（sessionLog.ts）
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位（复用 shared/composables/useDraggablePosition）与最近对话下拉
-  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，48px 紧凑一级栏与 272px 二级侧栏，z-index: 70 全圆角防遮挡折叠把手；安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订；引入 groupsMode 调度中间栏群组列表 GroupsSidebar）、分类导航条（CategoryRail.vue，48px 紧凑宽度，一级菜单顺序：项目 → 对话 → 群组 → 任务 → 终端 → 笔记 → 设置）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
+  │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，48px 紧凑一级栏与 272px 二级侧栏，z-index: 70 全圆角防遮挡折叠把手；安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订；引入 groupsMode 调度中间栏群组列表 GroupsSidebar）、分类导航条（CategoryRail.vue，48px 紧凑宽度，一级菜单顺序：项目 → 对话 → 群组 → 任务 → 笔记 → 设置，终端以全局悬浮窗 ProjectTerminalModal 与设置中心终端服务器配置协同提供）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
   │     ├── groups/    ── 团队群组工作台（GroupsView.vue 团队主视图、GroupsSidebar.vue 遵循 sidebar.css 标准规范的三段式侧栏、GroupEditPanel.vue 主工作台全屏面板支持团队创建与编辑无遮挡无浮层体验、GroupDetailView.vue 团队详情/中控大脑设定预览/专家成员看板/项目与工作树隔离任务列表、GroupTaskCreateModal.vue 群组任务创建弹窗、GroupFlowChatDialog.vue 协同群聊工作台视窗）
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目管理】/Zone B 检索与过滤/Zone C 树容器）、项目设置 Tab 页面（ProjectSettingsView.vue，项目改名、路径只读、Git 状态、工作树创建/列表/移除与非 Git 说明）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐、打开项目设置、解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；Git 项目名称前显示 Git 标识；项目行提供新建会话与项目设置入口；展开项目时加载工作树标签）、会话卡片项（ProjectSessionItem.vue，展示工作树分支标签）、统一项目弹窗（ProjectManageDialog.vue，仅 register/create 两种模式）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，支持浅色、暖阳、冷灰、蔚蓝、极光、青竹 6 款高质感主题，涵盖深浅蓝色系与深色暗夜模式；字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、调试面板设置（DebugSettings.vue，localStorage 本浏览器开关控制全局调试入口显隐，不落库）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接 → 调试面板，无缝对齐 AppShell 单头部规范）
-  │     ├── terminal/  ── Web 终端工作区（TerminalWorkspace.vue）、xterm 画布（XtermView.vue）、终端侧边栏（TerminalSidebar.vue）
+  │     ├── terminal/  ── Web 终端悬浮窗工作区（ProjectTerminalModal.vue 全局悬浮弹窗支持多窗口、多 Tab 拖拽缩放与多服务器连接、XtermView.vue xterm.js 核心终端画布交互、ServerDialog.vue 服务器配置弹窗）
   │     ├── notes/     ── 笔记中心（NotesView.vue 沉浸式 Markdown 双栏/仅编辑/仅预览工作台、NotesSidebar.vue 三段式列表、NoteItem.vue 实体卡片，支持项目归属维度与全局随笔记录、800ms 防抖自动落库与 Ctrl+S 快捷保存）
   │     ├── tasks/     ── 计划任务管理、执行面板、任务专属对话弹窗（TasksView.vue）、任务侧边栏（TasksSidebar.vue）、新建面板（TaskCreatePanel.vue，支持普通任务与多 Agent 协同流程创建，中控调度模型基于已配置 Chat 文本模型下拉选取，团队协同角色直接从角色库选用并展示）、协同工作流子目录 `flow/`（`FlowChatView.vue` 核心 IM 群聊协同工作台、`FlowMessageItem.vue` 多角色气泡，`.markdown-body` 排版复用 `shared/markdown-body.css` 全局样式（组件内只保留用户气泡的白色覆盖）、代码块复制与代码内 `@角色` 保护、`FlowRoleBadge.vue` 角色专属彩色徽标、`FlowRoleManager.vue` 团队角色配置面板，支持从全局角色库导入专家角色并统一引用提示词）
   │     ├── prompts/   ── 提示词管理核心组件（PromptManageDialog.vue 支持角色类与流程类单选区分、promptBlock.ts 角色/流程标签构造与解析；会话首条提示词与消息渲染共用该协议）
@@ -167,12 +167,12 @@ web/src/
    - 提取的组件严格置于 `shared/ui/`，保持与具体业务领域（Chat、Tasks、Projects 等）彻底解耦。
    - 例如：`UiSelectMenu` 提炼为通用的现代下拉选择器（支持触发器展示主副文本、弹出浮层、搜索过滤、快捷清除与多选/单选无障碍支持，彻底替代各业务模块的裸露原生 `<select>`）；`UiProgress` 抽离为支持 Tooltip 提示的通用进度条组件；`UiComposer` 抽离为通用可拖拽高度的复合输入交互容器；`UiTree` 抽象通用的树形层级交互骨架；`UiConfirmDialog` 统一承载删除、中止等二次确认，默认 Danger 按钮、支持加载态与弹窗内错误展示。
 2. **第二栏与侧边栏列表标准规范（基于 design-taste-frontend 深度重构）**：
-   - 全平台第二栏（中间导航与对象索引栏：项目、对话、任务、终端、笔记、设置）统一采用**三段式紧凑架构（Header & Actions / Search & Filter / Entity List）**，样式统一由 `shared/styles/sidebar.css` 标准化承载：
+   - 全平台第二栏（中间导航与对象索引栏：项目、对话、群组、任务、笔记、设置）统一采用**三段式紧凑架构（Header & Actions / Search & Filter / Entity List）**，样式统一由 `shared/styles/sidebar.css` 标准化承载：
      - **Zone A 紧凑 Header 与标准化操作区**：标题高度收敛（13px，`font-weight: 600`），右侧集成 22px 微型方圆角停靠与展开控制按钮（`var(--radius, 4px)`）；操作按钮统一收敛为 26px 极简扁平微圆角按钮，前置 1.5px 几何矢量 SVG 加号图标（消除纯字符 `+`）；设置页彻底移除内部冗余二级标题，与外壳单头部绝对对齐。
      - **Zone B 紧凑检索与微过滤**：统一 26px 极简工具栏，内嵌 1.5px 细线放大镜矢量图标与一键清空按钮，移除输入框聚焦外发光（glow / ring）与外层大按钮，大幅释放首屏纵向阅读高度。
      - **Zone C 紧凑列表与导航卡片（Dense Pitch）**：
        - **层级导航**：项目树由独立的 `ProjectSidebar.vue` 包装，`ProjectTree` 采用两级树状折叠（1.5px 矢量旋转 SVG 折叠角、等宽计数徽标及悬浮快捷加号微按钮）；对话模块第二栏 `ChatSidebar` 则专门聚焦为**纯助手列表**（图标徽标 + 助手名称 + 助手名称旁快捷新建对话按钮 + 会话计数 + 悬浮淡入的编辑/删除操作），下属对话剥离至第三栏右侧对话清单（`ChatHistoryPane`）呈现；对话清单严格按当前选中助手（包含未分组与指定助手）按需分页拉取，底部支持“加载更多”按需追加，保障大量对话场景下的流畅度，并支持单会话删除（Pinia store `deleteChat` 级联自愈）。
-       - **实体列表项排版**（覆盖会话项、助手项、对话项、任务项、提示词项、服务器项、设置项）：全量采用标准紧凑卡片（徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
+       - **实体列表项排版**（覆盖会话项、助手项、群组项、任务项、笔记项、设置项）：全量采用标准紧凑卡片（徽标/状态/呼吸指示器 + 语义标题单行截断 + 悬停淡入的 18×18px 快捷操作工具条；属性元数据 + 右对齐 `tabular-nums` 等宽时间戳）。
        - **选中与激活法则（The Move）**：所有列表项激活态严格收敛为**左侧边缘 2px accent 科技蓝实线标尺（`border-l-2 border-l-[var(--color-accent,#4a8ad6)]`）** 与阶梯底色（`var(--surface-muted)`），全平台第二栏彻底清除静止投影（`box-shadow`）与毛玻璃模糊。
        - **色彩预算**：彩色严格控制在 3% 以内，任务与终端状态仅在运行/阻断错误时显色，已完成与常规状态保持中性阶梯底色。
    - **折叠/展开交互按钮**：全平台统一采用紧凑方圆角微按钮（`var(--radius, 4px)`），展开与收起按钮双向镜像对称，消除突兀的长胶囊贴边条与文字大块按钮。
@@ -343,7 +343,7 @@ web/src/
    - Goroutine A：循环读取 PTY 字符流 ──► 写入 WebSocket ──► xterm.js 屏幕刷新
    - Goroutine B：循环读取 WebSocket 击键 ──► 写入 PTY 进程 stdin
    - 窗口伸缩：前端 ResizeObserver 捕获尺寸 ──► 发送二进制帧 ──► 调用 PTY.Resize()
-   - 终端工作区常驻保活（Persistent Terminal Workspace）：Web 终端工作区（TerminalWorkspace）在主框架 AppShell 中常驻挂载保活，通过 v-show 与 visible 属性管理显隐状态，避免切换左侧菜单导航时触发组件卸载与 WebSocket 连接断开。切换离开时正在运行的后台命令持续执行，切回时自动触发 FitAddon 自适应尺寸与焦点重获；仅在用户显式在 Tab 栏点击关闭按钮时才销毁连接并释放资源。
+   - 终端全局多窗口常驻保活（Persistent Project Terminal Modal）：Web 终端（ProjectTerminalModal）在主框架 AppShell 中全局挂载，支持任意页面随时唤出（快捷键 Alt+` 或工具栏按钮），支持多独立悬浮窗口、拖拽移动、缩放与多 Tab 切换。后台 PTY 与 SSH 会话在切换主视图时持续保持连接，不因页面路由改变而中断；关闭窗口或显式关闭 Tab 时安全销毁连接与清理资源。
    - Linux PTY 异步进程回收与杜绝僵死（Zombie / Defunct Reaping）：在 core/platform/unix 的 PTYSession 启动时派生专有异步回收协程（cmd.Wait()），并在 Close() 阶段执行优雅终止与等待同步闭环；不论是用户主动退出、断开连接还是进程被 kill，子进程退出状态均由内核及时消费，杜绝任何 <defunct> 僵死进程残留。
 ```
 
@@ -725,7 +725,9 @@ web/src/
 2. **CSRF 双提交令牌防御**：
    - 全局服务端在 `router.go` 挂载 `auth.RequireCSRF()` 中间件；
    - 令牌由传输层（`client.ts`）统一从 `auth` store 中拉取并自动轮转，禁止任何业务代码直接 `fetch`、手写 `X-CSRF-Token` 或将 `csrfToken` 作为函数参数传递；
-   - 前端守卫测试 `web/src/tests/csrf-coverage.spec.ts` 会在源码静态分析层面拦截违规调用；后端 `csrf_matrix_guard_test.go` 遍历所有非安全路由测试防御有效性。
+   - 前端守卫测试 `web/src/tests/csrf-coverage.spec.ts` 会在源码静态分析层面拦截违规调用；后端 `csrf_matrix_guard_test.go` 遍历所有非安全路由测试防御有效性；
+   - 测试夹具 `router_fixture_test.go` 具备反射断言，确保全平台所有微服务依赖注入完整；`openapi_guard_test.go` 严格核对全量 REST 路由与 `docs/api/openapi.yaml` 契约定义的一致性；
+   - 专家角色（Roles）与提示词模板（Prompts）具备级联引用完整性保护：删除前自动校验其是否被群组（group_members）、角色（agent_roles）或对话（chat_groups/chats）引用，被引用时返回 409 Conflict（role_in_use / prompt_in_use）并阻断物理删除。
 3. **HTTP 响应压缩**：
    - 中间件链为 `AccessLog → Compress(gzip) → Recovery → RequireCSRF → ...`；`Compress` 位于 `internal/transport/http/compress.go`，对协商了 gzip 的可压缩响应启用压缩；
    - 压缩成功时设置 `Content-Encoding: gzip`、`Vary: Accept-Encoding`，并删除 `Content-Length` 与 `Accept-Ranges`；已知 `Content-Length < 1KB` 的响应跳过；

@@ -76,7 +76,7 @@ function getStatusBadge(status?: string) {
     case 'failed':
       return { variant: 'danger' as const, label: '执行失败' }
     default:
-      return { variant: 'neutral' as const, label: '空闲就绪' }
+      return { variant: 'default' as const, label: '空闲就绪' }
   }
 }
 
@@ -131,7 +131,7 @@ async function confirmDeleteTask() {
 
 <template>
   <div class="h-full flex flex-col min-h-0 overflow-y-auto bg-[var(--color-bg)] p-6 space-y-6">
-    <UiAlert v-if="actionError" variant="danger">
+    <UiAlert v-if="actionError" variant="error">
       {{ actionError }}
     </UiAlert>
 
@@ -211,7 +211,7 @@ async function confirmDeleteTask() {
         <UiButton
           variant="secondary"
           class="text-xs h-7 px-2.5"
-          @click="showEditGroupDialog = true"
+          @click="emit('edit')"
         >
           调整成员
         </UiButton>

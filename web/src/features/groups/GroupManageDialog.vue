@@ -167,7 +167,7 @@ async function handleSave() {
     @close="emit('update:open', false)"
   >
     <div class="space-y-5 text-xs text-[var(--color-text)]">
-      <UiAlert v-if="errorMessage" variant="danger">
+      <UiAlert v-if="errorMessage" variant="error">
         {{ errorMessage }}
       </UiAlert>
 
@@ -219,7 +219,7 @@ async function handleSave() {
           <UiTextarea
             v-model="orchestratorPrompt"
             placeholder="定义中控调度大脑的行为规则、调度偏好及团队规约..."
-            rows="4"
+            :rows="4"
             class="w-full font-mono text-2xs"
           />
         </div>

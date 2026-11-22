@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+
+	"devplatform/internal/app/database"
 )
 
 func setupTestEngine(svc *Service) *gin.Engine {
@@ -105,7 +107,19 @@ func TestRoleHandlers(t *testing.T) {
 		}
 	}
 
-	// 5. DELETE /api/roles/:id
+	// 5. In-use role returns 409 Conflict
+	{
+		_ = db.Create(&database.GroupMember{GroupID: 1, RoleID: created.ID})
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("DELETE", "/api/roles/1", nil)
+		engine.ServeHTTP(w, req)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("expected 409 Conflict for in-use role, got %d", w.Code)
+		}
+		_ = db.Where("role_id = ?", created.ID).Delete(&database.GroupMember{})
+	}
+
+	// 6. DELETE /api/roles/:id
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("DELETE", "/api/roles/1", nil)
@@ -115,7 +129,7 @@ func TestRoleHandlers(t *testing.T) {
 		}
 	}
 
-	// 6. GET /api/roles/1 (404)
+	// 7. GET /api/roles/1 (404)
 	{
 		w := httptest.NewRecorder()
 		req, _ := http.NewRequest("GET", "/api/roles/1", nil)

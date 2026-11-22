@@ -7,6 +7,7 @@ import (
 
 var (
 	ErrPromptNotFound       = errors.New("prompt not found")
+	ErrPromptInUse          = errors.New("prompt is in use")
 	ErrInvalidPromptName    = errors.New("prompt name is required")
 	ErrInvalidPromptContent = errors.New("prompt content is required")
 	ErrDuplicatePromptName  = errors.New("prompt name already exists")
