@@ -1124,9 +1124,9 @@ async function createSession() {
           {{ sessions.error }}
           <RouterLink
             v-if="sessions.errorCode === 'service_not_running'"
-            :to="{ name: 'settings-agents' }"
+            :to="{ name: 'engines-agents' }"
             data-test="new-session-service-link"
-            >前往平台设置 → Agent</RouterLink
+            >前往引擎中心 → 执行引擎</RouterLink
           >
         </p>
       </form>

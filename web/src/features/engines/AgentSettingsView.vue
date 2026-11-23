@@ -20,8 +20,8 @@ import {
 import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 import BackendIcon from '../../shared/components/BackendIcon.vue'
-import BuiltinDataPanel from './BuiltinDataPanel.vue'
-import AgentUsagePanel from './AgentUsagePanel.vue'
+import BuiltinDataPanel from '../settings/BuiltinDataPanel.vue'
+import AgentUsagePanel from '../settings/AgentUsagePanel.vue'
 import { rememberModels } from '../../shared/modelCache'
 import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
 

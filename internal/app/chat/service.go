@@ -18,6 +18,7 @@ import (
 	"devplatform/internal/app/events"
 	"devplatform/internal/app/modelconfig"
 	"devplatform/internal/app/prompts"
+	"devplatform/internal/core/agentloop"
 	"devplatform/internal/core/textutil"
 )
 
@@ -600,56 +601,47 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 		}
 	}
 
-	currentMessages := append([]CompletionMessage(nil), request.Messages...)
-	var streamErr error
-	stepCount := 0
+	// Adapt to unified agentloop runner
+	loopCompleter := NewAgentLoopCompleter(s.completer)
+	var loopRegistry agentloop.Registry
+	if s.toolExecutor != nil && len(request.Tools) > 0 {
+		loopRegistry = NewToolExecutorRegistry(s.toolExecutor)
+	}
 
-	for {
-		req := request
-		req.Messages = currentMessages
-		if stepCount >= maxSteps {
-			req.Tools = nil // Exceeded allowed steps, force final text answer
-		}
+	runner := agentloop.NewRunner(loopCompleter, loopRegistry)
 
-		var receivedToolCalls []ToolCall
-		streamErr = s.completer.Stream(ctx, req, func(delta CompletionDelta) error {
+	// Convert base messages for agentloop
+	loopMessages := make([]agentloop.CompletionMessage, 0, len(request.Messages))
+	for _, m := range request.Messages {
+		loopMessages = append(loopMessages, agentloop.CompletionMessage{
+			Role:       m.Role,
+			Text:       m.Text,
+			ToolCallID: m.ToolCallID,
+		})
+	}
+
+	loopReq := agentloop.CompletionRequest{
+		BaseURL:  request.BaseURL,
+		APIKey:   request.APIKey,
+		Model:    request.Model,
+		Messages: loopMessages,
+	}
+
+	_, streamErr := runner.Run(ctx, loopReq, agentloop.LoopOptions{
+		MaxSteps:   maxSteps,
+		ForceFinal: true,
+		OnDelta: func(delta agentloop.CompletionDelta) {
 			if delta.Usage != nil {
-				s.manager.setUsage(run, delta.Usage)
-			}
-			if len(delta.ToolCalls) > 0 {
-				receivedToolCalls = append(receivedToolCalls, delta.ToolCalls...)
+				s.manager.setUsage(run, &Usage{
+					Input:  delta.Usage.PromptTokens,
+					Output: delta.Usage.CompletionTokens,
+				})
 			}
 			if delta.Text != "" || delta.Reasoning != "" {
 				s.manager.emitDelta(run, delta.Text, delta.Reasoning)
 			}
-			return nil
-		})
-
-		if streamErr != nil {
-			break
-		}
-		if len(receivedToolCalls) == 0 || s.toolExecutor == nil || stepCount >= maxSteps {
-			break
-		}
-
-		currentMessages = append(currentMessages, CompletionMessage{
-			Role:      RoleAssistant,
-			ToolCalls: receivedToolCalls,
-		})
-
-		for _, tc := range receivedToolCalls {
-			toolOutput, execErr := s.toolExecutor.Execute(ctx, tc.Name, tc.Arguments)
-			if execErr != nil {
-				toolOutput = fmt.Sprintf(`{"error": %q}`, execErr.Error())
-			}
-			currentMessages = append(currentMessages, CompletionMessage{
-				Role:       "tool",
-				ToolCallID: tc.ID,
-				Text:       toolOutput,
-			})
-		}
-		stepCount++
-	}
+		},
+	})
 
 	status, outcome, code, detail := classifyStreamError(ctx, streamErr)
 	view := s.manager.view(run)

@@ -19,11 +19,16 @@ import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
 import ChatPanel from './features/chat/pure/ChatPanel.vue'
 import SettingsView from './features/settings/SettingsView.vue'
+import EnginesView from './features/engines/EnginesView.vue'
+import AssistantEngineView from './features/engines/AssistantEngineView.vue'
+import CoderEngineView from './features/engines/CoderEngineView.vue'
+import OrchestratorEngineView from './features/engines/OrchestratorEngineView.vue'
+import CoreEngineView from './features/engines/CoreEngineView.vue'
+import AgentSettingsView from './features/engines/AgentSettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import SettingsRolesView from './features/settings/SettingsRolesView.vue'
 import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
-import AgentSettings from './features/settings/AgentSettings.vue'
 import GroupsView from './features/groups/GroupsView.vue'
 import TasksView from './features/tasks/TasksView.vue'
 import NotesView from './features/notes/NotesView.vue'
@@ -74,6 +79,20 @@ export function createAppRouter() {
             props: (route) => ({ chatId: Number(route.params.chatId) }),
           },
           {
+            path: 'engines',
+            component: EnginesView,
+            meta: { engines: true },
+            children: [
+              { path: '', redirect: { name: 'engines-assistant' } },
+              { path: 'assistant', name: 'engines-assistant', component: AssistantEngineView },
+              { path: 'steward', redirect: { name: 'engines-assistant' } },
+              { path: 'coder', name: 'engines-coder', component: CoderEngineView },
+              { path: 'orchestrator', name: 'engines-orchestrator', component: OrchestratorEngineView },
+              { path: 'agents', name: 'engines-agents', component: AgentSettingsView },
+              { path: 'core', name: 'engines-core', component: CoreEngineView },
+            ],
+          },
+          {
             path: 'settings',
             component: SettingsView,
             meta: { settings: true },
@@ -83,7 +102,7 @@ export function createAppRouter() {
               { path: 'roles', name: 'settings-roles', component: SettingsRolesView },
               { path: 'prompts', name: 'settings-prompts', component: SettingsPromptsView },
               { path: 'models', name: 'settings-models', component: ModelSettings },
-              { path: 'agents', name: 'settings-agents', component: AgentSettings },
+              { path: 'agents', redirect: { name: 'engines-agents' } },
               { path: 'proxies', name: 'settings-proxies', component: ProxySettings },
               { path: 'connections', name: 'settings-connections', component: ConnectionSettings },
               { path: 'terminal', name: 'settings-terminal', component: TerminalSettingsView },

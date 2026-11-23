@@ -33,12 +33,6 @@ const links = [
     icon: 'users',
   },
   {
-    name: 'settings-agents',
-    label: 'Agent',
-    desc: '执行引擎与后台服务',
-    icon: 'cpu',
-  },
-  {
     name: 'settings-proxies',
     label: '服务代理',
     desc: '二级路径与端口转发',

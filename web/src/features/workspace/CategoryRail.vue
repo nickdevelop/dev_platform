@@ -32,15 +32,18 @@ const draftsStore = useDraftsStore()
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The notes routes declare `meta.notes` or start with /notes.
 // The pure-chat routes declare `meta.chat` or start with /chat.
+// The engines routes declare `meta.engines` or start with /engines.
 // The settings routes declare `meta.settings`.
 const groupsActive = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const notesActive = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 const chatActive = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
+const enginesActive = computed(() => route.meta.engines === true || route.path.startsWith('/engines'))
 const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(
   () =>
     !settingsActive.value &&
+    !enginesActive.value &&
     !groupsActive.value &&
     !tasksActive.value &&
     !notesActive.value &&
@@ -137,6 +140,10 @@ function onChatClick(event: MouseEvent) {
   }
 }
 
+function onEnginesClick() {
+  emit('expandSidebar')
+}
+
 function onSettingsClick() {
   emit('expandSidebar')
 }
@@ -223,6 +230,22 @@ function onSettingsClick() {
     </div>
 
     <div class="rail-bottom">
+      <div class="rail-divider" aria-hidden="true"></div>
+      <RouterLink
+        class="footer-btn engines"
+        title="引擎"
+        :aria-current="enginesActive ? 'page' : undefined"
+        :to="{ name: 'engines-assistant' }"
+        @click="onEnginesClick"
+      >
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+          <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+        </svg>
+        <span>引擎</span>
+      </RouterLink>
       <RouterLink
         class="footer-btn settings"
         title="设置"
@@ -287,6 +310,13 @@ function onSettingsClick() {
 
 .rail-bottom {
   flex-shrink: 0;
+}
+
+.rail-divider {
+  width: 24px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 4px 0 6px;
 }
 
 .category,

@@ -32,6 +32,7 @@ import NotesSidebar from '../notes/NotesSidebar.vue'
 import { ProjectTerminalModal } from '../terminal'
 import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import SettingsNav from '../settings/SettingsNav.vue'
+import EnginesSidebar from '../engines/EnginesSidebar.vue'
 import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
 import DebugLauncher from '../debug/DebugLauncher.vue'
@@ -201,6 +202,8 @@ const taskRoute = computed(() => route.name === 'task-detail')
 // The settings center renders its category links in the middle column and its
 // panels in the pane.
 const settingsMode = computed(() => route.meta.settings === true)
+// The engines center configures AI agent brains and react loops.
+const enginesMode = computed(() => route.meta.engines === true || route.path.startsWith('/engines'))
 // The tasks center manages tasks with their own list column and detail pane.
 const tasksMode = computed(() => route.meta.tasks === true)
 // The groups center manages team groups with their own list column and detail pane.
@@ -213,6 +216,7 @@ const chatMode = computed(() => route.meta.chat === true || route.path.startsWit
 const projectActive = computed(
   () =>
     !settingsMode.value &&
+    !enginesMode.value &&
     !groupsMode.value &&
     !tasksMode.value &&
     !notesMode.value &&
@@ -283,15 +287,17 @@ const columnLabel = computed(() =>
 const columnTitle = computed(() =>
   settingsMode.value
     ? '设置'
-    : groupsMode.value
-      ? '群组'
-      : tasksMode.value
-        ? '任务'
-        : notesMode.value
-        ? '笔记'
-        : chatMode.value
-          ? '对话'
-          : '项目',
+    : enginesMode.value
+      ? '引擎'
+      : groupsMode.value
+        ? '群组'
+        : tasksMode.value
+          ? '任务'
+          : notesMode.value
+            ? '笔记'
+            : chatMode.value
+              ? '对话'
+              : '项目',
 )
 
 const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
@@ -787,6 +793,7 @@ watch(
       <TasksSidebar v-else-if="tasksMode" />
       <NotesSidebar v-else-if="notesMode" />
       <ChatSidebar v-else-if="chatMode" />
+      <EnginesSidebar v-else-if="enginesMode" />
       <SettingsNav v-else-if="settingsMode" />
       <ProjectSidebar
         v-else
