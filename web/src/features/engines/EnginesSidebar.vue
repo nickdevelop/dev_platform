@@ -9,33 +9,27 @@ import { RouterLink } from 'vue-router'
 const links = [
   {
     name: 'engines-assistant',
-    label: '助手对话',
+    label: '助手引擎',
     desc: '对话助手人设与平台管理工具',
     icon: 'assistant',
   },
   {
     name: 'engines-coder',
-    label: '编码智能体',
+    label: '会话引擎',
     desc: '工作区代码生成与终端执行',
     icon: 'coder',
   },
   {
     name: 'engines-orchestrator',
-    label: '协同中控',
+    label: '协同引擎',
     desc: '多 Agent 流程拆解与分派',
     icon: 'orchestrator',
   },
   {
     name: 'engines-agents',
-    label: '执行引擎',
+    label: 'Agent配置',
     desc: '异构 Agent 后端与服务管理',
     icon: 'agents',
-  },
-  {
-    name: 'engines-core',
-    label: '运行时核心',
-    desc: 'ReAct 引擎、搜索与 MCP',
-    icon: 'core',
   },
 ]
 </script>

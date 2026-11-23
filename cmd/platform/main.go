@@ -364,6 +364,9 @@ func runServer(args []string) error {
 		},
 		// ResolveMaxTurnSteps is consulted per turn so operator changes apply at once.
 		ResolveMaxTurnSteps: func() int {
+			if engines, err := settingsService.Engines(); err == nil && engines.Coder.MaxSteps != 0 {
+				return engines.Coder.MaxSteps
+			}
 			return settingsService.AgentMaxTurnSteps(agents.BackendBuiltin)
 		},
 		// DebugMode is consulted per turn so operator changes apply at once.
@@ -403,7 +406,18 @@ func runServer(args []string) error {
 	rolesRepo := roles.NewRepository(db)
 	rolesService := roles.NewService(rolesRepo, promptService)
 
-	chatService := chat.NewService(db, modelConfig, chat.WithToolExecutor(platformTools), chat.WithPromptReader(promptService))
+	chatService := chat.NewService(
+		db,
+		modelConfig,
+		chat.WithToolExecutor(platformTools),
+		chat.WithPromptReader(promptService),
+		chat.WithDefaultMaxSteps(func() int {
+			if engines, err := settingsService.Engines(); err == nil && engines.Steward.MaxSteps > 0 {
+				return engines.Steward.MaxSteps
+			}
+			return 5
+		}),
+	)
 	// Cancel in-flight generations before the database closes. Defers unwind
 	// LIFO, so this runs before the database close registered earlier.
 	defer func() {

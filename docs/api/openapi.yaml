@@ -3438,6 +3438,53 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/CSRFRejected'
+  /settings/engines:
+    get:
+      summary: Read engines configuration
+      description: Returns configuration for all built-in engines (steward, coder, orchestrator, core).
+      operationId: getEnginesSettings
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Current engines setting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnginesSetting'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      summary: Update engines configuration
+      description: Saves configuration for built-in engines.
+      operationId: putEnginesSettings
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnginesSetting'
+      responses:
+        '200':
+          description: Saved engines setting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnginesSetting'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /settings/agent-general:
     get:
       summary: Read global agent settings
@@ -8673,3 +8720,16 @@ components:
           type: integer
           format: int64
       additionalProperties: false
+    EnginesSetting:
+      type: object
+      properties:
+        steward:
+          type: object
+        coder:
+          type: object
+        orchestrator:
+          type: object
+        core:
+          type: object
+        updatedAt:
+          type: string

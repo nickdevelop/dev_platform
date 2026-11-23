@@ -21,15 +21,12 @@ watch(
 )
 
 const maxStepsOptions = [
-  { value: '15', label: '15 步（轻量）' },
+  { value: '10', label: '10 步（轻量）' },
   { value: '20', label: '20 步（默认推荐）' },
   { value: '30', label: '30 步（深度修改）' },
-  { value: '50', label: '50 步（全自动化）' },
-]
-
-const permissionOptions = [
-  { value: 'strict', label: '严格审批模式 (confirm: 文件修改与终端命令均需确认)' },
-  { value: 'trust', label: '完全信任模式 (auto: 自动放行常规工具执行)' },
+  { value: '50', label: '50 步（复杂任务）' },
+  { value: '100', label: '100 步（超长流程）' },
+  { value: '-1', label: '不限制（-1）' },
 ]
 
 async function save() {
@@ -54,7 +51,7 @@ async function save() {
     <div class="panel-header border-b border-border/50 pb-4">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-semibold tracking-tight text-foreground">编码智能体配置 (Builtin Coding Agent)</h2>
+          <h2 class="text-lg font-semibold tracking-tight text-foreground">会话引擎配置 (Session Coder Engine)</h2>
           <p class="text-xs text-muted-foreground mt-0.5">直连用户工程工作区、自动读取/修改代码并执行终端命令的内置智能编程 Agent 引擎。</p>
         </div>
         <div class="flex items-center gap-2">
@@ -66,22 +63,15 @@ async function save() {
 
     <!-- Section 1: Effective Execution Controls -->
     <div class="panel-section bg-surface/50 border border-border/60 rounded-lg p-4 space-y-4">
-      <div class="section-title text-xs font-semibold uppercase tracking-wider text-muted-foreground">执行控制与安全审批策略</div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-medium text-foreground mb-1">工具安全确认模式</label>
-          <UiSelect v-model="localConfig.permissionMode" :options="permissionOptions" />
-          <p class="text-2xs text-muted-foreground mt-1">控制内置 Agent 在尝试写入文件或运行终端命令时，是否通过交互卡片向用户请求确认。</p>
-        </div>
-        <div>
-          <label class="block text-xs font-medium text-foreground mb-1">单回合最大执行步数</label>
-          <UiSelect
-            :model-value="String(localConfig.maxSteps)"
-            :options="maxStepsOptions"
-            @update:model-value="localConfig.maxSteps = Number($event)"
-          />
-          <p class="text-2xs text-muted-foreground mt-1">单次会话轮次中允许 Agent 连续调用工具的最大步数上限。</p>
-        </div>
+      <div class="section-title text-xs font-semibold uppercase tracking-wider text-muted-foreground">执行控制与步数预算</div>
+      <div class="max-w-xs">
+        <label class="block text-xs font-medium text-foreground mb-1">单回合最大执行步数</label>
+        <UiSelect
+          :model-value="String(localConfig.maxSteps)"
+          :options="maxStepsOptions"
+          @update:model-value="localConfig.maxSteps = Number($event)"
+        />
+        <p class="text-2xs text-muted-foreground mt-1">单次会话轮次中允许 Agent 连续调用工具的最大步数上限（防止死循环）。</p>
       </div>
     </div>
 

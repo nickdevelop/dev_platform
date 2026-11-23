@@ -80,16 +80,24 @@ func WithPromptReader(reader PromptReader) Option {
 	}
 }
 
+// WithDefaultMaxSteps injects a resolver for fallback maximum tool steps.
+func WithDefaultMaxSteps(resolver func() int) Option {
+	return func(s *Service) {
+		s.defaultMaxSteps = resolver
+	}
+}
+
 // Service owns pure-chat conversations, their persistence and their in-process
 // generation state.
 type Service struct {
-	repo         Repository
-	models       ModelResolver
-	completer    Completer
-	toolExecutor ToolExecutor
-	promptReader PromptReader
-	manager      *runManager
-	eventsMgr    *events.Manager
+	repo            Repository
+	models          ModelResolver
+	completer       Completer
+	toolExecutor    ToolExecutor
+	promptReader    PromptReader
+	defaultMaxSteps func() int
+	manager         *runManager
+	eventsMgr       *events.Manager
 
 	baseCtx   context.Context
 	cancel    context.CancelFunc
@@ -595,6 +603,11 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 	}
 
 	maxSteps := 5
+	if s.defaultMaxSteps != nil {
+		if d := s.defaultMaxSteps(); d > 0 {
+			maxSteps = d
+		}
+	}
 	if len(request.Tools) > 0 {
 		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.MaxToolSteps > 0 {
 			maxSteps = group.MaxToolSteps

@@ -544,18 +544,8 @@ describe('AgentSettings service block', () => {
     expect(generalTab.attributes('aria-selected')).toBe('true')
   })
 
-  it('switches to builtin tab and configures max turn steps', async () => {
-    const calls = stubFetch({
-      'PUT /agents/builtin/max-turn-steps': {
-        backend: 'builtin',
-        enabled: true,
-        path: '',
-        pathSource: 'embedded',
-        available: true,
-        maxTurnSteps: -1,
-        defaultMaxTurnSteps: 30,
-      },
-    })
+  it('switches to builtin tab and delegates max turn steps to coder engine', async () => {
+    stubFetch()
     const wrapper = await mountView()
 
     // Tab button exists for builtin
@@ -563,26 +553,9 @@ describe('AgentSettings service block', () => {
     await wrapper.find('[data-test="agent-tab-builtin"]').trigger('click')
     await flushPromises()
 
-    // Builtin max turn steps block exists
+    // Builtin max turn steps block is removed from AgentSettingsView and unified in CoderEngineView
     const stepsBlock = wrapper.find('[data-test="agent-max-turn-steps-builtin"]')
-    expect(stepsBlock.exists()).toBe(true)
-    expect(stepsBlock.text()).toContain('单轮最大工具调用步数')
-    expect(stepsBlock.text()).toContain('当前设定：30 步')
-
-    // Click '不限制' button
-    const buttons = stepsBlock.findAll('button')
-    const unlimitedBtn = buttons.find((b) => b.text().includes('不限制'))
-    expect(unlimitedBtn).toBeDefined()
-    await unlimitedBtn!.trigger('click')
-    await flushPromises()
-
-    // Save
-    await wrapper.find('[data-test="save-max-turn-steps-builtin"]').trigger('click')
-    await flushPromises()
-
-    const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/agents/builtin/max-turn-steps')
-    expect(putCall).toBeDefined()
-    expect(putCall?.body).toMatchObject({ steps: -1 })
+    expect(stepsBlock.exists()).toBe(false)
   })
 
   it('renders usage panel and refreshes usage when supportsUsage is true', async () => {

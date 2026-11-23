@@ -139,14 +139,13 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
 
     expect(wrapper.find('.engines-links').exists()).toBe(true)
     const links = wrapper.findAll('.engines-link')
-    expect(links.length).toBe(5)
+    expect(links.length).toBe(4)
     expect(links[0].classes()).toContain('sidebar-card')
     expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
-      '助手对话',
-      '编码智能体',
-      '协同中控',
-      '执行引擎',
-      '运行时核心',
+      '助手引擎',
+      '会话引擎',
+      '协同引擎',
+      'Agent配置',
     ])
   })
 })

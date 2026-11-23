@@ -49,8 +49,8 @@ async function save() {
     <div class="panel-header border-b border-border/50 pb-4">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-semibold tracking-tight text-foreground">助手对话配置 (Assistant Chat Engine)</h2>
-          <p class="text-xs text-muted-foreground mt-0.5">负责平台日常对话、项目元数据检索与提示词库管理等对话助手的默认行为。</p>
+          <h2 class="text-lg font-semibold tracking-tight text-foreground">助手引擎配置 (Assistant Engine)</h2>
+          <p class="text-xs text-muted-foreground mt-0.5">负责平台日常对话、项目元数据检索与提示词库管理等对话助手的运行时引擎行为。</p>
         </div>
         <div class="flex items-center gap-2">
           <span v-if="savedSuccess" class="text-xs text-emerald-600 font-medium">配置已保存</span>
@@ -71,18 +71,6 @@ async function save() {
         />
         <p class="text-2xs text-muted-foreground mt-1">防止模型陷入连续工具调用死循环的硬性上限（超出后强制输出文本答复）。</p>
       </div>
-    </div>
-
-    <!-- Section 2: Persona Prompt -->
-    <div class="panel-section bg-surface/50 border border-border/60 rounded-lg p-4 space-y-3">
-      <div class="section-title text-xs font-semibold uppercase tracking-wider text-muted-foreground">全局默认系统提示词 (System Prompt)</div>
-      <textarea
-        v-model="localConfig.systemPrompt"
-        rows="4"
-        class="w-full text-xs font-mono bg-background border border-border/80 rounded-md p-2.5 focus:outline-none focus:border-primary text-foreground leading-relaxed resize-y"
-        placeholder="输入全局默认对话人设与准则..."
-      ></textarea>
-      <p class="text-2xs text-muted-foreground">当未指定专属角色提示词或分组提示词时，将自动注入此底座人设引导模型提供服务。</p>
     </div>
 
     <!-- Section 3: Toolkits Mount -->

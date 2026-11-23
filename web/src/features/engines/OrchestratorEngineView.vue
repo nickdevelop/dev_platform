@@ -49,7 +49,7 @@ async function save() {
     <div class="panel-header border-b border-border/50 pb-4">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-semibold tracking-tight text-foreground">协同中控大脑配置 (Collaborative Orchestrator)</h2>
+          <h2 class="text-lg font-semibold tracking-tight text-foreground">协同引擎配置 (Collaborative Orchestrator Engine)</h2>
           <p class="text-xs text-muted-foreground mt-0.5">多 Agent 协同流程的顶层指挥中枢，负责目标拆解、角色分派、异步等待与综合验收。</p>
         </div>
         <div class="flex items-center gap-2">
@@ -71,18 +71,6 @@ async function save() {
         />
         <p class="text-2xs text-muted-foreground mt-1">控制一个协同任务生命周期中允许中控大脑发起调度的最大轮次上限。</p>
       </div>
-    </div>
-
-    <!-- Section 2: Orchestration Prompt -->
-    <div class="panel-section bg-surface/50 border border-border/60 rounded-lg p-4 space-y-3">
-      <div class="section-title text-xs font-semibold uppercase tracking-wider text-muted-foreground">中枢工作准则提示词 (System Prompt)</div>
-      <textarea
-        v-model="localConfig.systemPrompt"
-        rows="4"
-        class="w-full text-xs font-mono bg-background border border-border/80 rounded-md p-2.5 focus:outline-none focus:border-primary text-foreground leading-relaxed resize-y"
-        placeholder="输入中控大脑全局工作准则..."
-      ></textarea>
-      <p class="text-2xs text-muted-foreground">中控大脑在调度时默认遵循的工作守则与角色协同规范（在具体任务或团队中亦可覆盖定制）。</p>
     </div>
 
     <!-- Section 3: Collaboration Tools Summary -->

@@ -1126,7 +1126,7 @@ async function createSession() {
             v-if="sessions.errorCode === 'service_not_running'"
             :to="{ name: 'engines-agents' }"
             data-test="new-session-service-link"
-            >前往引擎中心 → 执行引擎</RouterLink
+            >前往引擎中心 → Agent配置</RouterLink
           >
         </p>
       </form>

@@ -89,7 +89,7 @@ export function createAppRouter() {
               { path: 'coder', name: 'engines-coder', component: CoderEngineView },
               { path: 'orchestrator', name: 'engines-orchestrator', component: OrchestratorEngineView },
               { path: 'agents', name: 'engines-agents', component: AgentSettingsView },
-              { path: 'core', name: 'engines-core', component: CoreEngineView },
+              { path: 'core', redirect: { name: 'engines-assistant' } },
             ],
           },
           {
