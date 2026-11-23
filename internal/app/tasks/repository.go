@@ -288,6 +288,22 @@ func (r *Repository) GetTaskSessionIDs(projectID uint) ([]string, error) {
 	if err := query.Pluck("task_runs.session_id", &sessionIDs).Error; err != nil {
 		return nil, err
 	}
+
+	// Also collect child session IDs dispatched by collaborative flows (flow_messages)
+	flowQuery := r.db.Model(&database.FlowMessage{}).
+		Select("DISTINCT flow_messages.session_id").
+		Joins("JOIN flow_runs ON flow_runs.id = flow_messages.run_id").
+		Where("flow_messages.session_id IS NOT NULL AND flow_messages.session_id != ''")
+	if projectID > 0 {
+		flowQuery = flowQuery.Where("flow_runs.project_id = ?", projectID)
+	}
+
+	var flowSessionIDs []string
+	if err := flowQuery.Pluck("flow_messages.session_id", &flowSessionIDs).Error; err != nil {
+		return nil, err
+	}
+
+	sessionIDs = append(sessionIDs, flowSessionIDs...)
 	return sessionIDs, nil
 }
 
@@ -653,5 +669,10 @@ func (r *Repository) GetFlowMessage(id uint) (FlowMessage, error) {
 		return FlowMessage{}, err
 	}
 	return flowMsgFromDB(row), nil
+}
+
+// DeleteFlowMessage deletes a FlowMessage by ID.
+func (r *Repository) DeleteFlowMessage(id uint) error {
+	return r.db.Where("id = ?", id).Delete(&database.FlowMessage{}).Error
 }
 

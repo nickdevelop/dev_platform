@@ -2,14 +2,20 @@ package groups
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"devplatform/internal/app/database"
 	"devplatform/internal/app/events"
+	"devplatform/internal/app/sessions"
 	"devplatform/internal/app/tasks"
+	"devplatform/internal/core/agents"
+	"devplatform/internal/core/textutil"
 )
 
 // GroupFlowController defines the execution controller for group collaborative tasks.
@@ -295,6 +301,7 @@ func (s *Service) TriggerGroupTask(ctx context.Context, groupID uint, taskID uin
 	task.LastRunAt = &now
 	task.LastRunStatus = "running"
 	_ = s.repo.UpdateGroupTask(task)
+	s.repo.TouchAgentSessionByTaskID(taskID, "", "active")
 
 	return run, nil
 }
@@ -383,4 +390,166 @@ func (s *Service) ensureForwarding(runID uint) {
 			}
 		}
 	}()
+}
+
+// CreateCollabSession creates a group task, indexes a corresponding session in agent_sessions,
+// and automatically triggers the first execution run.
+func (s *Service) CreateCollabSession(ctx context.Context, groupID uint, req CreateCollabSessionRequest) (CollabSessionResponse, error) {
+	if groupID == 0 {
+		return CollabSessionResponse{}, ErrGroupNotFound
+	}
+	groupDetail, err := s.GetGroup(ctx, groupID)
+	if err != nil {
+		return CollabSessionResponse{}, err
+	}
+	if len(groupDetail.Members) == 0 {
+		return CollabSessionResponse{}, ErrNoMembersConfigured
+	}
+	if req.ProjectID == 0 {
+		return CollabSessionResponse{}, ErrInvalidProject
+	}
+	prompt := strings.TrimSpace(req.Prompt)
+	if prompt == "" {
+		return CollabSessionResponse{}, ErrInvalidPrompt
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = textutil.DeriveSessionTitle(prompt)
+	}
+	if title == "" {
+		title = fmt.Sprintf("[%s] 协同任务", groupDetail.Name)
+	}
+
+	// 1. Create GroupTask
+	task := GroupTask{
+		GroupID:         groupID,
+		Title:           title,
+		Description:     "项目工作区协同会话",
+		ProjectID:       req.ProjectID,
+		WorktreeID:      req.WorktreeID,
+		Prompt:          prompt,
+		ScheduleType:    "manual",
+		ScheduleEnabled: false,
+	}
+	createdTask, err := s.repo.CreateGroupTask(task)
+	if err != nil {
+		return CollabSessionResponse{}, fmt.Errorf("groups: create task for collab session: %w", err)
+	}
+
+	// 2. Generate unique session ID and insert into agent_sessions
+	randBytes := make([]byte, 8)
+	_, _ = rand.Read(randBytes)
+	sessionID := fmt.Sprintf("collab-%x-%d", randBytes, createdTask.ID)
+	nativeID := fmt.Sprintf("gt-%d", createdTask.ID)
+	now := time.Now().UTC()
+
+	sessionRow := database.AgentSession{
+		ID:              sessionID,
+		ProjectID:       req.ProjectID,
+		Backend:         "group-flow",
+		InstanceID:      fmt.Sprintf("group-%d", groupID),
+		WorktreeID:      req.WorktreeID,
+		NativeSessionID: nativeID,
+		Title:           title,
+		Model:           groupDetail.OrchestratorModel,
+		Status:          "active",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if err := s.repo.CreateAgentSession(sessionRow); err != nil {
+		return CollabSessionResponse{}, fmt.Errorf("groups: index collab session: %w", err)
+	}
+
+	// 3. Automatically trigger collaborative execution
+	var run tasks.FlowRun
+	if s.flowController != nil {
+		r, runErr := s.flowController.StartGroupRun(ctx, groupID, createdTask.ID, "manual", prompt)
+		if runErr == nil {
+			run = r
+			taskNow := time.Now().UTC()
+			createdTask.LastRunAt = &taskNow
+			createdTask.LastRunStatus = "running"
+			_ = s.repo.UpdateGroupTask(createdTask)
+			s.repo.TouchAgentSessionByTaskID(createdTask.ID, title, "active")
+		}
+	}
+
+	return CollabSessionResponse{
+		Session: sessionDTOFromModel(sessionRow),
+		Task:    createdTask,
+		Run:     run,
+	}, nil
+}
+
+func sessionDTOFromModel(row database.AgentSession) sessions.Session {
+	return sessions.Session{
+		ID:              row.ID,
+		ProjectID:       row.ProjectID,
+		Backend:         agents.BackendID(row.Backend),
+		InstanceID:      row.InstanceID,
+		WorktreeID:      row.WorktreeID,
+		NativeSessionID: row.NativeSessionID,
+		Title:           row.Title,
+		Model:           row.Model,
+		Status:          sessions.SessionActive,
+		Turn:            "idle",
+		CreatedAt:       row.CreatedAt,
+		UpdatedAt:       row.UpdatedAt,
+	}
+}
+
+// GetCollabSessionContext loads group detail, task metadata, and runs for a collaborative session.
+func (s *Service) GetCollabSessionContext(ctx context.Context, sessionID string) (CollabSessionContext, error) {
+	sess, err := s.repo.GetAgentSession(sessionID)
+	if err != nil {
+		return CollabSessionContext{}, err
+	}
+	if sess.Backend != "group-flow" {
+		return CollabSessionContext{}, errors.New("groups: not a collaborative session")
+	}
+
+	var taskID uint
+	if strings.HasPrefix(sess.NativeSessionID, "gt-") {
+		if id, err := strconv.ParseUint(strings.TrimPrefix(sess.NativeSessionID, "gt-"), 10, 64); err == nil {
+			taskID = uint(id)
+		}
+	}
+	if taskID == 0 {
+		return CollabSessionContext{}, ErrGroupTaskNotFound
+	}
+
+	task, err := s.repo.GetGroupTask(taskID)
+	if err != nil {
+		return CollabSessionContext{}, err
+	}
+
+	groupDetail, err := s.GetGroup(ctx, task.GroupID)
+	if err != nil {
+		return CollabSessionContext{}, err
+	}
+
+	runs, err := s.repo.ListFlowRuns(task.ID)
+	if err != nil {
+		runs = nil
+	}
+
+	var activeRun *tasks.FlowRun
+	for i := range runs {
+		if runs[i].Status == tasks.FlowRunRunning || runs[i].Status == tasks.FlowRunWaitingUser {
+			activeRun = &runs[i]
+			break
+		}
+	}
+	if activeRun == nil && len(runs) > 0 {
+		activeRun = &runs[0]
+	}
+
+	return CollabSessionContext{
+		Session:   sessionDTOFromModel(sess),
+		Group:     groupDetail,
+		Task:      task,
+		Runs:      runs,
+		ActiveRun: activeRun,
+	}, nil
 }

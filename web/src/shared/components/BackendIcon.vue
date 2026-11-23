@@ -57,6 +57,20 @@ const chipStyle = computed<Record<string, string>>((): Record<string, string> =>
       draggable="false"
       @error="failed = true"
     />
+    <svg
+      v-else-if="props.backend === 'group-flow'"
+      viewBox="0 0 16 16"
+      width="13"
+      height="13"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      class="text-blue-500 shrink-0"
+      aria-label="团队协同"
+    >
+      <circle cx="8" cy="8" r="2.8" />
+      <path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15M3 3l2 2M11 11l2 2M3 13l2-2M11 5l2-2" />
+    </svg>
     <template v-else>{{ shortName }}</template>
   </span>
 </template>

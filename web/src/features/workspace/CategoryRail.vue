@@ -176,7 +176,7 @@ function onSettingsClick() {
       <RouterLink
         class="category"
         :class="{ active: groupsActive }"
-        title="团队群组"
+        title="团队中心"
         :aria-current="groupsActive ? 'page' : undefined"
         :to="{ name: 'groups' }"
         @click="onGroupsClick"
@@ -187,7 +187,7 @@ function onSettingsClick() {
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
           <path d="M16 3.13a4 4 0 0 1 0 7.75" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        <span>群组</span>
+        <span>团队</span>
       </RouterLink>
       <RouterLink
         class="category"

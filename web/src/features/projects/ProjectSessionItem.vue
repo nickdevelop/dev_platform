@@ -66,13 +66,15 @@ function formatFullTime(isoString?: string): string {
   return date.toLocaleString()
 }
 
+const isCollab = computed(() => props.session.backend === 'group-flow')
+
 const modelFull = computed(() => {
   return sessionsStore.sessionDisplayModel(props.session.id, props.session.model)
 })
 
 const modelLabel = computed(() => {
   const full = modelFull.value
-  if (!full) return ''
+  if (!full) return isCollab.value ? '协同' : ''
   const slash = full.lastIndexOf('/')
   return slash >= 0 ? full.slice(slash + 1) : full
 })

@@ -4,6 +4,8 @@ import (
 	"errors"
 	"time"
 
+	"devplatform/internal/app/sessions"
+	"devplatform/internal/app/tasks"
 	"devplatform/internal/core/agents"
 )
 
@@ -124,4 +126,28 @@ type UpdateGroupTaskRequest struct {
 	CronExpr        *string    `json:"cronExpr"`
 	ScheduleEnabled *bool      `json:"scheduleEnabled"`
 	Status          *string    `json:"status"`
+}
+
+// CreateCollabSessionRequest payload for creating a collaborative session from the workspace.
+type CreateCollabSessionRequest struct {
+	ProjectID  uint   `json:"projectId"`
+	WorktreeID uint   `json:"worktreeId"`
+	Title      string `json:"title,omitempty"`
+	Prompt     string `json:"prompt"`
+}
+
+// CollabSessionResponse wraps the created session and run info.
+type CollabSessionResponse struct {
+	Session sessions.Session `json:"session"`
+	Task    GroupTask        `json:"task"`
+	Run     tasks.FlowRun    `json:"run"`
+}
+
+// CollabSessionContext contains the context needed by the collaborative IM workbench.
+type CollabSessionContext struct {
+	Session   sessions.Session `json:"session"`
+	Group     GroupDetail      `json:"group"`
+	Task      GroupTask        `json:"task"`
+	Runs      []tasks.FlowRun  `json:"runs"`
+	ActiveRun *tasks.FlowRun   `json:"activeRun,omitempty"`
 }

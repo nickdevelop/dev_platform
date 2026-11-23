@@ -158,6 +158,21 @@ func (r *fakeTaskRepo) UpdateFlowMessage(msg tasks.FlowMessage) error {
 	return nil
 }
 
+func (r *fakeTaskRepo) DeleteFlowMessage(id uint) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for runID, list := range r.messages {
+		var remaining []tasks.FlowMessage
+		for _, m := range list {
+			if m.ID != id {
+				remaining = append(remaining, m)
+			}
+		}
+		r.messages[runID] = remaining
+	}
+	return nil
+}
+
 func (r *fakeTaskRepo) ListFlowMessages(runID uint) ([]tasks.FlowMessage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

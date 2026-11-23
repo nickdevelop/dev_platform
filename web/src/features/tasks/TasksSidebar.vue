@@ -37,9 +37,8 @@ const projectFilterOptions = computed<SelectMenuItem<number | undefined>[]>(() =
 })
 
 const typeFilterOptions = computed<SelectMenuItem<TaskType | undefined>[]>(() => [
-  { value: undefined, label: '全部类型' },
+  { value: undefined, label: '全部任务' },
   { value: 'standard', label: '普通任务' },
-  { value: 'flow', label: '流程任务' },
 ])
 
 onMounted(async () => {

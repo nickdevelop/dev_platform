@@ -1,5 +1,6 @@
 // API client for Team Groups and Group Tasks.
 import { get, mutate } from './client'
+import type { AgentSession } from './sessions'
 import type { FlowMessage, FlowRun } from './tasks'
 
 export interface Group {
@@ -185,4 +186,36 @@ export async function postGroupRunMessage(runId: number, content: string): Promi
 
 export async function cancelGroupRun(runId: number): Promise<void> {
   await mutate<void>('POST', `/groups/runs/${runId}/cancel`)
+}
+
+export interface CreateCollabSessionPayload {
+  projectId: number
+  worktreeId?: number
+  title?: string
+  prompt: string
+}
+
+export interface CollabSessionResponse {
+  session: AgentSession
+  task: GroupTask
+  run: FlowRun
+}
+
+export interface CollabSessionContext {
+  session: AgentSession
+  group: GroupDetail
+  task: GroupTask
+  runs: FlowRun[]
+  activeRun?: FlowRun | null
+}
+
+export async function createCollabSession(
+  groupId: number,
+  payload: CreateCollabSessionPayload,
+): Promise<CollabSessionResponse> {
+  return mutate<CollabSessionResponse>('POST', `/groups/${groupId}/collab-sessions`, payload)
+}
+
+export async function getCollabSessionContext(sessionId: string): Promise<CollabSessionContext> {
+  return get<CollabSessionContext>(`/groups/collab-sessions/${sessionId}`)
 }

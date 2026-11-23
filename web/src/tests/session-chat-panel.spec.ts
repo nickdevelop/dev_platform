@@ -1712,4 +1712,21 @@ describe('SessionChatPanel scroll following', () => {
     // Active preview file should have mode 'diff'
     expect((wrapper.vm as any).currentActivePreviewFile?.mode).toBe('diff')
   })
+
+  it('renders CollabSessionChatView on the left and WorkspacePreviewPane on the right for group-flow session', async () => {
+    stubSessionList([session('collab-sess-1', { backend: 'group-flow' as any, title: '群组协同开发' })])
+    const wrapper = mountPanel('collab-sess-1')
+    await flushPromises()
+
+    // 1. Left pane renders CollabSessionChatView
+    const collabView = wrapper.findComponent({ name: 'CollabSessionChatView' })
+    expect(collabView.exists()).toBe(true)
+
+    // 2. Normal single-agent message column is hidden
+    expect(wrapper.find('.message-column').exists()).toBe(false)
+
+    // 3. Right pane WorkspacePreviewPane is present and mounted
+    const previewPane = wrapper.findComponent({ name: 'WorkspacePreviewPane' })
+    expect(previewPane.exists()).toBe(true)
+  })
 })

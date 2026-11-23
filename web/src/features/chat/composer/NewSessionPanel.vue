@@ -17,6 +17,7 @@ import { useSessionsStore } from '../../../stores/sessions'
 import { useWorktreesStore } from '../../../stores/worktrees'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useDraftsStore } from '../../../stores/drafts'
+import { useGroupsStore } from '../../../stores/groups'
 import { buildPromptMessage, promptKindLabel } from '../../../shared/utils/promptBlock'
 import { getSessionHistory, type BackendId, type ImageAttachment } from '../../../api/sessions'
 import { UiSelectMenu, type SelectMenuItem } from '../../../shared/ui'
@@ -51,6 +52,7 @@ const sessions = useSessionsStore()
 const worktreesStore = useWorktreesStore()
 const promptsStore = usePromptsStore()
 const draftsStore = useDraftsStore()
+const groupsStore = useGroupsStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -76,6 +78,22 @@ const initialDraft = draftsStore.getNewSessionDraft(initialProjectId)
 
 let isRestoringDraft = false
 
+const sessionMode = ref<'agent' | 'collab'>('agent')
+const selectedGroupId = ref<number | null>(null)
+
+const groupOptions = computed<SelectMenuItem[]>(() => {
+  return (groupsStore.groups ?? []).map((g) => ({
+    value: g.id,
+    label: `${g.name} (${g.orchestratorModel || 'Default'})`,
+    description: g.description || undefined,
+  }))
+})
+
+const selectedGroup = computed(() => {
+  if (!selectedGroupId.value) return null
+  return groupsStore.groupById(selectedGroupId.value) ?? null
+})
+
 const selectedPromptId = ref<number | ''>(initialDraft.promptId ?? '')
 // Both prompt kinds are valid here: a role prompt becomes a <Role> block and a
 // flow prompt a <Flow> block, with the user's own message after it.
@@ -98,6 +116,9 @@ const composerHint = computed(
 )
 
 const textareaPlaceholder = computed(() => {
+  if (sessionMode.value === 'collab') {
+    return `输入协同任务目标与需求描述，将自动交由中控调度大脑分解并分派各专家协同推进… (${sendShortcutHint.value})`
+  }
   if (selectedPrompt.value) {
     return `输入的内容将追加在所选提示词之后发送给 Agent… (可选；${composerHint.value})`
   }
@@ -639,17 +660,21 @@ watch(selectableBackends, (list) => {
   }
 })
 
-const canCreate = computed(
-  () =>
-    selectedProjectId.value !== null &&
+const canCreate = computed(() => {
+  if (selectedProjectId.value === null || creating.value) return false
+  if (sessionMode.value === 'collab') {
+    return selectedGroupId.value !== null && hasContent.value
+  }
+  return (
     selectedBackend.value !== '' &&
     selectedEnabled.value &&
-    firstMessageReady.value &&
-    !creating.value,
-)
+    firstMessageReady.value
+  )
+})
 
 const createLabel = computed(() => {
-  if (creating.value) return '创建中…'
+  if (creating.value) return sessionMode.value === 'collab' ? '启动中…' : '创建中…'
+  if (sessionMode.value === 'collab') return '创建并启动协同'
   return hasContent.value ? '创建并开始对话' : '新建会话'
 })
 
@@ -659,6 +684,11 @@ onMounted(async () => {
     // deleted can only be recognised here.
     clearMissingPromptSelection()
   })
+  void groupsStore.loadGroups().then(() => {
+    if (!selectedGroupId.value && (groupsStore.groups ?? []).length > 0) {
+      selectedGroupId.value = groupsStore.groups[0].id
+    }
+  }).catch(() => {})
   await agents.loadBackends()
   if (Array.isArray(projectsStore.projects) && projectsStore.projects.length === 0) {
     await projectsStore.load()
@@ -702,6 +732,47 @@ async function createSession() {
     toolNotice.value = '请先选择关联的项目'
     return
   }
+
+  if (sessionMode.value === 'collab') {
+    if (!selectedGroupId.value) {
+      toolNotice.value = '请先选择协同团队'
+      return
+    }
+    const rawText = messageText.value.trim()
+    if (!rawText) {
+      toolNotice.value = '请输入协同任务目标'
+      return
+    }
+    creating.value = true
+    toolNotice.value = ''
+    try {
+      const textToSend = await resolveSessionMentions(targetProjectId, rawText, (targetId, options) =>
+        getSessionHistory(targetProjectId, targetId, options),
+      )
+      const textWithCards = buildCodeCommentsMessage(commentCards.value, textToSend)
+      const finalPrompt = selectedPrompt.value
+        ? buildPromptMessage(selectedPrompt.value, textWithCards)
+        : textWithCards
+
+      const res = await groupsStore.createCollabSession(selectedGroupId.value, {
+        projectId: targetProjectId,
+        worktreeId: projectIsGit.value && selectedWorktreeId.value > 0 ? selectedWorktreeId.value : 0,
+        prompt: finalPrompt,
+      })
+      creating.value = false
+      if (res && res.session) {
+        const sessionId = res.session.id || (res.session as any).ID
+        draftsStore.clearNewSessionDraft(targetProjectId)
+        resetComposer()
+        emit('created', sessionId, targetProjectId)
+      }
+    } catch (err: any) {
+      creating.value = false
+      toolNotice.value = err?.message || '创建协同会话失败'
+    }
+    return
+  }
+
   if (selectedBackend.value === '' || creating.value || !selectedEnabled.value) return
   if (!firstMessageReady.value) return
   creating.value = true
@@ -762,8 +833,38 @@ async function createSession() {
     <div class="new-session-main">
       <section class="new-session" aria-label="新建会话">
     <div class="new-session-inner">
-      <h1>新建会话</h1>
-      <p class="subtitle">选择 Agent 后端，描述你要做的事</p>
+      <div class="new-session-header flex items-center justify-between mb-4">
+        <div>
+          <h1>新建会话</h1>
+          <p class="subtitle">选择会话模式与后端，描述你要做的事</p>
+        </div>
+        <div class="session-mode-switch-group">
+          <div class="inline-flex p-0.5 rounded-lg bg-[var(--color-surface-muted)] border border-[var(--color-border)] select-none">
+            <button
+              type="button"
+              class="px-3 py-1 text-xs font-medium rounded transition-colors"
+              :class="sessionMode === 'agent' ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+              data-test="mode-agent"
+              @click="sessionMode = 'agent'"
+            >
+              单 Agent
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1 text-xs font-medium rounded transition-colors flex items-center gap-1.5"
+              :class="sessionMode === 'collab' ? 'bg-[var(--color-surface)] text-[var(--color-text)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'"
+              data-test="mode-collab"
+              @click="sessionMode = 'collab'"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                <circle cx="8" cy="8" r="3" />
+                <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
+              </svg>
+              <span>团队协同</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
       <form class="create-session" @submit.prevent="createSession">
         <div class="project-selector-group">
@@ -817,8 +918,37 @@ async function createSession() {
         </div>
 
         <div class="agent-selector-group">
-          <span class="agent-label">Agent</span>
-          <AgentSwitch v-model="selectedBackend" :backends="sortedBackends" :loaded="agents.backendsLoaded" />
+          <template v-if="sessionMode === 'agent'">
+            <span class="agent-label">Agent</span>
+            <AgentSwitch v-model="selectedBackend" :backends="sortedBackends" :loaded="agents.backendsLoaded" />
+          </template>
+          <template v-else>
+            <span class="agent-label">协同团队</span>
+            <div class="flex-1">
+              <UiSelectMenu
+                id="group-select"
+                v-model="selectedGroupId"
+                class="group-select"
+                data-test="group-select"
+                :options="groupOptions"
+                placeholder="请选择协同团队…"
+                block
+              />
+              <div v-if="(groupsStore.groups ?? []).length === 0 && !groupsStore.loading" class="text-xs text-[var(--color-text-muted)] mt-1">
+                暂无协同团队，可前往 <RouterLink class="text-blue-500 underline" to="/groups">团队中心</RouterLink> 创建。
+              </div>
+              <div v-else-if="selectedGroup" class="mt-2 p-2.5 rounded bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-xs flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-blue-500" />
+                  <span class="font-medium text-[var(--color-text)]">{{ selectedGroup.name }}</span>
+                  <span class="text-[var(--color-text-muted)] text-2xs font-mono">中枢大脑: {{ selectedGroup.orchestratorModel }}</span>
+                </div>
+                <div class="text-[var(--color-text-muted)] text-2xs">
+                  {{ selectedGroup.memberCount }} 位协同专家 · 自动执行
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div class="prompt-selector-group">
@@ -913,7 +1043,7 @@ async function createSession() {
                 @change="onFileInput"
               />
               <ModelSelect
-                v-if="selectedCapabilities?.modelSelection && selectedBackend !== ''"
+                v-if="sessionMode === 'agent' && selectedCapabilities?.modelSelection && selectedBackend !== ''"
                 v-model="selectedModel"
                 :key="selectedBackend"
                 :backend="selectedBackend"

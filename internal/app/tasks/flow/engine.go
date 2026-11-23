@@ -57,6 +57,7 @@ type TaskRepository interface {
 	UpdateFlowRun(run tasks.FlowRun) error
 	CreateFlowMessage(msg tasks.FlowMessage) (tasks.FlowMessage, error)
 	UpdateFlowMessage(msg tasks.FlowMessage) error
+	DeleteFlowMessage(id uint) error
 	ListFlowMessages(runID uint) ([]tasks.FlowMessage, error)
 }
 
@@ -712,21 +713,6 @@ func (e *Engine) runOrchestratorStep(
 		})
 	}
 
-	now := time.Now().UTC()
-	initMsg := tasks.FlowMessage{
-		RunID:      run.ID,
-		SenderType: tasks.SenderOrchestrator,
-		SenderName: "中控调度员",
-		Content:    "",
-		Status:     tasks.FlowMsgStreaming,
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-	savedMsg, err := e.repo.CreateFlowMessage(initMsg)
-	if err != nil {
-		return orchestratorStepOutcome{}, err
-	}
-
 	req := chat.CompletionRequest{
 		BaseURL:  resolvedModel.BaseURL,
 		APIKey:   resolvedModel.APIKey,
@@ -737,9 +723,26 @@ func (e *Engine) runOrchestratorStep(
 
 	var sb strings.Builder
 	var receivedToolCalls []chat.ToolCall
+	var savedMsg *tasks.FlowMessage
 
 	onDelta := func(delta chat.CompletionDelta) error {
 		if delta.Text != "" {
+			if savedMsg == nil {
+				now := time.Now().UTC()
+				msg, err := e.repo.CreateFlowMessage(tasks.FlowMessage{
+					RunID:      run.ID,
+					SenderType: tasks.SenderOrchestrator,
+					SenderName: "中控调度员",
+					Content:    "",
+					Status:     tasks.FlowMsgStreaming,
+					CreatedAt:  now,
+					UpdatedAt:  now,
+				})
+				if err != nil {
+					return err
+				}
+				savedMsg = &msg
+			}
 			sb.WriteString(delta.Text)
 			e.eventBus.Publish(run.ID, FlowEvent{
 				Type:  EventChunk,
@@ -759,25 +762,31 @@ func (e *Engine) runOrchestratorStep(
 	}
 
 	if err := e.completer.Stream(ctx, req, onDelta); err != nil {
-		savedMsg.Status = tasks.FlowMsgFailed
-		savedMsg.Content = sb.String()
-		_ = e.repo.UpdateFlowMessage(savedMsg)
+		if savedMsg != nil {
+			savedMsg.Status = tasks.FlowMsgFailed
+			savedMsg.Content = sb.String()
+			_ = e.repo.UpdateFlowMessage(*savedMsg)
+		}
 		return orchestratorStepOutcome{}, err
 	}
 
-	fullContent := sb.String()
-	savedMsg.Content = fullContent
-	savedMsg.Status = tasks.FlowMsgComplete
-	_ = e.repo.UpdateFlowMessage(savedMsg)
+	fullContent := strings.TrimSpace(sb.String())
+	if savedMsg != nil && fullContent != "" {
+		savedMsg.Content = sb.String()
+		savedMsg.Status = tasks.FlowMsgComplete
+		_ = e.repo.UpdateFlowMessage(*savedMsg)
 
-	e.eventBus.Publish(run.ID, FlowEvent{
-		Type:    EventMessage,
-		RunID:   run.ID,
-		Payload: savedMsg,
-	})
+		e.eventBus.Publish(run.ID, FlowEvent{
+			Type:    EventMessage,
+			RunID:   run.ID,
+			Payload: *savedMsg,
+		})
+	} else if savedMsg != nil && fullContent == "" {
+		_ = e.repo.DeleteFlowMessage(savedMsg.ID)
+	}
 
 	outcome := orchestratorStepOutcome{
-		Content: fullContent,
+		Content: sb.String(),
 	}
 
 	if len(receivedToolCalls) == 0 {
@@ -980,7 +989,8 @@ func (e *Engine) executeRoleStep(
 		savedMsg.Content = fmt.Sprintf("正在复用已有 Agent 会话 (`%s`) 进行交互...", sessID)
 		_ = e.repo.UpdateFlowMessage(savedMsg)
 
-		_, err := e.launcher.Send(ctx, run.ProjectID, sessID, instruction, role.Model)
+		sendText := fmt.Sprintf("%s\n\n【协同执行规范】:\n当前为自动化协同执行，严禁调用提问类工具挂起会话；若有疑问请在最终答复中阐明并自主推进。", instruction)
+		_, err := e.launcher.Send(ctx, run.ProjectID, sessID, sendText, role.Model)
 		if err != nil {
 			savedMsg.Status = tasks.FlowMsgFailed
 			savedMsg.Content = fmt.Sprintf("向会话 `%s` 发送指令失败: %v", sessID, err)
@@ -990,7 +1000,7 @@ func (e *Engine) executeRoleStep(
 	} else {
 		// Launch new native session within the target project worktree
 		sessionTitle := fmt.Sprintf("[%s协同] %s 步骤 %d", task.Title, role.Name, run.CurrentStep+1)
-		combinedPrompt := fmt.Sprintf("%s\n\n【角色指派任务】:\n%s", role.SystemPrompt, instruction)
+		combinedPrompt := fmt.Sprintf("%s\n\n【角色指派任务】:\n%s\n\n【协同执行规范 (必须严格遵守)】:\n1. 当前处于自动化协同流中，无人工会话界面，严禁调用任何提问/交互挂起类工具（如 question、ask_user_question 等）。\n2. 若遇不明确事项，请依据常识自主推断最佳方案继续执行，并在最终总结中呈现你的决策。\n3. 独立闭环完成代码修改与测试，将所有成果汇总在最终答复中返回。", role.SystemPrompt, instruction)
 
 		outcome, err := e.launcher.CreateInWorktree(ctx, run.ProjectID, run.WorktreeID, role.Backend, sessionTitle, combinedPrompt, role.Model)
 		if err != nil {

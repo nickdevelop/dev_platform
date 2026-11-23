@@ -6383,6 +6383,70 @@ paths:
         '403':
           $ref: '#/components/responses/CSRFRejected'
 
+  /groups/{id}/collab-sessions:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      summary: Create collaborative session and trigger execution
+      operationId: createCollabSession
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - projectId
+                - prompt
+              properties:
+                projectId:
+                  type: integer
+                worktreeId:
+                  type: integer
+                title:
+                  type: string
+                prompt:
+                  type: string
+      responses:
+        '201':
+          description: Collaborative session created and started.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /groups/collab-sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get collaborative session context
+      operationId: getCollabSessionContext
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Collaborative session context details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /notes:
     get:
       summary: List notes

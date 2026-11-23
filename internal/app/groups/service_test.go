@@ -198,3 +198,97 @@ func TestGroupAndTaskLifecycle(t *testing.T) {
 		t.Fatalf("expected 0 groups after delete")
 	}
 }
+
+func TestCreateCollabSessionAndContext(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewRepository(db)
+	svc := NewService(repo)
+	fakeFlow := &fakeFlowController{}
+	svc.SetFlowController(fakeFlow)
+	ctx := context.Background()
+
+	// 1. Seed role and create group
+	role := database.AgentRole{
+		Name:         "全栈工程师",
+		Backend:      "builtin",
+		Model:        "gpt-4o",
+		SystemPrompt: "全栈开发",
+	}
+	_ = db.Create(&role).Error
+
+	grp, err := svc.CreateGroup(ctx, CreateGroupRequest{
+		Name:              "研发先锋队",
+		OrchestratorModel: "gpt-4o",
+		RoleIDs:           []uint{role.ID},
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	// 2. Create Collab Session
+	res, err := svc.CreateCollabSession(ctx, grp.ID, CreateCollabSessionRequest{
+		ProjectID:  10,
+		WorktreeID: 2,
+		Title:      "实现协同会话融入项目",
+		Prompt:     "请专家团队协助完成需求改造",
+	})
+	if err != nil {
+		t.Fatalf("CreateCollabSession: %v", err)
+	}
+	if res.Session.Backend != "group-flow" {
+		t.Fatalf("unexpected backend: %s", res.Session.Backend)
+	}
+	if res.Session.WorktreeID != 2 || res.Session.ProjectID != 10 {
+		t.Fatalf("unexpected session project/worktree: %+v", res.Session)
+	}
+	if len(fakeFlow.startedRuns) != 1 {
+		t.Fatalf("expected 1 started run automatically, got %d", len(fakeFlow.startedRuns))
+	}
+
+	// 3. GetCollabSessionContext
+	collabCtx, err := svc.GetCollabSessionContext(ctx, res.Session.ID)
+	if err != nil {
+		t.Fatalf("GetCollabSessionContext: %v", err)
+	}
+	if collabCtx.Group.ID != grp.ID {
+		t.Fatalf("unexpected group in context: %+v", collabCtx.Group)
+	}
+	if collabCtx.Task.ID != res.Task.ID {
+		t.Fatalf("unexpected task in context: %+v", collabCtx.Task)
+	}
+
+	// 4. Verify tasks.Repository.GetTaskSessionIDs includes flow_messages session_id
+	tasksRepo := tasks.NewRepository(db)
+	// seed a flow message with session_id
+	flowRun := database.FlowRun{
+		TaskID:    res.Task.ID,
+		GroupID:   grp.ID,
+		ProjectID: 10,
+		Status:    "running",
+	}
+	_ = db.Create(&flowRun).Error
+	childSessionID := "child-agent-session-999"
+	flowMsg := database.FlowMessage{
+		RunID:      flowRun.ID,
+		SenderType: "agent",
+		SenderName: "全栈工程师",
+		Content:    "已启动子会话",
+		SessionID:  childSessionID,
+	}
+	_ = db.Create(&flowMsg).Error
+
+	taskSessionIDs, err := tasksRepo.GetTaskSessionIDs(10)
+	if err != nil {
+		t.Fatalf("GetTaskSessionIDs: %v", err)
+	}
+	found := false
+	for _, id := range taskSessionIDs {
+		if id == childSessionID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected childSessionID %s to be collected in taskSessionIDs, got %+v", childSessionID, taskSessionIDs)
+	}
+}

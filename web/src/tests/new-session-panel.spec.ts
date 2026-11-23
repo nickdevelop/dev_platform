@@ -43,6 +43,7 @@ function mountPanel(options: any = {}) {
       { path: '/projects/:projectId/sessions/new', name: 'session-new', component: { template: '<div />' } },
       { path: '/sessions/new', name: 'session-new-global', component: { template: '<div />' } },
       { path: '/projects/:projectId/sessions/:sessionId', name: 'session', component: { template: '<div />' } },
+      { path: '/groups', component: { template: '<div />' } },
     ],
   })
   return mount(NewSessionPanel, {
@@ -889,5 +890,78 @@ describe('NewSessionPanel', () => {
     expect(payload.message).toContain('<CodeComment path="src/utils.ts" line="5">')
     expect(payload.message).toContain('<Description>\n精度问题\n</Description>')
     expect(payload.message).toContain('<Snippet>\nexport const PI = 3.14\n</Snippet>')
+  })
+
+  it('supports switching to collaborative session mode and creating collab session with group', async () => {
+    const { wrapper } = setup()
+    await flushPromises()
+
+    // 1. Initially in agent mode: mode-agent is active, agent-switch exists
+    expect(wrapper.find('[data-test="mode-agent"]').classes()).toContain('bg-[var(--color-surface)]')
+    expect(wrapper.find('[data-test="agent-switch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="group-select"]').exists()).toBe(false)
+
+    // 2. Click mode-collab button
+    await wrapper.find('[data-test="mode-collab"]').trigger('click')
+    await flushPromises()
+
+    // Now in collab mode: agent switch is hidden, group-select is rendered
+    expect(wrapper.find('[data-test="agent-switch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="group-select"]').exists()).toBe(true)
+
+    // 3. Mock groupsStore.createCollabSession
+    const { useGroupsStore } = await import('../stores/groups')
+    const groupsStore = useGroupsStore()
+    groupsStore.groups = [
+      {
+        id: 42,
+        name: 'AI全栈团队',
+        description: '敏捷协同',
+        orchestratorModel: 'gpt-4o',
+        orchestratorPrompt: '调度大脑',
+        memberCount: 3,
+        taskCount: 1,
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+      },
+    ]
+    const collabSpy = vi.spyOn(groupsStore, 'createCollabSession').mockResolvedValue({
+      session: {
+        id: 'collab-sess-1',
+        projectId: 1,
+        backend: 'group-flow',
+        instanceId: 'group-42',
+        nativeSessionId: 'gt-10',
+        title: '协同需求分析',
+        status: 'active',
+        turn: 'running',
+        capabilities: capabilities(),
+        createdAt: '2026-01-01',
+        updatedAt: '2026-01-01',
+      },
+      task: { id: 10 } as any,
+      run: { id: 1 } as any,
+    })
+
+    // Set group and message
+    const selectMenus = wrapper.findAllComponents(UiSelectMenu)
+    const groupSelect = selectMenus.find((c) => (c.props() as Record<string, any>).id === 'group-select' || c.attributes('id') === 'group-select')
+    expect(groupSelect).toBeDefined()
+    await groupSelect!.vm.$emit('update:modelValue', 42)
+    await wrapper.find<HTMLTextAreaElement>('#first-message').setValue('协同需求分析与落地')
+    await flushPromises()
+
+    // 4. Submit form
+    await wrapper.find('form.create-session').trigger('submit')
+    await flushPromises()
+
+    expect(collabSpy).toHaveBeenCalledTimes(1)
+    expect(collabSpy).toHaveBeenCalledWith(42, {
+      projectId: 1,
+      worktreeId: 0,
+      prompt: '协同需求分析与落地',
+    })
+    expect(wrapper.emitted('created')).toBeTruthy()
+    expect(wrapper.emitted('created')![0]).toEqual(['collab-sess-1', 1])
   })
 })

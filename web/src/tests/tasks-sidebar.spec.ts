@@ -84,15 +84,15 @@ describe('TasksSidebar Component', () => {
   it('filters tasks by type filter', async () => {
     const wrapper = await mountSidebar([
       mockTask({ id: 1, title: '标准任务', taskType: 'standard' }),
-      mockTask({ id: 2, title: '流程任务', taskType: 'flow' }),
+      mockTask({ id: 2, title: '未匹配任务', taskType: 'other' as any }),
     ])
 
-    await wrapper.find('.filter-select.type-filter').setValue('flow')
+    await wrapper.find('.filter-select.type-filter').setValue('standard')
     await flushPromises()
 
     const cards = wrapper.findAll('.task-card')
     expect(cards).toHaveLength(1)
-    expect(cards[0].text()).toContain('流程任务')
+    expect(cards[0].text()).toContain('标准任务')
   })
 
   it('marks the active task matching route params', async () => {

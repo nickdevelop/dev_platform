@@ -25,7 +25,7 @@
 | **后端语言** | Go 1.24.0 | 静态类型、跨平台编译（Linux / Windows / macOS） |
 | **HTTP 与网关** | Gin v1.11.0 | RESTful 路由编排、全局统一 SSE（Server-Sent Events）事件网关（`/api/events/bus/:uuid`），配合前端 SharedWorker 共享工作线程实现全浏览器跨标签页单长连接多路复用，根除浏览器并发长连接耗尽问题 |
 | **实时通信** | Gorilla WebSocket v1.5.3 | 终端 PTY 双向字符流转发（带严密 RFC 6455 同源 Origin 校验） |
-| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v40，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`、`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` / `chats` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记、v38 Git 工作树体系 `project_worktrees`、v39 笔记持久化体系 `notes` 表，以及 **v40 团队群组与群组任务体系**：新增 `groups`、`group_members`、`group_tasks` 表，并在 `flow_runs` 增加 `group_id` 与 `worktree_id` 支撑工作树隔离的多 Agent 团队协同任务） |
+| **数据持久化** | GORM v1.25.7 + SQLite (`glebarez/sqlite`) | 纯 Go 实现的嵌入式数据库（无需 CGO），自建迁移版本链（当前 v40，含 Agent 模型快照表、快捷助手固定分组、服务代理映射表 `service_proxies`、助手平台管理与最大工具步数配置、多 Agent 协同流程流转表、内置 Agent 会话转写表 `agent_builtin_sessions` / `agent_builtin_messages`、`prompts` 增加 `type` 字段区分角色类与流程类、全局专家角色管理表 `agent_roles`、`chat_groups` / `chats` 增加 `prompt_id` 实现对话与角色对提示词管理的统一引用机制、`agent_models` 增加 `name_customized` 标记、v38 Git 工作树体系 `project_worktrees`、v39 笔记持久化体系 `notes` 表，以及 **v40 团队中心与多 Agent 协同体系**：新增 `groups`、`group_members`、`group_tasks` 表，并在 `flow_runs` 增加 `group_id` 与 `worktree_id` 支撑工作树隔离的多 Agent 团队协同会话） |
 | **系统与进程** | `creack/pty`、`golang.org/x/sys`、`crypto` | 跨平台子进程生命周期管理、Linux/Unix POSIX PTY 与 Windows 原生 ConPTY（Pseudo Console API）分配、安全密码哈希与 SSH 客户端 |
 | **调度引擎** | `robfig/cron/v3` | 支持标准 5/6/7 段 Cron 表达式（秒、分、时、日、月、周、年）及单次定时调度 |
 | **前端工程** | Vue 3.5 (SFC, `<script setup>`), Vite 8.3, TypeScript 7.0, Tailwind CSS 3.4, PostCSS 8.5 | 单页面应用（SPA），组合式 API，原子化样式与全局扁平微圆角规范 |
@@ -73,8 +73,8 @@
 | **`projects/`** | 项目工作区与文件生命周期。项目目录登记/注销/移动/重命名、安全路径校验（防路径穿越）、工作区文件安全上传（`UploadFile`）、安全删除（`DeletePath`，严禁删除项目根目录）、附件流式下载（`handleFileDownload`，注入 `Content-Disposition` 附件头）、项目 Git 状态（`IsGit` 标记与 `GitInfo`）、Git 提交历史（`GitCommits` / `GitStatusWithRef`）、Git 工作区版本闭环管理（文件暂存 `StageFiles`、移出暂存 `UnstageFiles`、放弃工作区变更 `DiscardFileChanges`、提交变动 `CommitChanges` 及本地分支管理 `ListBranches` / `CheckoutBranch`）、文件统一 Diff 差异比对（`GitFileDiff`）、全量文件树遍历（去 `.gitignore` 与常规点文件过滤，严格隔离 `.git` 元数据目录）、工作区文件读取与短时只读预览 Ticket 鉴权（支持带 CSP Sandbox 的免 Cookie 通配符静态资源安全加载）。**Git Worktree 生命周期**：`ListWorktrees` / `CreateWorktree` / `RemoveWorktree`，默认创建到仓库同级 `<repo>-worktrees/<branch-slug>`，分支名严格校验，移除前停止该工作树全部实例并拒绝脏工作区，分支保留；所有文件/Git/预览接口支持可选 `worktreeId` 作用域（0 为主工作区）。项目侧边栏设置直接与 Tab 栏和 `projects-management` 路由联动，项目排序与显隐状态通过后端数据库持久化存储（`GET/PUT /api/projects/display-config`），杜绝关闭平台后重置。 | `service.go`（项目生命周期、预览 Ticket、工作树服务与显示配置）、`worktree.go`（工作树创建/移除/目录解析）、`files.go`（工作区文件树、上传/删除/下载与内容读取，支持工作树作用域）、`handlers.go`（项目、工作树与文件路由）、`git.go` / `git_status.go` / `git_ops.go` / `git_diff.go`（Git CLI 操作集成、差异比对与工作树作用域） | 不知道 Agent 的存在；项目删除时协同通知 `instances` 销毁对应进程；移除工作树通过 `InstanceStopper` 停止该工作树实例。 |
 | **`chat/`** | 纯模型非 Agent 直接对话系统。支持助手（Assistant）多级对话管理：支持助手专属配置（默认模型、系统提示词隐式注入模型上下文、图标配置/首字符自适应、浮窗快捷入口挂载、平台管理权限开关 `EnablePlatformTools` 与单轮最大工具步数 `MaxToolSteps` 控制）；移除固定分组锁定限制，所有助手平级可管理；对话只能在助手上新建；多模态图片上传（支持 32MiB 大请求体）、SSE 流式补全；支持流式 Function Calling / Tool Loop 调度（通过依赖反转注入中立的 `ToolExecutor` 接口，在助手开启平台管理权限时由大模型自主调用平台工具）；下行生成增量与消息事件统一接入全局事件网关（`events.Manager`，channel: `chat`），彻底退役 `GET /chats/:id/events`、`StreamChat` 及废弃的内部私有事件总线（已删除 `event_bus.go`）。 | `service.go`（助手与对话管理、上下文系统提示词组装与 Tool Loop）、`completer.go`（调用 OpenAI 兼容端点、分片聚合 tool_calls）、`tools.go`（中立工具定义与执行接口）、`stream.go`（SSE 事件帧切分） | 严禁导入 `sessions`、`instances`、`projects` 或 Agent 契约，与 Agent 流程物理隔离；系统提示词只注入请求上下文，不在对话消息气泡中体现；事件总线统一由 `events.Manager` 调度。 |
 | **`platformtools/`** | 平台自身能力工具适配层。实现 `chat.ToolExecutor` 契约，将平台的项目管理（`projects.Service`）、提示词管理（`prompts.Service`）以及会话索引查询（`sessions.Service`）封装为 OpenAI 兼容的 JSON Schema Tools（`platform_list_projects`、`platform_list_prompts`、`platform_get_prompt`、`platform_create_prompt`、`platform_update_prompt`、`platform_delete_prompt`、`platform_list_sessions`）；由组合根（`cmd/platform`）统一组装并注入 `chat.Service`，使 Chat 中的轻量级 Agent 能够自主查询与管理平台项目、会话与提示词，实现严格的分层依赖倒置。 | `executor.go`（工具定义清单与分发路由） | 依赖 `projects`、`prompts` 与 `sessions` 领域服务，不直接接触数据库与底层进程。 |
-| **`groups/`** | **团队群组与群组任务领域服务**。将团队协同任务从普通模板任务中剥离为独立业务体系：负责团队群组定义（`Group`，含中控调度大脑模型 `OrchestratorModel`、中控大脑系统提示词与群组规范 `OrchestratorPrompt`）、群组专家成员纳管（`GroupMember`，直接多选复用全局角色库 `agent_roles`）、群组专属任务（`GroupTask`，关联工作区项目 `ProjectID` 与独立 Git 工作树 `WorktreeID`、调度策略及总目标 Prompt）；实现 `flow.GroupProvider` 契约，在中控调度时将群组专属中控 Prompt 注入 AI 大脑系统上下文，并在派发专家角色时直连 `CreateInWorktree` 实现 Git Worktree 级别的多 Agent 文件与执行环境物理隔离；提供完整的群组 CRUD、成员批量配置、群组任务管理与协同执行触发（`TriggerGroupTask`）、人机问答回帖（`PostUserMessage`）及中断（`CancelRun`）；协同事件统一接入全局事件网关（`events.Manager`，channel: `tasks`）。 | `model.go`（群组与群组任务领域模型/DTO）、`service.go`（业务逻辑与协同生命周期）、`repository.go`（持久化存储与成员联合查询）、`group_provider.go`（flow.GroupProvider 契约适配）、`handlers.go`（REST 路由编排） | 纯通用同构层；依赖 `roles`、`projects`、`tasks/flow` 与 `events`，不直接耦合底层特定 Agent 后端。 |
-| **`tasks/`** | 计划任务与多 Agent 协同流程调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、多策略执行器（`StandardTaskExecutor` 与 `FlowTaskExecutor`）、执行历史记录；内嵌由平台内置 AI 大脑驱动的协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`），彻底废除旧版文本正则匹配 `@角色名` 的机制，全面升级为通过 Function Calling 工具（`flow_dispatch_role` 支持创建或复用已有会话、`flow_wait_session`、`flow_ask_user`、`flow_complete_task`）自主调度角色；全面支持群组协同提供者（`GroupProvider`），在派发专家 Agent 时直连会话启动器 `CreateInWorktree`，实现工作树隔离的团队任务闭环；配备独立的流程数据采集总线（`TelemetryBus`），通过 `sessions.Service.SubscribeSession` 强类型通道直连下游 Agent 会话实时事件流，实现低开销采集转发与轮次终结 Promise 自动汇聚；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准/协同流多策略执行器）、`service.go`（任务/角色/流程 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎与工作树派发）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
+| **`groups/`** | **团队领域服务（Team Center）**。负责团队定义（`Group`，含中控调度大脑模型 `OrchestratorModel`、中控大脑系统提示词与团队规范 `OrchestratorPrompt`）与团队专家成员纳管（`GroupMember`，直接多选复用全局角色库 `agent_roles`）；彻底移除独立分散的群组任务列表与流程任务表单，统一收敛至项目协同会话（Collab Sessions）：用户在新建会话中选择团队后，系统自动创建并调度中控协同会话，通过 `TouchAgentSessionByTaskID` 保证最后交互时间精确抬升；协同事件统一接入全局事件网关（`events.Manager`，channel: `tasks`）。 | `model.go`（团队领域模型/DTO）、`service.go`（业务逻辑与协同生命周期）、`repository.go`（持久化存储与成员联合查询）、`group_provider.go`（flow.GroupProvider 契约适配）、`handlers.go`（REST 路由编排） | 纯通用同构层；依赖 `roles`、`projects`、`tasks/flow` 与 `events`，不直接耦合底层特定 Agent 后端。 |
+| **`tasks/`** | 计划任务与单 Agent 自动化调度引擎。支持标准 5/6/7 位 Cron 表达式（秒、分、时、日、月、周、年，配合前端 CronBuilder 可视化生成器、双向反解析引擎与后10次执行时间自动推断）与单次定时、并发配额控制池（最多 5 并发）、执行历史记录；任务中心已彻底移除多 Agent 流程任务（统一收敛升级至团队协同会话），聚焦于标准单 Agent 模板自动化任务。底层保留协同流程中枢引擎（`internal/app/tasks/flow/`：`Engine`、`FlowTools`、`TelemetryBus`、`EventBus`）专供团队协同会话驱动多 Agent 工作树闭环；全面支持团队协同提供者（`GroupProvider`），在派发专家 Agent 时直连会话启动器 `CreateInWorktree`，实现工作树隔离的团队任务闭环；配备独立的流程数据采集总线（`TelemetryBus`），通过 `sessions.Service.SubscribeSession` 强类型通道直连下游 Agent 会话实时事件流，实现低开销采集转发与轮次终结 Promise 自动汇聚；**协同子会话过滤屏蔽**：`GetTaskSessionIDs` 联合查询所有任务流（`flow_runs` 及对应 `flow_messages`）派生的底层专家子会话 ID，默认在普通项目/任务会话列表中过滤隐藏，确保会话树聚焦高阶业务流；流程任务流式执行事件与状态变更统一接入全局事件网关（`events.Manager`，channel: `tasks`），废除原独立 SSE 端点 `/api/tasks/flows/:runId/events`。 | `scheduler.go`（后台轮询调度器）、`executor.go`（标准任务执行器）、`service.go`（任务 CRUD 与状态同步）、`flow/engine.go`（内置大脑 ReAct 协同调度引擎与工作树派发）、`flow/tools.go`（中枢 Agent 工具集）、`flow/telemetry_bus.go`（流程数据采集总线）、`flow/event_bus.go`（协同流事件分发总线） | 任务触发时调用 `sessions.Service` 创建或复用特定 Agent 会话执行，协同流中枢大脑通过 `modelconfig.Service` 与 `Completer` 驱动，通用层与底层异构 Agent 完全解耦。 |
 | **`terminal/`** | Web 在线交互式终端。本地 PTY 分配（Linux POSIX PTY 与 Windows 原生 ConPTY 双向支持）、本地 Shell 自动扫描（Windows 环境下优先探测并推荐 Git-Bash，兼顾 PowerShell 7 / Windows PowerShell / CMD；Linux 探测 bash/zsh/sh）与自定义路径手动配置及合法性校验（配置由 `settings` 表 `terminal.local_shell` 持久化，本地会话统一生效）、终端字体偏好配置（`GET/PUT /api/terminal/config` 与 `POST /api/terminal/config/reset`，支持用户自定义等宽字体并以平台统一字体 `Google Sans Code` + `Noto Sans SC` 作为默认与回退栈）、远程 SSH 会话池、WebSocket 双向字符转发、终端窗口 Resize 协同、同源 Origin 防御。REST 路由错误响应全面对齐 `errorResponse` 与 `c.AbortWithStatusJSON` 统一错误枚举规范。 | `handlers.go`（WebSocket 升级与同源拦截、REST 路由）、`service.go`（会话调度、本地 Shell 与终端配置管理）、`session.go`（LocalSession / SSHSession 封装） | 调用 `internal/core/platform` 分配底层 PTY；不依赖具体 Agent 业务。 |
 | **`modelconfig/`** | 大语言模型服务商与模型元数据配置。管理 OpenAI 兼容服务地址、模型列表、API 凭据安全关联、端点动态解析。 | `service.go`（模型服务增删改查）、`repository.go`（配置存储） | 为 `chat` 服务及平台模型选择器提供基础模型字典。 |
 | **`modelprobe/`** | 大模型连通性探针。提供模型服务地址可达性测试与模型可用性探针，向前端提供探测报告。 | `probe.go`（连通性测试与模型抓取） | 供设置中心与模型管理页调用。 |
@@ -147,7 +147,7 @@ web/src/
   │     │     ├── pure/          ── 独立纯 Chat 对话工作台（第二栏专属展示助手列表，第三栏无 Tab 左右双列：左侧主对话面板 + 右侧助手对话清单）
   │     │     └── quick/         ── 快捷助手横向方形工具栏、每次打开新建对话的 480×600 弹窗、自由拖拽定位（复用 shared/composables/useDraggablePosition）与最近对话下拉
   │     ├── workspace/ ── 平台三栏主框架（AppShell.vue，48px 紧凑一级栏与 272px 二级侧栏，z-index: 70 全圆角防遮挡折叠把手；安装 openTabs 容量裁剪守卫：轮次 running 的会话 Tab 永不被自动 trim 挤掉——被挤掉即触发无条件退订、后台流式会话失联，手动关闭仍走退订；引入 groupsMode 调度中间栏群组列表 GroupsSidebar）、分类导航条（CategoryRail.vue，48px 紧凑宽度，一级菜单顺序：项目 → 对话 → 群组 → 任务 → 笔记 → 设置，终端以全局悬浮窗 ProjectTerminalModal 与设置中心终端服务器配置协同提供）、全局浮动入口挂载点（quickAssistant 启动器 + debugPanel 调试入口 `DebugLauncher.vue`，随各自开关条件挂载）、会话 Tab
-  │     ├── groups/    ── 团队群组工作台（GroupsView.vue 团队主视图、GroupsSidebar.vue 遵循 sidebar.css 标准规范的三段式侧栏、GroupEditPanel.vue 主工作台全屏面板支持团队创建与编辑无遮挡无浮层体验、GroupDetailView.vue 团队详情/中控大脑设定预览/专家成员看板/项目与工作树隔离任务列表、GroupTaskCreateModal.vue 群组任务创建弹窗、GroupFlowChatDialog.vue 协同群聊工作台视窗）
+  │     ├── groups/    ── 团队群组工作台（GroupsView.vue 团队主视图、GroupsSidebar.vue 遵循 sidebar.css 标准规范的三段式侧栏、GroupEditPanel.vue 主工作台全屏面板支持团队创建与编辑无遮挡无浮层体验、GroupDetailView.vue 团队详情/中控大脑设定预览/专家成员看板/项目与工作树隔离任务列表、GroupTaskCreateModal.vue 群组任务创建弹窗、GroupFlowChatDialog.vue 独立弹窗协同群聊、CollabSessionChatView.vue 协同会话群聊主体视图，支持顶部中控/专家芯片、协同消息流、决策卡片与底层专家子会话抽屉检视）
   │     ├── projects/  ── 项目侧边栏（ProjectSidebar.vue，统管 Zone A 操作【新建项目/项目管理】/Zone B 检索与过滤/Zone C 树容器）、项目设置 Tab 页面（ProjectSettingsView.vue，项目改名、路径只读、Git 状态、工作树创建/列表/移除与非 Git 说明）、全局项目列表管理视图（ProjectsManagementView.vue，支持 Tab 中调整项目顺序与显隐、打开项目设置、解除登记）、项目树（ProjectTree.vue，取消定时轮询，采用本地状态就地响应与按需加载；Git 项目名称前显示 Git 标识；项目行提供新建会话与项目设置入口；展开项目时加载工作树标签）、会话卡片项（ProjectSessionItem.vue，展示工作树分支标签）、统一项目弹窗（ProjectManageDialog.vue，仅 register/create 两种模式）、新建项目弹窗（支持自定义项目名称、可视化路径选择与子目录创建）
   │     ├── proxies/   ── 服务代理管理组件（ProxiesView.vue）、创建/编辑表单弹窗（ProxyEditDialog.vue）、可视化目录选择器（ProxyDirectoryPicker.vue）
   │     ├── settings/  ── 设置中心（SettingsView.vue）：外观设置（AppearanceSettings.vue，支持浅色、暖阳、冷灰、蔚蓝、极光、青竹 6 款高质感主题，涵盖深浅蓝色系与深色暗夜模式；字号档位为小 12 / 标准 14 / 大 16 px，全站字号通过 --text-size-* 令牌跟随根字号，字号仅展示档位名称、不展示像素数值）、大模型配置（ModelSettings.vue）、提示词管理（SettingsPromptsView.vue，分类管理角色类与流程类提示词）、角色管理（SettingsRolesView.vue，多 Agent 专家角色库管理、统一人设与模型、提示词库统一引用、新建专家角色 Agent 后端选择全面对齐任务中心采用胶囊单选组并复用标准 ModelSelect 组件、提示词长描述分离排版与 min-w-0 布局防御）、Agent 全局设置（AgentSettings.vue，全局系统提示词 AGENTS.md 编辑与落盘同步、Tab 隔离后端开关与空闲断开配置）、服务代理设置（ProxySettings.vue）、服务连接（ConnectionSettings.vue）、调试面板设置（DebugSettings.vue，localStorage 本浏览器开关控制全局调试入口显隐，不落库）、设置侧边导航（SettingsNav.vue，菜单顺序固定为：外观 → 模型 → 提示词 → 角色 → Agent → 服务代理 → 服务连接 → 调试面板，无缝对齐 AppShell 单头部规范）
@@ -269,7 +269,8 @@ web/src/
     - 会话视口状态记忆（Session & Chat Viewport State Restoration）：通过 useViewportStore 独立记录每个会话主消息列的滚动条位置（scrollTop）与粘底状态（pinned）。当用户切换菜单、路由或切换 Tab 时，离开前自动固化当前视口状态（具备组件卸载虚假滚动事件过滤，防止记录 scrollTop=0）；再次切回该会话时：若此前处于非粘底状态（如翻看历史中间某段），无缝精确恢复到离开时的 scrollTop 与悬浮“跳至最新”状态，绝不无故强制重置滚到底部；若此前处于粘底状态或首次打开，则通过 double-rAF 等待异步排版就绪后平滑跟随最新内容，彻底根治 Tab 切换时对话界面默认滚动回顶部的问题。
     - 动态运行指示器与任务流状态：动态运行胶囊与任务流状态统一采用「正在执行...」与「正在执行中…」文案。
     - 源码选区划词批注与结构化 XML 封装（`features/files/CodeView.vue`、`features/chat/composer/ComposerCommentCards.vue`）：源码预览查看器（`CodeView.vue`）支持划选多行文本在末尾行号上展示 `+` 按钮，点击展开平滑嵌入且宽度上限为 300px 的行内批注面板输入说明或提问（避免弹窗移出视口）；提取文件路径、起止行号、代码片段与批注内容并注入会话输入框内顶部卡片托盘（`ComposerCommentCards.vue`），卡片固定 150px 宽并按「文件、代码摘要、描述」紧凑呈现（其中代码摘要展示两行），多张卡片并排展示并在溢出时启用横向平滑滚动条，支持快速移除及点击卡片反查定位代码行；消息提交时采用标准 XML 标签封装（`<CodeComment path="..." line="...">` 包含 `<Description>` 与 `<Snippet>`），与自然用户正文合并；对话流渲染层（`FoldableUserText.vue` / `MessageView.vue`）自动解析 `<CodeComment>` 并呈现为与输入区一致的 150px 紧凑卡片托盘，代码片段与描述提供两行缩略并支持鼠标悬停浮层展示完整内容（无需额外点击展开），点击头部可联动工作区面板平滑滚动至对应行号。
-    - 新建会话联动工作区面板（`features/chat/composer/NewSessionPanel.vue`）：采用与 `SessionChatPanel` 同构的双栏自适应布局，集成右侧统一工作区面板（`WorkspacePreviewPane`）；重新选择关联项目或工作树时，自动清空已打开的文件预览标签、重置激活项为文件树，并驱动底层文件树自动重新拉取；支持在新建会话阶段直接划选代码生成批注卡片，首条消息创建会话时一并打包传递给 Agent。
+    - 新建会话联动工作区面板（`features/chat/composer/NewSessionPanel.vue`）：采用与 `SessionChatPanel` 同构的双栏自适应布局，集成右侧统一工作区面板（`WorkspacePreviewPane`）；头部支持「单 Agent 会话 / 团队协同会话」模式切换：单 Agent 模式支持配置具体 Agent 后端与模型，协同会话模式支持选择团队群组（实时呈现中控模型与专家成员）；提交协同会话时调用 `POST /api/groups/:id/collab-sessions`，自动创建群组任务与会话索引，并自动触发首次协同运行；重新选择关联项目或工作树时，自动清空已打开的文件预览标签、重置激活项为文件树，并驱动底层文件树自动重新拉取；支持在新建会话阶段直接划选代码生成批注卡片，首条消息创建会话时一并打包传递给 Agent。
+    - 协同会话全链路集成（`features/chat/SessionChatPanel.vue`）：当会话后端为 `group-flow` 时，主对话区无缝切换为协同群聊工作台（`CollabSessionChatView.vue`），右侧面板完全复用 `WorkspacePreviewPane`，确保协同会话与普通会话的交互操作、文件树浏览、Diff 审阅与尺寸调整体验 100% 保持一致。
    - 轮次结束时将会话状态恢复为 TurnIdle
 ```
 
@@ -378,20 +379,20 @@ web/src/
 
 ---
 
-### 5. 团队群组与多 Agent 协同流程工作树隔离调度流（Team Groups & Flow Worktree Execution Flow）
+### 5. 团队中心与多 Agent 协同流程工作树隔离调度流（Team Center & Flow Worktree Execution Flow）
 
-面向复杂多 Agent 团队研发场景，平台将原协同流程任务从普通任务中剥离为独立的一级实体「团队群组（Groups）」，实现“定义团队成员库与中控大脑 → 为团队创建关联项目与独立 Git Worktree 的群组任务 → 中控大脑带专属 Prompt 自主规划派发 → 专家 Agent 在物理隔离工作树中修改代码与自测”的全闭环：
+平台将团队协同体系升级为「团队中心（Teams）」结合「项目协同会话（Collab Sessions）」：团队中心仅负责团队资产与专家角色定义，协同会话则是团队落地的唯一载体。实现了“定义团队成员库与中控大脑 → 在项目中创建协同会话并指定关联团队与 Git Worktree → 中控大脑带专属 Prompt 自主规划派发 → 专家 Agent 在物理隔离工作树中修改代码与自测”的全闭环：
 
 ```
-[ 用户在群组中心配置团队成员库与中控大脑设定，并创建群组任务（指定项目与 Git Worktree）]
+[ 用户在团队中心配置专家成员与中控大脑设定，并在项目新建会话中发起协同会话（指定团队与 Git Worktree）]
                       │
                       ▼
-1. Web 前端 (features/groups/GroupDetailView.vue / GroupFlowChatDialog.vue)
+1. Web 前端 (features/groups/GroupDetailView.vue / CollabSessionChatView.vue)
    - 展现为团队协同 IM 群聊对话流与专家工作台
    - 经由统一事件网关（channel="tasks", targetId=runId）多路复用订阅流式事件，不再独占独立长连接
                       │
                       ▼
-2. 群组领域服务与中枢引擎 (internal/app/groups/ & internal/app/tasks/flow/engine.go)
+2. 团队领域服务与中枢引擎 (internal/app/groups/ & internal/app/tasks/flow/engine.go)
    - 提取协同总目标、团队中控模型与专属中控设定（OrchestratorPrompt）
    - 初始化 FlowRun（携带 group_id 与 worktree_id）与首条用户目标消息
    - 启动基于 Function Calling 工具驱动的 ReAct 自主调度状态机
@@ -433,6 +434,45 @@ web/src/
                                            ▼
 6. 人机协同介入 (Human-in-the-Loop)
    - 用户在 IM 对话底部随时发言插话，作为最高优先级指令唤醒中枢大脑进入重规划
+```
+
+#### 5.1 群组任务融入项目会话与协同会话自动执行流（Collab Session Workflow）
+
+平台支持在项目会话中直接创建与运行多 Agent 团队协同会话，将高阶中枢群聊与普通会话工作台同构融合，同时杜绝底层专家子会话对会话树的视觉污染：
+
+```
+[ 用户在新建会话面板切换为“团队协同会话”并选择群组，输入总目标 ]
+                               │
+                               ▼
+1. Web 前端 (features/chat/composer/NewSessionPanel.vue)
+   - 提取输入任务描述与选中的群组 ID (groupId)
+   - 调用 api/groups.ts 的 createCollabSession(groupId, { projectId, worktreeId, title, prompt })
+                               │
+                               ▼ (POST /api/groups/:id/collab-sessions)
+2. 传输层与群组领域服务 (internal/app/groups/service.go)
+   - 校验群组成员与中控配置完整性
+   - 自动创建 GroupTask 实体 (type="flow", status="active", 绑定项目与工作树)
+   - 在 agent_sessions 登记平台中立索引行：
+       backend = "group-flow", instanceId = "group-<groupId>", native_session_id = "gt-<taskId>"
+   - 立即调用 flowController.StartGroupRun 自动触发首次协同运行
+   - 返回统一的 AgentSession 与 Task 实体
+                               │
+                               ▼
+3. 前端会话 Tab 打开与同构渲染 (SessionChatPanel.vue)
+   - 自动跳转并原地置换为协同会话 Tab（`openTabs.promoteNewSession` 携带 title 与 `backend: 'group-flow'`，同时将新会话同步注入 `sessionsStore` 本地索引缓存）
+   - 检测到 `session.backend === 'group-flow'` 时，绕过单 Agent 专属的 `openSession` 与单 Agent 历史请求，消除 `unsupported_capability` 报错与 `disconnected` 误标
+   - 主对话区同构渲染 `CollabSessionChatView.vue`，右侧工作区无缝复用 `WorkspacePreviewPane.vue`，保持左右双栏布局、文件树与代码预览体验完全一致
+   - 顶部呈现中控大脑与专家成员芯片，实时监听任务事件网关 (`channel="tasks"`, `targetId=runId`，字段对齐 `envelope.eventType` 与增量 `chunk`)，断线重连（`onReconnect`）自动补齐增量消息
+                               │
+                               ▼
+4. 底层专家会话静默执行、防挂起与隔离防污染 (internal/app/tasks/flow/)
+   - 中控大脑通过 `flow_dispatch_role` 派发的 Coding Agent 专家会话在专属工作树中执行
+   - **自动化子会话免挂起机制（Zero-Hanging Execution）**：
+     • Prompt 级注入协同执行规范：严禁底层 Agent 调用提问类工具（如 `question`、`ask_user_question`）挂起等待，要求根据常识与工程规范自主决策推进，并在总结报告中呈现疑问；
+     • 遥测总线双层自动解挂（`InteractionAutoReplier`）：`pipeLiveStream` 在实时流收到 `EventInteraction (InteractionRequested)` 时立即自动应答表单并批准权限；`CollectSessionTurn` 轮询中扫描挂起表单与权限并自动应答，杜绝子 Agent 进程卡死在无人交互界面上
+   - `tasks.GetTaskSessionIDs` 自动联合查询所有协同流派生的底层 session_id
+   - 左侧项目会话树默认过滤并隐藏这些专家子会话，防止会话列表爆炸
+   - 用户如需审查专家执行细节，可在 CollabSessionChatView 中点击“查看专家会话”在模态窗中直接下钻检视
 ```
 
 ---

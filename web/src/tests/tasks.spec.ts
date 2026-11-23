@@ -41,11 +41,9 @@ describe('Tasks Module Unit Tests', () => {
     })
     await flushPromises()
 
-    // 1. Task type selector: standard active, flow disabled
-    expect(wrapper.find('.task-type-selector').exists()).toBe(true)
-    expect(wrapper.text()).toContain('普通任务')
-    expect(wrapper.text()).toContain('流程任务')
-    expect(wrapper.find('.type-card.active .type-title').text()).toBe('普通任务')
+    // 1. Task title and standard task elements exist
+    expect(wrapper.find('#task-title').exists()).toBe(true)
+    expect(wrapper.text()).toContain('创建任务')
 
     // 2. Execution mode choices
     const modeCards = wrapper.findAll('.mode-card')

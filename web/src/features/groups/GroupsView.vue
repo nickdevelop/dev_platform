@@ -105,10 +105,10 @@ function onGroupDeleted() {
             </svg>
           </div>
           <h2 class="text-base font-semibold text-[var(--color-text)] tracking-tight">
-            团队群组与协同任务
+            团队中心
           </h2>
           <p class="text-xs text-[var(--color-text-muted)] leading-relaxed max-w-md mx-auto">
-            定义专业协作团队，配置中控调度大脑模型与角色提示词规范，纳管专家角色。指派群组任务时，可指定项目及 Git 工作树分支，实现多 Agent 隔离协同执行。
+            定义专业协作团队，配置中控调度大脑模型与角色提示词规范，纳管专家角色。在项目中创建协同会话时，团队各专家在中控大脑的统筹规划下协同执行任务。
           </p>
           <div class="pt-2">
             <UiButton
@@ -116,7 +116,7 @@ function onGroupDeleted() {
               class="text-xs px-4 py-2 font-medium"
               @click="router.push({ name: 'group-new' })"
             >
-              + 创建首个团队群组
+              + 创建首个团队
             </UiButton>
           </div>
         </div>

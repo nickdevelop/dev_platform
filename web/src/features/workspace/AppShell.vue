@@ -639,7 +639,8 @@ function onDeleteSession(_id: number, sessionId: string) {
 function onCreated(sessionId: string, targetProjectId?: number) {
   const pId = targetProjectId ?? projectId.value
   if (pId === null || pId === undefined) return
-  openTabs.promoteNewSession(pId, sessionId)
+  const known = sessions.sessionById(sessionId)
+  openTabs.promoteNewSession(pId, sessionId, known?.title ?? '', known?.backend ?? '')
   void router.push({ name: 'session', params: { projectId: String(pId), sessionId } })
 }
 

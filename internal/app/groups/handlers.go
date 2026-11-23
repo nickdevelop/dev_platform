@@ -12,6 +12,8 @@ import (
 func (s *Service) RegisterRoutes(r gin.IRouter) {
 	groups := r.Group("/groups")
 	{
+		groups.GET("/collab-sessions/:sessionId", s.handleGetCollabSessionContext)
+
 		groups.GET("", s.handleListGroups)
 		groups.POST("", s.handleCreateGroup)
 		groups.GET("/:id", s.handleGetGroup)
@@ -28,6 +30,8 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 
 		groups.POST("/:id/tasks/:taskId/trigger", s.handleTriggerGroupTask)
 		groups.GET("/:id/tasks/:taskId/runs", s.handleListGroupTaskRuns)
+
+		groups.POST("/:id/collab-sessions", s.handleCreateCollabSession)
 	}
 
 	flowRuns := r.Group("/groups/runs")
@@ -393,4 +397,56 @@ func (s *Service) handleCancelRun(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *Service) handleCreateCollabSession(c *gin.Context) {
+	groupID, ok := parseGroupID(c)
+	if !ok {
+		return
+	}
+
+	var req CreateCollabSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
+
+	res, err := s.CreateCollabSession(c.Request.Context(), groupID, req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrGroupNotFound):
+			respondError(c, http.StatusNotFound, "group_not_found")
+		case errors.Is(err, ErrNoMembersConfigured):
+			respondError(c, http.StatusBadRequest, "no_members_configured")
+		case errors.Is(err, ErrInvalidProject):
+			respondError(c, http.StatusBadRequest, "invalid_project_id")
+		case errors.Is(err, ErrInvalidPrompt):
+			respondError(c, http.StatusBadRequest, "invalid_prompt")
+		default:
+			respondError(c, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+
+	c.JSON(http.StatusCreated, res)
+}
+
+func (s *Service) handleGetCollabSessionContext(c *gin.Context) {
+	sessionID := c.Param("sessionId")
+	if sessionID == "" {
+		respondError(c, http.StatusBadRequest, "invalid_session_id")
+		return
+	}
+
+	ctx, err := s.GetCollabSessionContext(c.Request.Context(), sessionID)
+	if err != nil {
+		if errors.Is(err, ErrGroupNotFound) || errors.Is(err, ErrGroupTaskNotFound) {
+			respondError(c, http.StatusNotFound, "collab_session_not_found")
+			return
+		}
+		respondError(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, ctx)
 }

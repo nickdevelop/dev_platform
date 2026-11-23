@@ -35,6 +35,7 @@ import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
 import { ellipsisMiddle, formatTokens } from '../../shared/format'
 import SessionHeader from './pane/SessionHeader.vue'
+import CollabSessionChatView from '../groups/CollabSessionChatView.vue'
 import WorkspacePreviewPane, { type OpenFileTab } from './pane/WorkspacePreviewPane.vue'
 import QuickFileSearchDialog from './pane/QuickFileSearchDialog.vue'
 import MessageView from './rendering/MessageView.vue'
@@ -533,6 +534,7 @@ const FOLLOW_THRESHOLD_PX = 24
 
 
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
+const isCollabSession = computed(() => activeSession.value?.backend === 'group-flow')
 const activeWorktreeId = computed(() => activeSession.value?.worktreeId ?? 0)
 
 watch(
@@ -890,7 +892,16 @@ async function open() {
     loadError.value = sessions.error
     return
   }
-  if (!sessions.sessionById(props.sessionId)) return
+  const session = sessions.sessionById(props.sessionId)
+  if (!session) return
+  if (session.backend === 'group-flow') {
+    sessions.activeSessionId = props.sessionId
+    preparing.value = false
+    void loadGit()
+    await nextTick()
+    restoreScrollPosition()
+    return
+  }
   preparing.value = true
   toolNotice.value = ''
   // A first message the create request could not admit keeps its text here:
@@ -1054,7 +1065,16 @@ async function removeSession() {
           'preview-collapsed': previewCollapsed,
         }"
       >
-        <div class="message-column">
+        <!-- Collab Session IM View when backend is group-flow -->
+        <CollabSessionChatView
+          v-if="isCollabSession && activeSession"
+          :project-id="props.projectId"
+          :session-id="props.sessionId"
+          :session="activeSession"
+          @delete="confirmingDelete = true"
+        />
+
+        <div v-else class="message-column">
           <SessionHeader
             :session="activeSession"
             @delete="confirmingDelete = true"

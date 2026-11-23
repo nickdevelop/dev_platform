@@ -438,14 +438,27 @@ export const useOpenTabsStore = defineStore('openTabs', {
     // created session. A stored title arrives later, once the session list
     // reports the server-derived one. Without a new-session tab the session
     // opens as an ordinary tab, so the action stays safe from any call site.
-    promoteNewSession(projectId: number, sessionId: string) {
+    promoteNewSession(projectId: number, sessionId: string, title = '', backend = '') {
       const index = this.tabs.findIndex((tab) => tab.kind === 'new-session')
       if (index === -1) {
-        this.tabs.push({ kind: 'session', projectId, sessionId, title: '' })
+        this.tabs.push({
+          kind: 'session',
+          projectId,
+          sessionId,
+          title,
+          ...(backend !== '' ? { backend } : {}),
+        })
       } else {
         const { pinned } = this.tabs[index]
         const carried = pinned === true ? PINNED : {}
-        this.tabs.splice(index, 1, { kind: 'session', projectId, sessionId, title: '', ...carried })
+        this.tabs.splice(index, 1, {
+          kind: 'session',
+          projectId,
+          sessionId,
+          title,
+          ...(backend !== '' ? { backend } : {}),
+          ...carried,
+        })
       }
       this.setActiveKey(sessionId)
       persist(this.tabs)

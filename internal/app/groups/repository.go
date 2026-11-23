@@ -443,3 +443,32 @@ func toGroupTask(row database.GroupTask) GroupTask {
 		UpdatedAt:       row.UpdatedAt,
 	}
 }
+
+// CreateAgentSession persists an agent session row into the shared index.
+func (r *Repository) CreateAgentSession(s database.AgentSession) error {
+	return r.db.Create(&s).Error
+}
+
+// GetAgentSession returns an agent session row by its platform ID.
+func (r *Repository) GetAgentSession(id string) (database.AgentSession, error) {
+	var row database.AgentSession
+	if err := r.db.First(&row, "id = ?", id).Error; err != nil {
+		return database.AgentSession{}, err
+	}
+	return row, nil
+}
+
+// TouchAgentSessionByTaskID updates the session's updated_at and optionally title/status.
+func (r *Repository) TouchAgentSessionByTaskID(taskID uint, title string, status string) {
+	nativeID := fmt.Sprintf("gt-%d", taskID)
+	updates := map[string]any{
+		"updated_at": time.Now().UTC(),
+	}
+	if title != "" {
+		updates["title"] = title
+	}
+	if status != "" {
+		updates["status"] = status
+	}
+	_ = r.db.Model(&database.AgentSession{}).Where("backend = ? AND native_session_id = ?", "group-flow", nativeID).Updates(updates).Error
+}

@@ -15,8 +15,6 @@ import {
 } from './status'
 import TaskChatDialog from './TaskChatDialog.vue'
 import TaskManageDialog from './TaskManageDialog.vue'
-import FlowChatView from './flow/FlowChatView.vue'
-import FlowRoleManager from './flow/FlowRoleManager.vue'
 import { UiButton, UiBadge, UiAlert, UiConfirmDialog } from '../../shared/ui'
 
 const props = defineProps<{
@@ -37,7 +35,6 @@ const deleting = ref(false)
 const deleteError = ref('')
 const showEditDialog = ref(false)
 const copiedTemplate = ref(false)
-const flowViewMode = ref<'chat' | 'overview'>('chat')
 
 // Session Dialog State
 const activeSessionId = ref<string | null>(null)
@@ -47,8 +44,6 @@ const showChatDialog = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const task = computed<Task | null>(() => tasksStore.byId(props.taskId) ?? null)
-const isFlowTask = computed(() => task.value?.taskType === 'flow')
-const roles = computed(() => (task.value ? tasksStore.rolesByTaskId(task.value.id) : []))
 
 const taskRuns = computed<TaskRun[]>(() => tasksStore.runsByTaskId(props.taskId))
 
@@ -198,38 +193,7 @@ async function copyPromptTemplate() {
 
 <template>
   <div v-if="task" class="task-detail-wrapper h-full min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg)]">
-    <!-- 1. If Collaborative Flow Task in 'chat' mode, show FlowChatView -->
-    <template v-if="isFlowTask && flowViewMode === 'chat'">
-      <div class="flow-header-tabs px-4 py-1.5 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between text-xs select-none shrink-0">
-        <div class="flex items-center gap-2 text-[var(--color-text-muted)]">
-          <span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-          <span class="font-semibold text-[var(--color-text)]">多 Agent 团队协同工作台</span>
-          <span class="text-2xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-2">
-            中控自主派发 · 角色分工反馈 · IM 协同闭环
-          </span>
-        </div>
-        <button
-          type="button"
-          class="px-2.5 py-1 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text)] hover:border-[var(--color-primary)] transition-colors text-xs flex items-center gap-1.5"
-          data-test="btn-switch-flow-overview"
-          @click="flowViewMode = 'overview'"
-        >
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-            <circle cx="8" cy="8" r="6" />
-            <line x1="8" y1="5" x2="8" y2="8" />
-            <circle cx="8" cy="11" r="0.75" fill="currentColor" />
-          </svg>
-          <span>任务配置与指标</span>
-        </button>
-      </div>
-      <div class="flex-1 min-h-0">
-        <FlowChatView :key="task.id" :task="task" />
-      </div>
-    </template>
-
-    <!-- 2. Standard Task Detail View OR Flow Task in 'overview' mode -->
     <div
-      v-else
       class="task-detail-container flex-1 min-h-0 overflow-y-auto p-6 md:p-8 space-y-6 bg-[var(--color-bg)]"
       data-test="task-detail-view"
     >
@@ -290,16 +254,6 @@ async function copyPromptTemplate() {
         <!-- Action buttons -->
         <div class="header-actions flex items-center gap-2.5 shrink-0">
           <UiButton
-            v-if="isFlowTask"
-            variant="primary"
-            class="btn-enter-chat px-3.5 py-1.5 text-xs font-semibold"
-            data-test="btn-enter-flow-chat"
-            @click="flowViewMode = 'chat'"
-          >
-            进入协同群聊
-          </UiButton>
-          <UiButton
-            v-else
             variant="primary"
             class="btn-trigger px-3.5 py-1.5 text-xs font-medium"
             :disabled="triggering"
@@ -416,15 +370,6 @@ async function copyPromptTemplate() {
           </span>
         </div>
       </div>
-    </section>
-
-    <!-- Flow Roles Management if Collaborative Flow Task -->
-    <section v-if="isFlowTask" class="section-card p-6 rounded-[var(--radius,6px)] bg-[var(--color-surface)] border border-[var(--color-border)]">
-      <FlowRoleManager
-        :task-id="task.id"
-        :roles="roles"
-        @updated="tasksStore.loadRoles(task.id)"
-      />
     </section>
 
     <!-- 4. Execution History Table (app-screens §7: sentence-case, right-aligned numbers, no zebra) -->

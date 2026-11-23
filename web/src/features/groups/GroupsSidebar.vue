@@ -49,14 +49,14 @@ function selectGroup(groupId: number) {
 </script>
 
 <template>
-  <div class="groups-sidebar sidebar-panel" aria-label="团队群组列表">
+  <div class="groups-sidebar sidebar-panel" aria-label="团队列表">
     <!-- Zone A: Top dedicated action button -->
     <div class="sidebar-actions">
       <button
         type="button"
         class="action-btn"
         data-test="btn-new-group"
-        title="新建团队群组"
+        title="新建团队"
         @click="openNewGroup"
       >
         <svg
@@ -147,7 +147,6 @@ function selectGroup(groupId: number) {
 
         <div class="flex items-center justify-between text-3xs text-[var(--color-text-muted)] mt-1 pt-1 border-t border-[var(--color-border)] font-mono">
           <span>成员: {{ group.memberCount ?? 0 }} 位专家</span>
-          <span>任务: {{ group.taskCount ?? 0 }}</span>
         </div>
       </div>
 
@@ -155,7 +154,7 @@ function selectGroup(groupId: number) {
         v-if="filteredGroups.length === 0"
         class="py-8 text-center text-2xs text-[var(--color-text-muted)]"
       >
-        {{ keyword ? '未找到匹配的团队群组' : '暂无团队群组' }}
+        {{ keyword ? '未找到匹配的团队' : '暂无团队' }}
       </div>
     </div>
   </div>

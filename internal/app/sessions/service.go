@@ -704,6 +704,10 @@ func (s *Service) Continue(ctx context.Context, projectID uint, sessionID string
 	}
 	row = s.reconcile(row)
 
+	if row.Backend == "group-flow" {
+		return s.sessionFromModel(row), nil
+	}
+
 	backend := agents.BackendID(row.Backend)
 	if s.agentDisabled(backend) {
 		return Session{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
@@ -811,6 +815,9 @@ func (s *Service) HistoryPage(ctx context.Context, projectID uint, sessionID str
 	row, err := s.loadScoped(projectID, sessionID)
 	if err != nil {
 		return History{}, err
+	}
+	if row.Backend == "group-flow" {
+		return History{Events: []agents.NormalizedEvent{}}, nil
 	}
 	backend := agents.BackendID(row.Backend)
 	if !s.capabilities(backend).SessionHistory {
@@ -1326,7 +1333,7 @@ func (s *Service) markDisconnected(row database.AgentSession) {
 // consistent. An explicitly stopped session stays stopped; any other session
 // becomes active when its instance is runnable and disconnected otherwise.
 func (s *Service) reconcile(row database.AgentSession) database.AgentSession {
-	if row.Status == string(SessionStopped) {
+	if row.Status == string(SessionStopped) || row.Backend == "group-flow" {
 		return row
 	}
 	inst, err := s.instances.Get(row.InstanceID)
@@ -1339,7 +1346,7 @@ func (s *Service) reconcile(row database.AgentSession) database.AgentSession {
 // reconcileIndexed is reconcile against an already-loaded instance index, so a
 // listing reconciles every session without a per-row instance lookup.
 func (s *Service) reconcileIndexed(row database.AgentSession, index map[string]instances.Instance) database.AgentSession {
-	if row.Status == string(SessionStopped) {
+	if row.Status == string(SessionStopped) || row.Backend == "group-flow" {
 		return row
 	}
 	inst, ok := index[row.InstanceID]

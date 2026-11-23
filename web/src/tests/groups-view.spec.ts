@@ -5,7 +5,6 @@ import GroupsView from '../features/groups/GroupsView.vue'
 import GroupsSidebar from '../features/groups/GroupsSidebar.vue'
 import GroupEditPanel from '../features/groups/GroupEditPanel.vue'
 import GroupDetailView from '../features/groups/GroupDetailView.vue'
-import GroupFlowChatDialog from '../features/groups/GroupFlowChatDialog.vue'
 import { useGroupsStore } from '../stores/groups'
 import { useRolesStore } from '../stores/roles'
 import { useProjectsStore } from '../stores/projects'
@@ -95,7 +94,7 @@ describe('Groups View and Sidebar Component Suite', () => {
 
     // No modal dialog overlay should exist
     expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
-    expect(wrapper.text()).toContain('团队群组与协同任务')
+    expect(wrapper.text()).toContain('团队中心')
 
     // Find and click create button
     const createBtn = wrapper.find('button')
@@ -261,31 +260,16 @@ describe('Groups View and Sidebar Component Suite', () => {
     expect(wrapper.emitted('saved')).toBeTruthy()
   })
 
-  it('opens GroupFlowChatDialog on clicking 群聊视窗 and can be closed via close button or Escape', async () => {
-    const sampleTask = {
-      id: 88,
-      groupId: 1,
-      title: '重构认证模块',
-      description: '迁移为 JWT',
-      projectId: 10,
-      worktreeId: 0,
-      prompt: '执行重构',
-      scheduleType: 'manual',
-      scheduleEnabled: false,
-      status: 'active',
-      createdAt: '2026-01-01',
-      updatedAt: '2026-01-01',
-    }
-
+  it('GroupDetailView displays team info, orchestrator brain, and member expert cards', async () => {
     const groupsStore = useGroupsStore()
     groupsStore.activeGroupDetail = {
       id: 1,
       name: '架构组',
-      description: '核心架构',
+      description: '核心架构团队',
       orchestratorModel: 'gpt-4o',
       orchestratorPrompt: '中控提示',
       memberCount: 1,
-      taskCount: 1,
+      taskCount: 0,
       createdAt: '2026-01-01',
       updatedAt: '2026-01-01',
       members: [
@@ -295,7 +279,7 @@ describe('Groups View and Sidebar Component Suite', () => {
           roleId: 201,
           sortOrder: 0,
           name: '架构师',
-          description: '',
+          description: '系统方案设计',
           backend: 'builtin',
           model: 'gpt-4o',
           promptId: 0,
@@ -304,80 +288,23 @@ describe('Groups View and Sidebar Component Suite', () => {
         },
       ],
     }
-    groupsStore.groupTasks = [sampleTask as any]
-    groupsStore.activeTaskRuns = [
-      {
-        id: 501,
-        taskId: 88,
-        groupId: 1,
-        projectId: 10,
-        status: 'running',
-        currentStep: 1,
-        maxSteps: 20,
-        orchestratorModel: 'gpt-4o',
-        triggerType: 'manual',
-        prompt: '执行重构',
-        createdAt: '2026-01-01',
-        updatedAt: '2026-01-01',
-      } as any,
-    ]
-    groupsStore.flowMessages = [
-      {
-        id: 1001,
-        runId: 501,
-        senderType: 'user',
-        senderName: 'User',
-        content: '开始协同重构',
-        status: 'success',
-        createdAt: '2026-01-01',
-        updatedAt: '2026-01-01',
-      } as any,
-      {
-        id: 1002,
-        runId: 501,
-        senderType: 'orchestrator',
-        senderName: '平台中控',
-        content: '收到目标，正在调度架构师分工推进…',
-        status: 'success',
-        createdAt: '2026-01-01',
-        updatedAt: '2026-01-01',
-      } as any,
-    ]
-    groupsStore.loadTaskRuns = vi.fn().mockResolvedValue(undefined)
-    groupsStore.loadRunMessages = vi.fn().mockResolvedValue(groupsStore.flowMessages)
-    groupsStore.subscribeRunEvents = vi.fn()
-    groupsStore.resetFlowState = vi.fn()
 
-    // Mount GroupFlowChatDialog directly
-    const wrapper = mount(GroupFlowChatDialog, {
-      props: {
-        open: true,
-        groupId: 1,
-        task: sampleTask as any,
-      },
-      global: {
-        stubs: {
-          teleport: true,
-        },
-      },
+    const wrapper = mount(GroupDetailView, {
+      props: { groupId: 1 },
     })
     await flushPromises()
 
-    // 1. Should display dialog header and brain info
-    expect(wrapper.text()).toContain('重构认证模块')
-    expect(wrapper.text()).toContain('调度大脑: gpt-4o')
+    // 1. Should display team name and brain info
+    expect(wrapper.text()).toContain('架构组')
+    expect(wrapper.text()).toContain('中控大脑: gpt-4o')
+    expect(wrapper.text()).toContain('团队专家成员')
     expect(wrapper.text()).toContain('架构师')
+    expect(wrapper.text()).toContain('系统方案设计')
 
-    // 2. Should display message bubbles
-    expect(wrapper.text()).toContain('开始协同重构')
-    expect(wrapper.text()).toContain('收到目标，正在调度架构师分工推进…')
-
-    // 3. Close button exists and clicking emits update:open false
-    const closeBtn = wrapper.find('[data-test="group-flow-chat-close"]')
-    expect(closeBtn.exists()).toBe(true)
-    await closeBtn.trigger('click')
-
-    expect(wrapper.emitted('update:open')).toBeTruthy()
-    expect(wrapper.emitted('update:open')![0]).toEqual([false])
+    // 2. Emits edit on clicking 编辑团队设置
+    const editBtn = wrapper.findAll('button').find((b) => b.text().includes('编辑团队设置'))
+    expect(editBtn?.exists()).toBe(true)
+    await editBtn?.trigger('click')
+    expect(wrapper.emitted('edit')).toBeTruthy()
   })
 })

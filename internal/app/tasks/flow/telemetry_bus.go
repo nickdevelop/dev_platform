@@ -30,6 +30,14 @@ type SessionStreamer interface {
 	SubscribeSession(ctx context.Context, projectID uint, sessionID string) (<-chan agents.NormalizedEvent, error)
 }
 
+// InteractionAutoReplier is an optional interface to automatically resolve questions or permissions.
+type InteractionAutoReplier interface {
+	ReplyForm(ctx context.Context, projectID uint, sessionID, formID string, answer map[string]any) error
+	ReplyPermissionRequest(ctx context.Context, projectID uint, sessionID, requestID, decision, message string) error
+	ListForms(ctx context.Context, projectID uint, sessionID string) ([]sessions.FormInfo, error)
+	ListPermissionRequests(ctx context.Context, projectID uint, sessionID string) ([]sessions.PermissionRequest, error)
+}
+
 // TurnOutcome represents the final execution outcome of a role session turn.
 type TurnOutcome struct {
 	SessionID  string `json:"sessionId"`
@@ -131,6 +139,22 @@ func (b *TelemetryBus) CollectSessionTurn(
 		case <-ticker.C:
 		}
 
+		// Auto-resolve any pending question forms or permission requests to prevent the session from hanging
+		if replier, ok := b.manager.(InteractionAutoReplier); ok {
+			if forms, err := replier.ListForms(watchCtx, projectID, sessionID); err == nil {
+				for _, f := range forms {
+					_ = replier.ReplyForm(watchCtx, projectID, sessionID, f.ID, map[string]any{
+						"answer": "【中控自动应答】: 当前为中控自动化协同执行，请勿挂起提问，请自主推断并在总结报告中呈现。",
+					})
+				}
+			}
+			if perms, err := replier.ListPermissionRequests(watchCtx, projectID, sessionID); err == nil {
+				for _, p := range perms {
+					_ = replier.ReplyPermissionRequest(watchCtx, projectID, sessionID, p.ID, "once", "auto-allowed by flow")
+				}
+			}
+		}
+
 		sess, err := b.manager.Get(projectID, sessionID)
 		if err != nil {
 			continue
@@ -223,6 +247,18 @@ func (b *TelemetryBus) pipeLiveStream(
 		case ev, ok := <-eventsCh:
 			if !ok {
 				return
+			}
+			// Auto-resolve interactions immediately when requested on the stream
+			if replier, ok := b.manager.(InteractionAutoReplier); ok {
+				if ev.Type == agents.EventInteraction && ev.Interaction != nil && ev.Interaction.Phase == agents.InteractionRequested {
+					if ev.Interaction.Kind == agents.InteractionForm {
+						_ = replier.ReplyForm(ctx, projectID, sessionID, ev.Interaction.ID, map[string]any{
+							"answer": "【中控自动应答】: 当前为中控自动化协同执行，请勿挂起提问，请自主推断并在总结报告中呈现。",
+						})
+					} else if ev.Interaction.Kind == agents.InteractionPermission {
+						_ = replier.ReplyPermissionRequest(ctx, projectID, sessionID, ev.Interaction.ID, "once", "auto-allowed by flow")
+					}
+				}
 			}
 			chunkText := ""
 			if ev.Type == agents.EventMessage && ev.Message != nil && ev.Message.Role == "assistant" {

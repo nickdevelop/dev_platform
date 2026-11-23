@@ -18,6 +18,8 @@ import {
   triggerGroupTask,
   postGroupRunMessage,
   cancelGroupRun,
+  createCollabSession,
+  getCollabSessionContext,
   type Group,
   type GroupDetail,
   type GroupTask,
@@ -25,9 +27,13 @@ import {
   type UpdateGroupPayload,
   type CreateGroupTaskPayload,
   type UpdateGroupTaskPayload,
+  type CreateCollabSessionPayload,
+  type CollabSessionResponse,
+  type CollabSessionContext,
 } from '../api/groups'
 import type { FlowMessage, FlowRun } from '../api/tasks'
 import { unifiedEventBus } from '../shared/events/UnifiedEventBusClient'
+import { useSessionsStore } from './sessions'
 
 export const useGroupsStore = defineStore('groups', {
   state: () => ({
@@ -294,7 +300,12 @@ export const useGroupsStore = defineStore('groups', {
     async sendUserMessage(runId: number, content: string) {
       try {
         const msg = await postGroupRunMessage(runId, content)
-        this.flowMessages.push(msg)
+        const idx = this.flowMessages.findIndex((m) => Number(m.id) === Number(msg.id))
+        if (idx !== -1) {
+          this.flowMessages[idx] = msg
+        } else {
+          this.flowMessages.push(msg)
+        }
         return msg
       } catch (error) {
         if (error instanceof UnauthorizedError) throw error
@@ -322,41 +333,102 @@ export const useGroupsStore = defineStore('groups', {
 
       const runIdStr = String(runId)
       const handleFlowEvent = (envelope: any) => {
-        if (envelope.channel !== 'tasks' || envelope.topic !== runIdStr) return
+        if (envelope.channel !== 'tasks' || envelope.targetId !== runIdStr) return
 
-        const type = envelope.type
+        const type = envelope.eventType
         const payload = envelope.payload as any
 
         if (type === 'message' && payload) {
           const msg = payload as FlowMessage
-          const existingIdx = this.flowMessages.findIndex((m) => m.id === msg.id)
+          const existingIdx = this.flowMessages.findIndex((m) => Number(m.id) === Number(msg.id))
           if (existingIdx !== -1) {
             this.flowMessages[existingIdx] = msg
           } else {
             this.flowMessages.push(msg)
           }
         } else if (type === 'chunk' && payload) {
-          const { messageId, text, reasoning } = payload
+          const { messageId, chunk, text, reasoning, senderName, senderType } = payload
+          const appendText = chunk || text || ''
           const msg = this.flowMessages.find((m) => m.id === messageId)
           if (msg) {
-            if (text) msg.content = (msg.content || '') + text
+            if (appendText) msg.content = (msg.content || '') + appendText
             if (reasoning) msg.reasoning = (msg.reasoning || '') + reasoning
             msg.status = 'streaming'
+          } else {
+            this.flowMessages.push({
+              id: messageId,
+              runId,
+              senderType: senderType || 'orchestrator',
+              senderName: senderName || '调度大脑',
+              content: appendText,
+              reasoning: reasoning || '',
+              status: 'streaming',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            })
           }
         } else if (type === 'status' && payload) {
-          const { status, currentStep } = payload
+          const { status, currentStep, error } = payload
           if (this.activeRun && this.activeRun.id === runId) {
             this.activeRun.status = status
             if (currentStep !== undefined) this.activeRun.currentStep = currentStep
+            if (error) this.activeRun.error = error
+          }
+          const taskRun = this.activeTaskRuns.find((r) => r.id === runId)
+          if (taskRun) {
+            taskRun.status = status
+            if (currentStep !== undefined) taskRun.currentStep = currentStep
+            if (error) taskRun.error = error
           }
         }
       }
 
       void unifiedEventBus.subscribe('tasks', runIdStr, handleFlowEvent)
+      const cleanupReconnect = unifiedEventBus.onReconnect(() => {
+        if (this.activeRun && this.activeRun.id === runId) {
+          void this.loadRunMessages(runId)
+        }
+      })
 
       this.unsubEvents = () => {
         void unifiedEventBus.unsubscribe('tasks', runIdStr, handleFlowEvent)
+        cleanupReconnect()
       }
+    },
+
+    async createCollabSession(
+      groupId: number,
+      payload: CreateCollabSessionPayload,
+    ): Promise<CollabSessionResponse> {
+      const res = await createCollabSession(groupId, payload)
+      if (res && res.session) {
+        const sessionsStore = useSessionsStore()
+        sessionsStore.sessions = [res.session, ...sessionsStore.sessions.filter((s) => s.id !== res.session.id)]
+        const projectSessions = sessionsStore.sessionsByProject[payload.projectId] || []
+        sessionsStore.sessionsByProject[payload.projectId] = [
+          res.session,
+          ...projectSessions.filter((s) => s.id !== res.session.id),
+        ]
+      }
+      this.activeGroupId = groupId
+      if (res && res.task) {
+        this.activeTaskId = res.task.id
+      }
+      if (res && res.run) {
+        this.activeTaskRuns = [res.run]
+        this.activeRun = res.run
+      }
+      return res
+    },
+
+    async loadCollabSessionContext(sessionId: string): Promise<CollabSessionContext> {
+      const res = await getCollabSessionContext(sessionId)
+      this.activeGroupId = res.group.id
+      this.activeGroupDetail = res.group
+      this.activeTaskId = res.task.id
+      this.activeTaskRuns = res.runs
+      this.activeRun = res.activeRun || res.runs[0] || null
+      return res
     },
   },
 })
