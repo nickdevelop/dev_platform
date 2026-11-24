@@ -96,7 +96,7 @@ function onGroupDeleted() {
     <template v-else>
       <div class="flex items-center justify-center h-full p-6 md:p-12 overflow-y-auto">
         <div class="max-w-xl w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius,6px)] p-8 text-center space-y-4">
-          <div class="inline-flex p-3 rounded-full bg-blue-500/10 text-blue-500 mx-auto">
+          <div class="inline-flex p-3 rounded-full bg-accent/10 text-accent mx-auto">
             <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />

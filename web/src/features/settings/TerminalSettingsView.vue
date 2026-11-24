@@ -342,7 +342,7 @@ async function onDialogSaved() {
               type="button"
               class="px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer select-none"
               :class="customFontFamily === preset.value
-                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-medium'
+                ? 'border-accent bg-accent/10 text-accent font-medium'
                 : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700'"
               :data-test="`font-preset-${preset.value || 'default'}`"
               @click="selectFontPreset(preset.value)"
@@ -360,7 +360,7 @@ async function onDialogSaved() {
               v-model="customFontFamily"
               type="text"
               placeholder="留空即使用平台统一字体，或输入如：JetBrains Mono、Fira Code 等"
-              class="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+              class="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-accent font-mono"
               data-test="terminal-font-input"
             />
             <UiButton
@@ -512,7 +512,7 @@ async function onDialogSaved() {
               :key="sh.id + sh.path"
               class="p-2.5 rounded border transition-colors cursor-pointer text-left space-y-1 relative"
               :class="customShellPath === sh.path
-                ? 'border-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
+                ? 'border-accent bg-accent/10'
                 : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'"
               @click="selectDiscoveredShell(sh)"
             >
@@ -523,7 +523,7 @@ async function onDialogSaved() {
               <div class="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate" :title="sh.path">
                 {{ sh.path }}
               </div>
-              <div v-if="sh.args?.length" class="text-3xs text-slate-400 truncate">
+              <div v-if="sh.args?.length" class="text-2xs text-slate-400 truncate">
                 参数: {{ sh.args.join(' ') }}
               </div>
             </div>
@@ -544,7 +544,7 @@ async function onDialogSaved() {
                 v-model="customShellPath"
                 type="text"
                 placeholder="例如 C:\Program Files\Git\bin\bash.exe 或 /bin/bash"
-                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-accent font-mono"
                 data-test="shell-path-input"
               />
             </div>
@@ -554,7 +554,7 @@ async function onDialogSaved() {
                 v-model="customShellArgs"
                 type="text"
                 placeholder="例如 --login -i"
-                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500 font-mono"
+                class="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-accent font-mono"
                 data-test="shell-args-input"
               />
             </div>
@@ -623,7 +623,7 @@ async function onDialogSaved() {
             v-model="searchKeyword"
             type="search"
             placeholder="搜索服务器名称/主机/用户…"
-            class="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+            class="px-2.5 py-1 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:border-accent"
           />
         </div>
       </div>
@@ -689,7 +689,7 @@ async function onDialogSaved() {
               </td>
 
               <td class="py-2.5 px-3 font-mono text-2xs text-slate-600 dark:text-slate-400">
-                <code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 text-blue-600 dark:text-blue-400 tabular-nums">
+                <code class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80 text-accent tabular-nums">
                   {{ server.host }}:{{ server.port }}
                 </code>
               </td>
@@ -720,7 +720,7 @@ async function onDialogSaved() {
                     {{ testResults[server.id].message }}
                   </span>
                 </div>
-                <span v-else class="text-3xs text-slate-400 select-none">
+                <span v-else class="text-2xs text-slate-400 select-none">
                   未测试
                 </span>
               </td>

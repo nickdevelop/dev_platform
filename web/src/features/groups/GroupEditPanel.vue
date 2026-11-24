@@ -267,7 +267,7 @@ function handleCancel() {
         <!-- 2. Orchestrator Brain Config -->
         <div class="p-4 rounded-[var(--radius,6px)] border border-[var(--color-border)] bg-[var(--color-surface-muted)] space-y-4">
           <div class="flex items-center gap-2 font-medium text-xs text-[var(--color-text)]">
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-accent">
               <circle cx="8" cy="8" r="3" />
               <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
             </svg>
@@ -282,7 +282,7 @@ function handleCancel() {
               </label>
               <button
                 type="button"
-                class="text-2xs text-blue-600 dark:text-blue-400 hover:underline"
+                class="text-2xs text-accent hover:underline"
                 @click="router.push({ name: 'settings-models' })"
               >
                 配置大模型服务 →
@@ -333,16 +333,16 @@ function handleCancel() {
         <div class="space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <label class="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+              <label class="text-xs font-semibold text-[var(--color-text-muted)] tracking-wide">
                 团队专家成员
               </label>
-              <span class="text-3xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-mono border border-blue-500/20">
+              <span class="text-2xs px-1.5 py-0.5 rounded bg-surface-muted text-foreground font-mono border border-border">
                 已加入 {{ selectedRoles.length }} 位专家
               </span>
             </div>
             <button
               type="button"
-              class="text-2xs text-blue-600 dark:text-blue-400 hover:underline"
+              class="text-2xs text-accent hover:underline"
               @click="router.push({ name: 'settings-roles' })"
             >
               管理全局专家角色库 →
@@ -390,7 +390,7 @@ function handleCancel() {
                       {{ r.name }}
                     </span>
                     <BackendTag :backend="r.backend" />
-                    <span class="text-3xs px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
+                    <span class="text-2xs px-1.5 py-0.5 rounded bg-[var(--color-surface)] text-[var(--color-text-muted)] font-mono border border-[var(--color-border)]">
                       模型: {{ r.model || '跟随默认' }}
                     </span>
                   </div>

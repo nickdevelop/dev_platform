@@ -1,9 +1,6 @@
 <script setup lang="ts">
 // Collaborative Orchestrator Engine settings panel.
-// Conforms to design-taste-frontend (Data Terminal / App Screens) rules:
-// - Rules over shadows, 1px accent active indicators
-// - Tabular numerical alignments
-// - Unified EngineStepControl integration with unlimited support
+// Standard app typography scale (text-xl header, text-sm section, text-xs body).
 import { ref, watch } from 'vue'
 import { useEnginesStore } from '../../stores/engines'
 import { UiButton } from '../../shared/ui'
@@ -25,10 +22,10 @@ watch(
 )
 
 const stepPresets: StepPreset[] = [
-  { value: 10, label: '10步（轻量）' },
-  { value: 20, label: '20步（推荐）' },
-  { value: 30, label: '30步（标准）' },
-  { value: 50, label: '50步（长流程）' },
+  { value: 10, label: '10 步' },
+  { value: 20, label: '20 步' },
+  { value: 30, label: '30 步' },
+  { value: 50, label: '50 步' },
   { value: -1, label: '不限制' },
 ]
 
@@ -49,15 +46,17 @@ async function save() {
 </script>
 
 <template>
-  <div class="engine-panel space-y-5" v-if="localConfig">
+  <div class="engine-panel space-y-6" v-if="localConfig">
     <!-- Header -->
-    <div class="panel-header flex items-center justify-between pb-4 border-b border-border/60">
+    <header class="panel-header flex items-center justify-between pb-4 border-b border-border/70">
       <div>
-        <div class="flex items-center gap-2">
-          <h2 class="text-base font-semibold tracking-tight text-foreground">协同引擎 (Collaborative Orchestrator Engine)</h2>
-          <span class="text-2xs px-1.5 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Team Brain</span>
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-xl font-semibold tracking-tight text-foreground">协同引擎</h1>
+          <span class="text-xs px-2 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Team Orchestrator</span>
         </div>
-        <p class="text-xs text-muted-foreground mt-1">多 Agent 协同流程的顶层指挥中枢，负责目标拆解、角色分派、异步等待与综合验收。</p>
+        <p class="text-xs text-muted-foreground mt-1">
+          多 Agent 协作流程的顶层调度中枢，负责目标拆解、角色分派、异步等待与综合验收。
+        </p>
       </div>
       <div class="flex items-center gap-2.5">
         <span v-if="savedSuccess" class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 select-none">
@@ -68,16 +67,12 @@ async function save() {
         </span>
         <UiButton size="sm" :loading="enginesStore.saving" @click="save">保存配置</UiButton>
       </div>
-    </div>
+    </header>
 
     <!-- Section 1: Effective Orchestration Controls -->
-    <div class="panel-section bg-surface/50 border border-border/80 rounded p-4 space-y-3.5">
-      <div class="section-head flex items-center justify-between pb-2 border-b border-border/40">
-        <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-          <h3 class="text-xs font-semibold text-foreground">流程调度与步数预算</h3>
-        </div>
-        <span class="text-2xs text-muted-foreground font-mono">Orchestration Budget</span>
+    <section class="panel-section bg-surface/40 border border-border/80 rounded-lg p-5 space-y-4" aria-labelledby="orchestrator-budget-title">
+      <div class="section-head pb-2 border-b border-border/40">
+        <h2 id="orchestrator-budget-title" class="text-sm font-semibold text-foreground">流程调度与步数预算</h2>
       </div>
 
       <EngineStepControl
@@ -87,75 +82,78 @@ async function save() {
         input-id="orchestrator-max-steps-input"
         :presets="stepPresets"
       />
-    </div>
+    </section>
 
-    <!-- Section 2: Collaboration Tools Summary -->
-    <div class="panel-section bg-surface/50 border border-border/80 rounded p-4 space-y-3.5">
-      <div class="section-head flex items-center justify-between pb-2 border-b border-border/40">
-        <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-          <h3 class="text-xs font-semibold text-foreground">中枢协同调度工具集</h3>
-        </div>
-        <span class="text-2xs text-muted-foreground font-mono">Workflow Tools</span>
+    <!-- Section 2: Collaboration Tools Summary (Pipeline Moment) -->
+    <section class="panel-section bg-surface/40 border border-border/80 rounded-lg p-5 space-y-4" aria-labelledby="orchestrator-tools-title">
+      <div class="section-head pb-2 border-b border-border/40">
+        <h2 id="orchestrator-tools-title" class="text-sm font-semibold text-foreground">中枢协同调度工具集</h2>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-mono text-2xs text-accent font-semibold flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            flow_dispatch_role
+      <p class="text-xs text-muted-foreground leading-relaxed">
+        中枢大脑通过以下 4 项标准编排工具驱动团队成员间的工作流流转：
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        <div class="p-4 rounded border border-border/60 bg-background/60 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <code class="font-mono text-xs text-accent font-medium">flow_dispatch_role</code>
+            <span class="text-xs font-mono text-muted-foreground px-1.5 py-0.5 rounded bg-surface border border-border">01 · 分派</span>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">
-            向团队架构师、开发工程师、代码审查等专家角色分派明确的子任务与约束。
+          <p class="text-xs text-muted-foreground leading-relaxed">
+            向架构师、开发工程师、审查员等角色分配明确的子任务目标与工作区上下文约束。
           </p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-mono text-2xs text-accent font-semibold flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-            flow_wait_session
+        <div class="p-4 rounded border border-border/60 bg-background/60 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <code class="font-mono text-xs text-accent font-medium">flow_wait_session</code>
+            <span class="text-xs font-mono text-muted-foreground px-1.5 py-0.5 rounded bg-surface border border-border">02 · 等待</span>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">
-            显式挂起流程等待指定专家子会话执行完毕，并自动提取其产出的文件或测试结果。
+          <p class="text-xs text-muted-foreground leading-relaxed">
+            显式挂起流程等待指定子会话完成，并在恢复时自动汇总其生成的文件与测试结果。
           </p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-mono text-2xs text-accent font-semibold flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-            flow_ask_user
+        <div class="p-4 rounded border border-border/60 bg-background/60 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <code class="font-mono text-xs text-accent font-medium">flow_ask_user</code>
+            <span class="text-xs font-mono text-muted-foreground px-1.5 py-0.5 rounded bg-surface border border-border">03 · 对齐</span>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">
-            在协同遇到架构歧义或高风险技术选型时，主动向操作者提问并挂起等待决策。
+          <p class="text-xs text-muted-foreground leading-relaxed">
+            在协同遇到架构歧义、高危破坏性操作或重大技术选型时，主动向操作者提问。
           </p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-mono text-2xs text-accent font-semibold flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
-            flow_complete_task
+        <div class="p-4 rounded border border-border/60 bg-background/60 space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <code class="font-mono text-xs text-accent font-medium">flow_complete_task</code>
+            <span class="text-xs font-mono text-muted-foreground px-1.5 py-0.5 rounded bg-surface border border-border">04 · 验收</span>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">
-            汇总各个专家成员的阶段性交付物，输出综合完成总结并将协同任务标记为归档。
+          <p class="text-xs text-muted-foreground leading-relaxed">
+            核对并归纳各成员的阶段性交付物，输出综合完成报告并将协同任务归档。
           </p>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Section 3: Extensibility Slots -->
-    <div class="panel-section bg-surface/25 border border-dashed border-border/70 rounded p-4 space-y-2.5">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-semibold text-foreground">预留扩展能力</span>
-          <span class="text-2xs px-1.5 py-0.2 rounded border border-border/60 bg-surface-muted text-muted-foreground font-mono">TODO / 待实装</span>
+    <section class="panel-section bg-surface/20 border border-border/60 rounded-lg p-5 space-y-3" aria-labelledby="orchestrator-ext-title">
+      <div class="section-head pb-2 border-b border-border/40 flex items-center justify-between">
+        <h2 id="orchestrator-ext-title" class="text-sm font-semibold text-foreground">规划中扩展能力</h2>
+        <span class="text-xs text-muted-foreground font-mono">规划中</span>
+      </div>
+      <div class="space-y-2 text-xs text-muted-foreground leading-relaxed">
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono text-xs select-none">•</span>
+          <p><strong class="text-foreground font-medium">中枢只读代码巡检</strong>：允许编排中枢直接查阅 Git 工作区代码树与 Diff 记录，量化校验交付物。</p>
         </div>
-        <span class="text-2xs text-muted-foreground font-mono">Roadmap</span>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono text-xs select-none">•</span>
+          <p><strong class="text-foreground font-medium">动态多中枢竞争与投票</strong>：引入副中枢与评审仲裁机制，复杂技术方案由多视角独立打分。</p>
+        </div>
       </div>
-      <div class="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
-        <p>• <strong>中枢代码巡检（只读代码树）</strong>：允许中控大脑直接查阅 Git 工作区代码与 Diff，以量化评估各角色交付物质量。</p>
-        <p>• <strong>动态多中枢竞争与投票</strong>：引入副中控或评审委员会机制把关复杂技术方案。</p>
-      </div>
-    </div>
+    </section>
   </div>
   <div v-else class="py-12 text-center text-xs text-muted-foreground font-mono">正在加载协同引擎配置...</div>
 </template>

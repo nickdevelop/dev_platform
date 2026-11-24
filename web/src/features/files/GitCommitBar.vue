@@ -66,7 +66,7 @@ function onKeydown(e: KeyboardEvent) {
         <textarea
           v-model="commitMessage"
           rows="2"
-          class="w-full text-xs px-2 py-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 resize-none font-mono"
+          class="w-full text-xs px-2 py-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-accent resize-none font-mono"
           placeholder="提交说明 (Ctrl+Enter 提交)"
           :disabled="committing"
           @keydown="onKeydown"
@@ -95,7 +95,7 @@ function onKeydown(e: KeyboardEvent) {
           class="inline-flex items-center justify-center gap-1 h-6 px-2.5 rounded text-xs font-medium transition-colors"
           :class="[
             canCommit
-              ? 'bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 cursor-pointer'
+              ? 'bg-accent hover:opacity-90 text-white cursor-pointer'
               : 'bg-slate-200/80 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed',
           ]"
           :disabled="!canCommit || committing"

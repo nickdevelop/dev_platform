@@ -108,7 +108,7 @@ onMounted(() => {
             v-for="entry in entries"
             :key="entry.path"
             class="px-3 py-2 flex items-center justify-between cursor-pointer select-none transition-colors"
-            :class="selectedPath === entry.path ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'"
+            :class="selectedPath === entry.path ? 'bg-accent/10 text-accent font-medium' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'"
             @click="selectEntry(entry)"
             @dblclick="openEntry(entry)"
           >
@@ -121,7 +121,7 @@ onMounted(() => {
             </div>
             <button
               type="button"
-              class="text-2xs text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
+              class="text-2xs text-slate-400 hover:text-accent px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors shrink-0"
               title="进入此目录"
               @click.stop="openEntry(entry)"
             >

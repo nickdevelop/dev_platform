@@ -156,7 +156,7 @@ onUnmounted(() => {
           ref="inputRef"
           v-model="filterText"
           type="text"
-          class="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 font-mono"
+          class="w-full text-xs px-2 py-1 rounded border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-accent font-mono"
           placeholder="查找或创建新分支..."
           @keydown="onKeydown"
         />
@@ -166,7 +166,7 @@ onUnmounted(() => {
       <button
         v-if="isNewBranch"
         type="button"
-        class="flex items-center gap-1.5 px-2 py-1.5 rounded text-left text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 cursor-pointer font-mono"
+        class="flex items-center gap-1.5 px-2 py-1.5 rounded text-left text-accent hover:bg-accent/10 cursor-pointer font-mono"
         :disabled="switching"
         @click="selectBranch(filterText.trim(), true)"
       >
@@ -190,7 +190,7 @@ onUnmounted(() => {
             class="flex items-center justify-between px-2 py-1.5 rounded text-left transition-colors font-mono cursor-pointer"
             :class="[
               b === activeBranch
-                ? 'bg-blue-50/70 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-medium'
+                ? 'bg-accent/10 text-accent font-medium'
                 : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/60',
             ]"
             :disabled="switching"

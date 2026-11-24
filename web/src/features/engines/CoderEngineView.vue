@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// Builtin Coding Agent Engine settings panel.
-// Conforms to design-taste-frontend (Data Terminal / App Screens) rules:
-// - Rules over shadows, 1px accent active indicators
-// - Tabular numerical alignments
-// - Unified EngineStepControl integration with unlimited support
+// Session Coder Engine settings panel.
+// Standard app typography scale (text-xl header, text-sm section, text-xs body).
 import { ref, watch } from 'vue'
 import { useEnginesStore } from '../../stores/engines'
 import { UiButton } from '../../shared/ui'
@@ -25,10 +22,10 @@ watch(
 )
 
 const stepPresets: StepPreset[] = [
-  { value: 10, label: '10步（轻量）' },
-  { value: 20, label: '20步（推荐）' },
-  { value: 30, label: '30步（深度）' },
-  { value: 50, label: '50步（复杂）' },
+  { value: 10, label: '10 步' },
+  { value: 20, label: '20 步' },
+  { value: 30, label: '30 步' },
+  { value: 50, label: '50 步' },
   { value: -1, label: '不限制' },
 ]
 
@@ -49,15 +46,17 @@ async function save() {
 </script>
 
 <template>
-  <div class="engine-panel space-y-5" v-if="localConfig">
+  <div class="engine-panel space-y-6" v-if="localConfig">
     <!-- Header -->
-    <div class="panel-header flex items-center justify-between pb-4 border-b border-border/60">
+    <header class="panel-header flex items-center justify-between pb-4 border-b border-border/70">
       <div>
-        <div class="flex items-center gap-2">
-          <h2 class="text-base font-semibold tracking-tight text-foreground">会话引擎 (Session Coder Engine)</h2>
-          <span class="text-2xs px-1.5 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Workspace Coder</span>
+        <div class="flex items-center gap-2.5">
+          <h1 class="text-xl font-semibold tracking-tight text-foreground">会话引擎</h1>
+          <span class="text-xs px-2 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Workspace Coder</span>
         </div>
-        <p class="text-xs text-muted-foreground mt-1">直连用户工程工作区、自动读取/修改代码并执行终端验证的内置智能编程 Agent 引擎。</p>
+        <p class="text-xs text-muted-foreground mt-1">
+          直连工程工作区代码树，负责自主读取、编辑工程源码并驱动终端验证的内置编码 Agent 引擎。
+        </p>
       </div>
       <div class="flex items-center gap-2.5">
         <span v-if="savedSuccess" class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 select-none">
@@ -68,16 +67,12 @@ async function save() {
         </span>
         <UiButton size="sm" :loading="enginesStore.saving" @click="save">保存配置</UiButton>
       </div>
-    </div>
+    </header>
 
-    <!-- Section 1: Effective Execution Controls -->
-    <div class="panel-section bg-surface/50 border border-border/80 rounded p-4 space-y-3.5">
-      <div class="section-head flex items-center justify-between pb-2 border-b border-border/40">
-        <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-          <h3 class="text-xs font-semibold text-foreground">执行控制与步数预算</h3>
-        </div>
-        <span class="text-2xs text-muted-foreground font-mono">Turn Step Budget</span>
+    <!-- Section 1: Execution Step Budget -->
+    <section class="panel-section bg-surface/40 border border-border/80 rounded-lg p-5 space-y-4" aria-labelledby="coder-budget-title">
+      <div class="section-head pb-2 border-b border-border/40">
+        <h2 id="coder-budget-title" class="text-sm font-semibold text-foreground">执行控制与步数预算</h2>
       </div>
 
       <EngineStepControl
@@ -87,93 +82,126 @@ async function save() {
         input-id="coder-max-steps-input"
         :presets="stepPresets"
       />
-    </div>
+    </section>
 
-    <!-- Section 2: AGENTS.md Hierarchy -->
-    <div class="panel-section bg-surface/50 border border-border/80 rounded p-4 space-y-3.5">
-      <div class="section-head flex items-center justify-between pb-2 border-b border-border/40">
-        <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-          <h3 class="text-xs font-semibold text-foreground">规范注入与上下文分层体系</h3>
-        </div>
-        <span class="text-2xs text-muted-foreground font-mono">AGENTS.md Layering</span>
+    <!-- Section 2: AGENTS.md Hierarchy Cascade (Moment) -->
+    <section class="panel-section bg-surface/40 border border-border/80 rounded-lg p-5 space-y-4" aria-labelledby="coder-rules-title">
+      <div class="section-head pb-2 border-b border-border/40">
+        <h2 id="coder-rules-title" class="text-sm font-semibold text-foreground">规范注入与上下文分层体系</h2>
       </div>
 
-      <p class="text-xs text-muted-foreground leading-normal">
-        系统在每轮会话发起前，将自动遵循以下优先级分层组装 System Prompt，确保项目架构规约与个人偏好严格落地：
+      <p class="text-xs text-muted-foreground leading-relaxed">
+        系统在每轮会话发起前，按由浅入深的优先级分层装配 System Prompt，确保平台级约束与项目级工程标准严格执行：
       </p>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-medium text-foreground flex items-center gap-1.5">
-            <span class="text-accent font-mono text-2xs">01</span>
-            平台通用规范 (Platform AGENTS.md)
+      <div class="cascade-flow space-y-2.5 pt-1">
+        <div class="cascade-item flex items-start gap-3 p-3.5 rounded border border-border/60 bg-background/60">
+          <span class="font-mono text-xs text-accent font-medium px-2 py-0.5 rounded bg-surface border border-border tabular-nums">01</span>
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="flex items-center justify-between gap-2">
+              <strong class="text-xs font-medium text-foreground">平台通用规范</strong>
+              <code class="text-xs font-mono text-muted-foreground">dataDir/AGENTS.md</code>
+            </div>
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              由平台系统运维部署，对平台所有内置会话底座生效，承载全局安全边界与系统级指令。
+            </p>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">读取平台数据目录 <code>dataDir/AGENTS.md</code>，对全平台内置会话兜底生效。</p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-medium text-foreground flex items-center gap-1.5">
-            <span class="text-accent font-mono text-2xs">02</span>
-            个人偏好规范 (User AGENTS.md)
+        <div class="cascade-item flex items-start gap-3 p-3.5 rounded border border-border/60 bg-background/60">
+          <span class="font-mono text-xs text-accent font-medium px-2 py-0.5 rounded bg-surface border border-border tabular-nums">02</span>
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="flex items-center justify-between gap-2">
+              <strong class="text-xs font-medium text-foreground">个人偏好规范</strong>
+              <code class="text-xs font-mono text-muted-foreground">~/.agents/AGENTS.md</code>
+            </div>
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              读取当前宿主操作者家目录，承载开发者个人的编码风格、语言习惯与交互约束。
+            </p>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">读取当前用户家目录 <code>~/.agents/AGENTS.md</code>，承载个人编码与交互偏好。</p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-medium text-foreground flex items-center gap-1.5">
-            <span class="text-accent font-mono text-2xs">03</span>
-            工程约定规范 (Project AGENTS.md)
+        <div class="cascade-item flex items-start gap-3 p-3.5 rounded border border-border/60 bg-background/60">
+          <span class="font-mono text-xs text-accent font-medium px-2 py-0.5 rounded bg-surface border border-border tabular-nums">03</span>
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="flex items-center justify-between gap-2">
+              <strong class="text-xs font-medium text-foreground">工程约定规范</strong>
+              <code class="text-xs font-mono text-muted-foreground">&lt;project&gt;/AGENTS.md</code>
+            </div>
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              位于当前项目代码根目录，定义工程分层架构、测试守卫、提交规范与质量门禁。
+            </p>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">读取工作区根目录 <code>&lt;project&gt;/AGENTS.md</code>，定义工程架构与质量门禁。</p>
         </div>
 
-        <div class="p-3 rounded bg-background/80 border border-border/60 text-xs space-y-1">
-          <div class="font-medium text-foreground flex items-center gap-1.5">
-            <span class="text-accent font-mono text-2xs">04</span>
-            扩展技能套件 (&lt;available_skills&gt;)
+        <div class="cascade-item flex items-start gap-3 p-3.5 rounded border border-border/60 bg-background/60">
+          <span class="font-mono text-xs text-accent font-medium px-2 py-0.5 rounded bg-surface border border-border tabular-nums">04</span>
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="flex items-center justify-between gap-2">
+              <strong class="text-xs font-medium text-foreground">扩展技能套件</strong>
+              <code class="text-xs font-mono text-muted-foreground">&lt;available_skills&gt;</code>
+            </div>
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              根据项目上下文动态探测并注入 SKILL 元数据，指导模型按需激活外部专业能力。
+            </p>
           </div>
-          <p class="text-muted-foreground text-2xs leading-normal">自动探测并注入项目中的可用 SKILL 技能描述，指导模型按需激活外部能力。</p>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Section 3: Workspace Tools Summary -->
-    <div class="panel-section bg-surface/50 border border-border/80 rounded p-4 space-y-3">
-      <div class="section-head flex items-center justify-between pb-2 border-b border-border/40">
-        <div class="flex items-center gap-2">
-          <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-          <h3 class="text-xs font-semibold text-foreground">工作空间内置标准工具集</h3>
-        </div>
-        <span class="text-2xs text-muted-foreground font-mono">Workspace Tools</span>
+    <section class="panel-section bg-surface/40 border border-border/80 rounded-lg p-5 space-y-3.5" aria-labelledby="coder-tools-title">
+      <div class="section-head pb-2 border-b border-border/40">
+        <h2 id="coder-tools-title" class="text-sm font-semibold text-foreground">工作空间内置标准工具集</h2>
       </div>
       <p class="text-xs text-muted-foreground leading-relaxed">
-        内置标准工具已在工作树隔离环境中开箱即用：
-        <span class="inline-flex flex-wrap gap-1 mt-1 font-mono text-2xs">
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">read_file</span>
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">write_file</span>
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">edit_file</span>
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">bash</span>
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">git_status</span>
-          <span class="px-1.5 py-0.5 rounded border border-border bg-surface text-foreground">git_diff</span>
-        </span>
+        会话编码引擎在工作树隔离环境中开箱即用以下 6 项标准工具：
       </p>
-    </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">read_file</span>
+          <span class="text-muted-foreground">读文件</span>
+        </div>
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">write_file</span>
+          <span class="text-muted-foreground">写文件</span>
+        </div>
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">edit_file</span>
+          <span class="text-muted-foreground">精准替换</span>
+        </div>
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">bash</span>
+          <span class="text-muted-foreground">终端执行</span>
+        </div>
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">git_status</span>
+          <span class="text-muted-foreground">改动检视</span>
+        </div>
+        <div class="p-3 rounded border border-border/70 bg-background/60 flex items-center justify-between">
+          <span class="font-mono text-foreground font-medium">git_diff</span>
+          <span class="text-muted-foreground">增量差异</span>
+        </div>
+      </div>
+    </section>
 
     <!-- Section 4: Extensibility Slots -->
-    <div class="panel-section bg-surface/25 border border-dashed border-border/70 rounded p-4 space-y-2.5">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-semibold text-foreground">预留扩展能力</span>
-          <span class="text-2xs px-1.5 py-0.2 rounded border border-border/60 bg-surface-muted text-muted-foreground font-mono">TODO / 待实装</span>
+    <section class="panel-section bg-surface/20 border border-border/60 rounded-lg p-5 space-y-3" aria-labelledby="coder-ext-title">
+      <div class="section-head pb-2 border-b border-border/40 flex items-center justify-between">
+        <h2 id="coder-ext-title" class="text-sm font-semibold text-foreground">规划中扩展能力</h2>
+        <span class="text-xs text-muted-foreground font-mono">规划中</span>
+      </div>
+      <div class="space-y-2 text-xs text-muted-foreground leading-relaxed">
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono text-xs select-none">•</span>
+          <p><strong class="text-foreground font-medium">沙箱容器执行隔离</strong>：将高危 Bash 命令调度至轻量 Docker 或 MicroVM 运行时中，保障宿主数据安全。</p>
         </div>
-        <span class="text-2xs text-muted-foreground font-mono">Roadmap</span>
+        <div class="flex items-start gap-2">
+          <span class="text-accent font-mono text-xs select-none">•</span>
+          <p><strong class="text-foreground font-medium">编码 MCP 插件</strong>：为编码 Agent 挂载数据库连接器、OpenAPI 接口解析等外部专业能力。</p>
+        </div>
       </div>
-      <div class="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
-        <p>• <strong>沙箱容器执行隔离</strong>：将高危 Bash 执行隔离至轻量 Docker 或 MicroVM 运行时中，保障宿主安全。</p>
-        <p>• <strong>编码 MCP 插件</strong>：为编码 Agent 挂载数据库连接器、Swagger 接口解析等外部专业能力。</p>
-      </div>
-    </div>
+    </section>
   </div>
   <div v-else class="py-12 text-center text-xs text-muted-foreground font-mono">正在加载会话引擎配置...</div>
 </template>

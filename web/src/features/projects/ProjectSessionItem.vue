@@ -112,7 +112,7 @@ const modelLabel = computed(() => {
       <div class="session-bottom-left flex items-center gap-1.5 min-w-0">
         <span
           v-if="props.worktreeLabel"
-          class="session-worktree flex items-center gap-1 text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
+          class="session-worktree flex items-center gap-1 text-2xs px-1.5 py-0.5 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
           :title="`工作树：${props.worktreeLabel}`"
           data-test="session-worktree"
         >
@@ -126,7 +126,7 @@ const modelLabel = computed(() => {
         </span>
         <span
           v-if="modelLabel"
-          class="session-model text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
+          class="session-model text-2xs px-1.5 py-0.5 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border/60 truncate"
           :title="modelFull"
           data-test="session-model"
         >
@@ -135,7 +135,7 @@ const modelLabel = computed(() => {
       </div>
       <div class="session-bottom-right flex items-center gap-1 shrink-0 ml-auto">
         <span
-          class="session-time font-mono text-3xs shrink-0"
+          class="session-time font-mono text-2xs shrink-0"
           :title="formatFullTime(session.updatedAt)"
         >
           {{ formatSessionTime(session.updatedAt) }}

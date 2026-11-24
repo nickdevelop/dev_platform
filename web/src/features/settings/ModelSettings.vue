@@ -211,7 +211,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
         </label>
 
         <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none pt-1">
-          <input v-model="serviceForm.enabled" type="checkbox" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 accent-blue-600" />
+          <input v-model="serviceForm.enabled" type="checkbox" class="w-4 h-4 rounded text-accent accent-accent cursor-pointer" />
           <span>启用此服务</span>
         </label>
       </div>
@@ -270,7 +270,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
       <!-- Remote candidates selection panel -->
       <div
         v-if="candidates[service.id]?.length"
-        class="candidates p-3.5 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-blue-200 dark:border-blue-900/40 space-y-2.5"
+        class="candidates p-3.5 rounded-md bg-slate-50 dark:bg-slate-800/40 border border-border/80 space-y-2.5"
       >
         <div class="flex items-center justify-between">
           <div class="text-xs font-semibold text-slate-800 dark:text-slate-200">勾选要添加至本服务的模型：</div>
@@ -281,11 +281,11 @@ async function runTest(service: ServiceDto, model: ModelDto) {
             v-for="candidate in candidates[service.id]"
             :key="candidate.id"
             :data-candidate="candidate.id"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 cursor-pointer select-none hover:border-blue-400 transition-colors"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-200 cursor-pointer select-none hover:border-border-strong transition-colors"
           >
             <input
               type="checkbox"
-              class="w-3.5 h-3.5 rounded text-blue-600 accent-blue-600"
+              class="w-3.5 h-3.5 rounded text-accent accent-accent"
               :checked="isSelected(service.id, candidate.id)"
               @change="selected[service.id][candidate.id] = ($event.target as HTMLInputElement).checked"
             />
@@ -325,10 +325,10 @@ async function runTest(service: ServiceDto, model: ModelDto) {
               </td>
               <td class="py-2.5 px-3 font-medium text-slate-800 dark:text-slate-200">{{ model.name }}</td>
               <td class="py-2.5 px-3">
-                <div class="inline-flex items-center gap-1 text-3xs">
+                <div class="inline-flex items-center gap-1 text-2xs">
                   <span v-if="model.supportsText" class="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">文本</span>
-                  <span v-if="model.supportsImage" class="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300">图片</span>
-                  <span v-if="model.supportsTools" class="px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300">工具</span>
+                  <span v-if="model.supportsImage" class="px-1.5 py-0.5 rounded bg-surface-muted text-foreground border border-border/50">图片</span>
+                  <span v-if="model.supportsTools" class="px-1.5 py-0.5 rounded bg-surface-muted text-foreground border border-border/50">工具</span>
                 </div>
               </td>
               <td class="py-2.5 px-3 text-right tabular-nums text-slate-600 dark:text-slate-400">
@@ -392,15 +392,15 @@ async function runTest(service: ServiceDto, model: ModelDto) {
           <span class="text-xs font-medium text-slate-700 dark:text-slate-300 block">模型能力支持</span>
           <div class="flex flex-wrap gap-4 text-xs text-slate-700 dark:text-slate-300">
             <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-              <input v-model="modelForm.supportsText" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+              <input v-model="modelForm.supportsText" type="checkbox" class="w-4 h-4 rounded text-accent accent-accent" />
               <span>文本输入</span>
             </label>
             <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-              <input v-model="modelForm.supportsImage" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+              <input v-model="modelForm.supportsImage" type="checkbox" class="w-4 h-4 rounded text-accent accent-accent" />
               <span>图片输入</span>
             </label>
             <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-              <input v-model="modelForm.supportsTools" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+              <input v-model="modelForm.supportsTools" type="checkbox" class="w-4 h-4 rounded text-accent accent-accent" />
               <span>工具调用 (Function Call)</span>
             </label>
           </div>
@@ -418,7 +418,7 @@ async function runTest(service: ServiceDto, model: ModelDto) {
         </div>
 
         <label class="inline-flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer select-none pt-1">
-          <input v-model="modelForm.enabled" type="checkbox" class="w-4 h-4 rounded text-blue-600 accent-blue-600" />
+          <input v-model="modelForm.enabled" type="checkbox" class="w-4 h-4 rounded text-accent accent-accent" />
           <span>启用此模型</span>
         </label>
       </div>

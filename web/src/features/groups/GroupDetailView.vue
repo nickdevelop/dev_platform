@@ -59,7 +59,7 @@ async function confirmDeleteGroup() {
             <h1 class="text-lg font-semibold text-[var(--color-text)] tracking-tight">
               {{ group?.name || '团队' }}
             </h1>
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-medium bg-surface-muted text-foreground border border-border">
               <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
                 <circle cx="8" cy="8" r="3" />
                 <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
@@ -148,7 +148,7 @@ async function confirmDeleteGroup() {
               {{ m.description || m.systemPrompt || '暂无设定' }}
             </p>
           </div>
-          <div class="text-3xs text-[var(--color-text-muted)] font-mono truncate pt-1 border-t border-[var(--color-border)]">
+          <div class="text-2xs text-[var(--color-text-muted)] font-mono truncate pt-1 border-t border-[var(--color-border)]">
             模型: {{ m.model }}
           </div>
         </div>

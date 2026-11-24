@@ -47,7 +47,7 @@ const barColorClass = computed(() => {
       return 'bg-emerald-500'
     case 'primary':
     default:
-      return 'bg-blue-600'
+      return 'bg-accent'
   }
 })
 

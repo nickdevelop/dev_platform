@@ -147,7 +147,7 @@ onMounted(load)
               <span class="font-medium text-slate-800 dark:text-slate-200 truncate" :title="session.title">
                 {{ session.title || '(未命名会话)' }}
               </span>
-              <code class="text-3xs font-mono text-slate-400 shrink-0">{{ session.sessionId.slice(0, 8) }}</code>
+              <code class="text-2xs font-mono text-slate-400 shrink-0">{{ session.sessionId.slice(0, 8) }}</code>
             </div>
             <div class="flex items-center gap-2.5 mt-1 text-2xs text-slate-400 min-w-0">
               <span class="truncate" :title="session.directory">{{ session.directory }}</span>

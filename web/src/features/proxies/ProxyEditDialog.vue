@@ -187,7 +187,7 @@ async function submit() {
             <input
               type="checkbox"
               v-model="enabled"
-              class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 mr-2 border-slate-300 dark:border-slate-600 dark:bg-slate-700"
+              class="w-4 h-4 rounded text-accent focus:ring-accent mr-2 border-slate-300 dark:border-slate-600 dark:bg-slate-700"
             />
             立即启用此代理
           </label>
@@ -215,7 +215,7 @@ async function submit() {
           v-for="sub in ['dist', 'build', 'public', 'out']"
           :key="sub"
           type="button"
-          class="text-2xs px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-blue-400 text-slate-600 dark:text-slate-300 transition-colors"
+          class="text-2xs px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-accent text-slate-600 dark:text-slate-300 transition-colors"
           @click="appendSubdir(sub)"
         >
           + /{{ sub }}

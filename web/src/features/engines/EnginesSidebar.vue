@@ -3,7 +3,7 @@
 // Conforms to design-taste-frontend (Data Terminal / App Screens) compact rules:
 // - Direct alignment with AppShell's sidebar-head
 // - Active navigation uses 2px accent indicator on the left edge
-// - Flat surfaces, zero resting shadows, tabular descriptions
+// - Standard sidebar-card-meta (12px) consistent with SettingsNav and sidebar.css
 import { RouterLink } from 'vue-router'
 
 const links = [
@@ -86,7 +86,9 @@ const links = [
             <span class="link-label sidebar-card-title">{{ link.label }}</span>
           </div>
         </div>
-        <p class="link-desc sidebar-card-desc">{{ link.desc }}</p>
+        <div class="sidebar-card-row-bottom">
+          <span class="link-desc sidebar-card-meta">{{ link.desc }}</span>
+        </div>
       </RouterLink>
     </div>
   </nav>
@@ -123,17 +125,7 @@ const links = [
   color: var(--color-accent);
 }
 
-.sidebar-card-title {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.sidebar-card-desc {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted);
-  line-height: 1.3;
-  margin: 0;
+.link-desc {
   padding-left: 24px;
 }
 </style>

@@ -427,7 +427,7 @@ watch(
       <div class="flex flex-col gap-1.5">
         <label :for="id" class="font-medium text-[var(--color-text)] flex items-center justify-between">
           <span>Cron 表达式 (秒 分 时 日 月 周 年)</span>
-          <span class="text-3xs text-[var(--color-text-muted)] font-normal">支持直接粘贴反解析</span>
+          <span class="text-2xs text-[var(--color-text-muted)] font-normal">支持直接粘贴反解析</span>
         </label>
         <UiInput
           :id="id"
@@ -891,7 +891,7 @@ watch(
     <div v-if="showNextRuns" class="cron-next-runs bg-[var(--color-surface)] p-2.5 rounded border border-[var(--color-border)]/80 space-y-1.5" data-test="cron-next-runs">
       <div class="flex items-center justify-between text-2xs font-medium text-[var(--color-text)]">
         <span>推断后 10 次执行时间：</span>
-        <span class="text-3xs text-[var(--color-text-muted)] font-normal">基于本地系统时区计算</span>
+        <span class="text-2xs text-[var(--color-text-muted)] font-normal">基于本地系统时区计算</span>
       </div>
 
       <ol v-if="nextRuns.length > 0" class="list-decimal list-inside grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 text-2xs font-mono text-[var(--color-text-muted)]">

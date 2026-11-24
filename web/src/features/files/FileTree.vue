@@ -238,7 +238,7 @@ defineExpose({
 
         <span
           v-if="!node.isDir && props.gitChangesMap.get(node.path)"
-          class="git-badge shrink-0 px-1 py-0.2 text-3xs font-mono rounded font-semibold border"
+          class="git-badge shrink-0 px-1.5 py-0.5 text-2xs font-mono rounded font-semibold border"
           :class="[
             `git-${props.gitChangesMap.get(node.path)}`,
             props.gitChangesMap.get(node.path) === 'added'

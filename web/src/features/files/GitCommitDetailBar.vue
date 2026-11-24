@@ -37,7 +37,7 @@ async function copyHash() {
       <!-- Top header bar: commit badge, hash copy, and reset button -->
       <div class="flex items-center justify-between gap-1.5">
         <div class="flex items-center gap-1.5 min-w-0">
-          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shrink-0">
+          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium bg-surface-muted text-foreground border border-border shrink-0">
             <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
               <circle cx="8" cy="8" r="3" />
               <line x1="8" y1="1" x2="8" y2="5" />
@@ -47,13 +47,13 @@ async function copyHash() {
           </span>
           <button
             type="button"
-            class="commit-hash-btn inline-flex items-center gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer truncate transition-colors"
+            class="commit-hash-btn inline-flex items-center gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300 hover:text-accent cursor-pointer truncate transition-colors"
             :title="props.commit.hash"
             data-test="copy-commit-hash-btn"
             @click="copyHash"
           >
             <span>{{ props.commit.shortHash || props.commit.hash.slice(0, 7) }}</span>
-            <span class="text-3xs text-slate-400">
+            <span class="text-2xs text-slate-400">
               {{ copied ? '已复制' : '复制' }}
             </span>
           </button>

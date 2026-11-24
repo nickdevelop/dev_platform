@@ -594,7 +594,7 @@ async function confirmDelete() {
           变更
           <span
             v-if="changesCount > 0"
-            class="badge-count px-1.5 py-0.2 rounded-full text-3xs bg-platform-primary-soft text-platform-primary font-mono font-semibold"
+            class="badge-count px-1.5 py-0.5 rounded-full text-2xs bg-platform-primary-soft text-platform-primary font-mono font-semibold"
           >
             {{ changesCount }}
           </span>
@@ -615,7 +615,7 @@ async function confirmDelete() {
         <!-- 项目路径：在所有文件选项右侧显示，显示全，位置不够显示...，移除复制按钮 -->
         <span
           v-if="workspaceDir"
-          class="workdir-path text-3xs font-mono text-platform-text-muted truncate min-w-0"
+          class="workdir-path text-2xs font-mono text-platform-text-muted truncate min-w-0"
           :title="workspaceDir"
           data-test="workdir-path"
         >
@@ -840,7 +840,7 @@ async function confirmDelete() {
       <!-- File list with scrollbar ("滚动体") -->
       <div
         v-if="uploadFilesList.length > 0"
-        class="upload-file-list max-h-24 overflow-y-auto flex flex-col gap-1 pr-1 font-mono text-3xs text-platform-text-muted"
+        class="upload-file-list max-h-24 overflow-y-auto flex flex-col gap-1 pr-1 font-mono text-2xs text-platform-text-muted"
         data-test="upload-file-list"
       >
         <div
@@ -862,7 +862,7 @@ async function confirmDelete() {
           variant="primary"
           :show-text="false"
         />
-        <div class="flex items-center justify-between text-3xs font-mono text-platform-text-muted">
+        <div class="flex items-center justify-between text-2xs font-mono text-platform-text-muted">
           <span>{{ uploadTotal > 0 ? `${formatBytes(uploadLoaded)} / ${formatBytes(uploadTotal)}` : '' }}</span>
           <span class="font-semibold text-platform-text">{{ uploadPercent }}%</span>
         </div>
@@ -922,7 +922,7 @@ async function confirmDelete() {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>已暂存的更改</span>
-                <span class="text-3xs text-platform-text-muted font-mono">({{ stagedItems.length }})</span>
+                <span class="text-2xs text-platform-text-muted font-mono">({{ stagedItems.length }})</span>
               </div>
               <button
                 type="button"
@@ -967,7 +967,7 @@ async function confirmDelete() {
                   <polygon points="5 3 11 8 5 13" />
                 </svg>
                 <span>更改</span>
-                <span class="text-3xs text-platform-text-muted font-mono">({{ unstagedItems.length }})</span>
+                <span class="text-2xs text-platform-text-muted font-mono">({{ unstagedItems.length }})</span>
               </div>
               <button
                 type="button"

@@ -178,7 +178,7 @@ onUnmounted(() => {
         />
 
         <span v-if="loading" class="animate-spin text-xs text-platform-text-muted shrink-0">↻</span>
-        <span class="text-3xs font-mono text-platform-text-muted px-1.5 py-0.5 rounded border border-platform-border bg-platform-surface">
+        <span class="text-2xs font-mono text-platform-text-muted px-1.5 py-0.5 rounded border border-platform-border bg-platform-surface">
           ESC
         </span>
       </div>
@@ -253,11 +253,11 @@ onUnmounted(() => {
                   </svg>
                 </span>
                 <span class="file-path truncate font-semibold" :title="item.path">{{ item.path }}</span>
-                <span class="line-badge text-3xs px-1 py-0.2 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border">
+                <span class="line-badge text-2xs px-1.5 py-0.5 rounded bg-platform-surface-muted text-platform-text-muted border border-platform-border">
                   :{{ item.line }}
                 </span>
               </div>
-              <div class="content-snippet text-3xs text-platform-text-muted truncate pl-4">
+              <div class="content-snippet text-2xs text-platform-text-muted truncate pl-4">
                 {{ item.content }}
               </div>
             </li>

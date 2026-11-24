@@ -213,7 +213,7 @@ function onViewSession(sessionId: string) {
 
         <!-- Group Name Badge -->
         <span v-if="group" class="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-[var(--color-text-muted)] shrink-0">
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" class="text-accent">
             <circle cx="8" cy="8" r="3" />
             <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
           </svg>
@@ -230,7 +230,7 @@ function onViewSession(sessionId: string) {
           <span
             v-for="m in members"
             :key="m.id"
-            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-3xs font-medium bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-[var(--color-text)]"
+            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-[var(--color-text)]"
             :title="`${m.name} (${m.backend} / ${m.model})`"
           >
             <span class="w-1.5 h-1.5 rounded-full" :style="{ backgroundColor: m.color || '#3b82f6' }" />
@@ -304,7 +304,7 @@ function onViewSession(sessionId: string) {
         v-else-if="!currentRun && flowRuns.length === 0"
         class="h-full flex flex-col items-center justify-center text-center p-8 space-y-3.5 my-auto"
       >
-        <div class="w-12 h-12 rounded-full bg-blue-500/10 text-blue-500 flex items-center justify-center">
+        <div class="w-12 h-12 rounded-full bg-accent/10 text-accent flex items-center justify-center">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8">
             <polygon points="5 3 19 12 5 21 5 3" />
           </svg>
@@ -333,14 +333,14 @@ function onViewSession(sessionId: string) {
         v-else-if="messages.length === 0"
         class="py-16 text-center text-[var(--color-text-muted)] space-y-2"
       >
-        <div class="inline-block animate-spin text-blue-500 mb-1">
+        <div class="inline-block animate-spin text-accent mb-1">
           <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
             <path d="M12 2a10 10 0 0 1 10 10" />
           </svg>
         </div>
         <div class="text-xs font-medium">中控调度大脑正在规划协同分工…</div>
-        <p class="text-3xs">即将向团队角色成员分派子任务，请稍候。</p>
+        <p class="text-2xs text-muted-foreground">即将向团队角色成员分派子任务，请稍候。</p>
       </div>
 
       <!-- Messages Stream -->

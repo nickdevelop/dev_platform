@@ -32,14 +32,14 @@ const roleModel = computed(() => props.role?.model || props.model || '')
     <span class="role-name font-semibold tracking-tight">{{ roleName }}</span>
     <span
       v-if="roleBackend"
-      class="inline-flex items-center gap-1 text-3xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
+      class="inline-flex items-center gap-1 text-2xs text-[var(--color-text-muted)] border-l border-[var(--color-border)] pl-1.5 font-mono"
     >
       <BackendIcon :backend="roleBackend" size="sm" />
       {{ roleBackend }}
     </span>
     <span
       v-if="roleModel"
-      class="text-3xs text-[var(--color-text-muted)] truncate max-w-[90px] font-mono"
+      class="text-2xs text-[var(--color-text-muted)] truncate max-w-[90px] font-mono"
       :title="roleModel"
     >
       {{ roleModel }}

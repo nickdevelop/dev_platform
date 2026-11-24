@@ -136,7 +136,7 @@ function selectGroup(groupId: number) {
           <span class="sidebar-card-title truncate" :title="group.name">
             {{ group.name }}
           </span>
-          <span class="shrink-0 text-3xs font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+          <span class="shrink-0 text-2xs font-mono px-1.5 py-0.5 rounded bg-surface-muted text-foreground border border-border">
             {{ group.orchestratorModel }}
           </span>
         </div>
@@ -145,7 +145,7 @@ function selectGroup(groupId: number) {
           {{ group.description }}
         </p>
 
-        <div class="flex items-center justify-between text-3xs text-[var(--color-text-muted)] mt-1 pt-1 border-t border-[var(--color-border)] font-mono">
+        <div class="flex items-center justify-between text-2xs text-[var(--color-text-muted)] mt-1 pt-1 border-t border-[var(--color-border)] font-mono">
           <span>成员: {{ group.memberCount ?? 0 }} 位专家</span>
         </div>
       </div>

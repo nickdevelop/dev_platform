@@ -1,9 +1,11 @@
 <script setup lang="ts">
 // EngineStepControl: Unified step-limit control component across engine panels.
-// Adheres strictly to design-taste-frontend (Data Terminal / App Screens) rules:
-// - Flat surfaces, zero resting shadows, 1px accent active indicators
-// - Tabular figures for numerical fidelity
-// - Immediate numerical input + responsive quick-preset buttons (including unlimited: -1)
+// Unslopped per craft guidelines:
+// - 4px grid rhythm (h-8 32px controls, gap-2)
+// - Standard app typography scale (text-xs / text-sm, 12px leading-relaxed hint)
+// - Quiet chrome, zero resting shadows, 1px accent active indicator
+// - Tabular figures, quiet status metadata, no colored pill badges
+// - Subtle calibrated budget gauge visual
 import { computed } from 'vue'
 
 export interface StepPreset {
@@ -38,6 +40,12 @@ const emit = defineEmits<{
 
 const isUnlimited = computed(() => props.modelValue === -1 || props.modelValue < 0)
 
+// Visual indicator percentage: capped at 50 steps for progress visualization
+const budgetPercent = computed(() => {
+  if (isUnlimited.value) return 100
+  return Math.min(100, Math.max(4, (props.modelValue / 50) * 100))
+})
+
 function onInputChange(e: Event) {
   const target = e.target as HTMLInputElement
   const raw = Number.parseInt(target.value, 10)
@@ -56,23 +64,31 @@ function selectPreset(val: number) {
 </script>
 
 <template>
-  <div class="engine-step-control space-y-2.5">
+  <div class="engine-step-control space-y-3">
     <div class="flex items-center justify-between gap-2">
       <label :for="inputId" class="text-xs font-medium text-foreground select-none">
         {{ label }}
       </label>
-      <span class="text-2xs font-mono text-muted-foreground tabular-nums flex items-center gap-1.5">
+      <span class="text-xs font-mono text-muted-foreground tabular-nums flex items-center gap-1.5">
         当前设定:
         <span
-          class="font-semibold px-1.5 py-0.5 rounded text-2xs"
-          :class="isUnlimited ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20' : 'bg-surface-muted text-foreground border border-border'"
+          class="font-mono font-medium px-2 py-0.5 rounded text-xs tabular-nums border bg-surface-muted text-foreground border-border"
         >
           {{ isUnlimited ? '不限制 (-1)' : `${modelValue} 步` }}
         </span>
       </span>
     </div>
 
-    <div class="flex items-center gap-2.5 flex-wrap">
+    <!-- Calibrated Budget Gauge (Tactile Moment) -->
+    <div class="budget-gauge-track w-full h-1 bg-surface-muted rounded-full overflow-hidden flex items-center">
+      <div
+        class="budget-gauge-bar h-full transition-all duration-200"
+        :class="isUnlimited ? 'bg-muted-foreground/40 w-full' : 'bg-accent'"
+        :style="{ width: isUnlimited ? '100%' : `${budgetPercent}%` }"
+      ></div>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
       <div class="step-input-wrapper inline-flex items-center gap-1.5">
         <input
           :id="inputId"
@@ -80,11 +96,11 @@ function selectPreset(val: number) {
           min="-1"
           step="1"
           :value="modelValue"
-          class="step-num-input w-24 h-7.5 px-2.5 text-xs font-mono rounded border border-border bg-background text-foreground focus:outline-none focus:border-accent tabular-nums transition-colors"
+          class="step-num-input w-24 h-8 px-2.5 text-xs font-mono rounded border border-border bg-background text-foreground focus:outline-none focus:border-accent tabular-nums transition-colors"
           placeholder="步数"
           @input="onInputChange"
         />
-        <span class="text-2xs text-muted-foreground select-none">步</span>
+        <span class="text-xs text-muted-foreground select-none font-mono">步</span>
       </div>
 
       <div class="preset-group flex items-center gap-1 flex-wrap" role="group" aria-label="预设步数选择">
@@ -92,11 +108,11 @@ function selectPreset(val: number) {
           v-for="p in presets"
           :key="p.value"
           type="button"
-          class="preset-btn px-2.5 h-7.5 text-xs rounded border transition-colors cursor-pointer select-none tabular-nums"
+          class="preset-btn px-2.5 h-8 text-xs font-mono rounded border transition-colors cursor-pointer select-none tabular-nums"
           :class="
             modelValue === p.value
-              ? 'active border-accent bg-accent/10 text-accent font-semibold shadow-none'
-              : 'border-border/80 bg-surface/80 text-muted-foreground hover:text-foreground hover:border-border-strong hover:bg-surface'
+              ? 'active border-accent bg-accent/10 text-accent font-medium'
+              : 'border-border/70 bg-surface/60 text-muted-foreground hover:text-foreground hover:border-border hover:bg-surface'
           "
           :aria-pressed="modelValue === p.value"
           @click="selectPreset(p.value)"
@@ -106,7 +122,7 @@ function selectPreset(val: number) {
       </div>
     </div>
 
-    <p v-if="hint" class="text-2xs text-muted-foreground leading-normal">
+    <p v-if="hint" class="text-xs text-muted-foreground leading-relaxed">
       {{ hint }}
     </p>
   </div>
@@ -126,9 +142,5 @@ function selectPreset(val: number) {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-}
-
-.preset-btn.active {
-  position: relative;
 }
 </style>

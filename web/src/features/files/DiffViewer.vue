@@ -154,7 +154,7 @@ async function copyPatch() {
         <!-- Commit or working tree badge -->
         <span
           v-if="props.commitRef"
-          class="hidden sm:inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 font-mono"
+          class="hidden sm:inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded bg-surface-muted text-foreground border border-border font-mono"
           :title="props.commitMessage || props.commitRef"
         >
           <span>commit:</span>

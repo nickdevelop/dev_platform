@@ -194,11 +194,11 @@ async function onSubmit() {
         <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300">认证方式</label>
         <div class="radio-group flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
           <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
-            <input v-model="authType" type="radio" value="password" class="text-blue-600 accent-blue-600" />
+            <input v-model="authType" type="radio" value="password" class="accent-accent" />
             <span>密码认证</span>
           </label>
           <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
-            <input v-model="authType" type="radio" value="key" class="text-blue-600 accent-blue-600" />
+            <input v-model="authType" type="radio" value="key" class="accent-accent" />
             <span>私钥认证 (SSH Key)</span>
           </label>
         </div>

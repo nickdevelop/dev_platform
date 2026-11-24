@@ -17,7 +17,7 @@ const props = withDefaults(
 const variantClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'bg-blue-50/70 dark:bg-blue-950/20 text-slate-800 dark:text-slate-100 border-blue-200 dark:border-blue-900/60'
+      return 'bg-accent/10 text-foreground border-accent/20'
     case 'muted':
       return 'bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
     case 'default':

@@ -55,6 +55,10 @@
   - 禁止 `core → providers`、`app → providers`、`transport → providers`。
   - 禁止在通用同构层（`internal/app` 及 `internal/transport`）中出现任何特定后端 ID 字面量（如 `BackendOpenCodeV2`、`"opencode-v2"`、`"pi"` 等）或直接导入适配器包。由 `dependency_guard_test.go` 递归遍历全目录进行 AST 源码级拦截。
   - 前端通用组件禁止针对后端 ID 写 `if-else` 分支，所有功能差异必须基于契约能力集（`Capabilities`）或中性元数据（`Descriptor`）进行门控驱动。
+  - **界面设计与视觉系统规范（反 AI 粗糙模板感 / Unslop 准则）**：
+    1. **静谧中性镀层（Quiet Chrome）**：外壳、边框、侧栏底纹使用低对比度中性语义 token（`bg-surface-muted`、`border-border`、`text-platform-text-muted`），禁止随意引入高饱和彩虹色相（如多色彩点、硬编码 `blue-*` / `purple-*` / 霓虹发光底纹）。全站强调色统一收敛至语义 Accent（`text-accent` / `bg-accent` / `border-accent`）。
+    2. **标准字阶阶梯（Typographic Scale）**：Page Title 20px (`text-xl`)、Card Header 14px (`text-sm`)、Body 12px (`text-xs`)、Caption / Meta 10px (`text-2xs` font-mono / tabular-nums)。严禁使用难以阅读识别的极端微缩字体（如 `text-3xs`）或非标准十进制 rem。
+    3. **严格 4px 栅格与真实度**：所有间距、高宽均需对齐 4px 倍数栅格（如 h-8=32px、p-1.5=6px、gap-2=8px），杜绝非标准小数类名；去除无意义的 `animate-ping` 呼吸抖动动效，保持界面专业、稳定与静谧。
 
 ---
 

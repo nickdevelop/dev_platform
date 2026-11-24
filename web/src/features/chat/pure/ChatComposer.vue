@@ -265,7 +265,7 @@ function closePreview() {
       role="status"
     >
       <span>正在编辑历史消息；发送后将删除该消息之后的内容。</span>
-      <button type="button" class="chat-edit-cancel font-medium text-blue-600 hover:underline" @click="emit('cancel-edit')">取消</button>
+      <button type="button" class="chat-edit-cancel font-medium text-accent hover:underline" @click="emit('cancel-edit')">取消</button>
     </div>
 
     <UiAlert v-if="!props.hasModels" variant="warning" class="chat-composer-note">

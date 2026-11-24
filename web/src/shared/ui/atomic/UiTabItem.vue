@@ -50,7 +50,7 @@ function onClose(e: MouseEvent) {
     role="tab"
     :aria-selected="isActive"
     :disabled="disabled"
-    class="inline-flex items-center transition-all duration-150 select-none outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+    class="inline-flex items-center transition-all duration-150 select-none outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-50 disabled:cursor-not-allowed"
     :class="[
       isSm ? 'px-2 py-1 text-xs gap-1.5' : 'px-3 py-1.5 text-sm gap-2',
       isPill
@@ -63,7 +63,7 @@ function onClose(e: MouseEvent) {
         : [
             'border-b-2 font-medium -mb-px',
             isActive
-              ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+              ? 'border-accent text-accent'
               : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700',
           ],
     ]"
@@ -73,7 +73,7 @@ function onClose(e: MouseEvent) {
     <slot>{{ label }}</slot>
     <span
       v-if="count !== undefined"
-      class="px-1.5 py-0.2 text-3xs font-mono rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+      class="px-1.5 py-0.5 text-2xs font-mono rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
     >
       {{ count }}
     </span>

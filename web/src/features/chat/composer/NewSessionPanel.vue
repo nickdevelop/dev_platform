@@ -935,15 +935,15 @@ async function createSession() {
                 block
               />
               <div v-if="(groupsStore.groups ?? []).length === 0 && !groupsStore.loading" class="text-xs text-[var(--color-text-muted)] mt-1">
-                暂无协同团队，可前往 <RouterLink class="text-blue-500 underline" to="/groups">团队中心</RouterLink> 创建。
+                暂无协同团队，可前往 <RouterLink class="text-accent underline" to="/groups">团队中心</RouterLink> 创建。
               </div>
               <div v-else-if="selectedGroup" class="mt-2 p-2.5 rounded bg-[var(--color-surface-muted)] border border-[var(--color-border)] text-xs flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <span class="w-2 h-2 rounded-full bg-blue-500" />
+                  <span class="w-1.5 h-1.5 rounded-full bg-accent" />
                   <span class="font-medium text-[var(--color-text)]">{{ selectedGroup.name }}</span>
                   <span class="text-[var(--color-text-muted)] text-2xs font-mono">中枢大脑: {{ selectedGroup.orchestratorModel }}</span>
                 </div>
-                <div class="text-[var(--color-text-muted)] text-2xs">
+                <div class="text-[var(--color-text-muted)] text-2xs font-mono tabular-nums">
                   {{ selectedGroup.memberCount }} 位协同专家 · 自动执行
                 </div>
               </div>
@@ -1199,16 +1199,18 @@ async function createSession() {
 }
 
 .new-session h1 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   margin: 0;
-  text-align: center;
+  text-align: left;
 }
 
 .subtitle {
-  margin: 0 0 0.75rem;
-  text-align: center;
+  margin: 0.25rem 0 0.75rem;
+  text-align: left;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: 0.75rem;
 }
 
 .project-selector-group {
@@ -1219,12 +1221,12 @@ async function createSession() {
   padding: 0.5rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .project-label {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -1255,7 +1257,7 @@ async function createSession() {
   padding: 0.5rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .worktree-selector-head {
@@ -1266,8 +1268,8 @@ async function createSession() {
 }
 
 .worktree-label {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-text-muted);
   white-space: nowrap;
 }
@@ -1319,7 +1321,7 @@ async function createSession() {
   padding: 0.5rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .prompt-selector-header {
@@ -1329,8 +1331,8 @@ async function createSession() {
 }
 
 .prompt-label {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-text-muted);
 }
 
@@ -1413,14 +1415,13 @@ async function createSession() {
   padding: 0.5rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .agent-label {
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  white-space: nowrap;
 }
 
 /* Desktop-style composer: one rounded box holds the input and its toolbar,

@@ -203,7 +203,7 @@ async function handleSwitch(conn: ServerConnection) {
       class="p-4 rounded-lg bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 space-y-1.5"
     >
       <div class="flex items-center space-x-2 font-medium text-slate-800 dark:text-slate-200">
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-accent">
           <circle cx="8" cy="8" r="6.5" />
           <line x1="8" y1="5" x2="8" y2="8" />
           <circle cx="8" cy="11" r=".5" fill="currentColor" />
@@ -220,7 +220,7 @@ async function handleSwitch(conn: ServerConnection) {
       v-if="isSwitching"
       class="p-12 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center space-y-3"
     >
-      <UiSpinner class="w-8 h-8 text-blue-500" />
+      <UiSpinner class="w-8 h-8 text-accent" />
       <p class="text-sm font-medium text-slate-600 dark:text-slate-300">正在切换目标后端，请稍候…</p>
     </div>
 
@@ -241,7 +241,7 @@ async function handleSwitch(conn: ServerConnection) {
             class="flex items-center justify-between p-3.5 rounded-md border transition-colors"
             :class="[
               conn.id === activeConnection?.id
-                ? 'border-blue-500 bg-blue-50/20 dark:bg-blue-950/20'
+                ? 'border-accent bg-accent/10'
                 : 'border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-800/20 hover:border-slate-300 dark:hover:border-slate-700',
             ]"
           >

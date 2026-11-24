@@ -195,7 +195,7 @@ async function handleSave() {
       <!-- Orchestrator Brain Config -->
       <div class="p-3.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] space-y-3">
         <div class="flex items-center gap-2 font-medium text-[var(--color-text)]">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-blue-500">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" class="text-accent">
             <circle cx="8" cy="8" r="3" />
             <path d="M8 1v2M8 13v2M1 8h2M13 8h2" />
           </svg>
@@ -260,7 +260,7 @@ async function handleSave() {
               <p class="text-2xs text-[var(--color-text-muted)] truncate mt-0.5">
                 {{ role.description || role.systemPrompt || '暂无描述' }}
               </p>
-              <div class="text-3xs text-[var(--color-text-muted)] mt-1 font-mono">
+              <div class="text-2xs text-[var(--color-text-muted)] mt-1 font-mono">
                 {{ role.model }}
               </div>
             </div>

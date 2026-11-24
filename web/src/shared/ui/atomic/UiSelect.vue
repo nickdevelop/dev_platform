@@ -68,7 +68,7 @@ function onChange(event: Event) {
         sizeClasses,
         error
           ? 'border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
-          : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 focus:border-blue-500 dark:focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20',
+          : 'border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 focus:border-accent focus:ring-2 focus:ring-accent/20',
       ]"
       @change="onChange"
     >

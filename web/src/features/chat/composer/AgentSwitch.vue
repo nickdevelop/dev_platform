@@ -127,7 +127,7 @@ function onKeydown(event: KeyboardEvent) {
   background: transparent;
   color: var(--color-text-muted);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;

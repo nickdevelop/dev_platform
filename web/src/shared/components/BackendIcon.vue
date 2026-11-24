@@ -65,7 +65,7 @@ const chipStyle = computed<Record<string, string>>((): Record<string, string> =>
       fill="none"
       stroke="currentColor"
       stroke-width="1.8"
-      class="text-blue-500 shrink-0"
+      class="text-accent shrink-0"
       aria-label="团队协同"
     >
       <circle cx="8" cy="8" r="2.8" />

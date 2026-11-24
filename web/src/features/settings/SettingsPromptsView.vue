@@ -156,7 +156,7 @@ function formatDate(iso: string): string {
           ]"
           @click="activeTab = 'role'"
         >
-          <span class="w-1.5 h-1.5 rounded-full bg-blue-500" />
+          <span class="w-1.5 h-1.5 rounded-full bg-accent" />
           <span>角色类 ({{ roleCount }})</span>
         </button>
         <button
@@ -205,7 +205,7 @@ function formatDate(iso: string): string {
                 class="text-2xs px-1.5 py-0.5 rounded font-mono border"
                 :class="[
                   prompt.type === 'role'
-                    ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                    ? 'bg-accent/10 text-accent border-accent/20'
                     : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
                 ]"
               >

@@ -299,15 +299,15 @@ async function submit() {
       <label class="text-xs font-medium text-[var(--color-text)]">执行方式选项</label>
       <div class="schedule-radios flex items-center gap-4 text-xs text-[var(--color-text)]">
         <label class="inline-flex items-center gap-1.5 cursor-pointer">
-          <input v-model="scheduleType" type="radio" value="manual" class="text-blue-600 accent-blue-600" />
+          <input v-model="scheduleType" type="radio" value="manual" class="accent-accent" />
           <span>手动执行</span>
         </label>
         <label class="inline-flex items-center gap-1.5 cursor-pointer">
-          <input v-model="scheduleType" type="radio" value="once" class="text-blue-600 accent-blue-600" />
+          <input v-model="scheduleType" type="radio" value="once" class="accent-accent" />
           <span>定时执行</span>
         </label>
         <label class="inline-flex items-center gap-1.5 cursor-pointer">
-          <input v-model="scheduleType" type="radio" value="cron" class="text-blue-600 accent-blue-600" />
+          <input v-model="scheduleType" type="radio" value="cron" class="accent-accent" />
           <span>周期执行 (Cron)</span>
         </label>
       </div>

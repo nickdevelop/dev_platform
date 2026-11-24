@@ -265,7 +265,7 @@ function goToSettings() {
                   </button>
 
                   <div class="border-t border-white/10 my-1" />
-                  <div class="px-3 py-1 text-3xs font-medium text-slate-400 uppercase tracking-wider">
+                  <div class="px-3 py-1 text-2xs font-medium text-slate-400 uppercase tracking-wider">
                     第三方服务器
                   </div>
 
@@ -279,10 +279,10 @@ function goToSettings() {
                       @click.stop="createServerTab(server.id, server.name, instance.id)"
                     >
                       <span class="truncate font-medium">{{ server.name }}</span>
-                      <span class="text-3xs text-slate-400 font-mono">{{ server.host }}:{{ server.port }}</span>
+                      <span class="text-2xs text-slate-400 font-mono">{{ server.host }}:{{ server.port }}</span>
                     </button>
                   </template>
-                  <div v-else class="px-3 py-1.5 text-slate-500 text-3xs italic">
+                  <div v-else class="px-3 py-1.5 text-slate-500 text-2xs italic">
                     暂无配置的第三方服务器
                   </div>
 
@@ -310,7 +310,7 @@ function goToSettings() {
               </span>
               <span
                 v-if="instance.cwd"
-                class="path-badge text-3xs font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 truncate max-w-[360px] pointer-events-none"
+                class="path-badge text-2xs font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400 border border-white/10 truncate max-w-[360px] pointer-events-none"
                 :title="instance.cwd"
               >
                 {{ instance.cwd }}

@@ -98,7 +98,7 @@ const emit = defineEmits<{
             <span class="file-tab-name">{{ fileTab.name }}</span>
             <span
               v-if="fileTab.mode === 'diff'"
-              class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
+              class="tab-diff-badge text-2xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
             >
               Diff
             </span>

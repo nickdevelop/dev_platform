@@ -85,7 +85,7 @@ function handleOpenSession() {
         <circle cx="8" cy="11" r="0.8" fill="currentColor" />
       </svg>
       <span>{{ message.content }}</span>
-      <span class="text-3xs opacity-70 ml-1">{{ formatTime(message.createdAt) }}</span>
+      <span class="text-2xs opacity-70 ml-1">{{ formatTime(message.createdAt) }}</span>
     </div>
   </div>
 
@@ -110,7 +110,7 @@ function handleOpenSession() {
       <!-- Orchestrator Avatar -->
       <div
         v-else-if="isOrchestrator"
-        class="w-7 h-7 rounded bg-blue-500/10 border border-blue-500/30 text-blue-500 flex items-center justify-center"
+        class="w-7 h-7 rounded bg-accent/10 border border-accent/20 text-accent flex items-center justify-center"
         title="中控调度大脑"
       >
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -138,9 +138,9 @@ function handleOpenSession() {
       <!-- Sender Metadata Header -->
       <div class="msg-meta-header flex items-center gap-2 mb-1 px-1 text-xs text-[var(--color-text-muted)] select-none">
         <template v-if="!isUser">
-          <span v-if="isOrchestrator" class="font-semibold text-blue-500 flex items-center gap-1">
+          <span v-if="isOrchestrator" class="font-semibold text-accent flex items-center gap-1">
             <span>平台中控</span>
-            <span class="text-3xs px-1 py-0.2 rounded bg-blue-500/10 border border-blue-500/20 font-mono">AI内置大脑</span>
+            <span class="text-2xs px-1.5 py-0.5 rounded bg-surface-muted border border-border font-mono text-muted-foreground">中枢大脑</span>
           </span>
           <FlowRoleBadge
             v-else
@@ -153,7 +153,7 @@ function handleOpenSession() {
         </span>
         <span
           v-if="message.status === 'streaming'"
-          class="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping"
+          class="inline-block w-1.5 h-1.5 rounded-full bg-accent"
           title="生成中"
         />
       </div>
@@ -165,7 +165,7 @@ function handleOpenSession() {
           isUser
             ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)] rounded-tr-none'
             : isOrchestrator
-              ? 'bg-[var(--color-surface)] border-blue-500/20 text-[var(--color-text)] rounded-tl-none shadow-sm'
+              ? 'bg-[var(--color-surface)] border-accent/30 text-[var(--color-text)] rounded-tl-none shadow-none'
               : 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text)] rounded-tl-none'
         ]"
       >

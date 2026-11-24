@@ -458,7 +458,7 @@ async function copyPromptTemplate() {
                   class="status-badge"
                   :class="getRunStatusBadgeClass(run.status)"
                 >
-                  <span v-if="run.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                  <span v-if="run.status === 'running'" class="w-1.5 h-1.5 rounded-full bg-accent"></span>
                   {{ getRunStatusLabel(run.status) }}
                 </span>
               </td>

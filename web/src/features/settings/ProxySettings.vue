@@ -213,7 +213,7 @@ onMounted(() => {
                 class="sr-only peer"
                 @change="handleToggle(p)"
               />
-              <div class="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-transform dark:border-slate-600 peer-checked:bg-blue-600 relative"></div>
+              <div class="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-transform dark:border-slate-600 peer-checked:bg-accent relative"></div>
               <span class="ml-1.5 text-xs">{{ p.enabled ? '已启用' : '已停用' }}</span>
             </label>
 
@@ -230,7 +230,7 @@ onMounted(() => {
         <div class="bg-slate-50 dark:bg-slate-800/50 rounded-md px-3.5 py-2.5 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2 min-w-0 text-xs text-slate-700 dark:text-slate-300">
             <span class="text-slate-400 select-none text-2xs">ContextPath:</span>
-            <code class="font-semibold text-blue-600 dark:text-blue-400 truncate">{{ getFullUrl(p.alias) }}</code>
+            <code class="font-semibold text-accent truncate">{{ getFullUrl(p.alias) }}</code>
           </div>
           <div class="flex items-center gap-1.5 shrink-0">
             <UiButton variant="secondary" size="sm" @click="copyUrl(p)">

@@ -99,7 +99,7 @@ defineExpose({
 
 <template>
   <div
-    class="relative rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 transition-colors focus-within:border-blue-500 dark:focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+    class="relative rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
     @dragover.prevent
     @drop="$emit('drop', $event)"
   >

@@ -185,7 +185,7 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
         <span class="tab-title">{{ tab.name }}</span>
         <span
           v-if="tab.mode === 'diff'"
-          class="tab-diff-badge text-3xs px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium"
+          class="tab-diff-badge text-2xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium"
         >
           Diff
         </span>

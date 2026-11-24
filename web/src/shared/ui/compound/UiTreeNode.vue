@@ -46,7 +46,7 @@ function onNodeClick() {
       class="group flex items-center h-8 px-2 rounded cursor-pointer transition-colors duration-100 text-sm"
       :class="[
         selected
-          ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
+          ? 'bg-accent/10 text-accent font-medium'
           : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
         disabled ? 'opacity-50 cursor-not-allowed' : '',
       ]"
