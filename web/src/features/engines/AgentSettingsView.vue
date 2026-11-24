@@ -416,9 +416,12 @@ function cancelStop() {
 <template>
   <section class="agents-settings w-full space-y-6" aria-label="Agent 设置">
     <!-- Header row -->
-    <header class="pb-4 border-b border-slate-200 dark:border-slate-800">
-      <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">Agent 设置</h1>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+    <header class="panel-header pb-4 border-b border-border/60">
+      <div class="flex items-center gap-2">
+        <h1 class="text-base font-semibold tracking-tight text-foreground">Agent 配置 (Agent Configuration)</h1>
+        <span class="text-2xs px-1.5 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Infrastructure</span>
+      </div>
+      <p class="text-xs text-muted-foreground mt-1">
         配置平台接入的 AI Coding Agent 后端（OpenCode、Pi、DeepSeek 等），管理二进制路径、模型目录、空闲断开策略与后台服务守护进程。
       </p>
     </header>
