@@ -27,12 +27,6 @@ const links = [
     icon: 'prompt',
   },
   {
-    name: 'settings-roles',
-    label: '角色管理',
-    desc: '协同专家与智能体分工',
-    icon: 'users',
-  },
-  {
     name: 'settings-proxies',
     label: '服务代理',
     desc: '二级路径与端口转发',

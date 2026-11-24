@@ -8,6 +8,7 @@ import GroupsSidebar from '../features/groups/GroupsSidebar.vue'
 import NotesSidebar from '../features/notes/NotesSidebar.vue'
 import SettingsNav from '../features/settings/SettingsNav.vue'
 import EnginesSidebar from '../features/engines/EnginesSidebar.vue'
+import OrgSidebar from '../features/organization/OrgSidebar.vue'
 
 describe('Column 2 (Sidebar) Design Consistency across menus', () => {
   beforeEach(() => {
@@ -110,15 +111,14 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     // Zone C: Navigation list with standard cards
     expect(wrapper.find('.settings-links').exists()).toBe(true)
     const links = wrapper.findAll('.settings-link')
-    expect(links.length).toBe(8)
+    expect(links.length).toBe(7)
     expect(links[0].classes()).toContain('sidebar-card')
     // Menu order is part of the product contract: appearance, models, prompts,
-    // roles, proxies, connections, terminal, debug (Agent moved to Engines).
+    // proxies, connections, terminal, debug (Role moved to Organization).
     expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
       '外观',
       '模型',
       '提示词管理',
-      '角色管理',
       '服务代理',
       '服务连接',
       '终端服务器',
@@ -146,6 +146,28 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
       '会话引擎',
       '协同引擎',
       'Agent配置',
+    ])
+  })
+
+  it('OrgSidebar conforms to Data Terminal single-header standard', () => {
+    const wrapper = mount(OrgSidebar, {
+      global: {
+        stubs: {
+          RouterLink: {
+            template: '<a :class="$attrs.class"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('.org-links').exists()).toBe(true)
+    const links = wrapper.findAll('.org-link')
+    expect(links.length).toBe(3)
+    expect(links[0].classes()).toContain('sidebar-card')
+    expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
+      'AI 助手',
+      'AI 员工',
+      'AI 团队',
     ])
   })
 })

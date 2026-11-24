@@ -28,26 +28,23 @@ const route = useRoute()
 const openTabs = useOpenTabsStore()
 const draftsStore = useDraftsStore()
 
-// The groups routes declare `meta.groups` or start with /groups.
+// The org routes declare `meta.org` or start with /org.
 // The tasks routes declare `meta.tasks` or start with /tasks.
 // The notes routes declare `meta.notes` or start with /notes.
-// The pure-chat routes declare `meta.chat` or start with /chat.
 // The engines routes declare `meta.engines` or start with /engines.
 // The settings routes declare `meta.settings`.
-const groupsActive = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
+const orgActive = computed(() => route.meta.org === true || route.path.startsWith('/org'))
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
 const notesActive = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
-const chatActive = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
 const enginesActive = computed(() => route.meta.engines === true || route.path.startsWith('/engines'))
 const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(
   () =>
     !settingsActive.value &&
     !enginesActive.value &&
-    !groupsActive.value &&
+    !orgActive.value &&
     !tasksActive.value &&
-    !notesActive.value &&
-    !chatActive.value,
+    !notesActive.value,
 )
 
 const projectDestination = computed(() => {
@@ -85,26 +82,6 @@ const projectDestination = computed(() => {
   return { name: 'home' }
 })
 
-const chatDestination = computed(() => {
-  const chatTabs = openTabs.tabs.filter(
-    (tab) => tab.kind === 'chat' || tab.kind === 'new-chat',
-  )
-  if (chatTabs.length > 0) {
-    const preferred =
-      (openTabs.lastActiveChatKey
-        ? chatTabs.find((tab) => tabKey(tab) === openTabs.lastActiveChatKey)
-        : null) ?? chatTabs[chatTabs.length - 1]
-
-    if (preferred.kind === 'new-chat') {
-      return { name: 'chat' }
-    }
-    if (preferred.kind === 'chat') {
-      return { name: 'chat-detail', params: { chatId: String(preferred.chatId) } }
-    }
-  }
-  return { name: 'chat' }
-})
-
 function onProjectClick(event: MouseEvent) {
   emit('expandSidebar')
   if (projectActive.value) {
@@ -112,9 +89,9 @@ function onProjectClick(event: MouseEvent) {
   }
 }
 
-function onGroupsClick(event: MouseEvent) {
+function onOrgClick(event: MouseEvent) {
   emit('expandSidebar')
-  if (groupsActive.value) {
+  if (orgActive.value) {
     event.preventDefault()
   }
 }
@@ -129,13 +106,6 @@ function onTasksClick(event: MouseEvent) {
 function onNotesClick(event: MouseEvent) {
   emit('expandSidebar')
   if (notesActive.value) {
-    event.preventDefault()
-  }
-}
-
-function onChatClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (chatActive.value) {
     event.preventDefault()
   }
 }
@@ -167,34 +137,24 @@ function onSettingsClick() {
       </RouterLink>
       <RouterLink
         class="category"
-        :class="{ active: chatActive }"
-        title="对话"
-        :aria-current="chatActive ? 'page' : undefined"
-        :to="chatDestination"
-        @click="onChatClick"
+        :class="{ active: orgActive }"
+        title="组织"
+        :aria-current="orgActive ? 'page' : undefined"
+        :to="{ name: 'org-assistants' }"
+        @click="onOrgClick"
       >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path
-            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z"
-          />
+        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="3" width="6" height="4" rx="1" />
+          <path d="M12 7v4" />
+          <path d="M5 11h14" />
+          <path d="M5 11v3" />
+          <path d="M19 11v3" />
+          <rect x="2" y="14" width="6" height="4" rx="1" />
+          <rect x="16" y="14" width="6" height="4" rx="1" />
+          <path d="M12 11v3" />
+          <rect x="9" y="14" width="6" height="4" rx="1" />
         </svg>
-        <span>对话</span>
-      </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: groupsActive }"
-        title="团队中心"
-        :aria-current="groupsActive ? 'page' : undefined"
-        :to="{ name: 'groups' }"
-        @click="onGroupsClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <circle cx="9" cy="7" r="4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M16 3.13a4 4 0 0 1 0 7.75" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span>团队</span>
+        <span>组织</span>
       </RouterLink>
       <RouterLink
         class="category"

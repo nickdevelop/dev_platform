@@ -27,13 +27,12 @@ import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
-import GroupsSidebar from '../groups/GroupsSidebar.vue'
+import OrgSidebar from '../organization/OrgSidebar.vue'
 import NotesSidebar from '../notes/NotesSidebar.vue'
 import { ProjectTerminalModal } from '../terminal'
 import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import SettingsNav from '../settings/SettingsNav.vue'
 import EnginesSidebar from '../engines/EnginesSidebar.vue'
-import ChatSidebar from '../chat/pure/ChatSidebar.vue'
 import QuickAssistantLauncher from '../chat/quick/QuickAssistantLauncher.vue'
 import DebugLauncher from '../debug/DebugLauncher.vue'
 import DebugPanel from '../debug/DebugPanel.vue'
@@ -206,21 +205,18 @@ const settingsMode = computed(() => route.meta.settings === true)
 const enginesMode = computed(() => route.meta.engines === true || route.path.startsWith('/engines'))
 // The tasks center manages tasks with their own list column and detail pane.
 const tasksMode = computed(() => route.meta.tasks === true)
-// The groups center manages team groups with their own list column and detail pane.
-const groupsMode = computed(() => route.meta.groups === true || route.path.startsWith('/groups'))
+// The organization center manages AI assistants, AI employees, and AI teams.
+const orgMode = computed(() => route.meta.org === true || route.path.startsWith('/org') || route.path.startsWith('/groups'))
 // The notes center manages notes with their own list column and note workspace pane.
 const notesMode = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
-// The pure-chat center manages global conversations with their own list column and chat pane.
-const chatMode = computed(() => route.meta.chat === true || route.path.startsWith('/chat'))
-// The project/workspace area is the default when no other center is open.
+// The workspace area is the default when no other center is open.
 const projectActive = computed(
   () =>
     !settingsMode.value &&
     !enginesMode.value &&
-    !groupsMode.value &&
+    !orgMode.value &&
     !tasksMode.value &&
-    !notesMode.value &&
-    !chatMode.value,
+    !notesMode.value,
 )
 
 // Tabs belong strictly to the project workspace: sessions and
@@ -253,14 +249,7 @@ const activeKey = computed<string | null>(() => {
   return sessionId.value
 })
 
-const activeChatKey = computed<string | null>(() => {
-  if (!chatMode.value) return null
-  if (route.name === 'chat') return 'new-chat'
-  if (route.name === 'chat-detail' && route.params.chatId !== undefined) {
-    return `chat:${route.params.chatId}`
-  }
-  return null
-})
+const activeChatKey = computed<string | null>(() => null)
 const missingProject = computed(
   () => ready.value && projectId.value !== null && !projects.byId(projectId.value),
 )
@@ -272,15 +261,13 @@ const fullHeightPane = computed(() => route.meta.fullHeight === true)
 const columnLabel = computed(() =>
   settingsMode.value
     ? '功能导航'
-    : groupsMode.value
-      ? '团队群组列表'
+    : orgMode.value
+      ? '组织架构列表'
       : tasksMode.value
         ? '任务列表'
         : notesMode.value
         ? '笔记列表'
-        : chatMode.value
-          ? '对话列表'
-          : '项目导航',
+        : '项目导航',
 )
 // The sidebar's top row (title + dock controls) is owned by the shell, so
 // whichever column content mounts below the same head always starts aligned.
@@ -289,15 +276,13 @@ const columnTitle = computed(() =>
     ? '设置'
     : enginesMode.value
       ? '引擎'
-      : groupsMode.value
-        ? '群组'
+      : orgMode.value
+        ? '组织'
         : tasksMode.value
           ? '任务'
           : notesMode.value
             ? '笔记'
-            : chatMode.value
-              ? '对话'
-              : '项目',
+            : '项目',
 )
 
 const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
@@ -379,20 +364,6 @@ function syncTabWithRoute() {
     const known = sessions.sessionById(sessionId.value)
     openTabs.openTab(projectId.value, sessionId.value, known?.title ?? '', known?.backend ?? '')
     return
-  }
-
-  if (chatMode.value) {
-    if (route.name === 'chat') {
-      openTabs.openNewChat()
-      return
-    }
-    if (route.name === 'chat-detail' && route.params.chatId !== undefined) {
-      const cId = Number(route.params.chatId)
-      if (Number.isFinite(cId) && cId > 0) {
-        const known = chats.chats.find((c) => c.id === cId)
-        openTabs.openChat(cId, known?.title ?? '')
-      }
-    }
   }
 }
 
@@ -709,7 +680,7 @@ watch(
       'settings-mode': settingsMode,
       'tasks-mode': tasksMode,
       'notes-mode': notesMode,
-      'chat-mode': chatMode,
+      'org-mode': orgMode,
       'sidebar-collapsed': !isDocked,
     }"
   >
@@ -789,10 +760,9 @@ watch(
 
       <!-- The middle column carries whichever list the open menu owns: the
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
-      <GroupsSidebar v-if="groupsMode" />
+      <OrgSidebar v-if="orgMode" />
       <TasksSidebar v-else-if="tasksMode" />
       <NotesSidebar v-else-if="notesMode" />
-      <ChatSidebar v-else-if="chatMode" />
       <EnginesSidebar v-else-if="enginesMode" />
       <SettingsNav v-else-if="settingsMode" />
       <ProjectSidebar

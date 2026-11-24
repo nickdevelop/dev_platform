@@ -17,7 +17,6 @@ import ProjectsManagementView from './features/projects/ProjectsManagementView.v
 import ProjectSettingsView from './features/projects/ProjectSettingsView.vue'
 import NewSessionPanel from './features/chat/composer/NewSessionPanel.vue'
 import SessionChatPanel from './features/chat/SessionChatPanel.vue'
-import ChatPanel from './features/chat/pure/ChatPanel.vue'
 import SettingsView from './features/settings/SettingsView.vue'
 import EnginesView from './features/engines/EnginesView.vue'
 import AssistantEngineView from './features/engines/AssistantEngineView.vue'
@@ -26,10 +25,12 @@ import OrchestratorEngineView from './features/engines/OrchestratorEngineView.vu
 import CoreEngineView from './features/engines/CoreEngineView.vue'
 import AgentSettingsView from './features/engines/AgentSettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
-import SettingsRolesView from './features/settings/SettingsRolesView.vue'
 import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
-import GroupsView from './features/groups/GroupsView.vue'
+import OrganizationView from './features/organization/OrganizationView.vue'
+import AssistantListView from './features/organization/assistants/AssistantListView.vue'
+import EmployeeListView from './features/organization/employees/EmployeeListView.vue'
+import TeamListView from './features/organization/teams/TeamListView.vue'
 import TasksView from './features/tasks/TasksView.vue'
 import NotesView from './features/notes/NotesView.vue'
 import ProxySettings from './features/settings/ProxySettings.vue'
@@ -48,9 +49,8 @@ export function createAppRouter() {
         children: [
           { path: '', name: 'home', component: EmptyWorkspace },
           {
-            // A project is not a page of its own any more: its settings open as
+            // A workspace is not a page of its own any more: its settings open as
             // a workbench tab, and its name in the tree only expands its sessions.
-            // The old URL would otherwise render a panel no tab points to.
             path: 'projects/:projectId',
             redirect: { name: 'home' },
           },
@@ -67,16 +67,46 @@ export function createAppRouter() {
           },
           {
             path: 'chat',
-            name: 'chat',
-            component: ChatPanel,
-            meta: { chat: true, fullHeight: true },
+            redirect: { name: 'home' },
           },
           {
             path: 'chat/:chatId',
-            name: 'chat-detail',
-            component: ChatPanel,
-            meta: { chat: true, fullHeight: true },
-            props: (route) => ({ chatId: Number(route.params.chatId) }),
+            redirect: { name: 'home' },
+          },
+          {
+            path: 'org',
+            component: OrganizationView,
+            meta: { org: true, fullHeight: true },
+            children: [
+              { path: '', redirect: { name: 'org-assistants' } },
+              { path: 'assistants', name: 'org-assistants', component: AssistantListView },
+              {
+                path: 'assistants/new',
+                redirect: { name: 'org-assistants', query: { action: 'new' } },
+              },
+              {
+                path: 'assistants/:assistantId',
+                redirect: (route) => ({ name: 'org-assistants', query: { edit: route.params.assistantId } }),
+              },
+              { path: 'employees', name: 'org-employees', component: EmployeeListView },
+              {
+                path: 'employees/new',
+                redirect: { name: 'org-employees', query: { action: 'new' } },
+              },
+              {
+                path: 'employees/:employeeId',
+                redirect: (route) => ({ name: 'org-employees', query: { edit: route.params.employeeId } }),
+              },
+              { path: 'teams', name: 'org-teams', component: TeamListView },
+              {
+                path: 'teams/new',
+                redirect: { name: 'org-teams', query: { action: 'new' } },
+              },
+              {
+                path: 'teams/:teamId',
+                redirect: (route) => ({ name: 'org-teams', query: { edit: route.params.teamId } }),
+              },
+            ],
           },
           {
             path: 'engines',
@@ -99,7 +129,7 @@ export function createAppRouter() {
             children: [
               { path: '', redirect: { name: 'settings-appearance' } },
               { path: 'appearance', name: 'settings-appearance', component: AppearanceSettings },
-              { path: 'roles', name: 'settings-roles', component: SettingsRolesView },
+              { path: 'roles', redirect: { name: 'org-employees' } },
               { path: 'prompts', name: 'settings-prompts', component: SettingsPromptsView },
               { path: 'models', name: 'settings-models', component: ModelSettings },
               { path: 'agents', redirect: { name: 'engines-agents' } },
@@ -111,22 +141,15 @@ export function createAppRouter() {
           },
           {
             path: 'groups',
-            name: 'groups',
-            component: GroupsView,
-            meta: { groups: true, fullHeight: true },
+            redirect: { name: 'org-teams' },
           },
           {
             path: 'groups/new',
-            name: 'group-new',
-            component: GroupsView,
-            meta: { groups: true, fullHeight: true },
+            redirect: { name: 'org-teams', query: { action: 'new' } },
           },
           {
             path: 'groups/:groupId',
-            name: 'group-detail',
-            component: GroupsView,
-            meta: { groups: true, fullHeight: true },
-            props: (route) => ({ groupId: Number(route.params.groupId) }),
+            redirect: (route) => ({ name: 'org-teams', query: { edit: route.params.groupId } }),
           },
           {
             path: 'tasks',

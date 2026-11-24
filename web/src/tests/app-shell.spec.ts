@@ -70,24 +70,23 @@ describe('three-pane app shell', () => {
     vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('shows the tree, the empty workspace and an enabled Chat category at /', async () => {
+  it('shows the tree, the empty workspace and an enabled Organization category at /', async () => {
     const { wrapper } = await setup('/')
 
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
     expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
-    const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
-    expect(chat?.attributes('href')).toBe('/chat')
-    expect(chat?.attributes('disabled')).toBeUndefined()
+    const org = wrapper.findAll('a').find((entry) => entry.text() === '组织')
+    expect(org?.attributes('href')).toBe('/org/assistants')
+    expect(org?.attributes('disabled')).toBeUndefined()
   })
 
-  it('opens the pure chat area from the rail and passes a conversation id', async () => {
-    const { wrapper, router } = await setup('/chat/5', { ChatPanel: true, ChatSidebar: true })
+  it('opens the organization area from the rail and activates org mode', async () => {
+    const { wrapper, router } = await setup('/org/assistants')
 
-    expect(router.currentRoute.value.name).toBe('chat-detail')
-    expect(wrapper.findComponent(ChatPanel).props('chatId')).toBe(5)
-    const chat = wrapper.findAll('a').find((entry) => entry.text() === '对话')
-    expect(chat?.classes()).toContain('active')
-    // In chatMode, tab strip is removed as specified
+    expect(router.currentRoute.value.path).toBe('/org/assistants')
+    const org = wrapper.findAll('a').find((entry) => entry.text() === '组织')
+    expect(org?.classes()).toContain('active')
+    // In orgMode, tab strip is removed as specified
     const tabs = wrapper.findAll('[data-test="open-tab"]')
     expect(tabs).toHaveLength(0)
   })
@@ -252,17 +251,14 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/')
 
-    // 项目 / 对话 / 团队 / 任务 / 笔记 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
-    // 提示词管理与角色管理收拢在设置中心内。终端移至平台设置。
+    // 项目 / 组织 / 任务 / 笔记 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
+    // 提示词管理收拢在设置中心内。AI员工与AI团队在组织中心管理。
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(8)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
-    // Chat is a first-level peer immediately below projects, not nested in the
-    // project tree, because both are primary work areas.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
-      '对话',
-      '团队',
+      '组织',
       '任务',
       '笔记',
       '引擎',
