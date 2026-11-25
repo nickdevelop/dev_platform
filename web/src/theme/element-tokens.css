@@ -328,7 +328,7 @@ html .el-pagination {
   --el-pagination-button-height: 24px;
   --el-pagination-button-width: 24px;
   --el-pagination-border-radius: var(--el-border-radius-base);
-  font-family: var(--el-font-family-mono);
+  font-family: var(--font-mono);
   font-weight: 400;
 }
 
