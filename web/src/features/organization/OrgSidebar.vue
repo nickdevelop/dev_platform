@@ -29,7 +29,7 @@ const links: OrgLink[] = [
   {
     name: 'org-prompts',
     path: '/org/prompts',
-    label: 'AI提示词',
+    label: 'AI 提示词',
     desc: '角色人设与流程协同规范',
     icon: EditPen,
   },

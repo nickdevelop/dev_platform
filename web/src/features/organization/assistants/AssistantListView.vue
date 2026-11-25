@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // AssistantListView: governance grid for the organization's AI assistants.
 //
-// Migration step: the hand-written `<table>` is now `el-table`, the search is an
-// `el-input`, the launcher filter is an `el-segmented`, the row toggle is an
-// `el-switch`, deletion goes through `ElMessageBox`, and the create/edit form
-// opens in `AssistantEditDialog` instead of replacing this view in place. The
+// Migration step: the hand-written `<table>` is now `el-table`, the row above it
+// is the shared `ListToolbar` (create on the left, 常驻 `el-select` + keyword
+// `el-input` + 搜索 / 重置 on the right), the row toggle is an `el-switch`,
+// deletion goes through `ElMessageBox`, and the create/edit form opens in
+// `AssistantEditDialog` instead of replacing this view in place. The
 // `?action=new` / `?edit=<id>` deep links still resolve to the same editor.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -15,6 +16,7 @@ import { useModelsStore } from '../../../stores/models'
 import { usePromptsStore } from '../../../stores/prompts'
 import type { ChatGroup, ChatGroupInput } from '../../../api/chats'
 import { UiAlert } from '../../../shared/ui'
+import ListToolbar from '../../../shared/components/ListToolbar.vue'
 import AssistantEditDialog from './AssistantEditDialog.vue'
 
 const route = useRoute()
@@ -23,6 +25,9 @@ const chatsStore = useChatsStore()
 const modelsStore = useModelsStore()
 const promptsStore = usePromptsStore()
 
+// The keyword in the field is a draft (ListToolbar applies it on 搜索 / Enter);
+// the常驻 filter applies the moment it changes.
+const keywordDraft = ref('')
 const keyword = ref('')
 const floatFilter = ref<'all' | 'floating' | 'normal'>('all')
 
@@ -70,6 +75,16 @@ function syncRouteState() {
     showDialog.value = false
     selectedAssistant.value = null
   }
+}
+
+function applySearch() {
+  keyword.value = keywordDraft.value.trim()
+}
+
+function resetSearch() {
+  keywordDraft.value = ''
+  keyword.value = ''
+  floatFilter.value = 'all'
 }
 
 const filteredAssistants = computed(() => {
@@ -185,47 +200,49 @@ async function removeAssistant(group: ChatGroup) {
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="assistant-list">
     <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <div class="flex items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 助手</h1>
-            <span
-              class="px-2 py-0.5 rounded-full text-2xs font-mono font-medium bg-surface-muted text-platform-text-muted border border-border"
-            >
-              {{ chatsStore.groups.length }} 个助手
-            </span>
-          </div>
-          <p class="text-xs text-platform-text-muted mt-0.5">
-            日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
-          </p>
-        </div>
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 助手</h1>
+      <p class="text-xs text-platform-text-muted mt-0.5">
+        日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
+      </p>
 
-        <el-button
-          type="primary"
-          class="shrink-0"
-          :icon="Plus"
-          data-test="btn-create-assistant"
-          @click="openCreate"
-        >
-          新建 AI 助手
-        </el-button>
-      </div>
-
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-border/50">
-        <el-input
-          v-model="keyword"
-          :prefix-icon="Search"
+      <div class="mt-3">
+        <ListToolbar
+          v-model:keyword="keywordDraft"
           placeholder="搜索助手名称或人设关键词…"
-          clearable
-          class="search-input w-full sm:w-80"
-          data-test="input-search-assistant"
-        />
+          search-test="btn-search-assistant"
+          reset-test="btn-reset-assistant"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <template #actions>
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Plus"
+              data-test="btn-create-assistant"
+              @click="openCreate"
+            >
+              新建 AI 助手
+            </el-button>
+          </template>
 
-        <el-segmented
-          v-model="floatFilter"
-          :options="floatFilterOptions"
-          class="self-start sm:self-auto"
-        />
+          <template #filters>
+            <el-select
+              v-model="floatFilter"
+              size="small"
+              class="filter-select"
+              data-test="select-float-filter"
+              aria-label="按快捷助手常驻状态筛选"
+            >
+              <el-option
+                v-for="option in floatFilterOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </template>
+        </ListToolbar>
       </div>
     </header>
 
@@ -354,8 +371,8 @@ async function removeAssistant(group: ChatGroup) {
 <style scoped>
 /* Row chrome the library has no token for: the 24px avatar chip, the id chip and
    the persona summary line. All of it uses platform tokens. */
-.search-input {
-  max-width: 320px;
+.filter-select {
+  width: 176px;
 }
 
 .table-wrap {

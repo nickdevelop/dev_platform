@@ -58,9 +58,15 @@
    `element-plus → style.css → theme/element-tokens.css`；`web/src/types/components.d.ts` 必须提交；
    **禁止**引入 `theme-chalk/dark/css-vars.css` 或在 `html` 上加 `dark` class（会唤醒 280 处沉睡的
    `dark:` 工具类），深色预设靠自身 palette + `root.style.colorScheme` 生效。
-5. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与
+5. **列表页与弹窗布局契约**（v2 §四）：单列表页 = 页头（标题 + 一句话职责，**不写计数芯片**）
+   + 工具条（左＝全局动作按钮，右＝搜索表单，顺序固定「枚举 `el-select` → 关键词 `el-input` →
+   搜索 → 重置」，统一用 `web/src/shared/components/ListToolbar.vue`）+ `el-table` 铺满剩余高度；
+   枚举筛选变更即时生效、关键词是草稿只在搜索/回车时生效。弹窗一律垂直居中（`App.vue` 的
+   `el-config-provider` 上 `:dialog="{ alignCenter: true }"`，**不要在页面里逐个写 `align-center`/`top`**），
+   高度上限与内部滚动、底栏固定由 token 层负责。
+6. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与
    `ElMessageBox` 按钮，不要在局部另设 locale。
-6. **文档同步**：UI 规范任何一条契约变化，必须同时更新 v2 文档与本节摘要。
+7. **文档同步**：UI 规范任何一条契约变化，必须同时更新 v2 文档与本节摘要。
 
 ## 参照源码（重要）
 

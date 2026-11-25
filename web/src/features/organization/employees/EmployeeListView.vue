@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // EmployeeListView: the digital-employee roster of the organization center.
 //
-// `el-table` for the roster, `el-input` for search, `el-segmented` for the
-// execution-engine filter, `ElMessageBox` for deletion and `EmployeeEditDialog`
-// for the form, so the route no longer swaps shape when an editor opens.
+// `el-table` for the roster, the shared `ListToolbar` above it (create on the
+// left, engine `el-select` + keyword `el-input` + 搜索 / 重置 on the right),
+// `ElMessageBox` for deletion and `EmployeeEditDialog` for the form, so the route
+// no longer swaps shape when an editor opens.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -14,6 +15,7 @@ import { useModelsStore } from '../../../stores/models'
 import { useAgentsStore } from '../../../stores/agents'
 import BackendIcon from '../../../shared/components/BackendIcon.vue'
 import type { AgentRole } from '../../../api/roles'
+import ListToolbar from '../../../shared/components/ListToolbar.vue'
 import EmployeeEditDialog from './EmployeeEditDialog.vue'
 
 const route = useRoute()
@@ -23,6 +25,9 @@ const promptsStore = usePromptsStore()
 const modelsStore = useModelsStore()
 const agentsStore = useAgentsStore()
 
+// The keyword in the field is a draft (ListToolbar applies it on 搜索 / Enter);
+// the engine filter applies the moment it changes.
+const keywordDraft = ref('')
 const keyword = ref('')
 const backendFilter = ref<string>('all')
 
@@ -76,6 +81,16 @@ const backendFilterOptions = computed(() => [
   { label: `全部引擎 (${rolesStore.roles.length})`, value: 'all' },
   ...selectableBackends.value.map((b) => ({ label: b.label, value: b.id })),
 ])
+
+function applySearch() {
+  keyword.value = keywordDraft.value.trim()
+}
+
+function resetSearch() {
+  keywordDraft.value = ''
+  keyword.value = ''
+  backendFilter.value = 'all'
+}
 
 const filteredEmployees = computed(() => {
   let list = rolesStore.roles || []
@@ -146,46 +161,49 @@ async function removeEmployee(role: AgentRole) {
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="employee-list">
     <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <div class="flex items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 员工</h1>
-            <span
-              class="px-2 py-0.5 rounded-full text-2xs font-mono font-medium bg-surface-muted text-platform-text-muted border border-border"
-            >
-              {{ rolesStore.roles.length }} 名员工
-            </span>
-          </div>
-          <p class="text-xs text-platform-text-muted mt-0.5">
-            专职数字员工与执行引擎分工，作为 AI 团队的专业协同专家编制。
-          </p>
-        </div>
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 员工</h1>
+      <p class="text-xs text-platform-text-muted mt-0.5">
+        专职数字员工与执行引擎分工，作为 AI 团队的专业协同专家编制。
+      </p>
 
-        <el-button
-          type="primary"
-          class="shrink-0"
-          :icon="Plus"
-          data-test="btn-create-employee"
-          @click="openCreate"
-        >
-          新建 AI 员工
-        </el-button>
-      </div>
-
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-border/50">
-        <el-input
-          v-model="keyword"
-          :prefix-icon="Search"
+      <div class="mt-3">
+        <ListToolbar
+          v-model:keyword="keywordDraft"
           placeholder="搜索员工姓名、岗位或模型…"
-          clearable
-          class="search-input w-full sm:w-80"
-        />
+          search-test="btn-search-employee"
+          reset-test="btn-reset-employee"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <template #actions>
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Plus"
+              data-test="btn-create-employee"
+              @click="openCreate"
+            >
+              新建 AI 员工
+            </el-button>
+          </template>
 
-        <el-segmented
-          v-model="backendFilter"
-          :options="backendFilterOptions"
-          class="self-start sm:self-auto max-w-full overflow-x-auto"
-        />
+          <template #filters>
+            <el-select
+              v-model="backendFilter"
+              size="small"
+              class="filter-select"
+              data-test="select-backend-filter"
+              aria-label="按执行引擎筛选"
+            >
+              <el-option
+                v-for="option in backendFilterOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </template>
+        </ListToolbar>
       </div>
     </header>
 
@@ -294,8 +312,8 @@ async function removeEmployee(role: AgentRole) {
 </template>
 
 <style scoped>
-.search-input {
-  max-width: 320px;
+.filter-select {
+  width: 176px;
 }
 
 .table-wrap {

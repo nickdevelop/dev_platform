@@ -122,7 +122,13 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       await flushPromises()
 
       expect(wrapper.text()).toContain('AI 助手')
-      expect(wrapper.text()).toContain('1 个助手')
+      // Header keeps the title; the tally chip is gone and the toolbar carries
+      // the create action plus the filter / search form.
+      expect(wrapper.text()).not.toContain('1 个助手')
+      expect(wrapper.find('[data-test="btn-create-assistant"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="select-float-filter"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="btn-search-assistant"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="btn-reset-assistant"]').exists()).toBe(true)
       expect(wrapper.text()).toContain('默认开发助手')
       expect(wrapper.findComponent(AssistantEditDialog).exists()).toBe(false)
 
@@ -183,7 +189,8 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       await flushPromises()
 
       expect(wrapper.text()).toContain('AI 员工')
-      expect(wrapper.text()).toContain('1 名员工')
+      expect(wrapper.find('[data-test="select-backend-filter"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="btn-create-employee"]').exists()).toBe(true)
       expect(wrapper.text()).toContain('前端架构师')
       expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(false)
 
@@ -217,6 +224,34 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(true)
       expect(wrapper.text()).toContain('编辑 AI 员工 · 代码审查专家')
     })
+
+    it('takes the keyword on search only and resets both controls', async () => {
+      const rolesStore = useRolesStore()
+      rolesStore.roles = [
+        sampleEmployee,
+        { ...sampleEmployee, id: 12, name: '代码审查专家', backend: 'opencode_v2' },
+      ]
+      rolesStore.loadRoles = vi.fn().mockResolvedValue(rolesStore.roles)
+
+      const wrapper = mount(EmployeeListView)
+      await flushPromises()
+
+      await wrapper.find('[data-test="input-list-keyword"]').setValue('代码')
+      await flushPromises()
+      // The typed keyword is a draft: the table has not followed it yet.
+      expect(wrapper.text()).toContain('前端架构师')
+
+      // The search button submits the form, exactly like Enter in the field.
+      await wrapper.find('[data-test="btn-search-employee"]').trigger('submit')
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('前端架构师')
+      expect(wrapper.text()).toContain('代码审查专家')
+
+      await wrapper.find('[data-test="btn-reset-employee"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('前端架构师')
+      expect((wrapper.find('[data-test="input-list-keyword"]').element as HTMLInputElement).value).toBe('')
+    })
   })
 
   describe('AI Teams (TeamListView & TeamEditDialog)', () => {
@@ -241,7 +276,8 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       await flushPromises()
 
       expect(wrapper.text()).toContain('AI 团队')
-      expect(wrapper.text()).toContain('1 个团队')
+      expect(wrapper.find('[data-test="btn-create-team"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="btn-search-team"]').exists()).toBe(true)
       expect(wrapper.text()).toContain('全栈攻坚特战队')
       expect(wrapper.findComponent(TeamEditDialog).exists()).toBe(false)
 
@@ -302,7 +338,7 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
   })
 
   describe('OrgPromptsView in Organization Center', () => {
-    it('renders AI提示词 view with header and prompt counts', async () => {
+    it('renders the AI 提示词 view with its toolbar and rows', async () => {
       const promptsStore = usePromptsStore()
       promptsStore.prompts = [
         { id: 1, name: '角色提示词', type: 'role', description: 'desc', content: 'content', createdAt: '', updatedAt: '' },
@@ -311,8 +347,9 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       const wrapper = mount(OrgPromptsView)
       await flushPromises()
 
-      expect(wrapper.find('h1').text()).toBe('AI提示词')
-      expect(wrapper.text()).toContain('2 个提示词')
+      expect(wrapper.find('h1').text()).toBe('AI 提示词')
+      // The count chip is gone from the header; the type filter carries the tally.
+      expect(wrapper.text()).not.toContain('2 个提示词')
       expect(wrapper.find('[data-test="btn-create-prompt"]').exists()).toBe(true)
       expect(wrapper.text()).toContain('角色提示词')
       expect(wrapper.text()).toContain('流程提示词')

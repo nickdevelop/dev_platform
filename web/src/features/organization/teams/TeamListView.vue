@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // TeamListView: the multi-agent teams of the organization center.
 //
-// `el-table` for the roster, `el-input` for search, `ElMessageBox` for deletion
-// and `TeamEditDialog` for the form (including the staffing picker), so opening
-// an editor no longer replaces the whole view.
+// `el-table` for the roster, the shared `ListToolbar` above it (create on the
+// left, keyword `el-input` + 搜索 / 重置 on the right), `ElMessageBox` for
+// deletion and `TeamEditDialog` for the form (including the staffing picker), so
+// opening an editor no longer replaces the whole view.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -11,12 +12,15 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { useGroupsStore } from '../../../stores/groups'
 import type { Group, GroupDetail } from '../../../api/groups'
 import { UiAlert } from '../../../shared/ui'
+import ListToolbar from '../../../shared/components/ListToolbar.vue'
 import TeamEditDialog from './TeamEditDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const groupsStore = useGroupsStore()
 
+// The keyword in the field is a draft; ListToolbar applies it on 搜索 / Enter.
+const keywordDraft = ref('')
 const keyword = ref('')
 
 const showDialog = ref(false)
@@ -73,6 +77,15 @@ async function loadTeamDetail(groupId: number) {
   } finally {
     loadingDetail.value = false
   }
+}
+
+function applySearch() {
+  keyword.value = keywordDraft.value.trim()
+}
+
+function resetSearch() {
+  keywordDraft.value = ''
+  keyword.value = ''
 }
 
 const filteredTeams = computed(() => {
@@ -132,41 +145,33 @@ async function removeTeam(team: Group) {
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="team-list">
     <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <div class="flex items-center justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 团队</h1>
-            <span
-              class="px-2 py-0.5 rounded-full text-2xs font-mono font-medium bg-surface-muted text-platform-text-muted border border-border"
-            >
-              {{ groupsStore.groups.length }} 个团队
-            </span>
-          </div>
-          <p class="text-xs text-platform-text-muted mt-0.5">
-            中控大脑调度与专职 AI 员工组成的多 Agent 协同作战单元。
-          </p>
-        </div>
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 团队</h1>
+      <p class="text-xs text-platform-text-muted mt-0.5">
+        中控大脑调度与专职 AI 员工组成的多 Agent 协同作战单元。
+      </p>
 
-        <el-button
-          type="primary"
-          class="shrink-0"
-          :icon="Plus"
-          data-test="btn-create-team"
-          @click="openCreate"
-        >
-          新建 AI 团队
-        </el-button>
-      </div>
-
-      <div class="flex items-center gap-3 mt-4 pt-3 border-t border-border/50">
-        <el-input
-          v-model="keyword"
-          :prefix-icon="Search"
+      <div class="mt-3">
+        <ListToolbar
+          v-model:keyword="keywordDraft"
           placeholder="搜索团队名称、描述或大脑模型…"
-          clearable
-          class="search-input w-full sm:w-80"
-        />
-        <span v-if="loadingDetail" class="text-2xs text-platform-text-muted">正在加载团队详情…</span>
+          search-test="btn-search-team"
+          reset-test="btn-reset-team"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <template #actions>
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Plus"
+              data-test="btn-create-team"
+              @click="openCreate"
+            >
+              新建 AI 团队
+            </el-button>
+            <span v-if="loadingDetail" class="loading-hint">正在加载团队详情…</span>
+          </template>
+        </ListToolbar>
       </div>
     </header>
 
@@ -285,8 +290,9 @@ async function removeTeam(team: Group) {
 </template>
 
 <style scoped>
-.search-input {
-  max-width: 320px;
+.loading-hint {
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
 }
 
 .table-wrap {

@@ -170,7 +170,7 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     const items = wrapper.findAll('.el-menu-item')
     expect(items).toHaveLength(4)
     expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
-      'AI提示词',
+      'AI 提示词',
       'AI 助手',
       'AI 员工',
       'AI 团队',

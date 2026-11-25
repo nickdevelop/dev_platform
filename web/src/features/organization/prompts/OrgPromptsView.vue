@@ -4,20 +4,25 @@
 //
 // Element Plus carries the interaction surface: the list is an `el-table` (the
 // same part the other three organization pages use, so a prompt row behaves like
-// an assistant row), the type filter is an `el-segmented`, the search is an
-// `el-input`, and destructive work goes through `ElMessageBox` with the result
-// reported by `ElMessage`.
+// an assistant row), the row above it is the shared `ListToolbar` (create on the
+// left, 类型 `el-select` + keyword `el-input` + 搜索 / 重置 on the right), and
+// destructive work goes through `ElMessageBox` with the result reported by
+// `ElMessage`.
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { usePromptsStore } from '../../../stores/prompts'
 import type { Prompt, PromptType } from '../../../api/prompts'
 import { PromptManageDialog } from '../../prompts'
+import ListToolbar from '../../../shared/components/ListToolbar.vue'
 
 type PromptFilter = 'all' | 'role' | 'flow'
 
 const promptsStore = usePromptsStore()
 
+// The keyword in the field is a draft; the table only follows it on 搜索 / Enter
+// (ListToolbar), while the type filter applies immediately.
+const keywordDraft = ref('')
 const keyword = ref('')
 const filter = ref<PromptFilter>('all')
 const showEditDialog = ref(false)
@@ -39,6 +44,16 @@ const filterOptions = computed(() => [
   { label: `角色类 (${roleCount.value})`, value: 'role' as PromptFilter },
   { label: `流程类 (${flowCount.value})`, value: 'flow' as PromptFilter },
 ])
+
+function applySearch() {
+  keyword.value = keywordDraft.value.trim()
+}
+
+function resetSearch() {
+  keywordDraft.value = ''
+  keyword.value = ''
+  filter.value = 'all'
+}
 
 const filteredPrompts = computed(() => {
   let list = promptsStore.prompts || []
@@ -138,45 +153,52 @@ const emptyDescription = computed(() =>
   <div
     class="org-prompts-view h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden"
     data-test="org-prompts-view"
-    aria-label="AI提示词"
+    aria-label="AI 提示词"
   >
     <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <div class="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <div class="flex items-center gap-2.5">
-            <h1 class="text-lg font-semibold text-foreground tracking-tight">AI提示词</h1>
-            <span
-              class="px-2 py-0.5 rounded-full text-2xs font-mono font-medium bg-surface-muted text-platform-text-muted border border-border"
-            >
-              {{ promptsStore.prompts.length }} 个提示词
-            </span>
-          </div>
-          <p class="text-xs text-platform-text-muted mt-0.5">
-            管理角色类人设与流程类协同提示词，供助手、数字员工与协同团队统一引用。
-          </p>
-        </div>
+      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 提示词</h1>
+      <p class="text-xs text-platform-text-muted mt-0.5">
+        管理角色类人设与流程类协同提示词，供助手、数字员工与协同团队统一引用。
+      </p>
 
-        <el-button
-          type="primary"
-          class="shrink-0"
-          :icon="Plus"
-          data-test="btn-create-prompt"
-          @click="openCreateDialog"
-        >
-          新建提示词
-        </el-button>
-      </div>
-
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-border/50">
-        <el-segmented v-model="filter" :options="filterOptions" class="self-start sm:self-auto" />
-
-        <el-input
-          v-model="keyword"
-          :prefix-icon="Search"
+      <div class="mt-3">
+        <ListToolbar
+          v-model:keyword="keywordDraft"
           placeholder="搜索提示词名称、描述或正文…"
-          clearable
-          class="prompt-search w-full sm:w-80"
-        />
+          search-test="btn-search-prompts"
+          reset-test="btn-reset-prompts"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <template #actions>
+            <el-button
+              type="primary"
+              size="small"
+              :icon="Plus"
+              data-test="btn-create-prompt"
+              @click="openCreateDialog"
+            >
+              新建提示词
+            </el-button>
+          </template>
+
+          <template #filters>
+            <el-select
+              v-model="filter"
+              size="small"
+              class="filter-select"
+              data-test="select-prompt-type"
+              aria-label="按提示词类型筛选"
+            >
+              <el-option
+                v-for="option in filterOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </template>
+        </ListToolbar>
       </div>
     </header>
 
@@ -263,6 +285,12 @@ const emptyDescription = computed(() =>
 </template>
 
 <style scoped>
+/* The enum filter keeps a fixed width so the search form does not jump when the
+   selected label changes length. */
+.filter-select {
+  width: 176px;
+}
+
 /* Rows stay single-line: long descriptions and bodies are clipped by the column
    (`show-overflow-tooltip`), and the full text is one click away in the editor. */
 .content-preview {
