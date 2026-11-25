@@ -1,6 +1,8 @@
 /// <reference types="vitest/config" />
 import { configDefaults, defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // Same-origin /api in development; in production the Go service and the built
 // frontend are served from one origin. E2E runs move the backend to another
@@ -8,7 +10,24 @@ import vue from '@vitejs/plugin-vue'
 const apiTarget = process.env.E2E_API_PROXY ?? 'http://127.0.0.1:8080'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    // Element Plus is resolved per component: a template that writes <el-button>
+    // pulls in only that component's ES module, so the bundle carries the
+    // widgets the platform actually uses instead of the whole kit. Styles come
+    // separately and in one file (see main.ts), because the function-style APIs
+    // (ElMessage, ElMessageBox, ElLoading) are not visible to a template
+    // resolver and would otherwise arrive unstyled.
+    // Local components keep their explicit imports (`dirs: []`), so nothing in
+    // `shared/` or `features/` silently becomes globally registered.
+    // The generated declaration file is committed under src/types so `vue-tsc`
+    // type-checks `<el-*>` templates without a dev server run.
+    Components({
+      dirs: [],
+      resolvers: [ElementPlusResolver({ noStyles: true })],
+      dts: 'src/types/components.d.ts',
+    }),
+  ],
   server: {
     proxy: {
       '/api': {
@@ -35,6 +54,16 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    setupFiles: ['./src/tests/setup/element-plus.ts'],
+    // Element Plus resolves its widgets' stylesheets at import time. Left
+    // externalized, Vitest hands those `.css` imports to Node, which cannot
+    // parse them; inlining routes them through Vite, where CSS resolves to an
+    // empty module (styles are not under test).
+    server: {
+      deps: {
+        inline: ['element-plus'],
+      },
+    },
     // e2e/ holds Playwright specs, run separately via `npm run test:e2e`.
     exclude: [...configDefaults.exclude, 'e2e/**'],
   },
