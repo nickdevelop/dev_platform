@@ -300,15 +300,41 @@ html .el-form-item__label {
   color: var(--el-text-color-primary);
 }
 
-/* Table rows carry the platform's 8px vertical rhythm instead of the library's
-   12px, and the header sits on the caption tier. */
+/* Table rows are the data terminal's lines: about 33px of single-line text
+   rather than the library's ~41. `el-table` hardcodes cell padding in both
+   states, so it can only be reached here; long content is clipped by the column
+   (`show-overflow-tooltip`) instead of wrapping. */
 html .el-table .el-table__cell {
-  padding: 8px 0;
+  padding: 5px 0;
   font-size: var(--el-font-size-base);
+}
+
+html .el-table th.el-table__cell {
+  padding: 7px 0;
+}
+
+html .el-table .cell {
+  line-height: 22px;
 }
 
 html .el-table th.el-table__cell > .cell {
   font-size: var(--el-font-size-small);
+}
+
+/* A pagination bar is a toolbar strip, not a floating widget: mono numerals on
+   the compact tier, the current page a solid block. */
+html .el-pagination {
+  --el-pagination-font-size: var(--el-font-size-small);
+  --el-pagination-button-height: 24px;
+  --el-pagination-button-width: 24px;
+  --el-pagination-border-radius: var(--el-border-radius-base);
+  font-family: var(--el-font-family-mono);
+  font-weight: 400;
+}
+
+html .el-pagination.is-background .el-pager li.is-active {
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
 }
 
 /* A selected segment is a hairline chip, not a filled primary block: the design

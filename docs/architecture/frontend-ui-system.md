@@ -88,7 +88,8 @@
 
 | 场景 | 选用 | 备注 |
 |---|---|---|
-| 数据列表/表格 | `el-table` + `el-table-column` | 表头 sentence case、caption 字级、行内 8px 垂直节奏（token 文件已定） |
+| 主按钮 / 次按钮 / 文字链 | `el-button`（`type` / `link` / `text`） | 图标一律 `@element-plus/icons-vue`（`:icon` 或 `<el-icon>`），禁 emoji；行内操作用 `link` |
+| 列表分页 | `el-pagination` | 当作工具条部件而非浮动控件：等宽小字、24px 方块，当前页实心 |
 | 文本/数字/多行输入 | `el-input`（`type=number` 用 `el-input-number`，多行 `type="textarea"`） | 不再自绘 `<input>` |
 | 表单与校验 | `el-form` + `el-form-item` + `rules` | **校验反馈优先走行内 `prop` 错误**；保存成功/失败用 `ElMessage`；不再用散落的 `actionError` 字符串 |
 | 单选下拉 | `el-select` + `el-option`（长列表加 `filterable`） | 取代 `UiSelectMenu` |
@@ -146,11 +147,11 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 
 ## 八、迁移状态与待决事项
 
-**已完成**：依赖与构建接入、`element-tokens.css` token 层、本规范与 AGENTS/PROJECT 同步。
+**已完成**：依赖与构建接入、`element-tokens.css` token 层、本规范与 AGENTS/PROJECT 同步、组织二级导航（`el-menu`）、「AI提示词」子页（`el-table` + `el-segmented` + `el-input` + `el-dialog`/`el-form` + `ElMessageBox`/`ElMessage`）。
 
 **进行中 / 待办**：
 
-1. 组织中心（AI提示词 / AI 助手 / AI 员工 / AI 团队）：列表 → `el-table`，编辑 → `el-dialog` + `el-form`，确认 → `ElMessageBox`，专家编制 → `el-checkbox-group` 卡片网格勾选回显。
+1. 组织中心剩余三页（AI 助手 / AI 员工 / AI 团队）：列表 → `el-table`，编辑面板 → `el-dialog` + `el-form`，确认 → `ElMessageBox`，专家编制 → `el-checkbox-group` 卡片网格勾选回显。
 2. **二级导航已上 `el-menu`（组织中心，已落地）**：菜单自带键盘可达与 `el-sub-menu` 子菜单能力——组织二级导航当前没有子项，但渲染层已按 `children` 自动切换 `el-sub-menu`，日后加子菜单只改数据不改模板。早先评估担心的三点已全部并入 `element-tokens.css` 的 menus 段：条目高度 46 / 34px、hover 中性化（库默认是主色浅底）、以及库压根没有的**左缘 2px accent 标尺**（用 `inset` box-shadow，不推动行内容）；激活项的文字保持墨色，只有图标上 accent。
    **已知不一致**：其余五栏（项目 / 对话 / 任务 / 终端 / 设置）仍是 `sidebar.css` 卡片列表，与 `OrgSidebar` 的行样式存在差异。待办：把五栏一并迁到 `el-menu`（需先解决 Zone A 动作区与 Zone B 搜索区的归属），随后评估从 `sidebar.css` 删除卡片段，避免两种侧栏长期并存。
 3. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单。

@@ -39,3 +39,9 @@ playwright-report/
 Thumbs.db
 .idea/
 .vscode/
+
+# 临时视觉探针（本地截图用，不进仓库）
+/web/probe.html
+/web/probe.ts
+/web/probe.vue
+/web/probe-*.mjs
