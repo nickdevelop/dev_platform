@@ -104,6 +104,26 @@ const filteredAssistants = computed(() => {
   return list
 })
 
+// 分页固定坐在主体底部（v2 §四 三段式）：表格只铺当前页，正文自己滚。
+const page = ref(1)
+const pageSize = ref(10)
+const pageSizes = [10, 20, 50]
+const totalRows = computed(() => filteredAssistants.value.length)
+const pagedAssistants = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredAssistants.value.slice(start, start + pageSize.value)
+})
+
+// 条件一变就回到第一页，否则用户会停在一张空页上以为被筛选滤空了。
+watch([keyword, floatFilter], () => {
+  page.value = 1
+})
+
+watch([totalRows, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(totalRows.value / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
+})
+
 function getAssistantIcon(group: ChatGroup): string {
   if (group.icon && group.icon.trim()) return group.icon.trim()
   const trimmed = group.name.trim()
@@ -223,10 +243,14 @@ const emptyHint = computed(() =>
         日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
       </p>
 
-      <div class="list-page-toolbar">
+    </header>
+
+    <div class="list-page-panel" data-test="assistant-panel">
+      <div class="list-panel-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
-          placeholder="搜索助手名称或人设关键词…"
+          placeholder="搜索助手…"
+          hint="搜索助手名称或人设关键词…"
           search-test="btn-search-assistant"
           reset-test="btn-reset-assistant"
           @search="applySearch"
@@ -235,7 +259,6 @@ const emptyHint = computed(() =>
           <template #actions>
             <el-button
               type="primary"
-              size="small"
               :icon="Plus"
               data-test="btn-create-assistant"
               @click="openCreate"
@@ -247,7 +270,6 @@ const emptyHint = computed(() =>
           <template #filters>
             <el-select
               v-model="floatFilter"
-              size="small"
               class="list-page-filter"
               data-test="select-float-filter"
               aria-label="按快捷助手常驻状态筛选"
@@ -262,109 +284,121 @@ const emptyHint = computed(() =>
           </template>
         </ListToolbar>
       </div>
-    </header>
 
-    <div class="list-page-body">
-      <el-table :data="filteredAssistants" row-key="id" height="100%" data-test="assistant-table">
-        <el-table-column label="AI 助手" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="row-avatar select-none">{{ getAssistantIcon(row as ChatGroup) }}</span>
-              <span class="font-medium text-foreground truncate">{{ row.name }}</span>
-              <span class="id-chip font-mono">#{{ row.id }}</span>
-            </div>
-          </template>
-        </el-table-column>
+      <div class="list-panel-table">
+        <el-table :data="pagedAssistants" row-key="id" height="100%" data-test="assistant-table">
+          <el-table-column label="AI 助手" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="row-avatar select-none">{{ getAssistantIcon(row as ChatGroup) }}</span>
+                <span class="font-medium text-foreground truncate">{{ row.name }}</span>
+                <span class="id-chip font-mono">#{{ row.id }}</span>
+              </div>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="人设来源" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="text-platform-text-muted">{{ personaSummary(row as ChatGroup) }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="人设来源" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">{{ personaSummary(row as ChatGroup) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="运行模型" width="170" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="font-mono text-2xs">{{ getModelDisplayName(row.defaultModelId) }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="运行模型" width="170" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="font-mono">{{ getModelDisplayName(row.defaultModelId) }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="提示词规范" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="getPromptDisplayName(row.promptId)" class="text-foreground">
-              {{ getPromptDisplayName(row.promptId) }}
-            </span>
-            <span v-else class="text-platform-text-muted">
-              {{ row.systemPrompt ? '内联人设' : '通用' }}
-            </span>
-          </template>
-        </el-table-column>
+          <el-table-column label="提示词规范" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="getPromptDisplayName(row.promptId)" class="text-foreground">
+                {{ getPromptDisplayName(row.promptId) }}
+              </span>
+              <span v-else class="text-platform-text-muted">
+                {{ row.systemPrompt ? '内联人设' : '通用' }}
+              </span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="快捷助手浮窗" width="128" align="center">
-          <template #default="{ row }">
-            <el-switch
-              size="small"
-              :model-value="!!row.showInFloat"
-              :loading="togglingFloatId === row.id"
-              :aria-label="row.showInFloat ? '取消桌面快捷助手常驻' : '常驻到桌面快捷助手'"
-              :data-test="`switch-float-${row.id}`"
-              @change="toggleFloat(row as ChatGroup)"
-            />
-          </template>
-        </el-table-column>
-
-        <el-table-column label="平台自治能力" width="132">
-          <template #default="{ row }">
-            <el-tag v-if="row.enablePlatformTools" size="small" type="success" effect="light" disable-transitions>
-              已自治 ({{ row.maxToolSteps || 10 }}步)
-            </el-tag>
-            <span v-else class="text-platform-text-muted">基础对话</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="操作" width="124" align="right" fixed="right">
-          <template #default="{ row }">
-            <div class="inline-flex items-center gap-1">
-              <el-button
-                link
-                type="primary"
+          <el-table-column label="快捷助手浮窗" width="128" align="center">
+            <template #default="{ row }">
+              <el-switch
                 size="small"
-                :data-test="`btn-edit-assistant-${row.id}`"
-                @click="openEdit(row as ChatGroup)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                link
-                type="danger"
-                size="small"
-                :data-test="`btn-delete-assistant-${row.id}`"
-                @click="removeAssistant(row as ChatGroup)"
-              >
-                删除
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
+                :model-value="!!row.showInFloat"
+                :loading="togglingFloatId === row.id"
+                :aria-label="row.showInFloat ? '取消桌面快捷助手常驻' : '常驻到桌面快捷助手'"
+                :data-test="`switch-float-${row.id}`"
+                @change="toggleFloat(row as ChatGroup)"
+              />
+            </template>
+          </el-table-column>
 
-        <template #empty>
-          <ListEmptyState
-            :state="emptyState"
-            :icon="ChatDotRound"
-            :title="emptyTitle"
-            :hint="emptyHint"
-            @reset="resetSearch"
-          >
-            <el-button
-              type="primary"
-              :icon="Plus"
-              data-test="btn-new-assistant"
-              @click="openCreate"
+          <el-table-column label="平台自治能力" width="132">
+            <template #default="{ row }">
+              <el-tag v-if="row.enablePlatformTools" size="small" type="success" effect="light" disable-transitions>
+                已自治 ({{ row.maxToolSteps || 10 }}步)
+              </el-tag>
+              <span v-else class="text-platform-text-muted">基础对话</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="124" align="right" fixed="right">
+            <template #default="{ row }">
+              <div class="inline-flex items-center gap-1">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :data-test="`btn-edit-assistant-${row.id}`"
+                  @click="openEdit(row as ChatGroup)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :data-test="`btn-delete-assistant-${row.id}`"
+                  @click="removeAssistant(row as ChatGroup)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
+
+          <template #empty>
+            <ListEmptyState
+              :state="emptyState"
+              :icon="ChatDotRound"
+              :title="emptyTitle"
+              :hint="emptyHint"
+              @reset="resetSearch"
             >
-              新建 AI 助手
-            </el-button>
-          </ListEmptyState>
-        </template>
-      </el-table>
+              <el-button
+                type="primary"
+                :icon="Plus"
+                data-test="btn-new-assistant"
+                @click="openCreate"
+              >
+                新建 AI 助手
+              </el-button>
+            </ListEmptyState>
+          </template>
+        </el-table>
+      </div>
+
+      <div class="list-panel-footer" data-test="assistant-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="totalRows"
+          :page-sizes="pageSizes"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
     </div>
 
     <AssistantEditDialog

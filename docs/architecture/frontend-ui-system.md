@@ -74,7 +74,7 @@
 | default | `--control-height` = 28px | 32px | **由 token 文件的「density bridge」段桥接** |
 | large | 32px | 40px | 同上；large 仅用于独立大表单，禁止塞进面板 |
 
-- 常规密度：面板内工具条、表格行内操作、筛选器一律 `size="small"`；弹窗/抽屉里的独立表单用 default。
+- 常规密度：**表格行内操作**用 `size="small"`（命中区由 token 层收在 24px 档）；**列表页工具条**（`ListToolbar` 及其 `#actions` / `#filters` 插槽里的控件）走 default 28px，**不写 `size`**；弹窗 / 抽屉里的独立表单同样是 default。一行工具条上出现 24 与 28 两种高度即违规。
 - 禁止在业务组件里写 `height`、`padding` 去"微调"某个控件的高度——需要改高度就改 density bridge。
 - 圆角：`--el-border-radius-base` = `--radius` = 3px；`round` 保留全圆（只服务于开关与状态小胶囊，符合 v1 的唯一例外）。
 - 阴影：只有脱离文档流的部件（dialog / message-box / dropdown / popover / message）允许边界阴影，形式固定为 `0 0 0 1px 边线 + 短距投影`；表格、表单、卡片一律纯平。
@@ -85,15 +85,51 @@
 
 ### 布局契约：单列表页与弹窗
 
-**单列表页 = 页头 + 工具条 + 铺满的表格**（`features/organization/*` 四页即范式）：
+**单列表页 = 页头 + 主体三段**（`features/organization/prompts/OrgPromptsView.vue` 即范式）：
 
 | 区块 | 内容 | 备注 |
 |---|---|---|
-| 页头 | 标题 + 一句话职责说明 | 不放计数芯片（数量在枚举下拉的选项标签里），也不放操作按钮 |
-| 工具条 | 左：全局动作按钮（新建等）；右：搜索表单 | 统一用 `shared/components/ListToolbar.vue`，页面只填 `#actions` / `#filters` 两个插槽 |
-| 主体 | `el-table`（`height="100%"`）占满剩余高度 | 表头与操作列固定，长文本列 `show-overflow-tooltip` |
+| 页头 | 只有标题 + 一句话职责说明 | 不放计数芯片（数量在枚举下拉的选项标签里），不放操作按钮，也**不再放工具条** |
+| 主体 · 工具条 | 左：全局动作按钮（新建等）；右：搜索表单 | **固定顶部**；统一用 `shared/components/ListToolbar.vue`，页面只填 `#actions` / `#filters` 两个插槽 |
+| 主体 · 表格 | `el-table`（`height="100%"`）铺满中间 | 表头与操作列固定，长文本列 `show-overflow-tooltip`；正文自己滚 |
+| 主体 · 分页 | `el-pagination` | **固定底部**，一条发丝上边与正文分开；无论多少行都在视野内，不会被表格顶走 |
 
-页头与节奏的唯一实现是 `shared/styles/list-page.css`：`.list-page-header / .list-page-title / .list-page-desc / .list-page-toolbar / .list-page-body / .list-page-filter`。标题字号走 `--text-size-20`，**不要在页面里写 Tailwind 的 `text-lg`**（=15.75px，不在 v1 字阶上，且四页各写一份必然漂移）。
+三段容器的类在 `shared/styles/list-page.css`：`.list-page-panel`（flex column + `min-height: 0`）/ `.list-panel-toolbar` / `.list-panel-table` / `.list-panel-footer`。高度链不能断：`el-table` 只有拿到确定高度才会钉住表头，所以父级每一层都要 `min-height: 0`，表格用 `height="100%"` 接管中间段。组织四页已全部走三段式；旧的 `.list-page-toolbar`（工具条写在页头里）与无分页的 `.list-page-body` 随之删除，不要复活它们——同一件事有两种写法，下一个页面就会挑到旧的那种。
+
+**分页约定**：`size="small"` + `background`（当前页实心，见 token 层 pagination 段）。`size` 必须写：token 层把页码方块钉在 24px，摘掉 `size` 后条数下拉会回到 28px，同一条横带出现两种高度，layout 固定 `total, sizes, prev, pager, next`（数据量小的列表不给 jumper），条数档位 10 / 20 / 50。**关键词或枚举筛选一变就回到第一页**，结果总数变小要钓回合法末页——否则用户会停在一张空页上以为被筛选滤空。
+
+**工具条的紧凑度是契约的一部分**（数值即契约，四页共用一枚组件）：
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| 表单内控件间距 | **4px** | 筛选器、输入框、两个按钮是一件乐器，不是四件。库给相邻按钮的 `margin-left: 12px` 会叠在 gap 上（实测 16px），由 `ListToolbar` 自己的 `.toolbar-submit + .toolbar-submit` 清零——业务组件里不出现 `.el-*` |
+| 枚举筛选框 | **120px** | `.list-page-filter`，与关键词框同档；标签最长就是「全部 (13)」这一类 |
+| 关键词框 | **150px** | 是关键词框不是段落框：placeholder 写短（「搜索提示词…」），搜索范围的完整说法走 `hint` 属性（写进 `title` 与 `aria-label`） |
+| 提交按钮 | 带前置矢量图标 | 搜索用 `Search`、重置用 `Refresh`：只有两个字会窄成一枚小方块。放大镜因此**只出现在搜索按钮上**，关键词框不再自带 prefix 图标（同排两个放大镜会读成两种搜索） |
+| 控件高度 | 全部 28px | default 档（工具条上**不写 `size`**）；实测 select / input / 三枚按钮齐平，不要按页面单独调高某一件，也不要退回 small 档混出两种高度 |
+
+**表格的字号阶梯：数据说话，其余标注**（实测值，改动只在 token 层）：
+
+| 位置 | 字号 | 谁来管 |
+|---|---|---|
+| 数据单元格 | **12px**（`--el-font-size-base`） | 表格容器一条规则，单元格内容**继承**；等宽列只写 `font-mono`，**不要再写 `text-2xs`** 之类自带小一档——同一行的时间列比名称列小一号就是坏的 |
+| 表头 | 11px | caption 档，比数据轻 |
+| 行内动作（`el-button link`） | **11px** | 比数据低一档：`html .el-table .el-button.is-link` |
+| 表格内 `el-tag` | **11px / 18px 高 / 0 6px** | chip 不许比它标注的那个词更响；库默认 20px 高 + 12px 字会压过正文 |
+| 下拉框选中文字 | **12px** | 库在 `.el-select__wrapper` 上**硬编码 14px**（不读尺寸档），token 层统一投影成 base，所有尺寸档与分页条里的条数下拉一起生效 |
+| 分页条 | **12px 一个字号** | 同一条横带里的 `共 N 条` / 页码 / 条数下拉必须同号，`--el-pagination-font-size` 走 base |
+
+**表格的分格线只画三处**：
+
+| 线 | 色档 | 为什么 |
+|---|---|---|
+| 工具条与表格之间 | `--color-border` | 操作区与数据区的区带线（旧结构里由页头的 `border-bottom` 顺带承担） |
+| 表头列与列之间 | `--color-border-strong` | 只回答「哪一列从哪里开始」；比行分隔强一档，用同色实测几乎看不见等于没画 |
+| 数据行之间 | `--color-border`（库默认） | 库自带 |
+
+**数据单元格不画竖线**：竖线画进行间会把一行切成碎片，而横向连续正是扫读多列表格的依据。表头 `font-weight: 600`（库默认 400、平台原为 500，在 11px 的 caption 档上撑不住表头与正文的层级）。
+
+页头与节奏的唯一实现是 `shared/styles/list-page.css`：`.list-page-header / .list-page-title / .list-page-desc`（`.list-page-header / .list-page-title / .list-page-desc / .list-page-filter` + 三段式的 `.list-page-panel / .list-panel-toolbar / .list-panel-table / .list-panel-footer`）。标题字号走 `--text-size-20`，**不要在页面里写 Tailwind 的 `text-lg`**（=15.75px，不在 v1 字阶上，且四页各写一份必然漂移）。
 
 ### 列表的三态（没有行不等于没有话说）
 
@@ -119,6 +155,11 @@
 - 居中由 `App.vue` 的 `el-config-provider` 全局开启（`:dialog="{ alignCenter: true }"`，库会把 overlay 变 flex + `margin: auto`）；**不要在页面里逐个写 `align-center` 或 `top`**。
 - 高度上限与内部滚动在 token 层：弹窗按列排布、`max-height: calc(100vh - 48px)`，`__body` 自己滚（`overscroll-behavior: contain`），因此头部与底栏（取消 / 保存）永远在视野内——库默认不限制弹窗高度，长表单会把按钮顶出屏幕。
 - 二级弹窗（如团队编制勾选）同样继承该全局配置，不要单独设置。
+- 底栏是**全平台同一对动作，同一份实现**：`取消`（关闭不保存）与 `确认`（保存并关闭）。要点：
+  - **按钮名称就这两个字**。标题栏已经写了「新增 / 编辑」与记录号，按钮再复述「创建助手 / 保存修改 / 立即创建」是噪声；`EntityFormDialog` 的 `saveLabel` 默认就是 `确认`，只有动词真的携带信息时才覆盖。
+  - **不带图标**。这两个动作在全平台恒定，图标零信息量，还会把两枚按钮撑成不同宽度。
+  - **间距用库的默认值**。底栏容器 `.entity-dialog-actions` 只负责排布（flex + 居中），**不要在这里加 `gap`**：库给相邻按钮的 `margin-left: 12px` 会与 gap 相加（写 4px 实测变 16px），一对动作被拉开成两个模块。
+  - 新建弹窗一律复用 `shared/components/EntityFormDialog.vue`，不要另写底栏。
 
 ---
 
@@ -129,14 +170,14 @@
 | 场景 | 选用 | 备注 |
 |---|---|---|
 | 主按钮 / 次按钮 / 文字链 | `el-button`（`type` / `link` / `text`） | 图标一律 `@element-plus/icons-vue`（`:icon` 或 `<el-icon>`），禁 emoji；行内操作用 `link` |
-| 列表分页 | `el-pagination` | 当作工具条部件而非浮动控件：等宽小字、24px 方块，当前页实心 |
+| 列表分页 | `el-pagination` | 当作工具条部件而非浮动控件：等宽数字、24px 方块、整条一个字号（12px），当前页实心 |
 | 文本/数字/多行输入 | `el-input`（`type=number` 用 `el-input-number`，多行 `type="textarea"`） | 不再自绘 `<input>` |
 | 表单与校验 | `el-form` + `el-form-item` + `rules` | **校验反馈优先走行内 `prop` 错误**；保存成功/失败用 `ElMessage`；不再用散落的 `actionError` 字符串 |
 | 单选下拉 | `el-select` + `el-option`（长列表加 `filterable`） | 取代 `UiSelectMenu` |
 | 二选一/来源切换 | `el-radio-group`；多段筛选器用 `el-segmented` | 分段选中态是**贴边细线芯片**，不是主色实心块 |
 | 开关 | `el-switch` | 取代 `sr-only peer` 自绘开关 |
 | 多选（候选集小） | `el-checkbox-group` | 卡片式勾选（如团队编制专家）用 `el-checkbox` 包卡片，勾选后回显主面板 |
-| 布尔徽标/状态 | `el-tag`（`size="small"`） | 颜色预算仍受 v1 的 3% 约束 |
+| 布尔徽标/状态 | `el-tag`（`size="small"`） | 颜色预算仍受 v1 的 3% 约束；表格内的 chip 由 token 层收到 11px / 18px，不得大于数据字号；**枚举分类不能用 `type` 上色，见下一节 chip 双轨** |
 | 确认类弹窗 | `ElMessageBox.confirm` | 破坏性操作统一走它，不再自绘 `UiConfirmDialog` |
 | 新增/编辑承载 | `shared/components/EntityFormDialog.vue`（包 `el-dialog`） | 统一头部（标题 + 一句话职责 + 记录号芯片）与底栏（快捷键提示 + 取消 / 保存 + Ctrl/Cmd+S）；分区骨架类见 `shared/styles/entity-editor.css`；复杂多分区表单可用 `el-drawer`，同一模块内保持一致 |
 | 轻提示 | `ElMessage` | 结果与失败都只走它一处；列表页不再挂 `UiAlert` 错误横幅（组织中心已退役，`Ui*` 棘轮随之降到 745） |
@@ -153,6 +194,17 @@
 **函数式 API 的引入方式**：`ElMessage / ElMessageBox / ElLoading` 直接 `import { ElMessage } from 'element-plus'`（样式已随全量 CSS 到位）。模板里的 `<el-*>` 一律不手写 import——交给解析器。
 
 ---
+
+### chip 双轨：分类轨与状态轨不是一条轴
+
+语义色（`success / warning / info / danger`）说的是「跟主题一起表达好坏」，它**不能**承担「不同即不同色」：实测 `cool` 与 `emerald` 里 `success == primary`（同一个 hex），`ocean` 与 `midnight` 里 `info == primary`，`warm` 里 `primary` 与 `warning` 近似，青竹里 角色类 / 流程类 都是橄榄绿——没有一对语义色在 12 套预设下都保得住距离，换 `type` 治不好。
+
+| 轨 | 用在哪 | 怎么上色 |
+|---|---|---|
+| **分类轨** | 同一列里互斥的枚举值：提示词的 角色类 / 流程类、以后员工的生产引擎、团队的调度模式… | `class="entity-chip entity-chip--<枚举值>"`，**不写 `type`**；色相来自 `--cat-hue-1…6`（固定、与皮肤无关），档位映射只在 `shared/styles/entity-chip.css` 声明一次，同一个枚举值全平台永远同一档 |
+| **状态轨** | 启用 / 异常 / 危险：如助手的「已启用平台工具」 | 继续用 `el-tag` 的语义 `type`，跟着主题走 |
+
+分类轨的实现分两半，都不能越界：色相与 `el-tag` 三个部件变量（`--el-tag-text-color / -bg-color / -border-color`）的桥接在 token 层的「分类色轴」段——选择器必须是 `html .el-tag.entity-chip`，因为库的类型类写成 `.el-tag.el-tag--primary`（两位 class），特异度不够就被抢回去；页面只声明档位，不出现颜色。色相固定、明度向主题的 `--color-text / --color-surface / --color-border` 混合，所以浅色预设是浅底深字、深色预设自动翻深底亮字，两档在任何皮肤下都分得开。**新增枚举值 = 在映射表里加一行档位，不在页面里挑颜色。**
 
 ## 六、`Ui*` 原语退役流程
 
@@ -201,16 +253,24 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
    - 编辑器：`AssistantEditPanel` / `EmployeeEditPanel` / `TeamEditPanel` → `*EditDialog`，共用 `shared/components/EntityFormDialog.vue` 外壳；AI 提示词的 `PromptManageDialog` 同批迁 `el-dialog` + `el-form`；
    - 交互：删除 → `ElMessageBox`（`confirmButtonType: 'danger'`），结果反馈 → `ElMessage`，AI 团队专家编制 → 二级 `el-checkbox-group` 卡片网格勾选回显。
 4. §四 布局契约落地：页头去计数芯片、工具条左动作右搜索、表格铺满；弹窗全局垂直居中 + 内部滚动 + 底栏固定。
-5. 组织中心反馈与质感层（只面向 ≥ 1280 的桌面宽度，窄屏不在本轮范围）：
-   - **三态**：新增 `shared/components/ListEmptyState.vue`，四页的 `#empty` 槽不再各写一行灰字；loading 给行形骨架、搜不到给「重置筛选」、空库给导航同枚矢量图标 + 主动作；
+5. 组织中心反馈与质感层（只面向 ≥ 1280 的桌面宽度，窄屏不在本轮范围）：   - **三态**：新增 `shared/components/ListEmptyState.vue`，四页的 `#empty` 槽不再各写一行灰字；loading 给行形骨架、搜不到给「重置筛选」、空库给导航同枚矢量图标 + 主动作；
    - **页头原语**：`shared/styles/list-page.css`（`.list-page-*`），页头标题从 Tailwind `text-lg`（15.75px，不在字阶上）收编到 `--text-size-20`，四页重复的 `.filter-select` / `.table-wrap` 一并删除；
    - **可反馈性**（均在 token 层）：行内 link/text 按钮从 `padding: 2px` 给到 24px 命中区与 hover 中性底；typed link 的 hover 不再把主色刷成灰色（改 `--el-button-hover-link-text-color` 按类型加深一档）；`.el-button` 的 `transition: all` 改具名列表；实心按钮 hover 上浮 / 按下回位；表格内取消库的兄弟 `margin-left`（否则三个操作在 168px 列里被裁）；
    - **数字与时间**：表格 / 分页 / 下拉开 `tabular-nums`；时间列改为手工拼接的 `YYYY-MM-DD HH:mm`；
    - `UiAlert` 页面错误横幅从组织中心退位（同一错误不再 toast + 横幅双报，横幅还会把表格顶下去），棘轮 750 → 745。
 
+6. 一级 rail 的「组织」入口默认落点改为 **AI 提示词**（`CategoryRail.vue` 原本指向 `org-assistants`；`/org` 本身的 redirect 早已是 `org-prompts`）。
+7. AI 提示词页改为**三段式主体**（§四 布局契约 v2）：页头只剩标题与职责，工具条固定顶、`el-table` 铺满中间、`el-pagination` 固定底（10/20/50，筛选一变就回第一页）；工具条紧凑度收到控件间距 2px + 关键词框 120px，搜索范围改走 `hint`（title / aria-label）。其余三页待跟进（见待办 1）。
+8. **助手 / 员工 / 团队三页照同一模板改完，四页同构**
+   - `AssistantListView` / `EmployeeListView` / `TeamListView` 整块模板换成三段式：工具条从页头搬进 `.list-panel-toolbar`、表格包进 `.list-panel-table`、底部加 `.list-panel-footer` + `el-pagination`（`size="small"` + `background`，10/20/50）；筛选一变回第一页、总行数缩小钳制当前页；`:data` 换成 `paged*` 切片；页头只剩标题与一句话职责。
+   - **反向补齐**：`OrgPromptsView` 原本**完全没有** URL 同步（另三页都有 `?action=new` / `?edit=<id>`），补上同一套 `syncRouteState` + `router.replace` —— 粘贴的链接点开的东西必须和点击一样。实测四页：直链打开、点击写 query、Esc 清 query 全一致。
+   - **删掉旧写法**：`.list-page-toolbar`（工具条写在页头里）与无分页的 `.list-page-body` 四页同构后零引用，已从 `list-page.css` 删除；留着就有人会挑到旧的那种。
+   - **分页必须写 `size="small"`**：提示词页摘掉 `size` 后条数下拉回到 28px，而页码方块被 token 层钉在 24px，同一条横带两种高度。
+   - 实测（1440×900 四页）：工具条 y=80 / 表格 123→868 铺满 / 分页底贴 900、分页带 32px、控件全 24px、字号全 12px、区带线 1px、表头竖线最后一列不画、空态与关键词回显照常、0 pageerror。
+
 **待办**：
 
-1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；新页面直接按 §四 布局契约与「列表的三态」写（页头用 `.list-page-*`，空态用 `ListEmptyState`），不要再写页头计数芯片、散装筛选行与自绘空态。
+1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态（组织中心四页已全是这种形状，照抄即可）。
 2. 助手的预设头像仍是 emoji（源码里带 `taste-skill-ignore` 标记），与 v1「零 Emoji」相冲，且缺 emoji 字体的环境会显示成豆腐块；待办：换成 v1 的手绘 SVG 图标集，头像字段改存图标 key。
 
 ---

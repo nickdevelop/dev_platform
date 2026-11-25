@@ -216,7 +216,6 @@ async function handleSubmit() {
     subtitle="专职数字员工档案、执行引擎接入与人设规范，编制后可被 AI 团队招募为协同专家。"
     :identifier="isEdit ? props.employee?.id : null"
     :saving="submitting"
-    :save-label="isEdit ? '保存修改' : '创建员工'"
     save-test="btn-save-employee"
     width="880"
     :data-test="`employee-edit-dialog-${isEdit ? 'edit' : 'create'}`"

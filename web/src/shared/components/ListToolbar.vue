@@ -7,23 +7,32 @@
 // `actions` slot and their enum filters through the `filters` slot, so a filter
 // row cannot drift into a different shape or a different button order per module.
 //
+// Its density is part of the contract too: the form runs at 4px between controls
+// and the keyword box is 150px wide, so the placeholder has to stay short and the
+// full scope of the search goes in `hint` (title + accessible name). Controls take
+// the default 28px tier — the toolbar never mixes two heights on one line.
+//
 // When each control takes effect is part of the contract, not an accident:
 // enum filters (the `filters` slot) apply the moment they change, while the
 // keyword field is a draft that only lands on 搜索 / Enter — a half-typed word
 // should not flash the table. Clearing the field with its ✕ counts as a search
 // with an empty keyword.
-import { Search } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 
 const props = withDefaults(
   defineProps<{
     /** The keyword being typed; the applied one lives in the caller. */
     keyword: string
     placeholder?: string
+    /** Full scope of the search, for the tooltip and the accessible name: the
+        150px field can only show a short placeholder. */
+    hint?: string
     searchTest?: string
     resetTest?: string
   }>(),
   {
     placeholder: '搜索…',
+    hint: '',
     searchTest: 'btn-list-search',
     resetTest: 'btn-list-reset',
   },
@@ -47,11 +56,12 @@ const emit = defineEmits<{
       <slot name="filters" />
 
       <el-input
-        size="small"
         class="toolbar-keyword"
-        :prefix-icon="Search"
+        :autofocus="false"
         :model-value="props.keyword"
         :placeholder="props.placeholder"
+        :title="props.hint || props.placeholder"
+        :aria-label="props.hint || props.placeholder"
         clearable
         data-test="input-list-keyword"
         @update:model-value="emit('update:keyword', String($event))"
@@ -59,15 +69,17 @@ const emit = defineEmits<{
       />
 
       <el-button
-        size="small"
         type="primary"
         native-type="submit"
+        class="toolbar-submit"
+        :icon="Search"
         :data-test="props.searchTest"
       >
         搜索
       </el-button>
       <el-button
-        size="small"
+        class="toolbar-submit"
+        :icon="Refresh"
         :data-test="props.resetTest"
         @click="emit('reset')"
       >
@@ -78,8 +90,10 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-/* Layout only, on the platform's 4px rhythm: the actions group hugs the left
-   edge and the search form is pushed to the right edge of the same line. */
+/* Layout only: the actions group hugs the left edge and the search form is
+   pushed to the right edge of the same line. Inside the form the controls run at
+   4px — a filter, a field and two buttons are one instrument, not four, and the
+   8px that reads fine between unrelated groups reads as looseness between them. */
 .list-toolbar {
   display: flex;
   align-items: center;
@@ -96,12 +110,24 @@ const emit = defineEmits<{
 .toolbar-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-left: auto;
 }
 
+/* 150px is a keyword box, not a paragraph field: the placeholder stays short and
+   the full scope of the search rides on the accessible name. The field carries no
+   prefix icon of its own — the magnifier lives on the 搜索 button, and two of them
+   side by side read as two different searches. */
 .toolbar-keyword {
-  width: 240px;
+  width: 150px;
+}
+
+/* The library spaces sibling buttons with `margin-left: 12px`, which stacks on
+   top of the 4px gap above and turns the pair into a 16px gap. The form owns its
+   own spacing; this is the platform's own class, so no library selector is
+   reached from here. */
+.toolbar-submit + .toolbar-submit {
+  margin-left: 0;
 }
 
 @media (max-width: 960px) {
@@ -115,5 +141,6 @@ const emit = defineEmits<{
     width: auto;
     min-width: 160px;
   }
+
 }
 </style>

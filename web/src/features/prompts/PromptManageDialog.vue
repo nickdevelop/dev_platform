@@ -73,7 +73,7 @@ async function submit() {
     // The store returns undefined when the session expired mid-save; the auth
     // store is already showing the re-auth flow, so stay quiet here.
     if (saved) {
-      ElMessage.success(isEditing.value ? `已保存「${saved.name}」` : `已创建提示词「${saved.name}」`)
+      ElMessage.success(isEditing.value ? `已保存「${saved.name}」` : `已创建 AI 提示词「${saved.name}」`)
       emit('saved', saved)
       emit('close')
     }
@@ -88,7 +88,7 @@ async function submit() {
 <template>
   <el-dialog
     v-model="visible"
-    :title="isEditing ? '编辑提示词' : '新建提示词'"
+    :title="isEditing ? '编辑 AI 提示词' : '新建 AI 提示词'"
     width="640"
     :close-on-click-modal="false"
     :data-test="`prompt-dialog-${isEditing ? 'edit' : 'create'}`"
@@ -113,8 +113,8 @@ async function submit() {
       <el-form-item label="提示词类型" prop="type">
         <div class="type-block">
           <el-radio-group v-model="form.type">
-            <el-radio value="role" border>角色类 (Role)</el-radio>
-            <el-radio value="flow" border>流程类 (Flow)</el-radio>
+            <el-radio-button value="role" border>角色类 (Role)</el-radio-button>
+            <el-radio-button value="flow" border>流程类 (Flow)</el-radio-button>
           </el-radio-group>
           <p class="type-desc">{{ typeDescription }}</p>
         </div>
@@ -142,15 +142,10 @@ async function submit() {
     </el-form>
 
     <template #footer>
-      <div class="flex items-center justify-end gap-2">
+      <div class="entity-dialog-actions justify-end">
         <el-button @click="onClose">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="saving"
-          data-test="prompt-save-btn"
-          @click="submit"
-        >
-          {{ isEditing ? '保存修改' : '立即创建' }}
+        <el-button type="primary" :loading="saving" data-test="prompt-save-btn" @click="submit">
+          确认
         </el-button>
       </div>
     </template>

@@ -288,6 +288,15 @@ html .el-select--small .el-select__wrapper {
   min-height: var(--el-component-size-small);
 }
 
+/* The library hard-codes `font-size: 14px` on the select wrapper instead of
+   reading the size ladder, so a filter select shouts 14px next to a 12px input,
+   a 12px button and a 12px table row — and the page-size select inside a
+   pagination bar shouts next to an 11px pager. Every size class takes the
+   platform's control size; the option list already renders at that size. */
+html .el-select__wrapper {
+  font-size: var(--el-font-size-base);
+}
+
 html .el-input-number {
   line-height: calc(var(--el-component-size) - 2px);
 }
@@ -324,7 +333,9 @@ html .el-table th.el-table__cell > .cell {
 /* A pagination bar is a toolbar strip, not a floating widget: mono numerals on
    the compact tier, the current page a solid block. */
 html .el-pagination {
-  --el-pagination-font-size: var(--el-font-size-small);
+  /* One bar, one size: the pager, the total and the page-size select sit on the
+     same line, and a select at 14px beside an 11px pager reads as two widgets. */
+  --el-pagination-font-size: var(--el-font-size-base);
   --el-pagination-button-height: 24px;
   --el-pagination-button-width: 24px;
   --el-pagination-border-radius: var(--el-border-radius-base);
@@ -428,7 +439,55 @@ html .el-dialog__footer {
 html .el-table th.el-table__cell {
   background-color: var(--el-fill-color-light);
   color: var(--el-text-color-secondary);
-  font-weight: 500;
+  font-weight: 600;
+}
+
+/* 表头分格、数据不分格：竖线只回答「哪一列从哪里开始」，画在数据之间就会把
+   一行切成碎片——行的横向连续性正是扫读的依据。最后一列（通常是固定的操作列）
+   不画，否则在表格右缘叠出一道重线。竖线走 `--color-border-strong`（比行分隔
+   那一档发丝强一级）：用行分隔的同色实测几乎看不见，等于没画。 */
+html .el-table th.el-table__cell:not(:last-child) {
+  border-right: 1px solid var(--color-border-strong);
+}
+
+/* The library paints a fixed column's cells with the plain surface so scrolled
+   text cannot bleed through — which left 操作's header a white block next to the
+   tinted ones. The header must stay opaque, so it gets the same tint rather than
+   a transparent rule; the body cells keep the library's own background. */
+html .el-table th.el-table__cell.el-table-fixed-column--left,
+html .el-table th.el-table__cell.el-table-fixed-column--right {
+  background-color: var(--el-fill-color-light);
+}
+
+/* ------------------------------------------------- 分类色轴 categorical -----
+ * 给「同一列里互斥的枚举值」上色的独立一轴。语义色干不了这活：预设之间会并色——
+ * cool 与 emerald 里 `success == primary`，ocean 与 midnight 里 `info == primary`，
+ * 青竹里 角色类 / 流程类 都是橄榄绿——「不同即不同色」这个要求语义色给不了。
+ *
+ * 色相固定、明度向主题的 `--color-text` / `--color-surface` / `--color-border`
+ * 混合，所以浅色预设得到浅底深字、深色预设自动翻成深底亮字，任何皮肤下两档都
+ * 分得开。这套色不跟主题主色走，它表达的是「类别」，不是「状态」。
+ */
+html {
+  --cat-hue-1: #3f5fd0; /* 靛蓝 */
+  --cat-hue-2: #0f8a7a; /* 青绿 */
+  --cat-hue-3: #b4611c; /* 琥珀 */
+  --cat-hue-4: #b0467c; /* 玫红 */
+  --cat-hue-5: #7b52c4; /* 紫 */
+  --cat-hue-6: #6b7f2a; /* 橄榄 */
+}
+
+/* `.entity-chip` 是平台给分类 chip 的钩子（档位映射见
+   shared/styles/entity-chip.css）：页面只声明自己落在哪一档，这里把 `--chip-hue`
+   翻成 el-tag 的三个部件变量。缺档位时退回第一档，不会掉成无色。
+
+   选择器要带上 `.el-tag`：库的档位类写成 `.el-tag.el-tag--primary`（两位 class），
+   单挂一个 `.entity-chip` 特异度不够，颜色会被类型类抢回去。 */
+html .el-tag.entity-chip {
+  --el-tag-text-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 74%, var(--color-text));
+  --el-tag-bg-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 12%, var(--color-surface));
+  --el-tag-border-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 30%, var(--color-border));
+  --el-tag-hover-color: var(--el-tag-border-color);
 }
 
 /* 浮层（tooltip / popover / popconfirm）：库的 is-dark 变体拿文字色同时当底色和
@@ -498,6 +557,20 @@ html .el-button.is-text {
   height: var(--el-component-size-small);
   padding: 0 7px;
   border-radius: var(--el-border-radius-base);
+}
+
+/* Inside a table the data speaks and everything else annotates: cells run at the
+   base 12px, so row actions and status chips drop one step to 11px. A chip that
+   is 20px tall and 12px wide-set outweighs the word it labels — 18px and 6px of
+   padding keeps it under the line of text it sits in. */
+html .el-table .el-button.is-link {
+  font-size: var(--el-font-size-small);
+}
+
+html .el-table .el-tag {
+  height: 18px;
+  padding: 0 6px;
+  font-size: var(--el-font-size-small);
 }
 
 /* Hover used to *desaturate* a typed link: `.el-button.is-link:hover` paints the

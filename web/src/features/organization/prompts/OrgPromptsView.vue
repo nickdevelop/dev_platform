@@ -13,7 +13,12 @@
 // characters of markdown, and one clipped column of it tells you nothing. The
 // body belongs to the editor (编辑) and to 复制, both one click away. The search
 // field still matches against it.
-import { computed, onMounted, ref } from 'vue'
+//
+// Which editor is open lives in the URL (`?action=new` / `?edit=<id>`), exactly
+// like the other three organization pages, so a pasted link opens the same thing
+// a click does.
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditPen, Plus } from '@element-plus/icons-vue'
 import { usePromptsStore } from '../../../stores/prompts'
@@ -24,6 +29,8 @@ import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
 
 type PromptFilter = 'all' | 'role' | 'flow'
 
+const route = useRoute()
+const router = useRouter()
 const promptsStore = usePromptsStore()
 
 // The keyword in the field is a draft; the table only follows it on 搜索 / Enter
@@ -38,7 +45,33 @@ onMounted(async () => {
   if (promptsStore.prompts.length === 0) {
     await promptsStore.loadPrompts()
   }
+  syncRouteState()
 })
+
+watch(
+  () => [route.query, promptsStore.prompts],
+  () => {
+    syncRouteState()
+  },
+  { deep: true },
+)
+
+// The URL is the source of truth for which editor is open.
+function syncRouteState() {
+  if (route.query.action === 'new') {
+    editingPrompt.value = null
+    showEditDialog.value = true
+  } else if (route.query.edit) {
+    const target = (promptsStore.prompts || []).find((x) => x.id === Number(route.query.edit))
+    if (target) {
+      editingPrompt.value = target
+      showEditDialog.value = true
+    }
+  } else if (showEditDialog.value) {
+    showEditDialog.value = false
+    editingPrompt.value = null
+  }
+}
 
 const roleCount = computed(() => (promptsStore.prompts || []).filter((p) => p.type === 'role').length)
 const flowCount = computed(() => (promptsStore.prompts || []).filter((p) => p.type === 'flow').length)
@@ -76,6 +109,28 @@ const filteredPrompts = computed(() => {
   )
 })
 
+// 分页固定坐在主体底部：表格只铺当前页，正文自己滚。
+// 条数预设走 10 / 20 / 50：10 在一屏 34px 行高里是看得完的一页，50 是“我就是想
+// 一口气扫完”时的退路。
+const page = ref(1)
+const pageSize = ref(10)
+const pageSizes = [10, 20, 50]
+const totalRows = computed(() => filteredPrompts.value.length)
+const pagedPrompts = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredPrompts.value.slice(start, start + pageSize.value)
+})
+
+// 条件一变就回到第一页，否则用户会停在一张空页上以为被筛选滤空了。
+watch([keyword, filter], () => {
+  page.value = 1
+})
+
+watch([totalRows, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(totalRows.value / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
+})
+
 // A new prompt defaults to the type currently being browsed: creating from the
 // flow tab should not preselect a role.
 function newType(): PromptType {
@@ -85,22 +140,26 @@ function newType(): PromptType {
 function openCreateDialog() {
   editingPrompt.value = null
   showEditDialog.value = true
+  void router.replace({ query: { action: 'new' } })
 }
 
 function openEditDialog(prompt: Prompt) {
   editingPrompt.value = prompt
   showEditDialog.value = true
+  void router.replace({ query: { edit: String(prompt.id) } })
 }
 
 function onCloseDialog() {
   showEditDialog.value = false
+  editingPrompt.value = null
+  void router.replace({ query: {} })
 }
 
 async function removePrompt(prompt: Prompt) {
   try {
     await ElMessageBox.confirm(
       `删除后，引用「${prompt.name}」的角色、助手与协同团队将无法继续读取其内容。`,
-      `删除提示词「${prompt.name}」？`,
+      `删除 AI 提示词「${prompt.name}」？`,
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消', confirmButtonType: 'danger' },
     )
   } catch {
@@ -109,18 +168,9 @@ async function removePrompt(prompt: Prompt) {
   }
   try {
     await promptsStore.deletePrompt(prompt.id)
-    ElMessage.success(`已删除提示词「${prompt.name}」`)
+    ElMessage.success(`已删除 AI 提示词「${prompt.name}」`)
   } catch (err: any) {
-    ElMessage.error(promptsStore.error || err?.message || '删除提示词失败')
-  }
-}
-
-async function copyPromptContent(prompt: Prompt) {
-  try {
-    await navigator.clipboard.writeText(prompt.content)
-    ElMessage.success(`已复制「${prompt.name}」的正文`)
-  } catch {
-    ElMessage.error('当前浏览器不允许访问剪贴板')
+    ElMessage.error(promptsStore.error || err?.message || '删除 AI 提示词失败')
   }
 }
 
@@ -184,11 +234,14 @@ const emptyHint = computed(() => {
       <p class="list-page-desc">
         管理角色类人设与流程类协同提示词，供助手、数字员工与协同团队统一引用。
       </p>
+    </header>
 
-      <div class="list-page-toolbar">
+    <div class="list-page-panel" data-test="prompt-panel">
+      <div class="list-panel-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
-          placeholder="搜索提示词名称、描述或正文…"
+          placeholder="搜索提示词…"
+          hint="搜索提示词名称、描述或正文…"
           search-test="btn-search-prompts"
           reset-test="btn-reset-prompts"
           @search="applySearch"
@@ -197,19 +250,17 @@ const emptyHint = computed(() => {
           <template #actions>
             <el-button
               type="primary"
-              size="small"
               :icon="Plus"
               data-test="btn-create-prompt"
               @click="openCreateDialog"
             >
-              新建提示词
+              新建 AI 提示词
             </el-button>
           </template>
 
           <template #filters>
             <el-select
               v-model="filter"
-              size="small"
               class="list-page-filter"
               data-test="select-prompt-type"
               aria-label="按提示词类型筛选"
@@ -224,74 +275,92 @@ const emptyHint = computed(() => {
           </template>
         </ListToolbar>
       </div>
-    </header>
 
-    <div class="list-page-body">
-      <el-table
-        :data="filteredPrompts"
-        row-key="id"
-        height="100%"
-        data-test="prompt-table"
-      >
-        <el-table-column label="提示词名称" min-width="180">
-          <template #default="{ row }">
-            <span class="font-medium text-foreground" :data-test="`prompt-name-${row.id}`">
-              {{ row.name }}
-            </span>
-          </template>
-        </el-table-column>
+      <div class="list-panel-table">
+        <el-table
+          :data="pagedPrompts"
+          row-key="id"
+          height="100%"
+          data-test="prompt-table"
+        >
+          <el-table-column label="提示词名称" min-width="180">
+            <template #default="{ row }">
+              <span class="font-medium text-foreground" :data-test="`prompt-name-${row.id}`">
+                {{ row.name }}
+              </span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="类型" width="92">
-          <template #default="{ row }">
-            <el-tag :type="row.type === 'role' ? 'primary' : 'success'" size="small" effect="light" disable-transitions>
-              {{ row.type === 'role' ? '角色类' : '流程类' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="描述" min-width="320" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="text-platform-text-muted">{{ row.description || '—' }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="更新时间" width="150" align="right">
-          <template #default="{ row }">
-            <span class="text-2xs font-mono text-platform-text-muted">
-              {{ formatDate(row.updatedAt || row.createdAt) }}
-            </span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="操作" width="168" align="right" fixed="right">
-          <template #default="{ row }">
-            <div class="inline-flex items-center gap-1">
-              <el-button link type="primary" size="small" @click="copyPromptContent(row as Prompt)">复制</el-button>
-              <el-button link type="primary" size="small" @click="openEditDialog(row as Prompt)">编辑</el-button>
-              <el-button link type="danger" size="small" @click="removePrompt(row as Prompt)">删除</el-button>
-            </div>
-          </template>
-        </el-table-column>
-
-        <template #empty>
-          <ListEmptyState
-            :state="emptyState"
-            :icon="EditPen"
-            :title="emptyTitle"
-            :hint="emptyHint"
-            @reset="resetSearch"
-          >
-            <el-button
-              type="primary"
-              :icon="Plus"
-              data-test="btn-create-prompt-empty"
-              @click="openCreateDialog"
+          <el-table-column label="类型" width="92">
+            <template #default="{ row }">
+              <!-- 分类 chip：档位由枚举值决定（映射见 shared/styles/entity-chip.css），
+                 语义色在这里不可靠——cool / emerald / 青竹 里 success 与 primary 同色。 -->
+            <el-tag
+              :class="['entity-chip', 'entity-chip--' + row.type]"
+              size="small"
+              effect="light"
+              disable-transitions
             >
-              新建提示词
-            </el-button>
-          </ListEmptyState>
-        </template>
-      </el-table>
+                {{ row.type === 'role' ? '角色类' : '流程类' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="描述" min-width="320" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">{{ row.description || '—' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="更新时间" width="150" align="right">
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">
+                {{ formatDate(row.updatedAt || row.createdAt) }}
+              </span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="168" align="right" fixed="right">
+            <template #default="{ row }">
+              <div class="inline-flex items-center">
+                <el-button link type="primary" @click="openEditDialog(row as Prompt)">编辑</el-button>
+                <el-button link type="danger" @click="removePrompt(row as Prompt)">删除</el-button>
+              </div>
+            </template>
+          </el-table-column>
+
+          <template #empty>
+            <ListEmptyState
+              :state="emptyState"
+              :icon="EditPen"
+              :title="emptyTitle"
+              :hint="emptyHint"
+              @reset="resetSearch"
+            >
+              <el-button
+                type="primary"
+                :icon="Plus"
+                data-test="btn-create-prompt-empty"
+                @click="openCreateDialog"
+              >
+                新建 AI 提示词
+              </el-button>
+            </ListEmptyState>
+          </template>
+        </el-table>
+      </div>
+
+      <div class="list-panel-footer" data-test="prompt-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="totalRows"
+          :page-sizes="pageSizes"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
     </div>
 
     <PromptManageDialog

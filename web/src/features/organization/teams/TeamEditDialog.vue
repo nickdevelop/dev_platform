@@ -11,7 +11,7 @@
 // team.
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Close, Plus, Search } from '@element-plus/icons-vue'
+import { Plus, Search } from '@element-plus/icons-vue'
 import type { GroupDetail, Group, CreateGroupPayload, UpdateGroupPayload } from '../../../api/groups'
 import type { AgentRole } from '../../../api/roles'
 import { useRolesStore } from '../../../stores/roles'
@@ -214,7 +214,6 @@ async function handleSave() {
     subtitle="中控大脑调度与专职 AI 员工组成的多 Agent 协同作战单元。"
     :identifier="isEdit ? props.team?.id : null"
     :saving="saving"
-    :save-label="isEdit ? '保存修改' : '组建团队'"
     save-test="btn-save-team"
     width="920"
     :data-test="`team-edit-dialog-${isEdit ? 'edit' : 'create'}`"
@@ -401,7 +400,7 @@ async function handleSave() {
           <span class="entity-shortcut-hint">编制变更会在保存后生效</span>
           <div class="entity-dialog-actions">
             <el-button @click="pickerVisible = false">取消</el-button>
-            <el-button type="primary" @click="confirmPicker">确定</el-button>
+            <el-button type="primary" @click="confirmPicker">确认</el-button>
           </div>
         </div>
       </template>

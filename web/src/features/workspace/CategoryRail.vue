@@ -140,7 +140,7 @@ function onSettingsClick() {
         :class="{ active: orgActive }"
         title="组织"
         :aria-current="orgActive ? 'page' : undefined"
-        :to="{ name: 'org-assistants' }"
+        :to="{ name: 'org-prompts' }"
         @click="onOrgClick"
       >
         <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

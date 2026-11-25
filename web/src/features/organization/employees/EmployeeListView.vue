@@ -110,6 +110,26 @@ const filteredEmployees = computed(() => {
   return list
 })
 
+// 分页固定坐在主体底部（v2 §四 三段式）：表格只铺当前页，正文自己滚。
+const page = ref(1)
+const pageSize = ref(10)
+const pageSizes = [10, 20, 50]
+const totalRows = computed(() => filteredEmployees.value.length)
+const pagedEmployees = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredEmployees.value.slice(start, start + pageSize.value)
+})
+
+// 条件一变就回到第一页，否则用户会停在一张空页上以为被筛选滤空了。
+watch([keyword, backendFilter], () => {
+  page.value = 1
+})
+
+watch([totalRows, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(totalRows.value / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
+})
+
 function getPromptName(promptId?: number): string {
   if (!promptId) return ''
   const p = promptsStore.byId(promptId)
@@ -189,10 +209,14 @@ const emptyHint = computed(() =>
         专职数字员工与执行引擎分工，作为 AI 团队的专业协同专家编制。
       </p>
 
-      <div class="list-page-toolbar">
+    </header>
+
+    <div class="list-page-panel" data-test="employee-panel">
+      <div class="list-panel-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
-          placeholder="搜索员工姓名、岗位或模型…"
+          placeholder="搜索员工…"
+          hint="搜索员工姓名、岗位或模型…"
           search-test="btn-search-employee"
           reset-test="btn-reset-employee"
           @search="applySearch"
@@ -201,7 +225,6 @@ const emptyHint = computed(() =>
           <template #actions>
             <el-button
               type="primary"
-              size="small"
               :icon="Plus"
               data-test="btn-create-employee"
               @click="openCreate"
@@ -213,7 +236,6 @@ const emptyHint = computed(() =>
           <template #filters>
             <el-select
               v-model="backendFilter"
-              size="small"
               class="list-page-filter"
               data-test="select-backend-filter"
               aria-label="按执行引擎筛选"
@@ -228,95 +250,107 @@ const emptyHint = computed(() =>
           </template>
         </ListToolbar>
       </div>
-    </header>
 
-    <div class="list-page-body">
-      <el-table :data="filteredEmployees" row-key="id" height="100%" data-test="employee-table">
-        <el-table-column label="AI 员工 / 岗位" min-width="190" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="row-monogram" :style="{ background: row.color || 'var(--color-primary)' }">
-                {{ row.name.slice(0, 1) }}
+      <div class="list-panel-table">
+        <el-table :data="pagedEmployees" row-key="id" height="100%" data-test="employee-table">
+          <el-table-column label="AI 员工 / 岗位" min-width="190" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="row-monogram" :style="{ background: row.color || 'var(--color-primary)' }">
+                  {{ row.name.slice(0, 1) }}
+                </span>
+                <span class="font-medium text-foreground truncate">{{ row.name }}</span>
+                <span class="id-chip font-mono">#{{ row.id }}</span>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="岗位职责" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">{{ row.description || '专职数字员工 / 协同专家角色' }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="执行引擎" width="164">
+            <template #default="{ row }">
+              <span class="engine-chip">
+                <BackendIcon :backend="row.backend || 'llm'" class="engine-icon" />
+                <span class="truncate">{{ row.backend || 'LLM' }}</span>
               </span>
-              <span class="font-medium text-foreground truncate">{{ row.name }}</span>
-              <span class="id-chip font-mono">#{{ row.id }}</span>
-            </div>
-          </template>
-        </el-table-column>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="岗位职责" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="text-platform-text-muted">{{ row.description || '专职数字员工 / 协同专家角色' }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="运行模型" width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="font-mono">{{ row.model }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="执行引擎" width="164">
-          <template #default="{ row }">
-            <span class="engine-chip">
-              <BackendIcon :backend="row.backend || 'llm'" class="engine-icon" />
-              <span class="truncate">{{ row.backend || 'LLM' }}</span>
-            </span>
-          </template>
-        </el-table-column>
+          <el-table-column label="人设与规范" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span :class="row.promptId ? 'text-foreground' : 'text-platform-text-muted'">
+                {{ personaLabel(row as AgentRole) }}
+              </span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="运行模型" width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="font-mono text-2xs">{{ row.model }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="操作" width="124" align="right" fixed="right">
+            <template #default="{ row }">
+              <div class="inline-flex items-center gap-1">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :data-test="`btn-edit-employee-${row.id}`"
+                  @click="openEdit(row as AgentRole)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :data-test="`btn-delete-employee-${row.id}`"
+                  @click="removeEmployee(row as AgentRole)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="人设与规范" min-width="150" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span :class="row.promptId ? 'text-foreground' : 'text-platform-text-muted'">
-              {{ personaLabel(row as AgentRole) }}
-            </span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="操作" width="124" align="right" fixed="right">
-          <template #default="{ row }">
-            <div class="inline-flex items-center gap-1">
-              <el-button
-                link
-                type="primary"
-                size="small"
-                :data-test="`btn-edit-employee-${row.id}`"
-                @click="openEdit(row as AgentRole)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                link
-                type="danger"
-                size="small"
-                :data-test="`btn-delete-employee-${row.id}`"
-                @click="removeEmployee(row as AgentRole)"
-              >
-                删除
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-
-        <template #empty>
-          <ListEmptyState
-            :state="emptyState"
-            :icon="User"
-            :title="emptyTitle"
-            :hint="emptyHint"
-            @reset="resetSearch"
-          >
-            <el-button
-              type="primary"
-              :icon="Plus"
-              data-test="btn-new-employee"
-              @click="openCreate"
+          <template #empty>
+            <ListEmptyState
+              :state="emptyState"
+              :icon="User"
+              :title="emptyTitle"
+              :hint="emptyHint"
+              @reset="resetSearch"
             >
-              新建 AI 员工
-            </el-button>
-          </ListEmptyState>
-        </template>
-      </el-table>
+              <el-button
+                type="primary"
+                :icon="Plus"
+                data-test="btn-new-employee"
+                @click="openCreate"
+              >
+                新建 AI 员工
+              </el-button>
+            </ListEmptyState>
+          </template>
+        </el-table>
+      </div>
+
+      <div class="list-panel-footer" data-test="employee-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="totalRows"
+          :page-sizes="pageSizes"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
     </div>
 
     <EmployeeEditDialog

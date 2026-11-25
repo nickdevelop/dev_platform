@@ -203,7 +203,6 @@ async function handleSubmit() {
     subtitle="日常大模型人设与平台自治工具治理，支持常驻桌面快捷助手随时呼出。"
     :identifier="isEdit ? props.assistant?.id : null"
     :saving="submitting"
-    :save-label="isEdit ? '保存修改' : '创建助手'"
     save-test="btn-save-assistant"
     width="920"
     :data-test="`assistant-edit-dialog-${isEdit ? 'edit' : 'create'}`"

@@ -19,7 +19,9 @@ const props = withDefaults(
     subtitle?: string
     /** Record id shown as a chip next to the title; omitted for creation. */
     identifier?: number | string | null
-    saveLabel: string
+    /** 主动作按钮的文字。平台默认「确认」（保存并关闭）——标题栏已经写了新增 /
+        编辑与记录号，按钮再复述一遍「创建助手 / 保存修改」是噪声。 */
+    saveLabel?: string
     saving?: boolean
     width?: number | string
     /** `data-test` for the save button, so specs keep their selectors. */
@@ -27,6 +29,7 @@ const props = withDefaults(
   }>(),
   {
     subtitle: '',
+    saveLabel: '确认',
     identifier: null,
     saving: false,
     width: 880,
@@ -90,6 +93,8 @@ defineExpose({ close })
       <div class="entity-dialog-foot">
         <span class="entity-shortcut-hint">Ctrl+S 保存 · Esc 关闭</span>
         <div class="entity-dialog-actions">
+          <!-- 全平台同一对动作：取消 = 关闭不保存，确认 = 保存数据。不带图标——
+               两个字的按钮配一枚图标在这对动作上没有信息量，间距也由库负责。 -->
           <el-button @click="close">取消</el-button>
           <el-button type="primary" :loading="saving" :data-test="saveTest" @click="emit('save')">
             {{ saveLabel }}

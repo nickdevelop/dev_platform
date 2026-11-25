@@ -4,6 +4,14 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        // 平台只带两张脸（src/fonts：Google Sans Code + Noto Sans SC），Tailwind 的
+        // 默认栈会把 `font-mono` 掉回 ui-monospace / Menlo / Consolas，界面上就会出现
+        // 一批「看着像另一种字」的等宽片段。sans 与 mono 都必须指回 style.css 的
+        // 两个变量——等宽栈同样以 Google Sans Code 领头（它本身是等宽 face）。
+        sans: ['var(--font-family)'],
+        mono: ['var(--font-mono)'],
+      },
       borderRadius: {
         DEFAULT: '6px',
         sm: '4px',

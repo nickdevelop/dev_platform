@@ -100,6 +100,26 @@ const filteredTeams = computed(() => {
   return list
 })
 
+// 分页固定坐在主体底部（v2 §四 三段式）：表格只铺当前页，正文自己滚。
+const page = ref(1)
+const pageSize = ref(10)
+const pageSizes = [10, 20, 50]
+const totalRows = computed(() => filteredTeams.value.length)
+const pagedTeams = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredTeams.value.slice(start, start + pageSize.value)
+})
+
+// 条件一变就回到第一页，否则用户会停在一张空页上以为被筛选滤空了。
+watch([keyword], () => {
+  page.value = 1
+})
+
+watch([totalRows, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(totalRows.value / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
+})
+
 function openCreate() {
   selectedTeamDetail.value = null
   showDialog.value = true
@@ -163,10 +183,14 @@ const emptyHint = computed(() =>
         中控大脑调度与专职 AI 员工组成的多 Agent 协同作战单元。
       </p>
 
-      <div class="list-page-toolbar">
+    </header>
+
+    <div class="list-page-panel" data-test="team-panel">
+      <div class="list-panel-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
-          placeholder="搜索团队名称、描述或大脑模型…"
+          placeholder="搜索团队…"
+          hint="搜索团队名称、描述或大脑模型…"
           search-test="btn-search-team"
           reset-test="btn-reset-team"
           @search="applySearch"
@@ -175,7 +199,6 @@ const emptyHint = computed(() =>
           <template #actions>
             <el-button
               type="primary"
-              size="small"
               :icon="Plus"
               data-test="btn-create-team"
               @click="openCreate"
@@ -186,101 +209,113 @@ const emptyHint = computed(() =>
           </template>
         </ListToolbar>
       </div>
-    </header>
 
-    <div class="list-page-body">
-      <el-table
-        :data="filteredTeams"
-        row-key="id"
-        height="100%"
-        data-test="team-table"
-      >
-        <el-table-column label="AI 团队" min-width="240" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <span class="team-mark" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <circle cx="12" cy="5" r="3" />
-                  <circle cx="5" cy="19" r="3" />
-                  <circle cx="19" cy="19" r="3" />
-                  <path d="M12 8v4M7.5 17.5 10 13.5M16.5 17.5 14 13.5" />
-                </svg>
-              </span>
-              <span class="font-medium text-foreground truncate">{{ row.name }}</span>
-              <span class="id-chip font-mono">#{{ row.id }}</span>
-            </div>
-          </template>
-        </el-table-column>
+      <div class="list-panel-table">
+        <el-table
+          :data="pagedTeams"
+          row-key="id"
+          height="100%"
+          data-test="team-table"
+        >
+          <el-table-column label="AI 团队" min-width="240" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="team-mark" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <circle cx="12" cy="5" r="3" />
+                    <circle cx="5" cy="19" r="3" />
+                    <circle cx="19" cy="19" r="3" />
+                    <path d="M12 8v4M7.5 17.5 10 13.5M16.5 17.5 14 13.5" />
+                  </svg>
+                </span>
+                <span class="font-medium text-foreground truncate">{{ row.name }}</span>
+                <span class="id-chip font-mono">#{{ row.id }}</span>
+              </div>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="团队定位" min-width="220" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="text-platform-text-muted">{{ row.description || '暂无团队描述' }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="团队定位" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">{{ row.description || '暂无团队描述' }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="中控调度大脑" width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="font-mono text-2xs">{{ row.orchestratorModel || '默认调度模型' }}</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="中控调度大脑" width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="font-mono">{{ row.orchestratorModel || '默认调度模型' }}</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="编制员工" width="110" align="right">
-          <template #default="{ row }">
-            <span class="font-mono text-2xs">{{ row.memberCount || 0 }} 名</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="编制员工" width="110" align="right">
+            <template #default="{ row }">
+              <span class="font-mono">{{ row.memberCount || 0 }} 名</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="协作任务" width="100" align="right">
-          <template #default="{ row }">
-            <span class="font-mono text-2xs text-platform-text-muted">{{ row.taskCount || 0 }} 项</span>
-          </template>
-        </el-table-column>
+          <el-table-column label="协作任务" width="100" align="right">
+            <template #default="{ row }">
+              <span class="font-mono text-platform-text-muted">{{ row.taskCount || 0 }} 项</span>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="操作" width="124" align="right" fixed="right">
-          <template #default="{ row }">
-            <div class="inline-flex items-center gap-1">
-              <el-button
-                link
-                type="primary"
-                size="small"
-                :disabled="loadingDetail"
-                :data-test="`btn-edit-team-${row.id}`"
-                @click="openEdit(row as Group)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                link
-                type="danger"
-                size="small"
-                :data-test="`btn-delete-team-${row.id}`"
-                @click="removeTeam(row as Group)"
-              >
-                删除
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
+          <el-table-column label="操作" width="124" align="right" fixed="right">
+            <template #default="{ row }">
+              <div class="inline-flex items-center gap-1">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :disabled="loadingDetail"
+                  :data-test="`btn-edit-team-${row.id}`"
+                  @click="openEdit(row as Group)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :data-test="`btn-delete-team-${row.id}`"
+                  @click="removeTeam(row as Group)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
 
-        <template #empty>
-          <ListEmptyState
-            :state="emptyState"
-            :icon="Connection"
-            :title="emptyTitle"
-            :hint="emptyHint"
-            @reset="resetSearch"
-          >
-            <el-button
-              type="primary"
-              :icon="Plus"
-              data-test="btn-new-team"
-              @click="openCreate"
+          <template #empty>
+            <ListEmptyState
+              :state="emptyState"
+              :icon="Connection"
+              :title="emptyTitle"
+              :hint="emptyHint"
+              @reset="resetSearch"
             >
-              新建 AI 团队
-            </el-button>
-          </ListEmptyState>
-        </template>
-      </el-table>
+              <el-button
+                type="primary"
+                :icon="Plus"
+                data-test="btn-new-team"
+                @click="openCreate"
+              >
+                新建 AI 团队
+              </el-button>
+            </ListEmptyState>
+          </template>
+        </el-table>
+      </div>
+
+      <div class="list-panel-footer" data-test="team-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="totalRows"
+          :page-sizes="pageSizes"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
     </div>
 
     <TeamEditDialog

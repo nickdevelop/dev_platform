@@ -56,10 +56,11 @@
   gap: 12px;
 }
 
+/* 只排布，不调间距：按钮之间的距离交给库（相邻按钮 `margin-left: 12px`），
+   在这里加 gap 只会与它相加，把一对动作拉开成两个模块。 */
 .entity-dialog-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .entity-shortcut-hint {
