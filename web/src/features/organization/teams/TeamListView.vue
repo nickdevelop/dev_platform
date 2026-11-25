@@ -8,11 +8,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Connection, Plus } from '@element-plus/icons-vue'
 import { useGroupsStore } from '../../../stores/groups'
 import type { Group, GroupDetail } from '../../../api/groups'
-import { UiAlert } from '../../../shared/ui'
 import ListToolbar from '../../../shared/components/ListToolbar.vue'
+import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
 import TeamEditDialog from './TeamEditDialog.vue'
 
 const route = useRoute()
@@ -26,7 +26,6 @@ const keyword = ref('')
 const showDialog = ref(false)
 const selectedTeamDetail = ref<GroupDetail | null>(null)
 const loadingDetail = ref(false)
-const actionError = ref('')
 
 onMounted(async () => {
   await groupsStore.loadGroups()
@@ -62,7 +61,6 @@ async function syncRouteState() {
 
 async function loadTeamDetail(groupId: number) {
   loadingDetail.value = true
-  actionError.value = ''
   try {
     const detail = await groupsStore.loadGroup(groupId)
     if (detail) {
@@ -72,7 +70,7 @@ async function loadTeamDetail(groupId: number) {
       showDialog.value = false
     }
   } catch (err: any) {
-    actionError.value = err?.message || '加载团队详情失败'
+    ElMessage.error(err?.message || '加载团队详情失败')
     showDialog.value = false
   } finally {
     loadingDetail.value = false
@@ -130,27 +128,42 @@ async function removeTeam(team: Group) {
   } catch {
     return
   }
-  actionError.value = ''
   try {
     await groupsStore.deleteGroup(team.id)
     await groupsStore.loadGroups()
     ElMessage.success(`已删除团队「${team.name}」`)
   } catch (err: any) {
-    actionError.value = err?.message || '删除团队失败'
-    ElMessage.error(actionError.value)
+    ElMessage.error(err?.message || '删除团队失败')
   }
 }
+
+// 三种沉默分别说：还在拉数据 / 搜不到 / 本来就空（见 ListEmptyState）。
+// 团队列表没有枚举筛选，所以退路只有两条：重置关键词，或者组建一个。
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  if (groupsStore.loading) return 'loading'
+  return keyword.value ? 'filtered' : 'empty'
+})
+
+const emptyTitle = computed(() =>
+  emptyState.value === 'filtered' ? '没有匹配的 AI 团队' : '当前暂无 AI 团队',
+)
+
+const emptyHint = computed(() =>
+  emptyState.value === 'filtered'
+    ? `关键词「${keyword.value}」没有命中任何团队的名称、描述或大脑模型。`
+    : 'AI 团队由一个中控大脑负责拆解与调度，从 AI 员工花名册里勾选成员组成作战单元。',
+)
 </script>
 
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="team-list">
-    <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 团队</h1>
-      <p class="text-xs text-platform-text-muted mt-0.5">
+    <header class="list-page-header">
+      <h1 class="list-page-title">AI 团队</h1>
+      <p class="list-page-desc">
         中控大脑调度与专职 AI 员工组成的多 Agent 协同作战单元。
       </p>
 
-      <div class="mt-3">
+      <div class="list-page-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
           placeholder="搜索团队名称、描述或大脑模型…"
@@ -175,11 +188,7 @@ async function removeTeam(team: Group) {
       </div>
     </header>
 
-    <div v-if="actionError" class="px-6 pt-4">
-      <UiAlert variant="error">{{ actionError }}</UiAlert>
-    </div>
-
-    <div class="flex-1 min-h-0 p-6 table-wrap">
+    <div class="list-page-body">
       <el-table
         :data="filteredTeams"
         row-key="id"
@@ -254,28 +263,22 @@ async function removeTeam(team: Group) {
         </el-table-column>
 
         <template #empty>
-          <div class="px-6 py-10 text-center">
-            <p class="text-sm font-medium text-foreground">
-              {{ keyword ? '未找到匹配的 AI 团队' : '当前暂无 AI 团队' }}
-            </p>
-            <p class="text-xs text-platform-text-muted mt-1 max-w-sm mx-auto">
-              {{
-                keyword
-                  ? '没有符合搜索条件的团队，请尝试其他关键词。'
-                  : '当前暂无 AI 团队，点击上方按钮组建由中控大脑与专职员工协同的作战单元。'
-              }}
-            </p>
+          <ListEmptyState
+            :state="emptyState"
+            :icon="Connection"
+            :title="emptyTitle"
+            :hint="emptyHint"
+            @reset="resetSearch"
+          >
             <el-button
-              v-if="!keyword"
               type="primary"
-              class="mt-4"
               :icon="Plus"
               data-test="btn-new-team"
               @click="openCreate"
             >
               新建 AI 团队
             </el-button>
-          </div>
+          </ListEmptyState>
         </template>
       </el-table>
     </div>
@@ -290,14 +293,11 @@ async function removeTeam(team: Group) {
 </template>
 
 <style scoped>
+/* Row chrome only: the page frame (header, table wrapper) comes from
+   list-page.css. */
 .loading-hint {
   font-size: var(--text-size-11);
   color: var(--color-text-muted);
-}
-
-.table-wrap {
-  display: flex;
-  flex-direction: column;
 }
 
 .team-mark {

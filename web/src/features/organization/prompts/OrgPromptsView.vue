@@ -15,11 +15,12 @@
 // field still matches against it.
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { EditPen, Plus } from '@element-plus/icons-vue'
 import { usePromptsStore } from '../../../stores/prompts'
 import type { Prompt, PromptType } from '../../../api/prompts'
 import { PromptManageDialog } from '../../prompts'
 import ListToolbar from '../../../shared/components/ListToolbar.vue'
+import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
 
 type PromptFilter = 'all' | 'role' | 'flow'
 
@@ -125,33 +126,51 @@ async function copyPromptContent(prompt: Prompt) {
 
 function formatDate(iso: string): string {
   if (!iso) return ''
-  try {
-    return new Date(iso).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-  } catch {
-    return iso
-  }
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  // Written out rather than left to `toLocaleString('zh-CN')`: that locale renders
+  // the date with slashes and the time with a comma (2026/11/03 10:29), which in
+  // a right-aligned mono column reads as two different formats glued together.
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  )
 }
 
+// Three different silences, told apart: still loading, searched to nothing, and a
+// library with nothing in it. An enum filter alone is not「搜不到」——它是「这一类
+// 还没有」，退路是新建（弹窗会带着该类型打开），所以只有关键词才进 filtered。
+// See ListEmptyState.
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  if (promptsStore.loading) return 'loading'
+  return keyword.value ? 'filtered' : 'empty'
+})
+
 const emptyTitle = computed(() =>
-  filter.value === 'all'
-    ? '尚未创建任何提示词'
-    : filter.value === 'role'
-      ? '暂无角色类提示词'
-      : '暂无流程类提示词',
+  emptyState.value === 'filtered'
+    ? '没有匹配的提示词'
+    : filter.value === 'all'
+      ? '尚未创建任何提示词'
+      : filter.value === 'role'
+        ? '暂无角色类提示词'
+        : '暂无流程类提示词',
 )
 
-const emptyDescription = computed(() =>
-  filter.value === 'flow'
-    ? '流程类提示词偏向工作流程与协同任务规范，可在多 Agent 协同团队中统一引用。'
-    : '角色类提示词用于设定 Agent 人设、专业背景与思考准则，可在助手与数字员工中统一引用。',
-)
+const emptyHint = computed(() => {
+  if (emptyState.value === 'filtered') {
+    return filter.value === 'all'
+      ? `关键词「${keyword.value}」没有命中任何提示词的名称、描述或正文。`
+      : `在${filter.value === 'role' ? '角色类' : '流程类'}里，关键词「${keyword.value}」没有命中任何提示词。`
+  }
+  if (filter.value === 'flow') {
+    return '流程类提示词偏向工作流程与协同任务规范，可在多 Agent 协同团队中统一引用。'
+  }
+  if (filter.value === 'role') {
+    return '角色类提示词用于设定 Agent 人设、专业背景与思考准则，可在助手与数字员工中统一引用。'
+  }
+  return '角色类用于设定 Agent 人设与思考准则，流程类用于工作流程与协同任务规范，均可在助手、数字员工与团队中统一引用。'
+})
 </script>
 
 <template>
@@ -160,13 +179,13 @@ const emptyDescription = computed(() =>
     data-test="org-prompts-view"
     aria-label="AI 提示词"
   >
-    <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 提示词</h1>
-      <p class="text-xs text-platform-text-muted mt-0.5">
+    <header class="list-page-header">
+      <h1 class="list-page-title">AI 提示词</h1>
+      <p class="list-page-desc">
         管理角色类人设与流程类协同提示词，供助手、数字员工与协同团队统一引用。
       </p>
 
-      <div class="mt-3">
+      <div class="list-page-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
           placeholder="搜索提示词名称、描述或正文…"
@@ -191,7 +210,7 @@ const emptyDescription = computed(() =>
             <el-select
               v-model="filter"
               size="small"
-              class="filter-select"
+              class="list-page-filter"
               data-test="select-prompt-type"
               aria-label="按提示词类型筛选"
             >
@@ -207,7 +226,7 @@ const emptyDescription = computed(() =>
       </div>
     </header>
 
-    <div class="flex-1 min-h-0 p-6 table-wrap">
+    <div class="list-page-body">
       <el-table
         :data="filteredPrompts"
         row-key="id"
@@ -255,20 +274,22 @@ const emptyDescription = computed(() =>
         </el-table-column>
 
         <template #empty>
-          <div class="px-6 py-10 text-center">
-            <p class="text-sm font-medium text-[var(--color-text)]">{{ emptyTitle }}</p>
-            <p class="text-xs text-platform-text-muted mt-1 max-w-md mx-auto">{{ emptyDescription }}</p>
+          <ListEmptyState
+            :state="emptyState"
+            :icon="EditPen"
+            :title="emptyTitle"
+            :hint="emptyHint"
+            @reset="resetSearch"
+          >
             <el-button
-              v-if="!keyword"
               type="primary"
-              class="mt-4"
               :icon="Plus"
+              data-test="btn-create-prompt-empty"
               @click="openCreateDialog"
             >
               新建提示词
             </el-button>
-            <p v-else class="text-xs text-platform-text-muted mt-3">没有匹配的提示词，换个关键词试试。</p>
-          </div>
+          </ListEmptyState>
         </template>
       </el-table>
     </div>
@@ -282,18 +303,3 @@ const emptyDescription = computed(() =>
     />
   </div>
 </template>
-
-<style scoped>
-/* The enum filter keeps a fixed width so the search form does not jump when the
-   selected label changes length. */
-.filter-select {
-  width: 176px;
-}
-
-/* The table scrolls its body while the header row stays put; the wrapper owns
-   the height so the table's own layout stays untouched. */
-.table-wrap {
-  display: flex;
-  flex-direction: column;
-}
-</style>

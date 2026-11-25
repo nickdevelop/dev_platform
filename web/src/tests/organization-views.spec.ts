@@ -113,6 +113,28 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
       updatedAt: '',
     }
 
+    it('在分组数据到达前给行形骨架（用的是分组加载标志，不是会话列表的）', async () => {
+      const chatsStore = useChatsStore()
+      chatsStore.groups = []
+      chatsStore.groupsLoading = true
+      chatsStore.loadGroups = vi.fn().mockImplementation(() => new Promise(() => undefined))
+      // 会话列表同时在进 : 它不应该把助手页说成「在加载」。
+      chatsStore.loading = false
+
+      const wrapper = mount(AssistantListView)
+      await flushPromises()
+
+      expect(wrapper.find('[data-test="list-state-loading"]').exists()).toBe(true)
+      expect(wrapper.findAll('.skeleton-row').length).toBeGreaterThan(0)
+      expect(wrapper.find('[data-test="list-state-empty"]').exists()).toBe(false)
+
+      // 换过来：分组标志落位、确实没人，才是空库。
+      chatsStore.groupsLoading = false
+      await flushPromises()
+      expect(wrapper.find('[data-test="list-state-empty"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('当前暂无 AI 助手')
+    })
+
     it('renders the assistant grid and opens the editor as a dialog', async () => {
       const chatsStore = useChatsStore()
       chatsStore.groups = [sampleAssistant]

@@ -8,7 +8,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { Plus, User } from '@element-plus/icons-vue'
 import { useRolesStore } from '../../../stores/roles'
 import { usePromptsStore } from '../../../stores/prompts'
 import { useModelsStore } from '../../../stores/models'
@@ -16,6 +16,7 @@ import { useAgentsStore } from '../../../stores/agents'
 import BackendIcon from '../../../shared/components/BackendIcon.vue'
 import type { AgentRole } from '../../../api/roles'
 import ListToolbar from '../../../shared/components/ListToolbar.vue'
+import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
 import EmployeeEditDialog from './EmployeeEditDialog.vue'
 
 const route = useRoute()
@@ -156,17 +157,39 @@ async function removeEmployee(role: AgentRole) {
     ElMessage.error(err?.message || '删除 AI 员工失败')
   }
 }
+
+// 三种沉默分别说：还在拉数据 / 搜不到 / 本来就空（见 ListEmptyState）。
+// 引擎筛选单独不算「搜不到」——「这个引擎下还没有人」的退路是新建。
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  if (rolesStore.loading) return 'loading'
+  return keyword.value ? 'filtered' : 'empty'
+})
+
+const backendFilterLabel = computed(
+  () => backendFilterOptions.value.find((o) => o.value === backendFilter.value)?.label ?? '',
+)
+
+const emptyTitle = computed(() => {
+  if (emptyState.value === 'filtered') return '没有匹配的 AI 员工'
+  return backendFilter.value === 'all' ? '当前暂无 AI 员工' : `暂无${backendFilterLabel.value}的 AI 员工`
+})
+
+const emptyHint = computed(() =>
+  emptyState.value === 'filtered'
+    ? `关键词「${keyword.value}」没有命中任何员工的姓名、岗位或模型。`
+    : 'AI 员工是把人设、模型与执行引擎固定下来的专职专家，组建 AI 团队时直接从花名册勾选。',
+)
 </script>
 
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="employee-list">
-    <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 员工</h1>
-      <p class="text-xs text-platform-text-muted mt-0.5">
+    <header class="list-page-header">
+      <h1 class="list-page-title">AI 员工</h1>
+      <p class="list-page-desc">
         专职数字员工与执行引擎分工，作为 AI 团队的专业协同专家编制。
       </p>
 
-      <div class="mt-3">
+      <div class="list-page-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
           placeholder="搜索员工姓名、岗位或模型…"
@@ -191,7 +214,7 @@ async function removeEmployee(role: AgentRole) {
             <el-select
               v-model="backendFilter"
               size="small"
-              class="filter-select"
+              class="list-page-filter"
               data-test="select-backend-filter"
               aria-label="按执行引擎筛选"
             >
@@ -207,7 +230,7 @@ async function removeEmployee(role: AgentRole) {
       </div>
     </header>
 
-    <div class="flex-1 min-h-0 p-6 table-wrap">
+    <div class="list-page-body">
       <el-table :data="filteredEmployees" row-key="id" height="100%" data-test="employee-table">
         <el-table-column label="AI 员工 / 岗位" min-width="190" show-overflow-tooltip>
           <template #default="{ row }">
@@ -276,28 +299,22 @@ async function removeEmployee(role: AgentRole) {
         </el-table-column>
 
         <template #empty>
-          <div class="px-6 py-10 text-center">
-            <p class="text-sm font-medium text-foreground">
-              {{ keyword || backendFilter !== 'all' ? '未找到匹配的 AI 员工' : '当前暂无 AI 员工' }}
-            </p>
-            <p class="text-xs text-platform-text-muted mt-1 max-w-sm mx-auto">
-              {{
-                keyword
-                  ? '没有符合搜索条件的数字员工，请尝试其他关键词。'
-                  : '当前暂无 AI 员工，点击上方按钮创建专职数字专家。'
-              }}
-            </p>
+          <ListEmptyState
+            :state="emptyState"
+            :icon="User"
+            :title="emptyTitle"
+            :hint="emptyHint"
+            @reset="resetSearch"
+          >
             <el-button
-              v-if="!keyword"
               type="primary"
-              class="mt-4"
               :icon="Plus"
               data-test="btn-new-employee"
               @click="openCreate"
             >
               新建 AI 员工
             </el-button>
-          </div>
+          </ListEmptyState>
         </template>
       </el-table>
     </div>
@@ -312,14 +329,8 @@ async function removeEmployee(role: AgentRole) {
 </template>
 
 <style scoped>
-.filter-select {
-  width: 176px;
-}
-
-.table-wrap {
-  display: flex;
-  flex-direction: column;
-}
+/* Row chrome only: the page frame (header, filter width, table wrapper) comes
+   from list-page.css. */
 
 /* The employee's identity colour is data, so it rides on the monogram chip
    instead of appearing as a second badge. */

@@ -78,7 +78,10 @@
 - 禁止在业务组件里写 `height`、`padding` 去"微调"某个控件的高度——需要改高度就改 density bridge。
 - 圆角：`--el-border-radius-base` = `--radius` = 3px；`round` 保留全圆（只服务于开关与状态小胶囊，符合 v1 的唯一例外）。
 - 阴影：只有脱离文档流的部件（dialog / message-box / dropdown / popover / message）允许边界阴影，形式固定为 `0 0 0 1px 边线 + 短距投影`；表格、表单、卡片一律纯平。
-- 动效：`--el-transition-duration` = 0.12s，且 `--el-transition-all` 已被重写为显式属性列表（库默认动 `all`，会连带宽与高度）。
+- 动效：`--el-transition-duration` = 0.12s，且 `--el-transition-all` 已被重写为显式属性列表（库默认动 `all`，会连带宽与高度）。**注意 `.el-button` 硬编码 `transition: all .1s`、不读该变量**，token 层为它另写了具名列表；实心按钮 hover 上浮 1px、按下回位（`prefers-reduced-motion: reduce` 下关闭），文字链与 `text` 按钮不参与位移（它们坐在 34px 行高里，位移会被读成抖动）。
+- 数字：表格、分页、下拉选项一律 `font-variant-numeric: tabular-nums`（token 层）；库不带这个属性，缺了它日期与计数会在行间跳动。
+- 行内操作的可点区：`.el-button.is-link / .is-text` 库默认 `padding: 2px`（命中区就是字形本身），token 层给到 24px 档命中区 + hover 中性底；并且 `.el-table .el-button + .el-button { margin-left: 0 }`——页面用 flex `gap` 自控间距，库的兄弟外边距叠加上去会让三个操作在 168px 列里撑到 183px 被裁掉。
+- 时间列一律 `YYYY-MM-DD HH:mm` 手工拼接，**不要用 `toLocaleString('zh-CN')`**：它渲染成 `2026-11/03 10:29`，在右对齐等宽列里读起来像两种格式粘在一起。
 
 ### 布局契约：单列表页与弹窗
 
@@ -89,6 +92,23 @@
 | 页头 | 标题 + 一句话职责说明 | 不放计数芯片（数量在枚举下拉的选项标签里），也不放操作按钮 |
 | 工具条 | 左：全局动作按钮（新建等）；右：搜索表单 | 统一用 `shared/components/ListToolbar.vue`，页面只填 `#actions` / `#filters` 两个插槽 |
 | 主体 | `el-table`（`height="100%"`）占满剩余高度 | 表头与操作列固定，长文本列 `show-overflow-tooltip` |
+
+页头与节奏的唯一实现是 `shared/styles/list-page.css`：`.list-page-header / .list-page-title / .list-page-desc / .list-page-toolbar / .list-page-body / .list-page-filter`。标题字号走 `--text-size-20`，**不要在页面里写 Tailwind 的 `text-lg`**（=15.75px，不在 v1 字阶上，且四页各写一份必然漂移）。
+
+### 列表的三态（没有行不等于没有话说）
+
+空表格有三种成因，必须说得出区别，统一由 `shared/components/ListEmptyState.vue` 承担（放在 `el-table` 的 `#empty` 槽里）：
+
+| 状态 | 触发 | 给什么 |
+|---|---|---|
+| `loading` | 首批数据在途（store 的 `loading` 且无行） | **行形骨架**：按表格 34px 行高排布、左对齐、每行几条与列数对应的灰条。库默认的 `:rows` 骨架是一段篇文章的形状，读起来是「有文章要来」而不是「有行要来」 |
+| `filtered` | 关键词搜不到 | 复述关键词 + 「重置筛选」退路 |
+| `empty` | 真的还没有 | 与本页导航**同一枚**矢量图标作视觉锚 + 一句话职责 + 主动按钮（默认插槽） |
+
+- **枚举筛选单独命中空档不算「搜不到」**：「这个引擎下还没有人」的退路是新建（弹窗带着该类型打开），不是重置。
+- 空态图标必须与左侧导航同枚（组织中心：EditPen / ChatDotRound / User / Connection），零 emoji。
+- 空态在表格剩余高度里垂直居中，骨架贴顶（它标的是行将要落下的位置）；两者都由 token 层的 `.el-table__empty-block / __empty-text` 交出容器高度后由组件自己决定，库里那条 `width:50%; line-height:60px` 会把两行文字变成飘着的细条。
+- **失败只报一次**：动作失败一律 `ElMessage.error`，不再额外挂 `UiAlert` 页面横幅——同一条错误既弹 toast 又在表格上方占一行，会把表格整个顶下去。
 
 - 搜索表单的顺序固定：枚举筛选 → 关键词输入框 → **搜索** → **重置**，且以 `</form>` 包住，Enter 与搜索按钮同一条路径。
 - **生效时机是契约的一部分**：枚举下拉（`el-select`）变更即时过滤；关键词是草稿，只有点搜索或回车才落到列表（半截词不该让表格闪）；用输入框的 ✕ 清空等同于提交一次空关键词；重置清空全部条件并立即回到全量。
@@ -119,8 +139,9 @@
 | 布尔徽标/状态 | `el-tag`（`size="small"`） | 颜色预算仍受 v1 的 3% 约束 |
 | 确认类弹窗 | `ElMessageBox.confirm` | 破坏性操作统一走它，不再自绘 `UiConfirmDialog` |
 | 新增/编辑承载 | `shared/components/EntityFormDialog.vue`（包 `el-dialog`） | 统一头部（标题 + 一句话职责 + 记录号芯片）与底栏（快捷键提示 + 取消 / 保存 + Ctrl/Cmd+S）；分区骨架类见 `shared/styles/entity-editor.css`；复杂多分区表单可用 `el-drawer`，同一模块内保持一致 |
-| 轻提示 | `ElMessage` | 取代页面内 `UiAlert` 做结果反馈；页面级持久错误横幅仍可留 `UiAlert` |
-| 空态 | `el-table` 自带空态 / `el-empty` | 带引导动作的复杂空态可自绘 |
+| 轻提示 | `ElMessage` | 结果与失败都只走它一处；列表页不再挂 `UiAlert` 错误横幅（组织中心已退役，`Ui*` 棘轮随之降到 745） |
+| 列表三态 | `shared/components/ListEmptyState.vue`（`loading` / `filtered` / `empty`） | 放进 `el-table` 的 `#empty` 槽；见 §四「列表的三态」。非表格区域的大空态才用 `el-empty` |
+| 列表页页头与节奏 | `shared/styles/list-page.css`（`.list-page-*`） | 页头、工具条槽、表格容器、枚举筛选档位；只放平台自己的类与 token，禁止 `.el-*` / `--el-*` |
 | 列表页工具条 | `shared/components/ListToolbar.vue`（左动作 / 右搜索表单 + 搜索 + 重置） | 见 §四 布局契约；枚举筛选放 `#filters` 插槽用 `el-select` |
 | 弹层/浮层 | `el-dropdown` / `el-popover` / `el-tooltip` | 禁止 `backdrop-filter: blur`（v1 禁令继续有效，遮罩为中性半透明）；库的 `is-dark` 变体拿文字色当底色与描边，已统一改回平台浮层表面 + 强描边（tooltip 最大宽度 720px），均入 token 层 |
 | 图标 | `@element-plus/icons-vue`（`<el-icon>` 包裹） | 仍受 v1「零 Emoji、纯矢量细线条」约束；库内没有的业务符号继续用现有 1.5–1.8px 手绘 SVG |
@@ -180,11 +201,16 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
    - 编辑器：`AssistantEditPanel` / `EmployeeEditPanel` / `TeamEditPanel` → `*EditDialog`，共用 `shared/components/EntityFormDialog.vue` 外壳；AI 提示词的 `PromptManageDialog` 同批迁 `el-dialog` + `el-form`；
    - 交互：删除 → `ElMessageBox`（`confirmButtonType: 'danger'`），结果反馈 → `ElMessage`，AI 团队专家编制 → 二级 `el-checkbox-group` 卡片网格勾选回显。
 4. §四 布局契约落地：页头去计数芯片、工具条左动作右搜索、表格铺满；弹窗全局垂直居中 + 内部滚动 + 底栏固定。
-5. 组织中心至此只剩两处页面级错误横幅仍在 `UiAlert`（棘轮 750）。
+5. 组织中心反馈与质感层（只面向 ≥ 1280 的桌面宽度，窄屏不在本轮范围）：
+   - **三态**：新增 `shared/components/ListEmptyState.vue`，四页的 `#empty` 槽不再各写一行灰字；loading 给行形骨架、搜不到给「重置筛选」、空库给导航同枚矢量图标 + 主动作；
+   - **页头原语**：`shared/styles/list-page.css`（`.list-page-*`），页头标题从 Tailwind `text-lg`（15.75px，不在字阶上）收编到 `--text-size-20`，四页重复的 `.filter-select` / `.table-wrap` 一并删除；
+   - **可反馈性**（均在 token 层）：行内 link/text 按钮从 `padding: 2px` 给到 24px 命中区与 hover 中性底；typed link 的 hover 不再把主色刷成灰色（改 `--el-button-hover-link-text-color` 按类型加深一档）；`.el-button` 的 `transition: all` 改具名列表；实心按钮 hover 上浮 / 按下回位；表格内取消库的兄弟 `margin-left`（否则三个操作在 168px 列里被裁）；
+   - **数字与时间**：表格 / 分页 / 下拉开 `tabular-nums`；时间列改为手工拼接的 `YYYY-MM-DD HH:mm`；
+   - `UiAlert` 页面错误横幅从组织中心退位（同一错误不再 toast + 横幅双报，横幅还会把表格顶下去），棘轮 750 → 745。
 
 **待办**：
 
-1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；新页面直接按 §四 布局契约写，不要再写页头计数芯片与散装的筛选行。
+1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；新页面直接按 §四 布局契约与「列表的三态」写（页头用 `.list-page-*`，空态用 `ListEmptyState`），不要再写页头计数芯片、散装筛选行与自绘空态。
 2. 助手的预设头像仍是 emoji（源码里带 `taste-skill-ignore` 标记），与 v1「零 Emoji」相冲，且缺 emoji 字体的环境会显示成豆腐块；待办：换成 v1 的手绘 SVG 图标集，头像字段改存图标 key。
 
 ---

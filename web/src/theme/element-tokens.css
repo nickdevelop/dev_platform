@@ -456,3 +456,113 @@ html .el-table th.el-table__cell {
   max-width: min(720px, 92vw);
   line-height: 1.6;
 }
+
+/* ---------------------------------------------------- feedback: buttons ---- */
+/* The motion budget above is expressed in custom properties, but `.el-button`
+   hard-codes `transition: all .1s` instead of reading `--el-transition-all`, so
+   every button in the product animated geometry — a row action repainting its
+   own width while the list reflows. Named properties, same budget. */
+html .el-button {
+  transition: color 0.12s ease-out, background-color 0.12s ease-out,
+    border-color 0.12s ease-out, box-shadow 0.12s ease-out,
+    transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+/* A solid button steps toward the pointer and sits back down when pressed: the
+   control acknowledges the hand instead of only shifting hue. Text and link
+   buttons stay put — they live inside a 34px row, where a shift would read as
+   jitter. */
+@media (prefers-reduced-motion: no-preference) {
+  html .el-button:not(.is-link):not(.is-text):not(.is-disabled):hover {
+    transform: translateY(-1px);
+  }
+
+  html .el-button:not(.is-link):not(.is-text):not(.is-disabled):active {
+    transform: translateY(0);
+  }
+}
+
+/* Rows own their own rhythm: a page spaces its actions with a flex `gap`, while
+   the library stacks `margin-left: 12px` between sibling buttons on top of it —
+   three actions then measure 183px inside a 168px column and 删除 gets clipped by
+   the fixed edge. Inside a table cell the page decides the spacing. */
+html .el-table .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* Row actions are the only way into a record, and the library gives a link
+   button 2px of padding: the hit area is the glyph, and the gap between 复制 and
+   编辑 answers nothing. Give them a real target that still fits the 24px tier. */
+html .el-button.is-link,
+html .el-button.is-text {
+  height: var(--el-component-size-small);
+  padding: 0 7px;
+  border-radius: var(--el-border-radius-base);
+}
+
+/* Hover used to *desaturate* a typed link: `.el-button.is-link:hover` paints the
+   neutral secondary colour over the primary one, so pointing at 复制 or 删除 made
+   the action look less available than before it was touched. Re-point the
+   library's own hover token per type instead of overpainting `color`: the hue
+   stays and takes one step deeper, while the background — one step above the
+   row's own hover tint, since the row underneath is already tinted — carries the
+   signal. */
+html .el-button.is-link:not(.is-disabled):hover,
+html .el-button.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-text-color-primary);
+  background-color: var(--el-fill-color);
+}
+
+html .el-button--primary.is-link:not(.is-disabled):hover,
+html .el-button--primary.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-color-primary-dark-2);
+}
+
+html .el-button--danger.is-link:not(.is-disabled):hover,
+html .el-button--danger.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-color-danger-dark-2);
+}
+
+html .el-button.is-link:not(.is-disabled):active,
+html .el-button.is-text:not(.is-disabled):active {
+  background-color: var(--el-fill-color-dark);
+}
+
+/* ------------------------------------------------------- feedback: table --- */
+/* Numbers that re-glyph between rows are numbers that get misread: dates, ids
+   and counts all get tabular figures, in the table and wherever a list of them
+   scrolls by (pagination, option lists). */
+html .el-table,
+html .el-pagination,
+html .el-select-dropdown__item {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty space is designed, not leftover: the library wraps slot content in a
+   50%-wide box on a 60px line, which turns a two-line empty state into a
+   floating strip. The block takes the body's height and hands it down, so the
+   content decides where it sits — an empty state centres itself, a skeleton
+   stays at the top where its rows will land. ListEmptyState owns that choice. */
+html .el-table__empty-block {
+  align-items: stretch;
+  min-height: 100%;
+  padding: 0;
+}
+
+/* The text box is a flex child, so an `auto` width collapses it to the width of
+   its own content — a skeleton then renders 32px wide. It gets the block as a
+   box; the content inside decides how wide its own lines run (an empty state
+   centres itself, a skeleton spans the table). */
+html .el-table__empty-text {
+  display: block;
+  width: 100%;
+  line-height: 1.5;
+  color: inherit;
+}
+
+/* A skeleton is a promise about shape, so it must not glow or pulse past the
+   point of usefulness: the library's shimmer stays, its colours come from the
+   same muted fills as everything else at rest. */
+html .el-skeleton__text {
+  background-color: var(--el-fill-color-light);
+}

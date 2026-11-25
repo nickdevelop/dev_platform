@@ -1,0 +1,50 @@
+/* 列表页骨架原语：页头、工具条槽、表格容器、枚举筛选档位。
+ *
+ * 和 entity-editor.css 一个道理——这些类挂在各页自己的模板上，但四张列表页必须
+ * 长成同一张脸（v2 §四 布局契约：页头 + 工具条 + 铺满剩余高度的表格），所以字阶
+ * 与节奏只写一次。此前每页各写一份 `text-lg`（=15.75px）：既不在 v1 字阶上，
+ * 也没法一次改齐，正是字阶漂移的起点，这里收编进 --text-size-*。
+ *
+ * 间距用 rem 而不是 Tailwind 类名：rem 跟着外观层的根字号走，且 1.5rem 与模板里
+ * 的 p-6 / px-6 同值，页头与表格的左右边缘因此必然对齐（等边契约）。
+ */
+
+.list-page-header {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list-page-title {
+  margin: 0;
+  font-size: var(--text-size-20);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--color-text);
+}
+
+.list-page-desc {
+  margin: 3px 0 0;
+  font-size: var(--text-size-12);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.list-page-toolbar {
+  margin-top: 12px;
+}
+
+/* 表格容器：自身不滚，高度由 el-table 的 height="100%" 接管。 */
+.list-page-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1.5rem;
+}
+
+/* 枚举筛选固定宽度：选中项长短变化不推动搜索表单。 */
+.list-page-filter {
+  width: 176px;
+}

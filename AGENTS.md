@@ -61,7 +61,12 @@
 5. **列表页与弹窗布局契约**（v2 §四）：单列表页 = 页头（标题 + 一句话职责，**不写计数芯片**）
    + 工具条（左＝全局动作按钮，右＝搜索表单，顺序固定「枚举 `el-select` → 关键词 `el-input` →
    搜索 → 重置」，统一用 `web/src/shared/components/ListToolbar.vue`）+ `el-table` 铺满剩余高度；
-   枚举筛选变更即时生效、关键词是草稿只在搜索/回车时生效。弹窗一律垂直居中（`App.vue` 的
+   枚举筛选变更即时生效、关键词是草稿只在搜索/回车时生效。页头与节奏只用
+   `web/src/shared/styles/list-page.css` 的 `.list-page-*`（标题走 `--text-size-20`，不写 Tailwind `text-lg`）。
+   没有行的三种成因必须说清：`el-table` 的 `#empty` 槽一律放
+   `web/src/shared/components/ListEmptyState.vue`（`loading` 行形骨架 / `filtered` 给重置退路 /
+   `empty` 给导航同枚矢量图标 + 主动作），枚举筛选命中空档不算「搜不到」；
+   失败只报一次（只走 `ElMessage`，不再挂 `UiAlert` 页面横幅）。弹窗一律垂直居中（`App.vue` 的
    `el-config-provider` 上 `:dialog="{ alignCenter: true }"`，**不要在页面里逐个写 `align-center`/`top`**），
    高度上限与内部滚动、底栏固定由 token 层负责。
 6. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与

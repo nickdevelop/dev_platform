@@ -10,13 +10,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search } from '@element-plus/icons-vue'
+import { ChatDotRound, Plus } from '@element-plus/icons-vue'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
 import { usePromptsStore } from '../../../stores/prompts'
 import type { ChatGroup, ChatGroupInput } from '../../../api/chats'
-import { UiAlert } from '../../../shared/ui'
 import ListToolbar from '../../../shared/components/ListToolbar.vue'
+import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
 import AssistantEditDialog from './AssistantEditDialog.vue'
 
 const route = useRoute()
@@ -33,7 +33,6 @@ const floatFilter = ref<'all' | 'floating' | 'normal'>('all')
 
 const showDialog = ref(false)
 const selectedAssistant = ref<ChatGroup | null>(null)
-const actionError = ref('')
 const togglingFloatId = ref<number | null>(null)
 
 onMounted(async () => {
@@ -156,7 +155,6 @@ function closeEditor() {
 async function toggleFloat(group: ChatGroup) {
   if (togglingFloatId.value !== null) return
   togglingFloatId.value = group.id
-  actionError.value = ''
   try {
     const input: ChatGroupInput = {
       name: group.name,
@@ -170,7 +168,10 @@ async function toggleFloat(group: ChatGroup) {
     }
     await chatsStore.updateGroup(group.id, input)
   } catch (err: any) {
-    actionError.value = err?.message || '更新浮窗状态失败'
+    // The switch already snapped back to its stored value, so nothing on screen
+    // says "that failed" unless we say it: a toast at the pointer, not a banner
+    // that pushes the table down.
+    ElMessage.error(err?.message || '更新快捷助手常驻状态失败')
   } finally {
     togglingFloatId.value = null
   }
@@ -186,26 +187,43 @@ async function removeAssistant(group: ChatGroup) {
   } catch {
     return
   }
-  actionError.value = ''
   try {
     await chatsStore.deleteGroup(group.id)
     ElMessage.success(`已删除助手「${group.name}」`)
   } catch (err: any) {
-    actionError.value = err?.message || '删除助手失败'
-    ElMessage.error(actionError.value)
+    ElMessage.error(err?.message || '删除助手失败')
   }
 }
+
+// 三种沉默分别说：还在拉数据 / 搜不到 / 本来就空（见 ListEmptyState）。
+// 常驻筛选不会进 filtered——「这一类还没有」的退路是新建，不是重置。
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  // `groupsLoading`, not `loading`: the latter belongs to the conversation list
+  // and can be in flight from the chat surface while this page has nothing to do.
+  if (chatsStore.groupsLoading) return 'loading'
+  return keyword.value ? 'filtered' : 'empty'
+})
+
+const emptyTitle = computed(() =>
+  emptyState.value === 'filtered' ? '没有匹配的 AI 助手' : '当前暂无 AI 助手',
+)
+
+const emptyHint = computed(() =>
+  emptyState.value === 'filtered'
+    ? `关键词「${keyword.value}」没有命中任何助手的名称或人设。`
+    : 'AI 助手是日常大模型人设：选定模型与提示词后即可在会话页快捷区随时呼出。',
+)
 </script>
 
 <template>
   <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="assistant-list">
-    <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-      <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 助手</h1>
-      <p class="text-xs text-platform-text-muted mt-0.5">
+    <header class="list-page-header">
+      <h1 class="list-page-title">AI 助手</h1>
+      <p class="list-page-desc">
         日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
       </p>
 
-      <div class="mt-3">
+      <div class="list-page-toolbar">
         <ListToolbar
           v-model:keyword="keywordDraft"
           placeholder="搜索助手名称或人设关键词…"
@@ -230,7 +248,7 @@ async function removeAssistant(group: ChatGroup) {
             <el-select
               v-model="floatFilter"
               size="small"
-              class="filter-select"
+              class="list-page-filter"
               data-test="select-float-filter"
               aria-label="按快捷助手常驻状态筛选"
             >
@@ -246,11 +264,7 @@ async function removeAssistant(group: ChatGroup) {
       </div>
     </header>
 
-    <div v-if="actionError" class="px-6 pt-4">
-      <UiAlert variant="error">{{ actionError }}</UiAlert>
-    </div>
-
-    <div class="flex-1 min-h-0 p-6 table-wrap">
+    <div class="list-page-body">
       <el-table :data="filteredAssistants" row-key="id" height="100%" data-test="assistant-table">
         <el-table-column label="AI 助手" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
@@ -333,28 +347,22 @@ async function removeAssistant(group: ChatGroup) {
         </el-table-column>
 
         <template #empty>
-          <div class="px-6 py-10 text-center">
-            <p class="text-sm font-medium text-foreground">
-              {{ keyword ? '未找到匹配的 AI 助手' : '当前暂无 AI 助手' }}
-            </p>
-            <p class="text-xs text-platform-text-muted mt-1 max-w-sm mx-auto">
-              {{
-                keyword
-                  ? '没有符合搜索条件的助手，请尝试其他关键词。'
-                  : '当前暂无 AI 助手，点击上方按钮创建您的第一个助手。'
-              }}
-            </p>
+          <ListEmptyState
+            :state="emptyState"
+            :icon="ChatDotRound"
+            :title="emptyTitle"
+            :hint="emptyHint"
+            @reset="resetSearch"
+          >
             <el-button
-              v-if="!keyword"
               type="primary"
-              class="mt-4"
               :icon="Plus"
               data-test="btn-new-assistant"
               @click="openCreate"
             >
               新建 AI 助手
             </el-button>
-          </div>
+          </ListEmptyState>
         </template>
       </el-table>
     </div>
@@ -370,16 +378,8 @@ async function removeAssistant(group: ChatGroup) {
 
 <style scoped>
 /* Row chrome the library has no token for: the 24px avatar chip, the id chip and
-   the persona summary line. All of it uses platform tokens. */
-.filter-select {
-  width: 176px;
-}
-
-.table-wrap {
-  display: flex;
-  flex-direction: column;
-}
-
+   the persona summary line. All of it uses platform tokens. The page frame
+   itself (header, filter width, table wrapper) comes from list-page.css. */
 .row-avatar {
   width: 24px;
   height: 24px;

@@ -28,10 +28,13 @@ const webRoot = fileURLToPath(new URL('../..', import.meta.url))
 const srcRoot = join(webRoot, 'src')
 
 // Measured at each migration step: 859 when Element Plus landed, 836 after the
-// AI 提示词 page, 808 after the AI 助手 page, 798 after the AI 员工 page. Lower
+// AI 提示词 page, 808 after the AI 助手 page, 798 after the AI 员工 page, 750
+// after the AI 团队 page, 745 after the organization centre's last `UiAlert`
+// banner (a failure now reports once, through `ElMessage`, instead of once in a
+// toast and once in a banner that pushes the table down). Lower
 // it as pages move; see the
 // header note.
-const UI_PRIMITIVE_BASELINE = 750
+const UI_PRIMITIVE_BASELINE = 745
 
 // The primitives themselves are obviously allowed to mention their own names.
 const EXCLUDED_DIRS = new Set(['ui', 'tests', 'fonts', 'node_modules'])

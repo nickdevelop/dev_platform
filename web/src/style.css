@@ -4,6 +4,7 @@
 @import './fonts/fonts.css';
 @import './shared/styles/sidebar.css';
 @import './shared/styles/entity-editor.css';
+@import './shared/styles/list-page.css';
 @import './shared/highlight.css';
 
 @tailwind base;
