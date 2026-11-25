@@ -9,7 +9,7 @@
 // content with our own classes.
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ChatDotRound, Cpu, Share, Terminal } from '@element-plus/icons-vue'
+import { ChatDotRound, Cpu, Monitor, Share } from '@element-plus/icons-vue'
 
 interface EngineLink {
   // Route name, kept for tests and for future programmatic navigation.
@@ -34,7 +34,7 @@ const links: EngineLink[] = [
     path: '/engines/coder',
     label: '会话引擎',
     desc: '工作区代码生成与终端执行',
-    icon: Terminal,
+    icon: Monitor,
   },
   {
     name: 'engines-orchestrator',
