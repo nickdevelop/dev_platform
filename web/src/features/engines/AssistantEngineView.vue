@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // Assistant Chat Engine settings panel.
-// Standard app typography scale (text-xl header, text-sm section, text-xs body).
+// Element Plus migration: the save action is an `el-button`, the platform-tools
+// permission an `el-checkbox`, and the save result is reported once through
+// `ElMessage` (success and failure alike) instead of the inline ✓ that used to
+// push the header around.
 import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useEnginesStore } from '../../stores/engines'
-import { UiButton } from '../../shared/ui'
 import EngineStepControl, { type StepPreset } from './EngineStepControl.vue'
 
 const enginesStore = useEnginesStore()
 
-const savedSuccess = ref(false)
 const localConfig = ref(enginesStore.settings?.steward ? { ...enginesStore.settings.steward } : null)
 
 watch(
@@ -37,10 +39,9 @@ async function save() {
   }
   const ok = await enginesStore.saveSettings(full)
   if (ok) {
-    savedSuccess.value = true
-    setTimeout(() => {
-      savedSuccess.value = false
-    }, 2500)
+    ElMessage.success('助手引擎配置已保存')
+  } else {
+    ElMessage.error(enginesStore.error || '保存助手引擎配置失败')
   }
 }
 </script>
@@ -59,13 +60,7 @@ async function save() {
         </p>
       </div>
       <div class="flex items-center gap-2.5">
-        <span v-if="savedSuccess" class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 select-none">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          配置已保存
-        </span>
-        <UiButton size="sm" :loading="enginesStore.saving" @click="save">保存配置</UiButton>
+        <el-button type="primary" :loading="enginesStore.saving" data-test="save-assistant-engine" @click="save">保存配置</el-button>
       </div>
     </header>
 
@@ -91,19 +86,18 @@ async function save() {
       </div>
 
       <div class="space-y-2">
-        <label class="flex items-start gap-3 p-3.5 rounded border border-border/70 bg-background/60 hover:border-border transition-colors cursor-pointer select-none">
-          <input
-            type="checkbox"
+        <div class="platform-tool-card flex items-start gap-3 p-3.5 rounded border border-border/70 bg-background/60 transition-colors">
+          <el-checkbox
             v-model="localConfig.enablePlatformTools"
-            class="mt-0.5 rounded border-border text-accent focus:ring-0 focus:ring-offset-0 cursor-pointer"
-          />
-          <div class="space-y-1">
-            <div class="text-xs font-medium text-foreground">开启平台管理权限（平台管家模式）</div>
-            <p class="text-xs text-muted-foreground leading-relaxed">
-              允许对话助手调用内置系统级工具读取并管理平台资源（包含检索项目拓扑结构、提示词库读写、角色库查询等）。
-            </p>
-          </div>
-        </label>
+            class="platform-tool-checkbox"
+            data-test="assistant-platform-tools"
+          >
+            <span class="text-xs font-medium text-foreground">开启平台管理权限（平台管家模式）</span>
+          </el-checkbox>
+          <p class="text-xs text-muted-foreground leading-relaxed flex-1 min-w-0 pt-0.5">
+            允许对话助手调用内置系统级工具读取并管理平台资源（包含检索项目拓扑结构、提示词库读写、角色库查询等）。
+          </p>
+        </div>
       </div>
     </section>
 

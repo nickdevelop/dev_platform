@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // Session Coder Engine settings panel.
-// Standard app typography scale (text-xl header, text-sm section, text-xs body).
+// Element Plus migration: `el-button` for the save action; the save result is
+// reported once through `ElMessage` (see also the assistant engine panel).
 import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useEnginesStore } from '../../stores/engines'
-import { UiButton } from '../../shared/ui'
 import EngineStepControl, { type StepPreset } from './EngineStepControl.vue'
 
 const enginesStore = useEnginesStore()
 
-const savedSuccess = ref(false)
 const localConfig = ref(enginesStore.settings?.coder ? { ...enginesStore.settings.coder } : null)
 
 watch(
@@ -37,10 +37,9 @@ async function save() {
   }
   const ok = await enginesStore.saveSettings(full)
   if (ok) {
-    savedSuccess.value = true
-    setTimeout(() => {
-      savedSuccess.value = false
-    }, 2500)
+    ElMessage.success('会话引擎配置已保存')
+  } else {
+    ElMessage.error(enginesStore.error || '保存会话引擎配置失败')
   }
 }
 </script>
@@ -59,13 +58,7 @@ async function save() {
         </p>
       </div>
       <div class="flex items-center gap-2.5">
-        <span v-if="savedSuccess" class="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 select-none">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-          配置已保存
-        </span>
-        <UiButton size="sm" :loading="enginesStore.saving" @click="save">保存配置</UiButton>
+        <el-button type="primary" :loading="enginesStore.saving" data-test="save-coder-engine" @click="save">保存配置</el-button>
       </div>
     </header>
 
