@@ -6,7 +6,7 @@
    re-declared here in terms of the platform's own tokens (`--color-*`,
    `--radius`, `--control-height`, `--text-size-*`, `--font-*`), so:
 
-     - switching between the nine appearance presets re-skins every `el-*`
+     - switching between the twelve appearance presets re-skins every `el-*`
        widget with no per-widget work, because the platform palette is projected
        onto the document root at runtime by `theme/apply.ts` and these
        declarations only *reference* it;
