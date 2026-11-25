@@ -661,7 +661,7 @@ describe('CodeView.vue', () => {
 })
 
 describe('MarkdownArtifactView.vue', () => {
-  it('toggles between preview and source mode', async () => {
+  it('defaults to source mode and toggles to preview mode', async () => {
     const md = '# Header\nThis is **bold** text.'
     const wrapper = mount(MarkdownArtifactView, {
       props: {
@@ -673,20 +673,21 @@ describe('MarkdownArtifactView.vue', () => {
       },
     })
 
-    // Default mode is preview
+    // Default mode is source
+    expect(wrapper.findComponent(CodeView).exists()).toBe(true)
+    expect(wrapper.text()).toContain('# Header')
+    expect(wrapper.find('.markdown-preview-scroll').exists()).toBe(false)
+
+    // Switch to preview mode
+    const previewBtn = wrapper.findAll('.mode-btn').find((b) => b.text().includes('预览'))
+    await previewBtn?.trigger('click')
+
     expect(wrapper.find('.markdown-preview-scroll').exists()).toBe(true)
     expect(wrapper.html()).toContain('<h1>Header</h1>')
     expect(wrapper.html()).toContain('<strong>bold</strong>')
-
-    // Switch to source mode
-    const sourceBtn = wrapper.findAll('.mode-btn').find((b) => b.text().includes('源码'))
-    await sourceBtn?.trigger('click')
-
-    expect(wrapper.findComponent(CodeView).exists()).toBe(true)
-    expect(wrapper.text()).toContain('# Header')
   })
 
-  it('rewrites relative image sources to raw files API', () => {
+  it('rewrites relative image sources to raw files API', async () => {
     const md = '![diagram](./assets/arch.png)'
     const wrapper = mount(MarkdownArtifactView, {
       props: {
@@ -695,6 +696,9 @@ describe('MarkdownArtifactView.vue', () => {
         content: md,
       },
     })
+
+    const previewBtn = wrapper.findAll('.mode-btn').find((b) => b.text().includes('预览'))
+    await previewBtn?.trigger('click')
 
     const img = wrapper.find('img.markdown-image')
     expect(img.exists()).toBe(true)
@@ -712,6 +716,9 @@ describe('MarkdownArtifactView.vue', () => {
         content: md,
       },
     })
+
+    const previewBtn = wrapper.findAll('.mode-btn').find((b) => b.text().includes('预览'))
+    await previewBtn?.trigger('click')
 
     const link = wrapper.find('a')
     expect(link.exists()).toBe(true)

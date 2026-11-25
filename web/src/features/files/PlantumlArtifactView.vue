@@ -18,16 +18,21 @@ const props = defineProps<{
   content: string
   fileSize?: number
   lines?: number
+  editable?: boolean
+  saving?: boolean
+  saveError?: string
 }>()
 
 const emit = defineEmits<{
   'add-comment': [card: CodeCommentCard]
+  save: [content: string]
+  'dirty-change': [dirty: boolean]
 }>()
 
 const settings = useSettingsStore()
 const dark = computed(() => isDarkTheme(settings.appearance.theme))
 
-const mode = ref<'preview' | 'source'>('preview')
+const mode = ref<'preview' | 'source'>('source')
 const state = ref<'rendering' | 'ready' | 'failed'>('rendering')
 const svg = ref('')
 const reason = ref('')
@@ -60,7 +65,6 @@ async function draw(): Promise<void> {
     svg.value = result.svg
     reason.value = ''
     state.value = 'ready'
-    mode.value = 'preview'
   } else {
     svg.value = ''
     reason.value = result.reason
@@ -120,7 +124,12 @@ watch(
         v-if="mode === 'source'"
         :content="props.content"
         :file-path="props.filePath"
+        :editable="props.editable"
+        :saving="props.saving"
+        :save-error="props.saveError"
         @add-comment="emit('add-comment', $event)"
+        @save="emit('save', $event)"
+        @dirty-change="emit('dirty-change', $event)"
       />
     </div>
 

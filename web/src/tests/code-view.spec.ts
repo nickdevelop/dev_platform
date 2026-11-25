@@ -258,4 +258,39 @@ describe('CodeView', () => {
 
     wrapper.unmount()
   })
+
+  it('supports direct editing, saving, and dirty discard confirmation', async () => {
+    const wrapper = mount(CodeView, {
+      props: {
+        content: 'const x = 1',
+        filePath: 'app.ts',
+        editable: true,
+      },
+    })
+
+    const editBtn = wrapper.find('[data-test="code-edit-btn"]')
+    expect(editBtn.exists()).toBe(true)
+    await editBtn.trigger('click')
+
+    const textarea = wrapper.find('[data-test="code-editor-textarea"]')
+    expect(textarea.exists()).toBe(true)
+    await textarea.setValue('const x = 42')
+
+    expect(wrapper.find('[data-test="code-dirty-badge"]').exists()).toBe(true)
+    expect(wrapper.emitted('dirty-change')?.slice(-1)[0]).toEqual([true])
+
+    await wrapper.find('[data-test="code-save-btn"]').trigger('click')
+    expect(wrapper.emitted('save')?.[0]).toEqual(['const x = 42'])
+
+    // Simulate parent updating content after save
+    await wrapper.setProps({ content: 'const x = 42' })
+    expect(wrapper.find('[data-test="code-dirty-badge"]').exists()).toBe(false)
+
+    // Modify again and test cancel confirmation dialog
+    await textarea.setValue('const x = 99')
+    await wrapper.find('[data-test="code-cancel-btn"]').trigger('click')
+    expect(wrapper.text()).toContain('放弃未保存的修改')
+
+    wrapper.unmount()
+  })
 })

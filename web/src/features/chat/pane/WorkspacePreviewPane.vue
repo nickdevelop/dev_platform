@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { FileSidebar, FileViewer } from '../../files'
 import type { CodeCommentCard } from '../../files/types'
 
@@ -40,6 +41,18 @@ const emit = defineEmits<{
   'open-file-preview': [filePath: string]
   'add-comment': [card: CodeCommentCard]
 }>()
+
+const dirtyPaths = ref<Record<string, boolean>>({})
+
+function handleDirtyChange(path: string, dirty: boolean) {
+  if (dirty) {
+    dirtyPaths.value = { ...dirtyPaths.value, [path]: true }
+  } else {
+    const next = { ...dirtyPaths.value }
+    delete next[path]
+    dirtyPaths.value = next
+  }
+}
 </script>
 
 <template>
@@ -96,6 +109,12 @@ const emit = defineEmits<{
             @mousedown.middle.prevent="emit('close-tab', fileTab.path, $event)"
           >
             <span class="file-tab-name">{{ fileTab.name }}</span>
+            <span
+              v-if="dirtyPaths[fileTab.path]"
+              class="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 ml-1 shrink-0"
+              title="有未保存修改"
+              data-test="tab-dirty-dot"
+            ></span>
             <span
               v-if="fileTab.mode === 'diff'"
               class="tab-diff-badge text-2xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-medium ml-1"
@@ -168,6 +187,7 @@ const emit = defineEmits<{
             :initial-line="currentActivePreviewFile?.initialLine"
             @select="emit('open-file-preview', $event)"
             @add-comment="emit('add-comment', $event)"
+            @dirty-change="handleDirtyChange"
           />
         </div>
       </div>

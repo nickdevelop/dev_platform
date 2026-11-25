@@ -36,6 +36,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter, uploadRouter ...gin.IRouter) {
 	r.GET("/projects/:id/files/search-content", s.handleSearchFileContent)
 	r.GET("/projects/:id/files/tree", s.handleFileTree)
 	r.GET("/projects/:id/files/content", s.handleFileContent)
+	r.PUT("/projects/:id/files/content", s.handleUpdateFileContent)
 	r.GET("/projects/:id/files/raw", s.handleFileRaw)
 	r.GET("/projects/:id/files/download", s.handleFileDownload)
 
@@ -521,6 +522,38 @@ func (s *Service) handleFileContent(c *gin.Context) {
 		return
 	}
 	resp, err := s.ReadFileContent(c.Request.Context(), id, filePath, worktreeID)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+type updateFileContentRequest struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// handleUpdateFileContent updates an existing text file inside the project workspace.
+func (s *Service) handleUpdateFileContent(c *gin.Context) {
+	id, ok := projectID(c)
+	if !ok {
+		return
+	}
+	worktreeID, ok := optionalWorktreeID(c)
+	if !ok {
+		return
+	}
+	var req updateFileContentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, "invalid_payload")
+		return
+	}
+	if strings.TrimSpace(req.Path) == "" {
+		respondError(c, http.StatusBadRequest, "missing_path")
+		return
+	}
+	resp, err := s.WriteFileContent(c.Request.Context(), id, req.Path, req.Content, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return

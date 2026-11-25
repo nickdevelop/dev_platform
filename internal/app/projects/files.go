@@ -792,6 +792,64 @@ func (s *Service) ReadFileContent(ctx context.Context, projectID uint, relPath s
 	return res, nil
 }
 
+// WriteFileContent safely overwrites an existing text file inside the project workspace
+// (or worktree) and returns the updated inspection metadata. External allowlisted paths
+// and .git metadata paths are strictly rejected.
+func (s *Service) WriteFileContent(ctx context.Context, projectID uint, relPath string, content string, worktreeID ...uint) (*FileContentResponse, error) {
+	if strings.ContainsRune(relPath, 0) {
+		return nil, ErrInvalidTarget
+	}
+
+	rootDir, err := s.workspaceRoot(projectID, worktreeID...)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanRel, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Reject external paths (resolveProjectSafePath allows reading e.g. /tmp, but writing
+	// must stay strictly inside the project/worktree root).
+	relCheck, err := filepath.Rel(rootDir, fullPath)
+	if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) || filepath.IsAbs(relCheck) {
+		return nil, ErrPathEscaped
+	}
+
+	// Reject .git metadata directory writes
+	slashRel := filepath.ToSlash(relCheck)
+	if slashRel == ".git" || strings.HasPrefix(slashRel, ".git/") {
+		return nil, ErrPathEscaped
+	}
+
+	// Reject symlink targets escaping the project root
+	if canonical, cErr := filepath.EvalSymlinks(fullPath); cErr == nil {
+		canRel, rErr := filepath.Rel(rootDir, canonical)
+		if rErr != nil || canRel == ".." || strings.HasPrefix(canRel, ".."+string(filepath.Separator)) {
+			return nil, ErrPathEscaped
+		}
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, ErrInvalidTarget
+	}
+
+	perm := info.Mode().Perm()
+	if perm == 0 {
+		perm = 0o644
+	}
+	if err := os.WriteFile(fullPath, []byte(content), perm); err != nil {
+		return nil, err
+	}
+
+	return s.ReadFileContent(ctx, projectID, cleanRel, worktreeID...)
+}
+
 // ReadFileRaw opens the file for streaming raw content (e.g. for previewing images/media).
 func (s *Service) ReadFileRaw(ctx context.Context, projectID uint, relPath string, worktreeID ...uint) (io.ReadCloser, string, int64, error) {
 	_, fullPath, err := s.resolveProjectSafePath(projectID, relPath, worktreeID...)

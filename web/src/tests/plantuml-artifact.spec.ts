@@ -24,7 +24,7 @@ describe('PlantumlArtifactView', () => {
     configureEngineLoader(null)
   })
 
-  it('draws the file by default and wraps a bare diagram body in its markers', async () => {
+  it('defaults to source mode and draws when switched to preview with wrapped markers', async () => {
     const seen: string[][] = []
     configureEngineLoader(
       fakeEngine((lines) => {
@@ -38,6 +38,10 @@ describe('PlantumlArtifactView', () => {
     await flushPromises()
 
     expect(seen[0].join('\n')).toContain('@startuml\nA -> B: hi\n@enduml')
+    expect(wrapper.find('[data-test="code-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="plantuml-artifact-canvas"]').exists()).toBe(false)
+
+    await wrapper.findAll('.mode-btn')[0].trigger('click')
     expect(wrapper.find('[data-test="plantuml-artifact-canvas"] svg').exists()).toBe(true)
     expect(wrapper.find('[data-test="plantuml-artifact-error"]').exists()).toBe(false)
   })
@@ -101,6 +105,9 @@ describe('PlantumlArtifactView', () => {
     await flushPromises()
 
     expect(wrapper.findComponent(PlantumlArtifactView).exists()).toBe(true)
+    expect(wrapper.find('[data-test="code-view"]').exists()).toBe(true)
+
+    await wrapper.findAll('.mode-btn')[0].trigger('click')
     expect(wrapper.find('[data-test="plantuml-artifact-canvas"] svg').exists()).toBe(true)
 
     // Forward add-comment event from PlantumlArtifactView through FileViewer

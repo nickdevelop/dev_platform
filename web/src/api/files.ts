@@ -45,6 +45,20 @@ export function getFileContent(
   return get<FileContentResponse>(`/projects/${projectId}/files/content?${params.toString()}`)
 }
 
+export function updateFileContent(
+  projectId: number,
+  path: string,
+  content: string,
+  worktreeId?: number,
+): Promise<FileContentResponse> {
+  const params = withWorktree(new URLSearchParams(), worktreeId)
+  const query = params.toString() ? `?${params.toString()}` : ''
+  return mutate<FileContentResponse>('PUT', `/projects/${projectId}/files/content${query}`, {
+    path,
+    content,
+  })
+}
+
 export function getFileRawUrl(projectId: number, path: string, worktreeId?: number): string {
   const params = withWorktree(new URLSearchParams({ path }), worktreeId)
   return `/api/projects/${projectId}/files/raw?${params.toString()}`

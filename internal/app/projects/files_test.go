@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -921,5 +922,102 @@ func TestFileUploadDownloadDelete(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("delete path escape status = %d, want 400", w.Code)
+	}
+}
+
+func TestWriteFileContentAndHandler(t *testing.T) {
+	svc, _, root, _ := newTestService(t)
+	ctx := context.Background()
+
+	dir := filepath.Join(root, "write-test")
+	mustMkdir(t, dir)
+	p, err := svc.Register(dir)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	id := p.ID
+
+	// Prepare files
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("write main.go: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("[core]\n"), 0o644); err != nil {
+		t.Fatalf("write .git/config: %v", err)
+	}
+	extFile, err := os.CreateTemp("", "devplatform-ext-*.txt")
+	if err != nil {
+		t.Fatalf("create temp file: %v", err)
+	}
+	extPath := extFile.Name()
+	_, _ = extFile.WriteString("external")
+	_ = extFile.Close()
+	t.Cleanup(func() { _ = os.Remove(extPath) })
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	svc.RegisterRoutes(r)
+
+	pid := strconv.FormatUint(uint64(id), 10)
+
+	// 1. Update existing workspace file via PUT /projects/:id/files/content
+	payload := `{"path":"main.go","content":"package main\n\nfunc main() {}\n"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/projects/"+pid+"/files/content", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("update status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	var resp FileContentResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Path != "main.go" || resp.Lines != 3 || resp.Content != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+
+	diskBytes, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		t.Fatalf("read updated file: %v", err)
+	}
+	if string(diskBytes) != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("disk content mismatch: %q", string(diskBytes))
+	}
+
+	// 2. Reject .git metadata write
+	if _, err := svc.WriteFileContent(ctx, id, ".git/config", "hacked"); !errors.Is(err, ErrPathEscaped) {
+		t.Fatalf("expected ErrPathEscaped for .git write, got %v", err)
+	}
+
+	// 3. Reject external allowlisted path write (/tmp)
+	if _, err := svc.WriteFileContent(ctx, id, extPath, "hacked"); !errors.Is(err, ErrPathEscaped) {
+		t.Fatalf("expected ErrPathEscaped for external path write, got %v", err)
+	}
+
+	// 4. Reject path traversal
+	if _, err := svc.WriteFileContent(ctx, id, "../../outside.txt", "hacked"); !errors.Is(err, ErrPathEscaped) {
+		t.Fatalf("expected ErrPathEscaped for traversal, got %v", err)
+	}
+
+	// 5. Reject missing path in HTTP handler
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/projects/"+pid+"/files/content", strings.NewReader(`{"path":"","content":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("missing path status = %d, want 400", w.Code)
+	}
+
+	// 6. Reject non-existent file
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/projects/"+pid+"/files/content", strings.NewReader(`{"path":"no-such-file.go","content":"x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("non-existent file status = %d, want 404", w.Code)
 	}
 }

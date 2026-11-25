@@ -11,7 +11,7 @@ describe('MarkdownArtifactView', () => {
     configureMermaidEngine(null)
   })
 
-  it('renders markdown text and highlighted code block', async () => {
+  it('renders markdown text and highlighted code block when switched to preview', async () => {
     const md = '# 标题\n\n```typescript\nconst message = "hello";\n```'
     const wrapper = mount(MarkdownArtifactView, {
       props: {
@@ -21,6 +21,10 @@ describe('MarkdownArtifactView', () => {
       },
     })
     await flushPromises()
+
+    expect(wrapper.find('[data-test="code-view"]').exists()).toBe(true)
+    const previewBtn = wrapper.findAll('.mode-btn').find((btn) => btn.text().includes('预览'))
+    await previewBtn?.trigger('click')
 
     const preview = wrapper.find('[data-test="markdown-preview"]')
     expect(preview.exists()).toBe(true)
@@ -41,11 +45,15 @@ describe('MarkdownArtifactView', () => {
     })
     await flushPromises()
 
+    const previewBtn = wrapper.findAll('.mode-btn').find((btn) => btn.text().includes('预览'))
+    await previewBtn?.trigger('click')
+    await flushPromises()
+
     expect(wrapper.find('[data-test="mermaid-block"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="mermaid-canvas"]').html()).toContain('rendered-mermaid')
   })
 
-  it('switches to source mode and renders CodeView', async () => {
+  it('defaults to source mode and renders CodeView', async () => {
     const md = '# 纯文本'
     const wrapper = mount(MarkdownArtifactView, {
       props: {
@@ -56,11 +64,8 @@ describe('MarkdownArtifactView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[data-test="code-view"]').exists()).toBe(false)
-    const sourceBtn = wrapper.findAll('.mode-btn').find((btn) => btn.text().includes('源码'))
-    await sourceBtn?.trigger('click')
-
     expect(wrapper.find('[data-test="code-view"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="markdown-preview"]').exists()).toBe(false)
 
     // Forward add-comment event from CodeView
     const codeView = wrapper.findComponent({ name: 'CodeView' })

@@ -12,10 +12,15 @@ const props = defineProps<{
   fileSize?: number
   lines?: number
   worktreeId?: number
+  editable?: boolean
+  saving?: boolean
+  saveError?: string
 }>()
 
 const emit = defineEmits<{
   'add-comment': [card: CodeCommentCard]
+  save: [content: string]
+  'dirty-change': [dirty: boolean]
 }>()
 
 const isModalVisible = ref(false)
@@ -96,7 +101,12 @@ async function openInBrowserModal() {
       <CodeView
         :content="props.content"
         :file-path="props.filePath"
+        :editable="props.editable"
+        :saving="props.saving"
+        :save-error="props.saveError"
         @add-comment="emit('add-comment', $event)"
+        @save="emit('save', $event)"
+        @dirty-change="emit('dirty-change', $event)"
       />
     </div>
 

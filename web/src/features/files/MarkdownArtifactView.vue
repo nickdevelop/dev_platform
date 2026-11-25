@@ -19,14 +19,19 @@ const props = defineProps<{
   content: string
   fileSize?: number
   lines?: number
+  editable?: boolean
+  saving?: boolean
+  saveError?: string
 }>()
 
 const emit = defineEmits<{
   'open-file': [path: string]
   'add-comment': [card: CodeCommentCard]
+  save: [content: string]
+  'dirty-change': [dirty: boolean]
 }>()
 
-const mode = ref<'preview' | 'source'>('preview')
+const mode = ref<'preview' | 'source'>('source')
 
 const segments = computed(() => {
   if (!props.content) return []
@@ -127,7 +132,12 @@ async function onPreviewClick(event: MouseEvent) {
         v-if="mode === 'source'"
         :content="props.content"
         :file-path="props.filePath"
+        :editable="props.editable"
+        :saving="props.saving"
+        :save-error="props.saveError"
         @add-comment="emit('add-comment', $event)"
+        @save="emit('save', $event)"
+        @dirty-change="emit('dirty-change', $event)"
       />
 
       <div

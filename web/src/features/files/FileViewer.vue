@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getFileContent, getFileRawUrl } from '../../api/files'
+import { getFileContent, getFileRawUrl, updateFileContent } from '../../api/files'
 import type { CodeCommentCard, FileContentResponse, FileTab } from './types'
 import CodeView from './CodeView.vue'
 import MarkdownArtifactView from './MarkdownArtifactView.vue'
@@ -30,6 +30,8 @@ const emit = defineEmits<{
   select: [path: string, options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }]
   close: [path: string]
   'add-comment': [card: CodeCommentCard]
+  'dirty-change': [path: string, dirty: boolean]
+  'file-saved': [file: FileContentResponse]
 }>()
 
 const tabs = ref<FileTab[]>([])
@@ -37,6 +39,8 @@ const activeTabPath = ref<string>('')
 const loading = ref(false)
 const error = ref('')
 const fileData = ref<FileContentResponse | null>(null)
+const saving = ref(false)
+const saveError = ref('')
 
 function getFileName(filePath: string): string {
   const parts = filePath.replace(/\\/g, '/').split('/')
@@ -130,6 +134,7 @@ async function loadCurrentFile() {
   }
   loading.value = true
   error.value = ''
+  saveError.value = ''
   try {
     const data = await getFileContent(projId, currentPath, props.worktreeId)
     fileData.value = data
@@ -157,6 +162,39 @@ const isEmpty = computed(() => {
   }
   return tabs.value.length === 0
 })
+
+const isEditable = computed(() => {
+  if (!fileData.value || isDiffMode.value) return false
+  if (fileData.value.isBinary || fileData.value.truncated) return false
+  return currentFileType.value !== 'image'
+})
+
+const readonlyReason = computed(() =>
+  fileData.value?.truncated ? '文件超过 5MB，仅支持只读预览' : '',
+)
+
+async function handleSaveFile(newContent: string) {
+  const projId = props.projectId
+  const currentPath = activeTabPath.value
+  if (!projId || !currentPath || saving.value) return
+  saving.value = true
+  saveError.value = ''
+  try {
+    const updated = await updateFileContent(projId, currentPath, newContent, props.worktreeId)
+    fileData.value = updated
+    emit('dirty-change', currentPath, false)
+    emit('file-saved', updated)
+  } catch (err) {
+    saveError.value = err instanceof Error ? err.message : '保存文件失败'
+  } finally {
+    saving.value = false
+  }
+}
+
+function handleDirtyChange(dirty: boolean) {
+  if (!activeTabPath.value) return
+  emit('dirty-change', activeTabPath.value, dirty)
+}
 
 const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'binary' | 'code'>(() => {
   if (!activeTabPath.value) return 'code'
@@ -251,18 +289,28 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-size="fileData.size"
           :lines="fileData.lines"
+          :editable="isEditable"
+          :saving="saving"
+          :save-error="saveError"
           @open-file="openTab"
           @add-comment="emit('add-comment', $event)"
+          @save="handleSaveFile"
+          @dirty-change="handleDirtyChange"
         />
 
-        <!-- PlantUML view: the drawing by default, the source one toggle away -->
+        <!-- PlantUML view: source by default, drawing one toggle away -->
         <PlantumlArtifactView
           v-else-if="currentFileType === 'plantuml'"
           :file-path="activeTabPath"
           :content="fileData.content || ''"
           :file-size="fileData.size"
           :lines="fileData.lines"
+          :editable="isEditable"
+          :saving="saving"
+          :save-error="saveError"
           @add-comment="emit('add-comment', $event)"
+          @save="handleSaveFile"
+          @dirty-change="handleDirtyChange"
         />
 
         <!-- HTML view -->
@@ -274,7 +322,12 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-size="fileData.size"
           :lines="fileData.lines"
+          :editable="isEditable"
+          :saving="saving"
+          :save-error="saveError"
           @add-comment="emit('add-comment', $event)"
+          @save="handleSaveFile"
+          @dirty-change="handleDirtyChange"
         />
 
         <!-- Image view -->
@@ -304,7 +357,13 @@ const currentFileType = computed<'markdown' | 'html' | 'image' | 'plantuml' | 'b
           :content="fileData.content || ''"
           :file-path="activeTabPath"
           :initial-line="props.initialLine"
+          :editable="isEditable"
+          :saving="saving"
+          :save-error="saveError"
+          :readonly-reason="readonlyReason"
           @add-comment="emit('add-comment', $event)"
+          @save="handleSaveFile"
+          @dirty-change="handleDirtyChange"
         />
       </template>
     </div>

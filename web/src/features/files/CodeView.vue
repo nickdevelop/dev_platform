@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { highlightCode, splitHighlightedHtmlIntoLines } from '../../shared/highlight'
+import { UiConfirmDialog } from '../../shared/ui'
 import type { CodeCommentCard } from './types'
 
 const props = withDefaults(
@@ -9,14 +10,24 @@ const props = withDefaults(
     filePath?: string
     showLineNumbers?: boolean
     initialLine?: number
+    editable?: boolean
+    saving?: boolean
+    saveError?: string
+    readonlyReason?: string
   }>(),
   {
     showLineNumbers: true,
+    editable: false,
+    saving: false,
+    saveError: '',
+    readonlyReason: '',
   },
 )
 
 const emit = defineEmits<{
   'add-comment': [card: CodeCommentCard]
+  save: [content: string]
+  'dirty-change': [dirty: boolean]
 }>()
 
 const searchVisible = ref(false)
@@ -32,6 +43,98 @@ const focusedLineNumber = ref<number | null>(null)
 const codeContainerRef = ref<HTMLElement | null>(null)
 const copied = ref(false)
 const wrapLines = ref(true)
+
+// Direct file editing state
+const isEditing = ref(false)
+const draftContent = ref(props.content)
+const discardConfirmOpen = ref(false)
+const editorTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const editorGutterRef = ref<HTMLElement | null>(null)
+
+const isDirty = computed(() => isEditing.value && draftContent.value !== props.content)
+const draftLines = computed(() => (draftContent.value ? draftContent.value.split('\n') : ['']))
+
+watch(isDirty, (dirty) => {
+  emit('dirty-change', dirty)
+})
+
+watch(
+  () => props.filePath,
+  () => {
+    isEditing.value = false
+    discardConfirmOpen.value = false
+    draftContent.value = props.content
+    emit('dirty-change', false)
+  },
+)
+
+watch(
+  () => props.content,
+  (nextContent) => {
+    if (!isEditing.value) {
+      draftContent.value = nextContent
+    }
+  },
+)
+
+function startEditing() {
+  if (!props.editable) return
+  draftContent.value = props.content
+  isEditing.value = true
+  searchVisible.value = false
+  gotoLineVisible.value = false
+  closeInlineCommentEditor()
+  void nextTick(() => {
+    editorTextareaRef.value?.focus()
+  })
+}
+
+function requestExitEditing() {
+  if (props.saving) return
+  if (isDirty.value) {
+    discardConfirmOpen.value = true
+    return
+  }
+  confirmDiscardAndExit()
+}
+
+function confirmDiscardAndExit() {
+  discardConfirmOpen.value = false
+  isEditing.value = false
+  draftContent.value = props.content
+  emit('dirty-change', false)
+}
+
+function saveEdits() {
+  if (!isEditing.value || props.saving) return
+  emit('save', draftContent.value)
+}
+
+function syncEditorScroll() {
+  if (editorGutterRef.value && editorTextareaRef.value) {
+    editorGutterRef.value.scrollTop = editorTextareaRef.value.scrollTop
+  }
+}
+
+function onEditorKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    saveEdits()
+    return
+  }
+  if (e.key === 'Tab') {
+    e.preventDefault()
+    const el = editorTextareaRef.value
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const val = draftContent.value
+    draftContent.value = `${val.slice(0, start)}  ${val.slice(end)}`
+    void nextTick(() => {
+      el.selectionStart = el.selectionEnd = start + 2
+    })
+  }
+}
 
 const lines = computed(() => {
   if (!props.content) return []
@@ -239,6 +342,13 @@ function scrollToCurrentMatch() {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (isEditing.value) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      saveEdits()
+    }
+    return
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
     e.preventDefault()
     toggleSearch()
@@ -503,6 +613,50 @@ onUnmounted(() => {
 
     <!-- Quick action buttons -->
     <div class="code-actions">
+      <span
+        v-if="props.readonlyReason && !isEditing"
+        class="readonly-badge"
+        :title="props.readonlyReason"
+        data-test="code-readonly-badge"
+      >
+        只读
+      </span>
+      <button
+        v-if="props.editable && !isEditing"
+        type="button"
+        class="action-btn"
+        title="直接编辑文件"
+        data-test="code-edit-btn"
+        @click="startEditing"
+      >
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6">
+          <path d="M11.5 2.5a1.5 1.5 0 0 1 2.1 2.1L5.2 13l-2.9.7.7-2.9 8.5-8.3z" />
+        </svg>
+        <span>编辑</span>
+      </button>
+      <template v-if="isEditing">
+        <span v-if="isDirty" class="dirty-badge" data-test="code-dirty-badge">未保存</span>
+        <button
+          type="button"
+          class="action-btn is-primary"
+          :disabled="props.saving || !isDirty"
+          title="保存修改 (Ctrl+S)"
+          data-test="code-save-btn"
+          @click="saveEdits"
+        >
+          <span>{{ props.saving ? '保存中…' : '保存' }}</span>
+        </button>
+        <button
+          type="button"
+          class="action-btn"
+          :disabled="props.saving"
+          title="退出编辑"
+          data-test="code-cancel-btn"
+          @click="requestExitEditing"
+        >
+          <span>退出</span>
+        </button>
+      </template>
       <button
         type="button"
         class="action-btn"
@@ -519,8 +673,35 @@ onUnmounted(() => {
       </button>
     </div>
 
+    <div v-if="isEditing && props.saveError" class="save-error-banner" role="alert" data-test="code-save-error">
+      {{ props.saveError }}
+    </div>
+
+    <!-- Direct Editor mode -->
+    <div v-if="isEditing" class="code-editor-wrap" data-test="code-editor-wrap">
+      <div
+        v-if="props.showLineNumbers"
+        ref="editorGutterRef"
+        class="editor-gutter"
+        aria-hidden="true"
+      >
+        <div v-for="n in draftLines.length" :key="n" class="editor-gutter-line">{{ n }}</div>
+      </div>
+      <textarea
+        ref="editorTextareaRef"
+        v-model="draftContent"
+        class="code-editor-textarea"
+        :class="{ 'is-wrapped': wrapLines }"
+        data-test="code-editor-textarea"
+        spellcheck="false"
+        @scroll="syncEditorScroll"
+        @keydown="onEditorKeydown"
+      ></textarea>
+    </div>
+
     <!-- Code rows with line numbers -->
     <div
+      v-else
       ref="codeContainerRef"
       class="code-scroller"
       data-test="code-scroller"
@@ -630,6 +811,17 @@ onUnmounted(() => {
         </template>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="discardConfirmOpen"
+      title="放弃未保存的修改"
+      message="当前文件有尚未保存的修改，确定要放弃这些修改并退出编辑吗？"
+      confirm-label="放弃修改"
+      cancel-label="继续编辑"
+      variant="danger"
+      @close="discardConfirmOpen = false"
+      @confirm="confirmDiscardAndExit"
+    />
   </div>
 </template>
 
@@ -1062,5 +1254,104 @@ onUnmounted(() => {
   background-color: var(--color-primary-soft, rgba(59, 130, 246, 0.2));
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.action-btn.is-primary {
+  background: var(--color-accent, #4a8ad6);
+  border-color: var(--color-accent, #4a8ad6);
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.action-btn.is-primary:hover:not(:disabled) {
+  opacity: 0.92;
+  color: #ffffff;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.readonly-badge,
+.dirty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: var(--text-size-meta);
+  font-family: var(--font-family);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+}
+
+.dirty-badge {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.save-error-banner {
+  padding: 6px 12px;
+  font-size: var(--text-size-12, 12px);
+  font-family: var(--font-family);
+  color: var(--color-danger, #b91c1c);
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-danger-border, #fca5a5);
+  flex-shrink: 0;
+}
+
+.code-editor-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  background: var(--color-surface, #ffffff);
+}
+
+.editor-gutter {
+  flex-shrink: 0;
+  width: 48px;
+  padding: 10px 8px 24px 6px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 22px;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted, #f8fafc);
+  border-right: 1px solid var(--color-border, #e3e6eb);
+  overflow: hidden;
+  user-select: none;
+}
+
+.editor-gutter-line {
+  height: 22px;
+  line-height: 22px;
+}
+
+.code-editor-textarea {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 10px 14px 24px 12px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 22px;
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+
+.code-editor-textarea.is-wrapped {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
