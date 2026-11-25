@@ -1,7 +1,7 @@
 // Tests for the model settings section: it renders services/models, fetches
 // candidate models from a service, and runs a model test.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ModelSettings from '../features/settings/ModelSettings.vue'
 import { useAuthStore } from '../stores/auth'
@@ -66,7 +66,12 @@ async function mountView() {
   return wrapper
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+// el-message-box 挂在 body 上，不自动卸载会串到下一个用例。
+enableAutoUnmount(afterEach)
 
 describe('ModelSettings', () => {
   it('renders services and their models', async () => {
@@ -112,13 +117,18 @@ describe('ModelSettings', () => {
     const calls = stubFetch()
     const wrapper = await mountView()
 
-    const deleteBtn = wrapper.findAll('.service-actions button').find((btn) => btn.text() === '删除')
-    expect(deleteBtn?.exists()).toBe(true)
-    await deleteBtn!.trigger('click')
-    expect(wrapper.text()).toContain('确定要删除服务「Local」吗？')
+    const deleteBtn = wrapper.find('[data-test="btn-delete-service-1"]')
+    expect(deleteBtn.exists()).toBe(true)
+    await deleteBtn.trigger('click')
+    // ElMessageBox 挂在 document 上，不在组件树里。
+    expect(document.body.textContent).toContain('确定要删除服务「Local」吗？')
     expect(calls.some((c) => c.method === 'DELETE')).toBe(false)
 
-    await wrapper.find('[data-test="confirm-accept-btn"]').trigger('click')
+    const confirm = Array.from(document.querySelectorAll<HTMLElement>('.el-message-box__btns button')).find(
+      (btn) => btn.textContent?.trim() === '删除',
+    )
+    expect(confirm).toBeDefined()
+    confirm?.click()
     await flushPromises()
     expect(calls.some((c) => c.method === 'DELETE' && c.path === '/model-services/1')).toBe(true)
   })

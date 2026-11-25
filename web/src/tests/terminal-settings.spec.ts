@@ -1,12 +1,16 @@
 // Unit tests for TerminalSettingsView.vue
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import TerminalSettingsView from '../features/settings/TerminalSettingsView.vue'
 import { useTerminalStore } from '../stores/terminal'
 import { useProjectTerminalStore } from '../stores/projectTerminal'
 import { useAuthStore } from '../stores/auth'
 import { installTestCSRF } from './csrf-fixture'
+
+// el-select / ElMessageBox 的内容是 Teleport 到 body 的，VTU 不会自动卸载组件，
+// 上一个用例留下的浮层会被下一个用例的 document 查询捞到（点了没反应）。
+enableAutoUnmount(afterEach)
 
 describe('TerminalSettingsView Component', () => {
   beforeEach(() => {
@@ -162,7 +166,7 @@ describe('TerminalSettingsView Component', () => {
   it('renders local environment and remote server list', async () => {
     const { wrapper } = await mountView(true)
 
-    expect(wrapper.text()).toContain('终端服务器设置')
+    expect(wrapper.text()).toContain('终端服务器')
     expect(wrapper.text()).toContain('本地宿主环境')
     expect(wrapper.text()).toContain('生产服务器')
     expect(wrapper.find('[data-test="create-server-btn"]').exists()).toBe(true)
@@ -219,11 +223,13 @@ describe('TerminalSettingsView Component', () => {
     await deleteBtn.trigger('click')
     await flushPromises()
 
-    expect(wrapper.findComponent({ name: 'UiConfirmDialog' }).exists()).toBe(true)
-
-    // Confirm delete
-    const confirmDialog = wrapper.findComponent({ name: 'UiConfirmDialog' })
-    confirmDialog.vm.$emit('confirm')
+    // ElMessageBox 挂在 document 上，不在组件树里。
+    expect(document.body.textContent).toContain('确定要删除服务器「生产服务器」吗？')
+    const confirm = Array.from(document.querySelectorAll<HTMLElement>('.el-message-box__btns button')).find(
+      (btn) => btn.textContent?.trim() === '删除',
+    )
+    expect(confirm).toBeDefined()
+    confirm?.click()
     await flushPromises()
 
     expect(terminalStore.servers.some((s) => s.id === 1)).toBe(false)
@@ -233,7 +239,7 @@ describe('TerminalSettingsView Component', () => {
     const { wrapper, terminalStore } = await mountView(true)
 
     // Check initial shell summary
-    expect(wrapper.text()).toContain('当前生效 Shell：')
+    expect(wrapper.text()).toContain('当前生效 Shell')
     expect(wrapper.text()).toContain('bash')
 
     // Click scan shells button
@@ -267,17 +273,23 @@ describe('TerminalSettingsView Component', () => {
   it('renders terminal font settings and allows choosing preset, saving custom font, and resetting', async () => {
     const { wrapper, terminalStore } = await mountView(true)
 
-    expect(wrapper.text()).toContain('终端字体设置')
+    expect(wrapper.text()).toContain('终端字体')
     expect(wrapper.text()).toContain('平台统一字体')
 
     const fontInput = wrapper.find<HTMLInputElement>('[data-test="terminal-font-input"]')
     expect(fontInput.exists()).toBe(true)
     expect(fontInput.element.value).toBe('')
 
-    // Click JetBrains Mono preset
-    const jbPreset = wrapper.find('[data-test="font-preset-JetBrains Mono"]')
-    expect(jbPreset.exists()).toBe(true)
-    await jbPreset.trigger('click')
+    // 预设现在是一个 el-select（枚举值就该用下拉，八个手绘 chip 会横向溢出）：
+    // 点开浮层再选项，浮层挂在 document 上。
+    await wrapper.find('.el-select__wrapper').trigger('click')
+    await flushPromises()
+    const option = Array.from(document.querySelectorAll<HTMLElement>('.el-select-dropdown__item')).find((el) =>
+      el.textContent?.includes('JetBrains Mono'),
+    )
+    expect(option).toBeDefined()
+    option?.click()
+    await flushPromises()
     expect(fontInput.element.value).toBe('JetBrains Mono')
 
     // Save font
@@ -285,7 +297,8 @@ describe('TerminalSettingsView Component', () => {
     await saveFontBtn.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已成功保存自定义终端字体: JetBrains Mono')
+    // 轻提示挂在 body 上（失败与成功都只报一次，不再在表单下面挂返绿字横幅）。
+    expect(document.body.textContent).toContain('已保存自定义终端字体：JetBrains Mono')
     expect(terminalStore.fontFamily).toBe('JetBrains Mono')
     expect(terminalStore.effectiveFontFamily).toBe('"JetBrains Mono", var(--font-mono)')
 
@@ -294,7 +307,7 @@ describe('TerminalSettingsView Component', () => {
     await resetFontBtn.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已恢复平台统一内置字体')
+    expect(document.body.textContent).toContain('已恢复平台统一内置字体')
     expect(terminalStore.fontFamily).toBe('')
     expect(terminalStore.effectiveFontFamily).toBe('var(--font-mono)')
   })

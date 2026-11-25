@@ -85,6 +85,15 @@
 
 ### 布局契约：单列表页与弹窗
 
+> **例外：设置中心画布不是单列表页。** 设置中心六张路由页走居中最宽 1080px 的**滚动画布**
+> （`SettingsView.vue` 的 `.settings-canvas`），页头 + 若干分区卡，而不是铺满视口的三段式：
+> 一张设置页经常并列多个主题（字体 / 本地宿主环境 / 远程服务器），没有一张工具条能兼带它们，
+> 而画布自己滚动，给表格钉 `height="100%"` 会和滚动容器打架。所以设置页用
+> `shared/styles/settings-page.css` 的 `.settings-page-*` / `.settings-panel*` 原语，表格
+> 自然高度、**不分页**；页头右侧可以放页面级动作（与单列表页「页头不放按钮」相反）。
+> 画布里的表格列宽预算见下文《设置中心画布的表格列宽预算》。
+
+
 **单列表页 = 页头 + 主体三段**（`features/organization/prompts/OrgPromptsView.vue` 即范式）：
 
 | 区块 | 内容 | 备注 |
@@ -128,6 +137,13 @@
 | 数据行之间 | `--color-border`（库默认） | 库自带 |
 
 **数据单元格不画竖线**：竖线画进行间会把一行切成碎片，而横向连续正是扫读多列表格的依据。表头 `font-weight: 600`（库默认 400、平台原为 500，在 11px 的 caption 档上撑不住表头与正文的层级）。
+
+**设置中心画布的表格列宽预算＝ 866px**（守卫 `src/tests/settings-table-budget.spec.ts`）：画布扣除
+页面内边距、分区卡内边距与滞动条后，`el-table` 实测只有 **866px** 可用（1365×720、项目栏展开）。
+`el-table` 不会换行：列宽一超预算就出横向滚动条，而 `fixed="right"` 的操作列会**盖在中间的列上面**
+——实测现象是「更新时间列凭空消失」与「状态芯片被削一半」。它在真实浏览器里一眼可见，在单元测试
+里完全隐形（因为标记全都在）。所以：给设置页表格加列之前，先把各列 `width` / `min-width` 加起来，
+守卫会红。参考档位：服务代理八列 854px（130/84/150/130/76/64/120/100），其中时间列 120px + `show-overflow-tooltip`。
 
 页头与节奏的唯一实现是 `shared/styles/list-page.css`：`.list-page-header / .list-page-title / .list-page-desc`（`.list-page-header / .list-page-title / .list-page-desc / .list-page-filter` + 三段式的 `.list-page-panel / .list-panel-toolbar / .list-panel-table / .list-panel-footer`）。标题字号走 `--text-size-20`，**不要在页面里写 Tailwind 的 `text-lg`**（=15.75px，不在 v1 字阶上，且四页各写一份必然漂移）。
 
@@ -188,6 +204,9 @@
 | 图标 | `@element-plus/icons-vue`（`<el-icon>` 包裹） | 仍受 v1「零 Emoji、纯矢量细线条」约束；库内没有的业务符号继续用现有 1.5–1.8px 手绘 SVG |
 | 日期/时间 | `el-date-picker` / `el-time-picker` | 新增即用，不再排期 |
 | 侧栏导航 | `el-menu`（`router` 模式，见 §八） | 子级用 `el-sub-menu` 预留；条目高度 / hover 中性化 / 左缘 accent 标尺三项覆盖已入 token 层 |
+| 设置中心页头与分区卡 | `shared/styles/settings-page.css`（`.settings-page-*` / `.settings-panel*` / `.settings-switch-row` / `.settings-field-hint`） | 六页同一个脸；只放平台自己的类与 token，禁止 `.el-*` / `--el-*` |
+| 成块的互斥选项（主题配色 / 字号 / 渲染引擎） | `el-radio-group` + `el-radio`（卡片式） | 单选卡片高于默认 28px，由 token 层的 `.option-card` 桥接类接管高度与选中描边；业务组件里不写 `.el-radio__label` |
+| 控件里的路径前后缀 | `el-input` 的 `#prefix` / `#suffix` **槽** | **库没有 `prefix` / `suffix` prop**：写成属性会落到原生 `<input>`（那里 `prefix` 是只读 getter），只喷 Vue 警告且前缀永不渲染；样式走 `.path-affix` |
 
 **共享编辑器外壳（`shared/components/EntityFormDialog.vue`）**：所有「新增 / 编辑 X」表单统一用它，不要各页自己搭 `el-dialog` 头部与底栏。它固定：标题 + 一句话职责说明 + 记录号芯片、底栏的快捷键提示（Ctrl+S 保存 · Esc 关闭）与「取消 / 保存」按钮、`Ctrl/Cmd+S` 提交、`saving` 驱动的 loading。分区骨架（01 / 02 编号、hairline 分隔、字段下的说明文字、下拉项右侧次级说明、提示词预览块、开关行、两列栅格）放在 `shared/styles/entity-editor.css`——插槽内容在调用方作用域编译，组件的 scoped 样式够不着，所以与 `sidebar.css` 一样作为共享样式表引入；该文件只允许出现平台自己的类与 token，禁止 `.el-*` / `--el-*`。
 
@@ -232,6 +251,7 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 |---|---|
 | `src/tests/theme-tokens.spec.ts` | 任何 `var(--x)` 必须有定义（含 `--el-*`）；禁硬编码 px 字号；冻结 4px/28px/3px 布局 token |
 | `src/tests/ui-element-boundary.spec.ts` | `features/**` 不得出现 `--el-*`/`.el-*`；`Ui*` 引用数不得高于基线 |
+| `src/tests/settings-table-budget.spec.ts` | 设置中心四张 `el-table` 的列宽总和 ≤ 866px（画布实测可用宽） |
 | `src/tests/native-dialog-guard.spec.ts` | 禁止原生 `confirm/alert`（`ElMessageBox` 不受影响） |
 | `src/tests/template-attribute-guard.spec.ts` | 模板属性名合法性（Electron 132 会抛错的写法） |
 
@@ -276,10 +296,23 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
    - **分页必须写 `size="small"`**：提示词页摘掉 `size` 后条数下拉回到 28px，而页码方块被 token 层钉在 24px，同一条横带两种高度。
    - 实测（1440×900 四页）：工具条 y=80 / 表格 123→868 铺满 / 分页底贴 900、分页带 32px、控件全 24px、字号全 12px、区带线 1px、表头竖线最后一列不画、空态与关键词回显照常、0 pageerror。
 
+10. **设置菜单全量迁完（六张路由页 + 二级导航 + 三个弹窗 + 共享目录浏览器，`Ui*` 棘轮 630 → 343）**：
+   - `SettingsNav` 与 OrgSidebar / EnginesSidebar 同构：`el-menu` router 模式，图标走 `@element-plus/icons-vue`，保留标签 + 职责描述两行与 `data-test="settings-nav"`；
+   - 外观：主题配色与 PlantUML 渲染引擎 → `el-radio-group` 卡片（`.option-card` 桥接类在 token 层接管高度与选中描边），字号 → `el-radio-group` 三档卡片，快捷助手开关 → `el-switch`；
+   - 模型 / 服务代理 / 服务连接 / 终端服务器：列表一律 `el-table`（画布变体：自然高度、不分页），枚举分类走 `entity-chip` 分类轨（静态目录 / 端口反代、本机 / 远端、私钥 / 口令、文本 / 图像 / 工具…），启用 → 行内 `el-switch`，删除 → `ElMessageBox`（danger），结果只报一次 `ElMessage`；
+   - 弹窗：`ProxyEditDialog` / `ServerDialog` → `EntityFormDialog` + `el-form` + `rules`（校验走行内 `prop`，不再把 `actionError` 字符串堆到外壳）；「测试连接 / 浏览目录…」放 `#head-extra`，**不进底栏**（底栏永远只有取消 / 确认）；`ServerDirectoryPicker` → `el-dialog`（props / emits 零改动，两个调用方无感）；
+   - 三件真问题的修复：（a）外壳只写 `root.style.colorScheme`、从不加 `dark` class，而六页写了 145 处 `dark:` 工具类，所以深色预设下卡片全是白底（全部删除，改由 `.settings-panel` + token 接管）；（b）~40 处 `bg-surface/40` / `text-foreground` / `border-border` / `text-accent` 在 `tailwind.config.js` 里根本没定义（只有 `platform.*` 命名空间），在成品 CSS 里找不到对应规则 —— 字体预设选中态与当前连接高亮是**静默失效**，不是“颜目不一致”；（c）终端字体预览硬编码 `bg-[#121316]`，现改为跟随主题 token；
+   - 新增 `shared/styles/settings-page.css`（六页重复六次的 `bg-white dark:bg-slate-900 p-5 rounded-lg` 收编成一次声明）；`shared/format.ts` 新增 `formatListTime()`（手工拼接 `YYYY-MM-DD HH:mm`，不用 `toLocaleString()`）；
+   - 删死代码：`SettingsRolesView.vue`（654 行，路由早已 redirect 到组织中心）及其单测、`SettingsPromptsView.vue`（壳子重定向）与 router 死 import、`ProxiesView.vue`（无路由的旧代理页）与 `features/proxies/index.ts` 的导出；
+   - **实测**（Playwright 驱动真实栈，1365×720，浅色 / 暖阳 / 极光三档，六页全走）：菜单六项且恰好一项 `is-active`；深色预设下无白底面板；无死样式类残留；0 `pageerror`；同一行的控件同高同基线（实测字体行：`el-select` 与 `el-input` 均 top=196.5 / h=28）；四个弹窗均居中、`max-height: calc(100vh - 48px)` 生效、底栏固定且只一枚主按钮；
+   - **两个只能靠浏览器发现的缺陷（已修）**：（a）列宽预算——服务代理八列声明 930px 而画布实测只有 866px，表格开横向滚动后 `fixed="right"` 的操作列盖住了「更新时间」，且最后一列芯片被削一半（重排到 854px，并新增 `settings-table-budget.spec.ts` 守卫）；（b）`el-input` 的 `prefix` / `suffix` 只有槽没有 prop，写成属性会落到原生 `<input>` 上只喷 Vue 警告、`/proxy/` 前缀永不渲染；
+   - 顺带修一处陈旧 E2E：`settings-navigation.spec.ts` 还在等 `[data-test="project-edit"]` 与「编辑项目」弹窗，而项目树重构后入口已是 `project-settings`（跳 `/projects/:id/settings`）——本次改动前该用例就已红（stash 后跑基线证实），现改为断言路由与「常规」分区。
+
 **待办**：
 
-1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单（设置模块中被引擎页内嵌的 `BuiltinDataPanel` / `AgentUsagePanel` 已随引擎中心先行迁完）；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态（组织中心四页已全是这种形状，照抄即可）。
+1. 其余模块（任务、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单（设置模块已随第 10 条全量迁完；其中的 `BuiltinDataPanel` / `AgentUsagePanel` 被引擎页内嵌，更早随引擎中心迁完）；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态；**但设置中心的页用 `settings-page.css` 的 `.settings-page-*` / `.settings-panel*`，不要套三段式**（见 §四 的画布例外）。
 2. 助手的预设头像仍是 emoji（源码里带 `taste-skill-ignore` 标记），与 v1「零 Emoji」相冲，且缺 emoji 字体的环境会显示成豆腐块；待办：换成 v1 的手绘 SVG 图标集，头像字段改存图标 key。
+3. 技术债登记：`features/settings/ProxySettings.vue` 为了复用 `ProxyEditDialog` 而 `import from '../proxies'`（设置页跨特性引用了代理特性里的编辑器），下一轮把这类跨特性共用的编辑器下沉到 `shared/components/`；`features/groups/GroupEditPanel.vue` 与 `GroupManageDialog.vue` 仍是零路由引用的死代码（本轮只登记不动），删除时一并下调棘轮基线。
 
 ---
 

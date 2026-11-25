@@ -97,7 +97,7 @@ describe('Desktop Connections & ConnectionSettings', () => {
     await nextTick()
     await nextTick()
 
-    // Click "+ 添加远程服务"
+    // Click "添加远程服务"
     const addBtn = wrapper.findAll('button').find((b) => b.text().includes('添加远程服务'))
     expect(addBtn).toBeDefined()
     await addBtn!.trigger('click')
@@ -105,12 +105,17 @@ describe('Desktop Connections & ConnectionSettings', () => {
     await nextTick()
     expect(wrapper.text()).toContain('添加远程服务器')
 
-    // Click "保存" without name
-    const saveBtn = wrapper.findAll('button').find((b) => b.text() === '保存')
-    expect(saveBtn).toBeDefined()
-    await saveBtn!.trigger('click')
+    // 不填名称直接确认：字段级校验拦下（jsdom 下 transition-group 是 stub，
+    // 校验文案节点不会渲染，断言落在库的稳定结构类 `.is-error` 上）。
+    const saveBtn = wrapper.find('[data-test="btn-save-connection"]')
+    expect(saveBtn.exists()).toBe(true)
+    await saveBtn.trigger('click')
 
     await nextTick()
-    expect(wrapper.text()).toContain('请输入服务器名称')
+    await nextTick()
+    const erroredLabels = wrapper
+      .findAll('.el-form-item.is-error .el-form-item__label')
+      .map((label) => label.text())
+    expect(erroredLabels).toContain('服务器名称')
   })
 })

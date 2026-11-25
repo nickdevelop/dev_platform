@@ -1,0 +1,120 @@
+/* 设置中心画布原语：页头 + 分区卡 + 行内「说明左 / 控件右」的开关行。
+ *
+ * 和 list-page.css 一个道理——六张设置页必须长成一张脸，所以字阶与节奏只写一次。
+ * 迁移之前六页各写一份 `bg-white dark:bg-slate-900 p-5 rounded-lg`：`dark:` 工具类
+ * 在平台上是休眠的（外壳只写 `root.style.colorScheme`，从不加 `dark` class，见
+ * theme/apply.ts），于是深色预设下这些卡片全是白底；而另一些页面写的
+ * `bg-surface/40` / `border-border/80` 在 tailwind.config.js 的 colors 里根本不存在
+ * （只有 `platform.*` 命名空间），压根没生成 CSS。两边都是「看着有、其实没有」。
+ * 这里收编成一次声明，颜色只来自 --color-* token。
+ *
+ * 规范出处：docs/architecture/frontend-ui-system.md §四（设置中心画布例外）与 §五。
+ * 与 sidebar.css / entity-editor.css 一样作为共享样式表引入：这些类挂在各页自己的
+ * 模板上，只允许出现平台自己的类与 token，禁止 `.el-*` / `--el-*`。
+ */
+
+/* ------------------------------------------------------------------ 页头 -- */
+/* 设置页是滚动画布（居中 1080px），不是铺满视口的单列表页，所以页头没有左右 padding
+   与静止底色——画布本身已经有 24/32 的内边距，再加一层就是双重缩进。 */
+.settings-page-head {
+  flex-shrink: 0;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-page-head-split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-page-title {
+  margin: 0;
+  font-size: var(--text-size-20);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--color-text);
+}
+
+.settings-page-desc {
+  margin: 3px 0 0;
+  font-size: var(--text-size-12);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* ---------------------------------------------------------------- 分区卡 -- */
+/* 一张设置页 = 若干分区卡。卡是纯平的（v1 阴影禁令：脱离文档流的部件才允许阴影），
+   底色用 surface-muted 与画布底分开——深色预设会自动跟着 palette 翻。 */
+.settings-panel {
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+}
+
+.settings-panel-head {
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-panel-head-split {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-panel-title {
+  margin: 0;
+  font-size: var(--text-size-13);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-panel-desc {
+  margin: 2px 0 0;
+  font-size: var(--text-size-11);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* ------------------------------------------------- 开关行：说明左 / 控件右 -- */
+/* 与 entity-editor.css 的 .entity-switch-row 同一形状，但那一条是给弹窗表单用的
+   （白底、描边更重，因为它坐在 el-dialog 的白面上）；设置画布的分区卡本身已是
+   surface-muted，所以这里的卡要反过来用 surface 底才分得开层。 */
+.settings-switch-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.settings-switch-title {
+  font-size: var(--text-size-12);
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.settings-switch-desc {
+  margin: 2px 0 0;
+  font-size: var(--text-size-11);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* 字段下的一行说明：设置页里出现频率最高的排版单元。 */
+.settings-field-hint {
+  margin: 2px 0 0;
+  font-size: var(--text-size-11);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}

@@ -2,13 +2,17 @@
 // Appearance settings section: theme palette and font size.
 // Types of font face are built-in (Google Sans Code + Noto Sans SC).
 // Every change applies immediately and syncs with the server.
-// Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
-// flat surfaces, zero resting shadows, precise tactile swatches, accessible controls).
-import { onMounted } from 'vue'
+//
+// Element Plus owns the controls: the theme picker is an `el-radio-group` whose
+// options carry a live swatch, the font tier is a three-way radio pair, and the
+// quick-assistant float is an `el-switch` (the `sr-only peer` hand-rolled toggle
+// it replaces had no focus ring and no aria role). Failures go through
+// `ElMessage` once instead of stacking a `UiAlert` banner under the form.
+import { computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { ElMessage } from 'element-plus'
 import { useSettingsStore } from '../../stores/settings'
 import { fontSizes, resolveFontSizeKey, themes } from '../../theme/presets'
-import { UiAlert, UiInput } from '../../shared/ui'
 
 const settings = useSettingsStore()
 const {
@@ -21,240 +25,319 @@ const {
 } = storeToRefs(settings)
 const DEFAULT_PLANTUML_SERVER_URL = 'https://www.plantuml.com/plantuml'
 
+const PLANTUML_MODES = [
+  { value: 'local', label: '离线渲染（本地）', desc: '浏览器本地编译，无数据外传' },
+  { value: 'online', label: '在线渲染（服务器）', desc: '支持复杂图表与高吞吐渲染' },
+] as const
+
 onMounted(() => {
   void settings.loadAppearance()
   void settings.loadQuickAssistant()
 })
 
-function selectTheme(key: string) {
-  if (settings.appearance.theme !== key) void settings.saveAppearance({ theme: key })
+// The store keeps the last good value on a failed save; the report belongs here
+// rather than in a banner that pushes the rest of the page down (v2 §五).
+watch(error, (message) => {
+  if (message) ElMessage.error(message)
+})
+watch(quickAssistantError, (message) => {
+  if (message) ElMessage.error(message)
+})
+
+// el-radio-group is driven by the store, so every option value has to be a
+// real string the group can compare against; the font tier is a number.
+const themeKey = computed(() => appearance.value.theme)
+const fontSizeKey = computed(() => resolveFontSizeKey(appearance.value.fontSize))
+const plantumlMode = computed(() => appearance.value.plantumlMode || 'local')
+
+function onThemeChange(key: string | number | boolean | undefined) {
+  if (String(key) !== appearance.value.theme) void settings.saveAppearance({ theme: String(key) })
 }
 
-function selectFontSize(value: number) {
-  if (settings.appearance.fontSize !== value) void settings.saveAppearance({ fontSize: value })
+function onFontSizeChange(key: string | number | boolean | undefined) {
+  const opt = fontSizes.find((entry) => entry.key === String(key))
+  if (!opt) return
+  if (appearance.value.fontSize !== opt.value) void settings.saveAppearance({ fontSize: opt.value })
 }
 
-function selectPlantumlMode(mode: 'local' | 'online') {
-  if (settings.appearance.plantumlMode !== mode) void settings.saveAppearance({ plantumlMode: mode })
+function onPlantumlModeChange(mode: string | number | boolean | undefined) {
+  const next = String(mode) as 'local' | 'online'
+  if (appearance.value.plantumlMode !== next) void settings.saveAppearance({ plantumlMode: next })
 }
 
-function updatePlantumlServerUrl(value: string) {
+function onPlantumlServerUrlChange(value: string) {
   void settings.saveAppearance({ plantumlServerUrl: value.trim() })
 }
 
-function onPlantumlServerUrlChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  updatePlantumlServerUrl(input.value)
-}
-
-async function toggleQuickAssistant(event: Event) {
-  const input = event.target as HTMLInputElement
-  const ok = await settings.saveQuickAssistantEnabled(input.checked)
-  if (!ok) input.checked = settings.quickAssistant.enabled
+async function onQuickAssistantChange(checked: boolean) {
+  const ok = await settings.saveQuickAssistantEnabled(checked)
+  if (!ok) {
+    // The store did not move, so the control must not either: push the last
+    // good value back in or the switch would sit showing a state that never
+    // happened.
+    ElMessage.error(settings.quickAssistantError || '保存快捷助手设置失败')
+  }
 }
 </script>
 
 <template>
-  <section class="appearance-settings w-full space-y-6" aria-label="外观设置">
-    <!-- Header -->
-    <header class="settings-head pb-4 border-b border-platform-border">
-      <h1 class="text-xl font-semibold text-platform-text">外观</h1>
-      <p class="text-xs text-platform-text-muted mt-1">
+  <section class="appearance-settings space-y-4" aria-label="外观设置">
+    <header class="settings-page-head">
+      <h1 class="settings-page-title">外观</h1>
+      <p class="settings-page-desc">
         自定义工作台的主题配色、显示字号以及 PlantUML 架构图渲染方式
       </p>
     </header>
 
     <!-- Theme Palette -->
-    <fieldset class="setting-group p-5 rounded-lg bg-platform-surface border border-platform-border space-y-4">
-      <div class="group-header">
-        <legend class="text-sm font-semibold text-platform-text px-0">主题配色</legend>
-        <p class="text-xs text-platform-text-muted mt-0.5">选择符合您视觉习惯的配色体系，支持明亮浅色与低眩光暖冷色系</p>
-      </div>
+    <section class="settings-panel" aria-labelledby="appearance-theme-title">
+      <header class="settings-panel-head">
+        <h2 id="appearance-theme-title" class="settings-panel-title">主题配色</h2>
+        <p class="settings-panel-desc">选择符合您视觉习惯的配色体系，支持明亮浅色与低眩光暖冷色系</p>
+      </header>
 
-      <div class="theme-grid flex flex-wrap gap-3">
-        <button
+      <el-radio-group
+        class="theme-grid flex flex-wrap gap-2"
+        :model-value="themeKey"
+        @change="onThemeChange"
+      >
+        <el-radio
           v-for="theme in themes"
           :key="theme.key"
-          type="button"
-          class="theme-card relative flex flex-col w-[150px] shrink-0 p-2.5 rounded-lg border text-left cursor-pointer transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
-          :class="[
-            appearance.theme === theme.key
-              ? 'border-platform-primary bg-platform-primary-soft text-platform-text'
-              : 'border-platform-border hover:border-platform-border-strong bg-platform-surface-muted/50 text-platform-text-muted hover:text-platform-text',
-          ]"
+          :value="theme.key"
+          border
+          class="option-card theme-card"
           :data-theme-option="theme.key"
-          @click="selectTheme(theme.key)"
         >
-          <!-- Live swatch preview -->
-          <div
-            class="swatch-preview w-full h-12 rounded-md border flex flex-col justify-between p-2 mb-2 overflow-hidden"
-            :style="{
-              background: theme.previewGradient || theme.colors.bg,
-              borderColor: theme.colors.borderStrong,
-            }"
-          >
-            <div class="flex items-center justify-between">
-              <span
-                class="text-xs font-semibold px-1 rounded shadow-xs"
-                :style="{ color: theme.colors.text, background: theme.colors.surface }"
-              >
-                Aa
-              </span>
-              <span
-                class="w-2.5 h-2.5 rounded-full"
-                :style="{ background: theme.colors.primary }"
-              ></span>
-            </div>
+          <div class="theme-body">
+            <!-- Live swatch preview: the palette itself, not a decoration. -->
             <div
-              class="w-full h-1.5 rounded-sm opacity-80"
-              :style="{ background: theme.colors.border }"
-            ></div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <!-- Radio indicator matching user design -->
-            <span
-              class="w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 transition-colors"
-              :class="[
-                appearance.theme === theme.key
-                  ? 'border-platform-primary bg-white'
-                  : 'border-platform-border-strong/70 bg-transparent',
-              ]"
+              class="swatch-preview"
+              :style="{
+                background: theme.previewGradient || theme.colors.bg,
+                borderColor: theme.colors.borderStrong,
+              }"
             >
-              <span
-                v-if="appearance.theme === theme.key"
-                class="w-1.5 h-1.5 rounded-full bg-platform-primary"
-              ></span>
-            </span>
-            <span class="text-xs font-medium truncate">{{ theme.label }}</span>
+              <div class="swatch-top">
+                <span
+                  class="swatch-glyph"
+                  :style="{ color: theme.colors.text, background: theme.colors.surface }"
+                >
+                  Aa
+                </span>
+                <span class="swatch-dot" :style="{ background: theme.colors.primary }"></span>
+              </div>
+              <span class="swatch-rule" :style="{ background: theme.colors.border }"></span>
+            </div>
+            <span class="theme-label">{{ theme.label }}</span>
           </div>
-        </button>
-      </div>
-    </fieldset>
+        </el-radio>
+      </el-radio-group>
+    </section>
 
     <!-- Font Size -->
-    <fieldset class="setting-group p-5 rounded-lg bg-platform-surface border border-platform-border space-y-4">
-      <div class="group-header">
-        <legend class="text-sm font-semibold text-platform-text px-0">字号</legend>
-        <p class="text-xs text-platform-text-muted mt-0.5">控制全平台界面字体基准大小，各区域文本会按比例缩放</p>
-      </div>
+    <section class="settings-panel" aria-labelledby="appearance-font-title">
+      <header class="settings-panel-head">
+        <h2 id="appearance-font-title" class="settings-panel-title">字号</h2>
+        <p class="settings-panel-desc">控制全平台界面字体基准大小，各区域文本会按比例缩放</p>
+      </header>
 
-      <div class="font-size-row flex flex-wrap gap-2.5" data-font-size>
-        <button
+      <el-radio-group
+        class="font-size-row w-full"
+        data-font-size
+        :model-value="fontSizeKey"
+        @change="onFontSizeChange"
+      >
+        <el-radio
           v-for="opt in fontSizes"
           :key="opt.key"
-          type="button"
-          class="font-size-option flex-1 min-w-[90px] py-2.5 px-3 rounded-md border text-center transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
-          :class="[
-            resolveFontSizeKey(appearance.fontSize) === opt.key
-              ? 'border-platform-primary bg-platform-primary-soft text-platform-primary font-medium'
-              : 'border-platform-border hover:border-platform-border-strong text-platform-text-muted hover:text-platform-text bg-platform-surface',
-          ]"
+          :value="opt.key"
+          border
+          class="option-card font-size-option"
           :data-font-size-option="opt.key"
-          @click="selectFontSize(opt.value)"
         >
-          <div class="text-xs">{{ opt.label }}</div>
-        </button>
-      </div>
-    </fieldset>
+          {{ opt.label }}
+        </el-radio>
+      </el-radio-group>
+    </section>
 
     <!-- PlantUML Rendering Mode -->
-    <fieldset class="setting-group p-5 rounded-lg bg-platform-surface border border-platform-border space-y-4">
-      <div class="group-header">
-        <legend class="text-sm font-semibold text-platform-text px-0">PlantUML 渲染模式</legend>
-        <p class="text-xs text-platform-text-muted mt-0.5">对话或文档中的时序图与架构图渲染引擎设置，支持内建本地离线生成或私有服务器</p>
-      </div>
+    <section class="settings-panel" aria-labelledby="appearance-plantuml-title">
+      <header class="settings-panel-head">
+        <h2 id="appearance-plantuml-title" class="settings-panel-title">PlantUML 渲染模式</h2>
+        <p class="settings-panel-desc">
+          对话或文档中的时序图与架构图渲染引擎设置，支持内建本地离线生成或私有服务器
+        </p>
+      </header>
 
-      <div class="mode-row flex flex-wrap gap-2.5">
-        <button
-          type="button"
-          class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
-          :class="[
-            (appearance.plantumlMode || 'local') === 'local'
-              ? 'border-platform-primary bg-platform-primary-soft text-platform-primary font-medium'
-              : 'border-platform-border hover:border-platform-border-strong text-platform-text-muted hover:text-platform-text bg-platform-surface',
-          ]"
-          data-plantuml-mode="local"
-          @click="selectPlantumlMode('local')"
+      <el-radio-group
+        class="mode-row w-full"
+        :model-value="plantumlMode"
+        @change="onPlantumlModeChange"
+      >
+        <el-radio
+          v-for="mode in PLANTUML_MODES"
+          :key="mode.value"
+          :value="mode.value"
+          border
+          class="option-card mode-option"
+          :data-plantuml-mode="mode.value"
         >
-          <div class="text-xs font-medium">离线渲染（本地）</div>
-          <div class="text-2xs text-platform-text-muted mt-0.5">浏览器本地编译，无数据外传</div>
-        </button>
-        <button
-          type="button"
-          class="mode-option flex-1 min-w-[120px] py-2.5 px-3 rounded-md border text-center transition-colors duration-150 select-none focus-visible:outline-2 focus-visible:outline-platform-primary focus-visible:outline-offset-2"
-          :class="[
-            appearance.plantumlMode === 'online'
-              ? 'border-platform-primary bg-platform-primary-soft text-platform-primary font-medium'
-              : 'border-platform-border hover:border-platform-border-strong text-platform-text-muted hover:text-platform-text bg-platform-surface',
-          ]"
-          data-plantuml-mode="online"
-          @click="selectPlantumlMode('online')"
-        >
-          <div class="text-xs font-medium">在线渲染（服务器）</div>
-          <div class="text-2xs text-platform-text-muted mt-0.5">支持复杂图表与高吞吐渲染</div>
-        </button>
-      </div>
+          <div class="mode-body">
+            <span class="mode-label">{{ mode.label }}</span>
+            <span class="mode-desc">{{ mode.desc }}</span>
+          </div>
+        </el-radio>
+      </el-radio-group>
 
-      <!-- Online mode server URL input -->
-      <div v-if="appearance.plantumlMode === 'online'" class="plantuml-url-field pt-2 space-y-1.5 border-t border-platform-border">
-        <label class="field flex flex-col gap-1 text-xs font-medium text-platform-text">
-          <span>服务器地址</span>
-          <UiInput
-            data-plantuml-url
-            class="plantuml-url-input text-xs"
-            placeholder="https://www.plantuml.com/plantuml"
-            :model-value="appearance.plantumlServerUrl || DEFAULT_PLANTUML_SERVER_URL"
-            block
-            @change="onPlantumlServerUrlChange"
-          />
-        </label>
-        <span class="field-hint text-2xs text-platform-text-muted">
+      <div
+        v-if="appearance.plantumlMode === 'online'"
+        class="plantuml-url-field pt-1"
+      >
+        <el-input
+          data-plantuml-url
+          :model-value="appearance.plantumlServerUrl || DEFAULT_PLANTUML_SERVER_URL"
+          placeholder="https://www.plantuml.com/plantuml"
+          @change="onPlantumlServerUrlChange"
+        />
+        <p class="settings-field-hint">
           支持填入企业内网自建 PlantUML 服务地址，默认使用官方安全渲染端点
-        </span>
+        </p>
       </div>
-    </fieldset>
+    </section>
 
     <!-- Quick Assistant Switch -->
-    <fieldset class="setting-group p-5 rounded-lg bg-platform-surface border border-platform-border space-y-3">
-      <div class="group-header">
-        <legend class="text-sm font-semibold text-platform-text px-0">快捷助手</legend>
-      </div>
+    <section class="settings-panel" aria-labelledby="appearance-quick-title">
+      <header class="settings-panel-head">
+        <h2 id="appearance-quick-title" class="settings-panel-title">快捷助手</h2>
+      </header>
 
-      <div class="flex items-center justify-between gap-4 py-1">
-        <div class="space-y-0.5">
-          <div class="text-xs font-medium text-platform-text">显示快捷助手漂浮按钮</div>
-          <p class="text-2xs text-platform-text-muted leading-relaxed max-w-lg">
+      <div class="settings-switch-row">
+        <div class="min-w-0">
+          <div class="settings-switch-title">显示快捷助手漂浮按钮</div>
+          <p class="settings-switch-desc">
             开启后，平台右上角将常驻快捷悬浮球，支持随时唤起 AI 提问；对话历史自动同步至 Chat「快捷助手」分组
           </p>
         </div>
 
-        <label class="toggle-control relative inline-flex items-center cursor-pointer select-none shrink-0">
-          <input
-            type="checkbox"
-            data-test="quick-assistant-toggle"
-            class="sr-only peer"
-            :checked="quickAssistant.enabled"
-            :disabled="quickAssistantSaving || quickAssistantLoading"
-            @change="toggleQuickAssistant"
-          />
-          <div class="w-9 h-5 bg-platform-border-strong peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-platform-border after:border after:rounded-full after:h-4 after:w-4 after:transition-transform peer-checked:bg-platform-primary relative"></div>
-        </label>
+        <el-switch
+          class="shrink-0"
+          :model-value="quickAssistant.enabled"
+          :disabled="quickAssistantSaving || quickAssistantLoading"
+          aria-label="显示快捷助手漂浮按钮"
+          data-test="quick-assistant-toggle"
+          @change="onQuickAssistantChange($event as boolean)"
+        />
       </div>
-    </fieldset>
-
-    <!-- Error alerts -->
-    <UiAlert v-if="error" variant="error" class="error">
-      {{ error }}
-    </UiAlert>
-    <UiAlert v-if="quickAssistantError" variant="error" class="error">
-      {{ quickAssistantError }}
-    </UiAlert>
+    </section>
   </section>
 </template>
 
 <style scoped>
-.setting-group {
-  margin: 0;
+/* Only the theme cards' own content lives here: the radio's border, radius,
+   checked edge and the card's own box are the library's (plus the `.option-card`
+   bridge in the token layer). */
+.theme-card {
+  margin-right: 0;
+}
+
+.theme-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 132px;
+}
+
+.swatch-preview {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  height: 44px;
+  padding: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.swatch-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.swatch-glyph {
+  padding: 0 3px;
+  border-radius: 2px;
+  font-size: var(--text-size-11);
+  font-weight: 600;
+}
+
+.swatch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.swatch-rule {
+  display: block;
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  opacity: 0.85;
+}
+
+.theme-label {
+  font-size: var(--text-size-12);
+  font-weight: 500;
+}
+
+.font-size-option {
+  font-size: var(--text-size-12);
+}
+
+.font-size-row,
+.mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.font-size-option {
+  margin-right: 0;
+  flex: 1 1 90px;
+}
+
+.mode-row {
+  align-items: stretch;
+}
+
+.mode-option {
+  margin-right: 0;
+  flex: 1 1 150px;
+}
+
+.mode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mode-label {
+  font-size: var(--text-size-12);
+  font-weight: 500;
+}
+
+.mode-desc {
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
+}
+
+.plantuml-url-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--color-border);
 }
 </style>

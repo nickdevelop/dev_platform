@@ -75,7 +75,8 @@ describe('AppearanceSettings', () => {
     expect(wrapper.findAll('[data-theme-option]')).toHaveLength(12)
     expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-density-option]')).toHaveLength(0)
-    expect(wrapper.findAll('legend').map((legend) => legend.text())).toEqual([
+    // 分区标题从 fieldset/legend 换成设置中心的统一分区卡（v2 §四）。
+    expect(wrapper.findAll('.settings-panel-title').map((title) => title.text())).toEqual([
       '主题配色',
       '字号',
       'PlantUML 渲染模式',
@@ -102,7 +103,10 @@ describe('AppearanceSettings', () => {
     const calls = stubFetch()
     const { wrapper } = await mountSettings()
 
-    const toggle = wrapper.find('[data-test="quick-assistant-toggle"]')
+    // el-switch owns a hidden native input; the library keeps `checked` in sync
+    // with model-value, so it is still the honest thing to assert on. 单选同理：
+    // jsdom 不会把 label 的 click 转发到内部 input，得直接给 input 上 setValue。
+    const toggle = wrapper.find('[data-test="quick-assistant-toggle"] input')
     expect((toggle.element as HTMLInputElement).checked).toBe(false)
     await toggle.setValue(true)
     await flushPromises()
@@ -117,14 +121,15 @@ describe('AppearanceSettings', () => {
     stubFetch(500)
     const { wrapper } = await mountSettings()
 
-    const toggle = wrapper.find('[data-test="quick-assistant-toggle"]')
+    const toggle = wrapper.find('[data-test="quick-assistant-toggle"] input')
     expect((toggle.element as HTMLInputElement).checked).toBe(false)
     await toggle.setValue(true)
     await flushPromises()
 
     expect(useSettingsStore().quickAssistant.enabled).toBe(false)
     expect((toggle.element as HTMLInputElement).checked).toBe(false)
-    expect(wrapper.text()).toContain('服务内部错误')
+    // 失败只报一次：轻提示挂在 body 上，不再把页面内容往下顶。
+    expect(document.body.textContent).toContain('服务内部错误')
   })
 
   it('saves a theme change and applies it to the document', async () => {
@@ -132,7 +137,7 @@ describe('AppearanceSettings', () => {
     const { wrapper } = await mountSettings()
 
     expect(wrapper.find('[data-theme-option="dark"]').exists()).toBe(false)
-    await wrapper.find('[data-theme-option="warm"]').trigger('click')
+    await wrapper.find('[data-theme-option="warm"] input').setValue(true)
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
@@ -146,7 +151,7 @@ describe('AppearanceSettings', () => {
     const { wrapper } = await mountSettings()
 
     expect(wrapper.findAll('[data-font-size-option]')).toHaveLength(3)
-    await wrapper.find('[data-font-size-option="large"]').trigger('click')
+    await wrapper.find('[data-font-size-option="large"] input').setValue(true)
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
@@ -160,7 +165,7 @@ describe('AppearanceSettings', () => {
     const calls = stubFetch()
     const { wrapper } = await mountSettings()
 
-    await wrapper.find('[data-font-size-option="small"]').trigger('click')
+    await wrapper.find('[data-font-size-option="small"] input').setValue(true)
     await flushPromises()
 
     const put = calls.find((call) => call.method === 'PUT')
@@ -178,7 +183,7 @@ describe('AppearanceSettings', () => {
     expect(wrapper.find('[data-plantuml-url]').exists()).toBe(false)
 
     // 点击切换为在线模式
-    await wrapper.find('[data-plantuml-mode="online"]').trigger('click')
+    await wrapper.find('[data-plantuml-mode="online"] input').setValue(true)
     await flushPromises()
 
     const putOnline = calls.find((call) => (call.body as any)?.plantumlMode === 'online')
@@ -198,10 +203,10 @@ describe('AppearanceSettings', () => {
     stubFetch(500)
     const { wrapper } = await mountSettings()
 
-    await wrapper.find('[data-theme-option="warm"]').trigger('click')
+    await wrapper.find('[data-theme-option="warm"] input').setValue(true)
     await flushPromises()
 
     expect(useSettingsStore().appearance.theme).toBe('light')
-    expect(wrapper.text()).toContain('服务内部错误')
+    expect(document.body.textContent).toContain('服务内部错误')
   })
 })

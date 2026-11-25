@@ -95,28 +95,35 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
   })
 
-  it('SettingsNav conforms to Data Terminal single-header standard', () => {
-    const wrapper = mount(SettingsNav, {
-      global: {
-        stubs: {
-          RouterLink: {
-            template: '<a :class="$attrs.class"><slot /></a>',
-          },
-        },
-      },
+  it('SettingsNav renders the settings navigation as a router-driven el-menu', async () => {
+    // Same contract as the org and engines sidebars: a real router (memory
+    // history), because the menu navigates by index in router mode and marks the
+    // current path — both need it.
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/settings/appearance', component: { template: '<div />' } },
+        { path: '/settings/models', component: { template: '<div />' } },
+        { path: '/settings/proxies', component: { template: '<div />' } },
+        { path: '/settings/connections', component: { template: '<div />' } },
+        { path: '/settings/terminal', component: { template: '<div />' } },
+        { path: '/settings/debug', component: { template: '<div />' } },
+      ],
     })
+    await router.push('/settings/terminal')
+    await router.isReady()
 
-    // Double header must be eliminated
+    const wrapper = mount(SettingsNav, { global: { plugins: [router] } })
+
+    // Double header must stay eliminated: the shell owns the title row.
     expect(wrapper.find('.settings-nav-header').exists()).toBe(false)
+    expect(wrapper.find('[data-test="settings-nav"]').exists()).toBe(true)
 
-    // Zone C: Navigation list with standard cards
-    expect(wrapper.find('.settings-links').exists()).toBe(true)
-    const links = wrapper.findAll('.settings-link')
-    expect(links.length).toBe(6)
-    expect(links[0].classes()).toContain('sidebar-card')
+    const items = wrapper.findAll('.el-menu-item')
+    expect(items).toHaveLength(6)
     // Menu order is part of the product contract: appearance, models,
     // proxies, connections, terminal, debug (Role and Prompt moved to Organization).
-    expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
+    expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
       '外观',
       '模型',
       '服务代理',
@@ -124,6 +131,13 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
       '终端服务器',
       '调试面板',
     ])
+    // Every entry still carries its second line: the menu replaced the list
+    // markup, not the information it showed.
+    expect(wrapper.findAll('.link-desc')).toHaveLength(6)
+
+    const active = wrapper.findAll('.el-menu-item.is-active')
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toContain('终端服务器')
   })
 
   it('EnginesSidebar renders the engines navigation as a router-driven el-menu', async () => {

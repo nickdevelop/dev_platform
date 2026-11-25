@@ -66,8 +66,11 @@ test('the project category escapes the settings center back to the project area'
   await page.getByRole('link', { name: '项目' }).click()
   await expect(page).toHaveURL(/\/$/)
 
+  // 项目树的项目行上现在挂的是「项目设置」入口（打开 /projects/:id/settings），
+  // 旧的 project-edit 铅笔按钮与「编辑项目」弹窗已随项目树重构删除。
   const sidebar = page.getByRole('complementary', { name: '项目导航' })
   await expect(sidebar).toBeVisible()
-  await sidebar.locator('[data-test="project-edit"]').first().click()
-  await expect(page.getByRole('dialog')).toContainText('编辑项目')
+  await sidebar.locator('[data-test="project-settings"]').first().click()
+  await expect(page).toHaveURL(/\/projects\/\d+\/settings$/)
+  await expect(page.getByRole('heading', { name: '常规' })).toBeVisible()
 })

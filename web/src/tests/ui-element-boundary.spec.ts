@@ -33,10 +33,14 @@ const srcRoot = join(webRoot, 'src')
 // banner (a failure now reports once, through `ElMessage`, instead of once in a
 // toast and once in a banner that pushes the table down), 630 after the engines
 // centre (sidebar el-menu, the three engine panels, EngineStepControl, the
-// Agent 配置 page and its embedded BuiltinDataPanel / AgentUsagePanel). Lower
-// it as pages move; see the
+// Agent 配置 page and its embedded BuiltinDataPanel / AgentUsagePanel), 343
+// after the settings centre (SettingsNav el-menu, the six routed pages, the
+// service-proxy edit dialog, the SSH server dialog and the shared server
+// directory picker; plus the three unrouted leftovers the settings menu had
+// orphaned — SettingsRolesView, SettingsPromptsView, ProxiesView — deleted
+// outright). Lower it as pages move; see the
 // header note.
-const UI_PRIMITIVE_BASELINE = 630
+const UI_PRIMITIVE_BASELINE = 343
 
 // The primitives themselves are obviously allowed to mention their own names.
 const EXCLUDED_DIRS = new Set(['ui', 'tests', 'fonts', 'node_modules'])

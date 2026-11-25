@@ -1,12 +1,23 @@
 <script setup lang="ts">
-// Service proxy settings section: exposes local directories or port HTTP services
-// via transparent contextpath proxies.
-// Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
-// flat surfaces, zero resting shadows, tabular figures, pale status pills,
-// precise ContextPath affordances).
-import { ref, onMounted } from 'vue'
-import { UiButton, UiBadge, UiEmpty, UiSpinner, UiAlert, UiConfirmDialog } from '../../shared/ui'
+// Service proxy settings: exposes server directories or local port HTTP services
+// as transparent `/proxy/:alias/` ContextPath proxies.
+//
+// Element Plus owns the surface: the proxy list is an `el-table` (the hand-built
+// article cards grew four different alignment tricks per row and could not
+// line up a column with any neighbour page), enable/disable is an `el-switch`,
+// the type is a categorical chip, and failures go through `ElMessage` once
+// instead of a closable banner that survives into the next action.
+//
+// The table is the settings canvas variant: natural height, no `height="100%"`,
+// no pagination — the canvas scrolls, so a viewport-anchored panel would fight
+// it (see frontend-ui-system.md §四 设置中心画布例外).
+import { onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { CopyDocument, Link, Plus, Refresh, Share } from '@element-plus/icons-vue'
 import { ProxyEditDialog } from '../proxies'
+import ListEmptyState from '../../shared/components/ListEmptyState.vue'
+import { copyToClipboard } from '../../shared/clipboard'
+import { formatListTime } from '../../shared/format'
 import {
   listProxies,
   deleteProxy,
@@ -16,60 +27,37 @@ import {
 
 const proxies = ref<ServiceProxy[]>([])
 const loading = ref(false)
-const errorMessage = ref('')
-const pendingDelete = ref<ServiceProxy | null>(null)
-const deleting = ref(false)
-const deleteError = ref('')
+// The row whose enable switch is in flight: only that switch goes quiet, so a
+// slow toggle on one proxy doesn't freeze the whole column.
+const togglingId = ref<number | null>(null)
 
 const isDialogOpen = ref(false)
 const activeProxy = ref<ServiceProxy | null>(null)
 
-const copiedId = ref<number | null>(null)
-
 function getFullUrl(alias: string): string {
-  const base = window.location.origin
-  return `${base}/proxy/${alias}/`
+  return `${window.location.origin}/proxy/${alias}/`
 }
 
 async function copyUrl(proxy: ServiceProxy) {
   const url = getFullUrl(proxy.alias)
-  try {
-    await navigator.clipboard.writeText(url)
-    copiedId.value = proxy.id
-    setTimeout(() => {
-      if (copiedId.value === proxy.id) {
-        copiedId.value = null
-      }
-    }, 1500)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = url
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-    copiedId.value = proxy.id
-    setTimeout(() => {
-      if (copiedId.value === proxy.id) {
-        copiedId.value = null
-      }
-    }, 1500)
-  }
+  // The clipboard helper already carries the non-secure-context fallback, so the
+  // page only reports the outcome instead of re-implementing a textarea hack.
+  const ok = await copyToClipboard(url)
+  if (ok) ElMessage.success(`已复制 ${url}`)
+  else ElMessage.warning(`复制失败，请手动选取：${url}`)
 }
 
 function openUrl(proxy: ServiceProxy) {
-  const url = getFullUrl(proxy.alias)
-  window.open(url, '_blank')
+  window.open(getFullUrl(proxy.alias), '_blank')
 }
 
 async function fetchProxies() {
   loading.value = true
-  errorMessage.value = ''
   try {
     const list = await listProxies()
     proxies.value = Array.isArray(list) ? list : []
   } catch (err: any) {
-    errorMessage.value = err?.error || err?.message || '加载代理列表失败'
+    ElMessage.error(err?.error || err?.message || '加载代理列表失败')
   } finally {
     loading.value = false
   }
@@ -86,46 +74,49 @@ function openEditDialog(proxy: ServiceProxy) {
 }
 
 async function handleToggle(proxy: ServiceProxy) {
+  if (togglingId.value !== null) return
+  togglingId.value = proxy.id
+  // The switch is bound to `proxy.enabled`, which the server owns: flip it
+  // optimistically and pull it back if the write fails, otherwise the control
+  // would sit showing a state that never happened.
+  const previous = proxy.enabled
+  proxy.enabled = !previous
   try {
     const updated = await toggleProxy(proxy.id)
     const idx = proxies.value.findIndex((p) => p.id === proxy.id)
-    if (idx !== -1) {
-      proxies.value[idx] = updated
-    }
+    if (idx !== -1) proxies.value[idx] = updated
   } catch (err: any) {
-    errorMessage.value = err?.error || err?.message || '切换代理状态失败'
+    proxy.enabled = previous
+    ElMessage.error(err?.error || err?.message || '切换代理状态失败')
+  } finally {
+    togglingId.value = null
   }
 }
 
-function handleDelete(proxy: ServiceProxy) {
-  deleteError.value = ''
-  pendingDelete.value = proxy
-}
-
-async function confirmDelete() {
-  if (!pendingDelete.value || deleting.value) return
-  const target = pendingDelete.value
-  deleting.value = true
-  deleteError.value = ''
+async function removeProxy(proxy: ServiceProxy) {
   try {
-    await deleteProxy(target.id)
-    proxies.value = proxies.value.filter((p) => p.id !== target.id)
-    pendingDelete.value = null
+    await ElMessageBox.confirm(
+      `别名 ${proxy.alias} 删除后，原 /proxy/${proxy.alias}/ 访问地址将立即失效。`,
+      `确定要删除代理「${proxy.name}」吗？`,
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消', confirmButtonType: 'danger' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteProxy(proxy.id)
+    proxies.value = proxies.value.filter((p) => p.id !== proxy.id)
+    ElMessage.success(`已删除代理「${proxy.name}」`)
   } catch (err: any) {
-    deleteError.value = err?.error || err?.message || '删除代理失败'
-  } finally {
-    deleting.value = false
+    ElMessage.error(err?.error || err?.message || '删除代理失败')
   }
 }
 
 function onDialogSaved(saved: ServiceProxy) {
   isDialogOpen.value = false
   const idx = proxies.value.findIndex((p) => p.id === saved.id)
-  if (idx !== -1) {
-    proxies.value[idx] = saved
-  } else {
-    proxies.value.unshift(saved)
-  }
+  if (idx !== -1) proxies.value[idx] = saved
+  else proxies.value.unshift(saved)
 }
 
 onMounted(() => {
@@ -134,150 +125,190 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="proxy-settings w-full space-y-6" aria-label="服务代理设置">
-    <!-- Header -->
-    <header class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800 gap-4 flex-wrap">
-      <div>
-        <div class="flex items-center gap-2.5">
-          <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight">服务代理</h1>
-          <UiBadge variant="default" size="sm">ContextPath Proxy</UiBadge>
-        </div>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          将服务器上的静态构建目录或本地端口 HTTP 服务以平台端口的独立二级路径（<code>/proxy/:alias/</code>）直接暴露访问，支持免登录分享与 WebSocket HMR 热更新。
-        </p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <UiButton variant="secondary" size="sm" :disabled="loading" @click="fetchProxies">
-          刷新
-        </UiButton>
-        <UiButton variant="primary" size="sm" @click="openCreateDialog">
-          + 新建代理
-        </UiButton>
-      </div>
+  <section class="proxy-settings space-y-4" aria-label="服务代理设置">
+    <header class="settings-page-head">
+      <h1 class="settings-page-title">服务代理</h1>
+      <p class="settings-page-desc">
+        将服务器上的静态构建目录或本地端口 HTTP 服务以平台端口的独立二级路径（<code>/proxy/:alias/</code>）
+        直接暴露访问，支持免登录分享与 WebSocket HMR 热更新
+      </p>
     </header>
 
-    <UiAlert v-if="errorMessage" variant="error" closable @close="errorMessage = ''">
-      {{ errorMessage }}
-    </UiAlert>
+    <section class="settings-panel" aria-labelledby="proxy-list-title">
+      <header class="settings-panel-head settings-panel-head-split">
+        <div>
+          <h2 id="proxy-list-title" class="settings-panel-title">代理规则</h2>
+          <p class="settings-panel-desc">按 <code>/proxy/别名/</code> 暴露的访问路径与其映射目标</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <el-button :loading="loading" :icon="Refresh" data-test="btn-refresh-proxy" @click="fetchProxies">
+            刷新
+          </el-button>
+          <el-button type="primary" :icon="Plus" data-test="btn-create-proxy" @click="openCreateDialog">
+            新建代理
+          </el-button>
+        </div>
+      </header>
 
-    <!-- Loading State -->
-    <div v-if="loading && proxies.length === 0" class="py-16 flex flex-col items-center justify-center gap-3 text-slate-400 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-      <UiSpinner size="lg" />
-      <span class="text-xs">正在加载服务代理列表…</span>
-    </div>
+      <el-table :data="proxies" row-key="id" data-test="proxy-table">
+        <el-table-column label="代理名称" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="font-medium">{{ row.name }}</span>
+              <span class="id-chip font-mono">#{{ row.id }}</span>
+            </div>
+          </template>
+        </el-table-column>
 
-    <!-- Empty State -->
-    <div v-else-if="proxies.length === 0" class="py-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg">
-      <UiEmpty
-        title="暂无服务代理规则"
-        description="您可以将服务器上生成的网页产物目录或本地运行的 Web 端口（如 Vite 5173、后端 8080）暴露为独立的 ContextPath，直接通过浏览器访问或分享。"
-      >
-        <UiButton variant="primary" size="sm" class="mt-2" @click="openCreateDialog">
-          创建第一个代理
-        </UiButton>
-      </UiEmpty>
-    </div>
+        <el-table-column label="类型" width="84">
+          <template #default="{ row }">
+            <el-tag class="entity-chip" :class="`entity-chip--${row.type}`" size="small" disable-transitions>
+              {{ row.type === 'directory' ? '静态目录' : '端口反代' }}
+            </el-tag>
+          </template>
+        </el-table-column>
 
-    <!-- Proxies Cards List -->
-    <div v-else class="flex flex-col gap-3.5">
-      <article
-        v-for="p in proxies"
-        :key="p.id"
-        class="proxy-card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-3.5 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
-      >
-        <!-- Row 1: Title, Badges and Controls -->
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div class="flex items-center gap-2.5 min-w-0">
-            <span class="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">
-              {{ p.name }}
-            </span>
-            <UiBadge :variant="p.type === 'directory' ? 'default' : 'info'" size="sm">
-              {{ p.type === 'directory' ? '静态目录' : '端口反代' }}
-            </UiBadge>
-            <template v-if="p.type === 'port'">
-              <span
-                class="inline-flex items-center gap-1.5 text-2xs px-2 py-0.5 rounded-full"
-                :class="p.online ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
-              >
-                <span class="w-1.5 h-1.5 rounded-full" :class="p.online ? 'bg-emerald-500' : 'bg-slate-400'"></span>
-                {{ p.online ? '服务监听中' : '端口未连接' }}
-              </span>
-            </template>
-          </div>
-
-          <div class="flex items-center gap-2.5 shrink-0">
-            <label class="toggle-control inline-flex items-center cursor-pointer select-none text-xs text-slate-600 dark:text-slate-400">
-              <input
-                type="checkbox"
-                :checked="p.enabled"
-                class="sr-only peer"
-                @change="handleToggle(p)"
+        <!-- 列宽预算：设置中心画布扣除侧栏与内边距后只有 ~985px，八列加起来
+             必须装得下，否则 el-table 开横向滚动 + fixed="right" 会把中间的列
+             盖到固定列后面（芯片被切一半、「启用 / 更新时间」直接看不见）。
+             所以路径只留芯片，复制与打开改成图标链接（title / aria-label 说清范围）。 -->
+        <el-table-column label="访问路径" min-width="150">
+          <template #default="{ row }">
+            <div class="flex items-center gap-1 min-w-0">
+              <code class="path-code truncate" :title="getFullUrl(row.alias)">
+                /proxy/{{ row.alias }}/
+              </code>
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :icon="CopyDocument"
+                title="复制访问链接"
+                aria-label="复制访问链接"
+                :data-test="`btn-copy-proxy-${row.id}`"
+                @click="copyUrl(row as ServiceProxy)"
               />
-              <div class="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-transform dark:border-slate-600 peer-checked:bg-accent relative"></div>
-              <span class="ml-1.5 text-xs">{{ p.enabled ? '已启用' : '已停用' }}</span>
-            </label>
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :icon="Link"
+                title="在新窗口打开"
+                aria-label="在新窗口打开"
+                :disabled="!row.enabled"
+                :data-test="`btn-open-proxy-${row.id}`"
+                @click="openUrl(row as ServiceProxy)"
+              />
+            </div>
+          </template>
+        </el-table-column>
 
-            <UiButton variant="ghost" size="sm" @click="openEditDialog(p)">
-              编辑
-            </UiButton>
-            <UiButton variant="ghost" size="sm" class="text-red-600 hover:text-red-700 dark:text-red-400" @click="handleDelete(p)">
-              删除
-            </UiButton>
-          </div>
-        </div>
+        <el-table-column label="映射目标" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">
+            <code class="path-code">{{ row.type === 'directory' ? row.target : `127.0.0.1:${row.target}` }}</code>
+          </template>
+        </el-table-column>
 
-        <!-- Row 2: Access ContextPath Link Box -->
-        <div class="bg-slate-50 dark:bg-slate-800/50 rounded-md px-3.5 py-2.5 border border-slate-200/80 dark:border-slate-700/60 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-2 min-w-0 text-xs text-slate-700 dark:text-slate-300">
-            <span class="text-slate-400 select-none text-2xs">ContextPath:</span>
-            <code class="font-semibold text-accent truncate">{{ getFullUrl(p.alias) }}</code>
-          </div>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <UiButton variant="secondary" size="sm" @click="copyUrl(p)">
-              <svg v-if="copiedId === p.id" class="inline-block mr-1" viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 8 6 11 13 4" />
-              </svg>
-              <span>{{ copiedId === p.id ? '已复制' : '复制链接' }}</span>
-            </UiButton>
-            <UiButton variant="secondary" size="sm" :disabled="!p.enabled" @click="openUrl(p)">
-              在浏览器打开 ↗
-            </UiButton>
-          </div>
-        </div>
+        <el-table-column label="端口状态" width="76">
+          <template #default="{ row }">
+            <el-tag
+              v-if="row.type === 'port'"
+              :type="row.online ? 'success' : 'info'"
+              size="small"
+              disable-transitions
+            >
+              {{ row.online ? '监听中' : '未连接' }}
+            </el-tag>
+            <span v-else class="text-platform-text-muted">—</span>
+          </template>
+        </el-table-column>
 
-        <!-- Row 3: Target Details & Metadata -->
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between items-start gap-1 text-xs text-slate-500 dark:text-slate-400 pt-0.5">
-          <div class="truncate max-w-lg flex items-center gap-1.5">
-            <span class="text-slate-400">映射目标：</span>
-            <code class="font-mono text-slate-700 dark:text-slate-300 text-2xs truncate">
-              {{ p.type === 'directory' ? p.target : `127.0.0.1:${p.target}` }}
-            </code>
-          </div>
-          <div class="text-2xs shrink-0 text-slate-400 tabular-nums">
-            更新于 {{ new Date(p.updatedAt).toLocaleString() }}
-          </div>
-        </div>
-      </article>
-    </div>
+        <el-table-column label="启用" width="64" align="center">
+          <template #default="{ row }">
+            <el-switch
+              :model-value="row.enabled"
+              :loading="togglingId === row.id"
+              :disabled="togglingId !== null"
+              aria-label="启用此代理"
+              :data-test="`proxy-enabled-${row.id}`"
+              @change="handleToggle(row as ServiceProxy)"
+            />
+          </template>
+        </el-table-column>
 
-    <!-- Create / Edit Dialog -->
+        <el-table-column label="更新时间" width="120" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="font-mono">{{ formatListTime(row.updatedAt) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="100" align="right" fixed="right">
+          <template #default="{ row }">
+            <div class="inline-flex items-center gap-1">
+              <el-button
+                link
+                type="primary"
+                size="small"
+                :data-test="`btn-edit-proxy-${row.id}`"
+                @click="openEditDialog(row as ServiceProxy)"
+              >
+                编辑
+              </el-button>
+              <el-button
+                link
+                type="danger"
+                size="small"
+                :data-test="`btn-delete-proxy-${row.id}`"
+                @click="removeProxy(row as ServiceProxy)"
+              >
+                删除
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
+
+        <template #empty>
+          <ListEmptyState
+            :state="loading ? 'loading' : 'empty'"
+            :icon="Share"
+            title="暂无服务代理规则"
+            hint="可以将服务器上的网页产物目录或本地运行的 Web 端口（如 Vite 5173、后端 8080）暴露为独立的 ContextPath，直接通过浏览器访问或分享。"
+          >
+            <el-button type="primary" :icon="Plus" @click="openCreateDialog">创建第一个代理</el-button>
+          </ListEmptyState>
+        </template>
+      </el-table>
+    </section>
+
     <ProxyEditDialog
       v-if="isDialogOpen"
       :proxy="activeProxy"
       @close="isDialogOpen = false"
       @saved="onDialogSaved"
     />
-
-    <UiConfirmDialog
-      v-if="pendingDelete"
-      title="删除代理"
-      :message="`确定要删除代理「${pendingDelete.name}」吗？`"
-      :detail="`别名 ${pendingDelete.alias} 删除后，原 /proxy/${pendingDelete.alias}/ 访问地址将立即失效。`"
-      confirm-label="删除"
-      :loading="deleting"
-      :error="deleteError"
-      @close="pendingDelete = null"
-      @confirm="confirmDelete"
-    />
   </section>
 </template>
+
+<style scoped>
+/* 表格里两处等宽小片：访问路径与映射目标。字号跟随数据单元格的 12px（v2 §三
+   字号阶梯——数据单元格不另写更小的档）。 */
+.path-code {
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-size-12);
+  color: var(--color-text);
+}
+
+.id-chip {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--text-size-10);
+  line-height: 16px;
+  color: var(--color-text-muted);
+}
+</style>

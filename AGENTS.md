@@ -85,9 +85,16 @@
    高度上限与内部滚动、底栏固定由 token 层负责。底栏固定为 `取消`（关闭）/ `确认`（保存）两个词、不带图标、间距走库的默认值
    （`.entity-dialog-actions` 只排布不加 gap，否则与库的 `margin-left: 12px` 相加）；新建弹窗复用
    `shared/components/EntityFormDialog.vue`，不要另写底栏。
-6. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与
+6. **设置中心画布是三段式的例外**（v2 §四）：六张设置页走居中 1080px 的**滚动画布**，形状是
+   页头 + 若干分区卡，用 `web/src/shared/styles/settings-page.css` 的
+   `.settings-page-head / .settings-page-title / .settings-panel / .settings-panel-head(-split) / .settings-switch-row / .settings-field-hint`，
+   **不要**给它们套 `.list-page-*` 三段式、不给表格写 `height="100%"`、不分页；页头右侧**可以**放页面级动作
+   （与单列表页相反）。**画布里 `el-table` 的列宽预算只有 866px**（画布实测可用宽），列宽总和超上去横向滚动会把
+   `fixed="right"` 的操作列盖到中间列上面（「更新时间列消失」）；`web/src/tests/settings-table-budget.spec.ts` 执行这条预算。
+   `el-input` 的 `prefix` / `suffix` **只有槽没有 prop**（写成属性会落到原生 `<input>` 只喷 Vue 警告），路径前后缀样式走 `.path-affix`。
+7. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与
    `ElMessageBox` 按钮，不要在局部另设 locale。
-7. **文档同步**：UI 规范任何一条契约变化，必须同时更新 v2 文档与本节摘要。
+8. **文档同步**：UI 规范任何一条契约变化，必须同时更新 v2 文档与本节摘要。
 
 ## 参照源码（重要）
 

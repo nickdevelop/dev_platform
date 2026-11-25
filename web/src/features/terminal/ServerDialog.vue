@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+// ServerDialog: add or edit a third-party SSH server.
+//
+// `EntityFormDialog` + `el-form` own the chrome and the validation. Two things
+// deliberately do *not* live in the footer: 测试连接 (the footer is fixed to
+// 取消 / 确认 across the platform, so it hangs in the header instead) and the
+// test verdict (it is a result about the address, so it stays inline as an
+// `el-alert` rather than a toast that fades before you read it).
+import { computed, reactive, ref } from 'vue'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { Connection } from '@element-plus/icons-vue'
 import { testServerConnection, type TerminalServer } from '../../api/terminal'
 import { useTerminalStore } from '../../stores/terminal'
-import { useAuthStore } from '../../stores/auth'
-import { UiDialog, UiButton, UiInput, UiTextarea, UiAlert } from '../../shared/ui'
+import EntityFormDialog from '../../shared/components/EntityFormDialog.vue'
 
 const props = defineProps<{
   server?: TerminalServer | null
@@ -15,57 +23,66 @@ const emit = defineEmits<{
 }>()
 
 const terminalStore = useTerminalStore()
-const authStore = useAuthStore()
 
-const isEditing = computed(() => !!props.server && props.server.id > 0)
-const title = computed(() => (isEditing.value ? '编辑服务器' : '添加第三方服务器'))
-
-const name = ref(props.server?.name ?? '')
-const host = ref(props.server?.host ?? '')
-const port = ref(props.server?.port ?? 22)
-const username = ref(props.server?.username ?? 'root')
-const authType = ref<'password' | 'key'>(
-  props.server?.auth_type === 'key' ? 'key' : 'password',
-)
-const secret = ref('')
-const showPassword = ref(false)
-
+const formRef = ref<FormInstance>()
 const testing = ref(false)
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
 const saving = ref(false)
-const errorMessage = ref('')
+
+const isEditing = computed(() => !!props.server && props.server.id > 0)
+
+const form = reactive({
+  name: props.server?.name ?? '',
+  host: props.server?.host ?? '',
+  port: props.server?.port ?? 22,
+  username: props.server?.username ?? 'root',
+  authType: (props.server?.auth_type === 'key' ? 'key' : 'password') as 'password' | 'key',
+  secret: '',
+})
+
+const rules: FormRules = {
+  name: [{ required: true, message: '请输入服务器名称', trigger: 'blur' }],
+  host: [{ required: true, message: '请输入主机地址', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  // A new server needs a credential; an edit may leave it blank to keep the
+  // stored one, so the rule follows `isEditing`.
+  secret: [
+    {
+      validator: (_rule, value: string, callback) => {
+        if (isEditing.value || value.trim()) callback()
+        else callback(new Error(form.authType === 'password' ? '请输入密码' : '请输入私钥文本'))
+      },
+      trigger: 'blur',
+    },
+  ],
+}
+
+function payload() {
+  return {
+    name: form.name.trim(),
+    host: form.host.trim(),
+    port: Number(form.port) || 22,
+    username: form.username.trim(),
+    auth_type: form.authType,
+  }
+}
 
 async function onTest() {
-  if (!host.value.trim()) {
-    errorMessage.value = '请输入主机地址'
-    return
-  }
-  if (!username.value.trim()) {
-    errorMessage.value = '请输入用户名'
-    return
-  }
-  if (!isEditing.value && !secret.value) {
-    errorMessage.value = '请输入认证密码或私钥'
-    return
-  }
+  if (testing.value) return
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
 
   testing.value = true
   testResult.value = null
-  errorMessage.value = ''
-
   try {
     const res = await testServerConnection({
-      host: host.value.trim(),
-      port: Number(port.value) || 22,
-      username: username.value.trim(),
-      auth_type: authType.value,
-      secret: secret.value || undefined,
-      server_id: isEditing.value && !secret.value ? props.server?.id : undefined,
+      ...payload(),
+      secret: form.secret || undefined,
+      // Editing with a blank secret: ask the backend to use what it already
+      // holds for this server instead of failing on an empty credential.
+      server_id: isEditing.value && !form.secret ? props.server?.id : undefined,
     })
-    testResult.value = {
-      ok: true,
-      message: res.message || '连接成功',
-    }
+    testResult.value = { ok: true, message: res.message || '连接成功' }
   } catch (err: unknown) {
     testResult.value = {
       ok: false,
@@ -77,51 +94,24 @@ async function onTest() {
 }
 
 async function onSubmit() {
-  if (!name.value.trim()) {
-    errorMessage.value = '请输入服务器名称'
-    return
-  }
-  if (!host.value.trim()) {
-    errorMessage.value = '请输入主机地址'
-    return
-  }
-  if (!username.value.trim()) {
-    errorMessage.value = '请输入用户名'
-    return
-  }
-  if (!isEditing.value && !secret.value) {
-    errorMessage.value = authType.value === 'password' ? '请输入密码' : '请输入私钥文本'
-    return
-  }
+  if (saving.value) return
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
 
   saving.value = true
-  errorMessage.value = ''
-
   try {
     let saved: TerminalServer
     if (isEditing.value && props.server) {
       saved = await terminalStore.updateServer(props.server.id, {
-        name: name.value.trim(),
-        host: host.value.trim(),
-        port: Number(port.value) || 22,
-        username: username.value.trim(),
-        auth_type: authType.value,
-        secret: secret.value ? secret.value : undefined,
+        ...payload(),
+        secret: form.secret ? form.secret : undefined,
       })
     } else {
-      saved = await terminalStore.createServer({
-        name: name.value.trim(),
-        host: host.value.trim(),
-        port: Number(port.value) || 22,
-        username: username.value.trim(),
-        auth_type: authType.value,
-        secret: secret.value,
-      })
+      saved = await terminalStore.createServer({ ...payload(), secret: form.secret })
     }
     emit('saved', saved)
-    emit('close')
   } catch (err: unknown) {
-    errorMessage.value = err instanceof Error ? err.message : '保存失败'
+    ElMessage.error(err instanceof Error ? err.message : '保存失败')
   } finally {
     saving.value = false
   }
@@ -129,156 +119,119 @@ async function onSubmit() {
 </script>
 
 <template>
-  <UiDialog :title="title" width-class="w-full max-w-lg" @close="emit('close')">
-    <form class="server-form space-y-4" @submit.prevent="onSubmit">
-      <UiAlert v-if="errorMessage" variant="error" class="form-error">
-        {{ errorMessage }}
-      </UiAlert>
-
-      <div class="form-row flex flex-col gap-1.5">
-        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-name">
-          服务器名称 <span class="text-red-500">*</span>
-        </label>
-        <UiInput
-          id="server-name"
-          v-model="name"
-          placeholder="例如：开发环境、数据库服务器"
-          autofocus
-          required
-          block
-        />
-      </div>
-
-      <div class="form-grid grid grid-cols-3 gap-3">
-        <div class="form-row col-span-2 flex flex-col gap-1.5">
-          <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-host">
-            主机地址 (Host) <span class="text-red-500">*</span>
-          </label>
-          <UiInput
-            id="server-host"
-            v-model="host"
-            placeholder="IP 或域名"
-            required
-            block
-          />
-        </div>
-
-        <div class="form-row port-col flex flex-col gap-1.5">
-          <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-port">端口</label>
-          <UiInput
-            id="server-port"
-            v-model.number="port"
-            type="number"
-            min="1"
-            max="65535"
-            placeholder="22"
-            block
-          />
-        </div>
-      </div>
-
-      <div class="form-row flex flex-col gap-1.5">
-        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-username">
-          用户名 (Username) <span class="text-red-500">*</span>
-        </label>
-        <UiInput
-          id="server-username"
-          v-model="username"
-          placeholder="例如：root、ubuntu"
-          required
-          block
-        />
-      </div>
-
-      <div class="form-row flex flex-col gap-1.5">
-        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300">认证方式</label>
-        <div class="radio-group flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300">
-          <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
-            <input v-model="authType" type="radio" value="password" class="accent-accent" />
-            <span>密码认证</span>
-          </label>
-          <label class="radio-label inline-flex items-center gap-1.5 cursor-pointer">
-            <input v-model="authType" type="radio" value="key" class="accent-accent" />
-            <span>私钥认证 (SSH Key)</span>
-          </label>
-        </div>
-      </div>
-
-      <div v-if="authType === 'password'" class="form-row flex flex-col gap-1.5">
-        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-password">
-          密码 <span v-if="!isEditing" class="text-red-500">*</span>
-          <span v-else class="hint-text text-slate-400 font-normal">（留空则保持原密码不变）</span>
-        </label>
-        <div class="password-wrapper flex items-center gap-2">
-          <UiInput
-            id="server-password"
-            v-model="secret"
-            :type="showPassword ? 'text' : 'password'"
-            placeholder="输入 SSH 连接密码"
-            block
-            class="flex-1"
-          />
-          <UiButton
-            type="button"
-            variant="ghost"
-            size="md"
-            class="btn-toggle-visibility"
-            @click="showPassword = !showPassword"
-          >
-            {{ showPassword ? '隐藏' : '显示' }}
-          </UiButton>
-        </div>
-      </div>
-
-      <div v-else class="form-row flex flex-col gap-1.5">
-        <label class="form-label text-xs font-semibold text-slate-700 dark:text-slate-300" for="server-key">
-          SSH 私钥文本 <span v-if="!isEditing" class="text-red-500">*</span>
-          <span v-else class="hint-text text-slate-400 font-normal">（留空则保持原私钥不变）</span>
-        </label>
-        <UiTextarea
-          id="server-key"
-          v-model="secret"
-          :rows="5"
-          class="key-textarea font-mono text-xs"
-          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
-        />
-      </div>
-
-      <UiAlert
-        v-if="testResult"
-        :variant="testResult.ok ? 'success' : 'error'"
-        class="test-feedback"
+  <EntityFormDialog
+    :title="isEditing ? '编辑服务器' : '添加第三方服务器'"
+    subtitle="配置远程 SSH 节点的主机、凭据与认证方式"
+    :identifier="isEditing ? props.server?.id : null"
+    :saving="saving"
+    :width="620"
+    save-test="btn-save-server"
+    data-test="server-dialog"
+    @save="onSubmit"
+    @cancel="emit('close')"
+  >
+    <template #head-extra>
+      <el-button
+        :loading="testing"
+        :icon="Connection"
+        data-test="server-test-btn"
+        @click="onTest"
       >
-        {{ testResult.message }}
-      </UiAlert>
+        测试连接
+      </el-button>
+    </template>
 
-      <div class="dialog-actions flex items-center justify-between gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
-        <UiButton
-          type="button"
-          variant="secondary"
-          class="btn-test"
-          :disabled="testing"
-          :loading="testing"
-          @click="onTest"
-        >
-          {{ testing ? '测试中…' : '测试连接' }}
-        </UiButton>
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="onSubmit">
+      <section class="entity-form-section">
+        <el-form-item label="服务器名称" prop="name">
+          <el-input
+            v-model="form.name"
+            maxlength="40"
+            placeholder="例如：开发环境、数据库服务器"
+            data-test="server-name-input"
+          />
+        </el-form-item>
 
-        <div class="flex items-center gap-2">
-          <UiButton type="button" variant="secondary" class="btn-cancel" @click="emit('close')">
-            取消
-          </UiButton>
-          <UiButton
-            type="submit"
-            variant="primary"
-            class="btn-save"
-            :disabled="saving"
-            :loading="saving"
-          >
-            {{ saving ? '保存中…' : '保存' }}
-          </UiButton>
+        <div class="entity-grid-2">
+          <el-form-item label="主机地址（Host）" prop="host">
+            <el-input
+              v-model="form.host"
+              placeholder="IP 或域名"
+              data-test="server-host-input"
+            />
+          </el-form-item>
+          <el-form-item label="端口">
+            <el-input-number
+              v-model="form.port"
+              :min="1"
+              :max="65535"
+              :controls-position="'right'"
+              class="w-full"
+              data-test="server-port-input"
+            />
+          </el-form-item>
         </div>
-      </div>
-    </form>
-  </UiDialog>
+
+        <el-form-item label="用户名（Username）" prop="username">
+          <el-input
+            v-model="form.username"
+            placeholder="例如：root、ubuntu"
+            data-test="server-username-input"
+          />
+        </el-form-item>
+      </section>
+
+      <section class="entity-form-section">
+        <header class="entity-section-head">
+          <h3 class="entity-section-title">认证凭据</h3>
+          <p class="entity-section-desc">
+            {{ isEditing
+              ? '留空即保持已保存的凭据不变；填写新值会覆盖它。'
+              : '凭据由服务端加密保存，界面不会明文回显。' }}
+          </p>
+        </header>
+
+        <el-form-item label="认证方式">
+          <el-radio-group v-model="form.authType" data-test="server-auth-type">
+            <el-radio value="password">密码认证</el-radio>
+            <el-radio value="key">私钥认证（SSH Key）</el-radio>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item v-if="form.authType === 'password'" label="密码" prop="secret">
+          <el-input
+            v-model="form.secret"
+            type="password"
+            show-password
+            :placeholder="isEditing ? '留空则保持原密码不变' : '输入 SSH 连接密码'"
+            data-test="server-secret-input"
+          />
+        </el-form-item>
+
+        <el-form-item v-else label="SSH 私钥文本" prop="secret">
+          <el-input
+            v-model="form.secret"
+            type="textarea"
+            :rows="5"
+            resize="vertical"
+            class="entity-mono-input"
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----"
+            data-test="server-secret-input"
+          />
+        </el-form-item>
+
+        <el-alert
+          v-if="testResult"
+          :type="testResult.ok ? 'success' : 'error'"
+          :closable="false"
+          show-icon
+          :title="testResult.ok ? '连接成功' : '连接失败'"
+          :description="testResult.message"
+          data-test="server-test-result"
+        />
+      </section>
+    </el-form>
+  </EntityFormDialog>
 </template>

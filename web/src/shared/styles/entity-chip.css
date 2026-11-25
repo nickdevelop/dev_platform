@@ -18,3 +18,53 @@
 .entity-chip--flow {
   --chip-hue: var(--cat-hue-2); /* 青绿 · 流程类 */
 }
+
+/* 服务代理的类型（api/proxies.ts 的 ProxyType）：静态目录 / 端口反代。
+   两个值互斥且无好坏之分，走分类轨而不是语义 type。 */
+.entity-chip--directory {
+  --chip-hue: var(--cat-hue-2); /* 青绿 · 静态目录 */
+}
+
+.entity-chip--port {
+  --chip-hue: var(--cat-hue-3); /* 琥珀 · 端口反代 */
+}
+
+/* 服务连接的部署形态与 SSH 认证方式：同样是「不同即不同色」的分类值。 */
+.entity-chip--local {
+  --chip-hue: var(--cat-hue-6); /* 橄榄 · 本地 */
+}
+
+.entity-chip--remote {
+  --chip-hue: var(--cat-hue-1); /* 靛蓝 · 远程 */
+}
+
+.entity-chip--key {
+  --chip-hue: var(--cat-hue-2); /* 青绿 · 私钥 */
+}
+
+.entity-chip--password {
+  --chip-hue: var(--cat-hue-4); /* 玫红 · 密码 */
+}
+
+/* 模型能力（文本 / 图片 / 工具）：三个互斥不等的标签共用一列，必须三档各一色；
+   故意不用语义色——「支持图片」不是「成功」。 */
+.entity-chip--cap-text {
+  --chip-hue: var(--cat-hue-1); /* 靛蓝 · 文本 */
+}
+
+.entity-chip--cap-image {
+  --chip-hue: var(--cat-hue-3); /* 琥珀 · 图片 */
+}
+
+.entity-chip--cap-tools {
+  --chip-hue: var(--cat-hue-5); /* 紫 · 工具 */
+}
+
+/* 本地 Shell 的来源：自定义配置 vs 系统默认。两者都不是好坏，只是来路。 */
+.entity-chip--custom {
+  --chip-hue: var(--cat-hue-1); /* 靛蓝 · 自定义 */
+}
+
+.entity-chip--default {
+  --chip-hue: var(--cat-hue-6); /* 橄榄 · 系统默认 */
+}

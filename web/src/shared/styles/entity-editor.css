@@ -145,6 +145,15 @@
   line-height: 1.6;
 }
 
+/* 控件里的路径前后缀（el-input 的 #prefix / #suffix 槽）：等宽、不折行，
+   与输入正文同一字面，才能一眼看出「这段不是让用户打的」。 */
+.path-affix {
+  font-family: var(--font-mono);
+  font-size: var(--text-size-12);
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
 /* 开关行：说明在左、开关在右。 */
 .entity-switch-row {
   display: flex;

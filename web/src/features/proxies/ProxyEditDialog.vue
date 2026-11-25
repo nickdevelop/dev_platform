@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { UiFormDialog, UiInput, UiSelect, UiButton } from '../../shared/ui'
+// ProxyEditDialog: create or edit a ContextPath service proxy.
+//
+// `EntityFormDialog` + `el-form` own the chrome and the validation: the previous
+// version hand-rolled every rule into `submit()` and stacked the failure into an
+// `error` prop on the shell, so a typo in the alias and a server-side conflict
+// looked identical and both arrived only after a click on 保存. Now each field
+// validates on blur/change, and the `/proxy/:alias/` shape is expressed as an
+// `el-input` with a prefix and suffix rather than two loose <code> tags that
+// were not part of the control.
+import { computed, reactive, ref } from 'vue'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { FolderOpened } from '@element-plus/icons-vue'
 import { createProxy, updateProxy, type ServiceProxy, type ProxyType } from '../../api/proxies'
 import { useProjectsStore } from '../../stores/projects'
+import EntityFormDialog from '../../shared/components/EntityFormDialog.vue'
 import ProxyDirectoryPicker from './ProxyDirectoryPicker.vue'
 
 const props = defineProps<{
@@ -15,109 +26,118 @@ const emit = defineEmits<{
 }>()
 
 const projectsStore = useProjectsStore()
+const formRef = ref<FormInstance>()
+const saving = ref(false)
+const showDirPicker = ref(false)
+const selectedProjectId = ref<number | ''>('')
 
 const isEditing = computed(() => !!props.proxy)
 
-const name = ref(props.proxy?.name ?? '')
-const alias = ref(props.proxy?.alias ?? '')
-const type = ref<ProxyType>(props.proxy?.type ?? 'directory')
-const target = ref(props.proxy?.target ?? '')
-const enabled = ref(props.proxy?.enabled ?? true)
+const form = reactive({
+  name: props.proxy?.name ?? '',
+  alias: props.proxy?.alias ?? '',
+  type: (props.proxy?.type ?? 'directory') as ProxyType,
+  target: props.proxy?.target ?? '',
+  enabled: props.proxy?.enabled ?? true,
+})
 
-const selectedProjectId = ref<number | ''>('')
-const showDirPicker = ref(false)
+// ContextPath alias: lowercase letters, digits and dashes, starting with an
+// alphanumeric one. Same expression the server enforces.
+const ALIAS_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/
 
-const saving = ref(false)
-const errorMessage = ref('')
+// The target label, placeholder and validator all follow the type, so one
+// computed pair keeps the field and its hint from drifting apart.
+const isDirectory = computed(() => form.type === 'directory')
 
-const aliasRegex = /^[a-z0-9][a-z0-9-]{0,31}$/
+const rules: FormRules = {
+  name: [{ required: true, message: '请输入代理名称', trigger: 'blur' }],
+  alias: [
+    { required: true, message: '请输入 ContextPath 别名', trigger: 'blur' },
+    {
+      validator: (_rule, value: string, callback) => {
+        if (!value || ALIAS_PATTERN.test(value.trim().toLowerCase())) callback()
+        else callback(new Error('别名仅支持小写字母、数字和破折号（1~32位），例如：my-demo'))
+      },
+      trigger: 'blur',
+    },
+  ],
+  target: [
+    {
+      validator: (_rule, value: string, callback) => {
+        const trimmed = (value || '').trim()
+        if (!trimmed) {
+          callback(new Error(isDirectory.value ? '请输入或选择目录路径' : '请输入目标端口号'))
+          return
+        }
+        if (!isDirectory.value) {
+          const port = Number(trimmed)
+          if (Number.isNaN(port) || port < 1024 || port > 65535) {
+            callback(new Error('端口号必须在 1024 ~ 65535 范围内'))
+            return
+          }
+        }
+        callback()
+      },
+      trigger: 'blur',
+    },
+  ],
+}
+
+const projectOptions = computed(() =>
+  projectsStore.projects.map((p) => ({ value: p.id, label: p.name, path: p.path })),
+)
 
 function onProjectSelected() {
   if (!selectedProjectId.value) return
   const proj = projectsStore.projects.find((p) => p.id === Number(selectedProjectId.value))
-  if (proj) {
-    target.value = proj.path
-    if (!name.value.trim()) {
-      name.value = `${proj.name} 预览`
-    }
-    if (!alias.value.trim()) {
-      alias.value = proj.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
-    }
-  }
+  if (!proj) return
+  form.target = proj.path
+  if (!form.name.trim()) form.name = `${proj.name} 预览`
+  if (!form.alias.trim()) form.alias = proj.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+  // Filling the field through the store bypasses the input's blur, so clear any
+  // stale "请输入目录路径" the empty value left behind.
+  formRef.value?.clearValidate('target')
 }
 
 function appendSubdir(subdir: string) {
-  if (!target.value.trim()) return
-  const base = target.value.trim().replace(/\/+$/, '')
-  // If base already ends with subdir, avoid duplicate
-  if (!base.endsWith(`/${subdir}`)) {
-    target.value = `${base}/${subdir}`
-  }
+  if (!form.target.trim()) return
+  const base = form.target.trim().replace(/\/+$/, '')
+  if (!base.endsWith(`/${subdir}`)) form.target = `${base}/${subdir}`
 }
 
 function onDirectoryChosen(chosenPath: string) {
-  target.value = chosenPath
+  form.target = chosenPath
   showDirPicker.value = false
+  formRef.value?.clearValidate('target')
+}
+
+// Server-side rejections that deserve the user's attention, keyed by the code
+// the API returns; anything else falls back to the raw message.
+const SERVER_ERRORS: Record<string, string> = {
+  duplicate_proxy_alias: 'ContextPath 别名已被占用，请更换',
+  invalid_proxy_target: '目录不存在或不可访问，或端口无效',
 }
 
 async function submit() {
-  errorMessage.value = ''
-
-  const trimmedName = name.value.trim()
-  if (!trimmedName) {
-    errorMessage.value = '请输入代理名称'
-    return
-  }
-
-  const trimmedAlias = alias.value.trim().toLowerCase()
-  if (!trimmedAlias || !aliasRegex.test(trimmedAlias)) {
-    errorMessage.value = 'ContextPath 别名仅支持小写字母、数字和破折号（1~32位），例如：my-demo'
-    return
-  }
-
-  const trimmedTarget = target.value.trim()
-  if (!trimmedTarget) {
-    errorMessage.value = type.value === 'directory' ? '请输入或选择目录路径' : '请输入目标端口号'
-    return
-  }
-
-  if (type.value === 'port') {
-    const port = Number(trimmedTarget)
-    if (isNaN(port) || port < 1024 || port > 65535) {
-      errorMessage.value = '端口号必须在 1024 ~ 65535 范围内'
-      return
-    }
-  }
+  if (saving.value) return
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
 
   saving.value = true
+  const payload = {
+    name: form.name.trim(),
+    alias: form.alias.trim().toLowerCase(),
+    type: form.type,
+    target: form.target.trim(),
+    enabled: form.enabled,
+  }
   try {
-    let result: ServiceProxy
-    if (isEditing.value && props.proxy) {
-      result = await updateProxy(props.proxy.id, {
-        name: trimmedName,
-        alias: trimmedAlias,
-        type: type.value,
-        target: trimmedTarget,
-        enabled: enabled.value,
-      })
-    } else {
-      result = await createProxy({
-        name: trimmedName,
-        alias: trimmedAlias,
-        type: type.value,
-        target: trimmedTarget,
-        enabled: enabled.value,
-      })
-    }
+    const result = props.proxy
+      ? await updateProxy(props.proxy.id, payload)
+      : await createProxy(payload)
     emit('saved', result)
   } catch (err: any) {
-    if (err?.error === 'duplicate_proxy_alias') {
-      errorMessage.value = `ContextPath 别名 "${trimmedAlias}" 已被占用，请更换`
-    } else if (err?.error === 'invalid_proxy_target') {
-      errorMessage.value = type.value === 'directory' ? '目录不存在或不可访问' : '无效的端口号'
-    } else {
-      errorMessage.value = err?.error || err?.message || '保存失败，请检查输入'
-    }
+    ElMessage.error(SERVER_ERRORS[err?.error] || err?.error || err?.message || '保存失败，请检查输入')
   } finally {
     saving.value = false
   }
@@ -125,143 +145,141 @@ async function submit() {
 </script>
 
 <template>
-  <UiFormDialog
+  <EntityFormDialog
     :title="isEditing ? '编辑服务代理' : '新建服务代理'"
-    width-class="w-full max-w-lg"
-    :confirm-label="saving ? '保存中…' : '保存'"
-    :confirm-loading="saving"
-    :error="errorMessage"
-    @close="emit('close')"
-    @submit="submit"
+    subtitle="把服务器目录或本地端口暴露为独立的 /proxy/别名/ 访问路径"
+    :identifier="isEditing ? props.proxy?.id : null"
+    :saving="saving"
+    :width="620"
+    save-test="btn-save-proxy"
+    :data-test="`proxy-edit-dialog-${isEditing ? 'edit' : 'create'}`"
+    @save="submit"
+    @cancel="emit('close')"
   >
-    <div class="field flex flex-col gap-1.5">
-      <label for="dlg-proxy-name" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-        代理名称 <span class="text-red-500">*</span>
-      </label>
-      <UiInput
-        id="dlg-proxy-name"
-        v-model="name"
-        placeholder="例如：前端构建产物预览 / 本地 Vite 开发服务"
-        required
-        block
-      />
-    </div>
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
+      <section class="entity-form-section">
+        <el-form-item label="代理名称" prop="name">
+          <el-input
+            v-model="form.name"
+            maxlength="60"
+            placeholder="例如：前端构建产物预览 / 本地 Vite 开发服务"
+            data-test="input-proxy-name"
+          />
+        </el-form-item>
 
-    <div class="field flex flex-col gap-1.5">
-      <label for="dlg-proxy-alias" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-        ContextPath 别名 <span class="text-red-500">*</span>
-      </label>
-      <div class="flex items-center gap-1.5">
-        <code class="text-xs text-slate-400 select-none">/proxy/</code>
-        <UiInput
-          id="dlg-proxy-alias"
-          v-model="alias"
-          placeholder="例如：web-demo"
-          required
-          block
-        />
-        <code class="text-xs text-slate-400 select-none">/</code>
-      </div>
-      <p class="text-2xs text-slate-400">
-        访问路径前缀，仅限小写英文、数字与横线。外部访问链接将形如 <code>http://host:port/proxy/{{ alias || 'demo' }}/</code>
-      </p>
-    </div>
+        <el-form-item label="ContextPath 别名" prop="alias">
+          <div class="w-full space-y-1">
+            <el-input
+              v-model="form.alias"
+              maxlength="32"
+              placeholder="例如：web-demo"
+              class="entity-mono-input"
+              data-test="input-proxy-alias"
+            >
+              <!-- 【/proxy/】与尾部的【/】是路径形状的一部分，得坐在控件里：
+                   el-input 的 prefix / suffix 只有槽，没有同名 prop——写成属性会
+                   落到原生 <input> 上（它那里 prefix 是只读 getter），既只会喷 Vue
+                   警告，前缀也永远不会渲染。 -->
+              <template #prefix>
+                <span class="path-affix">/proxy/</span>
+              </template>
+              <template #suffix>
+                <span class="path-affix">/</span>
+              </template>
+            </el-input>
+            <p class="entity-field-hint">
+              访问路径前缀，仅限小写英文、数字与横线。外部访问链接形如
+              <code>http://host:port/proxy/{{ form.alias || 'demo' }}/</code>
+            </p>
+          </div>
+        </el-form-item>
+      </section>
 
-    <div class="field-row grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <div class="field flex flex-col gap-1.5">
-        <label for="dlg-proxy-type" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-          代理类型 <span class="text-red-500">*</span>
-        </label>
-        <UiSelect id="dlg-proxy-type" v-model="type" block required>
-          <option value="directory">静态目录 (Directory)</option>
-          <option value="port">端口反向代理 (Port)</option>
-        </UiSelect>
-      </div>
+      <section class="entity-form-section">
+        <el-form-item label="代理类型" prop="type">
+          <el-radio-group v-model="form.type" data-test="segment-proxy-type">
+            <el-radio value="directory">静态目录</el-radio>
+            <el-radio value="port">端口反向代理</el-radio>
+          </el-radio-group>
+        </el-form-item>
 
-      <div class="field flex flex-col gap-1.5">
-        <label class="text-xs font-medium text-slate-700 dark:text-slate-300">
-          启用状态
-        </label>
-        <div class="flex items-center h-[34px]">
-          <label class="inline-flex items-center cursor-pointer select-none text-xs text-slate-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              v-model="enabled"
-              class="w-4 h-4 rounded text-accent focus:ring-accent mr-2 border-slate-300 dark:border-slate-600 dark:bg-slate-700"
-            />
-            立即启用此代理
-          </label>
-        </div>
-      </div>
-    </div>
+        <el-form-item>
+          <el-checkbox v-model="form.enabled" data-test="check-proxy-enabled">立即启用此代理</el-checkbox>
+        </el-form-item>
 
-    <!-- Quick select from existing projects (when type === 'directory') -->
-    <div v-if="type === 'directory' && projectsStore.projects.length > 0" class="field flex flex-col gap-1.5 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded border border-slate-200 dark:border-slate-700">
-      <div class="flex items-center justify-between">
-        <label for="dlg-proxy-project" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-          从已有项目选取（快捷填入）
-        </label>
-        <span class="text-2xs text-slate-400">选择后自动带出项目目录</span>
-      </div>
-      <UiSelect id="dlg-proxy-project" v-model="selectedProjectId" block @change="onProjectSelected">
-        <option value="">选择项目…</option>
-        <option v-for="p in projectsStore.projects" :key="p.id" :value="p.id">
-          {{ p.name }} ({{ p.path }})
-        </option>
-      </UiSelect>
-      <div v-if="target" class="flex items-center gap-1 mt-1 flex-wrap">
-        <span class="text-2xs text-slate-400">追加常用构建子目录：</span>
-        <button
-          v-for="sub in ['dist', 'build', 'public', 'out']"
-          :key="sub"
-          type="button"
-          class="text-2xs px-1.5 py-0.5 rounded bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:border-accent text-slate-600 dark:text-slate-300 transition-colors"
-          @click="appendSubdir(sub)"
+        <el-form-item
+          v-if="isDirectory && projectOptions.length"
+          label="从已有项目选取（快捷填入）"
         >
-          + /{{ sub }}
-        </button>
-      </div>
-    </div>
+          <div class="w-full space-y-2">
+            <el-select
+              v-model="selectedProjectId"
+              placeholder="选择项目…"
+              class="w-full"
+              data-test="select-proxy-project"
+              @change="onProjectSelected"
+            >
+              <el-option
+                v-for="p in projectOptions"
+                :key="p.value"
+                :label="p.label"
+                :value="p.value"
+              >
+                <span>{{ p.label }}</span>
+                <span class="entity-option-sub font-mono">{{ p.path }}</span>
+              </el-option>
+            </el-select>
 
-    <!-- Target Field -->
-    <div class="field flex flex-col gap-1.5">
-      <label for="dlg-proxy-target" class="text-xs font-medium text-slate-700 dark:text-slate-300">
-        {{ type === 'directory' ? '服务器目录绝对路径' : '本地监听端口号' }} <span class="text-red-500">*</span>
-      </label>
-      <div class="flex items-center gap-2">
-        <UiInput
-          id="dlg-proxy-target"
-          v-model="target"
-          :placeholder="type === 'directory' ? '例如：/data/projects/my-app/dist' : '例如：5173、3000、8080'"
-          required
-          block
-          class="flex-1"
-        />
-        <UiButton
-          v-if="type === 'directory'"
-          variant="secondary"
-          size="sm"
-          type="button"
-          class="shrink-0"
-          @click="showDirPicker = true"
-        >
-          浏览目录…
-        </UiButton>
-      </div>
-      <p class="text-2xs text-slate-400">
-        {{ type === 'directory'
-          ? '服务器上生成的静态 HTML/构建产物所在的绝对路径。可点击“浏览目录…”选择服务器文件夹。'
-          : '服务器本地回环（127.0.0.1）上运行的 HTTP 端口。支持 WebSocket 双向转发（满足 Vite HMR 热更新）。'
-        }}
-      </p>
-    </div>
+            <div v-if="form.target" class="flex items-center gap-1 flex-wrap">
+              <span class="entity-field-hint">追加常用构建子目录：</span>
+              <el-button
+                v-for="sub in ['dist', 'build', 'public', 'out']"
+                :key="sub"
+                size="small"
+                :data-test="`append-subdir-${sub}`"
+                @click="appendSubdir(sub)"
+              >
+                /{{ sub }}
+              </el-button>
+            </div>
+          </div>
+        </el-form-item>
 
-    <!-- Directory Picker Dialog -->
+        <el-form-item :label="isDirectory ? '服务器目录绝对路径' : '本地监听端口号'" prop="target">
+          <div class="w-full space-y-1">
+            <div class="flex items-center gap-2">
+              <el-input
+                v-model="form.target"
+                class="flex-1"
+                :placeholder="isDirectory ? '例如：/data/projects/my-app/dist' : '例如：5173、3000、8080'"
+                data-test="input-proxy-target"
+              />
+              <el-button
+                v-if="isDirectory"
+                :icon="FolderOpened"
+                class="shrink-0"
+                data-test="btn-browse-dir"
+                @click="showDirPicker = true"
+              >
+                浏览目录…
+              </el-button>
+            </div>
+            <p class="entity-field-hint">
+              {{ isDirectory
+                ? '服务器上生成的静态 HTML/构建产物所在的绝对路径。可点击「浏览目录…」选择服务器文件夹。'
+                : '服务器本地回环（127.0.0.1）上运行的 HTTP 端口。支持 WebSocket 双向转发（满足 Vite HMR 热更新）。' }}
+            </p>
+          </div>
+        </el-form-item>
+      </section>
+    </el-form>
+
+    <!-- Second-level directory picker: the shared server browser over this form. -->
     <ProxyDirectoryPicker
       v-if="showDirPicker"
-      :initial-path="target"
+      :initial-path="form.target"
       @close="showDirPicker = false"
       @select="onDirectoryChosen"
     />
-  </UiFormDialog>
+  </EntityFormDialog>
 </template>
