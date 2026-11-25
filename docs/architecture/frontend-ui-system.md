@@ -180,7 +180,7 @@
 | 布尔徽标/状态 | `el-tag`（`size="small"`） | 颜色预算仍受 v1 的 3% 约束；表格内的 chip 由 token 层收到 11px / 18px，不得大于数据字号；**枚举分类不能用 `type` 上色，见下一节 chip 双轨** |
 | 确认类弹窗 | `ElMessageBox.confirm` | 破坏性操作统一走它，不再自绘 `UiConfirmDialog` |
 | 新增/编辑承载 | `shared/components/EntityFormDialog.vue`（包 `el-dialog`） | 统一头部（标题 + 一句话职责 + 记录号芯片）与底栏（快捷键提示 + 取消 / 保存 + Ctrl/Cmd+S）；分区骨架类见 `shared/styles/entity-editor.css`；复杂多分区表单可用 `el-drawer`，同一模块内保持一致 |
-| 轻提示 | `ElMessage` | 结果与失败都只走它一处；列表页不再挂 `UiAlert` 错误横幅（组织中心已退役，`Ui*` 棘轮随之降到 745） |
+| 轻提示 | `ElMessage` | 结果与失败都只走它一处；列表页不再挂 `UiAlert` 错误横幅（组织中心已退役，引擎中心同口径，`Ui*` 棘轮随之降到 630） |
 | 列表三态 | `shared/components/ListEmptyState.vue`（`loading` / `filtered` / `empty`） | 放进 `el-table` 的 `#empty` 槽；见 §四「列表的三态」。非表格区域的大空态才用 `el-empty` |
 | 列表页页头与节奏 | `shared/styles/list-page.css`（`.list-page-*`） | 页头、工具条槽、表格容器、枚举筛选档位；只放平台自己的类与 token，禁止 `.el-*` / `--el-*` |
 | 列表页工具条 | `shared/components/ListToolbar.vue`（左动作 / 右搜索表单 + 搜索 + 重置） | 见 §四 布局契约；枚举筛选放 `#filters` 插槽用 `el-select` |
@@ -246,7 +246,7 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 **已完成**：
 
 1. 依赖与构建接入、`element-tokens.css` token 层、本规范与 AGENTS/PROJECT 同步。
-2. 组织二级导航上 `el-menu`（router 模式）。**已知不一致**：其余五栏（项目 / 对话 / 任务 / 终端 / 设置）仍是 `sidebar.css` 卡片列表。待办：把五栏一并迁到 `el-menu`（需先解决 Zone A 动作区与 Zone B 搜索区的归属），随后评估从 `sidebar.css` 删除卡片段，避免两种侧栏长期并存。菜单三项覆盖（条目高度 46 / 34px、hover 中性化、库没有的左缘 2px accent 标尺）已在 `element-tokens.css` 的 menus 段；渲染层按 `children` 自动切换 `el-sub-menu`，日后加子菜单只改数据。
+2. 组织二级导航上 `el-menu`（router 模式）。**已知不一致**：其余五栏（项目 / 对话 / 任务 / 终端 / 设置）仍是 `sidebar.css` 卡片列表（引擎二级导航已随引擎中心一轮迁完，见下文第 9 条）。待办：把五栏一并迁到 `el-menu`（需先解决 Zone A 动作区与 Zone B 搜索区的归属），随后评估从 `sidebar.css` 删除卡片段，避免两种侧栏长期并存。菜单三项覆盖（条目高度 46 / 34px、hover 中性化、库没有的左缘 2px accent 标尺）已在 `element-tokens.css` 的 menus 段；渲染层按 `children` 自动切换 `el-sub-menu`，日后加子菜单只改数据。
 3. 组织中心四个子页全部迁完（菜单文案统一为「AI 提示词 / AI 助手 / AI 员工 / AI 团队」，「AI」与中文之间留半角空格）：
    - 列表：`el-table`（`height="100%"` 铺满主体），行内常驻开关 `el-switch`，行内操作 `el-button link`；
    - 工具条：统一 `shared/components/ListToolbar.vue`，枚举筛选 `el-select`（AI 助手＝常驻状态、AI 员工＝执行引擎、AI 提示词＝类型；AI 团队无枚举只留关键词），生效时机见 §四 布局契约；
@@ -263,6 +263,14 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 7. AI 提示词页改为**三段式主体**（§四 布局契约 v2）：页头只剩标题与职责，工具条固定顶、`el-table` 铺满中间、`el-pagination` 固定底（10/20/50，筛选一变就回第一页）；工具条紧凑度收到控件间距 2px + 关键词框 120px，搜索范围改走 `hint`（title / aria-label）。其余三页待跟进（见待办 1）。
 8. **助手 / 员工 / 团队三页照同一模板改完，四页同构**
    - `AssistantListView` / `EmployeeListView` / `TeamListView` 整块模板换成三段式：工具条从页头搬进 `.list-panel-toolbar`、表格包进 `.list-panel-table`、底部加 `.list-panel-footer` + `el-pagination`（`size="small"` + `background`，10/20/50）；筛选一变回第一页、总行数缩小钳制当前页；`:data` 换成 `paged*` 切片；页头只剩标题与一句话职责。
+9. **引擎菜单全量迁完（`features/engines/` 零 `Ui*`，棘轮 745 → 630）**：
+   - 二级导航 `EnginesSidebar` 与 OrgSidebar 同构：`el-menu` router 模式，图标走 `@element-plus/icons-vue`，token 层 menus 段覆盖直接复用；
+   - 助手 / 会话 / 协同三个面板：`el-button` 保存、`el-checkbox` 权限开关，内联「✓ 配置已保存」退位，保存结果只报一次 `ElMessage`（失败不再静默）；
+   - `EngineStepControl`：自绘 `<input type=number>` → `el-input-number`（关步进器、钳在 -1），预设按钮 → `el-segmented`；预算量规保留（纯展示面，不是控件）；-1=不限语义不变：清空 / 非正数一律回 -1；
+   - `AgentSettingsView` 整页：自绘 Tab → `el-tabs`（启用圆点、`agent-tab-*` 钩子保留）；路径输入 `el-input`、传输/权限模式 `el-select`、启用开关 `el-switch`、空闲断开 `el-input-number`；模型目录 `<ul>` → 小尺寸 `el-table`（行内 `el-switch` + `el-tag` 状态轨 + 行内「编辑」link）；模型编辑内联表单 → `shared/components/EntityFormDialog.vue` + `el-form`；停止 service 的内联确认条 → `ElMessageBox.confirm`（danger）；诊断 `<details>` → `el-collapse`（警告/错误默认展开）；
+   - 页面级错误横幅全部退位：store 错误（agentsError / serviceError / diagnosticsError）由 watcher 统一 `ElMessage` 报一次；
+   - 内嵌面板 `features/settings/BuiltinDataPanel.vue`（会话数据管理，仅被 Agent 配置页使用）同批整页迁：`el-table` + `el-pagination`，删除/清空走 `ElMessageBox`；`AgentUsagePanel` 同步迁移（`el-tag` 状态轨、配额条改用 `--color-success/warning/danger` 的 platform token 类）；两页里早年不在 tailwind 映射内的死样式类（`bg-surface/40`、`text-muted-foreground` 等）收编回 `platform-*` token 类；
+   - 顺带清障：删除从未挂载的 `CoreEngineView.vue` 与 router 死 import（`/engines/core` redirect 与 API `core` 字段不动）。
    - **反向补齐**：`OrgPromptsView` 原本**完全没有** URL 同步（另三页都有 `?action=new` / `?edit=<id>`），补上同一套 `syncRouteState` + `router.replace` —— 粘贴的链接点开的东西必须和点击一样。实测四页：直链打开、点击写 query、Esc 清 query 全一致。
    - **删掉旧写法**：`.list-page-toolbar`（工具条写在页头里）与无分页的 `.list-page-body` 四页同构后零引用，已从 `list-page.css` 删除；留着就有人会挑到旧的那种。
    - **分页必须写 `size="small"`**：提示词页摘掉 `size` 后条数下拉回到 28px，而页码方块被 token 层钉在 24px，同一条横带两种高度。
@@ -270,7 +278,7 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 
 **待办**：
 
-1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态（组织中心四页已全是这种形状，照抄即可）。
+1. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单（设置模块中被引擎页内嵌的 `BuiltinDataPanel` / `AgentUsagePanel` 已随引擎中心先行迁完）；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态（组织中心四页已全是这种形状，照抄即可）。
 2. 助手的预设头像仍是 emoji（源码里带 `taste-skill-ignore` 标记），与 v1「零 Emoji」相冲，且缺 emoji 字体的环境会显示成豆腐块；待办：换成 v1 的手绘 SVG 图标集，头像字段改存图标 key。
 
 ---
