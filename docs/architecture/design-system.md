@@ -1,4 +1,9 @@
-# dev_platform 设计系统规范：Data Terminal 极客终端
+# dev_platform 设计系统规范：Data Terminal 极客终端（v1 · 现为视觉附录）
+
+> **已被 [`frontend-ui-system.md`](./frontend-ui-system.md)（v2 · Element Plus 基座）取代为唯一权威规范。**
+> 本文件继续生效的部分：设计四大原则、色彩体系与 Token、排版与字阶、零 Emoji 矢量图标、动效预算、工作台布局骨架。
+> 本文件不再适用的部分：组件选型与引入（现由 Element Plus 承担）、控件密度（现为 24 / 28 / 32 三档）、
+> §七 的审查命令（已失效，改用 v2 §七 的真实命令与守卫）；弹窗策略也不再由本文件限定（新增/编辑已改用 `el-dialog`）。
 
 本规范定义了 `dev_platform` 的前端设计系统与视觉工程准则。该规范基于 `design-taste-frontend` 的 **App Screens（开发者工具/工作台）** 专章，面向长会话、高强度、沉浸式多 Agent 编码与实时系统协同场景制定。
 
@@ -154,16 +159,16 @@ html, body, button, input, select, textarea {
 
 ---
 
-## 七、质量门禁与设计审查守卫（Taste Linter）
+## 七、质量门禁与设计审查守卫（已失效，见 v2）
 
-为确保后续开发不退化回粗糙模板，项目集成了 `design-taste-frontend` 的自动化审查脚本：
+> 本节记录的 `design-taste-frontend/scripts/lint.mjs` 在技能包中并不存在（技能包提供 `gate.mjs /
+> consistency.mjs / copy-lint.mjs`，面向静态 HTML 页面而非本 SPA），因此从未真正执行过。
+> 可执行的门禁清单与逐条守卫文件见 [`frontend-ui-system.md`](./frontend-ui-system.md) §七：
+> `theme-tokens.spec.ts`（未定义 token / 硬编码 px 字号 / 布局 token 冻结）、
+> `ui-element-boundary.spec.ts`（库内部选择器不得泄漏到业务组件、`Ui*` 引用只降不升）、
+> `native-dialog-guard.spec.ts`（禁原生 `confirm/alert`）。
 
-```bash
-# 运行前端设计规范审查
-node /root/.agents/skills/design-taste-frontend/scripts/lint.mjs --app web/src/features web/src/shared web/src/theme web/src/views
-```
-
-### 违规拦截指标（Fail-on-Error）：
+以下拦截指标仍作为人工审查清单保留：
 1. `[emoji]`：源码中出现原生 Emoji 用于 UI 控件；
 2. `[purple]`：使用任何未经批准的紫色/靛蓝字面量；
 3. `[micro-label]`：出现全大写字母加宽字距的装饰性小标签；

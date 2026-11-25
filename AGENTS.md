@@ -33,6 +33,35 @@
 - 新增 agent 后端步骤：契约包加 `BackendID` → `internal/providers/<name>` 实现 `AgentAdapter` 并导出
   `Descriptor` → 组合根注册 → 更新 `docs/agent-compatibility.md`。前端零改动。
 
+## 前端 UI 规范（Element Plus 基座，强制）
+
+前端 UI 的唯一权威规范是 👉 [`docs/architecture/frontend-ui-system.md`](./docs/architecture/frontend-ui-system.md)（v2）。
+`docs/architecture/design-system.md`（v1 · Data Terminal）降级为视觉附录：色彩预算、字阶、零 Emoji 矢量图标、
+动效预算、工作台布局骨架继续有效；**弹窗策略与组件密度以 v2 为准**。改动任何界面前先读 v2。
+
+硬性规则（守卫测试执行，违反即 CI 红）：
+
+1. **组件库优先**：控件一律使用 Element Plus（`el-table / el-form / el-select / el-switch /
+   el-segmented / el-dialog / el-input / ElMessage / ElMessageBox` 等，选型表见 v2 §五）。
+   模板里 `<el-*>` 由 `unplugin-vue-components` 自动按需引入，**不要手写 import**；
+   函数式 API（`ElMessage / ElMessageBox / ElLoading`）才从 `'element-plus'` 显式 import。
+   新增页面禁止再写 `Ui*` 原语；改造页面必须**整页**迁移，不得半页 `el-*` 半页 `Ui*`。
+2. **唯一覆盖点**：对 Element Plus 的任何样式干预（`--el-*` 变量、`.el-*` 选择器、密度桥接）
+   只能写在 `web/src/theme/element-tokens.css`；业务组件的 `<style>` 里出现即违规
+   （`web/src/tests/ui-element-boundary.spec.ts` 拦截，并冻结 `Ui*` 引用数——只准降不准升）。
+3. **皮肤只来自 token**：颜色/圆角/字号/控件高度/阴影/时长必须可追溯到
+   `--color-* / --radius / --control-height / --text-size-* / --font-*`；组件内出现 hex 色值、
+   像素字号或手工微调控件高度即违规（`theme-tokens.spec.ts` 与 v2 §四密度表拦截）。
+   控件档位固定 small 24 / default 28 / large 32，面板内工具条与表格行内操作用 `size="small"`。
+4. **引入方式不可变更**：解析器 `ElementPlusResolver({ noStyles: true })` + 全量单文件 CSS
+   （`element-plus/dist/index.css`，因函数式 API 不在模板解析器射程内会裸奔无样式）；顺序固定
+   `element-plus → style.css → theme/element-tokens.css`；`web/src/types/components.d.ts` 必须提交；
+   **禁止**引入 `theme-chalk/dark/css-vars.css` 或在 `html` 上加 `dark` class（会唤醒 280 处沉睡的
+   `dark:` 工具类），深色预设靠自身 palette + `root.style.colorScheme` 生效。
+5. **中文语料**：全局 `<el-config-provider :locale="zhCn">`（`App.vue`）已生效于表格空态与
+   `ElMessageBox` 按钮，不要在局部另设 locale。
+6. **文档同步**：UI 规范任何一条契约变化，必须同时更新 v2 文档与本节摘要。
+
 ## 参照源码（重要）
 
 开发本项目时经常需要参照 opencode、pi 与 claudian 的实现。三个源码仓库位于本机，路径如下：
