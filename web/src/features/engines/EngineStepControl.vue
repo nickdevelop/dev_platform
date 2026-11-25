@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // EngineStepControl: Unified step-limit control component across engine panels.
-// Unslopped per craft guidelines:
-// - 4px grid rhythm (h-8 32px controls, gap-2)
-// - Standard app typography scale (text-xs / text-sm, 12px leading-relaxed hint)
-// - Quiet chrome, zero resting shadows, 1px accent active indicator
-// - Tabular figures, quiet status metadata, no colored pill badges
-// - Subtle calibrated budget gauge visual
+// Element Plus migration: the number field is `el-input-number` (controls off,
+// clamped at -1) and the preset chips are an `el-segmented` — the library owns
+// the selection affordance now. The budget gauge stays: it is our own display
+// surface, not a control, and it only paints platform tokens.
+// -1 keeps its "unlimited" meaning: a cleared field or any non-positive value
+// falls back to -1, exactly like the hand-rolled input it replaced.
 import { computed } from 'vue'
 
 export interface StepPreset {
@@ -46,20 +46,30 @@ const budgetPercent = computed(() => {
   return Math.min(100, Math.max(4, (props.modelValue / 50) * 100))
 })
 
-function onInputChange(e: Event) {
-  const target = e.target as HTMLInputElement
-  const raw = Number.parseInt(target.value, 10)
-  if (Number.isNaN(raw)) {
-    emit('update:modelValue', -1)
-  } else if (raw <= 0 && raw !== -1) {
-    emit('update:modelValue', -1)
-  } else {
-    emit('update:modelValue', raw)
-  }
-}
+// el-input-number binds `number | null`; the panel contract is a plain number
+// where anything non-positive (or a cleared field) means "unlimited" (-1).
+const inputValue = computed<number | null>({
+  get: () => props.modelValue,
+  set: (value) => {
+    if (value === null || Number.isNaN(value) || value <= 0) {
+      emit('update:modelValue', -1)
+    } else {
+      emit('update:modelValue', Math.trunc(value))
+    }
+  },
+})
 
-function selectPreset(val: number) {
-  emit('update:modelValue', val)
+// The segmented preset only lights up when the current value actually is one
+// of the presets; a custom number (e.g. 42) leaves the selection empty rather
+// than lying about which chip is active.
+const presetSelection = computed(() =>
+  props.presets.some((preset) => preset.value === props.modelValue)
+    ? props.modelValue
+    : undefined,
+)
+
+function onPresetChange(value: number | string | boolean) {
+  emit('update:modelValue', Number(value))
 }
 </script>
 
@@ -79,7 +89,7 @@ function selectPreset(val: number) {
       </span>
     </div>
 
-    <!-- Calibrated Budget Gauge (Tactile Moment) -->
+    <!-- Calibrated Budget Gauge (display-only, not a control) -->
     <div class="budget-gauge-track w-full h-1 bg-surface-muted rounded-full overflow-hidden flex items-center">
       <div
         class="budget-gauge-bar h-full transition-all duration-200"
@@ -90,36 +100,28 @@ function selectPreset(val: number) {
 
     <div class="flex items-center gap-2 flex-wrap">
       <div class="step-input-wrapper inline-flex items-center gap-1.5">
-        <input
+        <el-input-number
           :id="inputId"
-          type="number"
-          min="-1"
-          step="1"
-          :value="modelValue"
-          class="step-num-input w-24 h-8 px-2.5 text-xs font-mono rounded border border-border bg-background text-foreground focus:outline-none focus:border-accent tabular-nums transition-colors"
+          v-model="inputValue"
+          :min="-1"
+          :step="1"
+          :controls="false"
+          class="step-num-input w-24"
           placeholder="步数"
-          @input="onInputChange"
+          data-test="engine-step-number"
         />
         <span class="text-xs text-muted-foreground select-none font-mono">步</span>
       </div>
 
-      <div class="preset-group flex items-center gap-1 flex-wrap" role="group" aria-label="预设步数选择">
-        <button
-          v-for="p in presets"
-          :key="p.value"
-          type="button"
-          class="preset-btn px-2.5 h-8 text-xs font-mono rounded border transition-colors cursor-pointer select-none tabular-nums"
-          :class="
-            modelValue === p.value
-              ? 'active border-accent bg-accent/10 text-accent font-medium'
-              : 'border-border/70 bg-surface/60 text-muted-foreground hover:text-foreground hover:border-border hover:bg-surface'
-          "
-          :aria-pressed="modelValue === p.value"
-          @click="selectPreset(p.value)"
-        >
-          {{ p.label }}
-        </button>
-      </div>
+      <el-segmented
+        :model-value="presetSelection"
+        :options="presets"
+        class="preset-group"
+        role="group"
+        aria-label="预设步数选择"
+        data-test="engine-step-presets"
+        @change="onPresetChange"
+      />
     </div>
 
     <p v-if="hint" class="text-xs text-muted-foreground leading-relaxed">
@@ -129,18 +131,8 @@ function selectPreset(val: number) {
 </template>
 
 <style scoped>
-.step-num-input::-webkit-outer-spin-button,
-.step-num-input::-webkit-inner-spin-button {
-  margin: 0;
-}
-.step-num-input {
-  -moz-appearance: textfield;
-}
-
-.preset-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
+.step-num-input :deep(input) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 </style>
