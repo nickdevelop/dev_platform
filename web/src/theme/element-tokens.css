@@ -416,3 +416,29 @@ html .el-table th.el-table__cell {
   color: var(--el-text-color-secondary);
   font-weight: 500;
 }
+
+/* 浮层（tooltip / popover / popconfirm）：库的 is-dark 变体拿文字色同时当底色和
+   描边色（`--el-popper-bg-color-dark` + `--el-text-color-primary`），映射到平台
+   色板后深色预设会反相成白底白框，浅色预设描边过重。浮层一律用平台的浮层表面
+   与强描边，箭头随之。 */
+.el-popper.is-dark {
+  --el-popper-bg-color-dark: var(--color-surface);
+  --el-popover-bg-color: var(--color-surface);
+  --el-popover-border-color: var(--color-border-strong);
+  --el-popover-title-text-color: var(--color-text-muted);
+  background: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color-dark);
+  color: var(--el-text-color-primary);
+}
+
+.el-popper.is-dark > .el-popper__arrow::before {
+  background: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color-dark);
+}
+
+/* 长文本 tooltip：库不给最大宽度，一整段正文提示会铺满整屏；统一收到 720px
+   以内并把行高拉回可读值。 */
+.el-popper.el-tooltip {
+  max-width: min(720px, 92vw);
+  line-height: 1.6;
+}
