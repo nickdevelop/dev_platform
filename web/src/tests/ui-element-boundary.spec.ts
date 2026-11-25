@@ -28,9 +28,10 @@ const webRoot = fileURLToPath(new URL('../..', import.meta.url))
 const srcRoot = join(webRoot, 'src')
 
 // Measured at each migration step: 859 when Element Plus landed, 836 after the
-// AI 提示词 page, 808 after the AI 助手 page. Lower it as pages move; see the
+// AI 提示词 page, 808 after the AI 助手 page, 798 after the AI 员工 page. Lower
+// it as pages move; see the
 // header note.
-const UI_PRIMITIVE_BASELINE = 808
+const UI_PRIMITIVE_BASELINE = 750
 
 // The primitives themselves are obviously allowed to mention their own names.
 const EXCLUDED_DIRS = new Set(['ui', 'tests', 'fonts', 'node_modules'])

@@ -4,9 +4,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import AssistantListView from '../features/organization/assistants/AssistantListView.vue'
 import AssistantEditDialog from '../features/organization/assistants/AssistantEditDialog.vue'
 import EmployeeListView from '../features/organization/employees/EmployeeListView.vue'
-import EmployeeEditPanel from '../features/organization/employees/EmployeeEditPanel.vue'
+import EmployeeEditDialog from '../features/organization/employees/EmployeeEditDialog.vue'
 import TeamListView from '../features/organization/teams/TeamListView.vue'
-import TeamEditPanel from '../features/organization/teams/TeamEditPanel.vue'
+import TeamEditDialog from '../features/organization/teams/TeamEditDialog.vue'
 import OrgPromptsView from '../features/organization/prompts/OrgPromptsView.vue'
 import { useChatsStore } from '../stores/chats'
 import { useRolesStore } from '../stores/roles'
@@ -160,177 +160,122 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
     })
   })
 
-  describe('AI Employees (EmployeeListView & EmployeeEditPanel)', () => {
-    it('renders employee list without modal dialogs and clicking create switches to EmployeeEditPanel in-place', async () => {
+  describe('AI Employees (EmployeeListView & EmployeeEditDialog)', () => {
+    const sampleEmployee = {
+      id: 10,
+      name: '前端架构师',
+      description: '主导 Vue3 与工程化设计',
+      backend: 'llm',
+      model: 'gpt-4o',
+      color: '#3b82f6',
+      promptId: 1,
+      systemPrompt: '',
+      createdAt: '',
+      updatedAt: '',
+    }
+
+    it('renders the employee roster and opens the create dialog', async () => {
       const rolesStore = useRolesStore()
-      rolesStore.roles = [
-        {
-          id: 10,
-          name: '前端架构师',
-          description: '主导 Vue3 与工程化设计',
-          backend: 'llm',
-          model: 'gpt-4o',
-          color: '#3b82f6',
-          promptId: 1,
-          systemPrompt: '',
-          createdAt: '',
-          updatedAt: '',
-        },
-      ]
-      rolesStore.loadRoles = vi.fn().mockResolvedValue(rolesStore.roles)
-
-      const wrapper = mount(EmployeeListView)
-      await flushPromises()
-
-      // 1. Verify list rendered and zero modal backdrops
-      expect(wrapper.text()).toContain('AI 员工')
-      expect(wrapper.text()).toContain('1 名员工')
-      expect(wrapper.text()).toContain('前端架构师')
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
-      expect(wrapper.findComponent(EmployeeEditPanel).exists()).toBe(false)
-
-      // 2. Click "+ 新建 AI 员工"
-      const createBtn = wrapper.find('[data-test="btn-create-employee"]')
-      expect(createBtn.exists()).toBe(true)
-      await createBtn.trigger('click')
-      await flushPromises()
-
-      // 3. Verify in-place EmployeeEditPanel is rendered, NO dialogs
-      expect(wrapper.findComponent(EmployeeEditPanel).exists()).toBe(true)
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
-      expect(wrapper.text()).toContain('新建 AI 员工')
-      expect(wrapper.text()).toContain('01 基础档案与视觉标识')
-      expect(wrapper.text()).toContain('02 执行引擎与运行模型')
-      expect(wrapper.text()).toContain('03 人设规范与系统提示词')
-
-      // 4. Click cancel button and verify returning to list
-      const cancelBtn = wrapper.find('button[title="返回列表 (Esc)"]')
-      expect(cancelBtn.exists()).toBe(true)
-      await cancelBtn.trigger('click')
-      await flushPromises()
-
-      expect(wrapper.findComponent(EmployeeEditPanel).exists()).toBe(false)
-      expect(wrapper.text()).toContain('AI 员工')
-    })
-
-    it('opens edit mode when clicking edit on employee row without popups', async () => {
-      const rolesStore = useRolesStore()
-      const sampleEmployee = {
-        id: 11,
-        name: '代码审查专家',
-        description: '严格的代码质量审计',
-        backend: 'opencode_v2',
-        model: 'default',
-        color: '#10b981',
-        promptId: 1,
-        systemPrompt: '',
-        createdAt: '',
-        updatedAt: '',
-      }
       rolesStore.roles = [sampleEmployee]
       rolesStore.loadRoles = vi.fn().mockResolvedValue(rolesStore.roles)
 
       const wrapper = mount(EmployeeListView)
       await flushPromises()
 
-      // Click "编辑" button
-      const editBtn = wrapper.find('button[title="编辑档案"]')
+      expect(wrapper.text()).toContain('AI 员工')
+      expect(wrapper.text()).toContain('1 名员工')
+      expect(wrapper.text()).toContain('前端架构师')
+      expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(false)
+
+      await wrapper.find('[data-test="btn-create-employee"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(true)
+      expect(wrapper.text()).toContain('新建 AI 员工')
+      expect(wrapper.text()).toContain('员工档案与岗位')
+      expect(wrapper.text()).toContain('执行引擎与运行模型')
+      expect(wrapper.text()).toContain('人设与提示词')
+
+      wrapper.findComponent(EmployeeEditDialog).vm.$emit('cancel')
+      await flushPromises()
+      expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(false)
+    })
+
+    it('opens the edit dialog prefilled from the row action', async () => {
+      const rolesStore = useRolesStore()
+      rolesStore.roles = [{ ...sampleEmployee, id: 11, name: '代码审查专家', backend: 'opencode_v2' }]
+      rolesStore.loadRoles = vi.fn().mockResolvedValue(rolesStore.roles)
+
+      const wrapper = mount(EmployeeListView)
+      await flushPromises()
+
+      const editBtn = wrapper.find('[data-test="btn-edit-employee-11"]')
       expect(editBtn.exists()).toBe(true)
       await editBtn.trigger('click')
       await flushPromises()
 
-      // Verify in-place panel opens with employee data, no dialog
-      expect(wrapper.findComponent(EmployeeEditPanel).exists()).toBe(true)
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
+      expect(wrapper.findComponent(EmployeeEditDialog).exists()).toBe(true)
       expect(wrapper.text()).toContain('编辑 AI 员工 · 代码审查专家')
     })
   })
 
-  describe('AI Teams (TeamListView & TeamEditPanel)', () => {
-    it('renders team list without modal dialogs and clicking create switches to TeamEditPanel in-place', async () => {
+  describe('AI Teams (TeamListView & TeamEditDialog)', () => {
+    const sampleTeam = {
+      id: 20,
+      name: '全栈攻坚特战队',
+      description: '多 Agent 敏捷协同重构',
+      orchestratorModel: 'gpt-4o',
+      orchestratorPrompt: '中控调度指令',
+      memberCount: 2,
+      taskCount: 3,
+      createdAt: '',
+      updatedAt: '',
+    }
+
+    it('renders the team roster and opens the create dialog', async () => {
       const groupsStore = useGroupsStore()
-      groupsStore.groups = [
-        {
-          id: 20,
-          name: '全栈攻坚特战队',
-          description: '多 Agent 敏捷协同重构',
-          orchestratorModel: 'gpt-4o',
-          orchestratorPrompt: '中控调度指令',
-          memberCount: 2,
-          taskCount: 3,
-          createdAt: '',
-          updatedAt: '',
-        },
-      ]
+      groupsStore.groups = [sampleTeam]
       groupsStore.loadGroups = vi.fn().mockResolvedValue([])
 
       const wrapper = mount(TeamListView)
       await flushPromises()
 
-      // 1. Verify list rendered and zero modal backdrops
       expect(wrapper.text()).toContain('AI 团队')
       expect(wrapper.text()).toContain('1 个团队')
       expect(wrapper.text()).toContain('全栈攻坚特战队')
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
-      expect(wrapper.findComponent(TeamEditPanel).exists()).toBe(false)
+      expect(wrapper.findComponent(TeamEditDialog).exists()).toBe(false)
 
-      // 2. Click "+ 新建 AI 团队"
-      const createBtn = wrapper.find('[data-test="btn-create-team"]')
-      expect(createBtn.exists()).toBe(true)
-      await createBtn.trigger('click')
+      await wrapper.find('[data-test="btn-create-team"]').trigger('click')
       await flushPromises()
 
-      // 3. Verify in-place TeamEditPanel is rendered, NO dialogs
-      expect(wrapper.findComponent(TeamEditPanel).exists()).toBe(true)
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
+      expect(wrapper.findComponent(TeamEditDialog).exists()).toBe(true)
       expect(wrapper.text()).toContain('新建 AI 团队')
-      expect(wrapper.text()).toContain('01 基础信息与团队定位')
-      expect(wrapper.text()).toContain('02 中控调度大脑 (Orchestrator)')
-      expect(wrapper.text()).toContain('03 编制专家员工 (Staffing)')
+      expect(wrapper.text()).toContain('基础信息与团队定位')
+      expect(wrapper.text()).toContain('中控调度大脑')
+      expect(wrapper.text()).toContain('编制专家员工')
 
-      // 4. Click cancel button and verify returning to list
-      const cancelBtn = wrapper.find('button[title="返回列表 (Esc)"]')
-      expect(cancelBtn.exists()).toBe(true)
-      await cancelBtn.trigger('click')
+      wrapper.findComponent(TeamEditDialog).vm.$emit('cancel')
       await flushPromises()
-
-      expect(wrapper.findComponent(TeamEditPanel).exists()).toBe(false)
-      expect(wrapper.text()).toContain('AI 团队')
+      expect(wrapper.findComponent(TeamEditDialog).exists()).toBe(false)
     })
 
-    it('loads detail and opens edit mode without modal dialogs when editing team', async () => {
+    it('loads the team detail and opens the edit dialog from the row action', async () => {
       const groupsStore = useGroupsStore()
-      const sampleTeam = {
-        id: 21,
-        name: '微服务重构团队',
-        description: '后端架构治理',
-        orchestratorModel: 'gpt-4o',
-        orchestratorPrompt: '中控规范',
-        memberCount: 1,
-        taskCount: 0,
-        createdAt: '',
-        updatedAt: '',
-      }
       groupsStore.groups = [sampleTeam]
       groupsStore.loadGroups = vi.fn().mockResolvedValue([])
-      groupsStore.loadGroup = vi.fn().mockResolvedValue({
-        ...sampleTeam,
-        members: [{ roleId: 10, roleName: '前端架构师', backend: 'llm', model: 'gpt-4o', color: '#3b82f6' }],
-      })
+      groupsStore.loadGroup = vi.fn().mockResolvedValue({ ...sampleTeam, members: [{ roleId: 1 }] })
 
       const wrapper = mount(TeamListView)
       await flushPromises()
 
-      // Click "编辑" button
-      const editBtn = wrapper.find('button[title="编辑设置与编制员工"]')
+      const editBtn = wrapper.find('[data-test="btn-edit-team-20"]')
       expect(editBtn.exists()).toBe(true)
       await editBtn.trigger('click')
       await flushPromises()
 
-      // Verify in-place panel opens with team data, no dialog
-      expect(wrapper.findComponent(TeamEditPanel).exists()).toBe(true)
-      expect(wrapper.find('.fixed.inset-0').exists()).toBe(false)
-      expect(wrapper.text()).toContain('编辑 AI 团队 · 微服务重构团队')
+      expect(groupsStore.loadGroup).toHaveBeenCalledWith(20)
+      expect(wrapper.findComponent(TeamEditDialog).exists()).toBe(true)
+      expect(wrapper.text()).toContain('编辑 AI 团队 · 全栈攻坚特战队')
     })
   })
 
@@ -338,8 +283,8 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
     it('keeps the same numbered sections and save strip in every organization editor', async () => {
       const editors = [
         mount(AssistantEditDialog, { props: { assistant: null } }),
-        mount(EmployeeEditPanel, { props: { employee: null } }),
-        mount(TeamEditPanel, { props: { team: null } }),
+        mount(EmployeeEditDialog, { props: { employee: null } }),
+        mount(TeamEditDialog, { props: { team: null } }),
       ]
       await flushPromises()
 

@@ -2,18 +2,18 @@
 // AssistantEditDialog: create or edit one AI assistant.
 //
 // This used to be a full-page workbench panel that replaced the list, hid the URL
-// and had to re-implement Esc / Ctrl+S by hand. It is now an `el-dialog` over the
-// list: the route stays stable, the library owns focus trapping and dismissal,
-// and the four numbered sections survive as sections inside the form.
-//
-// Validation is `el-form` + `rules` (inline, under the field that failed); the
-// save result is reported by `ElMessage`.
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+// and re-implemented Esc / Ctrl+S by hand. It is now a form inside the shared
+// `EntityFormDialog` shell: the route stays stable, the shell owns the header,
+// the save strip and the shortcuts, and the four numbered sections survive as
+// sections. Validation is `el-form` + `rules` (inline, under the field that
+// failed); the save result is reported by `ElMessage`.
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import type { ChatGroup, ChatGroupInput } from '../../../api/chats'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
 import { usePromptsStore } from '../../../stores/prompts'
+import EntityFormDialog from '../../../shared/components/EntityFormDialog.vue'
 
 const props = defineProps<{
   assistant?: ChatGroup | null
@@ -28,7 +28,6 @@ const chatsStore = useChatsStore()
 const modelsStore = useModelsStore()
 const promptsStore = usePromptsStore()
 
-const visible = ref(true)
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
 
@@ -78,11 +77,6 @@ onMounted(async () => {
     promptsStore.prompts.length === 0 ? promptsStore.loadPrompts() : Promise.resolve(),
   ])
   initForm()
-  window.addEventListener('keydown', onKeyDown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeyDown)
 })
 
 watch(
@@ -90,13 +84,6 @@ watch(
   () => initForm(),
   { deep: true },
 )
-
-function onKeyDown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-    e.preventDefault()
-    void handleSubmit()
-  }
-}
 
 function initForm() {
   formRef.value?.clearValidate()
@@ -147,10 +134,7 @@ const usableModels = computed(
     (modelsStore.services ?? []).flatMap((service) =>
       (service.models ?? [])
         .filter((model) => model.usable && model.supportsText)
-        .map((model) => ({
-          id: model.id,
-          name: `${model.name || model.modelId} (${service.name})`,
-        })),
+        .map((model) => ({ id: model.id, name: `${model.name || model.modelId} (${service.name})` })),
     ),
 )
 
@@ -160,13 +144,11 @@ const selectedPromptPreview = computed(() => {
   return p ? p.content : ''
 })
 
-const defaultAvatar = computed(() => {
+const currentAvatar = computed(() => {
+  if (form.icon.trim()) return form.icon.trim()
   const trimmed = form.name.trim()
-  if (!trimmed) return '助'
-  return Array.from(trimmed)[0].toUpperCase()
+  return trimmed ? Array.from(trimmed)[0].toUpperCase() : '助'
 })
-
-const currentAvatar = computed(() => form.icon.trim() || defaultAvatar.value)
 
 function selectIcon(icon: string) {
   form.icon = form.icon === icon ? '' : icon
@@ -213,68 +195,53 @@ async function handleSubmit() {
     submitting.value = false
   }
 }
-
-function onClose() {
-  visible.value = false
-}
 </script>
 
 <template>
-  <el-dialog
-    v-model="visible"
-    class="entity-dialog"
+  <EntityFormDialog
+    :title="isEdit ? `编辑 AI 助手 · ${props.assistant?.name}` : '新建 AI 助手'"
+    subtitle="日常大模型人设与平台自治工具治理，支持常驻桌面快捷助手随时呼出。"
+    :identifier="isEdit ? props.assistant?.id : null"
+    :saving="submitting"
+    :save-label="isEdit ? '保存修改' : '创建助手'"
+    save-test="btn-save-assistant"
     width="920"
-    :close-on-click-modal="false"
     :data-test="`assistant-edit-dialog-${isEdit ? 'edit' : 'create'}`"
-    @closed="emit('cancel')"
+    @save="handleSubmit"
+    @cancel="emit('cancel')"
   >
-    <template #header>
-      <div class="dialog-head">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <h2 class="text-base font-semibold text-foreground tracking-tight truncate">
-              {{ isEdit ? `编辑 AI 助手 · ${props.assistant?.name}` : '新建 AI 助手' }}
-            </h2>
-            <span v-if="isEdit" class="id-chip font-mono">#{{ props.assistant?.id }}</span>
-          </div>
-          <p class="text-2xs text-platform-text-muted mt-0.5 truncate">
-            日常大模型人设与平台自治工具治理，支持常驻桌面快捷助手随时呼出。
-          </p>
-        </div>
-      </div>
-    </template>
-
     <el-form
       ref="formRef"
-      class="entity-form"
       :model="form"
       :rules="rules"
       label-position="top"
       @submit.prevent="handleSubmit"
     >
-      <section class="form-section">
-        <header class="section-head">
-          <h3 class="section-title"><span class="section-num font-mono">01</span>基础档案与视觉标识</h3>
-          <p class="section-desc">定义该助手的直观名称、代表性图标及人设职责定位。</p>
+      <section class="entity-form-section">
+        <header class="entity-section-head">
+          <h3 class="entity-section-title"><span class="entity-section-num font-mono">01</span>基础档案与视觉标识</h3>
+          <p class="entity-section-desc">定义该助手的直观名称、代表性图标及人设职责定位。</p>
         </header>
 
-        <div class="grid md:grid-cols-3 gap-x-5 gap-y-0">
-          <div class="md:col-span-2 grid sm:grid-cols-2 gap-x-4">
-            <el-form-item label="助手名称" prop="name">
-              <el-input
-                v-model="form.name"
-                placeholder="例如：开发助手、架构设计顾问、文档管家…"
-                maxlength="60"
-                data-test="input-assistant-name"
-              />
-            </el-form-item>
+        <div class="entity-grid-3">
+          <div class="span-2">
+            <div class="entity-grid-2">
+              <el-form-item label="助手名称" prop="name">
+                <el-input
+                  v-model="form.name"
+                  placeholder="例如：开发助手、架构设计顾问、文档管家…"
+                  maxlength="60"
+                  data-test="input-assistant-name"
+                />
+              </el-form-item>
 
-            <el-form-item label="自定义图标 / 字符">
-              <div class="flex items-center gap-2 w-full">
-                <el-input v-model="form.icon" placeholder="单个汉字 / 英文标识" maxlength="10" />
-                <el-button v-if="form.icon" size="small" @click="form.icon = ''">重置</el-button>
-              </div>
-            </el-form-item>
+              <el-form-item label="自定义图标 / 字符">
+                <div class="flex items-center gap-2 w-full">
+                  <el-input v-model="form.icon" placeholder="单个汉字 / 英文标识" maxlength="10" />
+                  <el-button v-if="form.icon" size="small" @click="form.icon = ''">重置</el-button>
+                </div>
+              </el-form-item>
+            </div>
           </div>
 
           <div class="space-y-2">
@@ -302,10 +269,10 @@ function onClose() {
         </div>
       </section>
 
-      <section class="form-section">
-        <header class="section-head">
-          <h3 class="section-title"><span class="section-num font-mono">02</span>运行模型与推理配置</h3>
-          <p class="section-desc">指定该助手发起对话时默认使用的大语言模型，或跟随全局默认设定。</p>
+      <section class="entity-form-section">
+        <header class="entity-section-head">
+          <h3 class="entity-section-title"><span class="entity-section-num font-mono">02</span>运行模型与推理配置</h3>
+          <p class="entity-section-desc">指定该助手发起对话时默认使用的大语言模型，或跟随全局默认设定。</p>
         </header>
 
         <el-form-item label="默认运行大模型">
@@ -314,16 +281,16 @@ function onClose() {
               <el-option label="跟随默认 / 未指定" value="" />
               <el-option v-for="m in usableModels" :key="m.id" :label="m.name" :value="m.id" />
             </el-select>
-            <p class="field-hint">若选择「跟随默认」，助手将自动使用系统平台服务配置中设定的主力对话模型。</p>
+            <p class="entity-field-hint">若选择「跟随默认」，助手将自动使用系统平台服务配置中设定的主力对话模型。</p>
           </div>
         </el-form-item>
       </section>
 
-      <section class="form-section">
-        <header class="section-head section-head-split">
+      <section class="entity-form-section">
+        <header class="entity-section-head entity-section-head-split">
           <div>
-            <h3 class="section-title"><span class="section-num font-mono">03</span>人设规范与系统提示词</h3>
-            <p class="section-desc">赋予助手专业的思考框架、角色定位、回复风格与工程准则。</p>
+            <h3 class="entity-section-title"><span class="entity-section-num font-mono">03</span>人设规范与系统提示词</h3>
+            <p class="entity-section-desc">赋予助手专业的思考框架、角色定位、回复风格与工程准则。</p>
           </div>
           <el-segmented v-model="form.promptSource" :options="promptSourceOptions" size="small" />
         </header>
@@ -337,21 +304,16 @@ function onClose() {
               class="w-full max-w-md"
               data-test="select-assistant-prompt"
             >
-              <el-option
-                v-for="p in rolePrompts"
-                :key="p.id"
-                :label="p.name"
-                :value="p.id"
-              >
+              <el-option v-for="p in rolePrompts" :key="p.id" :label="p.name" :value="p.id">
                 <span>{{ p.name }}</span>
-                <span v-if="p.description" class="option-sub">{{ p.description }}</span>
+                <span v-if="p.description" class="entity-option-sub">{{ p.description }}</span>
               </el-option>
             </el-select>
 
-            <div v-if="selectedPromptPreview" class="prompt-preview font-mono select-text">
+            <div v-if="selectedPromptPreview" class="entity-prompt-preview font-mono select-text">
               {{ selectedPromptPreview }}
             </div>
-            <p v-else class="field-hint">提示：未选择提示词时，将无法加载专属预设人设。</p>
+            <p v-else class="entity-field-hint">提示：未选择提示词时，将无法加载专属预设人设。</p>
           </div>
         </el-form-item>
 
@@ -362,133 +324,63 @@ function onClose() {
               type="textarea"
               :rows="7"
               resize="vertical"
-              class="mono-input"
+              class="entity-mono-input"
               placeholder="输入该 AI 助手的系统人设与指导指令，例如：你是一个经验丰富的前端架构专家，专注于 Vue 3、TypeScript 与响应式设计…"
               data-test="textarea-assistant-prompt"
             />
-            <p class="field-hint text-right font-mono">{{ form.systemPrompt.length }} 字</p>
+            <p class="entity-field-hint text-right font-mono">{{ form.systemPrompt.length }} 字</p>
           </div>
         </el-form-item>
       </section>
 
-      <section class="form-section">
-        <header class="section-head">
-          <h3 class="section-title"><span class="section-num font-mono">04</span>交互形态与自治能力</h3>
-          <p class="section-desc">控制助手在全局桌面环境中的驻留方式，以及是否具备平台级自治执行工具权限。</p>
+      <section class="entity-form-section">
+        <header class="entity-section-head">
+          <h3 class="entity-section-title"><span class="entity-section-num font-mono">04</span>交互形态与自治能力</h3>
+          <p class="entity-section-desc">控制助手在全局桌面环境中的驻留方式，以及是否具备平台级自治执行工具权限。</p>
         </header>
 
         <div class="space-y-2">
-          <div class="switch-row">
+          <div class="entity-switch-row">
             <div>
-              <div class="text-xs font-medium text-foreground">常驻桌面快捷助手</div>
-              <div class="text-2xs text-platform-text-muted">
+              <div class="entity-switch-title">常驻桌面快捷助手</div>
+              <div class="entity-switch-desc">
                 开启后，该助手将出现在页面右下角的常驻快捷助手呼出栏中，随时点击即刻发起新对话。
               </div>
             </div>
             <el-switch v-model="form.showInFloat" class="mt-0.5" />
           </div>
 
-          <div class="switch-row">
+          <div class="entity-switch-row">
             <div>
-              <div class="text-xs font-medium text-foreground">开启平台自治工具能力</div>
-              <div class="text-2xs text-platform-text-muted">
+              <div class="entity-switch-title">开启平台自治工具能力</div>
+              <div class="entity-switch-desc">
                 允许该助手在对话中自主分析并调用平台工具链（如项目文件检索、环境诊断等）。
               </div>
             </div>
             <el-switch v-model="form.enablePlatformTools" class="mt-0.5" />
           </div>
 
-          <el-form-item v-if="form.enablePlatformTools" label="自治思考步数上限（Max Steps）" class="stepper">
+          <el-form-item
+            v-if="form.enablePlatformTools"
+            label="自治思考步数上限（Max Steps）"
+            class="stepper"
+          >
             <div class="space-y-1">
               <el-input-number v-model="form.maxToolSteps" :min="1" :max="50" controls-position="right" />
-              <p class="field-hint">防止大模型陷入长时死循环，单轮对话最大自治工具调用步数。</p>
+              <p class="entity-field-hint">防止大模型陷入长时死循环，单轮对话最大自治工具调用步数。</p>
             </div>
           </el-form-item>
         </div>
       </section>
     </el-form>
-
-    <template #footer>
-      <div class="dialog-foot">
-        <span class="text-2xs text-platform-text-muted">Ctrl+S 保存 · Esc 关闭</span>
-        <div class="flex items-center gap-2">
-          <el-button @click="onClose">取消</el-button>
-          <el-button
-            type="primary"
-            :loading="submitting"
-            data-test="btn-save-assistant"
-            @click="handleSubmit"
-          >
-            {{ isEdit ? '保存修改' : '创建助手' }}
-          </el-button>
-        </div>
-      </div>
-    </template>
-  </el-dialog>
+  </EntityFormDialog>
 </template>
 
 <style scoped>
-/* Numbered sections stay as sections; the dialog owns the panel, the backdrop
-   and the dismissal. Everything here is our own layout, not library internals. */
-.dialog-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.id-chip {
-  padding: 1px 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface-muted);
-  font-size: var(--text-size-10);
-  color: var(--color-text-muted);
-}
-
-.form-section + .form-section {
-  margin-top: 4px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.section-head {
-  margin-bottom: 14px;
-}
-
-.section-head-split {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: var(--text-size-12);
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.section-num {
-  font-size: var(--text-size-10);
-  color: var(--color-text-muted);
-  letter-spacing: 0.08em;
-}
-
-.section-desc,
-.field-hint {
-  margin: 2px 0 0;
-  font-size: var(--text-size-11);
-  line-height: 1.5;
-  color: var(--color-text-muted);
-}
-
-.field-hint {
-  font-size: var(--text-size-11);
+/* Only the assistant's own chrome: the avatar preview and its preset chips. The
+   dialog shell, section rhythm and hints come from the shared editor styles. */
+.span-2 {
+  grid-column: span 2;
 }
 
 .avatar-preview {
@@ -539,53 +431,9 @@ function onClose() {
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
 }
 
-.option-sub {
-  float: right;
-  margin-left: 16px;
-  font-size: var(--text-size-11);
-  color: var(--color-text-muted);
-}
-
-.prompt-preview {
-  max-height: 190px;
-  overflow-y: auto;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface-muted);
-  font-size: var(--text-size-12);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  color: var(--color-text);
-}
-
-.mono-input {
-  font-family: var(--font-mono);
-  font-size: var(--text-size-12);
-  line-height: 1.6;
-}
-
-.switch-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-surface-muted);
-}
-
 .stepper {
   margin-top: 4px;
   padding-left: 12px;
   border-left: 2px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
-}
-
-.dialog-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 </style>

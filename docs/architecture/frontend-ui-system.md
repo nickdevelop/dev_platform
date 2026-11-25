@@ -98,13 +98,15 @@
 | 多选（候选集小） | `el-checkbox-group` | 卡片式勾选（如团队编制专家）用 `el-checkbox` 包卡片，勾选后回显主面板 |
 | 布尔徽标/状态 | `el-tag`（`size="small"`） | 颜色预算仍受 v1 的 3% 约束 |
 | 确认类弹窗 | `ElMessageBox.confirm` | 破坏性操作统一走它，不再自绘 `UiConfirmDialog` |
-| 新增/编辑承载 | `el-dialog` | 组织中心已定形态；复杂多分区表单可用 `el-drawer`，同一模块内保持一致 |
+| 新增/编辑承载 | `shared/components/EntityFormDialog.vue`（包 `el-dialog`） | 统一头部（标题 + 一句话职责 + 记录号芯片）与底栏（快捷键提示 + 取消 / 保存 + Ctrl/Cmd+S）；分区骨架类见 `shared/styles/entity-editor.css`；复杂多分区表单可用 `el-drawer`，同一模块内保持一致 |
 | 轻提示 | `ElMessage` | 取代页面内 `UiAlert` 做结果反馈；页面级持久错误横幅仍可留 `UiAlert` |
 | 空态 | `el-table` 自带空态 / `el-empty` | 带引导动作的复杂空态可自绘 |
 | 弹层/浮层 | `el-dropdown` / `el-popover` / `el-tooltip` | 禁止 `backdrop-filter: blur`（v1 禁令继续有效，遮罩为中性半透明） |
 | 图标 | `@element-plus/icons-vue`（`<el-icon>` 包裹） | 仍受 v1「零 Emoji、纯矢量细线条」约束；库内没有的业务符号继续用现有 1.5–1.8px 手绘 SVG |
 | 日期/时间 | `el-date-picker` / `el-time-picker` | 新增即用，不再排期 |
 | 侧栏导航 | `el-menu`（`router` 模式，见 §八） | 子级用 `el-sub-menu` 预留；条目高度 / hover 中性化 / 左缘 accent 标尺三项覆盖已入 token 层 |
+
+**共享编辑器外壳（`shared/components/EntityFormDialog.vue`）**：所有「新增 / 编辑 X」表单统一用它，不要各页自己搭 `el-dialog` 头部与底栏。它固定：标题 + 一句话职责说明 + 记录号芯片、底栏的快捷键提示（Ctrl+S 保存 · Esc 关闭）与「取消 / 保存」按钮、`Ctrl/Cmd+S` 提交、`saving` 驱动的 loading。分区骨架（01 / 02 编号、hairline 分隔、字段下的说明文字、下拉项右侧次级说明、提示词预览块、开关行、两列栅格）放在 `shared/styles/entity-editor.css`——插槽内容在调用方作用域编译，组件的 scoped 样式够不着，所以与 `sidebar.css` 一样作为共享样式表引入；该文件只允许出现平台自己的类与 token，禁止 `.el-*` / `--el-*`。
 
 **函数式 API 的引入方式**：`ElMessage / ElMessageBox / ElLoading` 直接 `import { ElMessage } from 'element-plus'`（样式已随全量 CSS 到位）。模板里的 `<el-*>` 一律不手写 import——交给解析器。
 
@@ -154,7 +156,11 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 1. 组织中心剩余三页（AI 助手 / AI 员工 / AI 团队）：列表 → `el-table`，编辑面板 → `el-dialog` + `el-form`，确认 → `ElMessageBox`，专家编制 → `el-checkbox-group` 卡片网格勾选回显。
 2. **二级导航已上 `el-menu`（组织中心，已落地）**：菜单自带键盘可达与 `el-sub-menu` 子菜单能力——组织二级导航当前没有子项，但渲染层已按 `children` 自动切换 `el-sub-menu`，日后加子菜单只改数据不改模板。早先评估担心的三点已全部并入 `element-tokens.css` 的 menus 段：条目高度 46 / 34px、hover 中性化（库默认是主色浅底）、以及库压根没有的**左缘 2px accent 标尺**（用 `inset` box-shadow，不推动行内容）；激活项的文字保持墨色，只有图标上 accent。
    **已知不一致**：其余五栏（项目 / 对话 / 任务 / 终端 / 设置）仍是 `sidebar.css` 卡片列表，与 `OrgSidebar` 的行样式存在差异。待办：把五栏一并迁到 `el-menu`（需先解决 Zone A 动作区与 Zone B 搜索区的归属），随后评估从 `sidebar.css` 删除卡片段，避免两种侧栏长期并存。
-3. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单。
+3. 「AI 助手」子页已完成：列表 `el-table`（行内常驻开关用 `el-switch`）、筛选 `el-segmented`，编辑器 `AssistantEditPanel` → `AssistantEditDialog`。
+4. 「AI 员工」子页已完成：同上，`EmployeeEditPanel` → `EmployeeEditDialog`；执行引擎与模型的联动、标识色选择保持不变。
+5. 「AI 团队」子页已完成：`TeamEditPanel` → `TeamEditDialog`；专家编制改成二级勾选弹窗（`el-checkbox-group` 紧凑卡片网格 + 搜索），勾选结果回显为主面板可移除的成员卡片。
+6. 组织中心至此只剩两处页面级错误横幅仍在 `UiAlert`（棘轮 750）。
+7. 待办：其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单；其余五栏侧边导航迁 `el-menu`（见本节第 2 条）。
 
 ---
 
