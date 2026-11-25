@@ -126,27 +126,41 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     ])
   })
 
-  it('EnginesSidebar conforms to Data Terminal single-header standard', () => {
-    const wrapper = mount(EnginesSidebar, {
-      global: {
-        stubs: {
-          RouterLink: {
-            template: '<a :class="$attrs.class"><slot /></a>',
-          },
-        },
-      },
+  it('EnginesSidebar renders the engines navigation as a router-driven el-menu', async () => {
+    // Same contract as the org sidebar: a real router (memory history),
+    // because the menu navigates by index in router mode and marks the
+    // current path — both need it.
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/engines/assistant', component: { template: '<div />' } },
+        { path: '/engines/coder', component: { template: '<div />' } },
+        { path: '/engines/orchestrator', component: { template: '<div />' } },
+        { path: '/engines/agents', component: { template: '<div />' } },
+      ],
     })
+    await router.push('/engines/agents')
+    await router.isReady()
 
-    expect(wrapper.find('.engines-links').exists()).toBe(true)
-    const links = wrapper.findAll('.engines-link')
-    expect(links.length).toBe(4)
-    expect(links[0].classes()).toContain('sidebar-card')
-    expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
+    const wrapper = mount(EnginesSidebar, { global: { plugins: [router] } })
+
+    expect(wrapper.find('[data-test="engines-nav"]').exists()).toBe(true)
+    const items = wrapper.findAll('.el-menu-item')
+    expect(items).toHaveLength(4)
+    // Menu order is part of the product contract.
+    expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
       '助手引擎',
       '会话引擎',
       '协同引擎',
       'Agent配置',
     ])
+    // Every entry still carries its second line: the menu replaced the list
+    // markup, not the information it showed.
+    expect(wrapper.findAll('.link-desc')).toHaveLength(4)
+
+    const active = wrapper.findAll('.el-menu-item.is-active')
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toContain('Agent配置')
   })
 
   it('OrgSidebar renders the org navigation as a router-driven el-menu', async () => {
