@@ -8,6 +8,11 @@
 // left, 类型 `el-select` + keyword `el-input` + 搜索 / 重置 on the right), and
 // destructive work goes through `ElMessageBox` with the result reported by
 // `ElMessage`.
+//
+// The list deliberately does not preview the prompt body: a body is a thousand
+// characters of markdown, and one clipped column of it tells you nothing. The
+// body belongs to the editor (编辑) and to 复制, both one click away. The search
+// field still matches against it.
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search } from '@element-plus/icons-vue'
@@ -225,15 +230,9 @@ const emptyDescription = computed(() =>
           </template>
         </el-table-column>
 
-        <el-table-column label="描述" min-width="200" show-overflow-tooltip>
+        <el-table-column label="描述" min-width="320" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="text-platform-text-muted">{{ row.description || '—' }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column label="正文预览" min-width="280" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="content-preview font-mono">{{ row.content }}</span>
           </template>
         </el-table-column>
 
@@ -289,12 +288,6 @@ const emptyDescription = computed(() =>
    selected label changes length. */
 .filter-select {
   width: 176px;
-}
-
-/* Rows stay single-line: long descriptions and bodies are clipped by the column
-   (`show-overflow-tooltip`), and the full text is one click away in the editor. */
-.content-preview {
-  color: var(--color-text-muted);
 }
 
 /* The table scrolls its body while the header row stays put; the wrapper owns
