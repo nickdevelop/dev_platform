@@ -31,10 +31,12 @@ const srcRoot = join(webRoot, 'src')
 // AI 提示词 page, 808 after the AI 助手 page, 798 after the AI 员工 page, 750
 // after the AI 团队 page, 745 after the organization centre's last `UiAlert`
 // banner (a failure now reports once, through `ElMessage`, instead of once in a
-// toast and once in a banner that pushes the table down). Lower
+// toast and once in a banner that pushes the table down), 630 after the engines
+// centre (sidebar el-menu, the three engine panels, EngineStepControl, the
+// Agent 配置 page and its embedded BuiltinDataPanel / AgentUsagePanel). Lower
 // it as pages move; see the
 // header note.
-const UI_PRIMITIVE_BASELINE = 745
+const UI_PRIMITIVE_BASELINE = 630
 
 // The primitives themselves are obviously allowed to mention their own names.
 const EXCLUDED_DIRS = new Set(['ui', 'tests', 'fonts', 'node_modules'])

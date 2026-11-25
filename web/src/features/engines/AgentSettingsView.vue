@@ -8,8 +8,8 @@
 // the model catalog is a small `el-table`, model editing opens in the shared
 // `EntityFormDialog`, stopping the service goes through `ElMessageBox`, and
 // every result — success or failure — is reported once through `ElMessage`
-// (the `UiAlert` banners are retired; the watchers below are the single place
-// store errors surface).
+// (the old page-level alert banners are retired; the watchers below are the
+// single place store errors surface).
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '../../stores/settings'
