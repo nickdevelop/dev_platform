@@ -288,7 +288,7 @@ html .el-select--small .el-select__wrapper {
   min-height: var(--el-component-size-small);
 }
 
-/* The library hard-codes `font-size: 14px` on the select wrapper instead of
+/* The library hard-codes `font-size 14px` on the select wrapper instead of
    reading the size ladder, so a filter select shouts 14px next to a 12px input,
    a 12px button and a 12px table row — and the page-size select inside a
    pagination bar shouts next to an 11px pager. Every size class takes the

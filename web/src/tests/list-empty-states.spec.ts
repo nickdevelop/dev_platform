@@ -7,6 +7,16 @@ import { useAuthStore } from '../stores/auth'
 import { installTestCSRF } from './csrf-fixture'
 import type { Prompt } from '../api/prompts'
 
+// 提示词页和另三页一样带 URL 同步（?action=new / ?edit=<id>），所以它需要
+// 路由：这里用与 organization-views.spec 相同的最小 mock。
+const pushMock = vi.fn()
+const replaceMock = vi.fn()
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRoute: () => ({ query: {}, params: {}, path: '/org/prompts' }),
+}))
+
 // 一个空表格有三种完全不同的成因，页面必须说得出口：数据还在路上、被筛选条件滤空、
 // 本来就还没有。三态由 shared/components/ListEmptyState.vue 承担，这里按真实页面走。
 const rows: Prompt[] = [

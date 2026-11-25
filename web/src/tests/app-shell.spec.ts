@@ -76,7 +76,8 @@ describe('three-pane app shell', () => {
     expect(wrapper.findComponent(ProjectTree).exists()).toBe(true)
     expect(wrapper.text()).toContain('从左侧选择一个项目或会话')
     const org = wrapper.findAll('a').find((entry) => entry.text() === '组织')
-    expect(org?.attributes('href')).toBe('/org/assistants')
+    // 一级 rail 的「组织」入口默认落点已改为 AI 提示词（§八 迁移状态 6）。
+    expect(org?.attributes('href')).toBe('/org/prompts')
     expect(org?.attributes('disabled')).toBeUndefined()
   })
 
