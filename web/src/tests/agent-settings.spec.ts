@@ -1,16 +1,44 @@
 // Tests for the agent management section: it renders detection state, keeps an
 // auto-detected path read-only, allows a manual path only when auto detection
 // failed, runs detection, and toggles platform enablement.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+//
+// The view is Element Plus now: keep the functional API mocked at the module
+// boundary (result feedback is ElMessage, destructive confirmation is
+// ElMessageBox) while every `<el-*>` component renders for real through the
+// resolver. The spread of `importOriginal` is what keeps the components alive
+// under the mock.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AgentSettings from '../features/engines/AgentSettingsView.vue'
 import { useAuthStore } from '../stores/auth'
 import { installTestCSRF } from './csrf-fixture'
 import { useAgentsStore } from '../stores/agents'
 import type { AgentServiceStatus } from '../api/agents'
 
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('element-plus')>()
+  return {
+    ...actual,
+    ElMessage: {
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn(),
+      info: vi.fn(),
+    },
+    ElMessageBox: {
+      confirm: vi.fn(() => Promise.resolve(true)),
+    },
+  }
+})
+
 type Call = { method: string; path: string; body: any }
+
+const confirmMock = ElMessageBox.confirm as unknown as Mock
+const messageSuccess = ElMessage.success as unknown as Mock
+const messageError = ElMessage.error as unknown as Mock
 
 function backendList() {
   const capabilities = (sessionHistory: boolean) => ({
@@ -79,6 +107,13 @@ async function mountView() {
   return wrapper
 }
 
+beforeEach(() => {
+  confirmMock.mockReset()
+  confirmMock.mockResolvedValue(true)
+  messageSuccess.mockClear()
+  messageError.mockClear()
+})
+
 afterEach(() => vi.unstubAllGlobals())
 
 describe('AgentSettings', () => {
@@ -118,7 +153,7 @@ describe('AgentSettings', () => {
     expect(wrapper.find('[data-test="agent-tab-pi"]').text()).not.toContain('检测到')
   })
 
-  it('runs a detection and shows the version', async () => {
+  it('runs a detection and reports the version once through ElMessage', async () => {
     const calls = stubFetch({ 'POST /agents/pi/detect': { backend: 'pi', status: 'ok', version: '1.2.3' } })
     const wrapper = await mountView()
 
@@ -126,14 +161,14 @@ describe('AgentSettings', () => {
     await flushPromises()
 
     expect(calls.some((c) => c.method === 'POST' && c.path === '/agents/pi/detect')).toBe(true)
-    expect(wrapper.text()).toContain('1.2.3')
+    expect(messageSuccess).toHaveBeenCalledWith('检测成功：版本 1.2.3')
   })
 
   it('toggles platform enablement', async () => {
     const calls = stubFetch()
     const wrapper = await mountView()
 
-    await wrapper.find('[data-agent-enabled="opencode-v2"]').setValue(true)
+    await wrapper.find('[data-agent-enabled="opencode-v2"] input').setValue(true)
     await flushPromises()
 
     const put = calls.find((c) => c.method === 'PUT' && c.path === '/agents/opencode-v2')
@@ -158,11 +193,12 @@ describe('AgentSettings diagnostics and models', () => {
     const wrapper = await mountView()
 
     expect(calls.some((c) => c.method === 'GET' && c.path === '/agent-backends/diagnostics')).toBe(true)
-    const details = wrapper.find('[data-test="agent-diagnostics-opencode-v2"]')
-    expect(details.exists()).toBe(true)
-    expect(details.text()).toContain('警告')
-    expect(details.attributes('open')).toBeDefined()
-    expect(details.text()).toContain('version outside the tested range')
+    const collapse = wrapper.find('[data-test="agent-diagnostics-opencode-v2"]')
+    expect(collapse.exists()).toBe(true)
+    expect(collapse.text()).toContain('警告')
+    // A warning opens the accordion by default.
+    expect(collapse.find('.el-collapse-item').classes()).toContain('is-active')
+    expect(collapse.text()).toContain('version outside the tested range')
   })
 
   it('reads the persisted model snapshot and only contacts the agent on refresh', async () => {
@@ -210,13 +246,14 @@ describe('AgentSettings diagnostics and models', () => {
     const wrapper = await mountView()
 
     const block = wrapper.find('[data-test="agent-models-opencode-v2"]')
-    let ids = block.findAll('[data-agent-model]').map((el) => el.attributes('data-agent-model'))
+    // The row order is visible through the per-row switch hooks.
+    let ids = block.findAll('[data-agent-model-toggle]').map((el) => el.attributes('data-agent-model-toggle'))
     // Enabled models keep their relative order and move above the disabled one.
     expect(ids).toEqual(['acme/small', 'acme/vision', 'acme/plain'])
 
     await block.find('[data-test="agent-models-search-opencode-v2"]').setValue('vision')
     await flushPromises()
-    ids = block.findAll('[data-agent-model]').map((el) => el.attributes('data-agent-model'))
+    ids = block.findAll('[data-agent-model-toggle]').map((el) => el.attributes('data-agent-model-toggle'))
     expect(ids).toEqual(['acme/vision'])
     expect(block.text()).not.toContain('Plain Model')
   })
@@ -248,7 +285,7 @@ describe('AgentSettings diagnostics and models', () => {
     )
     expect(clear?.body).toEqual({ enabled: false })
     for (const toggle of wrapper.findAll('[data-agent-model-toggle]')) {
-      expect((toggle.element as HTMLInputElement).checked).toBe(false)
+      expect((toggle.find('input').element as HTMLInputElement).checked).toBe(false)
     }
   })
 
@@ -279,7 +316,7 @@ describe('AgentSettings diagnostics and models', () => {
     )
     expect(clear?.body).toEqual({ enabled: true })
     for (const toggle of wrapper.findAll('[data-agent-model-toggle]')) {
-      expect((toggle.element as HTMLInputElement).checked).toBe(true)
+      expect((toggle.find('input').element as HTMLInputElement).checked).toBe(true)
     }
   })
 
@@ -308,25 +345,25 @@ describe('AgentSettings diagnostics and models', () => {
 
     const toggle = wrapper.find('[data-agent-model-toggle="acme/gpt"]')
     expect(toggle.exists()).toBe(true)
-    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+    expect((toggle.find('input').element as HTMLInputElement).checked).toBe(true)
 
     // Toggle to disable
-    await toggle.setValue(false)
+    await toggle.find('input').setValue(false)
     await flushPromises()
 
     const patchCall = calls.find((c) => c.method === 'PATCH' && c.path === '/agent-backends/opencode-v2/models')
     expect(patchCall).toBeDefined()
     expect(patchCall?.body).toMatchObject({ modelId: 'acme/gpt', enabled: false })
 
-    // Open edit form
+    // Open the edit dialog
     await wrapper.find('[data-agent-model-edit="acme/gpt"]').trigger('click')
     await flushPromises()
 
-    const form = wrapper.find('[data-agent-model-form="acme/gpt"]')
+    const form = wrapper.find('[data-test="agent-model-form"]')
     expect(form.exists()).toBe(true)
 
-    // Submit edit form
-    await form.trigger('submit')
+    // Submit through the shared footer's save button
+    await wrapper.find('[data-test="agent-model-form-submit"]').trigger('click')
     await flushPromises()
 
     expect(calls.filter((c) => c.method === 'PATCH')).toHaveLength(2)
@@ -406,27 +443,23 @@ describe('AgentSettings service block', () => {
     await wrapper.find('[data-test="service-stop"]').trigger('click')
     await flushPromises()
 
-    const dialog = wrapper.find('[data-test="service-stop-dialog"]')
-    expect(dialog.exists()).toBe(true)
-    expect(dialog.text()).toContain('桌面端 opencode')
-    expect(dialog.text()).toContain('正在运行的会话会被中断')
-    expect(calls.some((c) => c.path === '/agent-services/opencode-v2/stop')).toBe(false)
-
-    await wrapper.find('[data-test="service-stop-confirm"]').trigger('click')
-    await flushPromises()
+    expect(confirmMock).toHaveBeenCalledTimes(1)
+    const question = String(confirmMock.mock.calls[0][0])
+    expect(question).toContain('桌面端 opencode')
+    expect(question).toContain('正在运行的会话会被中断')
 
     expect(calls.some((c) => c.method === 'POST' && c.path === '/agent-services/opencode-v2/stop')).toBe(true)
   })
 
   it('leaves the service alone when the operator cancels', async () => {
     const calls = stubFetch({ 'GET /agent-services/opencode-v2': serviceStatus() })
+    confirmMock.mockRejectedValueOnce(new Error('cancel'))
     const wrapper = await mountView()
 
     await wrapper.find('[data-test="service-stop"]').trigger('click')
-    await wrapper.find('[data-test="service-stop-cancel"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="service-stop-dialog"]').exists()).toBe(false)
+    expect(confirmMock).toHaveBeenCalledTimes(1)
     expect(calls.some((c) => c.path === '/agent-services/opencode-v2/stop')).toBe(false)
   })
 
@@ -455,7 +488,9 @@ describe('AgentSettings service block', () => {
     await wrapper.find('[data-test="service-start"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-test="service-error"]').text()).toContain('已在运行')
+    expect(
+      messageError.mock.calls.some((args) => String(args[0]).includes('已在运行')),
+    ).toBe(true)
   })
 
   it('switches between agent tabs and configures dsh idle timeout', async () => {
@@ -471,7 +506,7 @@ describe('AgentSettings service block', () => {
     })
     const wrapper = await mountView()
 
-    // Tab buttons exist for each agent
+    // Tab labels exist for each agent
     expect(wrapper.find('[data-test="agent-tab-opencode-v2"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="agent-tab-pi"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="agent-tab-deepseek"]').exists()).toBe(true)
@@ -485,16 +520,16 @@ describe('AgentSettings service block', () => {
     expect(idleBlock.exists()).toBe(true)
     expect(idleBlock.text()).toContain('DSH 进程空闲断开时间')
 
-    // Input new idle timeout (15 mins) and save
-    const input = wrapper.find('[data-test="idle-timeout-input-deepseek"]')
-    await input.setValue(15)
+    // Use the 15m preset (a click on the fourth preset chip) and save
+    const presetButtons = idleBlock.findAll('.preset-buttons button')
+    await presetButtons[0].trigger('click')
     await wrapper.find('[data-test="save-idle-timeout-deepseek"]').trigger('click')
     await flushPromises()
 
     const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/agents/deepseek/idle-timeout')
     expect(putCall).toBeDefined()
     expect(putCall?.body).toMatchObject({ minutes: 15 })
-    expect(wrapper.find('[data-test="idle-timeout-success"]').text()).toContain('空闲断开时间已成功保存')
+    expect(messageSuccess).toHaveBeenCalledWith('空闲断开时间已成功保存')
   })
 
   it('renders general settings tab by default and saves system prompt', async () => {
@@ -515,7 +550,9 @@ describe('AgentSettings service block', () => {
     // 1. Check general tab exists and is selected by default
     const generalTab = wrapper.find('[data-test="agent-tab-general"]')
     expect(generalTab.exists()).toBe(true)
-    expect(generalTab.attributes('aria-selected')).toBe('true')
+    const activeItems = wrapper.findAll('.el-tabs__item.is-active')
+    expect(activeItems).toHaveLength(1)
+    expect(activeItems[0].text()).toContain('全局设置')
 
     // 2. Check general settings card is rendered with initial prompt
     const generalCard = wrapper.find('[data-test="agent-card-general"]')
@@ -532,23 +569,23 @@ describe('AgentSettings service block', () => {
     const putCall = calls.find((c) => c.method === 'PUT' && c.path === '/settings/agent-general')
     expect(putCall).toBeDefined()
     expect(putCall?.body).toMatchObject({ systemPrompt: '# Updated Instructions\nBe concise.' })
-    expect(wrapper.find('[data-test="agent-general-success"]').text()).toContain('全局系统提示词已成功保存并同步')
+    expect(messageSuccess).toHaveBeenCalledWith('全局系统提示词已成功保存并同步')
 
     // 4. Switch to an agent tab and then switch back to general
     await wrapper.find('[data-test="agent-tab-pi"]').trigger('click')
     await flushPromises()
-    expect(generalTab.attributes('aria-selected')).toBe('false')
+    expect(wrapper.findAll('.el-tabs__item.is-active')[0].text()).toContain('Pi Agent')
 
     await generalTab.trigger('click')
     await flushPromises()
-    expect(generalTab.attributes('aria-selected')).toBe('true')
+    expect(wrapper.findAll('.el-tabs__item.is-active')[0].text()).toContain('全局设置')
   })
 
   it('switches to builtin tab and delegates max turn steps to coder engine', async () => {
     stubFetch()
     const wrapper = await mountView()
 
-    // Tab button exists for builtin
+    // Tab label exists for builtin
     expect(wrapper.find('[data-test="agent-tab-builtin"]').exists()).toBe(true)
     await wrapper.find('[data-test="agent-tab-builtin"]').trigger('click')
     await flushPromises()

@@ -2,10 +2,16 @@
 // Agent management section: per-backend platform enablement, executable path
 // detection, manual path fallback when auto-detection fails, machine-level service
 // controller, persisted model catalogs with refresh, and diagnostics.
-// Redesigned with design-taste-frontend app-screens guidelines (framed-sheet,
-// flat surfaces, zero resting shadows, tabular figures, precise status pills,
-// structured sections).
-import { computed, onMounted, reactive, ref } from 'vue'
+//
+// Element Plus migration (整页): the backend switcher is `el-tabs`, forms are
+// `el-form` + `el-input / el-input-number / el-select / el-switch / el-checkbox`,
+// the model catalog is a small `el-table`, model editing opens in the shared
+// `EntityFormDialog`, stopping the service goes through `ElMessageBox`, and
+// every result — success or failure — is reported once through `ElMessage`
+// (the `UiAlert` banners are retired; the watchers below are the single place
+// store errors surface).
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '../../stores/settings'
 import { useAgentsStore } from '../../stores/agents'
 import { describeApiError } from '../../api/client'
@@ -17,18 +23,16 @@ import {
   type AgentServiceStatus,
   type ModelInfo,
 } from '../../api/agents'
-import type { AgentDetection } from '../../api/settings'
 import BackendDiagnostics from '../../shared/components/BackendDiagnostics.vue'
 import BackendIcon from '../../shared/components/BackendIcon.vue'
 import BuiltinDataPanel from '../settings/BuiltinDataPanel.vue'
 import AgentUsagePanel from '../settings/AgentUsagePanel.vue'
+import EntityFormDialog from '../../shared/components/EntityFormDialog.vue'
 import { rememberModels } from '../../shared/modelCache'
-import { UiButton, UiInput, UiSelect, UiBadge, UiAlert } from '../../shared/ui'
 
 const settings = useSettingsStore()
 const agents = useAgentsStore()
 const pathInputs = reactive<Record<string, string>>({})
-const detections = reactive<Record<string, AgentDetection | null>>({})
 
 // Tab selection state for switching between backends
 const selectedBackend = ref<string>('general')
@@ -43,7 +47,6 @@ const activeAgent = computed(() => {
 
 // General agent settings state
 const generalPromptInput = ref<string>('')
-const generalPromptSuccess = ref<boolean>(false)
 
 const generalUpdatedAtLabel = computed(() => {
   const raw = settings.agentGeneral?.updatedAt
@@ -54,21 +57,38 @@ const generalUpdatedAtLabel = computed(() => {
 })
 
 async function saveGeneralSettings() {
-  generalPromptSuccess.value = false
   const ok = await settings.saveAgentGeneral(generalPromptInput.value)
   if (ok) {
-    generalPromptSuccess.value = true
-    setTimeout(() => {
-      generalPromptSuccess.value = false
-    }, 2500)
+    ElMessage.success('全局系统提示词已成功保存并同步')
+  } else {
+    ElMessage.error(settings.agentGeneralError || '保存全局设置失败')
   }
 }
+
+// Store failures surface once through ElMessage — no page banners.
+watch(
+  () => settings.agentsError,
+  (msg) => {
+    if (msg) ElMessage.error(msg)
+  },
+)
+watch(
+  () => agents.diagnosticsError,
+  (msg) => {
+    if (msg) ElMessage.error(msg)
+  },
+)
+watch(
+  () => agents.serviceError,
+  (msg) => {
+    if (msg) ElMessage.error(msg)
+  },
+)
 
 // Persisted model snapshots, one per backend.
 const models = reactive<Record<string, ModelInfo[]>>({})
 const modelsUpdatedAt = reactive<Record<string, string | null>>({})
 const modelsLoading = reactive<Record<string, boolean>>({})
-const modelsError = reactive<Record<string, string>>({})
 const modelSearch = reactive<Record<string, string>>({})
 const modelsBulkSaving = reactive<Record<string, boolean>>({})
 
@@ -108,12 +128,9 @@ const diagnosticsByBackend = computed(() => {
   return byBackend
 })
 
-const confirmStop = ref<string | null>(null)
-
 // Idle timeout state per backend
 const idleTimeoutInputs = reactive<Record<string, number | null>>({})
 const idleTimeoutSaving = reactive<Record<string, boolean>>({})
-const idleTimeoutSuccess = reactive<Record<string, boolean>>({})
 
 
 
@@ -129,11 +146,12 @@ function supportsDebugMode(backend: string): boolean {
 
 async function toggleDebugMode(backend: string, enabled: boolean) {
   debugModeSaving[backend] = true
-  try {
-    await settings.setAgentDebugMode(backend, enabled)
-  } finally {
-    debugModeSaving[backend] = false
+  const ok = await settings.setAgentDebugMode(backend, enabled)
+  // 失败已经进了 agentsError，由 watcher 统一报一次。
+  if (ok) {
+    ElMessage.success(enabled ? '调试日志落盘已开启' : '调试日志落盘已关闭')
   }
+  debugModeSaving[backend] = false
 }
 
 function setIdleTimeoutPreset(backend: string, minutes: number) {
@@ -144,18 +162,12 @@ async function saveIdleTimeout(backend: string) {
   const agent = settings.agents.find((a) => a.backend === backend)
   const minutes = idleTimeoutInputs[backend] ?? agent?.idleTimeoutMinutes ?? 30
   idleTimeoutSaving[backend] = true
-  idleTimeoutSuccess[backend] = false
-  try {
-    const ok = await settings.setAgentIdleTimeout(backend, minutes)
-    if (ok) {
-      idleTimeoutSuccess[backend] = true
-      setTimeout(() => {
-        idleTimeoutSuccess[backend] = false
-      }, 2500)
-    }
-  } finally {
-    idleTimeoutSaving[backend] = false
+  const ok = await settings.setAgentIdleTimeout(backend, minutes)
+  if (ok) {
+    ElMessage.success('空闲断开时间已成功保存')
   }
+  // 失败已经进了 agentsError，由 watcher 统一报一次。
+  idleTimeoutSaving[backend] = false
 }
 
 onMounted(async () => {
@@ -183,11 +195,20 @@ function onPathInput(backend: string, value: string) {
 
 async function savePath(backend: string) {
   const ok = await settings.setAgentPath(backend, pathInputs[backend] ?? '')
-  if (ok) pathInputs[backend] = ''
+  if (ok) {
+    pathInputs[backend] = ''
+    ElMessage.success('可执行文件路径已保存')
+  }
 }
 
 async function detect(backend: string) {
-  detections[backend] = await settings.detectAgent(backend)
+  const result = await settings.detectAgent(backend)
+  if (!result) return // 失败已经进了 agentsError，由 watcher 统一报一次。
+  if (result.status === 'ok') {
+    ElMessage.success(`检测成功：版本 ${result.version}`)
+  } else {
+    ElMessage.error(`检测失败：${result.error}`)
+  }
 }
 
 async function toggle(backend: string, value: boolean) {
@@ -227,6 +248,13 @@ function stateLabel(backend: string): string {
   }
 }
 
+function serviceTagType(backend: string): 'success' | 'danger' | 'info' {
+  const state = serviceFor(backend)?.state
+  if (state === 'running') return 'success'
+  if (state === 'unreachable') return 'danger'
+  return 'info'
+}
+
 function supportsModels(backend: string): boolean {
   return agents.backendFor(backend)?.capabilities.modelSelection === true
 }
@@ -240,9 +268,8 @@ async function loadModels(backend: string, refresh: boolean) {
     models[backend] = list.models
     modelsUpdatedAt[backend] = list.updatedAt
     rememberModels(backend, list.models)
-    modelsError[backend] = ''
   } catch (error) {
-    modelsError[backend] = describeApiError(error)
+    ElMessage.error(describeApiError(error))
   } finally {
     modelsLoading[backend] = false
   }
@@ -261,14 +288,13 @@ function updatedAtLabel(backend: string): string {
 async function setAllModelsEnabled(backend: string, enabled: boolean) {
   if (!(models[backend] ?? []).length) return
   modelsBulkSaving[backend] = true
-  modelsError[backend] = ''
   try {
     const list = await setAllAgentBackendModelsEnabled(backend, enabled)
     models[backend] = list.models
     modelsUpdatedAt[backend] = list.updatedAt
     rememberModels(backend, list.models)
   } catch (error) {
-    modelsError[backend] = describeApiError(error)
+    ElMessage.error(describeApiError(error))
   } finally {
     modelsBulkSaving[backend] = false
   }
@@ -282,24 +308,8 @@ interface EditingModelState {
   supportsImages: boolean
   enabled: boolean
   saving: boolean
-  error: string
 }
 const editingModel = ref<EditingModelState | null>(null)
-
-// v-model bridge for the context-limit field: the store keeps `number | null`
-// ("blank = backend default") while UiInput binds `string | number | undefined`.
-const editingContextLimit = computed<string | number | undefined>({
-  get: () => editingModel.value?.contextLimit ?? undefined,
-  set: (value) => {
-    if (!editingModel.value) return
-    if (typeof value === 'number') {
-      editingModel.value.contextLimit = value
-    } else if (typeof value === 'string') {
-      const trimmed = value.trim()
-      editingModel.value.contextLimit = trimmed === '' ? null : Number(trimmed) || null
-    }
-  },
-})
 
 function openEditModel(backend: string, model: ModelInfo) {
   editingModel.value = {
@@ -310,7 +320,6 @@ function openEditModel(backend: string, model: ModelInfo) {
     supportsImages: model.supportsImages === true,
     enabled: model.enabled !== false,
     saving: false,
-    error: '',
   }
 }
 
@@ -322,7 +331,6 @@ async function submitEditModel() {
   if (!editingModel.value) return
   const cur = editingModel.value
   cur.saving = true
-  cur.error = ''
   try {
     const updated = await updateAgentBackendModel(cur.backend, cur.id, {
       name: cur.name.trim(),
@@ -336,11 +344,11 @@ async function submitEditModel() {
       list[idx] = { ...list[idx], ...updated }
       rememberModels(cur.backend, list)
     }
+    ElMessage.success(`模型「${cur.name.trim() || cur.id}」配置已保存`)
     editingModel.value = null
   } catch (error) {
-    cur.error = describeApiError(error)
-  } finally {
-    if (editingModel.value) editingModel.value.saving = false
+    cur.saving = false
+    ElMessage.error(describeApiError(error))
   }
 }
 
@@ -353,7 +361,7 @@ async function toggleModelEnabled(backend: string, model: ModelInfo, enabled: bo
     rememberModels(backend, list)
   } catch (error) {
     model.enabled = prev
-    modelsError[backend] = describeApiError(error)
+    ElMessage.error(describeApiError(error))
   }
 }
 
@@ -378,9 +386,19 @@ function diagnosticsStatusLabel(backend: string): string {
   return diagnosticsStatusLabels[diagnosticsStatus(backend)] ?? '未知'
 }
 
-function diagnosticsOpen(backend: string): boolean {
+function diagnosticsTagType(backend: string): 'success' | 'warning' | 'danger' | 'info' {
   const status = diagnosticsStatus(backend)
-  return status === 'warning' || status === 'error'
+  if (status === 'ok') return 'success'
+  if (status === 'warning') return 'warning'
+  if (status === 'error') return 'danger'
+  return 'info'
+}
+
+// Warnings and errors open the accordion by default; a healthy backend stays
+// collapsed. One item per collapse, so the model is a plain string array.
+function diagnosticsActive(backend: string): string[] {
+  const status = diagnosticsStatus(backend)
+  return status === 'warning' || status === 'error' ? ['diagnostics'] : []
 }
 
 function checkedAt(backend: string): string {
@@ -399,669 +417,572 @@ function startService(backend: string) {
   void agents.startService(backend)
 }
 
-function askStop(backend: string) {
-  confirmStop.value = backend
-}
-
-function confirmStopNow(backend: string) {
-  confirmStop.value = null
+// Stopping a shared service kills it for every client on the machine, so the
+// question goes through the library's confirmation; a rejection (cancel or
+// Esc) simply does nothing.
+async function askStop(backend: string) {
+  try {
+    await ElMessageBox.confirm(
+      '这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。',
+      '停止后台服务',
+      {
+        type: 'warning',
+        confirmButtonText: '确认停止',
+        cancelButtonText: '取消',
+        confirmButtonType: 'danger',
+      },
+    )
+  } catch {
+    return
+  }
   void agents.stopService(backend)
-}
-
-function cancelStop() {
-  confirmStop.value = null
 }
 </script>
 
 <template>
   <section class="agents-settings w-full space-y-6" aria-label="Agent 设置">
     <!-- Header row -->
-    <header class="panel-header pb-4 border-b border-border/70">
+    <header class="panel-header pb-4 border-b border-platform-border/70">
       <div class="flex items-center gap-2.5">
-        <h1 class="text-xl font-semibold tracking-tight text-foreground">Agent 配置</h1>
-        <span class="text-xs px-2 py-0.5 rounded border border-border bg-surface-muted text-muted-foreground font-mono">Infrastructure</span>
+        <h1 class="text-xl font-semibold tracking-tight text-platform-text">Agent 配置</h1>
+        <span class="text-xs px-2 py-0.5 rounded border border-platform-border bg-platform-surface-muted text-platform-text-muted font-mono">Infrastructure</span>
       </div>
-      <p class="text-xs text-muted-foreground mt-1">
+      <p class="text-xs text-platform-text-muted mt-1">
         配置平台接入的 AI Coding Agent 后端（OpenCode、Pi、DeepSeek 等），管理二进制路径、模型目录、空闲断开策略与后台服务守护进程。
       </p>
     </header>
 
-    <UiAlert v-if="settings.agentsError" variant="error" class="error">
-      {{ settings.agentsError }}
-    </UiAlert>
-    <UiAlert v-if="agents.diagnosticsError" variant="error" class="error">
-      {{ agents.diagnosticsError }}
-    </UiAlert>
+    <el-tabs v-model="selectedBackend" class="agent-tabs" data-test="agent-tabs">
+      <!-- General Settings -->
+      <el-tab-pane name="general">
+        <template #label>
+          <span data-test="agent-tab-general" data-agent-tab="general">全局设置</span>
+        </template>
 
-    <!-- Agent navigation tabs -->
-    <nav
-      v-if="settings.agents.length > 0"
-      class="agent-tabs-nav flex items-center gap-1 border-b border-border/70"
-      role="tablist"
-      aria-label="Agent 代理选择"
-    >
-      <button
-        type="button"
-        class="agent-tab relative py-2.5 px-4 text-xs font-medium cursor-pointer transition-colors border-b-2 -mb-px flex items-center gap-2 select-none"
-        :class="[
-          selectedBackend === 'general'
-            ? 'border-accent text-accent font-semibold'
-            : 'border-transparent text-muted-foreground hover:text-foreground'
-        ]"
-        data-agent-tab="general"
-        data-test="agent-tab-general"
-        role="tab"
-        :aria-selected="selectedBackend === 'general'"
-        @click="selectedBackend = 'general'"
-      >
-        <span>全局设置</span>
-      </button>
-
-      <button
-        v-for="agent in settings.agents"
-        :key="agent.backend"
-        type="button"
-        class="agent-tab relative py-2.5 px-4 text-xs font-medium cursor-pointer transition-colors border-b-2 -mb-px flex items-center gap-2 select-none"
-        :class="[
-          (selectedBackend !== 'general' && activeAgent?.backend === agent.backend)
-            ? 'border-accent text-accent font-semibold'
-            : 'border-transparent text-muted-foreground hover:text-foreground'
-        ]"
-        :data-agent-tab="agent.backend"
-        :data-test="`agent-tab-${agent.backend}`"
-        role="tab"
-        :aria-selected="selectedBackend !== 'general' && activeAgent?.backend === agent.backend"
-        @click="selectedBackend = agent.backend"
-      >
-        <BackendIcon :backend="agent.backend" size="sm" />
-        <span>{{ label(agent.backend) }}</span>
-        <span
-          class="w-1.5 h-1.5 rounded-full"
-          :class="agent.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
-          :title="agent.enabled ? '已启用' : '未启用'"
-        ></span>
-      </button>
-    </nav>
-
-    <!-- General Settings Card -->
-    <article
-      v-show="selectedBackend === 'general'"
-      class="agent-card p-5 rounded-lg bg-surface/40 border border-border/80 space-y-5"
-      data-agent="general"
-      data-test="agent-card-general"
-    >
-      <header class="flex items-center justify-between pb-3.5 border-b border-border/40">
-        <div>
-          <strong class="text-base text-foreground font-semibold">全局通用配置</strong>
-          <p class="text-xs text-muted-foreground mt-0.5">
-            配置跨所有 AI Coding Agent（OpenCode、Pi、DeepSeek 等）生效的通用规则与系统指令。
-          </p>
-        </div>
-      </header>
-
-      <!-- System Prompt / AGENTS.md section -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <label for="agent-general-system-prompt" class="text-xs font-semibold text-foreground block">
-              全局系统提示词 (AGENTS.md)
-            </label>
-            <span class="text-2xs text-muted-foreground block mt-0.5">
-              作为全局系统规约落盘于平台数据目录，各 Agent 原生作为底层系统级指令加载，绝不污染对话消息流。
-            </span>
-          </div>
-          <span v-if="settings.agentGeneral.path" class="text-2xs text-muted-foreground font-mono" :title="settings.agentGeneral.path">
-            {{ settings.agentGeneral.path }}
-          </span>
-        </div>
-
-        <UiAlert v-if="settings.agentGeneralError" variant="error">
-          {{ settings.agentGeneralError }}
-        </UiAlert>
-
-        <div class="relative">
-          <textarea
-            id="agent-general-system-prompt"
-            v-model="generalPromptInput"
-            rows="10"
-            class="w-full font-mono text-xs p-3 rounded-md border border-border/80 bg-background/80 text-foreground focus:outline-none focus:border-accent placeholder:text-muted-foreground/60 resize-y"
-            placeholder="# 全局规范&#10;&#10;- 与用户交互始终使用简体中文&#10;- 代码、命令原文保持原样，不翻译"
-            data-test="agent-general-prompt-input"
-          ></textarea>
-        </div>
-
-        <div class="flex items-center justify-between pt-1 flex-wrap gap-2">
-          <div class="flex items-center gap-3">
-            <span class="text-2xs text-muted-foreground tabular-nums">
-              {{ (generalPromptInput || '').length }} 字符
-            </span>
-            <span v-if="generalUpdatedAtLabel" class="text-2xs text-muted-foreground">
-              {{ generalUpdatedAtLabel }}
-            </span>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <UiButton
-              size="sm"
-              variant="primary"
-              :loading="settings.agentGeneralSaving"
-              data-test="save-agent-general"
-              @click="saveGeneralSettings"
-            >
-              保存全局设置
-            </UiButton>
-          </div>
-        </div>
-
-        <p v-if="generalPromptSuccess" class="text-2xs text-emerald-600 dark:text-emerald-400 font-medium pt-1" data-test="agent-general-success">
-          ✓ 全局系统提示词已成功保存并同步
-        </p>
-      </div>
-    </article>
-
-    <!-- Agent backend cards list (isolated by Tab view) -->
-    <article
-      v-for="agent in settings.agents"
-      v-show="selectedBackend !== 'general' && activeAgent?.backend === agent.backend"
-      :key="agent.backend"
-      class="agent-card p-5 rounded-lg bg-surface/40 border border-border/80 space-y-5"
-      :data-agent="agent.backend"
-    >
-      <!-- Backend Card Header -->
-      <header class="flex items-center justify-between pb-3.5 border-b border-border/40">
-        <div class="flex items-center gap-3">
-          <BackendIcon :backend="agent.backend" />
-          <strong class="text-base text-foreground font-semibold">{{ label(agent.backend) }}</strong>
-          <code class="text-2xs font-mono text-muted-foreground">{{ agent.backend }}</code>
-        </div>
-        <label class="toggle-control inline-flex items-center gap-2 text-xs font-medium text-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            class="w-4 h-4 rounded text-accent focus:ring-0 accent-accent cursor-pointer"
-            :data-agent-enabled="agent.backend"
-            :checked="agent.enabled"
-            @change="toggle(agent.backend, ($event.target as HTMLInputElement).checked)"
-          />
-          <span>启用此 Agent</span>
-        </label>
-      </header>
-
-      <!-- Executable path & detection (hidden for in-process backends) -->
-      <div v-if="agent.pathSource !== 'embedded'" class="space-y-2">
-        <span class="text-xs font-medium text-foreground block">可执行文件路径</span>
-        <div class="path-row flex items-center gap-2 flex-wrap">
-          <template v-if="agent.pathSource === 'auto'">
-            <div class="flex-1 min-w-[16rem] flex items-center gap-2 py-1.5 px-3 bg-background/60 rounded border border-border/70 text-xs">
-              <span class="text-2xs text-muted-foreground select-none">自动检测:</span>
-              <code class="path font-mono text-foreground flex-1 truncate" :data-agent-path-display="agent.backend">
-                {{ agent.path }}
-              </code>
-            </div>
-          </template>
-          <template v-else>
-            <UiInput
-              class="flex-1 min-w-[16rem] font-mono text-xs"
-              :data-agent-path-input="agent.backend"
-              :model-value="pathInputs[agent.backend] ?? agent.path"
-              placeholder="Agent 可执行文件绝对路径"
-              block
-              @input="(e: Event) => onPathInput(agent.backend, (e.target as HTMLInputElement).value)"
-            />
-            <UiButton size="sm" variant="secondary" @click="savePath(agent.backend)">保存路径</UiButton>
-          </template>
-          <UiButton size="sm" variant="secondary" :data-detect="agent.backend" @click="detect(agent.backend)">重新检测</UiButton>
-        </div>
-
-        <div class="status flex items-center gap-3 text-xs text-muted-foreground pt-0.5">
-          <UiBadge :variant="agent.available ? 'success' : 'default'" size="sm" dot>
-            {{ agent.available ? '已检测到' : '未检测到' }}
-          </UiBadge>
-          <span v-if="agent.version" class="tabular-nums text-2xs">版本 {{ agent.version }}</span>
-        </div>
-      </div>
-
-      <!-- Mode selection row -->
-      <div v-if="agent.modes && agent.modes.length > 1" class="mode-row flex items-center gap-3 text-xs text-muted-foreground py-1 border-t border-border/40">
-        <label class="inline-flex items-center gap-2">
-          <span class="font-medium text-foreground">传输模式:</span>
-          <UiSelect
-            size="sm"
-            :data-agent-mode="agent.backend"
-            :model-value="agent.mode || agent.modes[0]"
-            @change="(e: Event) => onModeChange(agent.backend, (e.target as HTMLSelectElement).value)"
-          >
-            <option v-for="mode in agent.modes" :key="mode" :value="mode">{{ mode }}</option>
-          </UiSelect>
-        </label>
-        <span class="mode-hint text-muted-foreground text-2xs">修改传输模式后需重启平台生效</span>
-      </div>
-
-      <!-- Tool permission mode (backends that support the control) -->
-      <div
-        v-if="agent.permissionModes && agent.permissionModes.length > 0"
-        class="permission-row flex items-center gap-3 text-xs text-muted-foreground py-1 border-t border-border/40"
-      >
-        <label class="inline-flex items-center gap-2">
-          <span class="font-medium text-foreground">工具权限模式:</span>
-          <UiSelect
-            size="sm"
-            :data-agent-permission-mode="agent.backend"
-            :model-value="agent.permissionMode || agent.permissionModes[0]"
-            @change="(e: Event) => onPermissionModeChange(agent.backend, (e.target as HTMLSelectElement).value)"
-          >
-            <option value="confirm">需确认（写文件与命令前弹出审批卡片）</option>
-            <option value="auto">自动放行（所有工具调用直接执行）</option>
-          </UiSelect>
-        </label>
-        <span class="text-muted-foreground text-2xs">自下一轮对话开始生效</span>
-      </div>
-
-      <!-- Debug Mode Settings (specifically for builtin agent) -->
-      <div
-        v-if="supportsDebugMode(agent.backend)"
-        class="debug-mode-block p-4 rounded-md bg-background/60 border border-border/70 space-y-3"
-        :data-test="`agent-debug-mode-${agent.backend}`"
-      >
-        <div class="flex items-center justify-between pb-2 border-b border-border/40">
-          <div>
-            <strong class="text-xs font-semibold text-foreground block">交互调试记录落盘</strong>
-            <span class="text-2xs text-muted-foreground">开启后将内置 Agent 的所有 LLM 请求/响应及工具执行详情落盘保存至 dataDir，可随时在会话头部导出调试日志文件。</span>
-          </div>
-          <span class="tabular-nums text-2xs text-muted-foreground">
-            当前状态：{{ agent.debugMode ? '已开启' : '已关闭' }}
-          </span>
-        </div>
-
-        <div class="flex items-center gap-3 text-xs">
-          <label class="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              class="rounded border-border text-accent focus:ring-0 accent-accent cursor-pointer"
-              :checked="agent.debugMode ?? false"
-              :disabled="debugModeSaving[agent.backend]"
-              :data-test="`debug-mode-checkbox-${agent.backend}`"
-              @change="(e) => toggleDebugMode(agent.backend, (e.target as HTMLInputElement).checked)"
-            />
-            <span class="text-foreground font-medium">开启调试日志落盘</span>
-          </label>
-          <span v-if="debugModeSaving[agent.backend]" class="text-muted-foreground text-2xs">保存中...</span>
-        </div>
-      </div>
-
-      <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->
-      <div
-        v-if="supportsIdleTimeout(agent.backend)"
-        class="idle-timeout-block p-4 rounded-md bg-background/60 border border-border/70 space-y-3"
-        :data-test="`agent-idle-timeout-${agent.backend}`"
-      >
-        <div class="flex items-center justify-between pb-2 border-b border-border/40">
-          <div>
-            <strong class="text-xs font-semibold text-foreground block">DSH 进程空闲断开时间</strong>
-            <span class="text-2xs text-muted-foreground">设置无会话活跃时共享 dsh 守护进程的自动释放时长</span>
-          </div>
-          <span v-if="agent.idleTimeoutMinutes !== undefined" class="tabular-nums text-2xs text-muted-foreground">
-            当前设定：{{ agent.idleTimeoutMinutes < 0 ? '从不断开' : `${agent.idleTimeoutMinutes} 分钟` }}
-          </span>
-        </div>
-
-        <div class="space-y-3 text-xs">
-          <div class="flex items-center gap-3 flex-wrap">
-            <div class="flex items-center gap-2">
-              <label :for="`idle-timeout-input-${agent.backend}`" class="text-muted-foreground font-medium">空闲断开时长:</label>
-              <UiInput
-                :id="`idle-timeout-input-${agent.backend}`"
-                type="number"
-                min="-1"
-                class="w-24 text-xs font-mono"
-                :data-test="`idle-timeout-input-${agent.backend}`"
-                :model-value="idleTimeoutInputs[agent.backend] ?? agent.idleTimeoutMinutes ?? 30"
-                @update:model-value="(val: string | number) => idleTimeoutInputs[agent.backend] = Number(val)"
-              />
-              <span class="text-muted-foreground text-xs">分钟（-1 表示从不断开）</span>
-            </div>
-
-            <div class="preset-buttons flex items-center gap-1.5">
-              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 15)">15m</UiButton>
-              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 30)">30m</UiButton>
-              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, 60)">60m</UiButton>
-              <UiButton size="sm" variant="secondary" @click="setIdleTimeoutPreset(agent.backend, -1)">从不断开</UiButton>
-            </div>
-
-            <UiButton
-              size="sm"
-              variant="primary"
-              :data-test="`save-idle-timeout-${agent.backend}`"
-              :loading="idleTimeoutSaving[agent.backend]"
-              @click="saveIdleTimeout(agent.backend)"
-            >
-              保存设置
-            </UiButton>
-          </div>
-
-          <p v-if="idleTimeoutSuccess[agent.backend]" class="text-2xs text-emerald-600 dark:text-emerald-400 font-medium" data-test="idle-timeout-success">
-            ✓ 空闲断开时间已成功保存
-          </p>
-        </div>
-      </div>
-
-      <!-- Detection alert feedback -->
-      <UiAlert
-        v-if="detections[agent.backend]"
-        :variant="detections[agent.backend]?.status === 'ok' ? 'success' : 'error'"
-        class="detection"
-        :data-detection="agent.backend"
-      >
-        {{
-          detections[agent.backend]?.status === 'ok'
-            ? `检测成功：版本 ${detections[agent.backend]?.version}`
-            : `检测失败：${detections[agent.backend]?.error}`
-        }}
-      </UiAlert>
-
-      <!-- Session data management (platform-persisted transcripts) -->
-      <BuiltinDataPanel v-if="agent.sessionDataOwner" :backend="agent.backend" />
-
-      <!-- Agent usage and quota statistics -->
-      <AgentUsagePanel v-if="agent.supportsUsage" :backend="agent.backend" />
-
-      <!-- Agent available models catalog -->
-      <div
-        v-if="supportsModels(agent.backend)"
-        class="models p-4 rounded-md bg-background/60 border border-border/70 space-y-3"
-        :data-test="`agent-models-${agent.backend}`"
-      >
-        <div class="models-head flex items-center justify-between pb-2 border-b border-border/40">
-          <div>
-            <strong class="text-xs font-semibold text-foreground block">可用模型目录</strong>
-            <span class="models-updated text-2xs text-muted-foreground">{{ updatedAtLabel(agent.backend) }}</span>
-          </div>
-          <UiButton
-            size="sm"
-            variant="ghost"
-            :data-test="`agent-models-refresh-${agent.backend}`"
-            :disabled="modelsLoading[agent.backend] === true"
-            :loading="modelsLoading[agent.backend] === true"
-            @click="loadModels(agent.backend, true)"
-          >
-            刷新模型
-          </UiButton>
-        </div>
-
-        <div class="model-toolbar flex items-center gap-2 flex-wrap">
-          <UiInput
-            v-model="modelSearch[agent.backend]"
-            size="sm"
-            clearable
-            placeholder="按模型名称搜索"
-            class="flex-1 min-w-[12rem]"
-            :data-test="`agent-models-search-${agent.backend}`"
-          />
-          <UiButton
-            size="sm"
-            variant="secondary"
-            :data-test="`agent-models-select-all-${agent.backend}`"
-            :disabled="
-              modelsLoading[agent.backend] === true ||
-              modelsBulkSaving[agent.backend] === true ||
-              !(models[agent.backend] ?? []).length ||
-              enabledModelCount(agent.backend) === (models[agent.backend] ?? []).length
-            "
-            :loading="modelsBulkSaving[agent.backend] === true"
-            @click="setAllModelsEnabled(agent.backend, true)"
-          >
-            全选
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            :data-test="`agent-models-clear-all-${agent.backend}`"
-            :disabled="
-              modelsLoading[agent.backend] === true ||
-              modelsBulkSaving[agent.backend] === true ||
-              enabledModelCount(agent.backend) === 0
-            "
-            @click="setAllModelsEnabled(agent.backend, false)"
-          >
-            清空
-          </UiButton>
-          <span class="text-2xs text-muted-foreground tabular-nums">
-            已启用 {{ enabledModelCount(agent.backend) }}/{{ (models[agent.backend] ?? []).length }}
-          </span>
-        </div>
-
-        <p v-if="modelsLoading[agent.backend]" class="models-line text-xs text-muted-foreground">正在同步模型目录…</p>
-        <UiAlert v-if="modelsError[agent.backend]" variant="error" class="models-line bad">
-          {{ modelsError[agent.backend] }}
-        </UiAlert>
-
-        <ul v-if="visibleModelsFor(agent.backend).length" class="model-list space-y-1.5 max-h-64 overflow-y-auto pr-1">
-          <li
-            v-for="model in visibleModelsFor(agent.backend)"
-            :key="model.id"
-            :data-agent-model="model.id"
-            class="model-item p-2.5 rounded bg-surface/60 border border-border/70 text-xs gap-2.5 hover:border-border transition-colors flex flex-col sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div class="flex items-center gap-2.5 min-w-0 flex-1">
-              <label class="inline-flex items-center cursor-pointer select-none shrink-0">
-                <input
-                  type="checkbox"
-                  class="w-3.5 h-3.5 rounded text-accent focus:ring-0 accent-accent cursor-pointer"
-                  :data-agent-model-toggle="model.id"
-                  :checked="model.enabled !== false"
-                  @change="toggleModelEnabled(agent.backend, model, ($event.target as HTMLInputElement).checked)"
-                />
-              </label>
-              <UiBadge :variant="model.enabled !== false ? 'success' : 'default'" size="sm">
-                {{ model.enabled !== false ? '已启用' : '已停用' }}
-              </UiBadge>
-              <span class="model-name font-medium text-foreground truncate">{{ model.name || model.id }}</span>
-              <!-- Desktop inline details -->
-              <div class="hidden sm:inline-flex items-center gap-2 text-2xs text-muted-foreground min-w-0">
-                <code class="model-id text-muted-foreground font-mono truncate max-w-[140px]">{{ model.id }}</code>
-                <span v-if="model.contextLimit" class="tabular-nums whitespace-nowrap">
-                  {{ Math.round(model.contextLimit / 1000) }}k 上下文
-                </span>
-                <span v-if="model.supportsImages" class="text-accent whitespace-nowrap">图片</span>
-                <span v-if="model.variants && model.variants.length" class="model-variants truncate max-w-[140px]">
-                  变体：{{ model.variants.join(' / ') }}
-                </span>
-              </div>
-            </div>
-
-            <!-- Mobile subline -->
-            <div class="flex sm:hidden items-center gap-2 text-2xs text-muted-foreground pl-6 flex-wrap">
-              <code class="model-id text-muted-foreground font-mono">{{ model.id }}</code>
-              <span v-if="model.contextLimit" class="tabular-nums">
-                {{ Math.round(model.contextLimit / 1000) }}k 上下文
-              </span>
-              <span v-if="model.supportsImages" class="text-accent">图片</span>
-              <span v-if="model.variants && model.variants.length" class="model-variants">
-                变体：{{ model.variants.join(' / ') }}
-              </span>
-            </div>
-
-            <div class="flex items-center justify-end gap-1 shrink-0 self-end sm:self-center">
-              <UiButton
-                size="sm"
-                variant="ghost"
-                :data-agent-model-edit="model.id"
-                @click="openEditModel(agent.backend, model)"
-              >
-                编辑
-              </UiButton>
-            </div>
-          </li>
-        </ul>
-        <p
-          v-else-if="!modelsLoading[agent.backend] && !(models[agent.backend] ?? []).length"
-          class="models-line text-xs text-muted-foreground py-1"
+        <article
+          class="agent-card p-5 rounded-lg bg-platform-surface-muted/40 border border-platform-border/80 space-y-5"
+          data-agent="general"
+          data-test="agent-card-general"
         >
-          尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
-        </p>
-        <p v-else-if="!modelsLoading[agent.backend]" class="models-line text-xs text-muted-foreground py-1">
-          没有匹配的模型。
-        </p>
-
-        <!-- Model edit form inline -->
-        <form
-          v-if="editingModel && editingModel.backend === agent.backend"
-          class="model-edit-form p-4 mt-2 rounded bg-surface border border-accent/40 space-y-3"
-          :data-agent-model-form="editingModel.id"
-          @submit.prevent="submitEditModel"
-        >
-          <div class="flex items-center justify-between pb-1 border-b border-border/40">
-            <h3 class="text-xs font-semibold text-foreground">
-              配置模型：<code class="font-mono text-muted-foreground">{{ editingModel.id }}</code>
-            </h3>
-            <span class="text-2xs text-muted-foreground">自定义友好显示名称与上下文 Token 限制</span>
-          </div>
-
-          <UiAlert v-if="editingModel.error" variant="error">
-            {{ editingModel.error }}
-          </UiAlert>
-
-          <div class="space-y-2.5">
+          <header class="flex items-center justify-between pb-3.5 border-b border-platform-border/40">
             <div>
-              <label class="block text-2xs font-medium text-foreground mb-1">显示名称</label>
-              <UiInput v-model="editingModel.name" placeholder="模型友好名称" required block />
+              <strong class="text-base text-platform-text font-semibold">全局通用配置</strong>
+              <p class="text-xs text-platform-text-muted mt-0.5">
+                配置跨所有 AI Coding Agent（OpenCode、Pi、DeepSeek 等）生效的通用规则与系统指令。
+              </p>
             </div>
+          </header>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          <!-- System Prompt / AGENTS.md section -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <label class="block text-2xs font-medium text-foreground mb-1">上下文 Token 限制 (留空按默认)</label>
-                <UiInput v-model="editingContextLimit" type="number" min="0" placeholder="如 128000" block />
+                <label for="agent-general-system-prompt" class="text-xs font-semibold text-platform-text block">
+                  全局系统提示词 (AGENTS.md)
+                </label>
+                <span class="text-2xs text-platform-text-muted block mt-0.5">
+                  作为全局系统规约落盘于平台数据目录，各 Agent 原生作为底层系统级指令加载，绝不污染对话消息流。
+                </span>
               </div>
-              <div class="flex flex-col justify-end gap-1.5 pb-1">
-                <label class="inline-flex items-center gap-1.5 text-xs text-foreground cursor-pointer select-none">
-                  <input v-model="editingModel.supportsImages" type="checkbox" class="w-3.5 h-3.5 rounded text-accent accent-accent" />
-                  <span>支持图片输入</span>
-                </label>
-                <label class="inline-flex items-center gap-1.5 text-xs text-foreground cursor-pointer select-none">
-                  <input v-model="editingModel.enabled" type="checkbox" class="w-3.5 h-3.5 rounded text-accent accent-accent" />
-                  <span>启用此模型</span>
-                </label>
+              <span v-if="settings.agentGeneral.path" class="text-2xs text-platform-text-muted font-mono" :title="settings.agentGeneral.path">
+                {{ settings.agentGeneral.path }}
+              </span>
+            </div>
+
+            <el-input
+              id="agent-general-system-prompt"
+              v-model="generalPromptInput"
+              type="textarea"
+              :rows="10"
+              resize="vertical"
+              class="agent-general-prompt font-mono"
+              placeholder="# 全局规范&#10;&#10;- 与用户交互始终使用简体中文&#10;- 代码、命令原文保持原样，不翻译"
+              data-test="agent-general-prompt-input"
+            />
+
+            <div class="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div class="flex items-center gap-3">
+                <span class="text-2xs text-platform-text-muted tabular-nums">
+                  {{ (generalPromptInput || '').length }} 字符
+                </span>
+                <span v-if="generalUpdatedAtLabel" class="text-2xs text-platform-text-muted">
+                  {{ generalUpdatedAtLabel }}
+                </span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <el-button
+                  type="primary"
+                  :loading="settings.agentGeneralSaving"
+                  data-test="save-agent-general"
+                  @click="saveGeneralSettings"
+                >
+                  保存全局设置
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </article>
+      </el-tab-pane>
+
+      <!-- One pane per agent backend -->
+      <el-tab-pane v-for="agent in settings.agents" :key="agent.backend" :name="agent.backend">
+        <template #label>
+          <span
+            class="inline-flex items-center gap-2"
+            :data-agent-tab="agent.backend"
+            :data-test="`agent-tab-${agent.backend}`"
+          >
+            <BackendIcon :backend="agent.backend" size="sm" />
+            <span>{{ label(agent.backend) }}</span>
+            <span
+              class="w-1.5 h-1.5 rounded-full"
+              :class="agent.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+              :title="agent.enabled ? '已启用' : '未启用'"
+            ></span>
+          </span>
+        </template>
+
+        <article
+          class="agent-card p-5 rounded-lg bg-platform-surface-muted/40 border border-platform-border/80 space-y-5"
+          :data-agent="agent.backend"
+        >
+          <!-- Backend Card Header -->
+          <header class="flex items-center justify-between pb-3.5 border-b border-platform-border/40">
+            <div class="flex items-center gap-3">
+              <BackendIcon :backend="agent.backend" />
+              <strong class="text-base text-platform-text font-semibold">{{ label(agent.backend) }}</strong>
+              <code class="text-2xs font-mono text-platform-text-muted">{{ agent.backend }}</code>
+            </div>
+            <div class="flex items-center gap-2">
+              <el-switch
+                :model-value="agent.enabled"
+                size="small"
+                :data-agent-enabled="agent.backend"
+                @change="toggle(agent.backend, $event as boolean)"
+              />
+              <span class="text-xs font-medium text-platform-text select-none">启用此 Agent</span>
+            </div>
+          </header>
+
+          <!-- Executable path & detection (hidden for in-process backends) -->
+          <div v-if="agent.pathSource !== 'embedded'" class="space-y-2">
+            <span class="text-xs font-medium text-platform-text block">可执行文件路径</span>
+            <div class="path-row flex items-center gap-2 flex-wrap">
+              <template v-if="agent.pathSource === 'auto'">
+                <div class="flex-1 min-w-[16rem] flex items-center gap-2 py-1.5 px-3 bg-platform-bg/60 rounded border border-platform-border/70 text-xs">
+                  <span class="text-2xs text-platform-text-muted select-none">自动检测:</span>
+                  <code class="path font-mono text-platform-text flex-1 truncate" :data-agent-path-display="agent.backend">
+                    {{ agent.path }}
+                  </code>
+                </div>
+              </template>
+              <template v-else>
+                <el-input
+                  class="flex-1 min-w-[16rem] font-mono text-xs"
+                  :data-agent-path-input="agent.backend"
+                  :model-value="pathInputs[agent.backend] ?? agent.path"
+                  placeholder="Agent 可执行文件绝对路径"
+                  @input="(value: string) => onPathInput(agent.backend, value)"
+                />
+                <el-button size="small" @click="savePath(agent.backend)">保存路径</el-button>
+              </template>
+              <el-button size="small" :data-detect="agent.backend" @click="detect(agent.backend)">重新检测</el-button>
+            </div>
+
+            <div class="status flex items-center gap-3 text-xs text-platform-text-muted pt-0.5">
+              <el-tag :type="agent.available ? 'success' : 'info'" size="small">
+                {{ agent.available ? '已检测到' : '未检测到' }}
+              </el-tag>
+              <span v-if="agent.version" class="tabular-nums text-2xs">版本 {{ agent.version }}</span>
+            </div>
+          </div>
+
+          <!-- Mode selection row -->
+          <div v-if="agent.modes && agent.modes.length > 1" class="mode-row flex items-center gap-3 text-xs text-platform-text-muted py-1 border-t border-platform-border/40">
+            <label class="inline-flex items-center gap-2">
+              <span class="font-medium text-platform-text">传输模式:</span>
+              <el-select
+                size="small"
+                class="agent-mode-select"
+                :data-agent-mode="agent.backend"
+                :model-value="agent.mode || agent.modes[0]"
+                @change="(mode: string) => onModeChange(agent.backend, mode)"
+              >
+                <el-option v-for="mode in agent.modes" :key="mode" :label="mode" :value="mode" />
+              </el-select>
+            </label>
+            <span class="mode-hint text-platform-text-muted text-2xs">修改传输模式后需重启平台生效</span>
+          </div>
+
+          <!-- Tool permission mode (backends that support the control) -->
+          <div
+            v-if="agent.permissionModes && agent.permissionModes.length > 0"
+            class="permission-row flex items-center gap-3 text-xs text-platform-text-muted py-1 border-t border-platform-border/40"
+          >
+            <label class="inline-flex items-center gap-2">
+              <span class="font-medium text-platform-text">工具权限模式:</span>
+              <el-select
+                size="small"
+                class="agent-permission-select"
+                :data-agent-permission-mode="agent.backend"
+                :model-value="agent.permissionMode || agent.permissionModes[0]"
+                @change="(mode: string) => onPermissionModeChange(agent.backend, mode)"
+              >
+                <el-option label="需确认（写文件与命令前弹出审批卡片）" value="confirm" />
+                <el-option label="自动放行（所有工具调用直接执行）" value="auto" />
+              </el-select>
+            </label>
+            <span class="text-platform-text-muted text-2xs">自下一轮对话开始生效</span>
+          </div>
+
+          <!-- Debug Mode Settings (specifically for builtin agent) -->
+          <div
+            v-if="supportsDebugMode(agent.backend)"
+            class="debug-mode-block p-4 rounded-md bg-platform-bg/60 border border-platform-border/70 space-y-3"
+            :data-test="`agent-debug-mode-${agent.backend}`"
+          >
+            <div class="flex items-center justify-between pb-2 border-b border-platform-border/40">
+              <div>
+                <strong class="text-xs font-semibold text-platform-text block">交互调试记录落盘</strong>
+                <span class="text-2xs text-platform-text-muted">开启后将内置 Agent 的所有 LLM 请求/响应及工具执行详情落盘保存至 dataDir，可随时在会话头部导出调试日志文件。</span>
+              </div>
+              <span class="tabular-nums text-2xs text-platform-text-muted">
+                当前状态：{{ agent.debugMode ? '已开启' : '已关闭' }}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-3 text-xs">
+              <el-checkbox
+                :model-value="agent.debugMode ?? false"
+                :disabled="debugModeSaving[agent.backend]"
+                :data-test="`debug-mode-checkbox-${agent.backend}`"
+                @change="(checked: string | number | boolean) => toggleDebugMode(agent.backend, Boolean(checked))"
+              >
+                <span class="text-platform-text font-medium">开启调试日志落盘</span>
+              </el-checkbox>
+              <span v-if="debugModeSaving[agent.backend]" class="text-platform-text-muted text-2xs">保存中...</span>
+            </div>
+          </div>
+
+          <!-- Idle Timeout Settings (specifically for dsh / deepseek or backends with idle reclamation) -->
+          <div
+            v-if="supportsIdleTimeout(agent.backend)"
+            class="idle-timeout-block p-4 rounded-md bg-platform-bg/60 border border-platform-border/70 space-y-3"
+            :data-test="`agent-idle-timeout-${agent.backend}`"
+          >
+            <div class="flex items-center justify-between pb-2 border-b border-platform-border/40">
+              <div>
+                <strong class="text-xs font-semibold text-platform-text block">DSH 进程空闲断开时间</strong>
+                <span class="text-2xs text-platform-text-muted">设置无会话活跃时共享 dsh 守护进程的自动释放时长</span>
+              </div>
+              <span v-if="agent.idleTimeoutMinutes !== undefined" class="tabular-nums text-2xs text-platform-text-muted">
+                当前设定：{{ agent.idleTimeoutMinutes < 0 ? '从不断开' : `${agent.idleTimeoutMinutes} 分钟` }}
+              </span>
+            </div>
+
+            <div class="space-y-3 text-xs">
+              <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                  <label :for="`idle-timeout-input-${agent.backend}`" class="text-platform-text-muted font-medium">空闲断开时长:</label>
+                  <el-input-number
+                    :id="`idle-timeout-input-${agent.backend}`"
+                    :min="-1"
+                    :step="1"
+                    :controls="false"
+                    size="small"
+                    class="idle-timeout-number w-24"
+                    :data-test="`idle-timeout-input-${agent.backend}`"
+                    :model-value="idleTimeoutInputs[agent.backend] ?? agent.idleTimeoutMinutes ?? 30"
+                    @update:model-value="(val: number | undefined) => (idleTimeoutInputs[agent.backend] = val ?? null)"
+                  />
+                  <span class="text-platform-text-muted text-xs">分钟（-1 表示从不断开）</span>
+                </div>
+
+                <div class="preset-buttons flex items-center gap-1.5">
+                  <el-button size="small" plain @click="setIdleTimeoutPreset(agent.backend, 15)">15m</el-button>
+                  <el-button size="small" plain @click="setIdleTimeoutPreset(agent.backend, 30)">30m</el-button>
+                  <el-button size="small" plain @click="setIdleTimeoutPreset(agent.backend, 60)">60m</el-button>
+                  <el-button size="small" plain @click="setIdleTimeoutPreset(agent.backend, -1)">从不断开</el-button>
+                </div>
+
+                <el-button
+                  type="primary"
+                  size="small"
+                  :data-test="`save-idle-timeout-${agent.backend}`"
+                  :loading="idleTimeoutSaving[agent.backend]"
+                  @click="saveIdleTimeout(agent.backend)"
+                >
+                  保存设置
+                </el-button>
               </div>
             </div>
           </div>
 
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
-            <UiButton size="sm" variant="secondary" type="button" @click="cancelEditModel">取消</UiButton>
-            <UiButton size="sm" variant="primary" type="submit" :loading="editingModel.saving">保存配置</UiButton>
-          </div>
-        </form>
-      </div>
+          <!-- Session data management (platform-persisted transcripts) -->
+          <BuiltinDataPanel v-if="agent.sessionDataOwner" :backend="agent.backend" />
 
-      <!-- Service daemon controller -->
-      <div
-        v-if="showsService(agent.backend)"
-        class="service-block p-4 rounded-md bg-background/60 border border-border/70 space-y-3"
-      >
-        <div class="flex items-center justify-between pb-2 border-b border-border/40">
-          <div class="flex items-center gap-2 text-xs">
-            <span class="font-medium text-foreground">后台 service 守护进程:</span>
-            <UiBadge
-              :variant="serviceFor(agent.backend)?.state === 'running' ? 'success' : 'default'"
-              size="sm"
-              :data-test="`service-state-${agent.backend}`"
-            >
-              {{ stateLabel(agent.backend) }}
-            </UiBadge>
-          </div>
-          <span v-if="serviceFor(agent.backend)?.version" class="tabular-nums text-2xs text-muted-foreground">
-            版本 {{ serviceFor(agent.backend)?.version }}
-          </span>
-        </div>
+          <!-- Agent usage and quota statistics -->
+          <AgentUsagePanel v-if="agent.supportsUsage" :backend="agent.backend" />
 
-        <div class="space-y-1 text-xs">
-          <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs text-muted-foreground">
-            服务地址 <code class="text-2xs">{{ serviceFor(agent.backend)?.endpoint }}</code>
-          </p>
-          <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs text-muted-foreground">
-            进程 PID <span class="tabular-nums text-2xs">{{ serviceFor(agent.backend)?.pid }}</span>
-          </p>
-          <p data-test="service-checked-at" class="service-line text-2xs text-muted-foreground">
-            {{ checkedAt(agent.backend) }}
-          </p>
-          <p
-            v-if="serviceFor(agent.backend)?.state === 'unreachable' && serviceFor(agent.backend)?.detail"
-            data-test="service-detail"
-            class="service-line text-xs text-red-500"
+          <!-- Agent available models catalog -->
+          <div
+            v-if="supportsModels(agent.backend)"
+            class="models p-4 rounded-md bg-platform-bg/60 border border-platform-border/70 space-y-3"
+            :data-test="`agent-models-${agent.backend}`"
           >
-            {{ serviceFor(agent.backend)?.detail }}
-          </p>
-          <UiAlert v-if="agents.serviceError" data-test="service-error" variant="error" class="service-line bad">
-            {{ agents.serviceError }}
-          </UiAlert>
-        </div>
+            <div class="models-head flex items-center justify-between pb-2 border-b border-platform-border/40">
+              <div>
+                <strong class="text-xs font-semibold text-platform-text block">可用模型目录</strong>
+                <span class="models-updated text-2xs text-platform-text-muted">{{ updatedAtLabel(agent.backend) }}</span>
+              </div>
+              <el-button
+                size="small"
+                text
+                :data-test="`agent-models-refresh-${agent.backend}`"
+                :disabled="modelsLoading[agent.backend] === true"
+                :loading="modelsLoading[agent.backend] === true"
+                @click="loadModels(agent.backend, true)"
+              >
+                刷新模型
+              </el-button>
+            </div>
 
-        <div class="service-actions flex items-center gap-2 pt-1">
-          <UiButton size="sm" variant="secondary" data-test="service-detect" @click="detectService(agent.backend)">检测状态</UiButton>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            data-test="service-start"
-            :disabled="serviceFor(agent.backend)?.state === 'running'"
-            @click="startService(agent.backend)"
-          >
-            启动服务
-          </UiButton>
-          <UiButton
-            size="sm"
-            variant="secondary"
-            class="text-red-600 hover:text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"
-            data-test="service-stop"
-            :disabled="serviceFor(agent.backend)?.state !== 'running'"
-            @click="askStop(agent.backend)"
-          >
-            停止服务
-          </UiButton>
-        </div>
+            <div class="model-toolbar flex items-center gap-2 flex-wrap">
+              <el-input
+                v-model="modelSearch[agent.backend]"
+                size="small"
+                clearable
+                placeholder="按模型名称搜索"
+                class="flex-1 min-w-[12rem]"
+                :data-test="`agent-models-search-${agent.backend}`"
+              />
+              <el-button
+                size="small"
+                :data-test="`agent-models-select-all-${agent.backend}`"
+                :disabled="
+                  modelsLoading[agent.backend] === true ||
+                  modelsBulkSaving[agent.backend] === true ||
+                  !(models[agent.backend] ?? []).length ||
+                  enabledModelCount(agent.backend) === (models[agent.backend] ?? []).length
+                "
+                :loading="modelsBulkSaving[agent.backend] === true"
+                @click="setAllModelsEnabled(agent.backend, true)"
+              >
+                全选
+              </el-button>
+              <el-button
+                size="small"
+                :data-test="`agent-models-clear-all-${agent.backend}`"
+                :disabled="
+                  modelsLoading[agent.backend] === true ||
+                  modelsBulkSaving[agent.backend] === true ||
+                  enabledModelCount(agent.backend) === 0
+                "
+                @click="setAllModelsEnabled(agent.backend, false)"
+              >
+                清空
+              </el-button>
+              <span class="text-2xs text-platform-text-muted tabular-nums">
+                已启用 {{ enabledModelCount(agent.backend) }}/{{ (models[agent.backend] ?? []).length }}
+              </span>
+            </div>
 
-        <!-- Stop confirmation dialog inline -->
-        <div
-          v-if="confirmStop === agent.backend"
-          class="service-confirm p-3.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 space-y-2.5"
-          data-test="service-stop-dialog"
-        >
-          <p class="text-xs text-red-700 dark:text-red-300 leading-relaxed font-medium">
-            这会停止本机所有正在使用该 service 的客户端，包括桌面端 opencode。正在运行的会话会被中断。
-          </p>
-          <div class="service-actions flex items-center gap-2">
-            <UiButton
-              size="sm"
-              variant="danger"
-              data-test="service-stop-confirm"
-              @click="confirmStopNow(agent.backend)"
+            <el-table
+              v-if="visibleModelsFor(agent.backend).length || modelsLoading[agent.backend]"
+              :data="visibleModelsFor(agent.backend)"
+              size="small"
+              max-height="256"
+              row-key="id"
+              class="model-table"
+              :empty-text="modelsLoading[agent.backend] ? '正在同步模型目录…' : '没有匹配的模型。'"
             >
-              确认停止
-            </UiButton>
-            <UiButton size="sm" variant="secondary" data-test="service-stop-cancel" @click="cancelStop()">取消</UiButton>
-          </div>
-        </div>
-      </div>
+              <el-table-column width="56">
+                <template #default="{ row }">
+                  <el-switch
+                    size="small"
+                    :model-value="row.enabled !== false"
+                    :data-agent-model-toggle="row.id"
+                    @change="toggleModelEnabled(agent.backend, row as ModelInfo, $event as boolean)"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="模型" min-width="240">
+                <template #default="{ row }">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <el-tag :type="row.enabled !== false ? 'success' : 'info'" size="small">
+                      {{ row.enabled !== false ? '已启用' : '已停用' }}
+                    </el-tag>
+                    <span class="model-name text-xs font-medium text-platform-text truncate">{{ row.name || row.id }}</span>
+                  </div>
+                  <div class="flex items-center gap-2 text-2xs text-platform-text-muted min-w-0 mt-0.5">
+                    <code class="model-id font-mono truncate max-w-[160px]">{{ row.id }}</code>
+                    <span v-if="row.contextLimit" class="tabular-nums whitespace-nowrap">
+                      {{ Math.round(row.contextLimit / 1000) }}k 上下文
+                    </span>
+                    <span v-if="row.supportsImages" class="text-platform-primary whitespace-nowrap">图片</span>
+                    <span v-if="row.variants && row.variants.length" class="model-variants truncate max-w-[160px]">
+                      变体：{{ row.variants.join(' / ') }}
+                    </span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="72" align="right">
+                <template #default="{ row }">
+                  <el-button
+                    size="small"
+                    link
+                    :data-agent-model-edit="row.id"
+                    @click="openEditModel(agent.backend, row as ModelInfo)"
+                  >
+                    编辑
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
 
-      <!-- Diagnostics accordion -->
-      <details
-        class="diagnostics text-xs text-foreground pt-1 border-t border-border/40"
-        :open="diagnosticsOpen(agent.backend)"
-        :data-test="`agent-diagnostics-${agent.backend}`"
-      >
-        <summary class="cursor-pointer font-medium py-1.5 select-none flex items-center justify-between hover:text-foreground">
-          <div class="flex items-center gap-2">
-            <span>后端诊断信息</span>
-            <UiBadge
-              size="sm"
-              :variant="diagnosticsStatus(agent.backend) === 'ok' ? 'success' : diagnosticsStatus(agent.backend) === 'warning' ? 'warning' : 'danger'"
+            <p
+              v-else-if="!modelsLoading[agent.backend] && !(models[agent.backend] ?? []).length"
+              class="models-line text-xs text-platform-text-muted py-1"
             >
-              {{ diagnosticsStatusLabel(agent.backend) }}
-            </UiBadge>
+              尚未同步模型，点击刷新读取该 Agent 当前可用的模型。
+            </p>
+
+            <!-- Model edit dialog: the shared editor shell, same chrome as every
+                 other 编辑 X form on the platform. -->
+            <EntityFormDialog
+              v-if="editingModel"
+              :key="`${editingModel.backend}-${editingModel.id}`"
+              title="编辑模型"
+              subtitle="自定义友好显示名称与上下文 Token 限制"
+              :identifier="editingModel.id"
+              save-label="保存"
+              :saving="editingModel.saving"
+              :width="520"
+              save-test="agent-model-form-submit"
+              data-test="agent-model-form"
+              @save="submitEditModel"
+              @cancel="cancelEditModel"
+            >
+              <el-form class="entity-form" label-position="top" @submit.prevent>
+                <el-form-item label="显示名称">
+                  <el-input v-model="editingModel.name" placeholder="模型友好名称" data-test="agent-model-edit-name" />
+                </el-form-item>
+                <el-form-item label="上下文 Token 限制（留空按后端默认）">
+                  <el-input-number
+                    v-model="editingModel.contextLimit"
+                    :min="0"
+                    :controls="false"
+                    class="w-full"
+                    placeholder="如 128000"
+                    data-test="agent-model-edit-context"
+                  />
+                </el-form-item>
+                <el-form-item>
+                  <el-checkbox v-model="editingModel.supportsImages">支持图片输入</el-checkbox>
+                  <el-checkbox v-model="editingModel.enabled" class="ml-4">启用此模型</el-checkbox>
+                </el-form-item>
+              </el-form>
+            </EntityFormDialog>
           </div>
-          <span class="text-muted-foreground text-2xs">展开/收起 ▾</span>
-        </summary>
-        <div class="pt-2.5">
-          <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
-        </div>
-      </details>
-    </article>
+
+          <!-- Service daemon controller -->
+          <div
+            v-if="showsService(agent.backend)"
+            class="service-block p-4 rounded-md bg-platform-bg/60 border border-platform-border/70 space-y-3"
+          >
+            <div class="flex items-center justify-between pb-2 border-b border-platform-border/40">
+              <div class="flex items-center gap-2 text-xs">
+                <span class="font-medium text-platform-text">后台 service 守护进程:</span>
+                <el-tag
+                  :type="serviceTagType(agent.backend)"
+                  size="small"
+                  :data-test="`service-state-${agent.backend}`"
+                >
+                  {{ stateLabel(agent.backend) }}
+                </el-tag>
+              </div>
+              <span v-if="serviceFor(agent.backend)?.version" class="tabular-nums text-2xs text-platform-text-muted">
+                版本 {{ serviceFor(agent.backend)?.version }}
+              </span>
+            </div>
+
+            <div class="space-y-1 text-xs">
+              <p v-if="serviceFor(agent.backend)?.endpoint" data-test="service-endpoint" class="service-line text-xs text-platform-text-muted">
+                服务地址 <code class="text-2xs">{{ serviceFor(agent.backend)?.endpoint }}</code>
+              </p>
+              <p v-if="serviceFor(agent.backend)?.pid" data-test="service-pid" class="service-line text-xs text-platform-text-muted">
+                进程 PID <span class="tabular-nums text-2xs">{{ serviceFor(agent.backend)?.pid }}</span>
+              </p>
+              <p data-test="service-checked-at" class="service-line text-2xs text-platform-text-muted">
+                {{ checkedAt(agent.backend) }}
+              </p>
+              <p
+                v-if="serviceFor(agent.backend)?.state === 'unreachable' && serviceFor(agent.backend)?.detail"
+                data-test="service-detail"
+                class="service-line text-xs text-platform-danger"
+              >
+                {{ serviceFor(agent.backend)?.detail }}
+              </p>
+            </div>
+
+            <div class="service-actions flex items-center gap-2 pt-1">
+              <el-button size="small" data-test="service-detect" @click="detectService(agent.backend)">检测状态</el-button>
+              <el-button
+                size="small"
+                data-test="service-start"
+                :disabled="serviceFor(agent.backend)?.state === 'running'"
+                @click="startService(agent.backend)"
+              >
+                启动服务
+              </el-button>
+              <el-button
+                size="small"
+                type="danger"
+                plain
+                data-test="service-stop"
+                :disabled="serviceFor(agent.backend)?.state !== 'running'"
+                @click="askStop(agent.backend)"
+              >
+                停止服务
+              </el-button>
+            </div>
+          </div>
+
+          <!-- Diagnostics accordion -->
+          <el-collapse
+            class="diagnostics text-xs text-platform-text pt-1 border-t border-platform-border/40"
+            :model-value="diagnosticsActive(agent.backend)"
+            :data-test="`agent-diagnostics-${agent.backend}`"
+          >
+            <el-collapse-item name="diagnostics">
+              <template #title>
+                <div class="flex items-center gap-2 font-medium select-none">
+                  <span>后端诊断信息</span>
+                  <el-tag size="small" :type="diagnosticsTagType(agent.backend)">
+                    {{ diagnosticsStatusLabel(agent.backend) }}
+                  </el-tag>
+                </div>
+              </template>
+              <div class="pt-1">
+                <BackendDiagnostics :diagnostics="diagnosticsFor(agent.backend)" compact />
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </article>
+      </el-tab-pane>
+    </el-tabs>
   </section>
 </template>
+
+<style scoped>
+/* 库部件的样式干预只能写在 theme/element-tokens.css；这里只碰原生元素。 */
+.agent-general-prompt :deep(textarea) {
+  font-family: var(--font-mono);
+  font-size: var(--text-size-12);
+}
+
+.idle-timeout-number :deep(input) {
+  font-variant-numeric: tabular-nums;
+}
+</style>
