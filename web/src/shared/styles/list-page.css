@@ -1,0 +1,79 @@
+/* 列表页骨架原语：页头、主体三段（工具条 / 表格 / 分页）、枚举筛选档位。
+ *
+ * 和 entity-editor.css 一个道理——这些类挂在各页自己的模板上，但四张列表页必须
+ * 长成同一张脸（v2 §四 布局契约：页头 + 主体三段），所以字阶与节奏只写一次。
+ * 旧的 `.list-page-toolbar`（工具条写在页头里）与无分页的 `.list-page-body` 已随
+ * 四页统一到三段式而删除，不要再复活它们。此前每页各写一份 `text-lg`（=15.75px）：既不在 v1 字阶上，
+ * 也没法一次改齐，正是字阶漂移的起点，这里收编进 --text-size-*。
+ *
+ * 间距用 rem 而不是 Tailwind 类名：rem 跟着外观层的根字号走，且 1.5rem 与模板里
+ * 的 p-6 / px-6 同值，页头与表格的左右边缘因此必然对齐（等边契约）。
+ */
+
+.list-page-header {
+  flex-shrink: 0;
+  padding: 1rem 1.5rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list-page-title {
+  margin: 0;
+  font-size: var(--text-size-20);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--color-text);
+}
+
+.list-page-desc {
+  margin: 3px 0 0;
+  font-size: var(--text-size-12);
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+/* 枚举筛选固定宽度：选中项长短变化不推动搜索表单。120px 与关键词框同档，
+   标签最长就是「全部 (13)」这一类，放得下。 */
+.list-page-filter {
+  width: 120px;
+}
+
+/* ---------------------------------------------------------------- 主体三段 --
+ * 工具条固定顶 / 表格铺满中间 / 分页固定底。
+ *
+ * 高度链不能断：`el-table` 只有拿到确定高度才会钉住表头并自己滚正文，所以三段
+ * 容器必须是 flex column + `min-height: 0`，表格用 `height="100%"` 接管中间段。
+ * 两端条带因此永远在视野里——工具条不会跟着表格滚走，分页也不会被顶出屏幕。
+ */
+.list-page-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 0.5rem 0;
+}
+
+.list-panel-toolbar {
+  flex-shrink: 0;
+  padding: 0.5rem 0;
+  /* 工具条是操作区、表格是数据区，两个区必须有一条线分开（旧结构里这条线
+     由页头的 border-bottom 顺带承担）。 */
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list-panel-table {
+  flex: 1 1 auto;
+  /* 不是可选的收紧：删掉它 flex 子项按 min-height:auto 撑到内容的固有高度
+     （实测 387px），面板溢出 45~145px，视口矮一点分页就被整条顶出屏幕。 */
+  min-height: 0;
+}
+
+/* 分页是基座，不是浮动控件：一条发丝上边把它与正文分开，页码贴右边缘。 */
+.list-panel-footer {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}

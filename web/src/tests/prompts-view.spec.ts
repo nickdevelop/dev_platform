@@ -82,7 +82,7 @@ describe('PromptManageDialog Component', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('编辑提示词')
+    expect(wrapper.text()).toContain('编辑 AI 提示词')
     await wrapper.find('[data-test="prompt-name-input"]').setValue('修改后的提示词')
     await wrapper.find('form.prompt-dialog-form').trigger('submit')
     await flushPromises()

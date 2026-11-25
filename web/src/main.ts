@@ -5,7 +5,16 @@ import { createAppRouter } from './router'
 import { applyCachedAppearance } from './theme/apply'
 import { installCSRF } from './api/client'
 import { useAuthStore } from './stores/auth'
+// Element Plus's stylesheet is loaded as a single file rather than per
+// component: the function-style APIs (ElMessage, ElMessageBox, ElLoading) sit
+// outside the template resolver's reach, and one import gives every widget — and
+// every theme switch — the same, predictable cascade. ~40 KB gzipped.
+import 'element-plus/dist/index.css'
 import './style.css'
+// The token layer lands last: it only re-points names the library already
+// declared, so it has to be parsed after both the library and the platform's own
+// stylesheet.
+import './theme/element-tokens.css'
 import './shared/markdown-body.css'
 import './shared/markdown-code.css'
 

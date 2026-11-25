@@ -101,7 +101,7 @@ const chipStyle = computed<Record<string, string>>((): Record<string, string> =>
 }
 
 .agent-logo:not(.has-icon) {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--text-size-10);
   font-weight: 700;
   line-height: 1;

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectSidebar from '../features/projects/ProjectSidebar.vue'
 import ChatSidebar from '../features/chat/pure/ChatSidebar.vue'
 import TasksSidebar from '../features/tasks/TasksSidebar.vue'
@@ -148,26 +149,38 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     ])
   })
 
-  it('OrgSidebar conforms to Data Terminal single-header standard', () => {
-    const wrapper = mount(OrgSidebar, {
-      global: {
-        stubs: {
-          RouterLink: {
-            template: '<a :class="$attrs.class"><slot /></a>',
-          },
-        },
-      },
+  it('OrgSidebar renders the org navigation as a router-driven el-menu', async () => {
+    // A real router (memory history) rather than a stub: the menu navigates by
+    // index in router mode and marks the current path, and both need it.
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/org/prompts', component: { template: '<div />' } },
+        { path: '/org/assistants', component: { template: '<div />' } },
+        { path: '/org/employees', component: { template: '<div />' } },
+        { path: '/org/teams', component: { template: '<div />' } },
+      ],
     })
+    await router.push('/org/assistants')
+    await router.isReady()
 
-    expect(wrapper.find('.org-links').exists()).toBe(true)
-    const links = wrapper.findAll('.org-link')
-    expect(links.length).toBe(4)
-    expect(links[0].classes()).toContain('sidebar-card')
-    expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
-      'AI提示词',
+    const wrapper = mount(OrgSidebar, { global: { plugins: [router] } })
+
+    expect(wrapper.find('[data-test="org-sidebar"]').exists()).toBe(true)
+    const items = wrapper.findAll('.el-menu-item')
+    expect(items).toHaveLength(4)
+    expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
+      'AI 提示词',
       'AI 助手',
       'AI 员工',
       'AI 团队',
     ])
+    // Every entry still carries its second line: the menu replaced the list
+    // markup, not the information it showed.
+    expect(wrapper.findAll('.link-desc')).toHaveLength(4)
+
+    const active = wrapper.findAll('.el-menu-item.is-active')
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toContain('AI 助手')
   })
 })

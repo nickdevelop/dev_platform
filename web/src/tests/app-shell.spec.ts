@@ -252,7 +252,7 @@ describe('three-pane app shell', () => {
     const { wrapper } = await setup('/')
 
     // 项目 / 组织 / 任务 / 笔记 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
-    // AI提示词、AI助手、AI员工与AI团队在组织中心统一管理。
+    // AI 提示词、AI 助手、AI 员工与 AI 团队在组织中心统一管理。
     const rail = wrapper.find('nav.category-rail')
     expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.

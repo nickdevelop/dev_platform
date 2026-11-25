@@ -1,19 +1,23 @@
 <script setup lang="ts">
-// AssistantListView: Pure object governance for AI Assistants.
-// Displays and manages Assistant configurations (name, icon, model, prompt, floating launcher toggle, tools).
-// Follows design-taste-frontend standards:
-//   - Zero dialogs/popups for creation & editing (uses dedicated AssistantEditPanel workbench)
-//   - Clean header with count badge, clear description, and primary action
-//   - Compact search and segmented filter bar
-//   - Flat table with subtle hover states, zero resting shadows, and direct toggles
+// AssistantListView: governance grid for the organization's AI assistants.
+//
+// Migration step: the hand-written `<table>` is now `el-table`, the row above it
+// is the shared `ListToolbar` (create on the left, 常驻 `el-select` + keyword
+// `el-input` + 搜索 / 重置 on the right), the row toggle is an `el-switch`,
+// deletion goes through `ElMessageBox`, and the create/edit form opens in
+// `AssistantEditDialog` instead of replacing this view in place. The
+// `?action=new` / `?edit=<id>` deep links still resolve to the same editor.
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ChatDotRound, Plus } from '@element-plus/icons-vue'
 import { useChatsStore } from '../../../stores/chats'
 import { useModelsStore } from '../../../stores/models'
 import { usePromptsStore } from '../../../stores/prompts'
 import type { ChatGroup, ChatGroupInput } from '../../../api/chats'
-import { UiButton, UiAlert, UiConfirmDialog } from '../../../shared/ui'
-import AssistantEditPanel from './AssistantEditPanel.vue'
+import ListToolbar from '../../../shared/components/ListToolbar.vue'
+import ListEmptyState from '../../../shared/components/ListEmptyState.vue'
+import AssistantEditDialog from './AssistantEditDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,15 +25,14 @@ const chatsStore = useChatsStore()
 const modelsStore = useModelsStore()
 const promptsStore = usePromptsStore()
 
+// The keyword in the field is a draft (ListToolbar applies it on 搜索 / Enter);
+// the常驻 filter applies the moment it changes.
+const keywordDraft = ref('')
 const keyword = ref('')
 const floatFilter = ref<'all' | 'floating' | 'normal'>('all')
 
-// Mode: 'list' | 'create' | 'edit'
-const mode = ref<'list' | 'create' | 'edit'>('list')
+const showDialog = ref(false)
 const selectedAssistant = ref<ChatGroup | null>(null)
-
-const pendingDelete = ref<ChatGroup | null>(null)
-const actionError = ref('')
 const togglingFloatId = ref<number | null>(null)
 
 onMounted(async () => {
@@ -49,21 +52,38 @@ watch(
   { deep: true },
 )
 
+const floatFilterOptions = computed(() => [
+  { label: `全部 (${chatsStore.groups.length})`, value: 'all' },
+  { label: `快捷助手常驻 (${chatsStore.floatingAssistants.length})`, value: 'floating' },
+  { label: '未常驻', value: 'normal' },
+])
+
+// The URL stays the source of truth for which editor is open, so a pasted link or
+// a refresh lands on the same assistant.
 function syncRouteState() {
   if (route.query.action === 'new') {
-    mode.value = 'create'
     selectedAssistant.value = null
+    showDialog.value = true
   } else if (route.query.edit) {
-    const targetId = Number(route.query.edit)
-    const found = chatsStore.groups.find((g) => g.id === targetId)
-    if (found) {
-      mode.value = 'edit'
-      selectedAssistant.value = found
+    const target = chatsStore.groups.find((g) => g.id === Number(route.query.edit))
+    if (target) {
+      selectedAssistant.value = target
+      showDialog.value = true
     }
-  } else if (mode.value !== 'create' && mode.value !== 'edit') {
-    mode.value = 'list'
+  } else if (showDialog.value) {
+    showDialog.value = false
     selectedAssistant.value = null
   }
+}
+
+function applySearch() {
+  keyword.value = keywordDraft.value.trim()
+}
+
+function resetSearch() {
+  keywordDraft.value = ''
+  keyword.value = ''
+  floatFilter.value = 'all'
 }
 
 const filteredAssistants = computed(() => {
@@ -82,6 +102,26 @@ const filteredAssistants = computed(() => {
     list = list.filter((g) => !g.showInFloat)
   }
   return list
+})
+
+// 分页固定坐在主体底部（v2 §四 三段式）：表格只铺当前页，正文自己滚。
+const page = ref(1)
+const pageSize = ref(10)
+const pageSizes = [10, 20, 50]
+const totalRows = computed(() => filteredAssistants.value.length)
+const pagedAssistants = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredAssistants.value.slice(start, start + pageSize.value)
+})
+
+// 条件一变就回到第一页，否则用户会停在一张空页上以为被筛选滤空了。
+watch([keyword, floatFilter], () => {
+  page.value = 1
+})
+
+watch([totalRows, pageSize], () => {
+  const lastPage = Math.max(1, Math.ceil(totalRows.value / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
 })
 
 function getAssistantIcon(group: ChatGroup): string {
@@ -108,26 +148,26 @@ function getPromptDisplayName(promptId?: number | null): string | null {
   return p ? p.name : `提示词 #${promptId}`
 }
 
+function personaSummary(group: ChatGroup): string {
+  if (group.systemPrompt) return group.systemPrompt
+  const promptName = getPromptDisplayName(group.promptId)
+  return promptName ? `引用提示词「${promptName}」` : '暂无人设描述'
+}
+
 function openCreate() {
   selectedAssistant.value = null
-  mode.value = 'create'
+  showDialog.value = true
   void router.replace({ query: { action: 'new' } })
 }
 
 function openEdit(group: ChatGroup) {
   selectedAssistant.value = group
-  mode.value = 'edit'
+  showDialog.value = true
   void router.replace({ query: { edit: String(group.id) } })
 }
 
-function onSaved(_saved: ChatGroup) {
-  mode.value = 'list'
-  selectedAssistant.value = null
-  void router.replace({ query: {} })
-}
-
-function onCancel() {
-  mode.value = 'list'
+function closeEditor() {
+  showDialog.value = false
   selectedAssistant.value = null
   void router.replace({ query: {} })
 }
@@ -135,7 +175,6 @@ function onCancel() {
 async function toggleFloat(group: ChatGroup) {
   if (togglingFloatId.value !== null) return
   togglingFloatId.value = group.id
-  actionError.value = ''
   try {
     const input: ChatGroupInput = {
       name: group.name,
@@ -149,283 +188,259 @@ async function toggleFloat(group: ChatGroup) {
     }
     await chatsStore.updateGroup(group.id, input)
   } catch (err: any) {
-    actionError.value = err?.message || '更新浮窗状态失败'
+    // The switch already snapped back to its stored value, so nothing on screen
+    // says "that failed" unless we say it: a toast at the pointer, not a banner
+    // that pushes the table down.
+    ElMessage.error(err?.message || '更新快捷助手常驻状态失败')
   } finally {
     togglingFloatId.value = null
   }
 }
 
-async function confirmDelete() {
-  if (!pendingDelete.value) return
-  actionError.value = ''
+async function removeAssistant(group: ChatGroup) {
   try {
-    await chatsStore.deleteGroup(pendingDelete.value.id)
-    pendingDelete.value = null
+    await ElMessageBox.confirm(
+      `删除后 AI 助手「${group.name}」将不再可用，此操作不可逆。`,
+      `删除 AI 助手「${group.name}」？`,
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消', confirmButtonType: 'danger' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await chatsStore.deleteGroup(group.id)
+    ElMessage.success(`已删除助手「${group.name}」`)
   } catch (err: any) {
-    actionError.value = err?.message || '删除助手失败'
+    ElMessage.error(err?.message || '删除助手失败')
   }
 }
+
+// 三种沉默分别说：还在拉数据 / 搜不到 / 本来就空（见 ListEmptyState）。
+// 常驻筛选不会进 filtered——「这一类还没有」的退路是新建，不是重置。
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  // `groupsLoading`, not `loading`: the latter belongs to the conversation list
+  // and can be in flight from the chat surface while this page has nothing to do.
+  if (chatsStore.groupsLoading) return 'loading'
+  return keyword.value ? 'filtered' : 'empty'
+})
+
+const emptyTitle = computed(() =>
+  emptyState.value === 'filtered' ? '没有匹配的 AI 助手' : '当前暂无 AI 助手',
+)
+
+const emptyHint = computed(() =>
+  emptyState.value === 'filtered'
+    ? `关键词「${keyword.value}」没有命中任何助手的名称或人设。`
+    : 'AI 助手是日常大模型人设：选定模型与提示词后即可在会话页快捷区随时呼出。',
+)
 </script>
 
 <template>
-  <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden">
-    <!-- View Switch: In-Place Edit/Create Panel (Zero Popups) -->
-    <template v-if="mode === 'create' || mode === 'edit'">
-      <AssistantEditPanel
-        :assistant="selectedAssistant"
-        @saved="onSaved"
-        @cancel="onCancel"
-      />
-    </template>
+  <div class="h-full flex flex-col min-h-0 bg-[var(--color-bg)] overflow-hidden" data-test="assistant-list">
+    <header class="list-page-header">
+      <h1 class="list-page-title">AI 助手</h1>
+      <p class="list-page-desc">
+        日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
+      </p>
 
-    <!-- Standard List View -->
-    <template v-else>
-      <!-- Top Header: Title + Count + Zone A Action -->
-      <header class="px-6 py-4 border-b border-border bg-surface shrink-0">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <div class="flex items-center gap-2.5">
-              <h1 class="text-lg font-semibold text-foreground tracking-tight">AI 助手</h1>
-              <span class="px-2 py-0.5 rounded-full text-2xs font-mono font-medium bg-surface-muted text-platform-text-muted border border-border">
-                {{ chatsStore.groups.length }} 个助手
+    </header>
+
+    <div class="list-page-panel" data-test="assistant-panel">
+      <div class="list-panel-toolbar">
+        <ListToolbar
+          v-model:keyword="keywordDraft"
+          placeholder="搜索助手…"
+          hint="搜索助手名称或人设关键词…"
+          search-test="btn-search-assistant"
+          reset-test="btn-reset-assistant"
+          @search="applySearch"
+          @reset="resetSearch"
+        >
+          <template #actions>
+            <el-button
+              type="primary"
+              :icon="Plus"
+              data-test="btn-create-assistant"
+              @click="openCreate"
+            >
+              新建 AI 助手
+            </el-button>
+          </template>
+
+          <template #filters>
+            <el-select
+              v-model="floatFilter"
+              class="list-page-filter"
+              data-test="select-float-filter"
+              aria-label="按快捷助手常驻状态筛选"
+            >
+              <el-option
+                v-for="option in floatFilterOptions"
+                :key="option.value"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
+          </template>
+        </ListToolbar>
+      </div>
+
+      <div class="list-panel-table">
+        <el-table :data="pagedAssistants" row-key="id" height="100%" data-test="assistant-table">
+          <el-table-column label="AI 助手" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="row-avatar select-none">{{ getAssistantIcon(row as ChatGroup) }}</span>
+                <span class="font-medium text-foreground truncate">{{ row.name }}</span>
+                <span class="id-chip font-mono">#{{ row.id }}</span>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="人设来源" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="text-platform-text-muted">{{ personaSummary(row as ChatGroup) }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="运行模型" width="170" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="font-mono">{{ getModelDisplayName(row.defaultModelId) }}</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="提示词规范" min-width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="getPromptDisplayName(row.promptId)" class="text-foreground">
+                {{ getPromptDisplayName(row.promptId) }}
               </span>
-            </div>
-            <p class="text-xs text-platform-text-muted mt-0.5">
-              日常大模型人设与平台自治工具治理。会话通过快捷助手随时呼出，无需在此直接发起。
-            </p>
-          </div>
+              <span v-else class="text-platform-text-muted">
+                {{ row.systemPrompt ? '内联人设' : '通用' }}
+              </span>
+            </template>
+          </el-table-column>
 
-          <UiButton
-            variant="primary"
-            class="shrink-0 text-xs"
-            data-test="btn-create-assistant"
-            @click="openCreate"
-          >
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="mr-1.5" aria-hidden="true">
-              <line x1="8" y1="3" x2="8" y2="13" />
-              <line x1="3" y1="8" x2="13" y2="8" />
-            </svg>
-            <span>新建 AI 助手</span>
-          </UiButton>
-        </div>
+          <el-table-column label="快捷助手浮窗" width="128" align="center">
+            <template #default="{ row }">
+              <el-switch
+                size="small"
+                :model-value="!!row.showInFloat"
+                :loading="togglingFloatId === row.id"
+                :aria-label="row.showInFloat ? '取消桌面快捷助手常驻' : '常驻到桌面快捷助手'"
+                :data-test="`switch-float-${row.id}`"
+                @change="toggleFloat(row as ChatGroup)"
+              />
+            </template>
+          </el-table-column>
 
-        <!-- Filter & Search Toolbar -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mt-4 pt-3 border-t border-border/50">
-          <!-- Search Input -->
-          <div class="relative w-full sm:w-72">
-            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-platform-text-muted pointer-events-none" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
-              <circle cx="7" cy="7" r="4.5" />
-              <line x1="10.5" y1="10.5" x2="14" y2="14" stroke-linecap="round" />
-            </svg>
-            <input
-              v-model="keyword"
-              type="search"
-              placeholder="搜索助手名称或人设关键词…"
-              class="w-full pl-8 pr-7 py-1.5 text-xs rounded border border-border bg-surface-muted/60 text-foreground placeholder:text-platform-text-muted focus:outline-none focus:border-accent"
-            />
-            <button
-              v-if="keyword"
-              type="button"
-              class="absolute right-2 top-1/2 -translate-y-1/2 text-platform-text-muted hover:text-foreground"
-              title="清空搜索"
-              @click="keyword = ''"
+          <el-table-column label="平台自治能力" width="132">
+            <template #default="{ row }">
+              <el-tag v-if="row.enablePlatformTools" size="small" type="success" effect="light" disable-transitions>
+                已自治 ({{ row.maxToolSteps || 10 }}步)
+              </el-tag>
+              <span v-else class="text-platform-text-muted">基础对话</span>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="124" align="right" fixed="right">
+            <template #default="{ row }">
+              <div class="inline-flex items-center gap-1">
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :data-test="`btn-edit-assistant-${row.id}`"
+                  @click="openEdit(row as ChatGroup)"
+                >
+                  编辑
+                </el-button>
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :data-test="`btn-delete-assistant-${row.id}`"
+                  @click="removeAssistant(row as ChatGroup)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
+
+          <template #empty>
+            <ListEmptyState
+              :state="emptyState"
+              :icon="ChatDotRound"
+              :title="emptyTitle"
+              :hint="emptyHint"
+              @reset="resetSearch"
             >
-              <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                <line x1="4" y1="4" x2="12" y2="12" />
-                <line x1="12" y1="4" x2="4" y2="12" />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Float Filter Segment -->
-          <div class="flex items-center p-0.5 rounded bg-surface-muted border border-border text-2xs font-medium text-platform-text-muted self-start sm:self-auto">
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded transition-colors"
-              :class="floatFilter === 'all' ? 'bg-surface text-foreground shadow-2xs font-semibold' : 'hover:text-foreground'"
-              @click="floatFilter = 'all'"
-            >
-              全部 ({{ chatsStore.groups.length }})
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded transition-colors"
-              :class="floatFilter === 'floating' ? 'bg-surface text-foreground shadow-2xs font-semibold' : 'hover:text-foreground'"
-              @click="floatFilter = 'floating'"
-            >
-              快捷助手常驻 ({{ chatsStore.floatingAssistants.length }})
-            </button>
-            <button
-              type="button"
-              class="px-2.5 py-1 rounded transition-colors"
-              :class="floatFilter === 'normal' ? 'bg-surface text-foreground shadow-2xs font-semibold' : 'hover:text-foreground'"
-              @click="floatFilter = 'normal'"
-            >
-              未常驻
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <!-- Error Banner -->
-      <div v-if="actionError" class="px-6 pt-4">
-        <UiAlert variant="error">
-          {{ actionError }}
-        </UiAlert>
-      </div>
-
-      <!-- Main Content Table View -->
-      <div class="flex-1 min-h-0 overflow-auto p-6">
-        <div v-if="filteredAssistants.length > 0" class="border border-border rounded-lg bg-surface overflow-hidden">
-          <table class="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr class="border-b border-border bg-surface-muted/60 text-2xs font-medium text-platform-text-muted uppercase tracking-wider">
-                <th class="py-2.5 px-4">AI 助手</th>
-                <th class="py-2.5 px-4">运行模型</th>
-                <th class="py-2.5 px-4">提示词规范</th>
-                <th class="py-2.5 px-4">快捷助手浮窗</th>
-                <th class="py-2.5 px-4">平台自治能力</th>
-                <th class="py-2.5 px-4 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border/60">
-              <tr
-                v-for="item in filteredAssistants"
-                :key="item.id"
-                class="hover:bg-surface-muted/30 transition-colors group"
+              <el-button
+                type="primary"
+                :icon="Plus"
+                data-test="btn-new-assistant"
+                @click="openCreate"
               >
-                <!-- Name & Icon -->
-                <td class="py-3 px-4">
-                  <div class="flex items-center gap-3">
-                    <span class="w-8 h-8 rounded-md flex items-center justify-center text-sm bg-surface-muted border border-border shrink-0 font-medium">
-                      {{ getAssistantIcon(item) }}
-                    </span>
-                    <div class="min-w-0 max-w-xs sm:max-w-sm">
-                      <div class="flex items-center gap-1.5">
-                        <span class="font-medium text-foreground truncate">{{ item.name }}</span>
-                        <span class="text-3xs font-mono text-platform-text-muted">#{{ item.id }}</span>
-                      </div>
-                      <p class="text-2xs text-platform-text-muted truncate mt-0.5">
-                        {{ item.systemPrompt || '暂无人设描述' }}
-                      </p>
-                    </div>
-                  </div>
-                </td>
-
-                <!-- Model -->
-                <td class="py-3 px-4">
-                  <span class="inline-flex items-center px-2 py-0.5 rounded text-2xs font-mono bg-surface-muted text-foreground border border-border">
-                    {{ getModelDisplayName(item.defaultModelId) }}
-                  </span>
-                </td>
-
-                <!-- Prompt library -->
-                <td class="py-3 px-4">
-                  <span v-if="getPromptDisplayName(item.promptId)" class="inline-flex items-center gap-1 text-2xs text-foreground">
-                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.8" class="text-accent shrink-0">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                    </svg>
-                    <span class="truncate max-w-[120px]">{{ getPromptDisplayName(item.promptId) }}</span>
-                  </span>
-                  <span v-else class="text-2xs text-platform-text-muted">
-                    {{ item.systemPrompt ? '内联人设' : '通用' }}
-                  </span>
-                </td>
-
-                <!-- Float Toggle -->
-                <td class="py-3 px-4">
-                  <button
-                    type="button"
-                    class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-2xs font-medium transition-colors border"
-                    :class="item.showInFloat
-                      ? 'bg-accent/10 border-accent/30 text-accent hover:bg-accent/20'
-                      : 'bg-surface-muted border-border text-platform-text-muted hover:text-foreground'"
-                    :title="item.showInFloat ? '点击取消桌面快捷助手常驻' : '点击常驻到桌面快捷助手'"
-                    :disabled="togglingFloatId === item.id"
-                    @click="toggleFloat(item)"
-                  >
-                    <span
-                      class="w-1.5 h-1.5 rounded-full"
-                      :class="item.showInFloat ? 'bg-accent' : 'bg-platform-text-muted/60'"
-                    ></span>
-                    <span>{{ item.showInFloat ? '已常驻浮窗' : '未常驻' }}</span>
-                  </button>
-                </td>
-
-                <!-- Platform tools -->
-                <td class="py-3 px-4">
-                  <div v-if="item.enablePlatformTools" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-mono bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
-                    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8">
-                      <polyline points="3 8 6 11 13 4" />
-                    </svg>
-                    <span>已自治 ({{ item.maxToolSteps || 10 }}步)</span>
-                  </div>
-                  <span v-else class="text-2xs text-platform-text-muted">基础对话</span>
-                </td>
-
-                <!-- Actions -->
-                <td class="py-3 px-4 text-right">
-                  <div class="inline-flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      class="px-2 py-1 rounded text-2xs font-medium text-foreground hover:bg-surface-muted transition-colors border border-transparent hover:border-border"
-                      title="编辑配置"
-                      @click="openEdit(item)"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      type="button"
-                      class="px-2 py-1 rounded text-2xs font-medium text-red-500 hover:bg-red-500/10 transition-colors border border-transparent hover:border-red-500/20"
-                      title="删除助手"
-                      @click="pendingDelete = item"
-                    >
-                      删除
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Empty State -->
-        <div v-else class="flex flex-col items-center justify-center p-12 text-center rounded-lg border border-dashed border-border bg-surface/50">
-          <div class="w-10 h-10 rounded-full bg-surface-muted border border-border flex items-center justify-center text-platform-text-muted mb-3">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8">
-              <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
-              <rect x="4" y="8" width="16" height="12" rx="2" />
-              <circle cx="9" cy="13" r="1.25" fill="currentColor" />
-              <circle cx="15" cy="13" r="1.25" fill="currentColor" />
-              <path d="M9 17h6" />
-            </svg>
-          </div>
-          <p class="text-sm font-medium text-foreground">未找到匹配的 AI 助手</p>
-          <p class="text-xs text-platform-text-muted mt-1 max-w-sm">
-            {{ keyword ? '没有符合搜索条件的助手，请尝试其他关键词。' : '当前暂无 AI 助手，点击上方按钮创建您的第一个助手。' }}
-          </p>
-          <UiButton
-            v-if="!keyword"
-            variant="primary"
-            class="text-xs mt-4"
-            @click="openCreate"
-          >
-            + 新建 AI 助手
-          </UiButton>
-        </div>
+                新建 AI 助手
+              </el-button>
+            </ListEmptyState>
+          </template>
+        </el-table>
       </div>
-    </template>
 
-    <!-- Delete Confirmation -->
-    <UiConfirmDialog
-      v-if="pendingDelete"
-      title="删除 AI 助手"
-      :message="`确定要删除 AI 助手「${pendingDelete.name}」吗？此操作不可逆。`"
-      confirm-text="删除"
-      variant="danger"
-      @confirm="confirmDelete"
-      @cancel="pendingDelete = null"
+      <div class="list-panel-footer" data-test="assistant-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="totalRows"
+          :page-sizes="pageSizes"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+        />
+      </div>
+    </div>
+
+    <AssistantEditDialog
+      v-if="showDialog"
+      :assistant="selectedAssistant"
+      @saved="closeEditor"
+      @cancel="closeEditor"
     />
   </div>
 </template>
+
+<style scoped>
+/* Row chrome the library has no token for: the 24px avatar chip, the id chip and
+   the persona summary line. All of it uses platform tokens. The page frame
+   itself (header, filter width, table wrapper) comes from list-page.css. */
+.row-avatar {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  font-size: var(--text-size-12);
+  color: var(--color-text);
+}
+
+.id-chip {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--text-size-10);
+  line-height: 16px;
+  color: var(--color-text-muted);
+}
+
+.persona-summary {
+  margin: 0;
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
+}
+</style>

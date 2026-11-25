@@ -1,0 +1,641 @@
+/* Element Plus token layer — the single place where the platform design system
+   speaks to the component library.
+
+   Element Plus ships ~123 custom properties on `:root`. Every one that carries a
+   colour, a radius, a font size, a control height, a shadow or a duration is
+   re-declared here in terms of the platform's own tokens (`--color-*`,
+   `--radius`, `--control-height`, `--text-size-*`, `--font-*`), so:
+
+     - switching between the twelve appearance presets re-skins every `el-*`
+       widget with no per-widget work, because the platform palette is projected
+       onto the document root at runtime by `theme/apply.ts` and these
+       declarations only *reference* it;
+     - the Data Terminal rules keep holding after the library arrives: 3px
+       micro-radius, the 28px control tier, no resting shadow, no `all`
+       transitions, no coloured glow rings.
+
+   Selector notes. Two shapes, both at specificity (0,1,1) so they beat the
+   library no matter who lands last:
+
+     - `html:root` for the variables the library declares on `:root` (0,1,0);
+     - `html .el-*` for rules and variables the library scopes to a component
+       class (also (0,1,0)) — an inherited custom property is read from the
+       nearest ancestor that sets it, so re-pointing one of those on the root
+       would silently do nothing.
+
+   The library's own dark stylesheet is deliberately *not* imported: the dark
+   presets are ordinary palettes here, and their `--color-*` values are already
+   dark, so a second branch would fight this one.
+*/
+
+html:root {
+  /* ---------------------------------------------------------------- palette */
+  /* `primary` is the platform's action colour (buttons, links, selection),
+     not Element Plus's brand blue. `dark-2` (the pressed/hover step) maps to the
+     platform's own hover token instead of a mixed shade. */
+  --el-color-primary: var(--color-primary);
+  --el-color-primary-dark-2: var(--color-primary-hover);
+  --el-color-primary-light-3: color-mix(in srgb, var(--color-primary) 70%, var(--color-bg));
+  --el-color-primary-light-5: color-mix(in srgb, var(--color-primary) 50%, var(--color-bg));
+  --el-color-primary-light-7: color-mix(in srgb, var(--color-primary) 30%, var(--color-bg));
+  --el-color-primary-light-8: color-mix(in srgb, var(--color-primary) 20%, var(--color-bg));
+  --el-color-primary-light-9: var(--color-primary-soft);
+
+  /* The four state colours carry the platform's soft/border tokens, which is
+     exactly what the library uses light-9 (tint background) and light-8
+     (matching outline) for in alerts, tags and messages. */
+  --el-color-success: var(--color-success);
+  --el-color-success-dark-2: color-mix(in srgb, var(--color-success) 80%, #000);
+  --el-color-success-light-3: color-mix(in srgb, var(--color-success) 70%, var(--color-bg));
+  --el-color-success-light-5: color-mix(in srgb, var(--color-success) 50%, var(--color-bg));
+  --el-color-success-light-7: color-mix(in srgb, var(--color-success) 30%, var(--color-bg));
+  --el-color-success-light-8: var(--color-success-border);
+  --el-color-success-light-9: var(--color-success-soft);
+
+  --el-color-warning: var(--color-warning);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--color-warning) 80%, #000);
+  --el-color-warning-light-3: color-mix(in srgb, var(--color-warning) 70%, var(--color-bg));
+  --el-color-warning-light-5: color-mix(in srgb, var(--color-warning) 50%, var(--color-bg));
+  --el-color-warning-light-7: color-mix(in srgb, var(--color-warning) 30%, var(--color-bg));
+  --el-color-warning-light-8: var(--color-warning-border);
+  --el-color-warning-light-9: var(--color-warning-soft);
+
+  --el-color-danger: var(--color-danger);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--color-danger) 80%, #000);
+  --el-color-danger-light-3: color-mix(in srgb, var(--color-danger) 70%, var(--color-bg));
+  --el-color-danger-light-5: color-mix(in srgb, var(--color-danger) 50%, var(--color-bg));
+  --el-color-danger-light-7: color-mix(in srgb, var(--color-danger) 30%, var(--color-bg));
+  --el-color-danger-light-8: var(--color-danger-border);
+  --el-color-danger-light-9: var(--color-danger-soft);
+  --el-color-error: var(--el-color-danger);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+
+  --el-color-info: var(--color-info);
+  --el-color-info-dark-2: color-mix(in srgb, var(--color-info) 80%, #000);
+  --el-color-info-light-3: color-mix(in srgb, var(--color-info) 70%, var(--color-bg));
+  --el-color-info-light-5: color-mix(in srgb, var(--color-info) 50%, var(--color-bg));
+  --el-color-info-light-7: color-mix(in srgb, var(--color-info) 30%, var(--color-bg));
+  --el-color-info-light-8: var(--color-info-border);
+  --el-color-info-light-9: var(--color-info-soft);
+
+  /* Derived steps mix towards the page base rather than the library's white, so
+     the same declaration stays correct on a light palette and on the dark
+     preset; the pressed steps mix towards black instead. Both are expressed
+     inline in the rules above so this file never invents a platform token. */
+
+  /* ---------------------------------------------------------------- surfaces */
+  --el-bg-color: var(--color-surface);
+  --el-bg-color-page: var(--color-bg);
+  --el-bg-color-overlay: var(--color-surface);
+
+  --el-text-color-primary: var(--color-text);
+  --el-text-color-regular: color-mix(in srgb, var(--color-text) 82%, var(--color-bg));
+  --el-text-color-secondary: var(--color-text-muted);
+  --el-text-color-placeholder: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg));
+  --el-text-color-disabled: color-mix(in srgb, var(--color-text-muted) 55%, var(--color-bg));
+
+  --el-border-color: var(--color-border);
+  --el-border-color-light: color-mix(in srgb, var(--color-border) 60%, var(--color-surface));
+  --el-border-color-lighter: color-mix(in srgb, var(--color-border) 35%, var(--color-surface));
+  --el-border-color-extra-light: color-mix(in srgb, var(--color-border) 18%, var(--color-surface));
+  --el-border-color-dark: var(--color-border-strong);
+  --el-border-color-darker: var(--color-border-strong);
+  --el-border-color-hover: var(--color-border-strong);
+
+  --el-fill-color: var(--color-surface-muted);
+  --el-fill-color-light: color-mix(in srgb, var(--color-surface-muted) 55%, var(--color-surface));
+  --el-fill-color-lighter: color-mix(in srgb, var(--color-surface-muted) 28%, var(--color-surface));
+  --el-fill-color-extra-light: color-mix(in srgb, var(--color-surface-muted) 14%, var(--color-surface));
+  --el-fill-color-dark: color-mix(in srgb, var(--color-border) 55%, var(--color-surface));
+  --el-fill-color-darker: color-mix(in srgb, var(--color-border) 75%, var(--color-surface));
+  --el-fill-color-blank: var(--color-surface);
+
+  --el-disabled-bg-color: var(--el-fill-color-light);
+  --el-disabled-text-color: var(--el-text-color-disabled);
+  --el-disabled-border-color: var(--el-border-color-light);
+
+  --el-overlay-color: rgba(10, 12, 16, 0.8);
+  --el-overlay-color-light: rgba(10, 12, 16, 0.7);
+  --el-overlay-color-lighter: rgba(10, 12, 16, 0.6);
+  /* The scrim is a flat neutral veil: the design system bans backdrop blurs, and
+     the library's light-white mask would wash out on the dark preset. */
+  --el-mask-color: rgba(10, 12, 16, 0.75);
+  --el-mask-color-extra-light: rgba(10, 12, 16, 0.3);
+
+  /* ---------------------------------------------------------------- geometry */
+  /* 3px micro-radius everywhere; `round` stays a full pill because the only
+     library parts that use it are small toggles and status pills, which the
+     design system explicitly allows to be fully rounded. */
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: 2px;
+  --el-border-radius-round: 999px;
+  --el-border-radius-circle: 100%;
+
+  /* Control tiers follow the frozen 4px grid: 24 / 28 / 32. The library's 40px
+     default tier would be the loudest thing on the screen. */
+  --el-component-size-large: 32px;
+  --el-component-size: var(--control-height);
+  --el-component-size-small: 24px;
+
+  /* ---------------------------------------------------------------- type */
+  --el-font-family: var(--font-family);
+  --el-font-size-extra-large: var(--text-size-20);
+  --el-font-size-large: var(--text-size-14);
+  --el-font-size-medium: var(--text-size-13);
+  --el-font-size-base: var(--text-size-12);
+  --el-font-size-small: var(--text-size-11);
+  --el-font-size-extra-small: var(--text-size-10);
+  --el-font-weight-primary: 500;
+  --el-font-line-height-primary: 1.5;
+
+  /* ---------------------------------------------------------------- motion */
+  /* Motion budget: 0.12s, and never `all` — the library's own `transition-all`
+     token would animate width and height on resize. */
+  --el-transition-duration: 0.12s;
+  --el-transition-duration-fast: 0.1s;
+  --el-transition-all: color 0.12s ease-out, background-color 0.12s ease-out,
+    border-color 0.12s ease-out, box-shadow 0.12s ease-out;
+
+  /* ---------------------------------------------------------------- elevation */
+  /* Nothing at rest carries a shadow. Only parts that leave the document flow
+     (dialogs, dropdowns, popovers, messages) get a hairline boundary plus a
+     short drop so the edge reads against the page. */
+  --el-box-shadow: 0 0 0 1px var(--color-border), 0 6px 16px rgba(10, 12, 16, 0.1);
+  --el-box-shadow-light: 0 0 0 1px var(--color-border), 0 4px 10px rgba(10, 12, 16, 0.08);
+  --el-box-shadow-lighter: 0 0 0 1px var(--color-border);
+  --el-box-shadow-dark: 0 0 0 1px var(--color-border), 0 10px 28px rgba(10, 12, 16, 0.16);
+
+  /* Layering stays below the platform's own overlays; the event bus drawer and
+     the terminal float window own the top of the stack. */
+  --el-index-normal: 1;
+  --el-index-top: 1000;
+  --el-index-popper: 2000;
+
+  --el-svg-monochrome-grey: var(--color-border-strong);
+}
+
+/* --------------------------------------------------------------- menus ---- */
+/* The side navigation is `el-menu`, and the Data Terminal rules are stricter
+   than the library's defaults: hover must stay neutral (the library tints with
+   the primary), the active item is marked by a 2px accent edge on the left edge
+   rather than coloured text, and the default 56px row would triple the height
+   of a compact sidebar card. */
+html .el-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--el-text-color-regular);
+  --el-menu-hover-bg-color: var(--el-fill-color-light);
+  --el-menu-hover-text-color: var(--el-text-color-primary);
+  --el-menu-active-color: var(--el-text-color-primary);
+  --el-menu-item-height: 46px;
+  --el-menu-sub-item-height: 34px;
+  --el-menu-base-level-padding: 8px;
+  --el-menu-level-padding: 12px;
+  border-right: none;
+}
+
+/* The Move: a 2px accent rule flush on the left edge, inset so it never shifts
+   the row's content. Applied per item rather than via `--el-menu-active-color`
+   because the library has no vertical active indicator at all. */
+html .el-menu--vertical .el-menu-item.is-active,
+html .el-menu--vertical .el-sub-menu.is-active > .el-sub-menu__title {
+  background-color: var(--el-fill-color-light);
+  box-shadow: inset 2px 0 0 0 var(--color-accent);
+  font-weight: 500;
+}
+
+/* The row's glyph carries the state the text is not allowed to: muted at rest,
+   ink on hover, accent when the row is the current one. */
+html .el-menu-item .el-icon,
+html .el-sub-menu__title .el-icon {
+  color: var(--el-text-color-secondary);
+  transition: color var(--el-transition-duration-fast) ease-out;
+}
+
+html .el-menu-item:hover .el-icon,
+html .el-sub-menu__title:hover .el-icon {
+  color: var(--el-text-color-primary);
+}
+
+html .el-menu-item.is-active .el-icon,
+html .el-sub-menu.is-active > .el-sub-menu__title .el-icon {
+  color: var(--color-accent);
+}
+
+html .el-menu--vertical .el-menu-item,
+html .el-menu--vertical .el-sub-menu__title {
+  border-radius: var(--el-border-radius-base);
+  margin: 1px 0;
+}
+
+/* Sub-menu rows read as second level by their indent and caption size, not by a
+   heavier background. */
+html .el-menu--vertical .el-menu--inline {
+  --el-menu-bg-color: transparent;
+}
+
+html .el-menu--vertical .el-menu--inline .el-menu-item {
+  font-size: var(--el-font-size-small);
+}
+
+/* ------------------------------------------------------------------ shared */
+/* Library-wide behaviours a token cannot express. Anything specific to one
+   screen belongs to that screen's own style block instead — this file is the
+   only place allowed to reach into the library's parts.
+
+   The `html ` prefix outranks the library's class rules; a bare `.el-*` would
+   tie with them and lose to source order. */
+
+/* A native control keeps its inherited face; the library's inputs would
+   otherwise fall back to the UA font and stop following the appearance tier. */
+html .el-input__wrapper,
+html .el-textarea__inner,
+html .el-select__wrapper,
+html .el-button {
+  font-family: var(--el-font-family);
+}
+
+/* ------------------------------------------------------- density bridge ---- */
+/* The library derives most heights from `--el-component-size` (inputs do), but a
+   few parts hard-code their ladder (a button is 32px, a select wrapper
+   min-height 32px, a form label 40px). Those constants are bridged onto the
+   platform's tiers here and nowhere else, so a screen never nudges a widget's
+   height locally and the 4px grid holds: small 24 / default 28 / large 32. */
+html .el-button {
+  height: var(--el-component-size);
+  padding: 0 12px;
+}
+
+html .el-button--small {
+  height: var(--el-component-size-small);
+  padding: 0 8px;
+}
+
+html .el-button--large {
+  height: var(--el-component-size-large);
+  padding: 0 15px;
+}
+
+html .el-select__wrapper {
+  min-height: var(--el-component-size);
+}
+
+html .el-select--small .el-select__wrapper {
+  min-height: var(--el-component-size-small);
+}
+
+/* The library hard-codes `font-size: 14px` on the select wrapper instead of
+   reading the size ladder, so a filter select shouts 14px next to a 12px input,
+   a 12px button and a 12px table row — and the page-size select inside a
+   pagination bar shouts next to an 11px pager. Every size class takes the
+   platform's control size; the option list already renders at that size. */
+html .el-select__wrapper {
+  font-size: var(--el-font-size-base);
+}
+
+html .el-input-number {
+  line-height: calc(var(--el-component-size) - 2px);
+}
+
+html .el-form-item__label {
+  height: var(--el-component-size);
+  line-height: 1.5;
+  padding-bottom: 0;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+}
+
+/* Table rows are the data terminal's lines: about 33px of single-line text
+   rather than the library's ~41. `el-table` hardcodes cell padding in both
+   states, so it can only be reached here; long content is clipped by the column
+   (`show-overflow-tooltip`) instead of wrapping. */
+html .el-table .el-table__cell {
+  padding: 5px 0;
+  font-size: var(--el-font-size-base);
+}
+
+html .el-table th.el-table__cell {
+  padding: 7px 0;
+}
+
+html .el-table .cell {
+  line-height: 22px;
+}
+
+html .el-table th.el-table__cell > .cell {
+  font-size: var(--el-font-size-small);
+}
+
+/* A pagination bar is a toolbar strip, not a floating widget: mono numerals on
+   the compact tier, the current page a solid block. */
+html .el-pagination {
+  /* One bar, one size: the pager, the total and the page-size select sit on the
+     same line, and a select at 14px beside an 11px pager reads as two widgets. */
+  --el-pagination-font-size: var(--el-font-size-base);
+  --el-pagination-button-height: 24px;
+  --el-pagination-button-width: 24px;
+  --el-pagination-border-radius: var(--el-border-radius-base);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+html .el-pagination.is-background .el-pager li.is-active {
+  background: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+
+/* A selected segment is a hairline chip, not a filled primary block: the design
+   system keeps colour under a 3% budget and marks selection with an edge.
+
+   Note the selector. The library scopes these names to `.el-segmented` itself,
+   and an inherited custom property is taken from the nearest ancestor that sets
+   it — a value declared on the root would never reach the thumb. Overriding a
+   component-scoped variable therefore needs a selector that hits the *same*
+   element with higher specificity than the library's class rule. */
+html .el-segmented {
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-light);
+  --el-segmented-item-selected-bg-color: var(--el-bg-color);
+  --el-segmented-item-selected-color: var(--el-text-color-primary);
+  --el-segmented-item-hover-bg-color: transparent;
+  --el-segmented-item-hover-color: var(--el-text-color-primary);
+  --el-segmented-item-active-bg-color: var(--el-fill-color);
+}
+
+html .el-segmented__item-selected {
+  /* The thumb is a sibling of the options (it slides between them), not a child
+     of the selected one, so the hairline hangs on the thumb itself. */
+  box-shadow: inset 0 0 0 1px var(--el-border-color-dark);
+}
+
+
+/* Scrollbars inside library scrollers follow the platform's 6px hairline
+   (the global rule already colours the thumb; this only keeps the library from
+   reserving a wider gutter than the rest of the shell). */
+html .el-scrollbar__bar {
+  opacity: 0.55;
+}
+
+/* Dialogs and drawers are panels, not floating cards: a 1px edge, the panel
+   radius, and no ambient glow beyond the boundary shadow above. */
+html .el-dialog {
+  border-radius: var(--el-border-radius-base);
+  box-shadow: var(--el-box-shadow-dark);
+}
+
+/* 弹窗一律垂直居中（`alignCenter` 由 App.vue 的 el-config-provider 全局开启：
+   overlay 变 flex + `margin: auto`），并且不许把整页顶出视口——库不限制弹窗
+   高度，长表单会让整块面板滚出屏幕，底部「取消 / 保存」跑到视野外。所以弹窗
+   自身按列排布并封顶高度，滚动交给 body：头部与底栏因此始终固定。 */
+html .el-dialog:not(.is-fullscreen) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+
+html .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+}
+
+/* The confirmation box carries the same panel radius as a dialog; the library
+   scopes this one to the component, so it is re-pointed on the same element. */
+html .el-message-box {
+  --el-messagebox-border-radius: var(--el-border-radius-base);
+  --el-messagebox-title-color: var(--el-text-color-primary);
+  --el-messagebox-content-color: var(--el-text-color-regular);
+  border-radius: var(--el-border-radius-base);
+  box-shadow: var(--el-box-shadow-dark);
+}
+
+html .el-dialog__header {
+  padding: 14px 16px 12px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+html .el-dialog__title {
+  font-size: var(--el-font-size-medium);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+html .el-dialog__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--el-border-color);
+}
+
+/* Table headers stay sentence case at caption size: the library's default
+   13px/regular reads as body copy next to the platform's 10–12px meta tier. */
+html .el-table th.el-table__cell {
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
+}
+
+/* 表头分格、数据不分格：竖线只回答「哪一列从哪里开始」，画在数据之间就会把
+   一行切成碎片——行的横向连续性正是扫读的依据。最后一列（通常是固定的操作列）
+   不画，否则在表格右缘叠出一道重线。竖线走 `--color-border-strong`（比行分隔
+   那一档发丝强一级）：用行分隔的同色实测几乎看不见，等于没画。 */
+html .el-table th.el-table__cell:not(:last-child) {
+  border-right: 1px solid var(--color-border-strong);
+}
+
+/* The library paints a fixed column's cells with the plain surface so scrolled
+   text cannot bleed through — which left 操作's header a white block next to the
+   tinted ones. The header must stay opaque, so it gets the same tint rather than
+   a transparent rule; the body cells keep the library's own background. */
+html .el-table th.el-table__cell.el-table-fixed-column--left,
+html .el-table th.el-table__cell.el-table-fixed-column--right {
+  background-color: var(--el-fill-color-light);
+}
+
+/* ------------------------------------------------- 分类色轴 categorical -----
+ * 给「同一列里互斥的枚举值」上色的独立一轴。语义色干不了这活：预设之间会并色——
+ * cool 与 emerald 里 `success == primary`，ocean 与 midnight 里 `info == primary`，
+ * 青竹里 角色类 / 流程类 都是橄榄绿——「不同即不同色」这个要求语义色给不了。
+ *
+ * 色相固定、明度向主题的 `--color-text` / `--color-surface` / `--color-border`
+ * 混合，所以浅色预设得到浅底深字、深色预设自动翻成深底亮字，任何皮肤下两档都
+ * 分得开。这套色不跟主题主色走，它表达的是「类别」，不是「状态」。
+ */
+html {
+  --cat-hue-1: #3f5fd0; /* 靛蓝 */
+  --cat-hue-2: #0f8a7a; /* 青绿 */
+  --cat-hue-3: #b4611c; /* 琥珀 */
+  --cat-hue-4: #b0467c; /* 玫红 */
+  --cat-hue-5: #7b52c4; /* 紫 */
+  --cat-hue-6: #6b7f2a; /* 橄榄 */
+}
+
+/* `.entity-chip` 是平台给分类 chip 的钩子（档位映射见
+   shared/styles/entity-chip.css）：页面只声明自己落在哪一档，这里把 `--chip-hue`
+   翻成 el-tag 的三个部件变量。缺档位时退回第一档，不会掉成无色。
+
+   选择器要带上 `.el-tag`：库的档位类写成 `.el-tag.el-tag--primary`（两位 class），
+   单挂一个 `.entity-chip` 特异度不够，颜色会被类型类抢回去。 */
+html .el-tag.entity-chip {
+  --el-tag-text-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 74%, var(--color-text));
+  --el-tag-bg-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 12%, var(--color-surface));
+  --el-tag-border-color: color-mix(in srgb, var(--chip-hue, var(--cat-hue-1)) 30%, var(--color-border));
+  --el-tag-hover-color: var(--el-tag-border-color);
+}
+
+/* 浮层（tooltip / popover / popconfirm）：库的 is-dark 变体拿文字色同时当底色和
+   描边色（`--el-popper-bg-color-dark` + `--el-text-color-primary`），映射到平台
+   色板后深色预设会反相成白底白框，浅色预设描边过重。浮层一律用平台的浮层表面
+   与强描边，箭头随之。 */
+.el-popper.is-dark {
+  --el-popper-bg-color-dark: var(--color-surface);
+  --el-popover-bg-color: var(--color-surface);
+  --el-popover-border-color: var(--color-border-strong);
+  --el-popover-title-text-color: var(--color-text-muted);
+  background: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color-dark);
+  color: var(--el-text-color-primary);
+}
+
+.el-popper.is-dark > .el-popper__arrow::before {
+  background: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color-dark);
+}
+
+/* 长文本 tooltip：库不给最大宽度，一整段正文提示会铺满整屏；统一收到 720px
+   以内并把行高拉回可读值。 */
+.el-popper.el-tooltip {
+  max-width: min(720px, 92vw);
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------- feedback: buttons ---- */
+/* The motion budget above is expressed in custom properties, but `.el-button`
+   hard-codes `transition: all .1s` instead of reading `--el-transition-all`, so
+   every button in the product animated geometry — a row action repainting its
+   own width while the list reflows. Named properties, same budget. */
+html .el-button {
+  transition: color 0.12s ease-out, background-color 0.12s ease-out,
+    border-color 0.12s ease-out, box-shadow 0.12s ease-out,
+    transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+/* A solid button steps toward the pointer and sits back down when pressed: the
+   control acknowledges the hand instead of only shifting hue. Text and link
+   buttons stay put — they live inside a 34px row, where a shift would read as
+   jitter. */
+@media (prefers-reduced-motion: no-preference) {
+  html .el-button:not(.is-link):not(.is-text):not(.is-disabled):hover {
+    transform: translateY(-1px);
+  }
+
+  html .el-button:not(.is-link):not(.is-text):not(.is-disabled):active {
+    transform: translateY(0);
+  }
+}
+
+/* Rows own their own rhythm: a page spaces its actions with a flex `gap`, while
+   the library stacks `margin-left: 12px` between sibling buttons on top of it —
+   three actions then measure 183px inside a 168px column and 删除 gets clipped by
+   the fixed edge. Inside a table cell the page decides the spacing. */
+html .el-table .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* Row actions are the only way into a record, and the library gives a link
+   button 2px of padding: the hit area is the glyph, and the gap between 复制 and
+   编辑 answers nothing. Give them a real target that still fits the 24px tier. */
+html .el-button.is-link,
+html .el-button.is-text {
+  height: var(--el-component-size-small);
+  padding: 0 7px;
+  border-radius: var(--el-border-radius-base);
+}
+
+/* Inside a table the data speaks and everything else annotates: cells run at the
+   base 12px, so row actions and status chips drop one step to 11px. A chip that
+   is 20px tall and 12px wide-set outweighs the word it labels — 18px and 6px of
+   padding keeps it under the line of text it sits in. */
+html .el-table .el-button.is-link {
+  font-size: var(--el-font-size-small);
+}
+
+html .el-table .el-tag {
+  height: 18px;
+  padding: 0 6px;
+  font-size: var(--el-font-size-small);
+}
+
+/* Hover used to *desaturate* a typed link: `.el-button.is-link:hover` paints the
+   neutral secondary colour over the primary one, so pointing at 复制 or 删除 made
+   the action look less available than before it was touched. Re-point the
+   library's own hover token per type instead of overpainting `color`: the hue
+   stays and takes one step deeper, while the background — one step above the
+   row's own hover tint, since the row underneath is already tinted — carries the
+   signal. */
+html .el-button.is-link:not(.is-disabled):hover,
+html .el-button.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-text-color-primary);
+  background-color: var(--el-fill-color);
+}
+
+html .el-button--primary.is-link:not(.is-disabled):hover,
+html .el-button--primary.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-color-primary-dark-2);
+}
+
+html .el-button--danger.is-link:not(.is-disabled):hover,
+html .el-button--danger.is-text:not(.is-disabled):hover {
+  --el-button-hover-link-text-color: var(--el-color-danger-dark-2);
+}
+
+html .el-button.is-link:not(.is-disabled):active,
+html .el-button.is-text:not(.is-disabled):active {
+  background-color: var(--el-fill-color-dark);
+}
+
+/* ------------------------------------------------------- feedback: table --- */
+/* Numbers that re-glyph between rows are numbers that get misread: dates, ids
+   and counts all get tabular figures, in the table and wherever a list of them
+   scrolls by (pagination, option lists). */
+html .el-table,
+html .el-pagination,
+html .el-select-dropdown__item {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Empty space is designed, not leftover: the library wraps slot content in a
+   50%-wide box on a 60px line, which turns a two-line empty state into a
+   floating strip. The block takes the body's height and hands it down, so the
+   content decides where it sits — an empty state centres itself, a skeleton
+   stays at the top where its rows will land. ListEmptyState owns that choice. */
+html .el-table__empty-block {
+  align-items: stretch;
+  min-height: 100%;
+  padding: 0;
+}
+
+/* The text box is a flex child, so an `auto` width collapses it to the width of
+   its own content — a skeleton then renders 32px wide. It gets the block as a
+   box; the content inside decides how wide its own lines run (an empty state
+   centres itself, a skeleton spans the table). */
+html .el-table__empty-text {
+  display: block;
+  width: 100%;
+  line-height: 1.5;
+  color: inherit;
+}
+
+/* A skeleton is a promise about shape, so it must not glow or pulse past the
+   point of usefulness: the library's shimmer stays, its colours come from the
+   same muted fills as everything else at rest. */
+html .el-skeleton__text {
+  background-color: var(--el-fill-color-light);
+}

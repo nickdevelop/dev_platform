@@ -1,162 +1,148 @@
 <script setup lang="ts">
-// OrgSidebar: The middle column for the Organization center.
-// Second-level navigation: AI Assistants, AI Employees, and AI Teams.
-// Pure object governance with zero transactional work.
-// Follows design-taste-frontend (Data Terminal / App Screens) compact rules:
-//   - Aligned directly with AppShell's sidebar-head (no redundant double header)
-//   - The Move: active navigation strictly uses 2px accent indicator on the left edge
-import { RouterLink } from 'vue-router'
+// OrgSidebar: the organization center's second-level navigation.
+//
+// It is an `el-menu` in router mode: the library owns the keyboard behaviour
+// (roving tabindex, aria roles, expand/collapse) that a hand-rolled list never
+// had. Two entries today would have been a plain list, but the structure below
+// already renders `el-sub-menu` for any link that declares children, so adding a
+// third level is a data change rather than a rewrite.
+//
+// The visual contract (neutral hover, 2px accent edge on the active row, compact
+// row height) lives in `theme/element-tokens.css` — never here. This file only
+// decorates the slot content, which is our own markup under our own classes.
+import { computed, type Component } from 'vue'
+import { useRoute } from 'vue-router'
+import { ChatDotRound, Connection, EditPen, User } from '@element-plus/icons-vue'
 
-const links = [
+interface OrgLink {
+  // Route name, kept for tests and for future programmatic navigation.
+  name: string
+  // el-menu navigates by index, and in router mode the index is the path.
+  path: string
+  label: string
+  desc: string
+  icon: Component
+  children?: Omit<OrgLink, 'children'>[]
+}
+
+const links: OrgLink[] = [
   {
     name: 'org-prompts',
-    label: 'AI提示词',
+    path: '/org/prompts',
+    label: 'AI 提示词',
     desc: '角色人设与流程协同规范',
-    icon: 'prompt',
+    icon: EditPen,
   },
   {
     name: 'org-assistants',
+    path: '/org/assistants',
     label: 'AI 助手',
     desc: '日常人设与自治工具管理',
-    icon: 'assistant',
+    icon: ChatDotRound,
   },
   {
     name: 'org-employees',
+    path: '/org/employees',
     label: 'AI 员工',
     desc: '专职数字员工与执行引擎分工',
-    icon: 'employee',
+    icon: User,
   },
   {
     name: 'org-teams',
+    path: '/org/teams',
     label: 'AI 团队',
     desc: '中控大脑调度与多专家协同',
-    icon: 'team',
+    icon: Connection,
   },
 ]
+
+const route = useRoute()
+
+// The menu highlights the current route; `/org/assistants?edit=3` still belongs
+// to the assistants entry, so match on the path and ignore the query.
+const activeIndex = computed(() => route.path)
 </script>
 
 <template>
-  <nav class="org-sidebar org-nav sidebar-panel" data-test="org-sidebar" aria-label="组织架构管理">
-    <!-- Zone C: Category navigation links list -->
-    <div class="org-links sidebar-list-container" role="list">
-      <RouterLink
-        v-for="link in links"
-        :key="link.name"
-        :to="{ name: link.name }"
-        class="org-link sidebar-card group"
-        role="listitem"
+  <nav class="org-nav sidebar-panel" data-test="org-sidebar" aria-label="组织架构管理">
+    <div class="org-menu-scroll">
+      <el-menu
+        class="org-menu"
+        router
+        :default-active="activeIndex"
+        :default-openeds="[]"
+        data-test="org-menu"
       >
-        <div class="sidebar-card-row-top">
-          <div class="flex items-center gap-2 min-w-0 flex-1">
-            <span class="link-icon" aria-hidden="true">
-              <!-- AI Prompt Icon -->
-              <svg v-if="link.icon === 'prompt'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-              <!-- AI Assistant Icon -->
-              <svg v-else-if="link.icon === 'assistant'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
-                <rect x="4" y="8" width="16" height="12" rx="2" />
-                <circle cx="9" cy="13" r="1.25" fill="currentColor" />
-                <circle cx="15" cy="13" r="1.25" fill="currentColor" />
-                <path d="M9 17h6" />
-                <path d="M2 14h2M20 14h2" />
-              </svg>
-              <!-- AI Employee / Role Icon -->
-              <svg v-else-if="link.icon === 'employee'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              <!-- AI Team / Organization Icon -->
-              <svg v-else-if="link.icon === 'team'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="5" r="3" />
-                <circle cx="5" cy="19" r="3" />
-                <circle cx="19" cy="19" r="3" />
-                <path d="M12 8v4M7.5 17.5 10 13.5M16.5 17.5 14 13.5" />
-              </svg>
-            </span>
-            <span class="link-label sidebar-card-title">{{ link.label }}</span>
-          </div>
-          <span class="link-chevron" aria-hidden="true">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 12 10 8 6 4" />
-            </svg>
-          </span>
-        </div>
-        <div class="sidebar-card-row-bottom">
-          <span class="link-desc sidebar-card-meta">{{ link.desc }}</span>
-        </div>
-      </RouterLink>
+        <template v-for="link in links" :key="link.name">
+          <el-sub-menu v-if="link.children" :index="link.path">
+            <template #title>
+              <el-icon class="link-icon"><component :is="link.icon" /></el-icon>
+              <span class="link-label">{{ link.label }}</span>
+            </template>
+            <el-menu-item v-for="child in link.children" :key="child.path" :index="child.path">
+              <span class="link-label">{{ child.label }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+
+          <el-menu-item v-else :index="link.path" :data-test="`org-link-${link.name}`">
+            <el-icon class="link-icon"><component :is="link.icon" /></el-icon>
+            <div class="link-body">
+              <span class="link-label">{{ link.label }}</span>
+              <span class="link-desc">{{ link.desc }}</span>
+            </div>
+          </el-menu-item>
+        </template>
+      </el-menu>
     </div>
   </nav>
 </template>
 
 <style scoped>
-.org-sidebar {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-  overflow: hidden;
+.org-nav {
   background: var(--color-surface);
 }
 
-.org-links {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 4px 8px 16px 8px;
+/* The scroller is ours so the menu keeps its own block layout: putting the
+   scroll container on the menu root would fight the library's list styles. */
+.org-menu-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 6px 12px 6px;
+}
+
+.org-menu {
+  width: 100%;
 }
 
 .link-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
   color: var(--color-text-muted);
-  flex-shrink: 0;
-  transition: color 0.12s ease;
+  font-size: var(--text-size-14);
+  transition: color 0.12s ease-out;
 }
 
-.link-icon svg {
-  width: 14px;
-  height: 14px;
+.link-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.35;
 }
 
-.link-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
+.link-label {
+  font-size: var(--text-size-13);
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-desc {
+  font-size: var(--text-size-11);
   color: var(--color-text-muted);
-  opacity: 0;
-  transform: translateX(-2px);
-  transition: opacity 0.12s ease, transform 0.12s ease;
-  flex-shrink: 0;
-}
-
-.link-chevron svg {
-  width: 11px;
-  height: 11px;
-}
-
-.org-link:hover .link-chevron {
-  opacity: 0.6;
-  transform: translateX(0);
-}
-
-.org-link.router-link-active .link-icon {
-  color: var(--color-accent, #4a8ad6);
-}
-
-.org-link.router-link-active .link-chevron {
-  opacity: 1;
-  color: var(--color-accent, #4a8ad6);
-  transform: translateX(0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

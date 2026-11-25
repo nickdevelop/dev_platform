@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+// PromptManageDialog: create or edit one prompt template.
+//
+// Element Plus carries the form: `el-dialog` for the panel, `el-form` with rules
+// for the two required fields (inline, next to the field that failed, instead of
+// an error banner above the whole form), and `ElMessage` for the result. The
+// form element keeps its `prompt-dialog-form` class and submit handler so the
+// panel can still be driven by a plain submit.
+import { computed, reactive, ref } from 'vue'
+import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { describeApiError } from '../../api/client'
 import type { Prompt } from '../../api/prompts'
 import { usePromptsStore } from '../../stores/prompts'
-import { UiDialog, UiButton, UiInput, UiAlert } from '../../shared/ui'
 
 const props = defineProps<{
   prompt?: Prompt | null
@@ -17,54 +24,61 @@ const emit = defineEmits<{
 
 const promptsStore = usePromptsStore()
 
-const name = ref(props.prompt?.name ?? '')
-const type = ref<'role' | 'flow'>(props.prompt?.type ?? props.defaultType ?? 'role')
-const description = ref(props.prompt?.description ?? '')
-const content = ref(props.prompt?.content ?? '')
-
+const visible = ref(true)
+const formRef = ref<FormInstance>()
 const saving = ref(false)
-const errorMessage = ref('')
+
+const form = reactive({
+  name: props.prompt?.name ?? '',
+  type: (props.prompt?.type ?? props.defaultType ?? 'role') as 'role' | 'flow',
+  description: props.prompt?.description ?? '',
+  content: props.prompt?.content ?? '',
+})
+
+const rules: FormRules<typeof form> = {
+  name: [{ required: true, message: '请输入提示词名称', trigger: 'blur' }],
+  content: [{ required: true, message: '请输入提示词内容', trigger: 'blur' }],
+}
 
 const isEditing = computed(() => !!props.prompt)
 
+const typeDescription = computed(() =>
+  form.type === 'flow'
+    ? '流程类偏向工作流程与协同任务规范，供多 Agent 协同团队统一引用。'
+    : '角色类设定 Agent 人设、专业背景与思考准则，可在助手与数字员工中统一引用。',
+)
+
+function onClose() {
+  visible.value = false
+}
+
 async function submit() {
-  if (!name.value.trim()) {
-    errorMessage.value = '请输入提示词名称'
-    return
-  }
-  if (!content.value.trim()) {
-    errorMessage.value = '请输入提示词内容'
-    return
-  }
+  if (saving.value) return
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
 
   saving.value = true
-  errorMessage.value = ''
+  const payload = {
+    name: form.name.trim(),
+    type: form.type,
+    description: form.description.trim(),
+    content: form.content,
+  }
 
   try {
-    let saved: Prompt | undefined
-    if (isEditing.value && props.prompt) {
-      saved = await promptsStore.updatePrompt(props.prompt.id, {
-        name: name.value.trim(),
-        type: type.value,
-        description: description.value.trim(),
-        content: content.value,
-      })
-    } else {
-      saved = await promptsStore.createPrompt({
-        name: name.value.trim(),
-        type: type.value,
-        description: description.value.trim(),
-        content: content.value,
-      })
-    }
-    // The store returns undefined when authentication expired mid-save
-    // (the session store shows the re-auth flow); do nothing here.
+    const saved: Prompt | undefined =
+      isEditing.value && props.prompt
+        ? await promptsStore.updatePrompt(props.prompt.id, payload)
+        : await promptsStore.createPrompt(payload)
+    // The store returns undefined when the session expired mid-save; the auth
+    // store is already showing the re-auth flow, so stay quiet here.
     if (saved) {
+      ElMessage.success(isEditing.value ? `已保存「${saved.name}」` : `已创建 AI 提示词「${saved.name}」`)
       emit('saved', saved)
       emit('close')
     }
   } catch (err) {
-    errorMessage.value = describeApiError(err)
+    ElMessage.error(describeApiError(err))
   } finally {
     saving.value = false
   }
@@ -72,132 +86,94 @@ async function submit() {
 </script>
 
 <template>
-  <UiDialog
-    :title="isEditing ? '编辑提示词' : '新建提示词'"
-    width-class="w-full max-w-xl"
-    @close="emit('close')"
+  <el-dialog
+    v-model="visible"
+    :title="isEditing ? '编辑 AI 提示词' : '新建 AI 提示词'"
+    width="640"
+    :close-on-click-modal="false"
+    :data-test="`prompt-dialog-${isEditing ? 'edit' : 'create'}`"
+    @closed="emit('close')"
   >
-    <form class="prompt-dialog-form space-y-4" @submit.prevent="submit">
-      <UiAlert v-if="errorMessage" variant="error" class="dialog-error">
-        {{ errorMessage }}
-      </UiAlert>
-
-      <!-- 1. Name -->
-      <div class="space-y-1.5">
-        <label for="prompt-name" class="text-xs font-medium text-[var(--color-text)]">
-          提示词名称 <span class="text-red-500">*</span>
-        </label>
-        <UiInput
-          id="prompt-name"
-          v-model="name"
+    <el-form
+      ref="formRef"
+      class="prompt-dialog-form"
+      :model="form"
+      :rules="rules"
+      label-position="top"
+      @submit.prevent="submit"
+    >
+      <el-form-item label="提示词名称" prop="name">
+        <el-input
+          v-model="form.name"
           placeholder="例如：代码审查助手、Git 提交信息生成"
-          required
-          autofocus
           data-test="prompt-name-input"
-          block
         />
-      </div>
+      </el-form-item>
 
-      <!-- 2. Type -->
-      <div class="space-y-1.5">
-        <label class="text-xs font-medium text-[var(--color-text)]">
-          提示词类型 <span class="text-red-500">*</span>
-        </label>
-        <div class="grid grid-cols-2 gap-2">
-          <label
-            class="flex flex-col p-2.5 rounded-[var(--radius,6px)] border cursor-pointer transition-colors"
-            :class="[
-              type === 'role'
-                ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
-                : 'border-[var(--color-border)] hover:border-[var(--color-primary)] bg-[var(--color-surface)]',
-            ]"
-          >
-            <div class="flex items-center gap-2">
-              <input
-                v-model="type"
-                type="radio"
-                value="role"
-                name="prompt-type"
-                class="text-[var(--color-primary)]"
-              />
-              <span class="text-xs font-medium text-[var(--color-text)]">角色类 (Role)</span>
-            </div>
-            <span class="text-2xs text-[var(--color-text-muted)] mt-1 leading-normal">
-              定义智能体人设、思考范式与专业准则
-            </span>
-          </label>
-
-          <label
-            class="flex flex-col p-2.5 rounded-[var(--radius,6px)] border cursor-pointer transition-colors"
-            :class="[
-              type === 'flow'
-                ? 'border-[var(--color-primary)] bg-[var(--color-surface-muted)]'
-                : 'border-[var(--color-border)] hover:border-[var(--color-primary)] bg-[var(--color-surface)]',
-            ]"
-          >
-            <div class="flex items-center gap-2">
-              <input
-                v-model="type"
-                type="radio"
-                value="flow"
-                name="prompt-type"
-                class="text-[var(--color-primary)]"
-              />
-              <span class="text-xs font-medium text-[var(--color-text)]">流程类 (Flow)</span>
-            </div>
-            <span class="text-2xs text-[var(--color-text-muted)] mt-1 leading-normal">
-              定义多步骤协同规范、任务拆解与工作流程
-            </span>
-          </label>
+      <el-form-item label="提示词类型" prop="type">
+        <div class="type-block">
+          <el-radio-group v-model="form.type">
+            <el-radio-button value="role" border>角色类 (Role)</el-radio-button>
+            <el-radio-button value="flow" border>流程类 (Flow)</el-radio-button>
+          </el-radio-group>
+          <p class="type-desc">{{ typeDescription }}</p>
         </div>
-      </div>
+      </el-form-item>
 
-      <!-- 3. Description -->
-      <div class="space-y-1.5">
-        <label for="prompt-desc" class="text-xs font-medium text-[var(--color-text)]">
-          描述 / 用途说明
-        </label>
-        <UiInput
-          id="prompt-desc"
-          v-model="description"
+      <el-form-item label="描述 / 用途说明" prop="description">
+        <el-input
+          v-model="form.description"
           placeholder="简要说明该提示词的应用场景与期望产出"
           data-test="prompt-desc-input"
-          block
         />
-      </div>
+      </el-form-item>
 
-      <!-- 3. Content Textarea -->
-      <div class="space-y-1.5">
-        <label for="prompt-content" class="text-xs font-medium text-[var(--color-text)]">
-          提示词内容 <span class="text-red-500">*</span>
-        </label>
-        <textarea
-          id="prompt-content"
-          v-model="content"
-          rows="8"
-          class="w-full rounded-[var(--radius,6px)] bg-[var(--color-surface-muted)] border border-[var(--color-border)] p-3 text-xs font-mono text-[var(--color-text)] placeholder-[var(--color-text-muted)] outline-none focus:border-[var(--color-primary)] transition-colors leading-relaxed resize-y"
+      <el-form-item label="提示词内容" prop="content">
+        <el-input
+          v-model="form.content"
+          type="textarea"
+          :rows="10"
+          resize="vertical"
           placeholder="输入提示词内容，例如：&#10;请对以下代码进行审查，并指出潜在缺陷与优化建议。"
-          required
+          class="content-input"
           data-test="prompt-content-input"
-        ></textarea>
-      </div>
+        />
+      </el-form-item>
+    </el-form>
 
-      <!-- 4. Dialog Actions -->
-      <div class="dialog-actions flex items-center justify-end gap-2.5 pt-3 border-t border-[var(--color-border)]">
-        <UiButton type="button" variant="secondary" class="btn-cancel text-xs" @click="emit('close')">
-          取消
-        </UiButton>
-        <UiButton
-          type="submit"
-          variant="primary"
-          class="btn-save text-xs font-medium px-4 py-2"
-          :disabled="saving"
-          :loading="saving"
-          data-test="prompt-save-btn"
-        >
-          {{ saving ? '保存中…' : isEditing ? '保存修改' : '立即创建' }}
-        </UiButton>
+    <template #footer>
+      <div class="entity-dialog-actions justify-end">
+        <el-button @click="onClose">取消</el-button>
+        <el-button type="primary" :loading="saving" data-test="prompt-save-btn" @click="submit">
+          确认
+        </el-button>
       </div>
-    </form>
-  </UiDialog>
+    </template>
+  </el-dialog>
 </template>
+
+<style scoped>
+/* The library's own label markup is not reached into from here (spec §六): the
+   type choice is a plain bordered radio pair, and the consequence of the current
+   choice is a caption we own. */
+.type-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.type-desc {
+  margin: 0;
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* The body is code-shaped text. `el-input`'s textarea inherits its face and
+   size, so styling the control root is enough. */
+.content-input {
+  font-family: var(--font-mono);
+  font-size: var(--text-size-12);
+  line-height: 1.6;
+}
+</style>
