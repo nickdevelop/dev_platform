@@ -7,6 +7,7 @@ import EmployeeListView from '../features/organization/employees/EmployeeListVie
 import EmployeeEditPanel from '../features/organization/employees/EmployeeEditPanel.vue'
 import TeamListView from '../features/organization/teams/TeamListView.vue'
 import TeamEditPanel from '../features/organization/teams/TeamEditPanel.vue'
+import OrgPromptsView from '../features/organization/prompts/OrgPromptsView.vue'
 import { useChatsStore } from '../stores/chats'
 import { useRolesStore } from '../stores/roles'
 import { useGroupsStore } from '../stores/groups'
@@ -389,6 +390,24 @@ describe('Organization Center Re-architecture (No Popups & Consistent Layout)', 
         expect(w.text()).toContain('02')
         expect(w.text()).toContain('取消')
       }
+    })
+  })
+
+  describe('OrgPromptsView in Organization Center', () => {
+    it('renders AI提示词 view with header and prompt counts', async () => {
+      const promptsStore = usePromptsStore()
+      promptsStore.prompts = [
+        { id: 1, name: '角色提示词', type: 'role', description: 'desc', content: 'content', createdAt: '', updatedAt: '' },
+        { id: 2, name: '流程提示词', type: 'flow', description: 'desc2', content: 'content2', createdAt: '', updatedAt: '' },
+      ]
+      const wrapper = mount(OrgPromptsView)
+      await flushPromises()
+
+      expect(wrapper.find('h1').text()).toBe('AI提示词')
+      expect(wrapper.text()).toContain('2 个提示词')
+      expect(wrapper.find('[data-test="btn-create-prompt"]').exists()).toBe(true)
+      expect(wrapper.text()).toContain('角色提示词')
+      expect(wrapper.text()).toContain('流程提示词')
     })
   })
 })

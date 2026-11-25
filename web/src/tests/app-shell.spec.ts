@@ -252,7 +252,7 @@ describe('three-pane app shell', () => {
     const { wrapper } = await setup('/')
 
     // 项目 / 组织 / 任务 / 笔记 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
-    // 提示词管理收拢在设置中心内。AI员工与AI团队在组织中心管理。
+    // AI提示词、AI助手、AI员工与AI团队在组织中心统一管理。
     const rail = wrapper.find('nav.category-rail')
     expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
     // The icons are decorative: the labels stay as the entries' readable text.
@@ -426,9 +426,13 @@ describe('three-pane app shell', () => {
     await flushPromises()
     expect(title()).toBe('设置')
 
-    await router.push('/settings/prompts')
+    await router.push('/settings/models')
     await flushPromises()
     expect(title()).toBe('设置')
+
+    await router.push('/org/prompts')
+    await flushPromises()
+    expect(title()).toBe('组织')
 
     await router.push('/')
     await flushPromises()
@@ -536,14 +540,14 @@ describe('three-pane app shell', () => {
   })
 
   it('isolates the prompts center so workspace session tabs do not display over prompts', async () => {
-    const { wrapper } = await setup('/settings/prompts', {
-      SettingsView: true,
-      SettingsNav: { template: '<div class="settings-nav-stub"></div>' },
+    const { wrapper } = await setup('/org/prompts', {
+      OrganizationView: true,
+      OrgSidebar: { template: '<div class="org-sidebar-stub"></div>' },
     })
 
-    // The middle column carries the settings nav in the settings center.
-    expect(wrapper.find('.settings-nav-stub').exists()).toBe(true)
-    // The workspace tab strip is isolated and not rendered in settings mode.
+    // The middle column carries the org sidebar in the organization center.
+    expect(wrapper.find('.org-sidebar-stub').exists()).toBe(true)
+    // The workspace tab strip is isolated and not rendered in org mode.
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(0)
   })
 

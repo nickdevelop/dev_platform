@@ -9,6 +9,12 @@ import { RouterLink } from 'vue-router'
 
 const links = [
   {
+    name: 'org-prompts',
+    label: 'AI提示词',
+    desc: '角色人设与流程协同规范',
+    icon: 'prompt',
+  },
+  {
     name: 'org-assistants',
     label: 'AI 助手',
     desc: '日常人设与自治工具管理',
@@ -43,8 +49,13 @@ const links = [
         <div class="sidebar-card-row-top">
           <div class="flex items-center gap-2 min-w-0 flex-1">
             <span class="link-icon" aria-hidden="true">
+              <!-- AI Prompt Icon -->
+              <svg v-if="link.icon === 'prompt'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
               <!-- AI Assistant Icon -->
-              <svg v-if="link.icon === 'assistant'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <svg v-else-if="link.icon === 'assistant'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
                 <rect x="4" y="8" width="16" height="12" rx="2" />
                 <circle cx="9" cy="13" r="1.25" fill="currentColor" />

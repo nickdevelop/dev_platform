@@ -21,12 +21,6 @@ const links = [
     icon: 'cube',
   },
   {
-    name: 'settings-prompts',
-    label: '提示词管理',
-    desc: '角色提示词与流程范式',
-    icon: 'prompt',
-  },
-  {
     name: 'settings-proxies',
     label: '服务代理',
     desc: '二级路径与端口转发',

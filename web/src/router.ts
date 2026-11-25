@@ -26,6 +26,7 @@ import CoreEngineView from './features/engines/CoreEngineView.vue'
 import AgentSettingsView from './features/engines/AgentSettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import SettingsPromptsView from './features/settings/SettingsPromptsView.vue'
+import OrgPromptsView from './features/organization/prompts/OrgPromptsView.vue'
 import ModelSettings from './features/settings/ModelSettings.vue'
 import OrganizationView from './features/organization/OrganizationView.vue'
 import AssistantListView from './features/organization/assistants/AssistantListView.vue'
@@ -78,7 +79,8 @@ export function createAppRouter() {
             component: OrganizationView,
             meta: { org: true, fullHeight: true },
             children: [
-              { path: '', redirect: { name: 'org-assistants' } },
+              { path: '', redirect: { name: 'org-prompts' } },
+              { path: 'prompts', name: 'org-prompts', component: OrgPromptsView },
               { path: 'assistants', name: 'org-assistants', component: AssistantListView },
               {
                 path: 'assistants/new',
@@ -130,7 +132,7 @@ export function createAppRouter() {
               { path: '', redirect: { name: 'settings-appearance' } },
               { path: 'appearance', name: 'settings-appearance', component: AppearanceSettings },
               { path: 'roles', redirect: { name: 'org-employees' } },
-              { path: 'prompts', name: 'settings-prompts', component: SettingsPromptsView },
+              { path: 'prompts', name: 'settings-prompts', redirect: { name: 'org-prompts' } },
               { path: 'models', name: 'settings-models', component: ModelSettings },
               { path: 'agents', redirect: { name: 'engines-agents' } },
               { path: 'proxies', name: 'settings-proxies', component: ProxySettings },
@@ -171,11 +173,11 @@ export function createAppRouter() {
           },
           {
             path: 'prompts',
-            redirect: { name: 'settings-prompts' },
+            redirect: { name: 'org-prompts' },
           },
           {
             path: 'prompts/:promptId',
-            redirect: { name: 'settings-prompts' },
+            redirect: { name: 'org-prompts' },
           },
           {
             path: 'terminal',

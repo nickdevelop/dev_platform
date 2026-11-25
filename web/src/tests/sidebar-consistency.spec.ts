@@ -111,14 +111,13 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     // Zone C: Navigation list with standard cards
     expect(wrapper.find('.settings-links').exists()).toBe(true)
     const links = wrapper.findAll('.settings-link')
-    expect(links.length).toBe(7)
+    expect(links.length).toBe(6)
     expect(links[0].classes()).toContain('sidebar-card')
-    // Menu order is part of the product contract: appearance, models, prompts,
-    // proxies, connections, terminal, debug (Role moved to Organization).
+    // Menu order is part of the product contract: appearance, models,
+    // proxies, connections, terminal, debug (Role and Prompt moved to Organization).
     expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
       '外观',
       '模型',
-      '提示词管理',
       '服务代理',
       '服务连接',
       '终端服务器',
@@ -162,9 +161,10 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
 
     expect(wrapper.find('.org-links').exists()).toBe(true)
     const links = wrapper.findAll('.org-link')
-    expect(links.length).toBe(3)
+    expect(links.length).toBe(4)
     expect(links[0].classes()).toContain('sidebar-card')
     expect(wrapper.findAll('.link-label').map((link) => link.text())).toEqual([
+      'AI提示词',
       'AI 助手',
       'AI 员工',
       'AI 团队',
