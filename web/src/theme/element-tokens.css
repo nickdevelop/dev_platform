@@ -1,0 +1,329 @@
+/* Element Plus token layer — the single place where the platform design system
+   speaks to the component library.
+
+   Element Plus ships ~123 custom properties on `:root`. Every one that carries a
+   colour, a radius, a font size, a control height, a shadow or a duration is
+   re-declared here in terms of the platform's own tokens (`--color-*`,
+   `--radius`, `--control-height`, `--text-size-*`, `--font-*`), so:
+
+     - switching between the nine appearance presets re-skins every `el-*`
+       widget with no per-widget work, because the platform palette is projected
+       onto the document root at runtime by `theme/apply.ts` and these
+       declarations only *reference* it;
+     - the Data Terminal rules keep holding after the library arrives: 3px
+       micro-radius, the 28px control tier, no resting shadow, no `all`
+       transitions, no coloured glow rings.
+
+   Selector notes. Two shapes, both at specificity (0,1,1) so they beat the
+   library no matter who lands last:
+
+     - `html:root` for the variables the library declares on `:root` (0,1,0);
+     - `html .el-*` for rules and variables the library scopes to a component
+       class (also (0,1,0)) — an inherited custom property is read from the
+       nearest ancestor that sets it, so re-pointing one of those on the root
+       would silently do nothing.
+
+   The library's own dark stylesheet is deliberately *not* imported: the dark
+   presets are ordinary palettes here, and their `--color-*` values are already
+   dark, so a second branch would fight this one.
+*/
+
+html:root {
+  /* ---------------------------------------------------------------- palette */
+  /* `primary` is the platform's action colour (buttons, links, selection),
+     not Element Plus's brand blue. `dark-2` (the pressed/hover step) maps to the
+     platform's own hover token instead of a mixed shade. */
+  --el-color-primary: var(--color-primary);
+  --el-color-primary-dark-2: var(--color-primary-hover);
+  --el-color-primary-light-3: color-mix(in srgb, var(--color-primary) 70%, var(--color-bg));
+  --el-color-primary-light-5: color-mix(in srgb, var(--color-primary) 50%, var(--color-bg));
+  --el-color-primary-light-7: color-mix(in srgb, var(--color-primary) 30%, var(--color-bg));
+  --el-color-primary-light-8: color-mix(in srgb, var(--color-primary) 20%, var(--color-bg));
+  --el-color-primary-light-9: var(--color-primary-soft);
+
+  /* The four state colours carry the platform's soft/border tokens, which is
+     exactly what the library uses light-9 (tint background) and light-8
+     (matching outline) for in alerts, tags and messages. */
+  --el-color-success: var(--color-success);
+  --el-color-success-dark-2: color-mix(in srgb, var(--color-success) 80%, #000);
+  --el-color-success-light-3: color-mix(in srgb, var(--color-success) 70%, var(--color-bg));
+  --el-color-success-light-5: color-mix(in srgb, var(--color-success) 50%, var(--color-bg));
+  --el-color-success-light-7: color-mix(in srgb, var(--color-success) 30%, var(--color-bg));
+  --el-color-success-light-8: var(--color-success-border);
+  --el-color-success-light-9: var(--color-success-soft);
+
+  --el-color-warning: var(--color-warning);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--color-warning) 80%, #000);
+  --el-color-warning-light-3: color-mix(in srgb, var(--color-warning) 70%, var(--color-bg));
+  --el-color-warning-light-5: color-mix(in srgb, var(--color-warning) 50%, var(--color-bg));
+  --el-color-warning-light-7: color-mix(in srgb, var(--color-warning) 30%, var(--color-bg));
+  --el-color-warning-light-8: var(--color-warning-border);
+  --el-color-warning-light-9: var(--color-warning-soft);
+
+  --el-color-danger: var(--color-danger);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--color-danger) 80%, #000);
+  --el-color-danger-light-3: color-mix(in srgb, var(--color-danger) 70%, var(--color-bg));
+  --el-color-danger-light-5: color-mix(in srgb, var(--color-danger) 50%, var(--color-bg));
+  --el-color-danger-light-7: color-mix(in srgb, var(--color-danger) 30%, var(--color-bg));
+  --el-color-danger-light-8: var(--color-danger-border);
+  --el-color-danger-light-9: var(--color-danger-soft);
+  --el-color-error: var(--el-color-danger);
+  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+  --el-color-error-light-3: var(--el-color-danger-light-3);
+  --el-color-error-light-5: var(--el-color-danger-light-5);
+  --el-color-error-light-7: var(--el-color-danger-light-7);
+  --el-color-error-light-8: var(--el-color-danger-light-8);
+  --el-color-error-light-9: var(--el-color-danger-light-9);
+
+  --el-color-info: var(--color-info);
+  --el-color-info-dark-2: color-mix(in srgb, var(--color-info) 80%, #000);
+  --el-color-info-light-3: color-mix(in srgb, var(--color-info) 70%, var(--color-bg));
+  --el-color-info-light-5: color-mix(in srgb, var(--color-info) 50%, var(--color-bg));
+  --el-color-info-light-7: color-mix(in srgb, var(--color-info) 30%, var(--color-bg));
+  --el-color-info-light-8: var(--color-info-border);
+  --el-color-info-light-9: var(--color-info-soft);
+
+  /* Derived steps mix towards the page base rather than the library's white, so
+     the same declaration stays correct on a light palette and on the dark
+     preset; the pressed steps mix towards black instead. Both are expressed
+     inline in the rules above so this file never invents a platform token. */
+
+  /* ---------------------------------------------------------------- surfaces */
+  --el-bg-color: var(--color-surface);
+  --el-bg-color-page: var(--color-bg);
+  --el-bg-color-overlay: var(--color-surface);
+
+  --el-text-color-primary: var(--color-text);
+  --el-text-color-regular: color-mix(in srgb, var(--color-text) 82%, var(--color-bg));
+  --el-text-color-secondary: var(--color-text-muted);
+  --el-text-color-placeholder: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-bg));
+  --el-text-color-disabled: color-mix(in srgb, var(--color-text-muted) 55%, var(--color-bg));
+
+  --el-border-color: var(--color-border);
+  --el-border-color-light: color-mix(in srgb, var(--color-border) 60%, var(--color-surface));
+  --el-border-color-lighter: color-mix(in srgb, var(--color-border) 35%, var(--color-surface));
+  --el-border-color-extra-light: color-mix(in srgb, var(--color-border) 18%, var(--color-surface));
+  --el-border-color-dark: var(--color-border-strong);
+  --el-border-color-darker: var(--color-border-strong);
+  --el-border-color-hover: var(--color-border-strong);
+
+  --el-fill-color: var(--color-surface-muted);
+  --el-fill-color-light: color-mix(in srgb, var(--color-surface-muted) 55%, var(--color-surface));
+  --el-fill-color-lighter: color-mix(in srgb, var(--color-surface-muted) 28%, var(--color-surface));
+  --el-fill-color-extra-light: color-mix(in srgb, var(--color-surface-muted) 14%, var(--color-surface));
+  --el-fill-color-dark: color-mix(in srgb, var(--color-border) 55%, var(--color-surface));
+  --el-fill-color-darker: color-mix(in srgb, var(--color-border) 75%, var(--color-surface));
+  --el-fill-color-blank: var(--color-surface);
+
+  --el-disabled-bg-color: var(--el-fill-color-light);
+  --el-disabled-text-color: var(--el-text-color-disabled);
+  --el-disabled-border-color: var(--el-border-color-light);
+
+  --el-overlay-color: rgba(10, 12, 16, 0.8);
+  --el-overlay-color-light: rgba(10, 12, 16, 0.7);
+  --el-overlay-color-lighter: rgba(10, 12, 16, 0.6);
+  /* The scrim is a flat neutral veil: the design system bans backdrop blurs, and
+     the library's light-white mask would wash out on the dark preset. */
+  --el-mask-color: rgba(10, 12, 16, 0.75);
+  --el-mask-color-extra-light: rgba(10, 12, 16, 0.3);
+
+  /* ---------------------------------------------------------------- geometry */
+  /* 3px micro-radius everywhere; `round` stays a full pill because the only
+     library parts that use it are small toggles and status pills, which the
+     design system explicitly allows to be fully rounded. */
+  --el-border-radius-base: var(--radius);
+  --el-border-radius-small: 2px;
+  --el-border-radius-round: 999px;
+  --el-border-radius-circle: 100%;
+
+  /* Control tiers follow the frozen 4px grid: 24 / 28 / 32. The library's 40px
+     default tier would be the loudest thing on the screen. */
+  --el-component-size-large: 32px;
+  --el-component-size: var(--control-height);
+  --el-component-size-small: 24px;
+
+  /* ---------------------------------------------------------------- type */
+  --el-font-family: var(--font-family);
+  --el-font-size-extra-large: var(--text-size-20);
+  --el-font-size-large: var(--text-size-14);
+  --el-font-size-medium: var(--text-size-13);
+  --el-font-size-base: var(--text-size-12);
+  --el-font-size-small: var(--text-size-11);
+  --el-font-size-extra-small: var(--text-size-10);
+  --el-font-weight-primary: 500;
+  --el-font-line-height-primary: 1.5;
+
+  /* ---------------------------------------------------------------- motion */
+  /* Motion budget: 0.12s, and never `all` — the library's own `transition-all`
+     token would animate width and height on resize. */
+  --el-transition-duration: 0.12s;
+  --el-transition-duration-fast: 0.1s;
+  --el-transition-all: color 0.12s ease-out, background-color 0.12s ease-out,
+    border-color 0.12s ease-out, box-shadow 0.12s ease-out;
+
+  /* ---------------------------------------------------------------- elevation */
+  /* Nothing at rest carries a shadow. Only parts that leave the document flow
+     (dialogs, dropdowns, popovers, messages) get a hairline boundary plus a
+     short drop so the edge reads against the page. */
+  --el-box-shadow: 0 0 0 1px var(--color-border), 0 6px 16px rgba(10, 12, 16, 0.1);
+  --el-box-shadow-light: 0 0 0 1px var(--color-border), 0 4px 10px rgba(10, 12, 16, 0.08);
+  --el-box-shadow-lighter: 0 0 0 1px var(--color-border);
+  --el-box-shadow-dark: 0 0 0 1px var(--color-border), 0 10px 28px rgba(10, 12, 16, 0.16);
+
+  /* Layering stays below the platform's own overlays; the event bus drawer and
+     the terminal float window own the top of the stack. */
+  --el-index-normal: 1;
+  --el-index-top: 1000;
+  --el-index-popper: 2000;
+
+  --el-svg-monochrome-grey: var(--color-border-strong);
+}
+
+/* ------------------------------------------------------------------ shared */
+/* Library-wide behaviours a token cannot express. Anything specific to one
+   screen belongs to that screen's own style block instead — this file is the
+   only place allowed to reach into the library's parts.
+
+   The `html ` prefix outranks the library's class rules; a bare `.el-*` would
+   tie with them and lose to source order. */
+
+/* A native control keeps its inherited face; the library's inputs would
+   otherwise fall back to the UA font and stop following the appearance tier. */
+html .el-input__wrapper,
+html .el-textarea__inner,
+html .el-select__wrapper,
+html .el-button {
+  font-family: var(--el-font-family);
+}
+
+/* ------------------------------------------------------- density bridge ---- */
+/* The library derives most heights from `--el-component-size` (inputs do), but a
+   few parts hard-code their ladder (a button is 32px, a select wrapper
+   min-height 32px, a form label 40px). Those constants are bridged onto the
+   platform's tiers here and nowhere else, so a screen never nudges a widget's
+   height locally and the 4px grid holds: small 24 / default 28 / large 32. */
+html .el-button {
+  height: var(--el-component-size);
+  padding: 0 12px;
+}
+
+html .el-button--small {
+  height: var(--el-component-size-small);
+  padding: 0 8px;
+}
+
+html .el-button--large {
+  height: var(--el-component-size-large);
+  padding: 0 15px;
+}
+
+html .el-select__wrapper {
+  min-height: var(--el-component-size);
+}
+
+html .el-select--small .el-select__wrapper {
+  min-height: var(--el-component-size-small);
+}
+
+html .el-input-number {
+  line-height: calc(var(--el-component-size) - 2px);
+}
+
+html .el-form-item__label {
+  height: var(--el-component-size);
+  line-height: 1.5;
+  padding-bottom: 0;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-primary);
+}
+
+/* Table rows carry the platform's 8px vertical rhythm instead of the library's
+   12px, and the header sits on the caption tier. */
+html .el-table .el-table__cell {
+  padding: 8px 0;
+  font-size: var(--el-font-size-base);
+}
+
+html .el-table th.el-table__cell > .cell {
+  font-size: var(--el-font-size-small);
+}
+
+/* A selected segment is a hairline chip, not a filled primary block: the design
+   system keeps colour under a 3% budget and marks selection with an edge.
+
+   Note the selector. The library scopes these names to `.el-segmented` itself,
+   and an inherited custom property is taken from the nearest ancestor that sets
+   it — a value declared on the root would never reach the thumb. Overriding a
+   component-scoped variable therefore needs a selector that hits the *same*
+   element with higher specificity than the library's class rule. */
+html .el-segmented {
+  border: 1px solid var(--el-border-color);
+  background: var(--el-fill-color-light);
+  --el-segmented-item-selected-bg-color: var(--el-bg-color);
+  --el-segmented-item-selected-color: var(--el-text-color-primary);
+  --el-segmented-item-hover-bg-color: transparent;
+  --el-segmented-item-hover-color: var(--el-text-color-primary);
+  --el-segmented-item-active-bg-color: var(--el-fill-color);
+}
+
+html .el-segmented__item-selected {
+  /* The thumb is a sibling of the options (it slides between them), not a child
+     of the selected one, so the hairline hangs on the thumb itself. */
+  box-shadow: inset 0 0 0 1px var(--el-border-color-dark);
+}
+
+
+/* Scrollbars inside library scrollers follow the platform's 6px hairline
+   (the global rule already colours the thumb; this only keeps the library from
+   reserving a wider gutter than the rest of the shell). */
+html .el-scrollbar__bar {
+  opacity: 0.55;
+}
+
+/* Dialogs and drawers are panels, not floating cards: a 1px edge, the panel
+   radius, and no ambient glow beyond the boundary shadow above. */
+html .el-dialog {
+  border-radius: var(--el-border-radius-base);
+  box-shadow: var(--el-box-shadow-dark);
+}
+
+/* The confirmation box carries the same panel radius as a dialog; the library
+   scopes this one to the component, so it is re-pointed on the same element. */
+html .el-message-box {
+  --el-messagebox-border-radius: var(--el-border-radius-base);
+  --el-messagebox-title-color: var(--el-text-color-primary);
+  --el-messagebox-content-color: var(--el-text-color-regular);
+  border-radius: var(--el-border-radius-base);
+  box-shadow: var(--el-box-shadow-dark);
+}
+
+html .el-dialog__header {
+  padding: 14px 16px 12px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+html .el-dialog__title {
+  font-size: var(--el-font-size-medium);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+html .el-dialog__body {
+  padding: 16px;
+  font-size: var(--el-font-size-base);
+  color: var(--el-text-color-regular);
+}
+
+html .el-dialog__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--el-border-color);
+}
+
+/* Table headers stay sentence case at caption size: the library's default
+   13px/regular reads as body copy next to the platform's 10–12px meta tier. */
+html .el-table th.el-table__cell {
+  background-color: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-weight: 500;
+}

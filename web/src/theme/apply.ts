@@ -51,6 +51,12 @@ export function applyAppearance(appearance: Appearance): void {
   }
 
   root.style.setProperty('--font-size-base', `${appearance.fontSize}px`)
+
+  // A dark palette wants dark user-agent furniture (scrollbar tracks, form
+  // controls, the dialog backdrop's own blending). This is carried on the
+  // palette's own `dark` flag rather than on a `dark` class: 280 legacy `dark:`
+  // Tailwind utilities are dormant today and would all wake up at once.
+  root.style.colorScheme = theme.dark ? 'dark' : 'light'
 }
 
 // applyCachedAppearance paints the last cached appearance before the server
