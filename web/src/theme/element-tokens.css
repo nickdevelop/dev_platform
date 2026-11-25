@@ -179,6 +179,69 @@ html:root {
   --el-svg-monochrome-grey: var(--color-border-strong);
 }
 
+/* --------------------------------------------------------------- menus ---- */
+/* The side navigation is `el-menu`, and the Data Terminal rules are stricter
+   than the library's defaults: hover must stay neutral (the library tints with
+   the primary), the active item is marked by a 2px accent edge on the left edge
+   rather than coloured text, and the default 56px row would triple the height
+   of a compact sidebar card. */
+html .el-menu {
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--el-text-color-regular);
+  --el-menu-hover-bg-color: var(--el-fill-color-light);
+  --el-menu-hover-text-color: var(--el-text-color-primary);
+  --el-menu-active-color: var(--el-text-color-primary);
+  --el-menu-item-height: 46px;
+  --el-menu-sub-item-height: 34px;
+  --el-menu-base-level-padding: 8px;
+  --el-menu-level-padding: 12px;
+  border-right: none;
+}
+
+/* The Move: a 2px accent rule flush on the left edge, inset so it never shifts
+   the row's content. Applied per item rather than via `--el-menu-active-color`
+   because the library has no vertical active indicator at all. */
+html .el-menu--vertical .el-menu-item.is-active,
+html .el-menu--vertical .el-sub-menu.is-active > .el-sub-menu__title {
+  background-color: var(--el-fill-color-light);
+  box-shadow: inset 2px 0 0 0 var(--color-accent);
+  font-weight: 500;
+}
+
+/* The row's glyph carries the state the text is not allowed to: muted at rest,
+   ink on hover, accent when the row is the current one. */
+html .el-menu-item .el-icon,
+html .el-sub-menu__title .el-icon {
+  color: var(--el-text-color-secondary);
+  transition: color var(--el-transition-duration-fast) ease-out;
+}
+
+html .el-menu-item:hover .el-icon,
+html .el-sub-menu__title:hover .el-icon {
+  color: var(--el-text-color-primary);
+}
+
+html .el-menu-item.is-active .el-icon,
+html .el-sub-menu.is-active > .el-sub-menu__title .el-icon {
+  color: var(--color-accent);
+}
+
+html .el-menu--vertical .el-menu-item,
+html .el-menu--vertical .el-sub-menu__title {
+  border-radius: var(--el-border-radius-base);
+  margin: 1px 0;
+}
+
+/* Sub-menu rows read as second level by their indent and caption size, not by a
+   heavier background. */
+html .el-menu--vertical .el-menu--inline {
+  --el-menu-bg-color: transparent;
+}
+
+html .el-menu--vertical .el-menu--inline .el-menu-item {
+  font-size: var(--el-font-size-small);
+}
+
 /* ------------------------------------------------------------------ shared */
 /* Library-wide behaviours a token cannot express. Anything specific to one
    screen belongs to that screen's own style block instead — this file is the

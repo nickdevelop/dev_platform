@@ -103,7 +103,7 @@
 | 弹层/浮层 | `el-dropdown` / `el-popover` / `el-tooltip` | 禁止 `backdrop-filter: blur`（v1 禁令继续有效，遮罩为中性半透明） |
 | 图标 | `@element-plus/icons-vue`（`<el-icon>` 包裹） | 仍受 v1「零 Emoji、纯矢量细线条」约束；库内没有的业务符号继续用现有 1.5–1.8px 手绘 SVG |
 | 日期/时间 | `el-date-picker` / `el-time-picker` | 新增即用，不再排期 |
-| 侧栏导航 | 暂用 `shared/styles/sidebar.css`（六栏共用） | `el-menu` 迁移评估见 §八 |
+| 侧栏导航 | `el-menu`（`router` 模式，见 §八） | 子级用 `el-sub-menu` 预留；条目高度 / hover 中性化 / 左缘 accent 标尺三项覆盖已入 token 层 |
 
 **函数式 API 的引入方式**：`ElMessage / ElMessageBox / ElLoading` 直接 `import { ElMessage } from 'element-plus'`（样式已随全量 CSS 到位）。模板里的 `<el-*>` 一律不手写 import——交给解析器。
 
@@ -151,7 +151,8 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 **进行中 / 待办**：
 
 1. 组织中心（AI提示词 / AI 助手 / AI 员工 / AI 团队）：列表 → `el-table`，编辑 → `el-dialog` + `el-form`，确认 → `ElMessageBox`，专家编制 → `el-checkbox-group` 卡片网格勾选回显。
-2. `el-menu` 迁移组织二级导航的评估结论：**技术上可行但当前不划算**。库的垂直菜单没有左缘 2px 激活标尺（`is-active` 在垂直态只换文字颜色，横向态才是 `border-bottom: 2px`），条目高度固定 `--el-menu-item-height: 56px`，hover 底色默认是主色浅底 `--el-color-primary-light-9`——为守住 v1 的「The Move / 静默中性镀层 / 26–28px 紧凑条目」需要覆写的量超过它省下的标记代码，且会让组织侧栏与其余五栏（共用 `sidebar.css` 三段式规范）当场分叉。**预留路径**：二级导航一旦出现真正的子菜单，改用 `el-menu` + `el-sub-menu`（支持 `:router`、内联展开与 `collapse` 收起态），并把「条目高度、hover 中性化、左缘 accent 标尺」三项覆盖正式并入 `element-tokens.css`，同步迁移其余五栏，避免出现两种侧栏。
+2. **二级导航已上 `el-menu`（组织中心，已落地）**：菜单自带键盘可达与 `el-sub-menu` 子菜单能力——组织二级导航当前没有子项，但渲染层已按 `children` 自动切换 `el-sub-menu`，日后加子菜单只改数据不改模板。早先评估担心的三点已全部并入 `element-tokens.css` 的 menus 段：条目高度 46 / 34px、hover 中性化（库默认是主色浅底）、以及库压根没有的**左缘 2px accent 标尺**（用 `inset` box-shadow，不推动行内容）；激活项的文字保持墨色，只有图标上 accent。
+   **已知不一致**：其余五栏（项目 / 对话 / 任务 / 终端 / 设置）仍是 `sidebar.css` 卡片列表，与 `OrgSidebar` 的行样式存在差异。待办：把五栏一并迁到 `el-menu`（需先解决 Zone A 动作区与 Zone B 搜索区的归属），随后评估从 `sidebar.css` 删除卡片段，避免两种侧栏长期并存。
 3. 其余模块（任务、设置、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单。
 
 ---
