@@ -81,5 +81,14 @@ export default defineConfig({
     // PlantUML core ships a bundled WebAssembly runtime (3.6MB + 1.4MB);
     // bound the chunk size warning limit so it does not trigger spurious build warnings.
     chunkSizeWarningLimit: 4000,
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('node_modules/monaco-editor')) {
+            return 'monaco-editor'
+          }
+        },
+      },
+    },
   },
 })

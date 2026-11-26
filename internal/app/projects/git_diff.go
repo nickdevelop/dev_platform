@@ -9,15 +9,18 @@ import (
 	"strings"
 )
 
-// GitFileDiffResponse holds the unified diff and change statistics of a file.
+// GitFileDiffResponse holds the unified diff, change statistics, and optional full
+// original/modified contents of a file for side-by-side / inline Monaco diffing.
 type GitFileDiffResponse struct {
-	Path      string `json:"path"`
-	OldPath   string `json:"oldPath,omitempty"`
-	Status    string `json:"status"` // "modified", "added", "deleted", "untracked", "renamed"
-	Patch     string `json:"patch"`
-	Additions int    `json:"additions"`
-	Deletions int    `json:"deletions"`
-	IsBinary  bool   `json:"isBinary"`
+	Path            string `json:"path"`
+	OldPath         string `json:"oldPath,omitempty"`
+	Status          string `json:"status"` // "modified", "added", "deleted", "untracked", "renamed"
+	Patch           string `json:"patch"`
+	OriginalContent string `json:"originalContent,omitempty"`
+	ModifiedContent string `json:"modifiedContent,omitempty"`
+	Additions       int    `json:"additions"`
+	Deletions       int    `json:"deletions"`
+	IsBinary        bool   `json:"isBinary"`
 }
 
 // resolveProjectRelativePath validates that relPath stays safely inside the project workspace boundary.
@@ -103,7 +106,19 @@ func (s *Service) gitWorkingFileDiff(ctx context.Context, rootDir, cleanRel stri
 		}
 	}
 
-	return parsePatchToDiffResponse(cleanRel, patch, status), nil
+	resp := parsePatchToDiffResponse(cleanRel, patch, status)
+	if !resp.IsBinary {
+		const maxDiffContentBytes = 2 << 20
+		if resp.Status != "untracked" && resp.Status != "added" {
+			if orig, err := gitOutputLimit(ctx, rootDir, maxDiffContentBytes, "show", "HEAD:"+cleanRel); err == nil {
+				resp.OriginalContent = orig
+			}
+		}
+		if resp.Status != "deleted" {
+			resp.ModifiedContent = readFileUpTo(fullPath, maxDiffContentBytes)
+		}
+	}
+	return resp, nil
 }
 
 func (s *Service) gitCommitFileDiff(ctx context.Context, rootDir, cleanRel, commitRef string) (*GitFileDiffResponse, error) {
@@ -120,7 +135,35 @@ func (s *Service) gitCommitFileDiff(ctx context.Context, rootDir, cleanRel, comm
 		status = "deleted"
 	}
 
-	return parsePatchToDiffResponse(cleanRel, out, status), nil
+	resp := parsePatchToDiffResponse(cleanRel, out, status)
+	if !resp.IsBinary {
+		const maxDiffContentBytes = 2 << 20
+		if resp.Status != "added" {
+			if orig, err := gitOutputLimit(ctx, rootDir, maxDiffContentBytes, "show", commitRef+"~1:"+cleanRel); err == nil {
+				resp.OriginalContent = orig
+			}
+		}
+		if resp.Status != "deleted" {
+			if mod, err := gitOutputLimit(ctx, rootDir, maxDiffContentBytes, "show", commitRef+":"+cleanRel); err == nil {
+				resp.ModifiedContent = mod
+			}
+		}
+	}
+	return resp, nil
+}
+
+func readFileUpTo(fullPath string, maxBytes int64) string {
+	f, err := os.Open(fullPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	buf := make([]byte, maxBytes)
+	n, _ := f.Read(buf)
+	if n <= 0 {
+		return ""
+	}
+	return string(buf[:n])
 }
 
 func parsePatchToDiffResponse(cleanRel, patch, fallbackStatus string) *GitFileDiffResponse {

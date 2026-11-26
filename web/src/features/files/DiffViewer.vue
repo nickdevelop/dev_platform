@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import * as monaco from 'monaco-editor'
 import { getGitFileDiff } from '../../api/files'
+import { useSettingsStore } from '../../stores/settings'
 import type { GitFileDiffResponse } from './types'
 import { getChangeStatusLabel } from './changeTreeUtil'
+import { ensureMonacoEnvironment, resolveMonacoLanguage } from './monaco/env'
+import { applyMonacoTheme, getMonacoFontFamily, getMonacoFontSize } from './monaco/theme'
 
 const props = defineProps<{
   projectId: number
@@ -12,78 +16,93 @@ const props = defineProps<{
   worktreeId?: number
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   close?: []
 }>()
+
+let settings: ReturnType<typeof useSettingsStore> | null = null
+try {
+  settings = useSettingsStore()
+} catch {
+  settings = null
+}
 
 const loading = ref(false)
 const error = ref('')
 const diffData = ref<GitFileDiffResponse | null>(null)
 const copied = ref(false)
+const sideBySide = ref(false)
+const diffContainerRef = ref<HTMLElement | null>(null)
 
-interface DiffLine {
-  kind: 'hunk' | 'addition' | 'deletion' | 'context'
-  oldNum?: number
-  newNum?: number
-  text: string
+let diffEditor: monaco.editor.IStandaloneDiffEditor | null = null
+let originalModel: monaco.editor.ITextModel | null = null
+let modifiedModel: monaco.editor.ITextModel | null = null
+
+const hasTextDiff = computed(() => {
+  if (!diffData.value || diffData.value.isBinary) return false
+  const hasPatch = Boolean(diffData.value.patch && diffData.value.patch.trim().length > 0)
+  const hasContents =
+    diffData.value.originalContent !== undefined || diffData.value.modifiedContent !== undefined
+  return hasPatch || hasContents
+})
+
+function disposeDiffEditor() {
+  diffEditor?.dispose()
+  diffEditor = null
+  originalModel?.dispose()
+  originalModel = null
+  modifiedModel?.dispose()
+  modifiedModel = null
 }
 
-const parsedLines = computed<DiffLine[]>(() => {
-  if (!diffData.value?.patch) return []
-  const rawLines = diffData.value.patch.split('\n')
-  const result: DiffLine[] = []
+function renderDiffEditor() {
+  if (!diffData.value || diffData.value.isBinary || !hasTextDiff.value) {
+    disposeDiffEditor()
+    return
+  }
+  if (!diffContainerRef.value) return
 
-  let oldCounter = 0
-  let newCounter = 0
+  ensureMonacoEnvironment()
+  const themeName = applyMonacoTheme(settings?.appearance.theme)
+  const fontSize = getMonacoFontSize(settings?.appearance.fontSize)
+  const lang = resolveMonacoLanguage(props.filePath)
 
-  for (const raw of rawLines) {
-    if (raw.startsWith('diff --git') || raw.startsWith('index ') || raw.startsWith('--- ') || raw.startsWith('+++ ') || raw.startsWith('new file mode') || raw.startsWith('deleted file mode') || raw.startsWith('\\ No newline')) {
-      continue
-    }
+  const origText = diffData.value.originalContent ?? ''
+  const modText = diffData.value.modifiedContent ?? ''
 
-    if (raw.startsWith('@@')) {
-      // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
-      const match = raw.match(/@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
-      if (match) {
-        oldCounter = parseInt(match[1], 10)
-        newCounter = parseInt(match[2], 10)
-      }
-      result.push({
-        kind: 'hunk',
-        text: raw,
-      })
-      continue
-    }
-
-    if (raw.startsWith('+')) {
-      result.push({
-        kind: 'addition',
-        newNum: newCounter++,
-        text: raw.slice(1),
-      })
-    } else if (raw.startsWith('-')) {
-      result.push({
-        kind: 'deletion',
-        oldNum: oldCounter++,
-        text: raw.slice(1),
-      })
-    } else {
-      const text = raw.startsWith(' ') ? raw.slice(1) : raw
-      result.push({
-        kind: 'context',
-        oldNum: oldCounter++,
-        newNum: newCounter++,
-        text,
-      })
-    }
+  if (!diffEditor) {
+    diffEditor = monaco.editor.createDiffEditor(diffContainerRef.value, {
+      theme: themeName,
+      readOnly: true,
+      automaticLayout: true,
+      renderSideBySide: sideBySide.value,
+      scrollBeyondLastLine: false,
+      fontFamily: getMonacoFontFamily(),
+      fontSize,
+      minimap: { enabled: false },
+      enableSplitViewResizing: true,
+      renderOverviewRuler: false,
+    })
   }
 
-  return result
-})
+  const nextOrig = monaco.editor.createModel(origText, lang)
+  const nextMod = monaco.editor.createModel(modText, lang)
+
+  diffEditor.setModel({
+    original: nextOrig,
+    modified: nextMod,
+  })
+
+  originalModel?.dispose()
+  modifiedModel?.dispose()
+  originalModel = nextOrig
+  modifiedModel = nextMod
+}
 
 async function fetchDiff() {
   if (!props.projectId || !props.filePath) {
     diffData.value = null
+    disposeDiffEditor()
     return
   }
 
@@ -92,21 +111,47 @@ async function fetchDiff() {
   try {
     const res = await getGitFileDiff(props.projectId, props.filePath, props.commitRef, props.worktreeId)
     diffData.value = res
+    loading.value = false
+    await nextTick()
+    renderDiffEditor()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '获取文件 Diff 失败'
     diffData.value = null
-  } finally {
+    disposeDiffEditor()
     loading.value = false
   }
 }
 
+function toggleSideBySide() {
+  sideBySide.value = !sideBySide.value
+  diffEditor?.updateOptions({ renderSideBySide: sideBySide.value })
+}
+
 watch(
-  [() => props.projectId, () => props.filePath, () => props.commitRef],
+  [() => props.projectId, () => props.filePath, () => props.commitRef, () => props.worktreeId],
   () => {
     void fetchDiff()
   },
   { immediate: true },
 )
+
+watch(
+  () => settings?.appearance.theme,
+  (themeKey) => {
+    applyMonacoTheme(themeKey)
+  },
+)
+
+watch(
+  () => settings?.appearance.fontSize,
+  (size) => {
+    diffEditor?.updateOptions({ fontSize: getMonacoFontSize(size) })
+  },
+)
+
+onUnmounted(() => {
+  disposeDiffEditor()
+})
 
 async function copyPatch() {
   if (!diffData.value?.patch) return
@@ -123,30 +168,30 @@ async function copyPatch() {
 </script>
 
 <template>
-  <div class="diff-viewer flex flex-col h-full bg-white dark:bg-slate-900 overflow-hidden font-sans">
+  <div class="diff-viewer flex flex-col h-full bg-platform-surface overflow-hidden font-sans" data-test="diff-viewer">
     <!-- Header bar -->
-    <div class="diff-header flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 shrink-0 select-none">
+    <div class="diff-header flex items-center justify-between px-4 py-2 border-b border-platform-border bg-platform-surface-muted shrink-0 select-none">
       <div class="flex items-center gap-2.5 min-w-0">
         <!-- Status badge -->
         <span
           v-if="diffData?.status"
-          class="shrink-0 px-1.5 py-0.5 rounded text-2xs font-mono font-semibold"
+          class="status-badge shrink-0 px-1.5 py-0.5 rounded font-mono font-semibold"
           :class="getChangeStatusLabel(diffData.status).class"
         >
           {{ getChangeStatusLabel(diffData.status).label }}
         </span>
 
         <!-- File path -->
-        <span class="font-mono text-xs font-medium text-slate-800 dark:text-slate-200 truncate" :title="props.filePath">
+        <span class="font-mono text-xs font-medium text-platform-text truncate" :title="props.filePath">
           {{ props.filePath }}
         </span>
 
         <!-- Additions / Deletions count -->
         <div v-if="diffData" class="flex items-center gap-1.5 text-xs font-mono shrink-0 ml-1">
-          <span v-if="diffData.additions > 0" class="text-emerald-600 dark:text-emerald-400 font-medium">
+          <span v-if="diffData.additions > 0" class="stat-add font-medium">
             +{{ diffData.additions }}
           </span>
-          <span v-if="diffData.deletions > 0" class="text-red-600 dark:text-red-400 font-medium">
+          <span v-if="diffData.deletions > 0" class="stat-del font-medium">
             -{{ diffData.deletions }}
           </span>
         </div>
@@ -154,7 +199,7 @@ async function copyPatch() {
         <!-- Commit or working tree badge -->
         <span
           v-if="props.commitRef"
-          class="hidden sm:inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded bg-surface-muted text-foreground border border-border font-mono"
+          class="hidden sm:inline-flex items-center gap-1 commit-badge px-2 py-0.5 rounded bg-platform-surface text-platform-text border border-platform-border font-mono"
           :title="props.commitMessage || props.commitRef"
         >
           <span>commit:</span>
@@ -163,7 +208,7 @@ async function copyPatch() {
         </span>
         <span
           v-else
-          class="hidden sm:inline-flex items-center text-2xs px-2 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono"
+          class="hidden sm:inline-flex items-center commit-badge px-2 py-0.5 rounded bg-platform-surface text-platform-text-muted border border-platform-border font-mono"
         >
           工作区未提交变更
         </span>
@@ -172,9 +217,20 @@ async function copyPatch() {
       <!-- Action buttons -->
       <div class="flex items-center gap-1.5 shrink-0 ml-2">
         <button
+          v-if="hasTextDiff"
+          type="button"
+          class="diff-btn px-2 py-1 text-xs rounded transition-colors"
+          :class="{ 'is-active': sideBySide }"
+          title="切换内联 / 并排对比"
+          data-test="diff-toggle-mode-btn"
+          @click="toggleSideBySide"
+        >
+          {{ sideBySide ? '内联' : '并排' }}
+        </button>
+        <button
           v-if="diffData?.patch"
           type="button"
-          class="diff-btn px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded transition-colors"
+          class="diff-btn px-2 py-1 text-xs rounded transition-colors"
           :title="copied ? '已复制 Patch' : '复制 Patch'"
           @click="copyPatch"
         >
@@ -182,7 +238,7 @@ async function copyPatch() {
         </button>
         <button
           type="button"
-          class="diff-btn px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded transition-colors"
+          class="diff-btn px-2 py-1 text-xs rounded transition-colors"
           title="刷新 Diff"
           :disabled="loading"
           @click="fetchDiff"
@@ -193,18 +249,18 @@ async function copyPatch() {
     </div>
 
     <!-- Body content -->
-    <div class="diff-content flex-1 overflow-auto bg-white dark:bg-slate-950 font-mono text-xs leading-relaxed">
+    <div class="diff-content flex-1 min-h-0 overflow-hidden bg-platform-surface font-mono text-xs">
       <!-- Loading state -->
-      <div v-if="loading" class="flex items-center justify-center h-48 text-slate-500 dark:text-slate-400">
+      <div v-if="loading" class="flex items-center justify-center h-48 text-platform-text-muted">
         <span class="animate-spin mr-2">⟳</span> 正在加载文件变更…
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="p-6 text-center text-red-600 dark:text-red-400">
+      <div v-else-if="error" class="p-6 text-center text-platform-danger">
         <p>{{ error }}</p>
         <button
           type="button"
-          class="mt-3 px-3 py-1 text-xs bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded transition-colors"
+          class="mt-3 px-3 py-1 text-xs bg-platform-surface-muted hover:bg-platform-border text-platform-text rounded transition-colors"
           @click="fetchDiff"
         >
           重试
@@ -227,127 +283,79 @@ async function copyPatch() {
       </div>
 
       <!-- No change notice -->
-      <div v-else-if="!diffData || parsedLines.length === 0" class="p-8 text-center text-platform-text-muted">
+      <div v-else-if="!diffData || !hasTextDiff" class="p-8 text-center text-platform-text-muted">
         <p class="text-sm">该文件在此版本中没有文本变更</p>
       </div>
 
-      <!-- Diff lines table -->
-      <div v-else class="diff-table w-full select-text">
-        <div
-          v-for="(line, idx) in parsedLines"
-          :key="idx"
-          class="diff-row flex items-baseline hover:bg-black/5 dark:hover:bg-white/5"
-          :class="`diff-line-${line.kind}`"
-        >
-          <!-- Old line number -->
-          <span
-            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-2xs"
-            aria-hidden="true"
-          >
-            {{ line.oldNum ?? '' }}
-          </span>
-
-          <!-- New line number -->
-          <span
-            class="line-num shrink-0 w-10 text-right pr-2 text-slate-400 dark:text-slate-600 select-none text-2xs border-r border-slate-200 dark:border-slate-800/80"
-            aria-hidden="true"
-          >
-            {{ line.newNum ?? '' }}
-          </span>
-
-          <!-- Diff marker symbol (+, -, @@, space) -->
-          <span class="diff-sign shrink-0 w-5 text-center select-none font-bold" aria-hidden="true">
-            {{ line.kind === 'addition' ? '+' : line.kind === 'deletion' ? '-' : line.kind === 'hunk' ? '@@' : ' ' }}
-          </span>
-
-          <!-- Code line text -->
-          <span class="line-code flex-1 whitespace-pre-wrap break-all pr-4">
-            {{ line.text }}
-          </span>
-        </div>
-      </div>
+      <!-- Monaco Diff Editor host -->
+      <div
+        v-else
+        ref="diffContainerRef"
+        class="monaco-diff-host"
+        data-test="monaco-diff-host"
+      ></div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.monaco-diff-host {
+  width: 100%;
+  height: 100%;
+}
+
+.status-badge,
+.commit-badge {
+  font-size: var(--text-size-11);
+}
+
+.stat-add {
+  color: var(--color-success);
+}
+
+.stat-del {
+  color: var(--color-danger);
+}
+
+.diff-btn {
+  color: var(--color-text-muted);
+  border: 1px solid transparent;
+}
+
+.diff-btn:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.diff-btn.is-active {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+}
+
 .git-modified {
-  background: color-mix(in srgb, #f59e0b 16%, transparent);
-  color: #d97706;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
 }
 
 .git-added {
-  background: color-mix(in srgb, #10b981 16%, transparent);
-  color: #059669;
+  background: var(--color-success-soft);
+  color: var(--color-success);
 }
 
 .git-deleted {
-  background: color-mix(in srgb, #ef4444 16%, transparent);
-  color: #dc2626;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .git-untracked {
-  background: color-mix(in srgb, #06b6d4 16%, transparent);
-  color: #0891b2;
+  background: var(--color-info-soft);
+  color: var(--color-info);
 }
 
 .git-renamed {
-  background: color-mix(in srgb, #8b5cf6 16%, transparent);
-  color: #7c3aed;
-}
-
-:root.dark .git-modified {
-  color: #fbbf24;
-}
-
-:root.dark .git-added {
-  color: #34d399;
-}
-
-:root.dark .git-deleted {
-  color: #f87171;
-}
-
-:root.dark .git-untracked {
-  color: #22d3ee;
-}
-
-:root.dark .git-renamed {
-  color: #a78bfa;
-}
-
-.diff-line-hunk {
-  background: color-mix(in srgb, #3b82f6 12%, transparent);
-  color: #2563eb;
-  font-weight: 500;
-}
-
-:root.dark .diff-line-hunk {
-  background: color-mix(in srgb, #3b82f6 18%, transparent);
-  color: #60a5fa;
-}
-
-.diff-line-addition {
-  background: color-mix(in srgb, #10b981 15%, transparent);
-  color: #047857;
-}
-
-:root.dark .diff-line-addition {
-  background: color-mix(in srgb, #10b981 18%, transparent);
-  color: #34d399;
-}
-
-.diff-line-deletion {
-  background: color-mix(in srgb, #ef4444 14%, transparent);
-  color: #b91c1c;
-}
-
-:root.dark .diff-line-deletion {
-  background: color-mix(in srgb, #ef4444 18%, transparent);
-  color: #f87171;
-}
-
-.diff-line-context {
-  color: inherit;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 </style>

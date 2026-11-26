@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -308,6 +309,9 @@ func TestGitCommitsAndDiff(t *testing.T) {
 	if diffResp.Status != "modified" || diffResp.Additions < 1 || diffResp.Deletions < 1 {
 		t.Errorf("unexpected diffResp for hello.txt: %+v", diffResp)
 	}
+	if diffResp.OriginalContent == "" || diffResp.ModifiedContent == "" || diffResp.OriginalContent == diffResp.ModifiedContent {
+		t.Errorf("expected non-empty distinct original/modified content for hello.txt, got orig=%q mod=%q", diffResp.OriginalContent, diffResp.ModifiedContent)
+	}
 
 	// 4. Test working tree modifications and untracked file diff
 	if err := os.WriteFile(filepath.Join(projectDir, "untracked.txt"), []byte("untracked line 1\nuntracked line 2\n"), 0o644); err != nil {
@@ -320,6 +324,9 @@ func TestGitCommitsAndDiff(t *testing.T) {
 	}
 	if untrackedDiff.Status != "untracked" || untrackedDiff.Additions != 2 {
 		t.Errorf("unexpected untracked diff: %+v", untrackedDiff)
+	}
+	if untrackedDiff.OriginalContent != "" || !strings.Contains(untrackedDiff.ModifiedContent, "untracked line 1") {
+		t.Errorf("unexpected untracked contents: orig=%q mod=%q", untrackedDiff.OriginalContent, untrackedDiff.ModifiedContent)
 	}
 
 	// 5. Verify HTTP Handlers

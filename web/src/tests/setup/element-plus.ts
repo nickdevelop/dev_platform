@@ -15,3 +15,5 @@ class ResizeObserverStub {
 if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
 }
+
+import './monaco'

@@ -630,33 +630,31 @@ describe('FileSidebar.vue', () => {
 })
 
 describe('CodeView.vue', () => {
-  it('renders lines and line numbers', () => {
+  it('mounts monaco editor with content and line numbers enabled by default', () => {
     const content = 'const a = 1\nconst b = 2\nconst c = 3'
     const wrapper = mount(CodeView, {
       props: { content },
     })
 
-    expect(wrapper.findAll('.line-number').length).toBe(3)
-    expect(wrapper.findAll('.code-line').length).toBe(3)
+    const host = wrapper.find('[data-test="monaco-editor-host"]')
+    expect(host.exists()).toBe(true)
+    expect(host.attributes('data-monaco-value')).toBe(content)
     expect(wrapper.text()).toContain('const a = 1')
+    wrapper.unmount()
   })
 
-  it('supports in-file search', async () => {
+  it('toggles line wrap option', async () => {
     const content = 'hello world\nfoo bar\nhello universe'
     const wrapper = mount(CodeView, {
       props: { content },
     })
 
-    // Open search bar with Ctrl+F
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }))
-    await wrapper.vm.$nextTick()
+    const host = wrapper.find('[data-test="monaco-editor-host"]')
+    expect(host.attributes('data-monaco-wrap')).toBe('on')
 
-    expect(wrapper.find('.search-bar').exists()).toBe(true)
-
-    const input = wrapper.find('.search-bar-input')
-    await input.setValue('hello')
-
-    expect(wrapper.text()).toContain('1/2')
+    await wrapper.find('[data-test="toggle-wrap-btn"]').trigger('click')
+    expect(host.attributes('data-monaco-wrap')).toBe('off')
+    wrapper.unmount()
   })
 })
 

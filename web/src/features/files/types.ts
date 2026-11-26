@@ -47,6 +47,8 @@ export interface GitFileDiffResponse {
   oldPath?: string
   status: GitFileChangeStatus | string
   patch: string
+  originalContent?: string
+  modifiedContent?: string
   additions: number
   deletions: number
   isBinary: boolean

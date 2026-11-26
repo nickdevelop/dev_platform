@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { highlightCode, splitHighlightedHtmlIntoLines } from '../../shared/highlight'
-import { UiConfirmDialog } from '../../shared/ui'
+import * as monaco from 'monaco-editor'
+import { ElMessageBox } from 'element-plus'
+import { ensureMonacoEnvironment, resolveMonacoLanguage } from './monaco/env'
+import { applyMonacoTheme, getMonacoFontFamily, getMonacoFontSize } from './monaco/theme'
+import { useSettingsStore } from '../../stores/settings'
 import type { CodeCommentCard } from './types'
 
 const props = withDefaults(
@@ -30,78 +33,122 @@ const emit = defineEmits<{
   'dirty-change': [dirty: boolean]
 }>()
 
-const searchVisible = ref(false)
-const searchQuery = ref('')
-const searchIndex = ref(0)
-const searchInputRef = ref<HTMLInputElement | null>(null)
+let settings: ReturnType<typeof useSettingsStore> | null = null
+try {
+  settings = useSettingsStore()
+} catch {
+  settings = null
+}
 
-const gotoLineVisible = ref(false)
-const gotoLineInput = ref('')
-const gotoLineInputRef = ref<HTMLInputElement | null>(null)
-const focusedLineNumber = ref<number | null>(null)
-
-const codeContainerRef = ref<HTMLElement | null>(null)
-const copied = ref(false)
+const editorContainerRef = ref<HTMLElement | null>(null)
 const wrapLines = ref(true)
 
 // Direct file editing state
 const isEditing = ref(false)
 const draftContent = ref(props.content)
-const discardConfirmOpen = ref(false)
-const editorTextareaRef = ref<HTMLTextAreaElement | null>(null)
-const editorGutterRef = ref<HTMLElement | null>(null)
 
 const isDirty = computed(() => isEditing.value && draftContent.value !== props.content)
-const draftLines = computed(() => (draftContent.value ? draftContent.value.split('\n') : ['']))
 
 watch(isDirty, (dirty) => {
   emit('dirty-change', dirty)
 })
 
-watch(
-  () => props.filePath,
-  () => {
-    isEditing.value = false
-    discardConfirmOpen.value = false
-    draftContent.value = props.content
-    emit('dirty-change', false)
-  },
-)
+const fileName = computed(() => {
+  if (!props.filePath) return 'untitled'
+  const parts = props.filePath.replace(/\\/g, '/').split('/')
+  return parts[parts.length - 1] || props.filePath
+})
 
-watch(
-  () => props.content,
-  (nextContent) => {
-    if (!isEditing.value) {
-      draftContent.value = nextContent
-    }
-  },
-)
+const languageId = computed(() => resolveMonacoLanguage(props.filePath))
+
+// Selection & inline comment state
+const activeSelectionEndLine = ref<number | null>(null)
+const selectedStartLine = ref(1)
+const selectedEndLine = ref(1)
+const selectedSnippet = ref('')
+const selectionBtnTop = ref(0)
+const inlineEditorVisible = ref(false)
+const inlineCommentText = ref('')
+const inlineCommentInputRef = ref<HTMLTextAreaElement | null>(null)
+
+let editorInstance: monaco.editor.IStandaloneCodeEditor | null = null
+let modelInstance: monaco.editor.ITextModel | null = null
+let focusedDecorations: string[] = []
+let syncingFromProps = false
+
+function updateSelectionWidgetPosition() {
+  if (!editorInstance || activeSelectionEndLine.value === null) return
+  const pos = editorInstance.getScrolledVisiblePosition({
+    lineNumber: activeSelectionEndLine.value,
+    column: 1,
+  })
+  if (pos) {
+    selectionBtnTop.value = Math.max(4, pos.top)
+  }
+}
+
+function applyFocusedLine(lineNumber?: number) {
+  if (!editorInstance || !modelInstance) return
+  if (!lineNumber || lineNumber < 1 || lineNumber > modelInstance.getLineCount()) {
+    focusedDecorations = editorInstance.deltaDecorations(focusedDecorations, [])
+    return
+  }
+  editorInstance.revealLineInCenter(lineNumber)
+  editorInstance.setPosition({ lineNumber, column: 1 })
+  focusedDecorations = editorInstance.deltaDecorations(focusedDecorations, [
+    {
+      range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+      options: {
+        isWholeLine: true,
+        className: 'monaco-focused-line',
+      },
+    },
+  ])
+}
 
 function startEditing() {
   if (!props.editable) return
   draftContent.value = props.content
   isEditing.value = true
-  searchVisible.value = false
-  gotoLineVisible.value = false
   closeInlineCommentEditor()
+  editorInstance?.updateOptions({ readOnly: false })
   void nextTick(() => {
-    editorTextareaRef.value?.focus()
+    editorInstance?.focus()
   })
 }
 
-function requestExitEditing() {
+async function requestExitEditing() {
   if (props.saving) return
   if (isDirty.value) {
-    discardConfirmOpen.value = true
+    try {
+      await ElMessageBox.confirm(
+        '当前文件有尚未保存的修改，确定要放弃这些修改并退出编辑吗？',
+        '放弃未保存的修改',
+        {
+          confirmButtonText: '放弃修改',
+          cancelButtonText: '继续编辑',
+          confirmButtonClass: 'el-button--danger',
+          type: 'warning',
+        },
+      )
+      confirmDiscardAndExit()
+    } catch {
+      // Cancelled by user
+    }
     return
   }
   confirmDiscardAndExit()
 }
 
 function confirmDiscardAndExit() {
-  discardConfirmOpen.value = false
   isEditing.value = false
   draftContent.value = props.content
+  if (modelInstance && modelInstance.getValue() !== props.content) {
+    syncingFromProps = true
+    modelInstance.setValue(props.content)
+    syncingFromProps = false
+  }
+  editorInstance?.updateOptions({ readOnly: true })
   emit('dirty-change', false)
 }
 
@@ -110,396 +157,9 @@ function saveEdits() {
   emit('save', draftContent.value)
 }
 
-function syncEditorScroll() {
-  if (editorGutterRef.value && editorTextareaRef.value) {
-    editorGutterRef.value.scrollTop = editorTextareaRef.value.scrollTop
-  }
-}
-
-function onEditorKeydown(e: KeyboardEvent) {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-    e.preventDefault()
-    saveEdits()
-    return
-  }
-  if (e.key === 'Tab') {
-    e.preventDefault()
-    const el = editorTextareaRef.value
-    if (!el) return
-    const start = el.selectionStart
-    const end = el.selectionEnd
-    const val = draftContent.value
-    draftContent.value = `${val.slice(0, start)}  ${val.slice(end)}`
-    void nextTick(() => {
-      el.selectionStart = el.selectionEnd = start + 2
-    })
-  }
-}
-
-const lines = computed(() => {
-  if (!props.content) return []
-  return props.content.split('\n')
-})
-
-const totalLines = computed(() => lines.value.length)
-
-const highlightedLines = computed(() => {
-  if (!props.content) return []
-  const highlighted = highlightCode(props.content, props.filePath)
-  return splitHighlightedHtmlIntoLines(highlighted)
-})
-
-// Search matches: line index and match offsets
-interface SearchMatch {
-  lineIndex: number
-  startCol: number
-  endCol: number
-}
-
-const matches = computed<SearchMatch[]>(() => {
-  const q = searchQuery.value
-  if (!q) return []
-  const res: SearchMatch[] = []
-  const lowerQ = q.toLowerCase()
-
-  lines.value.forEach((line, lIdx) => {
-    let start = 0
-    const lowerLine = line.toLowerCase()
-    while (start < lowerLine.length) {
-      const idx = lowerLine.indexOf(lowerQ, start)
-      if (idx === -1) break
-      res.push({
-        lineIndex: lIdx,
-        startCol: idx,
-        endCol: idx + q.length,
-      })
-      start = idx + q.length
-    }
-  })
-  return res
-})
-
-const lineMatchesMap = computed(() => {
-  const map = new Map<number, Array<{ match: SearchMatch; globalIndex: number }>>()
-  if (!searchQuery.value) return map
-  matches.value.forEach((m, gIdx) => {
-    let arr = map.get(m.lineIndex)
-    if (!arr) {
-      arr = []
-      map.set(m.lineIndex, arr)
-    }
-    arr.push({ match: m, globalIndex: gIdx })
-  })
-  return map
-})
-
-function renderLineWithHighlight(lineHtml: string, lineIdx: number): string {
-  const lineMatches = lineMatchesMap.value.get(lineIdx)
-  if (!lineMatches || lineMatches.length === 0) {
-    return lineHtml || ' '
-  }
-
-  const tokens = lineHtml.split(/(<[^>]+>)/)
-  let currCol = 0
-  let result = ''
-
-  for (const token of tokens) {
-    if (!token) continue
-    if (token.startsWith('<') && token.endsWith('>')) {
-      result += token
-      continue
-    }
-
-    const tokenLen = token.length
-    const tokenStart = currCol
-    const tokenEnd = currCol + tokenLen
-
-    const intersecting = lineMatches.filter(
-      (lm) => lm.match.startCol < tokenEnd && lm.match.endCol > tokenStart,
-    )
-
-    if (intersecting.length === 0) {
-      result += token
-    } else {
-      let subIdx = 0
-      while (subIdx < tokenLen) {
-        const absCol = tokenStart + subIdx
-        const activeMatch = intersecting.find(
-          (lm) => absCol >= lm.match.startCol && absCol < lm.match.endCol,
-        )
-
-        if (activeMatch) {
-          const matchEndInToken = Math.min(tokenLen, activeMatch.match.endCol - tokenStart)
-          const matchedText = token.slice(subIdx, matchEndInToken)
-          const isCurrent = activeMatch.globalIndex === searchIndex.value
-          const currentClass = isCurrent ? ' is-current' : ''
-          result += `<mark class="search-match${currentClass}">${matchedText}</mark>`
-          subIdx = matchEndInToken
-        } else {
-          let nextMatchStartInToken = tokenLen
-          for (const lm of intersecting) {
-            if (lm.match.startCol > absCol) {
-              const relStart = lm.match.startCol - tokenStart
-              if (relStart < nextMatchStartInToken) {
-                nextMatchStartInToken = relStart
-              }
-            }
-          }
-          result += token.slice(subIdx, nextMatchStartInToken)
-          subIdx = nextMatchStartInToken
-        }
-      }
-    }
-
-    currCol += tokenLen
-  }
-
-  return result || ' '
-}
-
-const renderedLines = computed(() => {
-  if (highlightedLines.value.length === 0) return []
-  if (!searchQuery.value) return highlightedLines.value
-  return highlightedLines.value.map((lineHtml, idx) => renderLineWithHighlight(lineHtml, idx))
-})
-
-function toggleSearch() {
-  searchVisible.value = !searchVisible.value
-  if (searchVisible.value) {
-    gotoLineVisible.value = false
-    void nextTick(() => {
-      searchInputRef.value?.focus()
-      searchInputRef.value?.select()
-    })
-  } else {
-    searchQuery.value = ''
-    searchIndex.value = 0
-  }
-}
-
-function toggleGotoLine() {
-  gotoLineVisible.value = !gotoLineVisible.value
-  if (gotoLineVisible.value) {
-    searchVisible.value = false
-    gotoLineInput.value = focusedLineNumber.value ? String(focusedLineNumber.value) : ''
-    void nextTick(() => {
-      gotoLineInputRef.value?.focus()
-      gotoLineInputRef.value?.select()
-    })
-  }
-}
-
-function scrollToLine(targetLine: number) {
-  if (targetLine < 1 || targetLine > totalLines.value) return
-  focusedLineNumber.value = targetLine
-  void nextTick(() => {
-    const lineEl = codeContainerRef.value?.querySelector(`[data-line="${targetLine}"]`)
-    if (typeof lineEl?.scrollIntoView === 'function') {
-      lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    }
-  })
-}
-
-function handleGotoLineSubmit() {
-  const parsed = parseInt(String(gotoLineInput.value || '').trim(), 10)
-  if (!isNaN(parsed) && parsed >= 1 && parsed <= totalLines.value) {
-    scrollToLine(parsed)
-    gotoLineVisible.value = false
-  }
-}
-
-watch(
-  () => props.initialLine,
-  (newLine) => {
-    if (newLine && newLine > 0) {
-      void nextTick(() => {
-        scrollToLine(newLine)
-      })
-    }
-  },
-  { immediate: true },
-)
-
-function nextMatch() {
-  if (matches.value.length === 0) return
-  searchIndex.value = (searchIndex.value + 1) % matches.value.length
-  scrollToCurrentMatch()
-}
-
-function prevMatch() {
-  if (matches.value.length === 0) return
-  searchIndex.value = (searchIndex.value - 1 + matches.value.length) % matches.value.length
-  scrollToCurrentMatch()
-}
-
-function scrollToCurrentMatch() {
-  const current = matches.value[searchIndex.value]
-  if (!current || !codeContainerRef.value) return
-  const lineEl = codeContainerRef.value.querySelector(`[data-line="${current.lineIndex + 1}"]`)
-  if (typeof lineEl?.scrollIntoView === 'function') {
-    lineEl.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  }
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (isEditing.value) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault()
-      saveEdits()
-    }
-    return
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-    e.preventDefault()
-    toggleSearch()
-  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
-    e.preventDefault()
-    toggleGotoLine()
-  } else if (e.key === 'Escape') {
-    if (gotoLineVisible.value) {
-      e.preventDefault()
-      gotoLineVisible.value = false
-    } else if (searchVisible.value) {
-      e.preventDefault()
-      toggleSearch()
-    }
-  }
-}
-
-async function copyCode() {
-  try {
-    await navigator.clipboard.writeText(props.content)
-    copied.value = true
-    setTimeout(() => {
-      copied.value = false
-    }, 1500)
-  } catch {
-    // Clipboard permission or failure fallback
-  }
-}
-
-const fileName = computed(() => {
-  if (!props.filePath) return 'untitled'
-  const parts = props.filePath.split('/')
-  return parts[parts.length - 1] || props.filePath
-})
-
-const activeSelectionEndLine = ref<number | null>(null)
-const selectedStartLine = ref(1)
-const selectedEndLine = ref(1)
-const selectedSnippet = ref('')
-const inlineEditorVisible = ref(false)
-const inlineCommentText = ref('')
-const inlineCommentInputRef = ref<HTMLTextAreaElement | null>(null)
-
-function isLineInSelection(lineNum: number): boolean {
-  if (activeSelectionEndLine.value === null) return false
-  return lineNum >= selectedStartLine.value && lineNum <= selectedEndLine.value
-}
-
-function findLineNumber(node: Node | null): number | null {
-  let curr = node instanceof HTMLElement ? node : node?.parentElement
-  while (curr && curr !== codeContainerRef.value) {
-    if (curr.dataset && curr.dataset.line) {
-      const parsed = parseInt(curr.dataset.line, 10)
-      if (!isNaN(parsed)) return parsed
-    }
-    curr = curr.parentElement
-  }
-  return null
-}
-
-function extractCodeSnippetFromRange(
-  range: Range,
-  container: HTMLElement,
-  startLine: number,
-  endLine: number,
-  originalLines: string[],
-): string {
-  const parts: string[] = []
-  for (let l = startLine; l <= endLine; l++) {
-    const rowEl = container.querySelector<HTMLElement>(`[data-line="${l}"]`)
-    if (!rowEl) continue
-    const codeLineEl = rowEl.querySelector<HTMLElement>('.code-line')
-    if (!codeLineEl) continue
-
-    if (typeof range.intersectsNode === 'function' && !range.intersectsNode(codeLineEl)) {
-      continue
-    }
-
-    try {
-      const lineRange = document.createRange()
-      lineRange.selectNodeContents(codeLineEl)
-
-      // Calculate intersection between user range and this code line's range
-      const isStartAfter = range.compareBoundaryPoints(Range.START_TO_START, lineRange) > 0
-      const startNode = isStartAfter ? range.startContainer : lineRange.startContainer
-      const startOffset = isStartAfter ? range.startOffset : lineRange.startOffset
-
-      const isEndBefore = range.compareBoundaryPoints(Range.END_TO_END, lineRange) < 0
-      const endNode = isEndBefore ? range.endContainer : lineRange.endContainer
-      const endOffset = isEndBefore ? range.endOffset : lineRange.endOffset
-
-      const subRange = document.createRange()
-      subRange.setStart(startNode, startOffset)
-      subRange.setEnd(endNode, endOffset)
-      let partText = subRange.toString()
-
-      if (originalLines[l - 1] === '' && partText === ' ') {
-        partText = ''
-      }
-      parts.push(partText)
-    } catch {
-      parts.push(originalLines[l - 1] ?? '')
-    }
-  }
-
-  return parts.length > 0 ? parts.join('\n') : ''
-}
-
-function handleCodeSelection() {
-  setTimeout(() => {
-    const selection = window.getSelection()
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-      if (!inlineEditorVisible.value) {
-        activeSelectionEndLine.value = null
-      }
-      return
-    }
-
-    const text = selection.toString()
-    if (!text.trim()) {
-      if (!inlineEditorVisible.value) {
-        activeSelectionEndLine.value = null
-      }
-      return
-    }
-
-    const range = selection.getRangeAt(0)
-    if (!codeContainerRef.value || !codeContainerRef.value.contains(range.commonAncestorContainer)) {
-      return
-    }
-
-    const anchorLine = findLineNumber(selection.anchorNode)
-    const focusLine = findLineNumber(selection.focusNode)
-
-    if (anchorLine === null || focusLine === null) {
-      return
-    }
-
-    selectedStartLine.value = Math.min(anchorLine, focusLine)
-    selectedEndLine.value = Math.max(anchorLine, focusLine)
-
-    const extracted = extractCodeSnippetFromRange(
-      range,
-      codeContainerRef.value,
-      selectedStartLine.value,
-      selectedEndLine.value,
-      lines.value,
-    )
-    selectedSnippet.value = extracted || text
-    activeSelectionEndLine.value = selectedEndLine.value
-  }, 10)
+function toggleWrap() {
+  wrapLines.value = !wrapLines.value
+  editorInstance?.updateOptions({ wordWrap: wrapLines.value ? 'on' : 'off' })
 }
 
 function openInlineCommentEditor() {
@@ -516,7 +176,6 @@ function closeInlineCommentEditor() {
   inlineEditorVisible.value = false
   inlineCommentText.value = ''
   activeSelectionEndLine.value = null
-  window.getSelection()?.removeAllRanges()
 }
 
 function submitInlineComment() {
@@ -548,69 +207,156 @@ function onInlineEditorKeydown(e: KeyboardEvent) {
   }
 }
 
+function onContainerKeydown(e: KeyboardEvent) {
+  if (isEditing.value && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    e.preventDefault()
+    saveEdits()
+  }
+}
+
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
+  ensureMonacoEnvironment()
+  if (!editorContainerRef.value) return
+
+  const themeName = applyMonacoTheme(settings?.appearance.theme)
+  const fontSize = getMonacoFontSize(settings?.appearance.fontSize)
+
+  modelInstance = monaco.editor.createModel(props.content, languageId.value)
+  editorInstance = monaco.editor.create(editorContainerRef.value, {
+    model: modelInstance,
+    theme: themeName,
+    readOnly: !isEditing.value,
+    automaticLayout: true,
+    wordWrap: wrapLines.value ? 'on' : 'off',
+    lineNumbers: props.showLineNumbers ? 'on' : 'off',
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    fontFamily: getMonacoFontFamily(),
+    fontSize,
+    tabSize: 2,
+    insertSpaces: true,
+    renderLineHighlight: 'line',
+    padding: { top: 8, bottom: 12 },
+    scrollbar: {
+      verticalScrollbarSize: 8,
+      horizontalScrollbarSize: 8,
+    },
+  })
+
+  editorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    saveEdits()
+  })
+
+  editorInstance.onDidChangeModelContent(() => {
+    if (syncingFromProps || !modelInstance) return
+    draftContent.value = modelInstance.getValue()
+  })
+
+  editorInstance.onDidChangeCursorSelection((e) => {
+    if (!modelInstance) return
+    const sel = e.selection
+    if (sel.isEmpty()) {
+      if (!inlineEditorVisible.value) {
+        activeSelectionEndLine.value = null
+      }
+      return
+    }
+    const text = modelInstance.getValueInRange(sel)
+    if (!text.trim()) {
+      if (!inlineEditorVisible.value) {
+        activeSelectionEndLine.value = null
+      }
+      return
+    }
+    selectedStartLine.value = Math.min(sel.startLineNumber, sel.endLineNumber)
+    selectedEndLine.value = Math.max(sel.startLineNumber, sel.endLineNumber)
+    selectedSnippet.value = text
+    activeSelectionEndLine.value = selectedEndLine.value
+    updateSelectionWidgetPosition()
+  })
+
+  editorInstance.onDidScrollChange(() => {
+    updateSelectionWidgetPosition()
+  })
+
+  if (props.initialLine && props.initialLine > 0) {
+    applyFocusedLine(props.initialLine)
+  }
 })
 
+watch(
+  () => props.filePath,
+  () => {
+    isEditing.value = false
+    draftContent.value = props.content
+    closeInlineCommentEditor()
+    editorInstance?.updateOptions({ readOnly: true })
+    if (modelInstance) {
+      monaco.editor.setModelLanguage(modelInstance, languageId.value)
+      if (modelInstance.getValue() !== props.content) {
+        syncingFromProps = true
+        modelInstance.setValue(props.content)
+        syncingFromProps = false
+      }
+    }
+    emit('dirty-change', false)
+  },
+)
+
+watch(
+  () => props.content,
+  (nextContent) => {
+    if (!isEditing.value) {
+      draftContent.value = nextContent
+      if (modelInstance && modelInstance.getValue() !== nextContent) {
+        syncingFromProps = true
+        modelInstance.setValue(nextContent)
+        syncingFromProps = false
+      }
+    }
+  },
+)
+
+watch(
+  () => props.showLineNumbers,
+  (show) => {
+    editorInstance?.updateOptions({ lineNumbers: show ? 'on' : 'off' })
+  },
+)
+
+watch(
+  () => props.initialLine,
+  (line) => {
+    if (line && line > 0) {
+      void nextTick(() => applyFocusedLine(line))
+    }
+  },
+)
+
+watch(
+  () => settings?.appearance.theme,
+  (themeKey) => {
+    applyMonacoTheme(themeKey)
+  },
+)
+
+watch(
+  () => settings?.appearance.fontSize,
+  (size) => {
+    editorInstance?.updateOptions({ fontSize: getMonacoFontSize(size) })
+  },
+)
+
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
+  editorInstance?.dispose()
+  editorInstance = null
+  modelInstance?.dispose()
+  modelInstance = null
 })
 </script>
 
 <template>
-  <div class="code-view" data-test="code-view">
-    <!-- Floating search toolbar -->
-    <div v-if="searchVisible" class="search-bar" data-test="code-search-bar">
-      <input
-        ref="searchInputRef"
-        v-model="searchQuery"
-        type="text"
-        class="search-bar-input"
-        placeholder="在文件中查找…"
-        @keydown.enter.prevent="nextMatch"
-      />
-      <span class="match-count">
-        {{ matches.length > 0 ? `${searchIndex + 1}/${matches.length}` : searchQuery ? '无匹配' : '' }}
-      </span>
-      <button type="button" class="search-btn" title="上一个 (Shift+Enter)" @click="prevMatch">↑</button>
-      <button type="button" class="search-btn" title="下一个 (Enter)" @click="nextMatch">↓</button>
-      <button type="button" class="search-close" title="关闭 (Esc)" @click="toggleSearch">×</button>
-    </div>
-
-    <!-- Floating goto line toolbar (Ctrl+G) -->
-    <div v-if="gotoLineVisible" class="search-bar goto-line-bar" data-test="goto-line-bar">
-      <span class="goto-line-label">跳转到行:</span>
-      <input
-        ref="gotoLineInputRef"
-        v-model="gotoLineInput"
-        type="number"
-        min="1"
-        :max="totalLines"
-        class="search-bar-input goto-line-input"
-        :placeholder="`1 - ${totalLines}`"
-        data-test="goto-line-input"
-        @keydown.enter.prevent="handleGotoLineSubmit"
-        @keydown.esc.prevent="gotoLineVisible = false"
-      />
-      <button
-        type="button"
-        class="search-btn"
-        title="跳转 (Enter)"
-        data-test="goto-line-submit-btn"
-        @click="handleGotoLineSubmit"
-      >
-        跳转
-      </button>
-      <button
-        type="button"
-        class="search-close"
-        title="关闭 (Esc)"
-        @click="gotoLineVisible = false"
-      >
-        ×
-      </button>
-    </div>
-
+  <div class="code-view" data-test="code-view" @keydown="onContainerKeydown">
     <!-- Quick action buttons -->
     <div class="code-actions">
       <span
@@ -663,7 +409,7 @@ onUnmounted(() => {
         :class="{ 'is-active': wrapLines }"
         :title="wrapLines ? '关闭自动换行' : '开启自动换行'"
         data-test="toggle-wrap-btn"
-        @click="wrapLines = !wrapLines"
+        @click="toggleWrap"
       >
         <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
           <polyline points="10 9 13 12 10 15" />
@@ -677,151 +423,94 @@ onUnmounted(() => {
       {{ props.saveError }}
     </div>
 
-    <!-- Direct Editor mode -->
-    <div v-if="isEditing" class="code-editor-wrap" data-test="code-editor-wrap">
+    <div class="monaco-host-wrap">
       <div
-        v-if="props.showLineNumbers"
-        ref="editorGutterRef"
-        class="editor-gutter"
-        aria-hidden="true"
+        ref="editorContainerRef"
+        class="monaco-editor-host"
+        data-test="monaco-editor-host"
+      ></div>
+
+      <!-- Floating + button on selection end line -->
+      <button
+        v-if="activeSelectionEndLine !== null && !inlineEditorVisible"
+        type="button"
+        class="line-add-comment-btn"
+        :style="{ top: `${selectionBtnTop}px` }"
+        :title="`在第 ${activeSelectionEndLine} 行添加选区备注`"
+        aria-label="添加选区备注"
+        data-test="line-add-comment-btn"
+        @click.stop="openInlineCommentEditor"
       >
-        <div v-for="n in draftLines.length" :key="n" class="editor-gutter-line">{{ n }}</div>
-      </div>
-      <textarea
-        ref="editorTextareaRef"
-        v-model="draftContent"
-        class="code-editor-textarea"
-        :class="{ 'is-wrapped': wrapLines }"
-        data-test="code-editor-textarea"
-        spellcheck="false"
-        @scroll="syncEditorScroll"
-        @keydown="onEditorKeydown"
-      ></textarea>
-    </div>
+        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
+          <line x1="8" y1="3" x2="8" y2="13" />
+          <line x1="3" y1="8" x2="13" y2="8" />
+        </svg>
+      </button>
 
-    <!-- Code rows with line numbers -->
-    <div
-      v-else
-      ref="codeContainerRef"
-      class="code-scroller"
-      data-test="code-scroller"
-      @mouseup="handleCodeSelection"
-    >
-      <div class="code-table" :class="{ 'is-wrapped': wrapLines }">
-        <template v-for="(lineHtml, idx) in renderedLines" :key="idx">
-          <div
-            class="code-row"
-            :class="{
-              'is-focused-line': focusedLineNumber === idx + 1,
-              'is-in-selection': isLineInSelection(idx + 1),
-            }"
-            :data-line="idx + 1"
-          >
-            <div
-              v-if="props.showLineNumbers"
-              class="line-number"
-              :class="{ 'has-comment-add-btn': activeSelectionEndLine === idx + 1 }"
-              :data-line-number="idx + 1"
+      <!-- Inline Comment Editor overlay -->
+      <div
+        v-if="inlineEditorVisible && activeSelectionEndLine !== null"
+        class="inline-comment-row"
+        data-test="inline-comment-row"
+        @mouseup.stop
+        @click.stop
+      >
+        <div class="inline-comment-box" data-test="inline-comment-box">
+          <div class="inline-comment-header">
+            <div class="header-left">
+              <svg class="file-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M3 2h7l4 4v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" />
+                <polyline points="10 2 10 6 14 6" />
+              </svg>
+              <span class="file-name">{{ fileName }}</span>
+              <span class="line-badge">L{{ selectedStartLine }}{{ selectedStartLine !== selectedEndLine ? `-${selectedEndLine}` : '' }}</span>
+            </div>
+            <button
+              type="button"
+              class="inline-close-btn"
+              title="关闭 (Esc)"
+              aria-label="关闭"
+              @click="closeInlineCommentEditor"
             >
-              <span class="line-num-text" aria-hidden="true">{{ idx + 1 }}</span>
-              <button
-                v-if="activeSelectionEndLine === idx + 1 && !inlineEditorVisible"
-                type="button"
-                class="line-add-comment-btn"
-                :title="`在第 ${idx + 1} 行添加选区备注`"
-                aria-label="添加选区备注"
-                data-test="line-add-comment-btn"
-                @click.stop="openInlineCommentEditor"
-              >
-                <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <line x1="8" y1="3" x2="8" y2="13" />
-                  <line x1="3" y1="8" x2="13" y2="8" />
-                </svg>
-              </button>
-            </div>
-            <div class="code-line">
-              <span class="code-text" v-html="lineHtml || ' '"></span>
-            </div>
+              ×
+            </button>
           </div>
-
-          <!-- Inline Comment Editor attached right beneath the selection end row -->
-          <div
-            v-if="inlineEditorVisible && activeSelectionEndLine === idx + 1"
-            class="inline-comment-row"
-            data-test="inline-comment-row"
-            @mouseup.stop
-            @click.stop
-          >
-            <div class="inline-comment-gutter" aria-hidden="true"></div>
-            <div class="inline-comment-box" data-test="inline-comment-box">
-              <div class="inline-comment-header">
-                <div class="header-left">
-                  <svg class="file-icon" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-                    <path d="M3 2h7l4 4v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" />
-                    <polyline points="10 2 10 6 14 6" />
-                  </svg>
-                  <span class="file-name">{{ fileName }}</span>
-                  <span class="line-badge">L{{ selectedStartLine }}{{ selectedStartLine !== selectedEndLine ? `-${selectedEndLine}` : '' }}</span>
-                </div>
+          <div class="inline-comment-body">
+            <textarea
+              ref="inlineCommentInputRef"
+              v-model="inlineCommentText"
+              class="inline-comment-textarea"
+              data-test="inline-comment-textarea"
+              rows="2"
+              placeholder="添加备注… (Enter 确认)"
+              @keydown="onInlineEditorKeydown"
+            ></textarea>
+            <div class="inline-comment-actions">
+              <span class="shortcut-tip">Enter 确认 · Esc 取消</span>
+              <div class="inline-btn-group">
                 <button
                   type="button"
-                  class="inline-close-btn"
-                  title="关闭 (Esc)"
-                  aria-label="关闭"
+                  class="inline-btn cancel-btn"
+                  data-test="inline-cancel-btn"
                   @click="closeInlineCommentEditor"
                 >
-                  ×
+                  取消
                 </button>
-              </div>
-              <div class="inline-comment-body">
-                <textarea
-                  ref="inlineCommentInputRef"
-                  v-model="inlineCommentText"
-                  class="inline-comment-textarea"
-                  data-test="inline-comment-textarea"
-                  rows="2"
-                  :placeholder="`添加备注… (Enter 确认)`"
-                  @keydown="onInlineEditorKeydown"
-                ></textarea>
-                <div class="inline-comment-actions">
-                  <span class="shortcut-tip">Enter 确认 · Esc 取消</span>
-                  <div class="inline-btn-group">
-                    <button
-                      type="button"
-                      class="inline-btn cancel-btn"
-                      data-test="inline-cancel-btn"
-                      @click="closeInlineCommentEditor"
-                    >
-                      取消
-                    </button>
-                    <button
-                      type="button"
-                      class="inline-btn submit-btn"
-                      data-test="inline-submit-btn"
-                      :disabled="!inlineCommentText.trim()"
-                      @click="submitInlineComment"
-                    >
-                      添加卡片
-                    </button>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  class="inline-btn submit-btn"
+                  data-test="inline-submit-btn"
+                  :disabled="!inlineCommentText.trim()"
+                  @click="submitInlineComment"
+                >
+                  添加卡片
+                </button>
               </div>
             </div>
           </div>
-        </template>
+        </div>
       </div>
     </div>
-
-    <UiConfirmDialog
-      v-if="discardConfirmOpen"
-      title="放弃未保存的修改"
-      message="当前文件有尚未保存的修改，确定要放弃这些修改并退出编辑吗？"
-      confirm-label="放弃修改"
-      cancel-label="继续编辑"
-      variant="danger"
-      @close="discardConfirmOpen = false"
-      @confirm="confirmDiscardAndExit"
-    />
   </div>
 </template>
 
@@ -831,61 +520,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--color-surface, #ffffff);
+  background: var(--color-surface);
   overflow: hidden;
   font-family: var(--font-mono);
-}
-
-.search-bar {
-  position: absolute;
-  top: 10px;
-  right: 20px;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--color-surface, #ffffff);
-  padding: 4px 8px;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border: 1px solid var(--color-border, #e3e6eb);
-}
-
-.search-bar-input {
-  border: 1px solid var(--color-border, #e3e6eb);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 0.8rem;
-  font-family: var(--font-family);
-  outline: none;
-  width: 140px;
-}
-
-.search-bar-input:focus {
-  border-color: var(--color-primary, #2563eb);
-}
-
-.match-count {
-  font-size: var(--text-size-meta);
-  color: var(--color-text-muted);
-  min-width: 44px;
-  text-align: center;
-}
-
-.search-btn,
-.search-close {
-  border: none;
-  background: transparent;
-  padding: 2px 6px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  color: var(--color-text);
-}
-
-.search-btn:hover,
-.search-close:hover {
-  background: var(--color-surface-muted, #f8fafc);
 }
 
 .code-actions {
@@ -901,457 +538,231 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid var(--color-border, #e3e6eb);
-  background: var(--color-surface, #ffffff);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: var(--text-size-meta);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
   color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
+  font-size: var(--text-size-11);
   font-family: var(--font-family);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
 }
 
-.action-btn:hover {
+.action-btn:hover:not(:disabled) {
   color: var(--color-text);
-  border-color: var(--color-border-strong, #d0d5dd);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.action-btn.is-active {
-  background: var(--color-primary-soft, #e8effd);
-  color: var(--color-primary, #2563eb);
-  border-color: var(--color-primary, #2563eb);
-  font-weight: 500;
-}
-
-.code-scroller {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 8px 0 24px;
-}
-
-.code-table {
-  display: flex;
-  flex-direction: column;
-  min-width: 100%;
-  font-size: 0.82rem;
-  line-height: 1.55;
-  width: max-content;
-}
-
-.code-table.is-wrapped {
-  width: 100%;
-  min-width: 100%;
-}
-
-.code-row {
-  display: flex;
-  align-items: flex-start;
-  min-height: 22px;
-  line-height: 22px;
-  width: 100%;
-}
-
-.code-row:hover {
-  background: var(--color-surface-muted, #f8fafc);
-}
-
-.code-row.is-in-selection {
-  background: rgba(37, 99, 235, 0.09);
-}
-
-.line-number {
-  position: relative;
-  flex-shrink: 0;
-  padding: 0 10px 0 8px;
-  text-align: right;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted, #f8fafc);
-  border-right: 1px solid var(--color-border, #e3e6eb);
-  min-width: 44px;
-  height: 22px;
-  line-height: 22px;
-}
-
-.line-num-text {
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-}
-
-.line-number.has-comment-add-btn {
+  border-color: var(--color-border-strong);
   background: var(--color-surface-muted);
-}
-
-.line-add-comment-btn {
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  border: none;
-  background: var(--color-primary, #2563eb);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.35);
-  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), background 0.15s ease;
-  z-index: 4;
-  padding: 0;
-}
-
-.line-add-comment-btn:hover {
-  transform: translateY(-50%) scale(1.15);
-  background: var(--color-primary-hover, #1d4ed8);
-}
-
-.inline-comment-row {
-  display: flex;
-  position: sticky;
-  left: 0;
-  width: fit-content;
-  max-width: 100%;
-  margin: 4px 0 8px;
-  z-index: 5;
-  box-sizing: border-box;
-}
-
-.inline-comment-gutter {
-  width: 44px;
-  min-width: 44px;
-  flex-shrink: 0;
-  background: var(--color-surface-muted, #f8fafc);
-  border-right: 1px solid var(--color-border, #e3e6eb);
-  box-sizing: border-box;
-}
-
-.inline-comment-box {
-  width: 300px;
-  max-width: 300px;
-  margin: 0 8px;
-  background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #cbd5e1);
-  border-left: 3px solid var(--color-primary, #2563eb);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
-  box-sizing: border-box;
-  font-family: var(--font-family);
-  animation: inline-slide-down 0.15s ease-out;
-}
-
-@keyframes inline-slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.inline-comment-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.3125rem 0.5rem;
-  background: var(--color-surface-muted);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.header-left {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3125rem;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.file-icon {
-  flex-shrink: 0;
-  color: var(--color-text-muted, #64748b);
-}
-
-.file-name {
-  font-size: 0.71875rem;
-  font-weight: 600;
-  color: var(--color-text, #0f172a);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 140px;
-}
-
-.line-badge {
-  font-family: var(--font-mono);
-  font-size: 0.65625rem;
-  padding: 0.0625rem 0.25rem;
-  border-radius: 3px;
-  background: var(--color-surface-muted);
-  color: var(--color-text, #334155);
-  flex-shrink: 0;
-}
-
-.inline-close-btn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: 0 0.25rem;
-  font-size: 1.125rem;
-  line-height: 1;
-  color: var(--color-text-muted, #94a3b8);
-  border-radius: 3px;
-}
-
-.inline-close-btn:hover {
-  color: var(--color-text, #0f172a);
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.inline-comment-body {
-  padding: 0.5rem 0.625rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.inline-comment-textarea {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.375rem 0.5rem;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  border: 1px solid var(--color-border, #cbd5e1);
-  border-radius: 4px;
-  resize: vertical;
-  background: var(--color-surface, #ffffff);
-  color: var(--color-text, #0f172a);
-  outline: none;
-  font-family: inherit;
-}
-
-.inline-comment-textarea:focus {
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
-}
-
-.inline-comment-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.inline-hint {
-  font-size: 0.6875rem;
-  color: var(--color-text-muted, #94a3b8);
-}
-
-.inline-btn-group {
-  display: flex;
-  gap: 0.375rem;
-}
-
-.inline-btn {
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
-}
-
-.cancel-btn {
-  background: transparent;
-  color: var(--color-text-muted, #64748b);
-  border-color: var(--color-border, #cbd5e1);
-}
-
-.cancel-btn:hover {
-  background: var(--color-surface-muted);
-  color: var(--color-text, #0f172a);
-}
-
-.submit-btn {
-  background: var(--color-primary, #2563eb);
-  color: #ffffff;
-}
-
-.submit-btn:hover:not(:disabled) {
-  background: var(--color-primary-hover, #1d4ed8);
-}
-
-.submit-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.code-line {
-  flex: 1;
-  min-width: 0;
-  padding: 0 12px;
-  white-space: pre;
-  tab-size: 2;
-  overflow-x: visible;
-}
-
-.code-table.is-wrapped .code-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.code-text {
-  font-family: var(--font-mono);
-  display: inline-block;
-  min-width: 100%;
-}
-
-:deep(.search-match) {
-  background-color: rgba(234, 179, 8, 0.4);
-  color: inherit;
-  border-radius: 2px;
-}
-
-:deep(.search-match.is-current) {
-  background-color: #f59e0b;
-  color: #000000;
-  box-shadow: 0 0 0 1px #d97706;
-  font-weight: 600;
-}
-
-.goto-line-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.goto-line-label {
-  font-size: var(--text-size-12, 12px);
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-
-.goto-line-input {
-  width: 90px;
-}
-
-.code-row.is-focused-line {
-  background-color: var(--color-primary-soft, rgba(59, 130, 246, 0.12));
-}
-
-.code-row.is-focused-line .line-number {
-  background-color: var(--color-primary-soft, rgba(59, 130, 246, 0.2));
-  color: var(--color-primary);
-  font-weight: 600;
-}
-
-.action-btn.is-primary {
-  background: var(--color-accent, #4a8ad6);
-  border-color: var(--color-accent, #4a8ad6);
-  color: #ffffff;
-  font-weight: 500;
-}
-
-.action-btn.is-primary:hover:not(:disabled) {
-  opacity: 0.92;
-  color: #ffffff;
 }
 
 .action-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  box-shadow: none;
+}
+
+.action-btn.is-active {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.action-btn.is-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.action-btn.is-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: var(--color-on-primary);
 }
 
 .readonly-badge,
 .dirty-badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: var(--text-size-meta);
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius);
+  font-size: var(--text-size-11);
   font-family: var(--font-family);
-  border: 1px solid var(--color-border);
+}
+
+.readonly-badge {
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
 }
 
 .dirty-badge {
-  color: #d97706;
-  border-color: rgba(217, 119, 6, 0.35);
-  background: rgba(245, 158, 11, 0.12);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning-border);
 }
 
 .save-error-banner {
   padding: 6px 12px;
-  font-size: var(--text-size-12, 12px);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border-bottom: 1px solid var(--color-danger-border);
+  font-size: var(--text-size-12);
   font-family: var(--font-family);
-  color: var(--color-danger, #b91c1c);
-  background: var(--color-surface-muted);
-  border-bottom: 1px solid var(--color-danger-border, #fca5a5);
   flex-shrink: 0;
 }
 
-.code-editor-wrap {
+.monaco-host-wrap {
+  position: relative;
   flex: 1;
   min-height: 0;
-  display: flex;
+  width: 100%;
   overflow: hidden;
-  background: var(--color-surface, #ffffff);
 }
 
-.editor-gutter {
-  flex-shrink: 0;
-  width: 48px;
-  padding: 10px 8px 24px 6px;
-  text-align: right;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 22px;
-  color: var(--color-text-muted);
-  background: var(--color-surface-muted, #f8fafc);
-  border-right: 1px solid var(--color-border, #e3e6eb);
-  overflow: hidden;
-  user-select: none;
-}
-
-.editor-gutter-line {
-  height: 22px;
-  line-height: 22px;
-}
-
-.code-editor-textarea {
-  flex: 1;
-  min-width: 0;
+.monaco-editor-host {
+  width: 100%;
   height: 100%;
-  margin: 0;
-  padding: 10px 14px 24px 12px;
-  border: none;
-  outline: none;
-  resize: none;
-  background: transparent;
-  color: var(--color-text);
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 22px;
-  white-space: pre;
-  overflow: auto;
-  tab-size: 2;
 }
 
-.code-editor-textarea.is-wrapped {
-  white-space: pre-wrap;
-  word-break: break-word;
+.line-add-comment-btn {
+  position: absolute;
+  left: 4px;
+  z-index: 6;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.line-add-comment-btn:hover {
+  background: var(--color-primary-hover);
+}
+
+.inline-comment-row {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  z-index: 10;
+}
+
+.inline-comment-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 1px var(--color-border), 0 4px 12px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+
+.inline-comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-size-12);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text);
+}
+
+.file-name {
+  font-weight: 600;
+}
+
+.line-badge {
+  font-family: var(--font-mono);
+  font-size: var(--text-size-11);
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.inline-close-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: var(--text-size-14);
+  line-height: 1;
+}
+
+.inline-comment-body {
+  padding: 8px 10px;
+}
+
+.inline-comment-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 8px;
+  font-size: var(--text-size-12);
+  font-family: var(--font-family);
+  resize: vertical;
+  outline: none;
+}
+
+.inline-comment-textarea:focus {
+  border-color: var(--color-primary);
+}
+
+.inline-comment-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.shortcut-tip {
+  font-size: var(--text-size-11);
+  color: var(--color-text-muted);
+}
+
+.inline-btn-group {
+  display: flex;
+  gap: 6px;
+}
+
+.inline-btn {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: var(--text-size-12);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.inline-btn.submit-btn {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.inline-btn.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:deep(.monaco-focused-line) {
+  background: var(--color-primary-soft);
 }
 </style>

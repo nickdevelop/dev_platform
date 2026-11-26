@@ -40,7 +40,7 @@ const srcRoot = join(webRoot, 'src')
 // orphaned — SettingsRolesView, SettingsPromptsView, ProxiesView — deleted
 // outright). Lower it as pages move; see the
 // header note.
-const UI_PRIMITIVE_BASELINE = 343
+const UI_PRIMITIVE_BASELINE = 341
 
 // The primitives themselves are obviously allowed to mention their own names.
 const EXCLUDED_DIRS = new Set(['ui', 'tests', 'fonts', 'node_modules'])

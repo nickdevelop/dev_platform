@@ -11,6 +11,8 @@ describe('DiffViewer.vue', () => {
     additions: 2,
     deletions: 1,
     isBinary: false,
+    originalContent: 'import { createApp } from \'vue\'\nconst port = 3000\nconst app = createApp({})\n',
+    modifiedContent: 'import { createApp } from \'vue\'\nconst port = 8080\nconsole.log(\'started\')\nconst app = createApp({})\n',
     patch: `diff --git a/src/main.ts b/src/main.ts
 index 1234..5678 100644
 --- a/src/main.ts
@@ -24,7 +26,7 @@ index 1234..5678 100644
 `,
   }
 
-  it('fetches and renders unified diff with row classes and stats', async () => {
+  it('fetches and renders monaco diff editor with stats and mode toggle', async () => {
     const diffSpy = vi.spyOn(filesApi, 'getGitFileDiff').mockResolvedValue(sampleDiff)
 
     const wrapper = mount(DiffViewer, {
@@ -36,7 +38,7 @@ index 1234..5678 100644
       },
     })
 
-    await vi.waitFor(() => expect(wrapper.text()).toContain('src/main.ts'))
+    await vi.waitFor(() => expect(wrapper.find('[data-test="monaco-diff-host"]').exists()).toBe(true))
 
     expect(diffSpy).toHaveBeenCalledWith(1, 'src/main.ts', 'a1b2c3d4e5f6', undefined)
 
@@ -48,17 +50,19 @@ index 1234..5678 100644
     expect(wrapper.text()).toContain('a1b2c3d')
     expect(wrapper.text()).toContain('fix: update server port')
 
-    // Check parsed diff lines
-    const additions = wrapper.findAll('.diff-line-addition')
-    const deletions = wrapper.findAll('.diff-line-deletion')
-    const hunks = wrapper.findAll('.diff-line-hunk')
+    const diffHost = wrapper.find('[data-test="monaco-diff-host"]')
+    expect(diffHost.attributes('data-language')).toBe('typescript')
+    expect(diffHost.attributes('data-original')).toContain('const port = 3000')
+    expect(diffHost.attributes('data-modified')).toContain('const port = 8080')
+    expect(diffHost.attributes('data-side-by-side')).toBe('false')
 
-    expect(additions.length).toBe(2)
-    expect(deletions.length).toBe(1)
-    expect(hunks.length).toBe(1)
+    // Toggle side-by-side mode
+    const toggleBtn = wrapper.find('[data-test="diff-toggle-mode-btn"]')
+    expect(toggleBtn.exists()).toBe(true)
+    await toggleBtn.trigger('click')
+    expect(diffHost.attributes('data-side-by-side')).toBe('true')
 
-    expect(additions[0].text()).toContain('const port = 8080')
-    expect(deletions[0].text()).toContain('const port = 3000')
+    wrapper.unmount()
   })
 
   it('handles binary files with friendly notice', async () => {
@@ -80,5 +84,6 @@ index 1234..5678 100644
 
     await vi.waitFor(() => expect(wrapper.text()).toContain('二进制文件变更'))
     expect(wrapper.text()).toContain('无法在文本编辑器中展示二进制文件的差异')
+    wrapper.unmount()
   })
 })
