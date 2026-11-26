@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import QuickFileSearchDialog from '../features/chat/pane/QuickFileSearchDialog.vue'
-import { EXT_FILTER_OPTIONS, resolveExtFilter } from '../features/chat/pane/quickSearchExt'
+import {
+  EXT_FILTER_OPTIONS,
+  extSelectionLabel,
+  normalizeCustomExt,
+  resolveExtFilter,
+} from '../features/chat/pane/quickSearchExt'
+import { highlightMatch } from '../features/chat/pane/quickSearchHighlight'
 import * as projectsApi from '../api/projects'
 
 describe('resolveExtFilter', () => {
@@ -23,7 +29,8 @@ describe('resolveExtFilter', () => {
     expect(resolveExtFilter('*.')).toBeUndefined()
   })
 
-  it('offers the preset groups expected by the product', () => {
+  it('offers 全部后缀 plus the preset groups', () => {
+    expect(EXT_FILTER_OPTIONS[0]).toEqual({ value: '', label: '全部后缀 (*.*)' })
     const labels = EXT_FILTER_OPTIONS.map((o) => o.value)
     for (const expected of ['Java', 'Go', 'Python', 'SQL', '前端 JS/TS', 'Shell 脚本']) {
       expect(labels).toContain(expected)
@@ -31,146 +38,222 @@ describe('resolveExtFilter', () => {
   })
 })
 
+describe('normalizeCustomExt', () => {
+  it('accepts the raw shapes the mockup allows', () => {
+    expect(normalizeCustomExt('vue')).toBe('.vue')
+    expect(normalizeCustomExt('.vue')).toBe('.vue')
+    expect(normalizeCustomExt('*.Vue')).toBe('.vue')
+    expect(normalizeCustomExt('kt,json')).toBe('.kt,.json')
+  })
+
+  it('treats wildcards as the unfiltered selection', () => {
+    expect(normalizeCustomExt('*')).toBe('')
+    expect(normalizeCustomExt('*.*')).toBe('')
+    expect(normalizeCustomExt('all')).toBe('')
+  })
+
+  it('rejects junk', () => {
+    expect(normalizeCustomExt('')).toBeUndefined()
+    expect(normalizeCustomExt('*.')).toBeUndefined()
+    expect(normalizeCustomExt('<script>')).toBeUndefined()
+  })
+})
+
+describe('extSelectionLabel', () => {
+  it('renders compact chip labels', () => {
+    expect(extSelectionLabel('')).toBe('*.*')
+    expect(extSelectionLabel('Java')).toBe('*.java')
+    expect(extSelectionLabel('前端 JS/TS')).toBe('前端 JS/TS')
+    expect(extSelectionLabel('.kt')).toBe('*.kt')
+    expect(extSelectionLabel('.kt,.json')).toBe('*.kt +1')
+  })
+})
+
+describe('highlightMatch', () => {
+  it('escapes markup before inserting hit spans', () => {
+    expect(highlightMatch('<b>x</b>', 'x')).toBe('&lt;b&gt;<span class="qs-hit">x</span>&lt;/b&gt;')
+  })
+
+  it('wraps case-insensitive matches and stays literal on regex chars', () => {
+    expect(highlightMatch('Foo(bar', 'foo')).toBe('<span class="qs-hit">Foo</span>(bar')
+    expect(highlightMatch('call(1)', '(')).toBe('call<span class="qs-hit">(</span>1)')
+  })
+
+  it('returns escaped text without a query', () => {
+    expect(highlightMatch('a&b', '  ')).toBe('a&amp;b')
+  })
+})
+
+const mounted: ReturnType<typeof mount>[] = []
+
+function mountDialog(props: { open: boolean; projectId: number; worktreeId?: number }) {
+  const wrapper = mount(QuickFileSearchDialog, { props, attachTo: document.body })
+  mounted.push(wrapper as unknown as ReturnType<typeof mount>)
+  return wrapper
+}
+
+afterEach(() => {
+  while (mounted.length) mounted.pop()!.unmount()
+  document.body.innerHTML = ''
+  vi.restoreAllMocks()
+})
+
+const tick = () => new Promise((r) => setTimeout(r, 150))
+
 describe('QuickFileSearchDialog', () => {
   it('does not render when open is false', () => {
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: {
-        open: false,
-        projectId: 1,
-      },
-    })
+    const wrapper = mountDialog({ open: false, projectId: 1 })
     expect(wrapper.find('[data-test="quick-file-search-dialog"]').exists()).toBe(false)
   })
 
-  it('renders and fetches files when open is true', async () => {
+  it('opens in file mode with the search bar and lists files', async () => {
     vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValueOnce({
       files: [
-        { path: 'src/main.ts', isDir: false },
-        { path: 'src/app.vue', isDir: false },
+        { path: 'src/main.go', isDir: false },
         { path: 'src/components', isDir: true },
       ],
     })
-
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: {
-        open: true,
-        projectId: 1,
-      },
-    })
-
+    const wrapper = mountDialog({ open: true, projectId: 1 })
     await flushPromises()
 
     expect(wrapper.find('[data-test="quick-file-search-dialog"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="quick-search-bar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="quick-search-type-select"]').text()).toContain('文件名')
+
     const items = wrapper.findAll('[data-test="quick-search-item"]')
-    // Only non-directory files should be listed
-    expect(items.length).toBe(2)
-    expect(items[0].text()).toContain('src/main.ts')
-    expect(items[1].text()).toContain('src/app.vue')
+    expect(items.length).toBe(1)
+    // 后缀 chip + 高亮文件名 + 路径行
+    expect(items[0].text()).toContain('.go')
+    expect(items[0].text()).toContain('main.go')
+    expect(items[0].find('.qs-hit').exists()).toBe(false)
+
+    // 文件模式没有后缀过滤
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').exists()).toBe(false)
+    // 状态条给出模式提示
+    expect(wrapper.find('[data-test="quick-search-stats"]').text()).toBe('文件名搜索')
   })
 
-  it('switches search type on Tab key and searches content', async () => {
-    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValueOnce({
-      files: [{ path: 'src/main.ts', isDir: false }],
-    })
-    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValueOnce({
-      matches: [
-        { path: 'src/main.ts', line: 42, content: 'const app = createApp(App)' },
-      ],
-    })
-
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: {
-        open: true,
-        projectId: 1,
-      },
-    })
-
+  it('switches modes through the prefix dropdown', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
     await flushPromises()
 
-    const selectEl = wrapper.find<HTMLSelectElement>('[data-test="quick-search-type-select"]')
-    expect(selectEl.element.value).toBe('file')
+    await wrapper.find('[data-test="quick-search-type-select"]').trigger('click')
+    const menu = wrapper.find('[data-test="quick-search-mode-menu"]')
+    expect(menu.exists()).toBe(true)
 
-    // Press Tab to switch to content mode
+    await menu.find('[data-test="quick-search-mode-content"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-search-type-select"]').text()).toContain('内容')
+    // 内容模式出现后缀 chip，默认全部
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').text()).toContain('*.*')
+    expect(wrapper.find('[data-test="quick-search-stats"]').text()).toContain('范围 全部文件')
+  })
+
+  it('searches content, highlights matches and sends the active selection', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({
+      matches: [{ path: 'src/main.ts', line: 42, content: 'const app = createApp(App)' }],
+    })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
+    await flushPromises()
+
+    // Tab 切到内容模式
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
     await wrapper.vm.$nextTick()
-    expect(selectEl.element.value).toBe('content')
 
-    // Input query for content search
     const input = wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]')
     await input.setValue('createApp')
-    // Wait for debounce
-    await new Promise((r) => setTimeout(r, 150))
+    await tick()
     await flushPromises()
 
     expect(contentSpy).toHaveBeenCalledWith(1, 'createApp', 50, undefined, undefined)
 
-    const contentItems = wrapper.findAll('[data-test="quick-search-content-item"]')
-    expect(contentItems.length).toBe(1)
-    expect(contentItems[0].text()).toContain('src/main.ts')
-    expect(contentItems[0].text()).toContain(':42')
-    expect(contentItems[0].text()).toContain('const app = createApp(App)')
+    const item = wrapper.find('[data-test="quick-search-content-item"]')
+    expect(item.exists()).toBe(true)
+    expect(item.text()).toContain('main.ts')
+    expect(item.text()).toContain('第 42 行')
+    // 命中词高亮
+    expect(item.find('.qs-hit').text()).toBe('createApp')
 
-    // Select content item
+    expect(wrapper.find('[data-test="quick-search-stats"]').text()).toBe('共 1 条匹配结果')
+
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await wrapper.vm.$nextTick()
-
     expect(wrapper.emitted('select')?.[0]).toEqual(['src/main.ts', 42])
   })
 
-  it('shows the extension filter only in content mode and sends exts to the API', async () => {
-    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({
-      files: [{ path: 'src/main.go', isDir: false }],
-    })
-    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({
-      matches: [],
-    })
-
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: { open: true, projectId: 1 },
-      attachTo: document.body,
-    })
+  it('filters by preset group, appends custom extensions and retries with all', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({ matches: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
     await flushPromises()
 
-    // File mode carries no extension filter
-    expect(wrapper.find('[data-test="quick-search-ext-select"]').exists()).toBe(false)
-
-    // Switch to content mode: the filter appears
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
     await wrapper.vm.$nextTick()
-    const selectWrapper = wrapper.findComponent('[data-test="quick-search-ext-select"]')
-    expect(selectWrapper.exists()).toBe(true)
-    // findComponent answers a loosely typed WrapperLike; the select's vm is all
-    // this spec needs to drive v-model.
-    const selectVm = selectWrapper as unknown as {
-      vm: { $emit: (event: string, value: string) => void }
-    }
-
-    // Content search needs a query: type one first
     const input = wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]')
     await input.setValue('handler')
-    await new Promise((r) => setTimeout(r, 150))
+    await tick()
     await flushPromises()
-    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, undefined)
 
-    // Choosing a preset group sends its extensions to the backend
-    selectVm.vm.$emit('update:modelValue', 'Go')
-    await new Promise((r) => setTimeout(r, 150))
+    // 预设组：Go
+    await wrapper.find('[data-test="quick-search-ext-btn"]').trigger('click')
+    await wrapper.find('[data-test="quick-search-ext-option-Go"]').trigger('click')
+    await tick()
     await flushPromises()
     expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, ['.go'])
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').text()).toContain('*.go')
 
-    // Manually typed raw values are normalized onto dotted extensions
-    selectVm.vm.$emit('update:modelValue', '*.kt,json')
-    await new Promise((r) => setTimeout(r, 150))
+    // 自定义后缀：下拉面板顶部的输入框 + 确定
+    await wrapper.find('[data-test="quick-search-ext-btn"]').trigger('click')
+    const extInput = wrapper.find<HTMLInputElement>('[data-test="quick-search-ext-input"]')
+    await extInput.setValue('kt')
+    await wrapper.find('[data-test="quick-search-ext-apply"]').trigger('click')
+    await tick()
     await flushPromises()
-    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, ['.kt', '.json'])
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, ['.kt'])
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').text()).toContain('*.kt')
+    // 自定义后缀追加进了下拉列表
+    await wrapper.find('[data-test="quick-search-ext-btn"]').trigger('click')
+    expect(
+      wrapper.find('[data-test="quick-search-ext-menu"]').text(),
+    ).toContain('自定义 (*.kt)')
 
-    // Clearing the filter removes exts again
-    selectVm.vm.$emit('update:modelValue', '')
-    await new Promise((r) => setTimeout(r, 150))
+    // 无结果 + 有过滤 → 「切换到全部后缀重试」
+    expect(wrapper.find('[data-test="quick-search-ext-retry-all"]').exists()).toBe(true)
+    await wrapper.find('[data-test="quick-search-ext-retry-all"]').trigger('click')
+    await tick()
     await flushPromises()
     expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, undefined)
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').text()).toContain('*.*')
+  })
 
-    wrapper.unmount()
+  it('uses the typed custom option when no preset matches the draft', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({ matches: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
+    await flushPromises()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    await wrapper.vm.$nextTick()
+    const input = wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]')
+    await input.setValue('value')
+    await tick()
+    await flushPromises()
+
+    await wrapper.find('[data-test="quick-search-ext-btn"]').trigger('click')
+    const extInput = wrapper.find<HTMLInputElement>('[data-test="quick-search-ext-input"]')
+    await extInput.setValue('wasm')
+    await wrapper.vm.$nextTick()
+    const useBtn = wrapper.find('[data-test="quick-search-ext-use-custom"]')
+    expect(useBtn.exists()).toBe(true)
+    expect(useBtn.text()).toContain('*.wasm')
+    // Enter 在自定义输入框里直接应用，不触发结果打开
+    await extInput.trigger('keydown.enter')
+    await tick()
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'value', 50, undefined, ['.wasm'])
+    expect(wrapper.emitted('select')).toBeUndefined()
   })
 
   it('navigates with ArrowDown/ArrowUp and selects with Enter', async () => {
@@ -180,55 +263,66 @@ describe('QuickFileSearchDialog', () => {
         { path: 'src/second.ts', isDir: false },
       ],
     })
-
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: {
-        open: true,
-        projectId: 1,
-      },
-    })
-
+    const wrapper = mountDialog({ open: true, projectId: 1 })
     await flushPromises()
 
-    // Initially active index is 0
     let items = wrapper.findAll('[data-test="quick-search-item"]')
     expect(items[0].classes()).toContain('is-active')
 
-    // Press ArrowDown
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
     await wrapper.vm.$nextTick()
-
     items = wrapper.findAll('[data-test="quick-search-item"]')
     expect(items[1].classes()).toContain('is-active')
 
-    // Press Enter to select
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await wrapper.vm.$nextTick()
-
     expect(wrapper.emitted('select')?.[0]).toEqual(['src/second.ts'])
   })
 
-  it('emits close on Escape key or backdrop click', async () => {
-    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValueOnce({
-      files: [],
+  it('Enter with an open dropdown only closes it; Escape closes dropdown then dialog', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({
+      files: [{ path: 'src/a.ts', isDir: false }],
     })
-
-    const wrapper = mount(QuickFileSearchDialog, {
-      props: {
-        open: true,
-        projectId: 1,
-      },
-    })
-
+    const wrapper = mountDialog({ open: true, projectId: 1 })
     await flushPromises()
 
-    // Press Escape
+    await wrapper.find('[data-test="quick-search-type-select"]').trigger('click')
+    expect(wrapper.find('[data-test="quick-search-mode-menu"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-test="quick-search-mode-menu"]').exists()).toBe(false)
+    expect(wrapper.emitted('select')).toBeUndefined()
+
+    // 重新打开下拉：Esc 先收下拉，再按一次才关弹窗
+    await wrapper.find('[data-test="quick-search-type-select"]').trigger('click')
+    expect(wrapper.find('[data-test="quick-search-mode-menu"]').exists()).toBe(true)
+
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await wrapper.vm.$nextTick()
-    expect(wrapper.emitted('close')).toBeTruthy()
+    expect(wrapper.find('[data-test="quick-search-mode-menu"]').exists()).toBe(false)
+    expect(wrapper.emitted('close')).toBeUndefined()
 
-    // Click backdrop
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('close')?.length).toBe(1)
+
     await wrapper.find('.quick-search-backdrop').trigger('click')
     expect(wrapper.emitted('close')?.length).toBe(2)
+  })
+
+  it('clear button empties the query and is hidden when there is nothing to clear', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-search-clear-btn"]').exists()).toBe(false)
+
+    const input = wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]')
+    await input.setValue('abc')
+    expect(wrapper.find('[data-test="quick-search-clear-btn"]').exists()).toBe(true)
+
+    await wrapper.find('[data-test="quick-search-clear-btn"]').trigger('click')
+    expect(input.element.value).toBe('')
+    expect(wrapper.find('[data-test="quick-search-clear-btn"]').exists()).toBe(false)
   })
 })
