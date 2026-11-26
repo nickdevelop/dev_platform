@@ -28,7 +28,6 @@ import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
 import OrgSidebar from '../organization/OrgSidebar.vue'
-import NotesSidebar from '../notes/NotesSidebar.vue'
 import { ProjectTerminalModal } from '../terminal'
 import { useProjectTerminalStore } from '../../stores/projectTerminal'
 import SettingsNav from '../settings/SettingsNav.vue'
@@ -207,16 +206,13 @@ const enginesMode = computed(() => route.meta.engines === true || route.path.sta
 const tasksMode = computed(() => route.meta.tasks === true)
 // The organization center manages AI assistants, AI employees, and AI teams.
 const orgMode = computed(() => route.meta.org === true || route.path.startsWith('/org') || route.path.startsWith('/groups'))
-// The notes center manages notes with their own list column and note workspace pane.
-const notesMode = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 // The workspace area is the default when no other center is open.
 const projectActive = computed(
   () =>
     !settingsMode.value &&
     !enginesMode.value &&
     !orgMode.value &&
-    !tasksMode.value &&
-    !notesMode.value,
+    !tasksMode.value,
 )
 
 // Tabs belong strictly to the project workspace: sessions and
@@ -265,8 +261,6 @@ const columnLabel = computed(() =>
       ? '组织架构列表'
       : tasksMode.value
         ? '任务列表'
-        : notesMode.value
-        ? '笔记列表'
         : '项目导航',
 )
 // The sidebar's top row (title + dock controls) is owned by the shell, so
@@ -280,9 +274,7 @@ const columnTitle = computed(() =>
         ? '组织'
         : tasksMode.value
           ? '任务'
-          : notesMode.value
-            ? '笔记'
-            : '项目',
+          : '项目',
 )
 
 const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
@@ -679,7 +671,6 @@ watch(
     :class="{
       'settings-mode': settingsMode,
       'tasks-mode': tasksMode,
-      'notes-mode': notesMode,
       'org-mode': orgMode,
       'sidebar-collapsed': !isDocked,
     }"
@@ -762,7 +753,6 @@ watch(
            tasks' task list, the prompts' prompt list, the settings' categories, or the project tree. -->
       <OrgSidebar v-if="orgMode" />
       <TasksSidebar v-else-if="tasksMode" />
-      <NotesSidebar v-else-if="notesMode" />
       <EnginesSidebar v-else-if="enginesMode" />
       <SettingsNav v-else-if="settingsMode" />
       <ProjectSidebar

@@ -242,7 +242,7 @@ html .el-menu--vertical .el-menu--inline .el-menu-item {
   font-size: var(--el-font-size-small);
 }
 
-/* 菜单条目不只有导航一种：任务与笔记列表把实体放进第二栏，一行是「标题 +
+/* 菜单条目不只有导航一种：任务列表把实体放进第二栏，一行是「标题 +
    摘要 + 元信息」三行，库的 46px 导航行高装不下。`entity-row` 是平台钩子（页面
    只挂这个类），卡高交还给内容流，顶对齐才能让标题与 chip 在同一基线。 */
 html .el-menu--vertical .el-menu-item.entity-row {

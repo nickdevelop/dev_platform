@@ -475,21 +475,6 @@ type FlowMessage struct {
 // TableName pins the table name for FlowMessage.
 func (FlowMessage) TableName() string { return "flow_messages" }
 
-// Note is one platform-persisted note.
-// ProjectID is 0 for global notes, or references a registered Project.
-// Table: notes.
-type Note struct {
-	ID        uint      `gorm:"primaryKey;column:id"`
-	ProjectID uint      `gorm:"column:project_id;not null;default:0;index"`
-	Title     string    `gorm:"column:title;not null"`
-	Content   string    `gorm:"column:content;type:text"`
-	CreatedAt time.Time `gorm:"column:created_at"`
-	UpdatedAt time.Time `gorm:"column:updated_at;index"`
-}
-
-// TableName pins the table name for Note.
-func (Note) TableName() string { return "notes" }
-
 // Group defines a collaborative team of agents with an orchestrator brain and member roles.
 // Table: groups.
 type Group struct {

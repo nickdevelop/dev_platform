@@ -16,7 +16,6 @@ import (
 	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
-	"devplatform/internal/app/notes"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
@@ -101,8 +100,6 @@ type Dependencies struct {
 	Groups *groups.Service
 	// Prompts manages reusable prompt templates.
 	Prompts *prompts.Service
-	// Notes manages user notes.
-	Notes *notes.Service
 	// Roles manages reusable agent roles.
 	Roles *roles.Service
 	// Terminal manages server connections and interactive terminal sessions.
@@ -205,9 +202,6 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Prompts != nil {
 			deps.Prompts.RegisterRoutes(protected)
-		}
-		if deps.Notes != nil {
-			deps.Notes.RegisterRoutes(protected)
 		}
 		if deps.Roles != nil {
 			deps.Roles.RegisterRoutes(protected)

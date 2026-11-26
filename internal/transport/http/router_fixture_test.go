@@ -23,7 +23,6 @@ import (
 	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
-	"devplatform/internal/app/notes"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
@@ -76,8 +75,6 @@ func newFullDependencies(t *testing.T) Dependencies {
 
 	promptRepo := prompts.NewRepository(db)
 	promptSvc := prompts.NewService(promptRepo)
-	notesRepo := notes.NewRepository(db)
-	notesSvc := notes.NewService(notesRepo)
 	rolesRepo := roles.NewRepository(db)
 	rolesSvc := roles.NewService(rolesRepo, promptSvc)
 	groupRepo := groups.NewRepository(db)
@@ -98,7 +95,6 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Tasks:         tasksSvc,
 		Groups:        groupSvc,
 		Prompts:       promptSvc,
-		Notes:         notesSvc,
 		Roles:         rolesSvc,
 		Terminal:      terminal.NewService(terminal.NewRepository(db), nil, fake.New()),
 		Chats:         chatSvc,

@@ -31,7 +31,6 @@ import AssistantListView from './features/organization/assistants/AssistantListV
 import EmployeeListView from './features/organization/employees/EmployeeListView.vue'
 import TeamListView from './features/organization/teams/TeamListView.vue'
 import TasksView from './features/tasks/TasksView.vue'
-import NotesView from './features/notes/NotesView.vue'
 import ProxySettings from './features/settings/ProxySettings.vue'
 import ConnectionSettings from './features/settings/ConnectionSettings.vue'
 import TerminalSettingsView from './features/settings/TerminalSettingsView.vue'
@@ -180,19 +179,6 @@ export function createAppRouter() {
           {
             path: 'terminal',
             redirect: { name: 'settings-terminal' },
-          },
-          {
-            path: 'notes',
-            name: 'notes',
-            component: NotesView,
-            meta: { notes: true, fullHeight: true },
-          },
-          {
-            path: 'notes/:noteId',
-            name: 'note-detail',
-            component: NotesView,
-            meta: { notes: true, fullHeight: true },
-            props: (route) => ({ noteId: Number(route.params.noteId) }),
           },
           {
             path: 'projects/:projectId/sessions/new',

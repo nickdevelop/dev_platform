@@ -80,6 +80,19 @@ type legacySessionPrompt struct {
 
 func (legacySessionPrompt) TableName() string { return "session_prompts" }
 
+// legacyNote is the shadow type for the notes table created by migration 39
+// and dropped again by migration 41 when the notes feature was removed.
+type legacyNote struct {
+	ID        uint      `gorm:"primaryKey;column:id"`
+	ProjectID uint      `gorm:"column:project_id;not null;default:0;index"`
+	Title     string    `gorm:"column:title;not null"`
+	Content   string    `gorm:"column:content;type:text"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+	UpdatedAt time.Time `gorm:"column:updated_at;index"`
+}
+
+func (legacyNote) TableName() string { return "notes" }
+
 type legacyManagedResourceFile struct {
 	ID              uint   `gorm:"primaryKey;column:id"`
 	ProjectID       uint   `gorm:"column:project_id;not null;uniqueIndex:idx_managed_file_target"`
@@ -556,8 +569,8 @@ var migrationSteps = []migrationStep{
 		return nil
 	}},
 	{version: 39, name: "create_notes_table", run: func(tx *gorm.DB) error {
-		if !tx.Migrator().HasTable(&Note{}) {
-			if err := tx.Migrator().CreateTable(&Note{}); err != nil {
+		if !tx.Migrator().HasTable(&legacyNote{}) {
+			if err := tx.Migrator().CreateTable(&legacyNote{}); err != nil {
 				return err
 			}
 		}
@@ -590,6 +603,14 @@ var migrationSteps = []migrationStep{
 					return err
 				}
 			}
+		}
+		return nil
+	}},
+	{version: 41, name: "drop_notes_table", run: func(tx *gorm.DB) error {
+		// The notes feature was removed from the platform: the table holds
+		// nothing but user data no code reads anymore, so it is dropped.
+		if tx.Migrator().HasTable(&legacyNote{}) {
+			return tx.Migrator().DropTable(&legacyNote{})
 		}
 		return nil
 	}},

@@ -30,12 +30,10 @@ const draftsStore = useDraftsStore()
 
 // The org routes declare `meta.org` or start with /org.
 // The tasks routes declare `meta.tasks` or start with /tasks.
-// The notes routes declare `meta.notes` or start with /notes.
 // The engines routes declare `meta.engines` or start with /engines.
 // The settings routes declare `meta.settings`.
 const orgActive = computed(() => route.meta.org === true || route.path.startsWith('/org'))
 const tasksActive = computed(() => route.meta.tasks === true || route.path.startsWith('/tasks'))
-const notesActive = computed(() => route.meta.notes === true || route.path.startsWith('/notes'))
 const enginesActive = computed(() => route.meta.engines === true || route.path.startsWith('/engines'))
 const settingsActive = computed(() => route.meta.settings === true)
 const projectActive = computed(
@@ -43,8 +41,7 @@ const projectActive = computed(
     !settingsActive.value &&
     !enginesActive.value &&
     !orgActive.value &&
-    !tasksActive.value &&
-    !notesActive.value,
+    !tasksActive.value,
 )
 
 const projectDestination = computed(() => {
@@ -99,13 +96,6 @@ function onOrgClick(event: MouseEvent) {
 function onTasksClick(event: MouseEvent) {
   emit('expandSidebar')
   if (tasksActive.value) {
-    event.preventDefault()
-  }
-}
-
-function onNotesClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (notesActive.value) {
     event.preventDefault()
   }
 }
@@ -169,23 +159,6 @@ function onSettingsClick() {
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         <span>任务</span>
-      </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: notesActive }"
-        title="笔记备忘"
-        :aria-current="notesActive ? 'page' : undefined"
-        :to="{ name: 'notes' }"
-        @click="onNotesClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <polyline points="14 2 14 8 20 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <line x1="16" y1="13" x2="8" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <line x1="16" y1="17" x2="8" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <polyline points="10 9 9 9 8 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <span>笔记</span>
       </RouterLink>
     </div>
 

@@ -6,7 +6,6 @@ import ProjectSidebar from '../features/projects/ProjectSidebar.vue'
 import ChatSidebar from '../features/chat/pure/ChatSidebar.vue'
 import TasksSidebar from '../features/tasks/TasksSidebar.vue'
 import GroupsSidebar from '../features/groups/GroupsSidebar.vue'
-import NotesSidebar from '../features/notes/NotesSidebar.vue'
 import SettingsNav from '../features/settings/SettingsNav.vue'
 import EnginesSidebar from '../features/engines/EnginesSidebar.vue'
 import OrgSidebar from '../features/organization/OrgSidebar.vue'
@@ -81,32 +80,6 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     // Zone B: Search with inset icon
     expect(wrapper.find('.sidebar-search-bar').exists()).toBe(true)
     expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
-  })
-
-  it('NotesSidebar conforms to the 3-zone standard with an el-menu list', async () => {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/notes', component: { template: '<div />' } },
-        { path: '/notes/:noteId', component: { template: '<div />' } },
-      ],
-    })
-    await router.push('/notes')
-    await router.isReady()
-
-    const wrapper = mount(NotesSidebar, { global: { plugins: [router] } })
-    await flushPromises()
-
-    // Zone A: the one action this column offers, an el-button now.
-    expect(wrapper.find('.sidebar-actions').exists()).toBe(true)
-    expect(wrapper.find('[data-test="new-note-btn"]').exists()).toBe(true)
-    // Zone B: live filters, both library controls.
-    expect(wrapper.find('[data-test="notes-search"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="notes-project-filter"]').exists()).toBe(true)
-    // Zone C: no notes loaded in this test, so the menu is absent and the
-    // three-state empty block stands in for it.
-    expect(wrapper.find('[data-test="notes-menu"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="list-state-empty"]').exists()).toBe(true)
   })
 
   it('SettingsNav renders the settings navigation as a router-driven el-menu', async () => {

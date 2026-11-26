@@ -252,16 +252,15 @@ describe('three-pane app shell', () => {
   it('renders the first-level rail entries in product order with one inline icon each', async () => {
     const { wrapper } = await setup('/')
 
-    // 项目 / 组织 / 任务 / 笔记 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
+    // 项目 / 组织 / 任务 / 引擎 / 设置 / 退出 each carry one inline SVG icon.
     // AI 提示词、AI 助手、AI 员工与 AI 团队在组织中心统一管理。
     const rail = wrapper.find('nav.category-rail')
-    expect(rail.findAll('svg.rail-icon')).toHaveLength(7)
+    expect(rail.findAll('svg.rail-icon')).toHaveLength(6)
     // The icons are decorative: the labels stay as the entries' readable text.
     expect(rail.findAll('a, button').map((entry) => entry.text())).toEqual([
       '项目',
       '组织',
       '任务',
-      '笔记',
       '引擎',
       '设置',
       '退出',
