@@ -2,6 +2,9 @@
 .superpowers/
 .taste-skill/
 
+# tmp
+.tmp
+
 # dev.sh runtime state (PID + log)
 .dev/
 

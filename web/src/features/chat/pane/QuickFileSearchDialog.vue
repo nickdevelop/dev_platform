@@ -13,7 +13,7 @@ import {
   resolveExtFilter,
   type ExtFilterOption,
 } from './quickSearchExt'
-import { highlightMatch } from './quickSearchHighlight'
+import { highlightMatch, clipAroundQuery } from './quickSearchHighlight'
 
 const props = defineProps<{
   open: boolean
@@ -56,14 +56,22 @@ const customExtInputRef = ref<HTMLInputElement | null>(null)
 // 文件模式下过滤掉目录，只列文件
 const fileList = computed(() => fileResults.value.filter((item) => !item.isDir))
 
-const activeListLength = computed(() =>
-  searchType.value === 'file' ? fileList.value.length : contentResults.value.length,
-)
+// 两种模式共用同一套结果行：后缀 chip + 名称行（内容模式带 :行号）+ 次行
+//（文件模式是路径，内容模式是命中摘要）。
+interface SearchRow {
+  key: string
+  path: string
+  line?: number
+  name: string
+  ext: string
+  nameHtml: string
+  subHtml: string
+}
 
 const modeLabel = computed(() => (searchType.value === 'file' ? '文件名' : '内容'))
 
 const inputPlaceholder = computed(() =>
-  searchType.value === 'file' ? '输入文件名搜索（如 UserAuth, Order）…' : '输入文本搜索文件内容…',
+  searchType.value === 'file' ? '输入文件名搜索…' : '输入文本搜索文件内容…',
 )
 
 const extChipLabel = computed(() => extSelectionLabel(extFilter.value))
@@ -109,6 +117,39 @@ function fileExt(path: string): string {
 
 function highlight(text: string): string {
   return highlightMatch(text, query.value)
+}
+
+const searchRows = computed<SearchRow[]>(() => {
+  if (searchType.value === 'file') {
+    return fileList.value.map((item) => ({
+      key: item.path,
+      path: item.path,
+      name: baseName(item.path),
+      ext: fileExt(item.path),
+      nameHtml: highlight(baseName(item.path)),
+      subHtml: highlight(item.path),
+    }))
+  }
+  return contentResults.value.map((item) => ({
+    key: `${item.path}:${item.line}`,
+    path: item.path,
+    line: item.line,
+    name: baseName(item.path),
+    ext: fileExt(item.path),
+    nameHtml: highlight(baseName(item.path)),
+    // 内容摘要：以命中位置为中心截取，长行不整段展示
+    subHtml: highlight(clipAroundQuery(item.content, query.value)),
+  }))
+})
+
+const activeListLength = computed(() => searchRows.value.length)
+
+function pickRow(row: SearchRow) {
+  if (row.line === undefined) {
+    emit('select', row.path)
+  } else {
+    emit('select', row.path, row.line)
+  }
 }
 
 async function doSearch(q: string) {
@@ -311,13 +352,8 @@ function onKeydown(e: KeyboardEvent) {
       focusInput()
       return
     }
-    if (searchType.value === 'file') {
-      const selected = fileList.value[activeIndex.value]
-      if (selected) emit('select', selected.path)
-    } else {
-      const selected = contentResults.value[activeIndex.value]
-      if (selected) emit('select', selected.path, selected.line)
-    }
+    const selected = searchRows.value[activeIndex.value]
+    if (selected) pickRow(selected)
   }
 }
 
@@ -381,7 +417,7 @@ onUnmounted(() => {
           </button>
           <div
             v-if="modeMenuOpen"
-            class="qs-popper absolute left-0 top-[calc(100%+6px)] w-32 py-1.5 bg-platform-surface rounded-sm border border-platform-border shadow-xl z-50"
+            class="qs-popper absolute left-0 top-[calc(100%+6px)] w-32 py-1.5 text-xs bg-platform-surface rounded-sm border border-platform-border shadow-xl z-50"
             data-test="quick-search-mode-menu"
             @click.stop
           >
@@ -471,7 +507,7 @@ onUnmounted(() => {
 
             <div
               v-if="extMenuOpen"
-              class="qs-popper absolute right-0 top-[calc(100%+12px)] w-64 py-1.5 bg-platform-surface rounded-sm border border-platform-border shadow-xl z-50"
+              class="qs-popper absolute right-0 top-[calc(100%+12px)] w-64 py-1.5 text-xs bg-platform-surface rounded-sm border border-platform-border shadow-xl z-50"
               data-test="quick-search-ext-menu"
               @click.stop
             >
@@ -560,7 +596,7 @@ onUnmounted(() => {
 
       <!-- 悬浮结果卡 -->
       <div class="qs-popper mt-1.5 w-full bg-platform-surface rounded-sm shadow-xl overflow-hidden">
-        <div ref="resultsRef" class="max-h-[320px] overflow-y-auto">
+        <div ref="resultsRef" class="h-[320px] overflow-y-auto">
           <!-- 搜索中 -->
           <div v-if="loading && activeListLength === 0" class="py-8 text-center text-xs text-platform-text-muted">
             {{ searchType === 'file' ? '正在搜索文件…' : '正在搜索文件内容…' }}
@@ -596,68 +632,42 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <!-- 文件列表 -->
+          <!-- 统一结果行：文件模式次行为路径，内容模式次行为命中摘要 -->
           <ul
-            v-else-if="searchType === 'file'"
+            v-else
             class="list-none m-0 p-0"
             data-test="quick-search-results"
           >
             <li
-              v-for="(item, idx) in fileList"
-              :key="item.path"
+              v-for="(row, idx) in searchRows"
+              :key="row.key"
               class="result-item flex items-center justify-between px-3.5 py-2.5 border-b border-platform-border/60 last:border-b-0 cursor-pointer"
               :class="idx === activeIndex ? 'is-active bg-platform-primary-soft' : 'hover:bg-platform-surface-muted/80'"
               :data-index="idx"
-              data-test="quick-search-item"
+              :data-test="row.line === undefined ? 'quick-search-item' : 'quick-search-content-item'"
+              :title="row.path"
               @mouseenter="activeIndex = idx"
-              @click="emit('select', item.path)"
+              @click="pickRow(row)"
             >
               <div class="flex items-center gap-2.5 min-w-0">
                 <span
-                  v-if="fileExt(item.path)"
+                  v-if="row.ext"
                   class="px-1.5 py-0.5 rounded-sm text-2xs font-mono bg-platform-surface-muted text-platform-text-muted border border-platform-border shrink-0"
-                >{{ fileExt(item.path) }}</span>
+                >{{ row.ext }}</span>
                 <div class="min-w-0">
-                  <div class="text-xs font-medium text-platform-text truncate" v-html="highlight(baseName(item.path))"></div>
-                  <div class="text-2xs font-mono text-platform-text-muted truncate" :title="item.path" v-html="highlight(item.path)"></div>
+                  <div class="text-xs font-medium text-platform-text truncate">
+                    <span v-html="row.nameHtml"></span><span
+                      v-if="row.line !== undefined"
+                      class="font-mono text-platform-text-muted"
+                    >:{{ row.line }}</span>
+                  </div>
+                  <div class="text-2xs font-mono text-platform-text-muted truncate" :title="row.path" v-html="row.subHtml"></div>
                 </div>
               </div>
               <span
                 class="text-xs text-platform-primary shrink-0 ml-2"
                 :class="idx === activeIndex ? 'opacity-100' : 'opacity-0'"
               >打开</span>
-            </li>
-          </ul>
-
-          <!-- 内容结果 -->
-          <ul
-            v-else
-            class="list-none m-0 p-0"
-            data-test="quick-search-content-results"
-          >
-            <li
-              v-for="(item, idx) in contentResults"
-              :key="`${item.path}:${item.line}`"
-              class="result-item content-result-item px-3.5 py-2.5 border-b border-platform-border/60 last:border-b-0 cursor-pointer"
-              :class="idx === activeIndex ? 'is-active bg-platform-primary-soft' : 'hover:bg-platform-surface-muted/80'"
-              :data-index="idx"
-              data-test="quick-search-content-item"
-              @mouseenter="activeIndex = idx"
-              @click="emit('select', item.path, item.line)"
-            >
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="text-xs font-medium text-platform-text shrink-0">{{ baseName(item.path) }}</span>
-                  <span class="text-2xs font-mono text-platform-text-muted truncate" :title="item.path">{{ item.path }}</span>
-                </div>
-                <span
-                  class="line-badge px-1.5 py-0.5 rounded-sm text-2xs font-mono bg-platform-primary-soft text-platform-primary border border-platform-border shrink-0"
-                >第 {{ item.line }} 行</span>
-              </div>
-              <div
-                class="content-snippet text-2xs font-mono bg-platform-surface-muted px-2.5 py-1 rounded-sm border border-platform-border overflow-x-auto whitespace-nowrap"
-                v-html="highlight(item.content.trim())"
-              ></div>
             </li>
           </ul>
         </div>

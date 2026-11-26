@@ -7,7 +7,7 @@ import {
   normalizeCustomExt,
   resolveExtFilter,
 } from '../features/chat/pane/quickSearchExt'
-import { highlightMatch } from '../features/chat/pane/quickSearchHighlight'
+import { highlightMatch, clipAroundQuery } from '../features/chat/pane/quickSearchHighlight'
 import * as projectsApi from '../api/projects'
 
 describe('resolveExtFilter', () => {
@@ -81,6 +81,26 @@ describe('highlightMatch', () => {
 
   it('returns escaped text without a query', () => {
     expect(highlightMatch('a&b', '  ')).toBe('a&amp;b')
+  })
+})
+
+describe('clipAroundQuery', () => {
+  it('centers the window on the hit and adds ellipses on clipped ends', () => {
+    const line = `logger.info("before context") ${'x'.repeat(80)} validateToken signature after${'y'.repeat(60)}`
+    const clipped = clipAroundQuery(line, 'validateToken', 20)
+    expect(clipped).toContain('validateToken')
+    expect(clipped.startsWith('…')).toBe(true)
+    expect(clipped.endsWith('…')).toBe(true)
+    expect(clipped.length).toBeLessThan(line.length)
+  })
+
+  it('leaves short lines and misses head-aligned', () => {
+    expect(clipAroundQuery('short line', 'short')).toBe('short line')
+    expect(clipAroundQuery('short line', 'zzz')).toBe('short line')
+    const long = 'a'.repeat(300)
+    const clipped = clipAroundQuery(long, 'zzz')
+    expect(clipped.endsWith('…')).toBe(true)
+    expect(clipped.startsWith('…')).toBe(false)
   })
 })
 
@@ -171,8 +191,8 @@ describe('QuickFileSearchDialog', () => {
 
     const item = wrapper.find('[data-test="quick-search-content-item"]')
     expect(item.exists()).toBe(true)
-    expect(item.text()).toContain('main.ts')
-    expect(item.text()).toContain('第 42 行')
+    // 与文件行一致：文件名后跟 :行号，第二行是命中摘要
+    expect(item.text()).toContain('main.ts:42')
     // 命中词高亮
     expect(item.find('.qs-hit').text()).toBe('createApp')
 
