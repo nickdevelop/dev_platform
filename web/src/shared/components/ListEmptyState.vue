@@ -29,8 +29,11 @@ const props = withDefaults(
     resetLabel?: string
     /** How many rows the skeleton stands in for. */
     rows?: number
+    /** Sidebars have no columns to echo: the skeleton drops to a title bar and
+        a meta bar on the menu row's own 40px rhythm. */
+    dense?: boolean
   }>(),
-  { resetLabel: '重置筛选', rows: 6 },
+  { resetLabel: '重置筛选', rows: 6, dense: false },
 )
 
 const emit = defineEmits<{ reset: [] }>()
@@ -40,10 +43,12 @@ const emit = defineEmits<{ reset: [] }>()
   <div v-if="state === 'loading'" class="list-state list-state--loading" data-test="list-state-loading">
     <el-skeleton animated>
       <template #template>
-        <div v-for="row in rows" :key="row" class="skeleton-row">
+        <div v-for="row in rows" :key="row" class="skeleton-row" :class="{ 'skeleton-row--dense': dense }">
           <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-name" />
-          <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-tag" />
-          <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-body" />
+          <template v-if="!dense">
+            <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-tag" />
+            <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-body" />
+          </template>
           <el-skeleton-item variant="text" class="skeleton-bar skeleton-bar-meta" />
         </div>
       </template>
@@ -99,6 +104,18 @@ const emit = defineEmits<{ reset: [] }>()
   gap: 12px;
   align-items: center;
   height: 34px;
+}
+
+/* Sidebar variant: an entity menu row, not a table row — title + meta only,
+   on the menu's own height. */
+.skeleton-row--dense {
+  height: 40px;
+  gap: 8px;
+}
+
+.skeleton-row--dense .skeleton-bar-name {
+  flex: 1 1 auto;
+  width: auto;
 }
 
 .skeleton-bar {

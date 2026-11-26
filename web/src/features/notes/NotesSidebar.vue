@@ -1,46 +1,76 @@
 <script setup lang="ts">
+// NotesSidebar: the notes centre's second column.
+//
+// Three zones, same as every other second column: an action row (Zone A), a
+// filter row (Zone B) and the list itself (Zone C). The list used to be a stack
+// of hand-drawn `.sidebar-card` buttons, which meant we owned the roving
+// tabindex, the aria roles and the active edge ourselves; it is now an
+// `el-menu` in router mode, the same shape as OrgSidebar / EnginesSidebar /
+// SettingsNav, and the visual contract for those rows lives in
+// `theme/element-tokens.css`.
+//
+// Zone B filters apply live. That is deliberate and differs from a list page's
+// toolbar (where the keyword is a draft until 搜索): this is navigation, not a
+// query — there is no search button here, and a note you cannot see is a note
+// you cannot open.
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Notebook, Plus, Search } from '@element-plus/icons-vue'
 import type { Note } from '../../api/notes'
 import { useNotesStore } from '../../stores/notes'
 import { useProjectsStore } from '../../stores/projects'
-import { UiConfirmDialog, UiEmpty, UiSpinner } from '../../shared/ui'
+import ListEmptyState from '../../shared/components/ListEmptyState.vue'
 import NoteItem from './NoteItem.vue'
 
+const route = useRoute()
 const router = useRouter()
 const notesStore = useNotesStore()
 const projectsStore = useProjectsStore()
 
+/** el-select needs one primitive for "all / global / a project"; the store
+    keeps the same three cases as null / 0 / id. */
+type ProjectFilter = 'all' | 'global' | number
+
 const deletingNote = ref<Note | null>(null)
-const deleteLoading = ref(false)
 
 onMounted(async () => {
   await projectsStore.load()
   await notesStore.loadNotes()
 })
 
-const activeId = computed(() => notesStore.activeNoteId)
 const filteredNotes = computed(() => notesStore.filteredNotes)
 
-function onSearchInput(e: Event) {
-  const target = e.target as HTMLInputElement
-  notesStore.setSearchQuery(target.value)
-}
+const activeIndex = computed(() => route.path)
 
-function clearSearch() {
+const isFiltered = computed(
+  () => notesStore.searchQuery.trim().length > 0 || notesStore.selectedProjectId !== null,
+)
+
+const emptyState = computed<'loading' | 'filtered' | 'empty'>(() => {
+  if (notesStore.loading && filteredNotes.value.length === 0) return 'loading'
+  return isFiltered.value ? 'filtered' : 'empty'
+})
+
+const searchQuery = computed({
+  get: () => notesStore.searchQuery,
+  set: (value: string) => notesStore.setSearchQuery(value),
+})
+
+const projectFilter = computed<ProjectFilter>({
+  get: () =>
+    notesStore.selectedProjectId === null
+      ? 'all'
+      : notesStore.selectedProjectId === 0
+        ? 'global'
+        : notesStore.selectedProjectId,
+  set: (value) =>
+    notesStore.setSelectedProjectId(value === 'all' ? null : value === 'global' ? 0 : value),
+})
+
+function resetFilters() {
   notesStore.setSearchQuery('')
-}
-
-function onProjectFilterChange(e: Event) {
-  const target = e.target as HTMLSelectElement
-  const val = target.value
-  if (val === 'all') {
-    notesStore.setSelectedProjectId(null)
-  } else if (val === 'global') {
-    notesStore.setSelectedProjectId(0)
-  } else {
-    notesStore.setSelectedProjectId(Number(val))
-  }
+  notesStore.setSelectedProjectId(null)
 }
 
 async function onNewNote() {
@@ -50,142 +80,121 @@ async function onNewNote() {
   }
 }
 
-function onSelectNote(id: number) {
-  void notesStore.selectNote(id)
-  void router.push({ name: 'note-detail', params: { noteId: String(id) } })
-}
-
-function askDelete(note: Note) {
+async function askDelete(note: Note) {
   deletingNote.value = note
-}
-
-function cancelDelete() {
-  deletingNote.value = null
-}
-
-async function confirmDelete() {
-  if (!deletingNote.value) return
-  deleteLoading.value = true
+  const title = note.title?.trim() || '无标题笔记'
   try {
-    const id = deletingNote.value.id
-    await notesStore.removeNote(id)
+    await ElMessageBox.confirm(`确定要删除笔记「${title}」吗？此操作不可恢复。`, '删除笔记', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      confirmButtonType: 'danger',
+    })
+  } catch {
+    // Dismissed is an answer, not an error.
     deletingNote.value = null
-    if (notesStore.activeNoteId) {
-      void router.push({ name: 'note-detail', params: { noteId: String(notesStore.activeNoteId) } })
-    } else {
-      void router.push({ name: 'notes' })
-    }
-  } finally {
-    deleteLoading.value = false
+    return
+  }
+  deletingNote.value = null
+  try {
+    await notesStore.removeNote(note.id)
+    ElMessage.success(`已删除笔记「${title}」`)
+  } catch {
+    // describeApiError already landed in notesStore.error; the failure is
+    // reported once, by the workspace, not here on top of it.
+    return
+  }
+  if (notesStore.activeNoteId) {
+    void router.push({ name: 'note-detail', params: { noteId: String(notesStore.activeNoteId) } })
+  } else {
+    void router.push({ name: 'notes' })
   }
 }
 </script>
 
 <template>
-  <div class="notes-sidebar sidebar-panel" aria-label="笔记列表">
-    <!-- Zone A: Top dedicated actions row -->
+  <nav class="notes-sidebar sidebar-panel" data-test="notes-sidebar" aria-label="笔记列表">
+    <!-- Zone A: the one action this column offers -->
     <div class="sidebar-actions">
-      <button
-        type="button"
-        class="sidebar-action-btn"
+      <el-button
+        type="primary"
+        class="w-full"
+        :icon="Plus"
         data-test="new-note-btn"
-        title="新建笔记"
         @click="onNewNote"
       >
-        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        <span>新建笔记</span>
-      </button>
+        新建笔记
+      </el-button>
     </div>
 
-    <!-- Zone B: Search input & Project filter -->
-    <div class="sidebar-search-bar">
-      <svg class="sidebar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <circle cx="11" cy="11" r="8" />
-        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-      </svg>
-      <input
-        type="text"
-        class="sidebar-search-input"
-        placeholder="搜索笔记..."
-        :value="notesStore.searchQuery"
+    <!-- Zone B: live navigation filters -->
+    <div class="notes-filters">
+      <el-input
+        v-model="searchQuery"
+        class="notes-search"
+        size="small"
+        placeholder="搜索笔记"
+        clearable
+        :prefix-icon="Search"
         aria-label="搜索笔记"
-        @input="onSearchInput"
+        data-test="notes-search"
       />
-      <button
-        v-if="notesStore.searchQuery"
-        type="button"
-        class="sidebar-search-clear"
-        title="清空搜索"
-        aria-label="清空搜索"
-        @click="clearSearch"
-      >
-        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-    </div>
-
-    <!-- Zone B: Micro filter select for Projects -->
-    <div class="sidebar-filter-bar">
-      <select
+      <el-select
+        v-model="projectFilter"
         class="notes-project-select"
-        :value="notesStore.selectedProjectId === null ? 'all' : notesStore.selectedProjectId === 0 ? 'global' : String(notesStore.selectedProjectId)"
-        aria-label="项目筛选"
-        @change="onProjectFilterChange"
+        size="small"
+        data-test="notes-project-filter"
       >
-        <option value="all">全部笔记</option>
-        <option value="global">全局笔记</option>
-        <option
+        <el-option label="全部笔记" value="all" />
+        <el-option label="全局笔记" value="global" />
+        <el-option
           v-for="project in projectsStore.projects"
           :key="project.id"
-          :value="String(project.id)"
+          :label="project.name"
+          :value="project.id"
         >
-          项目: {{ project.name }}
-        </option>
-      </select>
+          <span>{{ project.name }}</span>
+          <span class="entity-option-sub">项目笔记</span>
+        </el-option>
+      </el-select>
     </div>
 
-    <!-- Zone C: Note list items -->
-    <div class="sidebar-list-container">
-      <div v-if="notesStore.loading && filteredNotes.length === 0" class="notes-loading">
-        <UiSpinner size="sm" />
-        <span>加载中...</span>
-      </div>
+    <!-- Zone C: the note list -->
+    <div class="notes-menu-scroll">
+      <el-menu
+        v-if="filteredNotes.length"
+        class="notes-menu"
+        router
+        :default-active="activeIndex"
+        :default-openeds="[]"
+        data-test="notes-menu"
+      >
+        <el-menu-item
+          v-for="note in filteredNotes"
+          :key="note.id"
+          :index="`/notes/${note.id}`"
+          class="entity-row"
+          :data-test="`note-item-${note.id}`"
+        >
+          <NoteItem :note="note" @delete="askDelete" />
+        </el-menu-item>
+      </el-menu>
 
-      <UiEmpty
-        v-else-if="filteredNotes.length === 0"
-        title="暂无笔记"
-        description="点击上方新建笔记，随时记录您的思路"
-        class="my-auto py-8"
-      />
-
-      <NoteItem
-        v-for="note in filteredNotes"
-        :key="note.id"
-        :note="note"
-        :active="note.id === activeId"
-        @select="onSelectNote"
-        @delete="askDelete"
-      />
+      <ListEmptyState
+        v-else
+        dense
+        :rows="4"
+        :state="emptyState"
+        :icon="Notebook"
+        title="还没有笔记"
+        hint="笔记是工作区之外的随手记录，可以绑定到某个项目。"
+        reset-label="重置筛选"
+        @reset="resetFilters"
+      >
+        <el-button type="primary" size="small" :icon="Plus" @click="onNewNote">新建笔记</el-button>
+      </ListEmptyState>
     </div>
-
-    <!-- Delete Confirmation Dialog -->
-    <UiConfirmDialog
-      v-if="deletingNote"
-      title="删除笔记"
-      :message="`确定要删除笔记 “${deletingNote.title || '无标题笔记'}” 吗？`"
-      detail="此操作将永久删除该笔记，删除后不可恢复。"
-      confirm-label="确认删除"
-      variant="danger"
-      :loading="deleteLoading"
-      @close="cancelDelete"
-      @confirm="confirmDelete"
-    />
-  </div>
+  </nav>
 </template>
 
 <style scoped>
@@ -193,31 +202,37 @@ async function confirmDelete() {
   height: 100%;
 }
 
-.notes-project-select {
-  width: 100%;
-  height: 24px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  border-radius: var(--radius, 4px);
-  padding: 0 6px;
-  font-size: var(--text-size-12);
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.12s ease-out;
-}
-
-.notes-project-select:hover {
-  border-color: var(--color-border-strong);
-}
-
-.notes-loading {
+/* Zone B: 248px of content width fits one search box and one filter on a
+   single line (the library's own small tier is 24px, so both match). */
+.notes-filters {
   display: flex;
+  flex-shrink: 0;
+  gap: 6px;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 24px 0;
-  color: var(--color-text-muted);
-  font-size: var(--text-size-12);
+  padding: 0 12px 8px 12px;
+}
+
+.notes-search {
+  min-width: 0;
+  flex: 1;
+}
+
+.notes-project-select {
+  flex: none;
+  width: 104px;
+}
+
+/* The scroller is ours so the menu keeps its own block layout: putting the
+   scroll container on the menu root would fight the library's list styles. */
+.notes-menu-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 6px 12px 6px;
+}
+
+.notes-menu {
+  width: 100%;
 }
 </style>

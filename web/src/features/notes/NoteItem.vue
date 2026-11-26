@@ -1,15 +1,22 @@
 <script setup lang="ts">
+// NoteItem: the body of one `el-menu-item` in the notes sidebar.
+//
+// The row shell — hover, active edge, keyboard, navigation — belongs to the
+// library's `el-menu-item` (see NotesSidebar). What is left here is the note's
+// own three lines: title, first line of the body, and the project / time meta.
+// The row keeps the delete action, but stops the click from reaching the menu
+// item, because opening a confirmation is not the same intent as opening a note.
 import { computed } from 'vue'
+import { Delete } from '@element-plus/icons-vue'
 import type { Note } from '../../api/notes'
 import { useProjectsStore } from '../../stores/projects'
+import { formatMessageTime } from '../../shared/format'
 
 const props = defineProps<{
   note: Note
-  active: boolean
 }>()
 
 const emit = defineEmits<{
-  select: [id: number]
   delete: [note: Note]
 }>()
 
@@ -17,192 +24,135 @@ const projectsStore = useProjectsStore()
 
 const projectName = computed(() => {
   if (!props.note.projectId) return '全局'
-  const p = projectsStore.projects.find((proj) => proj.id === props.note.projectId)
-  return p ? p.name : `项目 #${props.note.projectId}`
+  const project = projectsStore.projects.find((p) => p.id === props.note.projectId)
+  return project ? project.name : `项目 #${props.note.projectId}`
 })
 
 const snippet = computed(() => {
   if (!props.note.content) return '无内容'
-  // 取首个非空行作为摘要
-  const lines = props.note.content.split('\n').map((l) => l.trim()).filter(Boolean)
-  return lines[0] || '无内容'
+  const first = props.note.content.split('\n').map((line) => line.trim()).filter(Boolean)[0]
+  return first || '无内容'
 })
 
-const formattedTime = computed(() => {
-  if (!props.note.updatedAt) return ''
-  const date = new Date(props.note.updatedAt)
-  const now = new Date()
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-
-  if (isToday) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-  return date.toLocaleDateString([], { month: 'numeric', day: 'numeric' })
-})
-
-function onClick() {
-  emit('select', props.note.id)
-}
+const updatedTime = computed(() => formatMessageTime(props.note.updatedAt))
 
 function onDelete(event: MouseEvent) {
+  // The menu item owns the click; deleting a note must not also open it.
   event.stopPropagation()
   emit('delete', props.note)
 }
 </script>
 
 <template>
-  <div
-    class="sidebar-card note-item"
-    :class="{ active }"
-    role="button"
-    tabindex="0"
-    :aria-pressed="active"
-    @click="onClick"
-    @keydown.enter.space="onClick"
-  >
-    <div class="sidebar-card-row-top">
-      <div class="note-title-wrap">
-        <span class="sidebar-card-title note-title" :title="note.title">
-          {{ note.title || '无标题笔记' }}
-        </span>
-      </div>
-      <div class="note-actions">
-        <button
-          type="button"
-          class="note-delete-btn"
-          title="删除笔记"
-          aria-label="删除笔记"
-          @click="onDelete"
-        >
-          <svg class="note-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
-      </div>
+  <div class="note-row">
+    <div class="note-row-head">
+      <span class="note-title" :title="note.title">{{ note.title || '无标题笔记' }}</span>
+      <el-button
+        link
+        type="danger"
+        :icon="Delete"
+        class="note-delete"
+        title="删除笔记"
+        aria-label="删除笔记"
+        data-test="note-delete"
+        @click="onDelete"
+      />
     </div>
-
-    <div class="sidebar-card-row-bottom note-bottom">
-      <div class="note-snippet" :title="snippet">
-        {{ snippet }}
-      </div>
-      <div class="note-meta">
-        <span class="note-badge" :class="{ 'is-project': note.projectId > 0 }">
-          {{ projectName }}
-        </span>
-        <span class="note-time tabular-nums">{{ formattedTime }}</span>
-      </div>
+    <span class="note-snippet" :title="snippet">{{ snippet }}</span>
+    <div class="note-row-meta">
+      <span
+        class="note-project"
+        :class="{ 'note-project--bound': note.projectId > 0 }"
+        :title="projectName"
+      >
+        {{ projectName }}
+      </span>
+      <span v-if="updatedTime" class="note-time font-mono">{{ updatedTime }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.note-item {
-  gap: 4px;
+.note-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
 }
 
-.note-title-wrap {
+.note-row-head {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: 1;
 }
 
 .note-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-size-13);
+  color: var(--color-text);
 }
 
-.note-actions {
-  display: flex;
-  align-items: center;
+/* Deleting is a per-row action: it appears with the pointer instead of
+   shouting at every row at rest. The row fills the menu item, so its own hover
+   is enough — the library's item class stays out of this file. */
+.note-delete {
+  flex: none;
+  width: 20px;
+  padding: 0;
   opacity: 0;
-  transition: opacity 0.12s ease-out;
 }
 
-.note-item:hover .note-actions {
+.note-row:hover .note-delete,
+.note-delete:focus-visible {
   opacity: 1;
 }
 
-.note-delete-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  border-radius: var(--radius, 3px);
-  cursor: pointer;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out;
-}
-
-.note-delete-btn:hover {
-  color: var(--color-danger, #ef4444);
-  background: var(--color-surface);
-}
-
-.note-btn-icon {
-  width: 12px;
-  height: 12px;
-}
-
-.note-bottom {
-  display: flex;
-  flex-direction: column;
-  /* The shared row-bottom rule centers its children; in this vertical stack
-     that would center the snippet and meta line horizontally, so undo it. */
-  align-items: stretch;
-  justify-content: flex-start;
-  text-align: left;
-  gap: 4px;
-}
-
 .note-snippet {
-  font-size: var(--text-size-12);
-  color: var(--color-text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-size-12);
+  color: var(--color-text-muted);
 }
 
-.note-meta {
+.note-row-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
-  width: 100%;
+  min-width: 0;
   font-size: var(--text-size-11);
 }
 
-.note-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 5px;
+/* Project binding is not an enum with a fixed palette (every project is its own
+   value), so it stays a neutral chip; the accent tint only says「绑定了项目」,
+   which is a state, not a category. */
+.note-project {
+  flex: none;
+  max-width: 104px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
   border-radius: 2px;
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
-  font-size: var(--text-size-10);
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.note-badge.is-project {
-  color: var(--color-accent, #4a8ad6);
-  background: rgba(74, 138, 214, 0.08);
+.note-project--bound {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface));
 }
 
 .note-time {
+  margin-left: auto;
+  flex: none;
   color: var(--color-text-muted);
-  font-size: var(--text-size-11);
 }
 </style>

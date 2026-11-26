@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectSidebar from '../features/projects/ProjectSidebar.vue'
@@ -83,16 +83,30 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
     expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
   })
 
-  it('NotesSidebar conforms to Data Terminal 3-zone standard', () => {
-    const wrapper = mount(NotesSidebar)
+  it('NotesSidebar conforms to the 3-zone standard with an el-menu list', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/notes', component: { template: '<div />' } },
+        { path: '/notes/:noteId', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/notes')
+    await router.isReady()
 
-    // Zone A: Action
+    const wrapper = mount(NotesSidebar, { global: { plugins: [router] } })
+    await flushPromises()
+
+    // Zone A: the one action this column offers, an el-button now.
     expect(wrapper.find('.sidebar-actions').exists()).toBe(true)
     expect(wrapper.find('[data-test="new-note-btn"]').exists()).toBe(true)
-
-    // Zone B: Search with inset icon
-    expect(wrapper.find('.sidebar-search-bar').exists()).toBe(true)
-    expect(wrapper.find('.sidebar-search-icon').exists()).toBe(true)
+    // Zone B: live filters, both library controls.
+    expect(wrapper.find('[data-test="notes-search"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="notes-project-filter"]').exists()).toBe(true)
+    // Zone C: no notes loaded in this test, so the menu is absent and the
+    // three-state empty block stands in for it.
+    expect(wrapper.find('[data-test="notes-menu"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="list-state-empty"]').exists()).toBe(true)
   })
 
   it('SettingsNav renders the settings navigation as a router-driven el-menu', async () => {

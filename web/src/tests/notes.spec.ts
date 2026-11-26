@@ -2,8 +2,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import NotesSidebar from '../features/notes/NotesSidebar.vue'
+import NoteItem from '../features/notes/NoteItem.vue'
 import { useNotesStore } from '../stores/notes'
+import { useProjectsStore } from '../stores/projects'
 import * as notesApi from '../api/notes'
+import * as projectsApi from '../api/projects'
 
 describe('useNotesStore', () => {
   beforeEach(() => {
@@ -120,15 +126,116 @@ describe('notes list rendering', () => {
     expect(css).toMatch(/\.markdown-body ol \{[^}]*list-style-type:\s*decimal/)
   })
 
-  it('left-aligns the note card snippet and meta row', () => {
-    const sfc = readFileSync(resolve(__dirname, '../features/notes/NoteItem.vue'), 'utf8')
-    const bottom = sfc.match(/\.note-bottom \{([^}]*)\}/)?.[1] ?? ''
-    // The shared .sidebar-card-row-bottom centers its children, which reads as
-    // centered text inside this vertical stack, so the card must undo it.
-    expect(bottom).toMatch(/align-items:\s*stretch/)
-    expect(bottom).toMatch(/text-align:\s*left/)
+  it('renders a note row with its snippet, project and time', () => {
+    setActivePinia(createPinia())
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 10, name: '微服务重构', path: '/srv/micro', isGit: false },
+    ]
 
-    const meta = sfc.match(/\.note-meta \{([^}]*)\}/)?.[1] ?? ''
-    expect(meta).toMatch(/width:\s*100%/)
+    const wrapper = mount(NoteItem, {
+      props: {
+        note: {
+          id: 2,
+          projectId: 10,
+          title: '拆分计划',
+          content: '\n第一步：抽出网关\n第二步：下沉配置',
+          createdAt: '',
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    })
+
+    expect(wrapper.find('.note-title').text()).toBe('拆分计划')
+    // The snippet is the first non-empty line, not the whole body.
+    expect(wrapper.find('.note-snippet').text()).toBe('第一步：抽出网关')
+    expect(wrapper.find('.note-project').text()).toBe('微服务重构')
+    // A bound project is told apart from a global note.
+    expect(wrapper.find('.note-project--bound').exists()).toBe(true)
+    expect(wrapper.find('.note-time').text()).toMatch(/\d{2}:\d{2}/)
+  })
+
+  it('keeps the delete click out of the menu item', async () => {
+    setActivePinia(createPinia())
+    const wrapper = mount(NoteItem, {
+      props: {
+        note: { id: 3, projectId: 0, title: '全局备忘', content: '', createdAt: '', updatedAt: '' },
+      },
+    })
+
+    expect(wrapper.find('.note-project').text()).toBe('全局')
+    await wrapper.find('[data-test="note-delete"]').trigger('click')
+    expect(wrapper.emitted('delete')?.[0]?.[0]).toMatchObject({ id: 3 })
+  })
+})
+
+describe('NotesSidebar', () => {
+  const notes: notesApi.Note[] = [
+    { id: 1, projectId: 0, title: '全局备忘', content: 'x', createdAt: '', updatedAt: '' },
+    { id: 2, projectId: 7, title: '部署清单', content: 'y', createdAt: '', updatedAt: '' },
+  ]
+
+  async function mountSidebar(path = '/notes/2') {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/notes', component: { template: '<div />' } },
+        { path: '/notes/:noteId', component: { template: '<div />' } },
+      ],
+    })
+    await router.push(path)
+    await router.isReady()
+
+    const wrapper = mount(NotesSidebar, { global: { plugins: [router] } })
+    await flushPromises()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.restoreAllMocks()
+    vi.spyOn(projectsApi, 'listProjects').mockResolvedValue({
+      projects: [{ id: 7, name: '网关', path: '/srv/gateway', isGit: false }],
+    })
+    vi.spyOn(notesApi, 'listNotes').mockResolvedValue(notes)
+  })
+
+  it('lists notes as a router-driven el-menu with the open note active', async () => {
+    const wrapper = await mountSidebar()
+
+    const items = wrapper.findAll('.el-menu-item')
+    expect(items).toHaveLength(2)
+    expect(items[0].text()).toContain('全局备忘')
+
+    const active = wrapper.findAll('.el-menu-item.is-active')
+    expect(active).toHaveLength(1)
+    expect(active[0].text()).toContain('部署清单')
+  })
+
+  it('separates a filtered-out list from an empty library', async () => {
+    const wrapper = await mountSidebar()
+    const store = useNotesStore()
+
+    // Nothing at all yet: the empty state offers the primary action.
+    store.notes = []
+    await flushPromises()
+    expect(wrapper.find('[data-test="list-state-empty"]').exists()).toBe(true)
+
+    // Rows exist but the keyword hid them: the way back out is the point.
+    store.notes = notes
+    store.setSearchQuery('不存在的关键字')
+    await flushPromises()
+    const filtered = wrapper.find('[data-test="list-state-filtered"]')
+    expect(filtered.exists()).toBe(true)
+    expect(filtered.text()).toContain('重置筛选')
+  })
+
+  it('filters notes live from the sidebar', async () => {
+    const wrapper = await mountSidebar()
+
+    // `el-input` has inheritAttrs: false and forwards the attrs to its inner
+    // <input>, so the data-test hook *is* the input element.
+    await wrapper.find('[data-test="notes-search"]').setValue('部署')
+    expect(wrapper.findAll('.el-menu-item')).toHaveLength(1)
   })
 })

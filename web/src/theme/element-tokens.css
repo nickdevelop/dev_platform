@@ -242,6 +242,16 @@ html .el-menu--vertical .el-menu--inline .el-menu-item {
   font-size: var(--el-font-size-small);
 }
 
+/* 菜单条目不只有导航一种：任务与笔记列表把实体放进第二栏，一行是「标题 +
+   摘要 + 元信息」三行，库的 46px 导航行高装不下。`entity-row` 是平台钩子（页面
+   只挂这个类），卡高交还给内容流，顶对齐才能让标题与 chip 在同一基线。 */
+html .el-menu--vertical .el-menu-item.entity-row {
+  height: auto;
+  align-items: flex-start;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
 /* ------------------------------------------------------------------ shared */
 /* Library-wide behaviours a token cannot express. Anything specific to one
    screen belongs to that screen's own style block instead — this file is the
@@ -391,6 +401,40 @@ html .el-radio.option-card .el-radio__label {
   white-space: normal;
   line-height: 1.4;
   font-weight: 500;
+}
+
+/* 文档标题式的输入（`entity-bare-input` 是平台钩子）：字段外壳在工具条里是噪声
+   —— 标题本来就在它自己的面板里。悬停与聚焦时才把外壳画回来，否则用户无从判断
+   它能不能输。 */
+html .el-input.entity-bare-input .el-input__wrapper {
+  background-color: transparent;
+  box-shadow: none;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+html .el-input.entity-bare-input:hover .el-input__wrapper {
+  background-color: var(--el-fill-color-light);
+}
+
+html .el-input.entity-bare-input .el-input__wrapper.is-focus {
+  background-color: var(--el-bg-color);
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+}
+
+/* 文档正文式的 textarea（`entity-fill-textarea` 是平台钩子）：铺满容器、去掉
+   字段外壳，它不是表单里的一个格，而是整个阅读面。内边距与字面由页面通过
+   `input-style` 给（库会把它们直接写到内层 textarea 上）。 */
+html .el-textarea.entity-fill-textarea,
+html .el-textarea.entity-fill-textarea .el-textarea__inner {
+  height: 100%;
+}
+
+html .el-textarea.entity-fill-textarea .el-textarea__inner {
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
 }
 
 
