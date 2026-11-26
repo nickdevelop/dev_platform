@@ -9,7 +9,7 @@
 // optional message rides along with the create request and the waiting is
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
@@ -32,6 +32,7 @@ import { resolveSessionMentions } from './sessionMentionResolver'
 import ComposerImageTray from './ComposerImageTray.vue'
 import ComposerCommentCards from './ComposerCommentCards.vue'
 import WorkspacePreviewPane, { type OpenFileTab } from '../pane/WorkspacePreviewPane.vue'
+import QuickFileSearchDialog from '../pane/QuickFileSearchDialog.vue'
 import { useActivityPane } from '../pane/useActivityPane'
 import { buildCodeCommentsMessage } from '../../../shared/utils/codeCommentBlock'
 import type { CodeCommentCard } from '../../files/types'
@@ -241,6 +242,31 @@ const {
   previewWidth,
   setPreviewWidth,
 } = useActivityPane()
+
+// Ctrl+P / Cmd+P opens the same quick file/content search dialog the chat panel
+// uses; a picked result lands in the preview pane on the right. The panel is
+// kept alive across routes, so the shortcut must follow the active route.
+const quickFileSearchOpen = ref(false)
+
+function onQuickSearchKeydown(e: KeyboardEvent) {
+  if (!isNewSessionRouteActive()) return
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+    e.preventDefault()
+    if (selectedProjectId.value === null) {
+      toolNotice.value = '请先选择关联的项目'
+      return
+    }
+    quickFileSearchOpen.value = !quickFileSearchOpen.value
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onQuickSearchKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onQuickSearchKeydown)
+})
 
 const isPreviewResizing = ref(false)
 let previewStartX = 0
@@ -1160,6 +1186,15 @@ async function createSession() {
       @select-workspace-file="onSelectWorkspaceFile"
       @open-file-preview="openFileInPreview"
       @add-comment="onAddCodeComment"
+    />
+
+    <QuickFileSearchDialog
+      v-if="selectedProjectId !== null"
+      :open="quickFileSearchOpen"
+      :project-id="Number(selectedProjectId)"
+      :worktree-id="selectedWorktreeId"
+      @close="quickFileSearchOpen = false"
+      @select="(path, line) => { quickFileSearchOpen = false; openFileInPreview(path, { initialLine: line }) }"
     />
   </div>
 </template>

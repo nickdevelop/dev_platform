@@ -267,7 +267,7 @@ func TestSearchFileContent_GitAndNonGit(t *testing.T) {
 	ctx := context.Background()
 
 	// Non-git project content search
-	matches, err := svc.SearchFileContent(ctx, id, "Hello", 50)
+	matches, err := svc.SearchFileContent(ctx, id, "Hello", 50, nil)
 	if err != nil {
 		t.Fatalf("SearchFileContent: %v", err)
 	}
@@ -292,14 +292,74 @@ func TestSearchFileContent_GitAndNonGit(t *testing.T) {
 			p, _ := repo.Create("git-content-proj", dir)
 			gitSvc := NewServiceWithRepository(repo)
 
-			gitMatches, gitErr := gitSvc.SearchFileContent(ctx, p.ID, "TargetFunc", 50)
+			gitMatches, gitErr := gitSvc.SearchFileContent(ctx, p.ID, "TargetFunc", 50, nil)
 			if gitErr != nil {
 				t.Fatalf("git SearchFileContent: %v", gitErr)
 			}
 			if len(gitMatches) != 1 || gitMatches[0].Path != "code.go" || gitMatches[0].Line != 2 {
 				t.Fatalf("expected code.go:2, got %+v", gitMatches)
 			}
+
+			// Extension filter on the git path: only .md files searched, so the
+			// .go match disappears; raw "*.go" tokens normalize onto the same path.
+			mdOnly, mdErr := gitSvc.SearchFileContent(ctx, p.ID, "TargetFunc", 50, []string{".md"})
+			if mdErr != nil {
+				t.Fatalf("git SearchFileContent (.md filter): %v", mdErr)
+			}
+			if len(mdOnly) != 0 {
+				t.Fatalf("expected no .md matches, got %+v", mdOnly)
+			}
+			goOnly, goErr := gitSvc.SearchFileContent(ctx, p.ID, "TargetFunc", 50, []string{"*.go,*.md"})
+			if goErr != nil {
+				t.Fatalf("git SearchFileContent (*.go,*.md filter): %v", goErr)
+			}
+			if len(goOnly) != 1 || goOnly[0].Path != "code.go" {
+				t.Fatalf("expected code.go via raw *.go token filter, got %+v", goOnly)
+			}
 		}
+	}
+}
+
+func TestSearchFileContent_ExtFilterNonGit(t *testing.T) {
+	svc, id, _ := setupTestProject(t)
+	ctx := context.Background()
+
+	// Without a filter both .go files match "package".
+	off, err := svc.SearchFileContent(ctx, id, "package", 50, nil)
+	if err != nil {
+		t.Fatalf("SearchFileContent: %v", err)
+	}
+	if len(off) != 2 {
+		t.Fatalf("expected 2 unfiltered matches, got %+v", off)
+	}
+
+	// .md filter excludes the .go matches entirely.
+	mdOnly, err := svc.SearchFileContent(ctx, id, "package", 50, []string{".md"})
+	if err != nil {
+		t.Fatalf("SearchFileContent (.md filter): %v", err)
+	}
+	if len(mdOnly) != 0 {
+		t.Fatalf("expected no matches in .md files, got %+v", mdOnly)
+	}
+
+	// Raw tokens ("*.go", bare "md") normalize onto dotted extensions.
+	norm := NormalizeExts([]string{"*.go", "md", " , ", ""})
+	if !norm[".go"] || !norm[".md"] || len(norm) != 2 {
+		t.Fatalf("NormalizeExts = %v", norm)
+	}
+	goOnly, err := svc.SearchFileContent(ctx, id, "package", 50, []string{"*.go"})
+	if err != nil {
+		t.Fatalf("SearchFileContent (*.go filter): %v", err)
+	}
+	if len(goOnly) != 2 {
+		t.Fatalf("expected 2 .go matches, got %+v", goOnly)
+	}
+	mdHit, err := svc.SearchFileContent(ctx, id, "Hello", 50, []string{"md"})
+	if err != nil {
+		t.Fatalf("SearchFileContent (md filter): %v", err)
+	}
+	if len(mdHit) != 1 || mdHit[0].Path != "README.md" {
+		t.Fatalf("expected README.md via bare-token filter, got %+v", mdHit)
 	}
 }
 
@@ -325,6 +385,36 @@ func TestHandleSearchFileContent(t *testing.T) {
 
 	if len(resp.Matches) == 0 || resp.Matches[0].Path != "README.md" {
 		t.Fatalf("expected README.md match, got: %+v", resp.Matches)
+	}
+
+	// exts=.go excludes the README.md match.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/search-content?q=Hello&exts=.go", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	resp = searchContentResponse{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Matches) != 0 {
+		t.Fatalf("expected no matches with exts=.go, got: %+v", resp.Matches)
+	}
+
+	// exts=*.md keeps the README.md match.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/projects/"+strconv.FormatUint(uint64(id), 10)+"/files/search-content?q=Hello&exts=*.md", nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+	resp = searchContentResponse{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Matches) != 1 || resp.Matches[0].Path != "README.md" {
+		t.Fatalf("expected README.md match with exts=*.md, got: %+v", resp.Matches)
 	}
 }
 

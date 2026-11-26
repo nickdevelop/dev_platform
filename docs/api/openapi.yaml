@@ -778,7 +778,7 @@ paths:
   /projects/{id}/files/search-content:
     get:
       summary: Search text content in project workspace files
-      description: Searches text occurrences matching query pattern q inside project files.
+      description: Searches text occurrences matching query pattern q inside project files, optionally restricted to given file extensions.
       operationId: searchProjectFileContent
       security:
         - cookieAuth: []
@@ -787,8 +787,8 @@ paths:
         - $ref: '#/components/parameters/WorktreeScope'
         - name: q
           in: query
-          required: true
-          description: Query string or pattern to match inside files.
+          required: false
+          description: Query string or pattern to match inside files (empty returns no matches).
           schema:
             type: string
         - name: limit
@@ -798,6 +798,15 @@ paths:
           schema:
             type: integer
             default: 50
+        - name: exts
+          in: query
+          required: false
+          description: >-
+            Comma-separated file extension filter, e.g. ".go,.ts" (also accepts
+            "*.go" or bare "go" tokens). Only files with a matching extension are
+            searched; empty omits the filter.
+          schema:
+            type: string
       responses:
         '200':
           description: List of content matches.

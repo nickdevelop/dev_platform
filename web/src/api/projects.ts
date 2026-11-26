@@ -94,11 +94,13 @@ export function searchProjectContent(
   query: string,
   limit = 50,
   worktreeId?: number,
+  exts?: string[],
 ): Promise<ProjectContentSearchResponse> {
   const params = new URLSearchParams()
   if (query) params.set('q', query)
   if (limit) params.set('limit', String(limit))
   if (worktreeId) params.set('worktreeId', String(worktreeId))
+  if (exts && exts.length > 0) params.set('exts', exts.join(','))
   const qs = params.toString() ? `?${params.toString()}` : ''
   return get<ProjectContentSearchResponse>(`/projects/${projectId}/files/search-content${qs}`)
 }

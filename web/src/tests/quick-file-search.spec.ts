@@ -1,7 +1,35 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import QuickFileSearchDialog from '../features/chat/pane/QuickFileSearchDialog.vue'
+import { EXT_FILTER_OPTIONS, resolveExtFilter } from '../features/chat/pane/quickSearchExt'
 import * as projectsApi from '../api/projects'
+
+describe('resolveExtFilter', () => {
+  it('maps preset groups onto their extensions', () => {
+    expect(resolveExtFilter('Go')).toEqual(['.go'])
+    expect(resolveExtFilter('前端 JS/TS')).toEqual(['.js', '.jsx', '.ts', '.tsx', '.vue'])
+  })
+
+  it('normalizes manually typed tokens', () => {
+    expect(resolveExtFilter('*.kt')).toEqual(['.kt'])
+    expect(resolveExtFilter('kt,json')).toEqual(['.kt', '.json'])
+    expect(resolveExtFilter('*.py; *.sql')).toEqual(['.py', '.sql'])
+    expect(resolveExtFilter('PY')).toEqual(['.py'])
+  })
+
+  it('returns undefined for empty or junk selections', () => {
+    expect(resolveExtFilter('')).toBeUndefined()
+    expect(resolveExtFilter('  ')).toBeUndefined()
+    expect(resolveExtFilter('*.')).toBeUndefined()
+  })
+
+  it('offers the preset groups expected by the product', () => {
+    const labels = EXT_FILTER_OPTIONS.map((o) => o.value)
+    for (const expected of ['Java', 'Go', 'Python', 'SQL', '前端 JS/TS', 'Shell 脚本']) {
+      expect(labels).toContain(expected)
+    }
+  })
+})
 
 describe('QuickFileSearchDialog', () => {
   it('does not render when open is false', () => {
@@ -74,7 +102,7 @@ describe('QuickFileSearchDialog', () => {
     await new Promise((r) => setTimeout(r, 150))
     await flushPromises()
 
-    expect(contentSpy).toHaveBeenCalledWith(1, 'createApp', 50, undefined)
+    expect(contentSpy).toHaveBeenCalledWith(1, 'createApp', 50, undefined, undefined)
 
     const contentItems = wrapper.findAll('[data-test="quick-search-content-item"]')
     expect(contentItems.length).toBe(1)
@@ -87,6 +115,62 @@ describe('QuickFileSearchDialog', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('select')?.[0]).toEqual(['src/main.ts', 42])
+  })
+
+  it('shows the extension filter only in content mode and sends exts to the API', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({
+      files: [{ path: 'src/main.go', isDir: false }],
+    })
+    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({
+      matches: [],
+    })
+
+    const wrapper = mount(QuickFileSearchDialog, {
+      props: { open: true, projectId: 1 },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // File mode carries no extension filter
+    expect(wrapper.find('[data-test="quick-search-ext-select"]').exists()).toBe(false)
+
+    // Switch to content mode: the filter appears
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    await wrapper.vm.$nextTick()
+    const selectWrapper = wrapper.findComponent('[data-test="quick-search-ext-select"]')
+    expect(selectWrapper.exists()).toBe(true)
+    // findComponent answers a loosely typed WrapperLike; the select's vm is all
+    // this spec needs to drive v-model.
+    const selectVm = selectWrapper as unknown as {
+      vm: { $emit: (event: string, value: string) => void }
+    }
+
+    // Content search needs a query: type one first
+    const input = wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]')
+    await input.setValue('handler')
+    await new Promise((r) => setTimeout(r, 150))
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, undefined)
+
+    // Choosing a preset group sends its extensions to the backend
+    selectVm.vm.$emit('update:modelValue', 'Go')
+    await new Promise((r) => setTimeout(r, 150))
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, ['.go'])
+
+    // Manually typed raw values are normalized onto dotted extensions
+    selectVm.vm.$emit('update:modelValue', '*.kt,json')
+    await new Promise((r) => setTimeout(r, 150))
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, ['.kt', '.json'])
+
+    // Clearing the filter removes exts again
+    selectVm.vm.$emit('update:modelValue', '')
+    await new Promise((r) => setTimeout(r, 150))
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'handler', 50, undefined, undefined)
+
+    wrapper.unmount()
   })
 
   it('navigates with ArrowDown/ArrowUp and selects with Enter', async () => {

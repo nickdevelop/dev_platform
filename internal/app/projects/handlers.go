@@ -401,8 +401,14 @@ func (s *Service) handleSearchFileContent(c *gin.Context) {
 			limit = parsed
 		}
 	}
+	// Optional extension filter, e.g. exts=.go,.ts (also accepts "*.go" / bare
+	// "go" tokens); empty means search every text file.
+	var exts []string
+	if raw := c.Query("exts"); raw != "" {
+		exts = []string{raw}
+	}
 
-	matches, err := s.SearchFileContent(c.Request.Context(), id, query, limit, worktreeID)
+	matches, err := s.SearchFileContent(c.Request.Context(), id, query, limit, exts, worktreeID)
 	if err != nil {
 		respondServiceError(c, err)
 		return

@@ -149,7 +149,9 @@ func (s *Service) searchGitFiles(ctx context.Context, rootDir, normQuery string,
 }
 
 // SearchFileContent searches text content inside project workspace files.
-func (s *Service) SearchFileContent(ctx context.Context, projectID uint, query string, limit int, worktreeID ...uint) ([]FileContentMatch, error) {
+// exts optionally restricts the searched files to the given extensions
+// (e.g. ".go", ".ts"); an empty list searches every text file.
+func (s *Service) SearchFileContent(ctx context.Context, projectID uint, query string, limit int, exts []string, worktreeID ...uint) ([]FileContentMatch, error) {
 	trimmedQuery := strings.TrimSpace(query)
 	if trimmedQuery == "" {
 		return []FileContentMatch{}, nil
@@ -165,14 +167,62 @@ func (s *Service) SearchFileContent(ctx context.Context, projectID uint, query s
 		return nil, err
 	}
 
+	extSet := NormalizeExts(exts)
+
 	if s.isGitDir(ctx, rootDir) {
-		return s.searchGitFileContent(ctx, rootDir, trimmedQuery, limit)
+		return s.searchGitFileContent(ctx, rootDir, trimmedQuery, limit, extSet)
 	}
-	return s.searchWorkspaceFileContent(ctx, rootDir, trimmedQuery, limit)
+	return s.searchWorkspaceFileContent(ctx, rootDir, trimmedQuery, limit, extSet)
 }
 
-func (s *Service) searchGitFileContent(ctx context.Context, rootDir, query string, limit int) ([]FileContentMatch, error) {
-	out, err := gitOutputLimit(ctx, rootDir, 8<<20, "grep", "-n", "-I", "-i", "--untracked", "-e", query)
+// NormalizeExts turns raw extension tokens ("go", ".go", "*.go" in any case)
+// into a deduplicated set of lowercase dotted extensions. Entries that may
+// carry several tokens at once ("*.go,*.ts", "go;ts") are split apart, so the
+// value can also come straight from a comma-separated query parameter.
+func NormalizeExts(raw []string) map[string]bool {
+	set := make(map[string]bool)
+	for _, entry := range raw {
+		for _, token := range strings.FieldsFunc(entry, func(r rune) bool {
+			return r == ',' || r == ';' || r == ' ' || r == '\t'
+		}) {
+			token = strings.ToLower(strings.TrimSpace(token))
+			token = strings.TrimPrefix(token, "*.")
+			token = strings.TrimPrefix(token, "*")
+			token = strings.TrimPrefix(token, ".")
+			if token == "" {
+				continue
+			}
+			set["."+token] = true
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+// extSetPatternArgs renders the extension set as git pathspec globs sorted
+// for deterministic commands (e.g. ["*.go", "*.ts"]).
+func extSetPatternArgs(extSet map[string]bool) []string {
+	if len(extSet) == 0 {
+		return nil
+	}
+	patterns := make([]string, 0, len(extSet))
+	for ext := range extSet {
+		patterns = append(patterns, "*"+ext)
+	}
+	sort.Strings(patterns)
+	return patterns
+}
+
+func (s *Service) searchGitFileContent(ctx context.Context, rootDir, query string, limit int, extSet map[string]bool) ([]FileContentMatch, error) {
+	args := []string{"grep", "-n", "-I", "-i", "--untracked", "-e", query}
+	if patterns := extSetPatternArgs(extSet); len(patterns) > 0 {
+		// Restrict the searched files via pathspec globs after "--".
+		args = append(args, "--")
+		args = append(args, patterns...)
+	}
+	out, err := gitOutputLimit(ctx, rootDir, 8<<20, args...)
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -180,7 +230,7 @@ func (s *Service) searchGitFileContent(ctx context.Context, rootDir, query strin
 			return []FileContentMatch{}, nil
 		}
 		// If git grep fails for other reasons, fallback to standard workspace scan
-		return s.searchWorkspaceFileContent(ctx, rootDir, query, limit)
+		return s.searchWorkspaceFileContent(ctx, rootDir, query, limit, extSet)
 	}
 
 	var matches []FileContentMatch
@@ -213,7 +263,7 @@ func (s *Service) searchGitFileContent(ctx context.Context, rootDir, query strin
 	return matches, nil
 }
 
-func (s *Service) searchWorkspaceFileContent(ctx context.Context, rootDir, query string, limit int) ([]FileContentMatch, error) {
+func (s *Service) searchWorkspaceFileContent(ctx context.Context, rootDir, query string, limit int, extSet map[string]bool) ([]FileContentMatch, error) {
 	var matches []FileContentMatch
 	normQuery := strings.ToLower(query)
 
@@ -233,6 +283,11 @@ func (s *Service) searchWorkspaceFileContent(ctx context.Context, rootDir, query
 			return nil
 		}
 		if d.IsDir() {
+			return nil
+		}
+
+		// Extension filter: when a set is active only scan matching files.
+		if len(extSet) > 0 && !extSet[strings.ToLower(filepath.Ext(d.Name()))] {
 			return nil
 		}
 

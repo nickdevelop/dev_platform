@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { searchProjectFiles, searchProjectContent, type FileContentMatch, type FileItem } from '../../../api/projects'
+import { EXT_FILTER_OPTIONS, resolveExtFilter } from './quickSearchExt'
 
 const props = defineProps<{
   open: boolean
@@ -22,6 +23,10 @@ const activeIndex = ref(0)
 const inputRef = ref<HTMLInputElement | null>(null)
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
+// Content-search extension filter: a single choice mapping to a group of
+// extensions, or a manually typed raw value (see ./quickSearchExt.ts).
+const extFilter = ref('')
+
 // Filter out folders in file mode
 const fileList = computed(() => {
   return fileResults.value.filter((item) => !item.isDir)
@@ -42,7 +47,7 @@ async function doSearch(q: string) {
       if (!q) {
         contentResults.value = []
       } else {
-        const resp = await searchProjectContent(props.projectId, q, 50, props.worktreeId)
+        const resp = await searchProjectContent(props.projectId, q, 50, props.worktreeId, resolveExtFilter(extFilter.value))
         contentResults.value = resp.matches || []
       }
     }
@@ -64,6 +69,7 @@ watch(
     if (isOpen) {
       searchType.value = 'file'
       query.value = ''
+      extFilter.value = ''
       activeIndex.value = 0
       void doSearch('')
       void nextTick(() => {
@@ -91,12 +97,28 @@ watch(searchType, () => {
   })
 })
 
+watch(extFilter, () => {
+  if (searchType.value !== 'content') return
+  activeIndex.value = 0
+  void doSearch(query.value.trim())
+})
+
+// While the extension el-select owns the focus, arrows/Tab/Enter belong to its
+// dropdown (navigating options / confirming a created one), not to the result
+// list. Escape still closes the whole dialog.
+function isInsideExtSelect(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null
+  return !!t && typeof t.closest === 'function' && !!t.closest('[data-test="quick-search-ext-select"]')
+}
+
 function onKeydown(e: KeyboardEvent) {
   if (!props.open) return
 
   if (e.key === 'Escape') {
     e.preventDefault()
     emit('close')
+  } else if (isInsideExtSelect(e) && (e.key === 'Tab' || e.key === 'Enter' || e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    // Leave the keystroke to the select's own dropdown handling.
   } else if (e.key === 'Tab') {
     e.preventDefault()
     searchType.value = searchType.value === 'file' ? 'content' : 'file'
@@ -158,6 +180,28 @@ onUnmounted(() => {
           <option value="file">文件</option>
           <option value="content">内容</option>
         </select>
+
+        <!-- 后缀过滤只在内容模式下提供：内容搜索有截断上限，过滤必须在后端生效 -->
+        <el-select
+          v-if="searchType === 'content'"
+          v-model="extFilter"
+          class="ext-filter-select"
+          size="small"
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          placeholder="后缀：不限"
+          title="按文件后缀过滤内容搜索；可直接输入，如 *.kt 或 kt,json"
+          data-test="quick-search-ext-select"
+        >
+          <el-option
+            v-for="opt in EXT_FILTER_OPTIONS"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
+        </el-select>
 
         <svg class="w-4 h-4 text-platform-text-muted shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8">
           <circle cx="7" cy="7" r="4.5" />
@@ -275,5 +319,11 @@ onUnmounted(() => {
   background-repeat: no-repeat;
   background-position: right 4px center;
   padding-right: 18px;
+}
+
+/* Width of the extension filter; only a plain layout width, no .el-* overrides. */
+.ext-filter-select {
+  width: 9.5rem;
+  flex-shrink: 0;
 }
 </style>
